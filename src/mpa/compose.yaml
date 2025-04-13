@@ -1,0 +1,40 @@
+services:
+
+  redis:
+    image: redis:5
+    ports:
+      - "6379:6379"
+    networks:
+      - mpa_network
+
+  test:
+    build: ./tests
+    profiles: 
+      - test
+    environment:
+      - MTA_HOST=mta
+      - MDA_API_SECRET=mda-secret
+    command: pytest -vvs .
+    volumes:
+      - ./tests:/app
+    ports:
+      - "8000:8000"
+    networks:
+      - mpa_network
+
+  mpa:
+    build: ./rspamd
+    environment:
+      - RSPAMD_password=password
+    networks:
+      - mpa_network
+    volumes:
+      - ./rspamd:/app
+    depends_on:
+      - redis
+    ports:
+      - "8010:8010"
+
+networks:
+  mpa_network:
+    driver: bridge 

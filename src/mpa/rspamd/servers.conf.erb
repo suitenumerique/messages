@@ -1,0 +1,12 @@
+
+server {
+    server_name localhost;
+    listen <%= ENV['PORT'] %>;
+    charset utf-8;
+    location /_api/ {
+        proxy_pass http://localhost:11333/;
+    }
+    location / {
+        proxy_pass http://localhost:11334/;
+    }
+}

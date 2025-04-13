@@ -1,0 +1,19 @@
+.info-row {
+  display: flex;
+  justify-content: space-between;
+
+  align-items: center;
+
+  &__label {
+    font-size: var(--c--theme--font--sizes--sm);
+    color: var(--c--theme--colors--greyscale-1000);
+    font-weight: 700;
+  }
+
+  &__right-content {
+    &__string {
+      font-size: var(--c--theme--font--sizes--sm);
+      color: var(--c--theme--colors--greyscale-600);
+    }
+  }
+}

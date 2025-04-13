@@ -1,0 +1,124 @@
+import { Item } from "@/features/drivers/types";
+import { ItemIcon } from "../ItemIcon";
+import { Button } from "@openfun/cunningham-react";
+import { useExplorer } from "../ExplorerContext";
+import { InfoRow } from "@/features/ui/components/info/InfoRow";
+import { useTranslation } from "react-i18next";
+import { UserRow } from "@/features/users/components/UserRow";
+import multipleSelection from "@/assets/mutliple-selection.png";
+import emptySelection from "@/assets/empty-selection.png";
+import { getFormatTranslationKey } from "../../utils/mimeTypes";
+
+type ExplorerRightPanelContentProps = {
+  item?: Item;
+};
+
+export const ExplorerRightPanelContent = ({
+  item,
+}: ExplorerRightPanelContentProps) => {
+  const { setRightPanelOpen, selectedItems } = useExplorer();
+  const { t } = useTranslation();
+
+  const firstSelectedItem = item ?? selectedItems[0];
+
+  if (!firstSelectedItem) {
+    return (
+      <div className="explorer__right-panel__empty-selection">
+        <div className="explorer__right-panel__multiple-selection__close">
+          <Button
+            size="small"
+            color="primary-text"
+            icon={<span className="material-icons">close</span>}
+            onClick={() => setRightPanelOpen(false)}
+          />
+        </div>
+        <img
+          src={emptySelection.src}
+          alt={t("explorer.rightPanel.empty.alt")}
+        />
+        <div className="explorer__right-panel__empty__text">
+          {t("explorer.rightPanel.empty.text")}
+        </div>
+      </div>
+    );
+  }
+
+  if (selectedItems.length > 1) {
+    return (
+      <div className="explorer__right-panel__multiple-selection">
+        <div className="explorer__right-panel__multiple-selection__close">
+          <Button
+            size="small"
+            color="primary-text"
+            icon={<span className="material-icons">close</span>}
+            onClick={() => setRightPanelOpen(false)}
+          />
+        </div>
+        <img src={multipleSelection.src} alt={selectedItems[0].title} />
+        <div className="explorer__right-panel__multiple-selection__text">
+          {t("explorer.rightPanel.multipleSelection.text")}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="explorer__right-panel">
+      <div className="explorer__right-panel__section p">
+        <div className="explorer__right-panel__item-title">
+          <div className="explorer__right-panel__item-title__close">
+            <Button
+              size="small"
+              color="primary-text"
+              icon={<span className="material-icons">close</span>}
+              onClick={() => setRightPanelOpen(false)}
+            />
+          </div>
+          <div className="explorer__right-panel__item-title__icon">
+            <ItemIcon item={firstSelectedItem} size="small" type="mini" />
+          </div>
+          <div className="explorer__right-panel__item-title__text">
+            {firstSelectedItem.title}
+          </div>
+        </div>
+        <div className="explorer__right-panel__item-type">
+          <ItemIcon item={firstSelectedItem} size="xlarge" />
+        </div>
+        <InfoRow
+          label={t("explorer.rightPanel.sharing")}
+          rightContent={
+            <Button color="primary-text">
+              {t("explorer.rightPanel.share")}
+            </Button>
+          }
+        />
+      </div>
+      <div className="explorer__right-panel__section explorer__right-panel__section--info">
+        <InfoRow
+          label={t("explorer.rightPanel.format")}
+          rightContent={t(getFormatTranslationKey(firstSelectedItem))}
+        />
+        <InfoRow
+          label={t("explorer.rightPanel.updated_at")}
+          rightContent={firstSelectedItem.updated_at.toLocaleString()}
+        />
+        <InfoRow
+          label={t("explorer.rightPanel.created_at")}
+          rightContent={
+            firstSelectedItem.created_at
+              ? new Date(firstSelectedItem?.created_at).toLocaleString()
+              : ""
+          }
+        />
+        <InfoRow
+          label={t("explorer.rightPanel.size")}
+          rightContent={"121.2 MB"}
+        />
+        <InfoRow
+          label={t("explorer.rightPanel.created_by")}
+          rightContent={<UserRow user={{ id: "1", name: "John Doe" }} />}
+        />
+      </div>
+    </div>
+  );
+};

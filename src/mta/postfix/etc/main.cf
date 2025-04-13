@@ -1,0 +1,36 @@
+# General config
+compatibility_level=3.6
+
+# Identity
+myhostname = localhost
+myorigin = localhost
+inet_interfaces = all
+inet_protocols = ipv4
+
+# Accept mail for any recipient
+mydestination = example.com
+local_recipient_maps =
+local_transport = local_cmd
+virtual_alias_maps =
+virtual_mailbox_maps =
+
+# No rate limiting for now
+smtpd_client_event_limit_exceptions = static:all
+
+# Logging
+maillog_file = /dev/stdout
+
+smtpd_recipient_restrictions = check_policy_service unix:private/recipient_check
+smtpd_recipient_limit = 100
+
+# Disable any conflicting delivery settings
+home_mailbox =
+
+# Done through postconf in entrypoint.sh:
+# - message_size_limit
+
+# TODO
+# local_destination_concurrency_limit
+# local_destination_recipient_limit / smtpd_recipient_limit
+# mailbox_size_limit
+
