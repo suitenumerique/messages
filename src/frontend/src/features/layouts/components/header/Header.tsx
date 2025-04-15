@@ -1,6 +1,5 @@
 import { DropdownMenu, Header as KitHeader } from "@gouvfr-lasuite/ui-kit";
 import { Button } from "@openfun/cunningham-react";
-import logo from "@/assets/logo.svg";
 import { useAuth, logout } from "@/features/auth/Auth";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -8,7 +7,7 @@ import { useTranslation } from "react-i18next";
 export const Header = () => {
   return (
     <KitHeader
-      leftIcon={<h3>Messagerie</h3>} // <img src={logo.src} alt="logo" />
+      leftIcon={<img src="/images/app-logo.svg" alt="logo" height={32} />}
       rightIcon={<HeaderRight />}
     />
   );
