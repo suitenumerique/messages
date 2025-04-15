@@ -66,6 +66,7 @@ services:
       - DJANGO_CONFIGURATION=Development
     env_file:
       - env.d/development/common
+      - env.d/development/backend
       - env.d/development/postgresql
     ports:
       - "8071:8000"
@@ -95,6 +96,7 @@ services:
       - DJANGO_CONFIGURATION=Production
     env_file:
       - env.d/development/common
+      - env.d/development/backend
       - env.d/development/postgresql
     depends_on:
       postgresql:
@@ -114,6 +116,7 @@ services:
     depends_on:
       - keycloak
       - app-dev
+      - mta-in
 
   frontend-dev:
     user: "${DOCKER_USER:-1000}"
@@ -167,6 +170,19 @@ services:
       HOME: /tmp
     volumes:
       - ".:/app"
+
+  mta-in:
+    image: mta-in:latest
+    build:
+      context: src/mta-in/postfix
+      dockerfile: Dockerfile
+    env_file:
+      - env.d/development/common
+      - env.d/development/mta-in
+    ports:
+      - "25:25"
+    depends_on:
+      - app-dev
 
   kc_postgresql:
     image: postgres:16.6

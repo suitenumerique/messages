@@ -26,8 +26,15 @@ smtpd_recipient_limit = 100
 # Disable any conflicting delivery settings
 home_mailbox =
 
+# Proxy support
+postscreen_client_connection_count_limit = 1000
+
 # Done through postconf in entrypoint.sh:
 # - message_size_limit
+
+# Extended debug
+# debug_peer_level = 10
+# debug_peer_list = 127.0.0.1,192.168.0.3,192.168.0.2,172.30.0.1
 
 # TODO
 # local_destination_concurrency_limit

@@ -119,7 +119,7 @@ class Base(Configuration):
 
     # MDA/MTA settings
     MDA_API_SECRET = values.Value(
-        None, environ_name="MDA_API_SECRET", environ_prefix=None
+        "default-mda-api-secret", environ_name="MDA_API_SECRET", environ_prefix=None
     )
 
     # Media

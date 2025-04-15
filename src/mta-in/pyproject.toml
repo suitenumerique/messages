@@ -25,6 +25,9 @@ license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "pytest==8.3.5",
+    "fastapi==0.115.12",
+    "uvicorn==0.34.1",
     "requests==2.32.3",
     "PyJWT==2.10.1"
 ]
@@ -38,6 +41,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "ruff==0.9.3",
+    "pylint==3.3.4",
     "types-requests==2.32.0.20241016",
 ]
 
@@ -77,6 +81,7 @@ select = [
     "S", # flake8-bandit
     "SLF", # flake8-self
     "T20", # flake8-print
+    "F"  # pyflakes
 ]
 
 [tool.ruff.lint.isort]

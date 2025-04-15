@@ -1,5 +1,2 @@
-pytest
-fastapi
-uvicorn
 requests==2.32.3
 PyJWT==2.10.1

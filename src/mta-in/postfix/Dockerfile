@@ -15,12 +15,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create and activate virtual environment
 RUN python3 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
+ENV PYTHONPATH="/app"
+ENV PYTHONIOENCODING=utf-8
 
-COPY . /app
+COPY requirements.txt /app/requirements.txt
+RUN pip install -r /app/requirements.txt
+
+COPY ./scripts /app/scripts
 COPY ./etc /etc/postfix/
+COPY ./entrypoint.sh /entrypoint.sh
 
-RUN pip install -e .
+RUN chmod +x /app/scripts/*.py /entrypoint.sh
 
-RUN chmod +x *.py entrypoint.sh
-
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/entrypoint.sh"]

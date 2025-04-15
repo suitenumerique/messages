@@ -119,7 +119,7 @@ select = [
     "S", # flake8-bandit
     "SLF", # flake8-self
     "T20", # flake8-print
-    "F401"  # pyflakes unused imports
+    "F"  # pyflakes
 ]
 
 [tool.ruff.lint.isort]

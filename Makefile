@@ -44,6 +44,7 @@ COMPOSE_EXEC_APP    = $(COMPOSE_EXEC) app-dev
 COMPOSE_RUN         = $(COMPOSE) run --rm
 COMPOSE_RUN_APP     = $(COMPOSE_RUN) app-dev
 COMPOSE_RUN_CROWDIN = $(COMPOSE_RUN) crowdin crowdin
+COMPOSE_RUN_MTA_IN_TESTS  = cd src/mta-in && $(COMPOSE_RUN) --build test
 
 # -- Backend
 MANAGE              = $(COMPOSE_RUN_APP) python manage.py
@@ -67,7 +68,9 @@ create-env-files: \
 	env.d/development/common \
 	env.d/development/crowdin \
 	env.d/development/postgresql \
-	env.d/development/kc_postgresql
+	env.d/development/kc_postgresql \
+	env.d/development/backend \
+	env.d/development/mta-in
 .PHONY: create-env-files
 
 bootstrap: ## Prepare Docker images for the project
@@ -110,6 +113,10 @@ logs: ## display app-dev logs (follow mode)
 	@$(COMPOSE) logs -f app-dev
 .PHONY: logs
 
+build-run: ## start the wsgi (production) and development server, rebuilding the containers
+	@$(COMPOSE) up --force-recreate --build -d nginx
+.PHONY: run-rebuild
+
 run: ## start the wsgi (production) and development server
 	@$(COMPOSE) up --force-recreate -d nginx
 .PHONY: run
@@ -143,7 +150,8 @@ lint: ## lint back-end python sources
 lint: \
   lint-ruff-format \
   lint-ruff-check \
-  lint-pylint
+  lint-pylint \
+  lint-mta-in
 .PHONY: lint
 
 lint-ruff-format: ## format back-end python sources with ruff
@@ -160,6 +168,13 @@ lint-pylint: ## lint back-end python sources with pylint only on changed files f
 	@echo 'lint:pylint started…'
 	bin/pylint --diff-only=origin/main
 .PHONY: lint-pylint
+
+lint-mta-in: ## lint mta-in python sources with pylint
+	@echo 'lint:mta-in started…'
+	@$(COMPOSE_RUN_MTA_IN_TESTS) ruff format .
+	@$(COMPOSE_RUN_MTA_IN_TESTS) ruff check . --fix
+# 	@$(COMPOSE_RUN_MTA_IN_TESTS) pylint .
+.PHONY: lint-mta-in
 
 test: ## run project tests
 	@$(MAKE) test-back-parallel
@@ -219,6 +234,12 @@ resetdb: ## flush database and create a superuser "admin"
 
 env.d/development/common:
 	cp -n env.d/development/common.dist env.d/development/common
+
+env.d/development/backend:
+	cp -n env.d/development/backend.dist env.d/development/backend
+
+env.d/development/mta-in:
+	cp -n env.d/development/mta-in.dist env.d/development/mta-in
 
 env.d/development/postgresql:
 	cp -n env.d/development/postgresql.dist env.d/development/postgresql

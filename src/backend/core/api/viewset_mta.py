@@ -36,6 +36,9 @@ class MTAJWTAuthentication(authentication.BaseAuthentication):
                 jwt_token, settings.MDA_API_SECRET, algorithms=["HS256"]
             )
 
+            if not payload.get("exp"):
+                raise jwt.InvalidTokenError("Missing expiration time")
+
             # Validate email hash if there's a body
             if request.body:
                 body_hash = hashlib.sha256(request.body).hexdigest()
@@ -64,18 +67,11 @@ class MTAViewSet(viewsets.GenericViewSet):
     @drf.decorators.action(
         detail=False,
         methods=["post"],
-        url_path="address_exists",
-        parser_classes=[drf.parsers.BaseParser],
+        url_path="check-recipients",
+        parser_classes=[drf.parsers.JSONParser],
     )
-    def address_exists(self, request):
+    def check_recipients(self, request):
         """Handle incoming email from MTA"""
-
-        # Validate content type
-        if request.content_type != "application/json":
-            return drf.response.Response(
-                {"detail": "Content-Type must be application/json"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         # Get a list of email addresses from the request body
         email_addresses = request.data.get("addresses")
@@ -94,10 +90,10 @@ class MTAViewSet(viewsets.GenericViewSet):
     @drf.decorators.action(
         detail=False,
         methods=["post"],
-        url_path="incoming_mail",
+        url_path="inbound-email",
         parser_classes=[drf.parsers.BaseParser],
     )
-    def incoming_mail(self, request):
+    def inbound_email(self, request):
         """Handle incoming email from MTA"""
 
         # Validate content type

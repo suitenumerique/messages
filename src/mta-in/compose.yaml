@@ -1,8 +1,8 @@
 services:
   test:
-    build: ./tests
+    build: ./
     environment:
-      - MTA_HOST=mta
+      - MTA_HOST=mta-in
       - MDA_API_SECRET=mda-secret
     command: pytest -vvs .
     volumes:
@@ -10,20 +10,19 @@ services:
     ports:
       - "8000:8000"
     networks:
-      - mta_network
+      - mta_in_network
 
-  mta:
+  mta-in:
     build: ./postfix
     environment:
-      - MDA_API_URL=http://test:8000/api/mail
-      - REGIE_API_URL=http://test:8000/api/regie/mailbox
+      - MDA_API_BASE_URL=http://test:8000/api/mail/
       - MDA_API_SECRET=mda-secret
       - MESSAGE_SIZE_LIMIT=30000000
     networks:
-      - mta_network
+      - mta_in_network
     ports:
       - "25:25"
 
 networks:
-  mta_network:
+  mta_in_network:
     driver: bridge 

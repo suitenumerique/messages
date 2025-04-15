@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+COPY pyproject.toml .
+RUN pip install -e .[dev]
 
 COPY . .
