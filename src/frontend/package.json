@@ -11,7 +11,7 @@
     "generate-api": "orval --config ./orval.config.ts"
   },
   "dependencies": {
-    "@gouvfr-lasuite/ui-kit": "0.1.9",
+    "@gouvfr-lasuite/ui-kit": "0.2.0",
     "@openfun/cunningham-react": "3.0.0",
     "@tanstack/react-query": "5.66.9",
     "@tanstack/react-table": "8.20.6",
