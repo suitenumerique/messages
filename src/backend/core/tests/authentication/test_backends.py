@@ -522,7 +522,7 @@ def test_authentication_verify_claims_essential_missing(
     OIDC_OP_USER_ENDPOINT="http://oidc.endpoint.test/userinfo",
     USER_OIDC_ESSENTIAL_CLAIMS=["email", "last_name"],
 )
-def test_authentication_verify_claims_success(django_assert_num_queries, monkeypatch):
+def test_authentication_verify_claims_success(monkeypatch):
     """Ensure user is authenticated when all essential claims are present."""
 
     klass = OIDCAuthenticationBackend()

@@ -14,6 +14,8 @@ from rest_framework.permissions import IsAuthenticated
 
 logger = logging.getLogger(__name__)
 
+User = get_user_model()
+
 
 class MTAJWTAuthentication(authentication.BaseAuthentication):
     """
@@ -40,7 +42,6 @@ class MTAJWTAuthentication(authentication.BaseAuthentication):
                 if body_hash != payload["body_hash"]:
                     raise jwt.InvalidTokenError("Invalid email hash")
 
-            User = get_user_model()
             service_account = User()
             return (service_account, payload)
 
