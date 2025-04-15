@@ -16,7 +16,6 @@ pytestmark = pytest.mark.django_db
 
 
 @override_settings(
-    CRISP_WEBSITE_ID="123",
     FRONTEND_THEME="test-theme",
     MEDIA_BASE_URL="http://testserver/",
     POSTHOG_KEY={"id": "132456", "host": "https://eu.i.posthog-test.com"},
@@ -34,10 +33,9 @@ def test_api_config(is_authenticated):
     response = client.get("/api/v1.0/config/")
     assert response.status_code == HTTP_200_OK
     assert response.json() == {
-        "CRISP_WEBSITE_ID": "123",
         "ENVIRONMENT": "test",
         "FRONTEND_THEME": "test-theme",
-        "LANGUAGES": [["en-us", "English"], ["fr-fr", "French"], ["de-de", "German"]],
+        "LANGUAGES": [['en-us', 'English'], ['fr-fr', 'French'], ['de-de', 'German']],
         "LANGUAGE_CODE": "en-us",
         "MEDIA_BASE_URL": "http://testserver/",
         "POSTHOG_KEY": {"id": "132456", "host": "https://eu.i.posthog-test.com"},

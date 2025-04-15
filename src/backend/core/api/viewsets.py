@@ -3,6 +3,7 @@
 
 import logging
 import re
+import email
 from urllib.parse import unquote, urlparse
 
 from django.conf import settings
@@ -25,6 +26,9 @@ from rest_framework.throttling import UserRateThrottle
 from core import enums, models
 
 from . import permissions, serializers, utils
+
+import jwt
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -126,92 +130,6 @@ class Pagination(drf.pagination.PageNumberPagination):
     ordering = "-created_on"
     max_page_size = 200
     page_size_query_param = "page_size"
-
-
-class UserListThrottleBurst(UserRateThrottle):
-    """Throttle for the user list endpoint."""
-
-    scope = "user_list_burst"
-
-
-class UserListThrottleSustained(UserRateThrottle):
-    """Throttle for the user list endpoint."""
-
-    scope = "user_list_sustained"
-
-
-class UserViewSet(
-    drf.mixins.UpdateModelMixin, viewsets.GenericViewSet, drf.mixins.ListModelMixin
-):
-    """User ViewSet"""
-
-    permission_classes = [permissions.IsSelf]
-    queryset = models.User.objects.all().filter(is_active=True)
-    serializer_class = serializers.UserSerializer
-    pagination_class = None
-    throttle_classes = []
-
-    def get_throttles(self):
-        self.throttle_classes = []
-        if self.action == "list":
-            self.throttle_classes = [UserListThrottleBurst, UserListThrottleSustained]
-
-        return super().get_throttles()
-
-    def get_queryset(self):
-        """
-        Limit listed users by querying the email field with a trigram similarity
-        search if a query is provided.
-        Limit listed users by excluding users already in the item if a item_id
-        is provided.
-        """
-        queryset = self.queryset
-
-        if self.action != "list":
-            return queryset
-
-        # Exclude all users already in the given item
-        if item_id := self.request.query_params.get("item_id", ""):
-            queryset = queryset.exclude(itemaccess__item_id=item_id)
-
-        if not (query := self.request.query_params.get("q", "")) or len(query) < 5:
-            return queryset.none()
-
-        # For emails, match emails by Levenstein distance to prevent typing errors
-        if "@" in query:
-            return (
-                queryset.annotate(
-                    distance=RawSQL("levenshtein(email::text, %s::text)", (query,))
-                )
-                .filter(distance__lte=3)
-                .order_by("distance", "email")[: settings.API_USERS_LIST_LIMIT]
-            )
-
-        # Use trigram similarity for non-email-like queries
-        # For performance reasons we filter first by similarity, which relies on an
-        # index, then only calculate precise similarity scores for sorting purposes
-        return (
-            queryset.filter(email__trigram_word_similar=query)
-            .annotate(similarity=TrigramSimilarity("email", query))
-            .filter(similarity__gt=0.2)
-            .order_by("-similarity", "email")[: settings.API_USERS_LIST_LIMIT]
-        )
-
-    @drf.decorators.action(
-        detail=False,
-        methods=["get"],
-        url_name="me",
-        url_path="me",
-        permission_classes=[permissions.IsAuthenticated],
-    )
-    def get_me(self, request):
-        """
-        Return information on currently logged user
-        """
-        context = {"request": request}
-        return drf.response.Response(
-            self.serializer_class(request.user, context=context).data
-        )
 
 
 class ResourceAccessViewsetMixin:
@@ -335,7 +253,6 @@ class ConfigView(drf.views.APIView):
             Return a dictionary of public settings.
         """
         array_settings = [
-            "CRISP_WEBSITE_ID",
             "ENVIRONMENT",
             "FRONTEND_THEME",
             "MEDIA_BASE_URL",
@@ -350,3 +267,79 @@ class ConfigView(drf.views.APIView):
                 dict_settings[setting] = getattr(settings, setting)
 
         return drf.response.Response(dict_settings)
+
+
+class MTAViewSet(viewsets.GenericViewSet):
+    """ViewSet for MTA-related endpoints"""
+    
+    # Since we'll use JWT token validation, we can make the endpoint public
+    permission_classes = [AllowAny]  
+    authentication_classes = []
+    
+    @drf.decorators.action(
+        detail=False,
+        methods=["post"],
+        url_path="incoming_mail",
+        parser_classes=[drf.parsers.BaseParser],  # To handle raw email data
+    )
+    def incoming_mail(self, request):
+        """Handle incoming email from MTA"""
+        
+        # Validate content type
+        if request.content_type != "message/rfc822":
+            return drf.response.Response(
+                {"detail": "Content-Type must be message/rfc822"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate JWT token
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return drf.response.Response(
+                {"detail": "Authorization header missing"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        try:
+            jwt_token = auth_header.split(" ")[1]
+            payload = jwt.decode(
+                jwt_token, 
+                settings.MDA_API_SECRET, 
+                algorithms=["HS256"]
+            )
+        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError) as e:
+            return drf.response.Response(
+                {"detail": str(e)},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # Validate email hash
+        raw_data = request.body
+        email_hash = hashlib.sha256(raw_data).hexdigest()
+        if email_hash != payload["email_hash"]:
+            return drf.response.Response(
+                {"detail": "Invalid email hash"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        logger.info(
+            "Raw email received: %d bytes for %s",
+            len(raw_data),
+            payload["original_recipients"][0:4]
+        )
+
+        # Parse the email message
+        email_message = email.message_from_bytes(raw_data)
+
+        # Print details of the email message
+        logger.info(f"Subject: {email_message['Subject']}")
+        logger.info(f"From: {email_message['From']}")
+        logger.info(f"To: {email_message['To']}")
+
+        # Walk mime parts and display their metadata
+        for part in email_message.walk():
+            logger.info(f"Part: {part.get_content_type()}")
+            logger.info(f" Content-Disposition: {part.get('Content-Disposition')}")
+        
+        
+        return drf.response.Response({"status": "ok"})

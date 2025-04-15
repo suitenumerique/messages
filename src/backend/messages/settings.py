@@ -115,6 +115,11 @@ class Base(Configuration):
         },
     }
 
+    # MDA/MTA settings
+    MDA_API_SECRET = values.Value(
+        None, environ_name="MDA_API_SECRET", environ_prefix=None
+    )
+
     # Media
     AWS_S3_ENDPOINT_URL = values.Value(
         environ_name="AWS_S3_ENDPOINT_URL", environ_prefix=None
@@ -150,7 +155,7 @@ class Base(Configuration):
     # https://docs.djangoproject.com/en/3.1/topics/i18n/
 
     # Languages
-    LANGUAGE_CODE = values.Value("fr-fr")
+    LANGUAGE_CODE = values.Value("en-us")
     LANGUAGE_COOKIE_NAME = "messages_language"  # cookie & language is set from frontend
 
     DRF_NESTED_MULTIPART_PARSER = {
@@ -163,8 +168,8 @@ class Base(Configuration):
     # fallback/default languages throughout the app.
     LANGUAGES = values.SingleNestedTupleValue(
         (
-            ("fr-fr", _("French")),
             ("en-us", _("English")),
+            ("fr-fr", _("French")),
             ("de-de", _("German")),
         )
     )
