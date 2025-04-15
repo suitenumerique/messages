@@ -1,13 +1,10 @@
 """Client serializers for the messages core app."""
 
-from django.conf import settings
 from django.db.models import Q
-from django.utils.translation import gettext_lazy as _
 
 from rest_framework import exceptions, serializers
 
 from core import models
-from core.api import utils
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -89,4 +86,3 @@ class BaseAccessSerializer(serializers.ModelSerializer):
         # pylint: disable=no-member
         attrs[f"{self.Meta.resource_field_name}_id"] = self.context["resource_id"]
         return attrs
-

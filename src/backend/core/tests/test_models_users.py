@@ -2,13 +2,11 @@
 Unit tests for the User model
 """
 
-from unittest import mock
-
 from django.core.exceptions import ValidationError
 
 import pytest
 
-from core import factories, models
+from core import factories
 
 pytestmark = pytest.mark.django_db
 
@@ -24,4 +22,3 @@ def test_models_users_id_unique():
     user = factories.UserFactory()
     with pytest.raises(ValidationError):
         factories.UserFactory(id=user.id)
-

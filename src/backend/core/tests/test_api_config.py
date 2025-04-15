@@ -35,7 +35,7 @@ def test_api_config(is_authenticated):
     assert response.json() == {
         "ENVIRONMENT": "test",
         "FRONTEND_THEME": "test-theme",
-        "LANGUAGES": [['en-us', 'English'], ['fr-fr', 'French'], ['de-de', 'German']],
+        "LANGUAGES": [["en-us", "English"], ["fr-fr", "French"], ["de-de", "German"]],
         "LANGUAGE_CODE": "en-us",
         "MEDIA_BASE_URL": "http://testserver/",
         "POSTHOG_KEY": {"id": "132456", "host": "https://eu.i.posthog-test.com"},

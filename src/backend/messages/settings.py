@@ -79,7 +79,9 @@ class Base(Configuration):
                 environ_name="DB_ENGINE",
                 environ_prefix=None,
             ),
-            "NAME": values.Value("messages", environ_name="DB_NAME", environ_prefix=None),
+            "NAME": values.Value(
+                "messages", environ_name="DB_NAME", environ_prefix=None
+            ),
             "USER": values.Value("dbuser", environ_name="DB_USER", environ_prefix=None),
             "PASSWORD": values.Value(
                 "dbpass", environ_name="DB_PASSWORD", environ_prefix=None

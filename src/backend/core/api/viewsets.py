@@ -3,32 +3,18 @@
 
 import logging
 import re
-import email
-from urllib.parse import unquote, urlparse
 
 from django.conf import settings
 from django.contrib.postgres.aggregates import ArrayAgg
-from django.contrib.postgres.fields import ArrayField
-from django.contrib.postgres.search import TrigramSimilarity
-from django.core.exceptions import ValidationError
-from django.core.files.storage import default_storage
 from django.db import models as db
-from django.db import transaction
-from django.db.models.expressions import RawSQL
 
-import magic
 import rest_framework as drf
-from rest_framework import filters, status, viewsets
-from rest_framework import response as drf_response
+from rest_framework import viewsets
 from rest_framework.permissions import AllowAny
-from rest_framework.throttling import UserRateThrottle
 
 from core import enums, models
 
-from . import permissions, serializers, utils
-
-import jwt
-import hashlib
+from . import permissions
 
 logger = logging.getLogger(__name__)
 
@@ -267,4 +253,3 @@ class ConfigView(drf.views.APIView):
                 dict_settings[setting] = getattr(settings, setting)
 
         return drf.response.Response(dict_settings)
-

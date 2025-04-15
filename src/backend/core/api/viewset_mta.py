@@ -1,23 +1,27 @@
-from rest_framework import filters, status, viewsets, authentication
-from rest_framework.permissions import IsAuthenticated
-import rest_framework as drf
-from django.conf import settings
-from django.contrib.auth.models import User
+"""DRF Views for MTA endpoints"""
 
-import logging
-import hashlib
-import jwt
 import email
+import hashlib
+import logging
+
+from django.conf import settings
+from django.contrib.auth import get_user_model
+
+import jwt
+import rest_framework as drf
+from rest_framework import authentication, status, viewsets
+from rest_framework.permissions import IsAuthenticated
 
 logger = logging.getLogger(__name__)
+
 
 class MTAJWTAuthentication(authentication.BaseAuthentication):
     """
     Custom authentication for MTA endpoints using JWT tokens with email hash validation.
     Returns None or (user, auth)
     """
-    def authenticate(self, request):
 
+    def authenticate(self, request):
         # Get the auth header
         auth_header = request.headers.get("Authorization")
         if not auth_header:
@@ -27,9 +31,7 @@ class MTAJWTAuthentication(authentication.BaseAuthentication):
             # Extract and validate JWT
             jwt_token = auth_header.split(" ")[1]
             payload = jwt.decode(
-                jwt_token,
-                settings.MDA_API_SECRET,
-                algorithms=["HS256"]
+                jwt_token, settings.MDA_API_SECRET, algorithms=["HS256"]
             )
 
             # Validate email hash if there's a body
@@ -38,11 +40,12 @@ class MTAJWTAuthentication(authentication.BaseAuthentication):
                 if body_hash != payload["body_hash"]:
                     raise jwt.InvalidTokenError("Invalid email hash")
 
-            service_account = User(username="_mta")
+            User = get_user_model()
+            service_account = User()
             return (service_account, payload)
 
         except (jwt.ExpiredSignatureError, jwt.InvalidTokenError) as e:
-            raise drf.exceptions.AuthenticationFailed(str(e))
+            raise drf.exceptions.AuthenticationFailed(str(e)) from e
         except (IndexError, KeyError):
             return None
 
@@ -53,7 +56,7 @@ class MTAJWTAuthentication(authentication.BaseAuthentication):
 
 class MTAViewSet(viewsets.GenericViewSet):
     """ViewSet for MTA-related endpoints"""
-    
+
     permission_classes = [IsAuthenticated]
     authentication_classes = [MTAJWTAuthentication]
 
@@ -65,20 +68,19 @@ class MTAViewSet(viewsets.GenericViewSet):
     )
     def address_exists(self, request):
         """Handle incoming email from MTA"""
-        
+
         # Validate content type
         if request.content_type != "application/json":
             return drf.response.Response(
                 {"detail": "Content-Type must be application/json"},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Get a list of email addresses from the request body
         email_addresses = request.data.get("addresses")
         if not email_addresses or not isinstance(email_addresses, list):
             return drf.response.Response(
-                {"detail": "Missing addresses"},
-                status=status.HTTP_400_BAD_REQUEST
+                {"detail": "Missing addresses"}, status=status.HTTP_400_BAD_REQUEST
             )
 
         # Check if each address exists
@@ -96,12 +98,12 @@ class MTAViewSet(viewsets.GenericViewSet):
     )
     def incoming_mail(self, request):
         """Handle incoming email from MTA"""
-        
+
         # Validate content type
         if request.content_type != "message/rfc822":
             return drf.response.Response(
                 {"detail": "Content-Type must be message/rfc822"},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         # The JWT payload is now available in request.auth
@@ -109,7 +111,7 @@ class MTAViewSet(viewsets.GenericViewSet):
         if not payload:
             return drf.response.Response(
                 {"detail": "Valid authorization required"},
-                status=status.HTTP_401_UNAUTHORIZED
+                status=status.HTTP_401_UNAUTHORIZED,
             )
 
         raw_data = request.body
@@ -117,20 +119,20 @@ class MTAViewSet(viewsets.GenericViewSet):
         logger.info(
             "Raw email received: %d bytes for %s",
             len(raw_data),
-            payload["original_recipients"][0:4]
+            payload["original_recipients"][0:4],
         )
 
         # Parse the email message
         email_message = email.message_from_bytes(raw_data)
 
         # Print details of the email message
-        logger.info(f"Subject: {email_message['Subject']}")
-        logger.info(f"From: {email_message['From']}")
-        logger.info(f"To: {email_message['To']}")
+        logger.info("Subject: %s", email_message["Subject"])
+        logger.info("From: %s", email_message["From"])
+        logger.info("To: %s", email_message["To"])
 
         # Walk mime parts and display their metadata
         for part in email_message.walk():
-            logger.info(f"Part: {part.get_content_type()}")
-            logger.info(f" Content-Disposition: {part.get('Content-Disposition')}")
-        
+            logger.info("Part: %s", part.get_content_type())
+            logger.info("Content-Disposition: %s", part.get("Content-Disposition"))
+
         return drf.response.Response({"status": "ok"})

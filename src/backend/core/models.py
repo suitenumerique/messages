@@ -3,32 +3,20 @@ Declare and configure the models for the messages core application
 """
 # pylint: disable=too-many-lines
 
-import smtplib
 import uuid
-from collections import defaultdict
 from datetime import timedelta
 from logging import getLogger
 
 from django.conf import settings
 from django.contrib.auth import models as auth_models
 from django.contrib.auth.base_user import AbstractBaseUser
-from django.contrib.postgres.indexes import GistIndex
-from django.contrib.sites.models import Site
-from django.core import mail, validators
-from django.core.cache import cache
-from django.core.exceptions import ValidationError
-from django.core.mail import send_mail
-from django.db import models, transaction
-from django.db.models.expressions import RawSQL
-from django.template.loader import render_to_string
+from django.core import validators
+from django.db import models
 from django.utils import timezone
 from django.utils.functional import cached_property
-from django.utils.translation import get_language, override
 from django.utils.translation import gettext_lazy as _
 
-from django_ltree.managers import TreeManager, TreeQuerySet
-from django_ltree.models import TreeModel
-from django_ltree.paths import PathGenerator
+from django_ltree.managers import TreeQuerySet
 from timezone_field import TimeZoneField
 
 logger = getLogger(__name__)
@@ -79,6 +67,7 @@ class LinkReachChoices(models.TextChoices):
         _("Authenticated"),
     )  # Any authenticated user can access the item
     PUBLIC = "public", _("Public")  # Even anonymous users can access the item
+
 
 class DuplicateEmailError(Exception):
     """Raised when an email is already associated with a pre-existing user."""
@@ -335,4 +324,3 @@ class ItemQuerySet(TreeQuerySet):
             )
 
         return self.filter(models.Q(link_reach=LinkReachChoices.PUBLIC))
-

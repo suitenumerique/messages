@@ -1,12 +1,8 @@
 """Permission handlers for the messages core app."""
 
 from django.core import exceptions
-from django.db.models import Q
-from django.http import Http404
 
 from rest_framework import permissions
-
-from core.models import RoleChoices, get_trashbin_cutoff
 
 ACTION_FOR_METHOD_TO_PERMISSION = {
     "versions_detail": {"DELETE": "versions_destroy", "GET": "versions_retrieve"},
@@ -79,4 +75,3 @@ class AccessPermission(permissions.BasePermission):
         except KeyError:
             pass
         return abilities.get(action, False)
-
