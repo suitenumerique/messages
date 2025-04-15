@@ -119,7 +119,7 @@ run-with-frontend: ## Start all the containers needed (backend to frontend)
 	@$(COMPOSE) up --force-recreate -d frontend-dev
 .PHONY: run-with-frontend
 
-run-all-fg:
+run-all-fg: ## Start backend containers and frontend in foreground
 	@$(COMPOSE) up --force-recreate --build nginx frontend-dev
 .PHONY: run-all-fg
 
