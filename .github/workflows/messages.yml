@@ -1,0 +1,104 @@
+name: ST-Messages Workflow
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+
+  lint-git:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' # Makes sense only for pull requests
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: show
+        run: git log
+      - name: Enforce absence of print statements in code
+        run: |
+          ! git diff origin/${{ github.event.pull_request.base.ref }}..HEAD -- . ':(exclude)**/messages.yml' | grep -E "(\bprint\(|\bpprint\()"
+      - name: Check absence of fixup commits
+        run: |
+          ! git log | grep 'fixup!'
+      - name: Install gitlint
+        run: pip install --user requests gitlint
+      - name: Lint commit messages added to main
+        run: ~/.local/bin/gitlint --commits origin/${{ github.event.pull_request.base.ref }}..HEAD
+
+  lint-back:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install development dependencies
+        run: pip install --user .[dev]
+      - name: Check code formatting with ruff
+        run: ~/.local/bin/ruff format . --diff
+      - name: Lint code with ruff
+        run: ~/.local/bin/ruff check .
+      - name: Lint code with pylint
+        run: ~/.local/bin/pylint .
+
+  test-back:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: messages
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: pass
+        ports:
+          - 5432:5432
+        # needed because the postgres container does not provide a healthcheck
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+    env:
+      DJANGO_CONFIGURATION: Test
+      DJANGO_SETTINGS_MODULE: messages.settings
+      DJANGO_SECRET_KEY: ThisIsAnExampleKeyForTestPurposeOnly
+      OIDC_OP_JWKS_ENDPOINT: /endpoint-for-test-purpose-only
+      DB_HOST: localhost
+      DB_NAME: messages
+      DB_USER: user
+      DB_PASSWORD: pass
+      DB_PORT: 5432
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Create writable /data
+        run: |
+          sudo mkdir -p /data/media && \
+          sudo mkdir -p /data/static
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install development dependencies
+        run: pip install --user .[dev]
+      - name: Install gettext (required to compile messages)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext
+      - name: Generate a MO file from strings extracted from the project
+        run: python manage.py compilemessages
+      - name: Run tests
+        run: ~/.local/bin/pytest -n 2
