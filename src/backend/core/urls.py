@@ -7,10 +7,11 @@ from rest_framework.routers import DefaultRouter
 
 from core.api import viewsets
 from core.authentication.urls import urlpatterns as oidc_urls
+from core.api.viewset_mta import MTAViewSet
 
 # - Main endpoints
 router = DefaultRouter()
-router.register("mta", viewsets.MTAViewSet, basename="mta")
+router.register("mta", MTAViewSet, basename="mta")
 
 
 urlpatterns = [
