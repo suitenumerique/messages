@@ -59,17 +59,17 @@ export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
     <>
       <Head>
         <title>ST Messages</title>
-        <link rel="icon" href="/images/favicon-light.png" type="image/png" />
+        <link rel="icon" href="/images/favicon-light.svg" type="image/svg+xml" />
         <link
           rel="icon"
-          href="/images/favicon-light.png"
-          type="image/png"
+          href="/images/favicon-light.svg"
+          type="image/svg+xml"
           media="(prefers-color-scheme: light)"
         />
         <link
           rel="icon"
-          href="/images/favicon-dark.png"
-          type="image/png"
+          href="/images/favicon-dark.svg"
+          type="image/svg+xml"
           media="(prefers-color-scheme: dark)"
         />
       </Head>
