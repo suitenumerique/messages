@@ -9,3 +9,5 @@ echo "-----> Running post-compile script"
 mkdir -p build/frontend-out
 mv src/frontend/out/ build/frontend-out/
 rm -rf src/frontend/
+
+chmod +x bin/scalingo_run_web
