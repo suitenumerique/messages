@@ -114,14 +114,6 @@ class MailboxSerializer(serializers.ModelSerializer):
         fields = ["id", "email", "perms"]
 
 
-class MessageSerializer(serializers.ModelSerializer):
-    """Serialize messages."""
-
-    class Meta:
-        model = models.Message
-        fields = ["id", "subject", "created_at", "updated_at"]
-
-
 class ContactSerializer(serializers.ModelSerializer):
     """Serialize contacts."""
 
@@ -162,4 +154,59 @@ class ThreadSerializer(serializers.ModelSerializer):
             "messages",
             "is_read",
             "updated_at",
+        ]
+
+
+class MessageRecipientSerializer(serializers.ModelSerializer):
+    """Serialize message recipients."""
+
+    contact = ContactSerializer(read_only=True)
+
+    class Meta:
+        model = models.MessageRecipient
+        fields = ["id", "contact", "type"]
+
+
+class MessageSerializer(serializers.ModelSerializer):
+    """Serialize messages."""
+
+    raw_html_body = serializers.SerializerMethodField(read_only=True)
+    raw_text_body = serializers.SerializerMethodField(read_only=True)
+    sender = serializers.SerializerMethodField(read_only=True)
+    recipients = serializers.SerializerMethodField(read_only=True)
+    is_read = serializers.SerializerMethodField(read_only=True)
+
+    def get_raw_html_body(self, instance):
+        """Return the raw HTML body of the message."""
+        return instance.body_html
+
+    def get_raw_text_body(self, instance):
+        """Return the raw text body of the message."""
+        return instance.body_text
+
+    def get_sender(self, instance):
+        """Return the sender of the message."""
+        return ContactSerializer(instance.sender).data
+
+    def get_recipients(self, instance):
+        """Return the recipients of the message."""
+        return MessageRecipientSerializer(instance.recipients, many=True).data
+
+    def get_is_read(self, instance):
+        """Return the read status of the message."""
+        return instance.read_at is not None
+
+    class Meta:
+        model = models.Message
+        fields = [
+            "id",
+            "subject",
+            "received_at",
+            "created_at",
+            "updated_at",
+            "raw_html_body",
+            "raw_text_body",
+            "sender",
+            "recipients",
+            "is_read",
         ]

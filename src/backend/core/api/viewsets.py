@@ -314,3 +314,23 @@ class ThreadViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
             if mailbox_id:
                 return queryset.filter(mailbox__id=mailbox_id)
         return queryset
+
+
+class MessageViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
+    """ViewSet for Message model."""
+
+    queryset = models.Message.objects.all()
+    serializer_class = serializers.MessageSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+        permissions.IsAllowedToAccessMailbox,
+    ]
+
+    def get_queryset(self):
+        """Return the queryset according to the action."""
+        queryset = super().get_queryset()
+        if self.action == "list":
+            thread_id = self.request.GET.get("thread_id")
+            if thread_id:
+                return queryset.filter(thread__id=thread_id)
+        return queryset

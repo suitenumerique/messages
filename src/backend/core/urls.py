@@ -15,6 +15,7 @@ router.register("mta", MTAViewSet, basename="mta")
 router.register("users", viewsets.UserViewSet, basename="users")
 router.register("mailboxes", viewsets.MailboxViewSet, basename="mailboxes")
 router.register("threads", viewsets.ThreadViewSet, basename="threads")
+router.register("messages", viewsets.MessageViewSet, basename="messages")
 
 urlpatterns = [
     path(
