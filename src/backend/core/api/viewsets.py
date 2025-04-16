@@ -299,7 +299,7 @@ class MailboxViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
 class ThreadViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
     """ViewSet for Thread model."""
 
-    queryset = models.Thread.objects.all()
+    queryset = models.Thread.objects.all().order_by("-updated_at")
     serializer_class = serializers.ThreadSerializer
     permission_classes = [
         permissions.IsAuthenticated,
@@ -319,7 +319,7 @@ class ThreadViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
 class MessageViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
     """ViewSet for Message model."""
 
-    queryset = models.Message.objects.all()
+    queryset = models.Message.objects.all().order_by("-received_at")
     serializer_class = serializers.MessageSerializer
     permission_classes = [
         permissions.IsAuthenticated,
