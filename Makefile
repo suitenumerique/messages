@@ -305,8 +305,13 @@ help:
 
 # Front
 frontend-install: ## install the frontend locally
-	@$(COMPOSE) run --rm frontend-install
+	@$(COMPOSE) run --rm frontend-tools npm install
 .PHONY: frontend-install
+
+frontend-build: ## build the frontend locally
+	@$(COMPOSE) run --rm frontend-tools npm run build
+.PHONY: frontend-build
+
 
 frontend-lint: ## run the frontend linter
 	@$(COMPOSE) run --rm frontend-dev npm run lint

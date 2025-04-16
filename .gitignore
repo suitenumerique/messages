@@ -46,6 +46,7 @@ env.d/terraform
 
 # npm
 node_modules
+src/frontend/out/
 
 # Mails
 src/backend/core/templates/mail/

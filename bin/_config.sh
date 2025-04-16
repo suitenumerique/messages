@@ -60,7 +60,7 @@ function _dc_run() {
         user_args=""
     fi
 
-    _docker_compose run --rm $user_args "$@"
+    _docker_compose run --rm --build $user_args "$@"
 }
 
 # _dc_exec: wrap docker compose exec command

@@ -1,0 +1,3 @@
+FROM node:22-alpine AS frontend-deps
+
+WORKDIR /home/frontend/
