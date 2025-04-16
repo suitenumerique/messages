@@ -338,8 +338,8 @@ class Message(BaseModel):
     sender = models.ForeignKey("Contact", on_delete=models.CASCADE)
     received_at = models.DateTimeField(_("received at"), auto_now_add=True)
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
-    sent_at = models.DateTimeField(_("sent at"))
-    read_at = models.DateTimeField(_("read at"))
+    sent_at = models.DateTimeField(_("sent at"), null=True, blank=True)
+    read_at = models.DateTimeField(_("read at"), null=True, blank=True)
     mta_sent = models.BooleanField(_("mta sent"), default=False)
     is_read = models.BooleanField(_("is read"), default=False)
 
