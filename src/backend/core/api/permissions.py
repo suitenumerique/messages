@@ -75,3 +75,11 @@ class AccessPermission(permissions.BasePermission):
         except KeyError:
             pass
         return abilities.get(action, False)
+
+
+class IsAllowedToAccessMailbox(permissions.BasePermission):
+    """Permission class for access to a mailbox."""
+
+    def has_object_permission(self, request, view, obj):
+        """Check permission for a given object."""
+        return obj.accesses.filter(user=request.user).exists()

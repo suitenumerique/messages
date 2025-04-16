@@ -112,3 +112,27 @@ class MailboxSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.Mailbox
         fields = ["id", "email", "perms"]
+
+
+class MessageSerializer(serializers.ModelSerializer):
+    """Serialize messages."""
+
+    class Meta:
+        model = models.Message
+        fields = ["id", "subject", "created_at", "updated_at"]
+
+
+class ThreadSerializer(serializers.ModelSerializer):
+    """Serialize threads."""
+
+    messages = serializers.SerializerMethodField(read_only=True)
+
+    def get_messages(self, instance):
+        """Return the messages in the thread."""
+        return MessageSerializer(
+            instance.messages.order_by("created_at"), many=True
+        ).data
+
+    class Meta:
+        model = models.Thread
+        fields = ["id", "subject", "snippet", "created_at", "updated_at", "messages"]
