@@ -1,14 +1,10 @@
 @use "@gouvfr-lasuite/ui-kit/style";
 @use "./cunningham-tokens.css";
 @use "./../features/layouts/components/global/GlobalLayout.scss";
-@use "./../features/layouts/components/explorer/ExplorerLayout.scss";
-@use "./../features/explorer/components/Explorer.scss";
-@use "./../features/explorer/components/right-panel/ExplorerRightPanel.scss";
 @use "./../features/layouts/components/header/index.scss";
 @use "./../features/users/components/User.scss";
 @use "./../features/ui/components/breadcrumbs";
 @use "./../features/ui/components/toaster";
-@use "./../features/explorer/components/tree/ExplorerTree.scss";
 @use "./../features/ui/components/info/InfoRow.scss";
 body {
   margin: 0;

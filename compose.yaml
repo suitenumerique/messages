@@ -133,26 +133,26 @@ services:
     ports:
       - "3000:3000"
 
-  frontend-install:
+  frontend-tools:
     profiles:
-      - frontend-install
+      - frontend-tools
     build:
-      dockerfile: ./src/frontend/Dockerfile.install
+      dockerfile: ./src/frontend/Dockerfile.tools
     volumes:
       - ./src/frontend/:/home/frontend/
 
-  frontend:
-    user: "${DOCKER_USER:-1000}"
-    build: 
-      context: .
-      dockerfile: ./src/frontend/Dockerfile
-      target: frontend-production
-      args:
-        API_ORIGIN: "http://localhost:8071"
-        S3_DOMAIN_REPLACE: "http://localhost:9000"
-    image: st-messages:frontend-production
-    ports:
-      - "3001:3000"
+  # frontend:
+  #   user: "${DOCKER_USER:-1000}"
+  #   build: 
+  #     context: .
+  #     dockerfile: ./src/frontend/Dockerfile
+  #     target: frontend-production
+  #     args:
+  #       API_ORIGIN: "http://localhost:8071"
+  #       S3_DOMAIN_REPLACE: "http://localhost:9000"
+  #   image: st-messages:frontend-production
+  #   ports:
+  #     - "3001:3000"
 
   crowdin:
     image: crowdin/cli:3.16.0

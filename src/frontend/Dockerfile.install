@@ -1,6 +1,0 @@
-FROM node:22-alpine AS frontend-deps
-
-WORKDIR /home/frontend/
-
-# This will bootstrap a new package-lock.json file
-CMD [ "npm", "install"]

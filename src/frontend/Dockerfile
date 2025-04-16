@@ -13,10 +13,6 @@ COPY .dockerignore ./.dockerignore
 COPY ./src/frontend ./apps/messages
 
 ### ---- Front-end builder image ----
-FROM frontend-deps AS messages
-
-WORKDIR /home/frontend/apps/messages
-
 FROM frontend-deps AS st-messages-dev
 
 WORKDIR /home/frontend/apps/messages
@@ -28,31 +24,31 @@ EXPOSE 3000
 
 CMD [ "npm", "run", "dev"]
 
-# Tilt will rebuild messages target so, we dissociate messages and messages-builder 
-# to avoid rebuilding the app at every changes.
-FROM messages AS messages-builder
+# # Tilt will rebuild messages target so, we dissociate messages and messages-builder 
+# # to avoid rebuilding the app at every changes.
+# FROM messages AS messages-builder
 
-WORKDIR /home/frontend/apps/messages
+# WORKDIR /home/frontend/apps/messages
 
-ARG S3_DOMAIN_REPLACE
-ENV NEXT_PUBLIC_S3_DOMAIN_REPLACE=${S3_DOMAIN_REPLACE}
+# ARG S3_DOMAIN_REPLACE
+# ENV NEXT_PUBLIC_S3_DOMAIN_REPLACE=${S3_DOMAIN_REPLACE}
 
-RUN npm run build
+# RUN npm run build
 
-# ---- Front-end image ----
-FROM nginxinc/nginx-unprivileged:1.26-alpine AS frontend-production
+# # ---- Front-end image ----
+# FROM nginxinc/nginx-unprivileged:1.26-alpine AS frontend-production
 
-# Un-privileged user running the application
-ARG DOCKER_USER
-USER ${DOCKER_USER}
+# # Un-privileged user running the application
+# ARG DOCKER_USER
+# USER ${DOCKER_USER}
 
-COPY --from=messages-builder \
-    /home/frontend/apps/messages/out \
-    /usr/share/nginx/html
+# COPY --from=messages-builder \
+#     /home/frontend/apps/messages/out \
+#     /usr/share/nginx/html
 
-COPY ./src/frontend/conf/default.conf /etc/nginx/conf.d
-COPY ./docker/files/usr/local/bin/entrypoint /usr/local/bin/entrypoint
+# COPY ./src/frontend/conf/default.conf /etc/nginx/conf.d
+# COPY ./docker/files/usr/local/bin/entrypoint /usr/local/bin/entrypoint
 
-ENTRYPOINT [ "/usr/local/bin/entrypoint" ]
+# ENTRYPOINT [ "/usr/local/bin/entrypoint" ]
 
-CMD ["nginx", "-g", "daemon off;"]
+# CMD ["nginx", "-g", "daemon off;"]
