@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "build-theme": "cunningham -g css -o src/styles"
+    "build-theme": "cunningham -g css -o src/styles",
+    "generate-api": "orval --config ./orval.config.ts"
   },
   "dependencies": {
     "@gouvfr-lasuite/ui-kit": "0.1.9",
@@ -36,6 +37,8 @@
     "@types/react-dom": "19.0.0",
     "eslint": "9.20.1",
     "eslint-config-next": "15.1.7",
+    "orval": "7.8.0",
+    "prettier": "3.5.3",
     "typescript": "5.4.5"
   }
 }

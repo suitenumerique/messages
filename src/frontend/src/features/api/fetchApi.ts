@@ -1,53 +1,32 @@
-import { logout } from "@/features/auth/Auth";
-import { baseApiUrl, isJson } from "./utils";
-import { APIError } from "./APIError";
+// Inspired by https://github.com/orval-labs/orval/blob/master/samples/next-app-with-fetch/custom-fetch.ts
 
-/**
- * Retrieves the CSRF token from the document's cookies.
- *
- * @returns {string|null} The CSRF token if found in the cookies, or null if not present.
- */
-function getCSRFToken() {
-  return document.cookie
-    .split(";")
-    .filter((cookie) => cookie.trim().startsWith("csrftoken="))
-    .map((cookie) => cookie.split("=")[1])
-    .pop();
-}
+import { logout } from "../auth/Auth";
+import { APIError } from "./APIError";
+import { getHeaders, getRequestUrl, isJson } from "./utils";
 
 export interface fetchAPIOptions {
   logoutOn401?: boolean;
 }
 
-export const fetchAPI = async (
-  input: string,
-  init?: RequestInit & { params?: Record<string, string> },
-  options?: fetchAPIOptions
-) => {
-  const apiUrl = new URL(`${baseApiUrl("1.0")}${input}`);
-  if (init?.params) {
-    Object.entries(init.params).forEach(([key, value]) => {
-      apiUrl.searchParams.set(key, value);
-    });
-  }
-  const csrfToken = getCSRFToken();
+export const fetchAPI= async <T>(
+  pathname: string,
+  { params, logoutOn401, ...requestInit }: RequestInit & fetchAPIOptions & { params?: Record<string, string> } = {},
+): Promise<T> => {
+  const requesUrl = getRequestUrl(pathname, params);
 
-  const response = await fetch(apiUrl, {
-    ...init,
+  const response = await fetch(requesUrl, {
+    ...requestInit,
     credentials: "include",
-    headers: {
-      ...init?.headers,
-      "Content-Type": "application/json",
-      ...(csrfToken && { "X-CSRFToken": csrfToken }),
-    },
+    headers: getHeaders(requestInit.headers),
   });
 
-  if ((options?.logoutOn401 ?? true) && response.status === 401) {
+  if ((logoutOn401 ?? true) && response.status === 401) {
     logout();
   }
 
   if (response.ok) {
-    return response;
+    const data = await response.json();
+    return { status: response.status, data, headers: response.headers } as T;
   }
 
   const data = await response.text();

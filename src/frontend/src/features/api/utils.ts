@@ -17,13 +17,6 @@ export const errorCauses = async (response: Response, data?: unknown) => {
   };
 };
 
-export const baseApiUrl = (apiVersion: string = "1.0") => {
-  const origin =
-    process.env.NEXT_PUBLIC_API_ORIGIN ||
-    (typeof window !== "undefined" ? window.location.origin : "");
-  return `${origin}/api/v${apiVersion}/`;
-};
-
 export const isJson = (str: string) => {
   try {
     JSON.parse(str);
@@ -33,3 +26,45 @@ export const isJson = (str: string) => {
   }
   return true;
 };
+
+/**
+ * Build the request url from the context url and the base url
+ *
+ */
+export function getRequestUrl(pathname: string, params?: Record<string, string>): string {
+  const origin =
+    process.env.NEXT_PUBLIC_API_ORIGIN ||
+    (typeof window !== "undefined" ? window.location.origin : "");
+
+  const requestUrl = new URL(`${origin}${pathname}`);
+
+  if (params) {
+    Object.entries(params).forEach(([key, value]) => {
+      requestUrl.searchParams.set(key, value);
+    });
+  }
+
+  return requestUrl.toString();
+};
+
+export const getHeaders = (headers?: HeadersInit): HeadersInit => {
+  const csrfToken = getCSRFToken();
+  return {
+    ...headers,
+    "Content-Type": "application/json",
+    ...(csrfToken && { "X-CSRFToken": csrfToken }),
+  };
+};
+
+/**
+* Retrieves the CSRF token from the document's cookies.
+*
+* @returns {string|null} The CSRF token if found in the cookies, or null if not present.
+*/
+export function getCSRFToken() {
+  return document.cookie
+    .split(";")
+    .filter((cookie) => cookie.trim().startsWith("csrftoken="))
+    .map((cookie) => cookie.split("=")[1])
+    .pop();
+}
