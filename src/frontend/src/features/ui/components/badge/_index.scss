@@ -1,0 +1,11 @@
+.badge {
+    font-size: var(--c--theme--font--sizes--xs);
+    line-height: 1rem;
+    display: flex;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    background-color: var(--c--theme--colors--primary-200);
+    color: var(--c--theme--colors--primary-400);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
