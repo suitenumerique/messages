@@ -5,9 +5,7 @@ set -o pipefail   # don't ignore exit codes when piping output
 
 echo "-----> Running post-compile script"
 
-# Move the frontend build to the nginx root and clean up
-mkdir -p build/frontend-out
-mv src/frontend/out/ build/frontend-out/
-rm -rf src/frontend/
+# Remove all the files we don't need
+rm -rf src docker env.d .cursor .github compose.yaml README.md
 
 chmod +x bin/scalingo_run_web
