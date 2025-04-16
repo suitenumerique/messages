@@ -202,6 +202,10 @@ migrate:  ## run django migrations for the messages project.
 	@$(MANAGE) migrate
 .PHONY: migrate
 
+showmigrations: ## show all migrations for the messages project.
+	@$(MANAGE) showmigrations
+.PHONY: showmigrations
+
 superuser: ## Create an admin superuser with password "admin"
 	@echo "$(BOLD)Creating a Django superuser$(RESET)"
 	@$(MANAGE) createsuperuser --email admin@example.com --password admin
