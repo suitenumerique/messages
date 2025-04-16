@@ -24,7 +24,7 @@ class TestApiThreads:
         )
         # Create a thread with a message
         thread = factories.ThreadFactory(mailbox=mailbox)
-        message = factories.MessageFactory(thread=thread)
+        message = factories.MessageFactory(thread=thread, read_at=None)
         factories.MessageRecipientFactory(
             message=message,
             type=enums.MessageRecipientTypeChoices.TO,
@@ -44,8 +44,20 @@ class TestApiThreads:
         assert response.data["count"] == 1
         # Assert the thread is correct
         assert response.data["results"][0]["id"] == str(thread.id)
-        # Assert the message is correct
-        assert response.data["results"][0]["messages"][0]["id"] == str(message.id)
+        assert response.data["results"][0]["subject"] == thread.subject
+        assert response.data["results"][0]["snippet"] == thread.snippet
+        assert response.data["results"][0]["recipients"] == [
+            {
+                "id": str(message.recipients.get().contact.id),
+                "name": message.recipients.get().contact.name,
+                "email": message.recipients.get().contact.email,
+            }
+        ]
+        assert response.data["results"][0]["messages"] == [str(message.id)]
+        assert response.data["results"][0]["is_read"] is False
+        assert response.data["results"][0][
+            "updated_at"
+        ] == thread.updated_at.isoformat().replace("+00:00", "Z")
 
     def test_list_threads_unauthorized(self):
         """Test list threads unauthorized."""

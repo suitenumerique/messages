@@ -122,17 +122,44 @@ class MessageSerializer(serializers.ModelSerializer):
         fields = ["id", "subject", "created_at", "updated_at"]
 
 
+class ContactSerializer(serializers.ModelSerializer):
+    """Serialize contacts."""
+
+    class Meta:
+        model = models.Contact
+        fields = ["id", "name", "email"]
+
+
 class ThreadSerializer(serializers.ModelSerializer):
     """Serialize threads."""
 
     messages = serializers.SerializerMethodField(read_only=True)
+    is_read = serializers.SerializerMethodField(read_only=True)
+    recipients = serializers.SerializerMethodField(read_only=True)
 
     def get_messages(self, instance):
         """Return the messages in the thread."""
-        return MessageSerializer(
-            instance.messages.order_by("created_at"), many=True
-        ).data
+        return [str(message.id) for message in instance.messages.all()]
+
+    def get_is_read(self, instance):
+        """Return the read status of the thread."""
+        return instance.messages.filter(read_at__isnull=False).exists()
+
+    def get_recipients(self, instance):
+        """Return the recipients of the thread."""
+        contacts = models.Contact.objects.filter(
+            id__in=instance.messages.values_list("recipients__contact__id", flat=True)
+        )
+        return ContactSerializer(contacts, many=True).data
 
     class Meta:
         model = models.Thread
-        fields = ["id", "subject", "snippet", "created_at", "updated_at", "messages"]
+        fields = [
+            "id",
+            "subject",
+            "snippet",
+            "recipients",
+            "messages",
+            "is_read",
+            "updated_at",
+        ]
