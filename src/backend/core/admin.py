@@ -142,6 +142,7 @@ class ContactAdmin(admin.ModelAdmin):
     list_display = ("id", "name", "email")
 
 
+@admin.register(models.MessageRecipient)
 class MessageRecipientAdmin(admin.ModelAdmin):
     """Admin class for the MessageRecipient model"""
 
