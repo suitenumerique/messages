@@ -5,6 +5,7 @@ Core application factories
 
 from django.conf import settings
 from django.contrib.auth.hashers import make_password
+from django.utils import timezone
 
 import factory.fuzzy
 from faker import Faker
@@ -107,10 +108,8 @@ class MessageFactory(factory.django.DjangoModelFactory):
     thread = factory.SubFactory(ThreadFactory)
     subject = factory.Faker("sentence")
     sender = factory.SubFactory(ContactFactory)
-    received_at = factory.Faker("date_time_this_year")
-    created_at = factory.Faker("date_time_this_year")
-    sent_at = factory.Faker("date_time_this_year")
-    read_at = factory.Faker("date_time_this_year")
+    received_at = factory.LazyAttribute(lambda o: timezone.now())
+    created_at = factory.LazyAttribute(lambda o: timezone.now())
 
 
 class MessageRecipientFactory(factory.django.DjangoModelFactory):
