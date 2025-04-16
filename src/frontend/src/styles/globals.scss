@@ -1,17 +1,15 @@
-@use "@gouvfr-lasuite/ui-kit/style";
-@use "./cunningham-tokens.css";
-@use "./../features/layouts/components/global/GlobalLayout.scss";
-@use "./../features/layouts/components/header/index.scss";
-@use "./../features/users/components/User.scss";
-@use "./../features/ui/components/breadcrumbs";
-@use "./../features/ui/components/toaster";
-@use "./../features/ui/components/info/InfoRow.scss";
 body {
   margin: 0;
+  font-size: 14px;
+  color: var(--c--theme--colors--greyscale-1000);
 }
 
 * {
   box-sizing: border-box;
+}
+
+.material-icons {
+  font-size: 1.25em;
 }
 
 // Related to @viselect/react

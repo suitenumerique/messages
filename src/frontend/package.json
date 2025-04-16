@@ -7,7 +7,7 @@
     "build": "next build --no-lint",
     "start": "next start",
     "lint": "next lint",
-    "build-theme": "cunningham -g css -o src/styles",
+    "build-theme": "cunningham -g css,scss -o src/styles",
     "generate-api": "orval --config ./orval.config.ts"
   },
   "dependencies": {
@@ -17,7 +17,9 @@
     "@tanstack/react-table": "8.20.6",
     "@viselect/react": "3.9.0",
     "clsx": "2.1.1",
+    "date-fns": "4.1.0",
     "i18next": "24.2.2",
+    "lettersanitizer": "1.0.7",
     "next": "15.2.3",
     "next-i18next": "15.4.2",
     "pretty-bytes": "6.1.1",
@@ -26,6 +28,7 @@
     "react-dropzone": "14.3.8",
     "react-hook-form": "7.54.2",
     "react-i18next": "15.4.1",
+    "react-resizable-panels": "2.1.7",
     "react-toastify": "11.0.5",
     "sass": "1.85.0"
   },

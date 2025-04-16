@@ -1,0 +1,48 @@
+.thread-message {
+    border-radius: 8px;
+    background-color: white;
+    padding: var(--c--theme--spacings--base);
+}
+
+.thread-message__header {
+    border-bottom: 1px solid var(--c--theme--colors--greyscale-200);
+    padding-bottom: var(--c--theme--spacings--base);
+}
+
+.thread-message__header-row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-end;
+}
+
+.thread-message__header-row > div > * {
+    margin-block: 0;
+}
+
+.thread-message__date {
+    font-size: 0.875rem;
+    color: var(--c--theme--colors--greyscale-500);
+}
+
+.thread-message__correspondents {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    margin: 0;
+    column-gap: var(--c--theme--spacings--base);
+}
+
+.thread-message__correspondents dt {
+    font-weight: 600;
+}
+
+.thread-message__correspondents dd {
+    margin: 0;
+}
+
+.thread-message__body {
+    width: 100%;
+    height: auto;
+    border: none;
+    overflow: auto;
+}

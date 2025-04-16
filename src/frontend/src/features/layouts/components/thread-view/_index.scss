@@ -1,0 +1,16 @@
+.thread-view {
+    overflow-y: auto;
+    max-height: 100%;
+}
+
+.thread-action-bar {
+    position: sticky;
+    top: 0;
+}
+
+.thread-view__messages {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+}

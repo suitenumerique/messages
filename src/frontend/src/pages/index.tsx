@@ -1,22 +1,22 @@
 import { GlobalLayout } from "@/features/layouts/components/global/GlobalLayout";
 import Head from "next/head";
 import { useTranslation } from "next-i18next";
-import { DefaultLayout } from "@/features/layouts/components/default/DefaultLayout";
 import { Hero, HomeGutter, Footer, ProConnectButton } from "@gouvfr-lasuite/ui-kit";
 import { login, useAuth } from "@/features/auth/Auth";
+import { MainLayout } from "@/features/layouts/components/main";
+import { Header } from "@/features/layouts/components/header";
 
 export default function HomePage() {
   const { t } = useTranslation();
   const { user } = useAuth();
 
   if (user) {
-    return <>
-      <div></div>
-    </>
+    return <MainLayout />;
   }
 
   return (
-    <>
+    <div className="app__home">
+      <Header />
       <Head>
         <title>{t("app_title")}</title>
         <meta name="description" content={t("app_description")} />
@@ -33,14 +33,12 @@ export default function HomePage() {
         />
       </HomeGutter>
       <Footer />
-    </>
+    </div>
   );
 }
 
 HomePage.getLayout = function getLayout(page: React.ReactElement) {
   return (
-    <GlobalLayout>
-      <DefaultLayout>{page}</DefaultLayout>
-    </GlobalLayout>
+      <GlobalLayout>{page}</GlobalLayout>
   );
 };

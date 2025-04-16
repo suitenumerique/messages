@@ -1,0 +1,15 @@
+.threads__container {
+    display: flex;
+    flex-direction: row;
+    height: 100%;
+}
+
+.thread-list-panel {
+    flex: 1;
+    min-width: 280px;
+}
+
+.thread__resize-handle {
+    background: var(--c--theme--colors--greyscale-200);
+    width: 1px;
+}

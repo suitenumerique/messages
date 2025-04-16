@@ -10,7 +10,7 @@ import {
   QueryClientProvider,
 } from "@tanstack/react-query";
 
-import "../styles/globals.scss";
+import "../styles/main.scss";
 import "../features/i18n/initI18n";
 import {
   addToast,
@@ -18,6 +18,7 @@ import {
 } from "@/features/ui/components/toaster/Toaster";
 import { errorToString } from "@/features/api/APIError";
 import Head from "next/head";
+import { useTranslation } from "react-i18next";
 
 export type NextPageWithLayout<P = {}, IP = P> = NextPage<P, IP> & {
   getLayout?: (page: ReactElement) => ReactNode;
@@ -53,12 +54,13 @@ const queryClient = new QueryClient({
 
 export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
   // Use the layout defined at the page level, if available
+  const { t } = useTranslation();
   const getLayout = Component.getLayout ?? ((page) => page);
 
   return (
     <>
       <Head>
-        <title>ST Messages</title>
+      <title>{t("app_title")}</title>
         <link rel="icon" href="/images/favicon-light.svg" type="image/svg+xml" />
         <link
           rel="icon"
