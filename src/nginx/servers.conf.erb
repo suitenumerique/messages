@@ -14,17 +14,17 @@ server {
     
     error_page 404 /404.html;
 
-    # Frontend export
-    location / {
-        try_files $uri index.html $uri/ =404;
-    }
-
     location /mailbox/ {
-        error_page 404 /mailbox/[id].html;
+        error_page 404 /mailbox/[mailboxId].html;
     }
 
     location /mailbox/([^/]+)/thread/ {
-        error_page 404 /mailbox/thread/[id].html;
+        error_page 404 /mailbox/[mailboxId]/thread/[threadId].html;
+    }
+
+    # Frontend export
+    location / {
+        try_files $uri index.html $uri/ =404;
     }
 
     location = /404.html {

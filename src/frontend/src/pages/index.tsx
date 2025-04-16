@@ -7,12 +7,14 @@ import { MainLayout } from "@/features/layouts/components/main";
 import { Header } from "@/features/layouts/components/header";
 
 export default function HomePage() {
+
   const { t } = useTranslation();
   const { user } = useAuth();
 
   if (user) {
     return <MainLayout />;
   }
+
 
   return (
     <div className="app__home">

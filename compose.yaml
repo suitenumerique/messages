@@ -122,22 +122,23 @@ services:
     user: "${DOCKER_USER:-1000}"
     build:
       context: .
-      dockerfile: ./src/frontend/Dockerfile
-      target: st-messages-dev
-      args:
-        API_ORIGIN: "http://localhost:8071"
-        S3_DOMAIN_REPLACE: "http://localhost:9000"
+      dockerfile: ./src/frontend/Dockerfile.dev
+    environment:
+      - NEXT_PUBLIC_API_ORIGIN=http://localhost:8071
+      - NEXT_PUBLIC_S3_DOMAIN_REPLACE=http://localhost:9000
     image: st-messages:frontend-development
+    command: ["npm", "run", "dev"]
     volumes:
       - ./src/frontend/:/home/frontend/
     ports:
       - "3000:3000"
 
   frontend-tools:
+    user: "${DOCKER_USER:-1000}"
     profiles:
       - frontend-tools
     build:
-      dockerfile: ./src/frontend/Dockerfile.tools
+      dockerfile: ./src/frontend/Dockerfile.dev
     volumes:
       - ./src/frontend/:/home/frontend/
 

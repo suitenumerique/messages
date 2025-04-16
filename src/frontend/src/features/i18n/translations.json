@@ -37,8 +37,8 @@
   },
   "fr": {
     "translation": {
-      "app_title": "Messagerie",
-      "app_description": "Messagerie",
+      "app_title": "Messages",
+      "app_description": "Messages",
       "welcome": "Bienvenue",
       "logout": "Déconnexion",
       "my_account": "Mon Compte",
@@ -48,7 +48,7 @@
         }
       },
       "home": {
-        "title": "Messagerie",
+        "title": "Messages",
         "subtitle": "Gérer vos messages professionnels en toute sécurité."
       },
       "actions": {

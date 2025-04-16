@@ -80,7 +80,8 @@ bootstrap: \
 	create-env-files \
 	build \
 	migrate \
-	back-i18n-compile
+	back-i18n-compile \
+	frontend-install-frozen
 .PHONY: bootstrap
 
 # -- Docker/compose
@@ -307,22 +308,29 @@ help:
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(GREEN)%-30s$(RESET) %s\n", $$1, $$2}'
 .PHONY: help
 
+frontend-shell: ## open a shell in the frontend container
+	@$(COMPOSE) run --rm frontend-tools /bin/sh
+.PHONY: frontend-shell
+
 # Front
 frontend-install: ## install the frontend locally
 	@$(COMPOSE) run --rm frontend-tools npm install
 .PHONY: frontend-install
 
+frontend-install-frozen: ## install the frontend locally, following the frozen lockfile
+	@$(COMPOSE) run --rm frontend-tools npm ci
+.PHONY: frontend-install-frozen
+
 frontend-build: ## build the frontend locally
 	@$(COMPOSE) run --rm frontend-tools npm run build
 .PHONY: frontend-build
 
-
 frontend-lint: ## run the frontend linter
-	@$(COMPOSE) run --rm frontend-dev npm run lint
+	@$(COMPOSE) run --rm frontend-tools npm run lint
 .PHONY: frontend-lint
 
 frontend-i18n-extract: ## Extract the frontend translation inside a json to be used for crowdin
-	@$(COMPOSE) run --rm frontend-dev npm run i18n:extract
+	@$(COMPOSE) run --rm frontend-tools npm run i18n:extract
 .PHONY: frontend-i18n-extract
 
 frontend-i18n-generate: ## Generate the frontend json files used for crowdin
@@ -332,5 +340,5 @@ frontend-i18n-generate: \
 .PHONY: frontend-i18n-generate
 
 frontend-i18n-compile: ## Format the crowin json files used deploy to the apps
-	@$(COMPOSE) run --rm frontend-dev npm run i18n:deploy
+	@$(COMPOSE) run --rm frontend-tools npm run i18n:deploy
 .PHONY: frontend-i18n-compile
