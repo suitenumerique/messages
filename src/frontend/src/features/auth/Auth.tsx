@@ -1,16 +1,16 @@
-import React, { PropsWithChildren, useEffect, useState } from "react";
+import React, { PropsWithChildren, useEffect } from "react";
 
-import { fetchAPI } from "@/features/api/fetchApi";
-import { User } from "@/features/auth/types";
-import { baseApiUrl } from "../api/utils";
-import { APIError } from "../api/APIError";
+import { getRequestUrl } from "@/features/api/utils";
+import { useUsersMeRetrieve } from "@/features/api/gen/users/users";
+import { User } from "@/features/api/gen/models/user";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
 
 export const logout = () => {
-  window.location.replace(new URL("logout/", baseApiUrl()).href);
+  window.location.replace(getRequestUrl("/api/v1.0/logout/"));
 };
 
 export const login = () => {
-  window.location.replace(new URL("authenticate/", baseApiUrl()).href);
+  window.location.replace(getRequestUrl("/api/v1.0/authenticate/"));
 };
 
 interface AuthContextInterface {
@@ -26,32 +26,17 @@ export const Auth = ({
   children,
   redirect,
 }: PropsWithChildren & { redirect?: boolean }) => {
-  const [user, setUser] = useState<User | null>();
-
-  const init = async () => {
-    try {
-      const response = await fetchAPI(`users/me/`, undefined, {
-        logoutOn401: false,
-      });
-      const data = (await response.json()) as User;
-      setUser(data);
-      return data;
-    } catch (error) {
-      if (redirect && error instanceof APIError && error.code === 401) {
-        login();
-      } else {
-        setUser(null);
-      }
-      return null;
-    }
-  };
+  const query = useUsersMeRetrieve({
+    request: { logoutOn401: false },
+  });
 
   useEffect(() => {
-    void init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (query.isError && redirect) {
+      login();
+    }
+  }, [query.isError, redirect]);
 
-  if (user === undefined) {
+  if (query.isFetched === false) {
     return (
       <div
         style={{
@@ -61,7 +46,7 @@ export const Auth = ({
           height: "100vh",
         }}
       >
-        <div>LOADING</div>
+        <Spinner />
       </div>
     );
   }
@@ -69,8 +54,7 @@ export const Auth = ({
   return (
     <AuthContext.Provider
       value={{
-        user,
-        init,
+        user: query?.data?.data || null,
       }}
     >
       {children}
