@@ -1,6 +1,6 @@
 #/bin/bash
 
-gunicorn messages.wsgi:application --log-file - &
+gunicorn -b :8000 messages.wsgi:application --log-file - &
 bin/run &
                                   
 # if the current shell is killed, also terminate all its children     
