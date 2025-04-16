@@ -9,4 +9,4 @@ _dc_run \
     --api-version 'v1.0' \
     --urlconf 'core.urls' \
     --format openapi-json \
-    --file /app/core/tests/swagger/swagger.json
+    --file /app/core/api/openapi.json
