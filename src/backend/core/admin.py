@@ -91,3 +91,31 @@ class UserAdmin(auth_admin.UserAdmin):
         "updated_at",
     )
     search_fields = ("id", "sub", "admin_email", "email", "full_name")
+
+
+@admin.register(models.MailDomain)
+class MailDomainAdmin(admin.ModelAdmin):
+    """Admin class for the MailDomain model"""
+
+    list_display = (
+        "name",
+        "created_at",
+        "updated_at",
+    )
+    search_fields = ("name",)
+
+
+@admin.register(models.Mailbox)
+class MailboxAdmin(admin.ModelAdmin):
+    """Admin class for the Mailbox model"""
+
+    list_display = ("__str__", "domain", "updated_at")
+    search_fields = ("local_part", "domain__name")
+
+
+@admin.register(models.MailboxAccess)
+class MailboxAccessAdmin(admin.ModelAdmin):
+    """Admin class for the MailboxAccess model"""
+
+    list_display = ("id", "mailbox", "user", "permission")
+    search_fields = ("mailbox__local_part", "mailbox__domain__name", "user__email")

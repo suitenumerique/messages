@@ -44,3 +44,35 @@ class ParentNodeFactory(factory.declarations.ParameteredAttribute):
             return None
         subfactory = step.builder.factory_meta.factory
         return step.recurse(subfactory, params)
+
+
+class MailDomainFactory(factory.django.DjangoModelFactory):
+    """A factory to random mail domains for testing purposes."""
+
+    class Meta:
+        model = models.MailDomain
+
+    name = factory.Faker("domain_name")
+
+
+class MailboxFactory(factory.django.DjangoModelFactory):
+    """A factory to random mailboxes for testing purposes."""
+
+    class Meta:
+        model = models.Mailbox
+
+    domain = factory.SubFactory(MailDomainFactory)
+    local_part = factory.Sequence(lambda n: f"john.doe{n!s}")
+
+
+class MailboxAccessFactory(factory.django.DjangoModelFactory):
+    """A factory to random mailbox accesses for testing purposes."""
+
+    class Meta:
+        model = models.MailboxAccess
+
+    mailbox = factory.SubFactory(MailboxFactory)
+    user = factory.SubFactory(UserFactory)
+    permission = factory.fuzzy.FuzzyChoice(
+        [permission[0] for permission in models.MailboxPermissionChoices.choices]
+    )

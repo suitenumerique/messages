@@ -13,11 +13,11 @@ from django.contrib.auth.base_user import AbstractBaseUser
 from django.core import validators
 from django.db import models
 from django.utils import timezone
-from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
-from django_ltree.managers import TreeQuerySet
 from timezone_field import TimeZoneField
+
+from core.enums import MailboxPermissionChoices
 
 logger = getLogger(__name__)
 
@@ -53,20 +53,6 @@ class RoleChoices(models.TextChoices):
 
 
 PRIVILEGED_ROLES = [RoleChoices.ADMIN, RoleChoices.OWNER]
-
-
-class LinkReachChoices(models.TextChoices):
-    """Defines types of access for links"""
-
-    RESTRICTED = (
-        "restricted",
-        _("Restricted"),
-    )  # Only users with a specific access can read/edit the item
-    AUTHENTICATED = (
-        "authenticated",
-        _("Authenticated"),
-    )  # Any authenticated user can access the item
-    PUBLIC = "public", _("Public")  # Even anonymous users can access the item
 
 
 class DuplicateEmailError(Exception):
@@ -224,103 +210,58 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
     def __str__(self):
         return self.email or self.admin_email or str(self.id)
 
-    @cached_property
-    def teams(self):
-        """
-        Get list of teams in which the user is, as a list of strings.
-        Must be cached if retrieved remotely.
-        """
-        return []
+
+class MailDomain(BaseModel):
+    """Mail domain model to store mail domain information."""
+
+    name = models.CharField(_("name"), max_length=255)
+
+    class Meta:
+        db_table = "messages_maildomain"
+        verbose_name = _("mail domain")
+        verbose_name_plural = _("mail domains")
+
+    def __str__(self):
+        return self.name
 
 
-class BaseAccess(BaseModel):
-    """Base model for accesses to handle resources."""
+class Mailbox(BaseModel):
+    """Mailbox model to store mailbox information."""
 
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
+    local_part = models.CharField(_("local part"), max_length=255)
+    domain = models.ForeignKey("MailDomain", on_delete=models.CASCADE)
+
+    class Meta:
+        db_table = "messages_mailbox"
+        verbose_name = _("mailbox")
+        verbose_name_plural = _("mailboxes")
+        unique_together = ("local_part", "domain")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.local_part}@{self.domain.name}"
+
+
+class MailboxAccess(BaseModel):
+    """Mailbox access model to store mailbox access information."""
+
+    mailbox = models.ForeignKey(
+        "Mailbox", on_delete=models.CASCADE, related_name="mailbox_accesses"
     )
-    team = models.CharField(max_length=100, blank=True)
-    role = models.CharField(
-        max_length=20, choices=RoleChoices.choices, default=RoleChoices.READER
+    user = models.ForeignKey(
+        "User", on_delete=models.CASCADE, related_name="mailbox_accesses"
+    )
+    permission = models.CharField(
+        _("permission"),
+        max_length=20,
+        choices=MailboxPermissionChoices.choices,
+        default=MailboxPermissionChoices.READ,
     )
 
     class Meta:
-        abstract = True
+        db_table = "messages_mailboxaccess"
+        verbose_name = _("mailbox access")
+        verbose_name_plural = _("mailbox accesses")
 
-    def _get_abilities(self, resource, user):
-        """
-        Compute and return abilities for a given user taking into account
-        the current state of the object.
-        """
-        roles = []
-        if user.is_authenticated:
-            teams = user.teams
-            try:
-                roles = self.user_roles or []
-            except AttributeError:
-                try:
-                    roles = resource.accesses.filter(
-                        models.Q(user=user) | models.Q(team__in=teams),
-                    ).values_list("role", flat=True)
-                except (self._meta.model.DoesNotExist, IndexError):
-                    roles = []
-
-        is_owner_or_admin = bool(
-            set(roles).intersection({RoleChoices.OWNER, RoleChoices.ADMIN})
-        )
-        if self.role == RoleChoices.OWNER:
-            can_delete = (
-                RoleChoices.OWNER in roles
-                and resource.accesses.filter(role=RoleChoices.OWNER).count() > 1
-            )
-            set_role_to = (
-                [RoleChoices.ADMIN, RoleChoices.EDITOR, RoleChoices.READER]
-                if can_delete
-                else []
-            )
-        else:
-            can_delete = is_owner_or_admin
-            set_role_to = []
-            if RoleChoices.OWNER in roles:
-                set_role_to.append(RoleChoices.OWNER)
-            if is_owner_or_admin:
-                set_role_to.extend(
-                    [RoleChoices.ADMIN, RoleChoices.EDITOR, RoleChoices.READER]
-                )
-
-        # Remove the current role as we don't want to propose it as an option
-        try:
-            set_role_to.remove(self.role)
-        except ValueError:
-            pass
-
-        return {
-            "destroy": can_delete,
-            "update": bool(set_role_to),
-            "partial_update": bool(set_role_to),
-            "retrieve": bool(roles),
-            "set_role_to": set_role_to,
-        }
-
-
-class ItemQuerySet(TreeQuerySet):
-    """Custom queryset for Item model with additional methods."""
-
-    def readable_per_se(self, user):
-        """
-        Filters the queryset to return documents that the given user has
-        permission to read.
-        :param user: The user for whom readable documents are to be fetched.
-        :return: A queryset of documents readable by the user.
-        """
-        if user.is_authenticated:
-            return self.filter(
-                models.Q(accesses__user=user)
-                | models.Q(accesses__team__in=user.teams)
-                | ~models.Q(link_reach=LinkReachChoices.RESTRICTED)
-            )
-
-        return self.filter(models.Q(link_reach=LinkReachChoices.PUBLIC))
+    def __str__(self):
+        return f"Access to {self.mailbox} for {self.user}"
