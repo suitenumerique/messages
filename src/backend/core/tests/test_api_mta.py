@@ -11,6 +11,8 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from core import models
+
 
 @pytest.fixture(name="api_client")
 def fixture_api_client():
@@ -51,6 +53,12 @@ class TestMTAInboundEmail:
 
     def test_valid_email_submission(self, api_client, sample_email, valid_jwt_token):
         """Test submitting a valid email with correct JWT token."""
+
+        # Create the maildomain
+        models.MailDomain.objects.create(
+            name="example.com",
+        )
+
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
             data=sample_email,
@@ -64,6 +72,16 @@ class TestMTAInboundEmail:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {"status": "ok"}
+
+        # Check that the message was created
+        assert models.Message.objects.count() == 1
+        assert models.Thread.objects.count() == 1
+        assert models.Contact.objects.count() == 2
+        assert models.MessageRecipient.objects.count() == 1
+        message = models.Message.objects.first()
+        assert message.subject == "Test Email"
+        assert message.body_html == "This is a test email body.\n"
+        assert message.body_text == "This is a test email body.\n"
 
     def test_invalid_content_type(self, api_client, sample_email, valid_jwt_token):
         """Test submitting with wrong content type."""

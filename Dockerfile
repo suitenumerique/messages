@@ -17,35 +17,11 @@ FROM base AS back-builder
 WORKDIR /builder
 
 # Copy required python dependencies
-COPY ./src/backend /builder
+COPY ./src/backend/setup.py /builder/setup.py
+COPY ./src/backend/pyproject.toml /builder/pyproject.toml
 
 RUN mkdir /install && \
     pip install --prefix=/install .
-
-# ---- static link collector ----
-FROM base AS link-collector
-ARG MESSAGES_STATIC_ROOT=/data/static
-
-# Install pango & rdfind
-RUN apk add \
-    pango \
-    rdfind
-
-# Copy installed python dependencies
-COPY --from=back-builder /install /usr/local
-
-# Copy messages application (see .dockerignore)
-COPY ./src/backend /app/
-
-WORKDIR /app
-
-# collectstatic
-RUN DJANGO_CONFIGURATION=Build \
-    python manage.py collectstatic --noinput
-
-# Replace duplicated file by a symlink to decrease the overall size of the
-# final image
-RUN rdfind -makesymlinks true -followsymlinks true -makeresultsfile false ${MESSAGES_STATIC_ROOT}
 
 # ---- Core application image ----
 FROM base AS core
@@ -87,7 +63,6 @@ WORKDIR /app
 RUN DJANGO_CONFIGURATION=Build \
     python manage.py compilemessages
 
-
 # We wrap commands run in this container by the following entrypoint that
 # creates a user on-the-fly with the container user ID (see USER) and root group
 # ID.
@@ -118,6 +93,31 @@ ENV DB_HOST=postgresql \
 
 # Run django development server
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+
+# ---- static link collector ----
+FROM base AS link-collector
+ARG MESSAGES_STATIC_ROOT=/data/static
+
+# Install pango & rdfind
+RUN apk add \
+    pango \
+    rdfind
+
+# Copy installed python dependencies
+COPY --from=back-builder /install /usr/local
+
+# Copy messages application (see .dockerignore)
+COPY ./src/backend /app/
+
+WORKDIR /app
+
+# collectstatic
+RUN DJANGO_CONFIGURATION=Build \
+    python manage.py collectstatic --noinput
+
+# Replace duplicated file by a symlink to decrease the overall size of the
+# final image
+RUN rdfind -makesymlinks true -followsymlinks true -makeresultsfile false ${MESSAGES_STATIC_ROOT}
 
 # ---- Production image ----
 FROM core AS backend-production

@@ -12,6 +12,8 @@ import rest_framework as drf
 from rest_framework import authentication, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 
+from core import models
+
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
@@ -111,7 +113,7 @@ class MTAViewSet(viewsets.GenericViewSet):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        raw_data = request.body
+        raw_data = request.body or ""
 
         logger.info(
             "Raw email received: %d bytes for %s",
@@ -122,14 +124,97 @@ class MTAViewSet(viewsets.GenericViewSet):
         # Parse the email message
         email_message = email.message_from_bytes(raw_data)
 
-        # Print details of the email message
-        logger.info("Subject: %s", email_message["Subject"])
-        logger.info("From: %s", email_message["From"])
-        logger.info("To: %s", email_message["To"])
+        # TODO: move non-mail-specific logic somewhere else as this is not the only place
+        # where we'll receive "messages".
+
+        # We may have received a single POST but for multiple recipients.
+        # Every one of them should be treated as a separate message.
+        # TODO: wrap all this in a transaction? with a lock?
 
         # Walk mime parts and display their metadata
         for part in email_message.walk():
-            logger.info("Part: %s", part.get_content_type())
-            logger.info("Content-Disposition: %s", part.get("Content-Disposition"))
+            logger.info("  Part: %s", part.get_content_type())
+
+        body_html = email_message.get_payload(decode=True).decode()
+        body_text = email_message.get_payload(decode=True).decode()
+
+        for recipient in payload["original_recipients"]:
+            try:
+                # Find the maildomain for this recipient's domain
+                # For now we don't create it if it doesn't exist, but
+                # in the future we'll call the Regie and might do it on demand.
+                maildomain = models.MailDomain.objects.filter(
+                    name=recipient.split("@")[1]
+                ).first()
+
+                if not maildomain:
+                    # Silently ignore this recipient for now
+                    continue
+
+                # Create the mailbox if it doesn't exist.
+                # TODO: in the future we'll check in the Regie first if we are supposed
+                # to manage it. For now we assume all local_parts exist and are managed
+                # by us in a maildomain.
+                mailbox, _ = models.Mailbox.objects.get_or_create(
+                    local_part=recipient.split("@")[0],
+                    domain=maildomain,
+                )
+
+                # Find if there's already a thread with the same subject.
+                # TODO: many more conditions to check here.
+                thread = models.Thread.objects.filter(
+                    subject=email_message["Subject"],
+                    mailbox=mailbox,
+                ).first()
+
+                if not thread:
+                    snippet = body_text[:140]
+                    thread = models.Thread.objects.create(
+                        subject=email_message["Subject"],
+                        mailbox=mailbox,
+                        snippet=snippet,
+                    )
+
+                # Get or create the sender contact
+                sender_contact, _ = models.Contact.objects.get_or_create(
+                    email=email_message["From"],
+                    defaults={"name": email_message["From"]},
+                )
+
+                # Get or create each of the recipients
+                recipients = []
+                for rcpnt in email_message["To"].split(","):
+                    recipient_contact, _ = models.Contact.objects.get_or_create(
+                        email=rcpnt.strip(),
+                        defaults={"name": rcpnt.strip()},
+                    )
+                    recipients.append(recipient_contact)
+
+                # Create a message
+                message = models.Message.objects.create(
+                    thread=thread,
+                    sender=sender_contact,
+                    subject=email_message.get("Subject") or "No subject",
+                    raw_mime=raw_data,
+                    body_html=body_html,
+                    body_text=body_text,
+                    sent_at=email_message.get("Date"),
+                    is_read=False,
+                    mta_sent=False,
+                )
+
+                # Create a message recipient for each recipient
+                for rcpnt in recipients:
+                    models.MessageRecipient.objects.create(
+                        message=message,
+                        contact=rcpnt,
+                        type=models.MessageRecipientTypeChoices.TO,
+                    )
+
+            except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
+                logger.error("Error creating message: %s", e)
+                return drf.response.Response(
+                    {"status": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
 
         return drf.response.Response({"status": "ok"})

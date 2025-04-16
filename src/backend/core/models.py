@@ -335,6 +335,7 @@ class Message(BaseModel):
     # body = models.ForeignKey(EmailBody, on_delete=models.CASCADE)
     body_html = models.TextField(_("body html"), blank=True)
     body_text = models.TextField(_("body text"), blank=True)
+    raw_mime = models.TextField(_("raw message"), blank=True)
     sender = models.ForeignKey("Contact", on_delete=models.CASCADE)
     received_at = models.DateTimeField(_("received at"), auto_now_add=True)
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
