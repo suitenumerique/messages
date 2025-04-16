@@ -65,6 +65,44 @@ class TestApiThreads:
         response = client.get(reverse("threads-list"))
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    def test_list_threads_not_allowed(self):
+        """Test list threads not allowed."""
+        # Create other mailbox and thread with a message
+        jean = factories.UserFactory()
+        jean_mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=jean_mailbox,
+            user=jean,
+            permission=enums.MailboxPermissionChoices.ADMIN,
+        )
+        jean_thread = factories.ThreadFactory(mailbox=jean_mailbox)
+        jean_message = factories.MessageFactory(thread=jean_thread, read_at=None)
+        factories.MessageRecipientFactory(
+            message=jean_message,
+            type=enums.MessageRecipientTypeChoices.TO,
+        )
+
+        # Create authenticated user with access to a mailbox
+        authenticated_user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            permission=enums.MailboxPermissionChoices.READ,
+        )
+        thread = factories.ThreadFactory(mailbox=mailbox)
+        message = factories.MessageFactory(thread=thread, read_at=None)
+        factories.MessageRecipientFactory(
+            message=message,
+            type=enums.MessageRecipientTypeChoices.TO,
+        )
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+        response = client.get(
+            reverse("threads-list"), query_params={"mailbox_id": jean_mailbox.id}
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
 
 @pytest.mark.django_db
 class TestApiMessages:
@@ -170,3 +208,41 @@ class TestApiMessages:
         client = APIClient()
         response = client.get(reverse("messages-list"))
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_list_messages_not_allowed(self):
+        """Test list messages not allowed."""
+        # Create other mailbox and thread with a message
+        jean = factories.UserFactory()
+        jean_mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=jean_mailbox,
+            user=jean,
+            permission=enums.MailboxPermissionChoices.ADMIN,
+        )
+        jean_thread = factories.ThreadFactory(mailbox=jean_mailbox)
+        jean_message = factories.MessageFactory(thread=jean_thread, read_at=None)
+        factories.MessageRecipientFactory(
+            message=jean_message,
+            type=enums.MessageRecipientTypeChoices.TO,
+        )
+
+        # Create authenticated user with access to a mailbox
+        authenticated_user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            permission=enums.MailboxPermissionChoices.READ,
+        )
+        thread = factories.ThreadFactory(mailbox=mailbox)
+        message = factories.MessageFactory(thread=thread, read_at=None)
+        factories.MessageRecipientFactory(
+            message=message,
+            type=enums.MessageRecipientTypeChoices.TO,
+        )
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+        response = client.get(
+            reverse("messages-list"), query_params={"thread_id": jean_thread.id}
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN

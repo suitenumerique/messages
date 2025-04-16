@@ -4,6 +4,8 @@ from django.core import exceptions
 
 from rest_framework import permissions
 
+from core import models
+
 ACTION_FOR_METHOD_TO_PERMISSION = {
     "versions_detail": {"DELETE": "versions_destroy", "GET": "versions_retrieve"},
     "children": {"GET": "children_list", "POST": "children_create"},
@@ -77,9 +79,17 @@ class AccessPermission(permissions.BasePermission):
         return abilities.get(action, False)
 
 
-class IsAllowedToAccessMailbox(permissions.BasePermission):
+class IsAllowedToAccessMailbox(IsAuthenticated):
     """Permission class for access to a mailbox."""
 
-    def has_object_permission(self, request, view, obj):
-        """Check permission for a given object."""
-        return obj.accesses.filter(user=request.user).exists()
+    def has_permission(self, request, view):
+        """Check if user has permission to access the mailbox thread and messages"""
+        mailbox_id = request.query_params.get("mailbox_id")
+        if not mailbox_id:
+            thread_id = request.query_params.get("thread_id")
+            if not thread_id:
+                return False
+            thread = models.Thread.objects.get(id=thread_id)
+            return thread.mailbox.accesses.filter(user=request.user).exists()
+        mailbox = models.Mailbox.objects.get(id=mailbox_id)
+        return mailbox.accesses.filter(user=request.user).exists()

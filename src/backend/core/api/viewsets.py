@@ -301,10 +301,7 @@ class ThreadViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
 
     queryset = models.Thread.objects.all().order_by("-updated_at")
     serializer_class = serializers.ThreadSerializer
-    permission_classes = [
-        permissions.IsAuthenticated,
-        permissions.IsAllowedToAccessMailbox,
-    ]
+    permission_classes = [permissions.IsAllowedToAccessMailbox]
 
     def get_queryset(self):
         """Return the queryset according to the action."""
@@ -321,10 +318,7 @@ class MessageViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
 
     queryset = models.Message.objects.all().order_by("-received_at")
     serializer_class = serializers.MessageSerializer
-    permission_classes = [
-        permissions.IsAuthenticated,
-        permissions.IsAllowedToAccessMailbox,
-    ]
+    permission_classes = [permissions.IsAllowedToAccessMailbox]
 
     def get_queryset(self):
         """Return the queryset according to the action."""
