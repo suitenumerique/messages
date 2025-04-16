@@ -1,0 +1,184 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "messages API",
+        "version": "1.0.0 (v1.0)",
+        "description": "This is the messages API schema."
+    },
+    "paths": {
+        "/api/v1.0/config/": {
+            "get": {
+                "operationId": "config_retrieve",
+                "description": "GET /api/v1.0/config/\n    Return a dictionary of public settings.",
+                "tags": [
+                    "config"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    },
+                    {}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/": {
+            "get": {
+                "operationId": "mailboxes_list",
+                "description": "ViewSet for Mailbox model.",
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Mailbox"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mta/check-recipients/": {
+            "post": {
+                "operationId": "mta_check_recipients_create",
+                "description": "Handle incoming email from MTA",
+                "tags": [
+                    "mta"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mta/inbound-email/": {
+            "post": {
+                "operationId": "mta_inbound_email_create",
+                "description": "Handle incoming email from MTA",
+                "tags": [
+                    "mta"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/users/me/": {
+            "get": {
+                "operationId": "users_me_retrieve",
+                "description": "Return information on currently logged user",
+                "tags": [
+                    "users"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/User"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Mailbox": {
+                "type": "object",
+                "description": "Serialize mailboxes.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "email": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "perms": {
+                        "type": "string",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "email",
+                    "id",
+                    "perms"
+                ]
+            },
+            "User": {
+                "type": "object",
+                "description": "Serialize users.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "readOnly": true,
+                        "nullable": true,
+                        "title": "Identity email address"
+                    },
+                    "full_name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "short_name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "email",
+                    "full_name",
+                    "id",
+                    "short_name"
+                ]
+            }
+        },
+        "securitySchemes": {
+            "cookieAuth": {
+                "type": "apiKey",
+                "in": "cookie",
+                "name": "sessionid"
+            }
+        }
+    }
+}
