@@ -15,7 +15,6 @@ export const login = () => {
 
 interface AuthContextInterface {
   user?: User | null;
-  init?: () => Promise<User | null>;
 }
 
 export const AuthContext = React.createContext<AuthContextInterface>({});
@@ -36,7 +35,7 @@ export const Auth = ({
     }
   }, [query.isError, redirect]);
 
-  if (query.isFetched === false) {
+  if (!query.isFetched) {
     return (
       <div
         style={{
@@ -54,7 +53,7 @@ export const Auth = ({
   return (
     <AuthContext.Provider
       value={{
-        user: query?.data?.data || null,
+        user: query.data?.data ?? null,
       }}
     >
       {children}
