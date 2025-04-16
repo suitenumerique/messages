@@ -6,5 +6,6 @@ set -o pipefail   # don't ignore exit codes when piping output
 echo "-----> Running post-compile script"
 
 # Move the frontend build to the nginx root and clean up
-mv src/frontend/out/ /frontend-out
+mkdir -p build/frontend-out
+mv src/frontend/out/ build/frontend-out/
 rm -rf src/frontend/

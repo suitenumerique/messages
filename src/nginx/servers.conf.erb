@@ -10,7 +10,7 @@ server {
 	listen <%= ENV["PORT"] %>;
 	server_name _;
 
-    root /frontend-out;
+    root /app/build/frontend-out;
     
     error_page 404 /404.html;
 
