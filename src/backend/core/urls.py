@@ -13,6 +13,7 @@ from core.authentication.urls import urlpatterns as oidc_urls
 router = DefaultRouter()
 router.register("mta", MTAViewSet, basename="mta")
 router.register("users", viewsets.UserViewSet, basename="users")
+router.register("mailboxes", viewsets.MailboxViewSet, basename="mailboxes")
 
 urlpatterns = [
     path(

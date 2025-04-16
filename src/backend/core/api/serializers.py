@@ -86,3 +86,29 @@ class BaseAccessSerializer(serializers.ModelSerializer):
         # pylint: disable=no-member
         attrs[f"{self.Meta.resource_field_name}_id"] = self.context["resource_id"]
         return attrs
+
+
+class MailboxSerializer(serializers.ModelSerializer):
+    """Serialize mailboxes."""
+
+    email = serializers.SerializerMethodField(read_only=True)
+    perms = serializers.SerializerMethodField(read_only=True)
+
+    def get_email(self, instance):
+        """Return the email of the mailbox."""
+        return str(instance)
+
+    def get_perms(self, instance):
+        """Return the allowed actions of the logged-in user on the instance."""
+        request = self.context.get("request")
+        if request:
+            return list(
+                instance.mailbox_accesses.filter(user=request.user).values_list(
+                    "permission", flat=True
+                )
+            )
+        return []
+
+    class Meta:
+        model = models.Mailbox
+        fields = ["id", "email", "perms"]

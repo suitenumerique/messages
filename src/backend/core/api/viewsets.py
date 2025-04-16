@@ -9,7 +9,7 @@ from django.contrib.postgres.aggregates import ArrayAgg
 from django.db import models as db
 
 import rest_framework as drf
-from rest_framework import viewsets
+from rest_framework import mixins, viewsets
 from rest_framework.permissions import AllowAny
 
 from core import enums, models
@@ -276,3 +276,21 @@ class UserViewSet(viewsets.ViewSet):
         return drf.response.Response(
             self.serializer_class(request.user, context=context).data
         )
+
+
+class MailboxViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
+    """ViewSet for Mailbox model."""
+
+    queryset = models.Mailbox.objects.all()
+    serializer_class = serializers.MailboxSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        """Return the queryset according to the action."""
+        queryset = super().get_queryset()
+        if self.action == "list":
+            user = self.request.user
+            accesses = user.mailbox_accesses.all()
+            return queryset.filter(id__in=accesses.values_list("mailbox_id", flat=True))
+        return queryset
