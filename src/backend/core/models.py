@@ -246,7 +246,7 @@ class MailboxAccess(BaseModel):
     """Mailbox access model to store mailbox access information."""
 
     mailbox = models.ForeignKey(
-        "Mailbox", on_delete=models.CASCADE, related_name="mailbox_accesses"
+        "Mailbox", on_delete=models.CASCADE, related_name="accesses"
     )
     user = models.ForeignKey(
         "User", on_delete=models.CASCADE, related_name="mailbox_accesses"

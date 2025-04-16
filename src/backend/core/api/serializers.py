@@ -103,7 +103,7 @@ class MailboxSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if request:
             return list(
-                instance.mailbox_accesses.filter(user=request.user).values_list(
+                instance.accesses.filter(user=request.user).values_list(
                     "permission", flat=True
                 )
             )
