@@ -76,3 +76,51 @@ class MailboxAccessFactory(factory.django.DjangoModelFactory):
     permission = factory.fuzzy.FuzzyChoice(
         [permission[0] for permission in models.MailboxPermissionChoices.choices]
     )
+
+
+class ThreadFactory(factory.django.DjangoModelFactory):
+    """A factory to random threads for testing purposes."""
+
+    class Meta:
+        model = models.Thread
+
+    subject = factory.Faker("sentence")
+    snippet = factory.Faker("text")
+
+
+class ContactFactory(factory.django.DjangoModelFactory):
+    """A factory to random contacts for testing purposes."""
+
+    class Meta:
+        model = models.Contact
+
+    name = factory.Faker("name")
+    email = factory.Faker("email")
+
+
+class MessageFactory(factory.django.DjangoModelFactory):
+    """A factory to random messages for testing purposes."""
+
+    class Meta:
+        model = models.Message
+
+    thread = factory.SubFactory(ThreadFactory)
+    subject = factory.Faker("sentence")
+    sender = factory.SubFactory(ContactFactory)
+    received_at = factory.Faker("date_time_this_year")
+    created_at = factory.Faker("date_time_this_year")
+    sent_at = factory.Faker("date_time_this_year")
+    read_at = factory.Faker("date_time_this_year")
+
+
+class MessageRecipientFactory(factory.django.DjangoModelFactory):
+    """A factory to random message recipients for testing purposes."""
+
+    class Meta:
+        model = models.MessageRecipient
+
+    message = factory.SubFactory(MessageFactory)
+    contact = factory.SubFactory(ContactFactory)
+    type = factory.fuzzy.FuzzyChoice(
+        [type[0] for type in models.MessageRecipientTypeChoices.choices]
+    )

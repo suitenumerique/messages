@@ -20,3 +20,11 @@ class MailboxPermissionChoices(models.TextChoices):
     EDIT = "edit", _("Edit")
     SEND = "send", _("Send")
     ADMIN = "admin", _("Admin")
+
+
+class MessageRecipientTypeChoices(models.TextChoices):
+    """Defines the possible types of message recipients."""
+
+    TO = "to", _("To")
+    CC = "cc", _("Cc")
+    BCC = "bcc", _("Bcc")

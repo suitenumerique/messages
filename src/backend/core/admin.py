@@ -119,3 +119,31 @@ class MailboxAccessAdmin(admin.ModelAdmin):
 
     list_display = ("id", "mailbox", "user", "permission")
     search_fields = ("mailbox__local_part", "mailbox__domain__name", "user__email")
+
+
+@admin.register(models.Thread)
+class ThreadAdmin(admin.ModelAdmin):
+    """Admin class for the Thread model"""
+
+    list_display = ("id", "subject", "snippet", "mailbox", "created_at", "updated_at")
+
+
+@admin.register(models.Message)
+class MessageAdmin(admin.ModelAdmin):
+    """Admin class for the Message model"""
+
+    list_display = ("id", "subject", "sender", "received_at")
+
+
+@admin.register(models.Contact)
+class ContactAdmin(admin.ModelAdmin):
+    """Admin class for the Contact model"""
+
+    list_display = ("id", "name", "email")
+
+
+class MessageRecipientAdmin(admin.ModelAdmin):
+    """Admin class for the MessageRecipient model"""
+
+    list_display = ("id", "message", "contact", "type")
+    search_fields = ("message__subject", "contact__name", "contact__email")

@@ -17,7 +17,7 @@ from django.utils.translation import gettext_lazy as _
 
 from timezone_field import TimeZoneField
 
-from core.enums import MailboxPermissionChoices
+from core.enums import MailboxPermissionChoices, MessageRecipientTypeChoices
 
 logger = getLogger(__name__)
 
@@ -265,3 +265,89 @@ class MailboxAccess(BaseModel):
 
     def __str__(self):
         return f"Access to {self.mailbox} for {self.user}"
+
+
+class Thread(BaseModel):
+    """Thread model to group messages."""
+
+    subject = models.CharField(_("subject"), max_length=255)
+    snippet = models.TextField(_("snippet"), blank=True)
+    mailbox = models.ForeignKey(Mailbox, on_delete=models.CASCADE)
+
+    class Meta:
+        db_table = "messages_thread"
+        verbose_name = _("thread")
+        verbose_name_plural = _("threads")
+
+    def __str__(self):
+        return self.subject
+
+
+class Contact(BaseModel):
+    """Contact model to store contact information."""
+
+    name = models.CharField(_("name"), max_length=255)
+    email = models.EmailField(_("email"), unique=True)
+    user = models.ForeignKey("User", on_delete=models.CASCADE, null=True, blank=True)
+
+    class Meta:
+        db_table = "messages_contact"
+        verbose_name = _("contact")
+        verbose_name_plural = _("contacts")
+
+    def __str__(self):
+        return self.name
+
+
+class MessageRecipient(BaseModel):
+    """Message recipient model to store message recipient information."""
+
+    message = models.ForeignKey(
+        "Message", on_delete=models.CASCADE, related_name="recipients"
+    )
+    contact = models.ForeignKey(
+        "Contact", on_delete=models.CASCADE, related_name="messages"
+    )
+    type = models.CharField(
+        _("type"),
+        max_length=20,
+        choices=MessageRecipientTypeChoices.choices,
+        default=MessageRecipientTypeChoices.TO,
+    )
+
+    class Meta:
+        db_table = "messages_messagerecipient"
+        verbose_name = _("message recipient")
+        verbose_name_plural = _("message recipients")
+
+    def __str__(self):
+        return f"{self.message} - {self.contact} - {self.type}"
+
+
+class Message(BaseModel):
+    """Message model to store received and sent messages."""
+
+    thread = models.ForeignKey(
+        Thread, on_delete=models.CASCADE, related_name="messages"
+    )
+    subject = models.CharField(_("subject"), max_length=255)
+    # header = models.ForeignKey(EmailHeader, on_delete=models.CASCADE)
+    # body = models.ForeignKey(EmailBody, on_delete=models.CASCADE)
+    body_html = models.TextField(_("body html"), blank=True)
+    body_text = models.TextField(_("body text"), blank=True)
+    sender = models.ForeignKey("Contact", on_delete=models.CASCADE)
+    received_at = models.DateTimeField(_("received at"), auto_now_add=True)
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
+    sent_at = models.DateTimeField(_("sent at"))
+    read_at = models.DateTimeField(_("read at"))
+    mta_sent = models.BooleanField(_("mta sent"), default=False)
+    is_read = models.BooleanField(_("is read"), default=False)
+
+    class Meta:
+        db_table = "messages_message"
+        verbose_name = _("message")
+        verbose_name_plural = _("messages")
+        ordering = ["-received_at"]
+
+    def __str__(self):
+        return self.subject
