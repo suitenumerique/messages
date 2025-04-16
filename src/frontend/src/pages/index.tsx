@@ -4,17 +4,10 @@ import { useTranslation } from "next-i18next";
 import { DefaultLayout } from "@/features/layouts/components/default/DefaultLayout";
 import { ProConnectButton } from "@gouvfr-lasuite/ui-kit";
 import { login, logout, useAuth } from "@/features/auth/Auth";
-// import { gotoLastVisitedItem } from "@/features/explorer/utils/utils";
-import { useEffect } from "react";
+
 export default function HomePage() {
   const { t } = useTranslation();
   const { user } = useAuth();
-
-  // useEffect(() => {
-  //   if (user) {
-  //     gotoLastVisitedItem();
-  //   }
-  // }, [user]);
 
   if (user) {
     return <>
