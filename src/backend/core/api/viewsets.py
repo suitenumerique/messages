@@ -14,7 +14,7 @@ from rest_framework.permissions import AllowAny
 
 from core import enums, models
 
-from . import permissions
+from . import permissions, serializers
 
 logger = logging.getLogger(__name__)
 
@@ -253,3 +253,26 @@ class ConfigView(drf.views.APIView):
                 dict_settings[setting] = getattr(settings, setting)
 
         return drf.response.Response(dict_settings)
+
+
+class UserViewSet(viewsets.ViewSet):
+    """ViewSet for User model."""
+
+    serializer_class = serializers.UserSerializer
+    permission_classes = [permissions.IsSelf]
+
+    @drf.decorators.action(
+        detail=False,
+        methods=["get"],
+        url_name="me",
+        url_path="me",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def get_me(self, request):
+        """
+        Return information on currently logged user
+        """
+        context = {"request": request}
+        return drf.response.Response(
+            self.serializer_class(request.user, context=context).data
+        )

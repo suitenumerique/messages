@@ -12,7 +12,7 @@ from core.authentication.urls import urlpatterns as oidc_urls
 # - Main endpoints
 router = DefaultRouter()
 router.register("mta", MTAViewSet, basename="mta")
-
+router.register("users", viewsets.UserViewSet, basename="users")
 
 urlpatterns = [
     path(
