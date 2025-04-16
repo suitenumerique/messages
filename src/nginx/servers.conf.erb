@@ -1,0 +1,54 @@
+# ERB templated nginx configuration
+# see https://doc.scalingo.com/platform/deployment/buildpacks/nginx
+
+upstream backend_server {
+	server localhost:8000 fail_timeout=0;
+}
+
+server {
+	
+	listen <%= ENV["PORT"] %>;
+	server_name _;
+
+    root /usr/share/nginx/html;
+    
+    error_page 404 /404.html;
+
+    # Frontend export
+    location / {
+        try_files $uri index.html $uri/ =404;
+    }
+
+    location /mailbox/ {
+        error_page 404 /mailbox/[id].html;
+    }
+
+    location /mailbox/([^/]+)/thread/ {
+        error_page 404 /mailbox/thread/[id].html;
+    }
+
+    location = /404.html {
+        internal;
+    }
+
+    # Django rest framework
+    location ^~ /api/ {
+		proxy_pass http://backend_server;
+	}
+    
+    # Django admin
+    location ^~ /admin/ {
+		proxy_pass http://backend_server;
+	}
+
+    # Django static files
+    location ^~ /static/ {
+        proxy_pass http://backend_server;
+    }
+
+    # Django media files
+    location ^~ /media/ {
+        proxy_pass http://backend_server;
+    }
+
+}
