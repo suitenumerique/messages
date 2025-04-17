@@ -52,7 +52,7 @@ export const MailboxList = () => {
     const router = useRouter()
 
     useEffect(() => {
-        if (!params.mailboxId) {
+        if (!params?.mailboxId) {
             router.push(`/mailbox/${defaultMailboxId}`)
         }
     }, [])
@@ -71,11 +71,11 @@ export const MailboxList = () => {
 }
 
 const MailboxListItem = ({ mailbox }) => {
-    const { mailboxId } = useParams<{ mailboxId: string }>()
+    const params = useParams<{ mailboxId?: string }>()
     return (
         <Link
             href={`/mailbox/${mailbox.id}`}
-            className={`mailbox__item ${mailbox.id === mailboxId ? "mailbox__item--active" : ""}`}
+            className={`mailbox__item ${mailbox.id === params?.mailboxId ? "mailbox__item--active" : ""}`}
         >
             <p className="mailbox__item-label">
                 <span className="material-icons" aria-hidden="true">{mailbox.icon}</span>
