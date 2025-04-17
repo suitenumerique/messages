@@ -1,6 +1,6 @@
 """Client serializers for the messages core app."""
 
-from django.db.models import Q
+from django.db.models import Count, Q
 
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import exceptions, serializers
@@ -94,6 +94,8 @@ class MailboxSerializer(serializers.ModelSerializer):
 
     email = serializers.SerializerMethodField(read_only=True)
     perms = serializers.SerializerMethodField(read_only=True)
+    count_unread_messages = serializers.SerializerMethodField(read_only=True)
+    count_messages = serializers.SerializerMethodField(read_only=True)
 
     def get_email(self, instance):
         """Return the email of the mailbox."""
@@ -110,9 +112,19 @@ class MailboxSerializer(serializers.ModelSerializer):
             )
         return []
 
+    def get_count_unread_messages(self, instance):
+        """Return the number of unread messages in the mailbox."""
+        return instance.threads.aggregate(
+            total=Count("messages", filter=Q(messages__read_at__isnull=True))
+        )["total"]
+
+    def get_count_messages(self, instance):
+        """Return the number of messages in the mailbox."""
+        return instance.threads.aggregate(total=Count("messages"))["total"]
+
     class Meta:
         model = models.Mailbox
-        fields = ["id", "email", "perms"]
+        fields = ["id", "email", "perms", "count_unread_messages", "count_messages"]
 
 
 class ContactSerializer(serializers.ModelSerializer):

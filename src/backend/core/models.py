@@ -272,7 +272,9 @@ class Thread(BaseModel):
 
     subject = models.CharField(_("subject"), max_length=255)
     snippet = models.TextField(_("snippet"), blank=True)
-    mailbox = models.ForeignKey(Mailbox, on_delete=models.CASCADE)
+    mailbox = models.ForeignKey(
+        Mailbox, on_delete=models.CASCADE, related_name="threads"
+    )
 
     class Meta:
         db_table = "messages_thread"
