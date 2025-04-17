@@ -14,7 +14,7 @@ export class DateHelper {
    * @param locale - The locale code (e.g., 'fr', 'en')
    * @returns Formatted date string
    */
-  public static formatDate(dateString: string, locale: keyof typeof locales): string {
+  public static formatDate(dateString: string, locale: string): string {
     const date = new Date(dateString);
     const daysDifference = differenceInDays(new Date(), date);
     const dateLocale = locales[locale as keyof typeof locales];
