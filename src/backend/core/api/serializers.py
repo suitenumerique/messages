@@ -186,15 +186,17 @@ class MessageSerializer(serializers.ModelSerializer):
         """Return the raw text body of the message."""
         return instance.body_text
 
+    @extend_schema_field(ContactSerializer)
     def get_sender(self, instance):
         """Return the sender of the message."""
         return ContactSerializer(instance.sender).data
 
+    @extend_schema_field(MessageRecipientSerializer(many=True))
     def get_recipients(self, instance):
         """Return the recipients of the message."""
         return MessageRecipientSerializer(instance.recipients, many=True).data
 
-    def get_is_read(self, instance):
+    def get_is_read(self, instance) -> bool:
         """Return the read status of the message."""
         return instance.read_at is not None
 
