@@ -12,7 +12,6 @@ type ThreadItemProps = {
 
 export const ThreadItem = ({ thread }: ThreadItemProps) => {
     const { t, i18n } = useTranslation();
-
     const {mailboxId, threadId} = useParams<{mailboxId: string, threadId: string}>()
     
     return (
