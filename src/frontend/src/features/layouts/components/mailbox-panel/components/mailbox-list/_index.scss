@@ -1,7 +1,7 @@
 .mailbox-list {
     display: flex;
     flex-direction: column;
-    margin: var(--c--theme--spacings--xs);
+    margin-inline: var(--c--theme--spacings--xs);
     gap: var(--c--theme--spacings--4xs);
 }
 

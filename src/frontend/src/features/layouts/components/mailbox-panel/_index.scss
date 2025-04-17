@@ -3,3 +3,11 @@
     top: 0;
     background-color: #FFF;
 }
+
+.mailbox-panel__mailbox-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+    padding-inline: var(--c--theme--spacings--sm);
+    padding-top: var(--c--theme--spacings--sm);
+}
