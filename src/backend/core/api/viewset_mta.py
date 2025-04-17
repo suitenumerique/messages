@@ -216,15 +216,6 @@ class MTAViewSet(viewsets.GenericViewSet):
             defaults={"name": email_message["From"]},
         )
 
-        # Get or create each of the recipients
-        recipients = []
-        for rcpnt in email_message["To"].split(","):
-            recipient_contact, _ = models.Contact.objects.get_or_create(
-                email=rcpnt.strip(),
-                defaults={"name": rcpnt.strip()},
-            )
-            recipients.append(recipient_contact)
-
         # Create a message
         message = models.Message.objects.create(
             thread=thread,
@@ -237,6 +228,20 @@ class MTAViewSet(viewsets.GenericViewSet):
             is_read=False,
             mta_sent=False,
         )
+
+        # Get or create each of the recipients
+        logger.info("Creating recipients contacts %s", email_message["To"])
+        recipients = []
+        for rcpnt in email_message["To"].split(","):
+            try:
+                recipient_contact, _ = models.Contact.objects.get_or_create(
+                    email=rcpnt.strip(),
+                    defaults={"name": rcpnt.strip()},
+                )
+            except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
+                logger.error("Error creating recipient contact: %s", e)
+                continue
+            recipients.append(recipient_contact)
 
         # Create a message recipient for each recipient
         for rcpnt in recipients:
