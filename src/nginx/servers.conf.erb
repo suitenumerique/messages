@@ -14,23 +14,6 @@ server {
     
     error_page 404 /404.html;
 
-    location /mailbox/ {
-        error_page 404 /mailbox/[mailboxId].html;
-    }
-
-    location /mailbox/([^/]+)/thread/ {
-        error_page 404 /mailbox/[mailboxId]/thread/[threadId].html;
-    }
-
-    # Frontend export
-    location / {
-        try_files $uri index.html $uri/ =404;
-    }
-
-    location = /404.html {
-        internal;
-    }
-
     # Django rest framework
     location ^~ /api/ {
         proxy_set_header X-Forwarded-Proto https;
@@ -50,5 +33,22 @@ server {
         proxy_redirect off;
 		proxy_pass http://backend_server;
 	}
+
+    # Next static export
+    location ~* ^/mailbox/[^/]+$ {
+        try_files /mailbox/[mailboxId].html =404;
+    }
+    location ~* ^/mailbox/[^/]+/thread/[^/]+$ {
+        try_files /mailbox/[mailboxId]/thread/[threadId].html =404;
+    }
+
+    location = /404.html {
+        internal;
+    }
+
+    # Frontend export
+    location / {
+        try_files $uri index.html $uri/ =404;
+    }
 
 }
