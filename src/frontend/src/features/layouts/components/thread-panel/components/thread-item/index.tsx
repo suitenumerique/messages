@@ -12,12 +12,12 @@ type ThreadItemProps = {
 
 export const ThreadItem = ({ thread }: ThreadItemProps) => {
     const { t, i18n } = useTranslation();
-    const {mailboxId, threadId} = useParams<{mailboxId: string, threadId: string}>()
+    const params = useParams<{mailboxId: string, threadId: string}>()
     
     return (
         <Link
-            href={`/mailbox/${mailboxId}/thread/${thread.id}`}
-            className={`thread-item ${thread.id === threadId && "thread-item--active"} `}
+            href={`/mailbox/${params?.mailboxId}/thread/${thread.id}`}
+            className={`thread-item ${thread.id === params?.threadId && "thread-item--active"} `}
         >
             <div className="thread-item__left">
                 <div className="thread-item__read-indicator" data-read={thread.is_read} />

@@ -9,12 +9,12 @@ export const ActionBar = () => {
     const { t } = useTranslation();
     const { selectThread } = useMailboxContext();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-    const { mailboxId } = useParams<{ mailboxId: string }>();
+    const params = useParams<{ mailboxId: string }>();
     const router = useRouter();
 
     const handleCloseThread = () => {
         selectThread(null);
-        router.push(`/mailbox/${mailboxId}`);
+        router.push(`/mailbox/${params?.mailboxId}`);
     }
 
     return (
