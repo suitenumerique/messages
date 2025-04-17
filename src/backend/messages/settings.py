@@ -23,7 +23,6 @@ from sentry_sdk.integrations.django import DjangoIntegration
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join("/", "data")
 
 
 def get_release():
@@ -96,6 +95,10 @@ class Base(Configuration):
         }
     }
     DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
+
+    DATA_DIR = values.Value(
+        "/data", environ_name="DJANGO_DATA_DIR", environ_prefix=None
+    )
 
     # Static files (CSS, JavaScript, Images)
     STATIC_URL = "/static/"
