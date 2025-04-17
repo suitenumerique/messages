@@ -210,11 +210,20 @@ class MTAViewSet(viewsets.GenericViewSet):
                 snippet=snippet,
             )
 
-        # Get or create the sender contact
-        sender_contact, _ = models.Contact.objects.get_or_create(
-            email=email_message["From"],
-            defaults={"name": email_message["From"]},
-        )
+        logger.info("Creating FROM contact %s", email_message["From"])
+
+        try:
+            # Get or create the sender contact
+            sender_contact, _ = models.Contact.objects.get_or_create(
+                email=email_message["From"],
+                defaults={"name": email_message["From"]},
+            )
+        except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
+            logger.error("Error creating sender contact: %s", e)
+            sender_contact, _ = models.Contact.objects.get_or_create(
+                email="unknown@unknown.com",
+                defaults={"name": "Unknown sender"},
+            )
 
         # Create a message
         message = models.Message.objects.create(
