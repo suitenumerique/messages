@@ -2,6 +2,7 @@
 
 from django.db.models import Q
 
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import exceptions, serializers
 
 from core import models
@@ -133,10 +134,11 @@ class ThreadSerializer(serializers.ModelSerializer):
         """Return the messages in the thread."""
         return [str(message.id) for message in instance.messages.all()]
 
-    def get_is_read(self, instance):
+    def get_is_read(self, instance) -> bool:
         """Return the read status of the thread."""
         return instance.messages.filter(read_at__isnull=False).exists()
 
+    @extend_schema_field(ContactSerializer(many=True))
     def get_recipients(self, instance):
         """Return the recipients of the thread."""
         contacts = models.Contact.objects.filter(
