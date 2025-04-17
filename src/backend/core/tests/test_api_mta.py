@@ -66,6 +66,17 @@ Content-Type: text/html; charset="UTF-8"
 """
 
 
+@pytest.fixture(name="formatted_email")
+def fixture_formatted_email():
+    """Return a sample email with formatted From/To addresses."""
+    return b"""From: John Doe <sender@example.com>
+To: Jane Smith <recipient@example.com>, Another User <user2@example.com>
+Subject: Email with Formatted Addresses
+
+Testing formatted email addresses.
+"""
+
+
 @pytest.fixture(name="valid_jwt_token")
 def fixture_valid_jwt_token():
     """Return a valid JWT token for the sample email."""
@@ -256,3 +267,45 @@ class TestMTACheckRecipients:
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+class TestEmailAddressParsing:
+    """Test email address parsing functionality"""
+    
+    def test_formatted_email_addresses(self, api_client, formatted_email, valid_jwt_token):
+        """Test that emails with formatted addresses (Name <email>) are parsed correctly."""
+        # Create the maildomain
+        models.MailDomain.objects.create(
+            name="example.com",
+        )
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=formatted_email,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {
+                valid_jwt_token(
+                    formatted_email, {'original_recipients': ['recipient@example.com']}
+                )
+            }",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"status": "ok"}
+
+        # Check that contacts were created with correct names and emails
+        sender = models.Contact.objects.get(email="sender@example.com")
+        assert sender.name == "John Doe"
+        
+        recipient = models.Contact.objects.get(email="recipient@example.com")
+        assert recipient.name == "Jane Smith"
+        
+        # Check for the second recipient
+        user2 = models.Contact.objects.get(email="user2@example.com")
+        assert user2.name == "Another User"
+        
+        # Verify message recipients
+        message = models.Message.objects.first()
+        recipients = models.MessageRecipient.objects.filter(message=message)
+        assert recipients.count() == 2  # Both recipients should be added

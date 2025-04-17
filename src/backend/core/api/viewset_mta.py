@@ -3,6 +3,7 @@
 import email
 import hashlib
 import logging
+import re
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -17,6 +18,31 @@ from core import models
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
+
+
+def parse_email_address(address):
+    """Parse an email address that might include a display name
+    Returns a tuple of (name, email_address)
+    """
+    if not address:
+        return None, None
+        
+    # Try to extract email using regex pattern for <email> format
+    email_pattern = r'<([^<>]+)>'
+    email_match = re.search(email_pattern, address)
+    
+    if email_match:
+        # If we have a match with angle brackets, extract the email
+        email_addr = email_match.group(1).strip()
+        # Extract name by removing the angle bracket part
+        name = address.replace(email_match.group(0), '').strip()
+        # Remove quotes if present
+        if name.startswith('"') and name.endswith('"'):
+            name = name[1:-1]
+        return name or email_addr, email_addr
+    else:
+        # If no angle brackets, assume the whole string is an email
+        return address, address
 
 
 class MTAJWTAuthentication(authentication.BaseAuthentication):
@@ -213,10 +239,13 @@ class MTAViewSet(viewsets.GenericViewSet):
         logger.info("Creating FROM contact %s", email_message["From"])
 
         try:
+            # Parse the sender address to extract name and email properly
+            sender_name, sender_email = parse_email_address(email_message["From"])
+            
             # Get or create the sender contact
             sender_contact, _ = models.Contact.objects.get_or_create(
-                email=email_message["From"],
-                defaults={"name": email_message["From"]},
+                email=sender_email,
+                defaults={"name": sender_name or sender_email},
             )
         except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
             logger.error("Error creating sender contact: %s", e)
@@ -243,9 +272,11 @@ class MTAViewSet(viewsets.GenericViewSet):
         recipients = []
         for rcpnt in email_message["To"].split(","):
             try:
+                recipient_name, recipient_email = parse_email_address(rcpnt.strip())
+                
                 recipient_contact, _ = models.Contact.objects.get_or_create(
-                    email=rcpnt.strip(),
-                    defaults={"name": rcpnt.strip()},
+                    email=recipient_email,
+                    defaults={"name": recipient_name or recipient_email},
                 )
             except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
                 logger.error("Error creating recipient contact: %s", e)
