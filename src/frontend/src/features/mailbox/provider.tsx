@@ -8,7 +8,7 @@ type MailboxContextType = {
     selectedMailbox: Mailbox | null;
     selectMailbox: (mailbox: Mailbox) => void;
     selectedThread: Thread | null;
-    selectThread: (thread: Thread) => void;
+    selectThread: (thread: Thread | null) => void;
     isPending: boolean;
     status: {
         mailboxes: 'pending' | 'error' | 'success' | null,
@@ -55,7 +55,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const threadsQuery = useThreadsList(undefined, {
         query: {
             enabled: !!selectedMailbox,
-            refetchInterval: 5000,
+            refetchInterval: 30 * 1000, // 30 seconds
         },
         request: {
             params: {

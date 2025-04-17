@@ -1,3 +1,4 @@
+import { useMailboxContext } from "@/features/mailbox/provider";
 import { DropdownMenu } from "@gouvfr-lasuite/ui-kit"
 import { Button, Tooltip } from "@openfun/cunningham-react"
 import { useParams, useRouter } from "next/navigation";
@@ -6,16 +7,22 @@ import { useTranslation } from "react-i18next";
 
 export const ActionBar = () => {
     const { t } = useTranslation();
+    const { selectThread } = useMailboxContext();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const { mailboxId } = useParams<{ mailboxId: string }>();
     const router = useRouter();
+
+    const handleCloseThread = () => {
+        selectThread(null);
+        router.push(`/mailbox/${mailboxId}`);
+    }
 
     return (
         <div className="thread-action-bar">
             <div className="thread-action-bar__left">
             <Tooltip content={t('tooltips.close_thread')} placement="right">
                     <Button
-                        onClick={() => router.push(`/mailbox/${mailboxId}`)}
+                        onClick={handleCloseThread}
                         color="tertiary-text"
                         aria-label={t('tooltips.close_thread')}
                         size="small"
