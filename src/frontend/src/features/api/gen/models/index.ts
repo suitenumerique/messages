@@ -6,6 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
+export * from "./contact";
 export * from "./mailbox";
 export * from "./message";
 export * from "./messages_list_params";
@@ -14,4 +15,5 @@ export * from "./paginated_thread_list";
 export * from "./thread";
 export * from "./threads_list_params";
 export * from "./user";
-export * from "./contact";
+export * from "./message_recipient";
+export * from "./type_enum";

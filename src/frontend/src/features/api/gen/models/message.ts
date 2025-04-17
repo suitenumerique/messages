@@ -5,6 +5,8 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { Contact } from "./contact";
+import type { MessageRecipient } from "./message_recipient";
 
 /**
  * Serialize messages.
@@ -20,7 +22,8 @@ export interface Message {
   readonly updated_at: string;
   readonly raw_html_body: string;
   readonly raw_text_body: string;
-  readonly sender: string;
-  readonly recipients: string;
-  readonly is_read: string;
+  readonly sender: Contact;
+  readonly recipients: readonly MessageRecipient[];
+  /** Return the read status of the message. */
+  readonly is_read: boolean;
 }
