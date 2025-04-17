@@ -5,6 +5,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	ca-certificates \
   postfix \
+  postfix-pcre \
   python3-pip \
   python3-venv \
   curl \

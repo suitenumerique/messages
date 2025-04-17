@@ -143,6 +143,9 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
     def setup_testdomain(self, user):
         """Setup test domain for user."""
 
+        if not settings.MESSAGES_TESTDOMAIN:
+            return
+
         maildomain, _ = MailDomain.objects.get_or_create(
             name=settings.MESSAGES_TESTDOMAIN
         )

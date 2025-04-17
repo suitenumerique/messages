@@ -7,8 +7,8 @@ myorigin = localhost
 inet_interfaces = all
 inet_protocols = ipv4
 
-# Accept mail for any recipient
-mydestination = example.com
+# Accept mail for any recipient. We'll filter later
+mydestination = pcre:/etc/postfix/localmap
 local_recipient_maps =
 local_transport = local_cmd
 virtual_alias_maps =
