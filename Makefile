@@ -336,6 +336,10 @@ frontend-lint: ## run the frontend linter
 	@$(COMPOSE) run --rm frontend-tools npm run lint
 .PHONY: frontend-lint
 
+frontend-test: ## run the frontend tests
+	@$(COMPOSE) run --rm frontend-tools npm run test
+.PHONY: frontend-test
+
 frontend-i18n-extract: ## Extract the frontend translation inside a json to be used for crowdin
 	@$(COMPOSE) run --rm frontend-tools npm run i18n:extract
 .PHONY: frontend-i18n-extract
