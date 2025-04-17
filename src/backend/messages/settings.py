@@ -125,6 +125,16 @@ class Base(Configuration):
         "default-mda-api-secret", environ_name="MDA_API_SECRET", environ_prefix=None
     )
 
+    # Test domain settings
+    MESSAGES_TESTDOMAIN = values.Value(
+        "localhost", environ_name="MESSAGES_TESTDOMAIN", environ_prefix=None
+    )
+    MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN = values.Value(
+        "gouv.fr",
+        environ_name="MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN",
+        environ_prefix=None,
+    )
+
     # Media
     AWS_S3_ENDPOINT_URL = values.Value(
         environ_name="AWS_S3_ENDPOINT_URL", environ_prefix=None

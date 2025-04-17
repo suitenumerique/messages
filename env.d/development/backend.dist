@@ -56,6 +56,5 @@ COLLABORATION_WS_URL=ws://localhost:8083/collaboration/ws/
 FRONTEND_THEME=dsfr
 
 # Messages
-MTA_API_URL=http://localhost:8071/api/v1.0/mta/
-MDA_API_SECRET=my-shared-secret-mda
-MTA_API_SECRET=my-shared-secret-mta
+MESSAGES_TESTDOMAIN=localhost
+MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN=example.com

@@ -46,7 +46,7 @@
   "users": [
     {
       "username": "user1",
-      "email": "user1@sardine.local",
+      "email": "user1@example.com",
       "firstName": "User",
       "lastName": "Un",
       "enabled": true,
@@ -60,7 +60,7 @@
     },
     {
       "username": "user2",
-      "email": "user2@sardine.local",
+      "email": "user2@example.com",
       "firstName": "User",
       "lastName": "Deux",
       "enabled": true,
@@ -74,7 +74,7 @@
     },
     {
       "username": "user3",
-      "email": "user3@sardine.local",
+      "email": "user3@example.com",
       "firstName": "User",
       "lastName": "Trois",
       "enabled": true,

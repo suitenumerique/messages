@@ -17,6 +17,8 @@ from core.factories import UserFactory
 
 pytestmark = pytest.mark.django_db
 
+QUERIES_FOR_TESTDOMAIN_SETUP = 5
+
 
 def test_authentication_getter_existing_user_no_email(
     django_assert_num_queries, monkeypatch
@@ -33,7 +35,7 @@ def test_authentication_getter_existing_user_no_email(
 
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
-    with django_assert_num_queries(1):
+    with django_assert_num_queries(1 + QUERIES_FOR_TESTDOMAIN_SETUP):
         user = klass.get_or_create_user(
             access_token="test-token", id_token=None, payload=None
         )
@@ -57,7 +59,7 @@ def test_authentication_getter_existing_user_via_email(
 
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
-    with django_assert_num_queries(2):
+    with django_assert_num_queries(2 + QUERIES_FOR_TESTDOMAIN_SETUP):
         user = klass.get_or_create_user(
             access_token="test-token", id_token=None, payload=None
         )
@@ -174,7 +176,7 @@ def test_authentication_getter_existing_user_with_email(
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
     # Only 1 query because email and names have not changed
-    with django_assert_num_queries(1):
+    with django_assert_num_queries(1 + QUERIES_FOR_TESTDOMAIN_SETUP):
         authenticated_user = klass.get_or_create_user(
             access_token="test-token", id_token=None, payload=None
         )
@@ -214,7 +216,7 @@ def test_authentication_getter_existing_user_change_fields_sub(
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
     # One and only one additional update query when a field has changed
-    with django_assert_num_queries(2):
+    with django_assert_num_queries(2 + QUERIES_FOR_TESTDOMAIN_SETUP):
         authenticated_user = klass.get_or_create_user(
             access_token="test-token", id_token=None, payload=None
         )
@@ -256,7 +258,7 @@ def test_authentication_getter_existing_user_change_fields_email(
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
     # One and only one additional update query when a field has changed
-    with django_assert_num_queries(3):
+    with django_assert_num_queries(3 + QUERIES_FOR_TESTDOMAIN_SETUP):
         authenticated_user = klass.get_or_create_user(
             access_token="test-token", id_token=None, payload=None
         )
@@ -546,3 +548,50 @@ def test_authentication_verify_claims_success(monkeypatch):
     assert user.full_name == "Doe"
     assert user.short_name is None
     assert user.email == "john.doe@example.com"
+
+
+@override_settings(
+    OIDC_OP_USER_ENDPOINT="http://oidc.endpoint.test/userinfo",
+    USER_OIDC_ESSENTIAL_CLAIMS=["email", "last_name"],
+    MESSAGES_TESTDOMAIN="testdomain.bzh",
+    MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN="gouv.fr",
+)
+def test_authentication_getter_new_user_with_testdomain(monkeypatch):
+    """
+    Check the TESTDOMAIN creation process
+    """
+
+    klass = OIDCAuthenticationBackend()
+
+    def get_userinfo_mocked(*args):
+        return {
+            "email": "john.doe@sub.gouv.fr",
+            "last_name": "Doe",
+            "sub": "123",
+        }
+
+    monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
+
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
+
+    assert models.User.objects.filter(id=user.id).exists()
+
+    assert user.sub == "123"
+    assert user.full_name == "Doe"
+    assert user.short_name is None
+    assert user.email == "john.doe@sub.gouv.fr"
+
+    maildomain = models.MailDomain.objects.get(name="testdomain.bzh")
+    mailbox = models.Mailbox.objects.get(local_part="john.doe-sub", domain=maildomain)
+
+    assert models.Contact.objects.filter(email="john.doe-sub@testdomain.bzh").exists()
+    assert models.Mailbox.objects.filter(
+        local_part="john.doe-sub", domain=maildomain
+    ).exists()
+    assert models.MailboxAccess.objects.filter(
+        mailbox=mailbox,
+        user=user,
+        permission=models.MailboxPermissionChoices.ADMIN,
+    ).exists()

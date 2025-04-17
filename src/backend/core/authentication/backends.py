@@ -11,7 +11,15 @@ from mozilla_django_oidc.auth import (
     OIDCAuthenticationBackend as MozillaOIDCAuthenticationBackend,
 )
 
-from core.models import DuplicateEmailError, User
+from core.enums import MailboxPermissionChoices
+from core.models import (
+    Contact,
+    DuplicateEmailError,
+    Mailbox,
+    MailboxAccess,
+    MailDomain,
+    User,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +115,11 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
             if not user.is_active:
                 raise SuspiciousOperation(_("User account is disabled"))
             self.update_user_if_needed(user, claims)
+
         elif self.get_settings("OIDC_CREATE_USER", True):
             user = User.objects.create(sub=sub, password="!", **claims)  # noqa: S106
+
+        self.setup_testdomain(user)
 
         return user
 
@@ -128,3 +139,45 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
         if has_changed:
             updated_claims = {key: value for key, value in claims.items() if value}
             self.UserModel.objects.filter(id=user.id).update(**updated_claims)
+
+    def setup_testdomain(self, user):
+        """Setup test domain for user."""
+
+        maildomain, _ = MailDomain.objects.get_or_create(
+            name=settings.MESSAGES_TESTDOMAIN
+        )
+
+        if not user.email.endswith(settings.MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN):
+            return
+
+        # <x.y@z.gouv.fr> => <x.y-z@sardinepq.fr>
+        prefix = user.email.split("@")[1][
+            : -len(settings.MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN) - 1
+        ]
+        mapped_email = (
+            user.email.split("@")[0]
+            + ("-" + prefix if prefix else "")
+            + "@"
+            + settings.MESSAGES_TESTDOMAIN
+        )
+
+        contact, created = Contact.objects.get_or_create(
+            email=mapped_email,
+            defaults={"name": user.full_name, "user": user},
+        )
+        if not created and contact.user != user:
+            contact.user = user
+            contact.save()
+
+        # Create a mailbox for the user if missing
+        mailbox, _ = Mailbox.objects.get_or_create(
+            local_part=mapped_email.split("@")[0],
+            domain=maildomain,
+        )
+
+        # Create an admin mailbox access for the user if neede
+        MailboxAccess.objects.get_or_create(
+            mailbox=mailbox,
+            user=user,
+            permission=MailboxPermissionChoices.ADMIN,
+        )
