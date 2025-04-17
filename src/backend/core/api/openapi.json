@@ -186,6 +186,32 @@
     },
     "components": {
         "schemas": {
+            "Contact": {
+                "type": "object",
+                "description": "Serialize contacts.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 254
+                    }
+                },
+                "required": [
+                    "email",
+                    "id",
+                    "name"
+                ]
+            },
             "Mailbox": {
                 "type": "object",
                 "description": "Serialize mailboxes.",
@@ -356,7 +382,10 @@
                         "type": "string"
                     },
                     "recipients": {
-                        "type": "string",
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Contact"
+                        },
                         "readOnly": true
                     },
                     "messages": {
@@ -364,7 +393,8 @@
                         "readOnly": true
                     },
                     "is_read": {
-                        "type": "string",
+                        "type": "boolean",
+                        "description": "Return the read status of the thread.",
                         "readOnly": true
                     },
                     "updated_at": {
