@@ -4,6 +4,10 @@
     padding: var(--c--theme--spacings--base);
 }
 
+.thread-message[data-read="false"] {
+    border: 3px solid var(--c--theme--colors--primary-300);
+}
+
 .thread-message__header {
     border-bottom: 1px solid var(--c--theme--colors--greyscale-200);
     padding-bottom: var(--c--theme--spacings--base);
