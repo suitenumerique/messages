@@ -277,15 +277,23 @@
                         "readOnly": true
                     },
                     "sender": {
-                        "type": "string",
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/Contact"
+                            }
+                        ],
                         "readOnly": true
                     },
                     "recipients": {
-                        "type": "string",
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MessageRecipient"
+                        },
                         "readOnly": true
                     },
                     "is_read": {
-                        "type": "string",
+                        "type": "boolean",
+                        "description": "Return the read status of the message.",
                         "readOnly": true
                     }
                 },
@@ -300,6 +308,33 @@
                     "sender",
                     "subject",
                     "updated_at"
+                ]
+            },
+            "MessageRecipient": {
+                "type": "object",
+                "description": "Serialize message recipients.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "contact": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/Contact"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "type": {
+                        "$ref": "#/components/schemas/TypeEnum"
+                    }
+                },
+                "required": [
+                    "contact",
+                    "id"
                 ]
             },
             "PaginatedMessageList": {
@@ -413,6 +448,15 @@
                     "subject",
                     "updated_at"
                 ]
+            },
+            "TypeEnum": {
+                "enum": [
+                    "to",
+                    "cc",
+                    "bcc"
+                ],
+                "type": "string",
+                "description": "* `to` - To\n* `cc` - Cc\n* `bcc` - Bcc"
             },
             "User": {
                 "type": "object",
