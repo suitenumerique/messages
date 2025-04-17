@@ -31,6 +31,41 @@ This is a test email body.
 """
 
 
+@pytest.fixture(name="html_email")
+def fixture_html_email():
+    """Return a sample email with HTML content."""
+    return b"""From: sender@example.com
+To: recipient@example.com
+Subject: HTML Test Email
+Content-Type: text/html; charset="UTF-8"
+
+<html><body><h1>Test HTML Email</h1><p>This is a <b>formatted</b> email.</p></body></html>
+"""
+
+
+@pytest.fixture(name="multipart_email")
+def fixture_multipart_email():
+    """Return a multipart email with both text and HTML parts."""
+    return b"""From: sender@example.com
+To: recipient@example.com
+Subject: Multipart Test Email
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="boundary-string"
+
+--boundary-string
+Content-Type: text/plain; charset="UTF-8"
+
+This is the plain text version.
+
+--boundary-string
+Content-Type: text/html; charset="UTF-8"
+
+<html><body><h1>Multipart Email</h1><p>This is the <b>HTML version</b>.</p></body></html>
+
+--boundary-string--
+"""
+
+
 @pytest.fixture(name="valid_jwt_token")
 def fixture_valid_jwt_token():
     """Return a valid JWT token for the sample email."""
@@ -134,6 +169,57 @@ class TestMTAInboundEmail:
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_html_email_submission(self, api_client, html_email, valid_jwt_token):
+        """Test submitting an email with HTML content."""
+        # Create the maildomain
+        models.MailDomain.objects.create(
+            name="example.com",
+        )
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=html_email,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {
+                valid_jwt_token(
+                    html_email, {'original_recipients': ['recipient@example.com']}
+                )
+            }",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        message = models.Message.objects.first()
+        assert message.subject == "HTML Test Email"
+        assert "<h1>Test HTML Email</h1>" in message.body_html
+        # HTML should be used for text when no text part exists
+        assert "<h1>Test HTML Email</h1>" in message.body_text
+
+    def test_multipart_email_submission(
+        self, api_client, multipart_email, valid_jwt_token
+    ):
+        """Test submitting a multipart email with both text and HTML parts."""
+        # Create the maildomain
+        models.MailDomain.objects.create(
+            name="example.com",
+        )
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=multipart_email,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {
+                valid_jwt_token(
+                    multipart_email, {'original_recipients': ['recipient@example.com']}
+                )
+            }",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        message = models.Message.objects.first()
+        assert message.subject == "Multipart Test Email"
+        assert "<h1>Multipart Email</h1>" in message.body_html
+        assert "This is the plain text version." in message.body_text
 
 
 @pytest.mark.django_db
