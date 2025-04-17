@@ -34,10 +34,18 @@
 
 .thread-item__left {
     gap: var(--c--theme--spacings--base);
+    min-width: 0;
+    flex: 1;
 }
 
 .thread-item__right {
     gap: var(--c--theme--spacings--2xs);
+    flex-shrink: 0;
+}
+
+.thread-item__thread-details {
+    min-width: 0;
+    flex: 1;
 }
 
 .thread-item__read-indicator {
@@ -50,7 +58,7 @@
     background-color: transparent;
     border: 2px solid var(--c--theme--colors--greyscale-300);
 
-    &[data-unread="true"] {
+    &[data-read="false"] {
         background-color: var(--c--theme--colors--primary-400);
         border-color: var(--c--theme--colors--primary-400);
     }
@@ -62,14 +70,47 @@
     align-items: center;
     gap: var(--c--theme--spacings--2xs);
     line-height: 1;
+    min-width: 0;
 }
 
-.thread-item__sender,
+.thread-item__recipients,
 .thread-item__subject {
     margin: 0;
     text-wrap: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.thread-item__recipients-container {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--c--theme--spacings--2xs);
+    max-width: 100%;
+    min-width: 0;
+}
+
+.thread-item__recipients {
+    list-style: none;
+    padding: 0;
+    font-weight: 600;
+    max-width: 100%;
+}
+
+.thread-item__recipient {
+    display: inline;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.thread-item__recipient:not(:last-child):after {
+    content: ", ";
+}
+
+.thread-item__recipients-count {
+    font-weight: 300;
+    font-size: var(--c--theme--font--sizes--xs);
 }
 
 .thread-item__subject {
