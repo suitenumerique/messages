@@ -6,7 +6,8 @@
       "welcome": "Welcome",
       "logout": "Logout",
       "my_account": "My Account",
-      "no_mailbox": "No mailbox found",
+      "no_mailbox": "No mailbox.",
+      "no_threads": "No threads.",
       "api": {
         "error": {
           "unexpected": "An unexpected error occurred."
@@ -43,7 +44,8 @@
       "welcome": "Bienvenue",
       "logout": "Déconnexion",
       "my_account": "Mon Compte",
-      "no_mailbox": "Aucune boîte aux lettres trouvée",
+      "no_mailbox": "Aucune boîte aux lettres.",
+      "no_threads": "Aucune conversation.",
       "api": {
         "error": {
           "unexpected": "Une erreur inattendue est survenue."
