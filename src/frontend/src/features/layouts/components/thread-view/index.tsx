@@ -10,8 +10,8 @@ export const ThreadView = () => {
     const { threads, selectedThread, selectThread, messages } = useMailboxContext();
 
     useEffect(() => {
-        if (selectedThread?.id !== params.threadId) {
-            const thread = threads?.results.find(({id}) => id === params.threadId);
+        if (selectedThread?.id !== params?.threadId) {
+            const thread = threads?.results.find(({ id }) => id === params.threadId);
             if (thread) {
                 selectThread(thread);
             }
