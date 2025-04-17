@@ -6,46 +6,43 @@ import { useEffect } from "react"
 
 const TMP_MAILBOXES = [
     {
+        id: "0",
+        name: "Tous les messages",
+        icon: "folder",
+        unread: 10,
+        total: 2000,
+    },
+    {
         id: "1",
         name: "Boîte de réception",
         icon: "inbox",
-        unread: 10,
-        total: 2000,
+        unread: 0,
     },
     {
         id: "2",
         name: "Brouillons",
         icon: "drafts",
-        unread: 2000,
-        total: 2000,
+        unread: 2,
     },
     {
         id: "3",
         name: "Envoyés",
         icon: "outbox",
-        unread: 10,
-        total: 2000,
     },
     {
         id: "4",
         name: "Pourriels",
         icon: "report",
-        unread: 10,
-        total: 2000,
     },
     {
         id: "5",
         name: "Archives",
         icon: "inventory_2",
-        unread: 10,
-        total: 2000,
     },
     {
         id: "6",
         name: "Corbeille",
         icon: "delete",
-        unread: 10,
-        total: 2000,
     }
 ]
 
@@ -59,6 +56,7 @@ export const MailboxList = () => {
             router.push(`/mailbox/${defaultMailboxId}`)
         }
     }, [])
+
     return (
         <div className="mailbox-list">
             {/* TODO: replace with real data */}
@@ -83,7 +81,7 @@ const MailboxListItem = ({ mailbox }) => {
                 <span className="material-icons" aria-hidden="true">{mailbox.icon}</span>
                 {mailbox.name}
             </p>
-            <Badge>{mailbox.unread}</Badge>
+            {mailbox.unread > 0 && <Badge>{mailbox.unread}</Badge>}
         </Link>
     )
 }
