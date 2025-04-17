@@ -8,3 +8,9 @@
 
 export * from "./mailbox";
 export * from "./user";
+export * from "./message";
+export * from "./messages_list_params";
+export * from "./paginated_message_list";
+export * from "./paginated_thread_list";
+export * from "./thread";
+export * from "./threads_list_params";
