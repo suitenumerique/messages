@@ -262,7 +262,7 @@ class MTAViewSet(viewsets.GenericViewSet):
             raw_mime=raw_data,
             body_html=body_html,
             body_text=body_text,
-            sent_at=email_message.get("Date"),
+            # sent_at=email_message.get("Date"),
             is_read=False,
             mta_sent=False,
         )
