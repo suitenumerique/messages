@@ -55,6 +55,43 @@
                 }
             }
         },
+        "/api/v1.0/messages/": {
+            "get": {
+                "operationId": "messages_list",
+                "description": "ViewSet for Message model.",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedMessageList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/mta/check-recipients/": {
             "post": {
                 "operationId": "mta_check_recipients_create",
@@ -79,6 +116,43 @@
                 "responses": {
                     "200": {
                         "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/threads/": {
+            "get": {
+                "operationId": "threads_list",
+                "description": "ViewSet for Thread model.",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "threads"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedThreadList"
+                                }
+                            }
+                        },
+                        "description": ""
                     }
                 }
             }
@@ -135,6 +209,179 @@
                     "email",
                     "id",
                     "perms"
+                ]
+            },
+            "Message": {
+                "type": "object",
+                "description": "Serialize messages.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "subject": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "received_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    },
+                    "raw_html_body": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "raw_text_body": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "sender": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "recipients": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "is_read": {
+                        "type": "string",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "is_read",
+                    "raw_html_body",
+                    "raw_text_body",
+                    "received_at",
+                    "recipients",
+                    "sender",
+                    "subject",
+                    "updated_at"
+                ]
+            },
+            "PaginatedMessageList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Message"
+                        }
+                    }
+                }
+            },
+            "PaginatedThreadList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Thread"
+                        }
+                    }
+                }
+            },
+            "Thread": {
+                "type": "object",
+                "description": "Serialize threads.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "subject": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "snippet": {
+                        "type": "string"
+                    },
+                    "recipients": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "messages": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "is_read": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "id",
+                    "is_read",
+                    "messages",
+                    "recipients",
+                    "subject",
+                    "updated_at"
                 ]
             },
             "User": {
