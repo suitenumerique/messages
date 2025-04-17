@@ -104,3 +104,60 @@ jobs:
         run: python manage.py compilemessages
       - name: Run tests
         run: ~/.local/bin/pytest -n 2
+
+  test-front:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          cache: 'npm'
+          node-version-file: src/frontend/package.json
+          cache-dependency-path: src/frontend/package-lock.json
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Run tests
+        run: npm run test
+
+  lint-front:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          cache: 'npm'
+          node-version-file: src/frontend/package.json
+          cache-dependency-path: src/frontend/package-lock.json
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Run lint
+        run: npm run lint
+
+  build-front:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          cache: 'npm'
+          node-version-file: src/frontend/package.json
+          cache-dependency-path: src/frontend/package-lock.json
+      - name: Install dependencies
+        run: npm clean-install
+      - name: Build
+        run: npm run build
