@@ -143,7 +143,7 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
     def setup_testdomain(self, user):
         """Setup test domain for user."""
 
-        if not settings.MESSAGES_TESTDOMAIN:
+        if not settings.MESSAGES_TESTDOMAIN or not user.email:
             return
 
         maildomain, _ = MailDomain.objects.get_or_create(
@@ -166,7 +166,7 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
 
         contact, created = Contact.objects.get_or_create(
             email=mapped_email,
-            defaults={"name": user.full_name, "user": user},
+            defaults={"name": user.full_name or user.email, "user": user},
         )
         if not created and contact.user != user:
             contact.user = user
