@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next"
 import { DateHelper } from "@/features/utils/date-helper"
-import { Button, Tooltip } from "@openfun/cunningham-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { Thread } from "@/features/api/gen/models"
@@ -11,7 +10,7 @@ type ThreadItemProps = {
 }
 
 export const ThreadItem = ({ thread }: ThreadItemProps) => {
-    const { t, i18n } = useTranslation();
+    const { i18n } = useTranslation();
     const params = useParams<{mailboxId: string, threadId: string}>()
     
     return (

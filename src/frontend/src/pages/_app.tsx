@@ -20,7 +20,7 @@ import { errorToString } from "@/features/api/APIError";
 import Head from "next/head";
 import { useTranslation } from "react-i18next";
 
-export type NextPageWithLayout<P = {}, IP = P> = NextPage<P, IP> & {
+export type NextPageWithLayout<P = object, IP = P> = NextPage<P, IP> & {
   getLayout?: (page: ReactElement) => ReactNode;
 };
 
