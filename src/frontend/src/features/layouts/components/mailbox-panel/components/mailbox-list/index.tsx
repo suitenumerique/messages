@@ -4,13 +4,20 @@ import { useParams } from "next/navigation"
 import { useRouter } from "next/router"
 import { useEffect } from "react"
 
-const TMP_MAILBOXES = [
+// @TODO: replace with real data when folder will be ready
+type HardcodedMailbox = {
+    id: string;
+    name: string;
+    icon: string;
+    unread: number;
+}
+
+const TMP_MAILBOXES: HardcodedMailbox[] = [
     {
         id: "0",
         name: "Tous les messages",
         icon: "folder",
         unread: 10,
-        total: 2000,
     },
     {
         id: "1",
@@ -28,21 +35,25 @@ const TMP_MAILBOXES = [
         id: "3",
         name: "Envoyés",
         icon: "outbox",
+        unread: 0,
     },
     {
         id: "4",
         name: "Pourriels",
         icon: "report",
+        unread: 0,
     },
     {
         id: "5",
         name: "Archives",
         icon: "inventory_2",
+        unread: 0,
     },
     {
         id: "6",
         name: "Corbeille",
         icon: "delete",
+        unread: 0,
     }
 ]
 
@@ -70,7 +81,11 @@ export const MailboxList = () => {
     )
 }
 
-const MailboxListItem = ({ mailbox }) => {
+type MailboxListItemProps = {
+    mailbox: HardcodedMailbox
+}
+
+const MailboxListItem = ({ mailbox }: MailboxListItemProps) => {
     const params = useParams<{ mailboxId?: string }>()
     return (
         <Link

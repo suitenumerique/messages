@@ -1,8 +1,7 @@
-type BadgeProps = {
-    children: string;
-}
+import { PropsWithChildren } from "react"
 
-export const Badge = ({ children }: BadgeProps) => {
+
+export const Badge = ({ children }: PropsWithChildren) => {
     return (
         <div className="badge">
             {children}
