@@ -281,50 +281,40 @@ class UserViewSet(viewsets.ViewSet):
 class MailboxViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
     """ViewSet for Mailbox model."""
 
-    queryset = models.Mailbox.objects.all()
     serializer_class = serializers.MailboxSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = None
 
     def get_queryset(self):
-        """Return the queryset according to the action."""
-        queryset = super().get_queryset()
-        if self.action == "list":
-            user = self.request.user
-            accesses = user.mailbox_accesses.all()
-            return queryset.filter(id__in=accesses.values_list("mailbox_id", flat=True))
-        return queryset
+        """Restrict results to the current user's mailboxes."""
+        accesses = self.request.user.mailbox_accesses.all()
+        return models.Mailbox.objects.filter(
+            id__in=accesses.values_list("mailbox_id", flat=True)
+        )
 
 
 class ThreadViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
     """ViewSet for Thread model."""
 
-    queryset = models.Thread.objects.all().order_by("-updated_at")
     serializer_class = serializers.ThreadSerializer
     permission_classes = [permissions.IsAllowedToAccessMailbox]
 
     def get_queryset(self):
-        """Return the queryset according to the action."""
-        queryset = super().get_queryset()
-        if self.action == "list":
-            mailbox_id = self.request.GET.get("mailbox_id")
-            if mailbox_id:
-                return queryset.filter(mailbox__id=mailbox_id)
-        return queryset
+        """Restrict results to threads of the current user's mailboxes."""
+        accesses = self.request.user.mailbox_accesses.all()
+        return models.Thread.objects.filter(
+            mailbox__id__in=accesses.values_list("mailbox_id", flat=True)
+        ).order_by("-updated_at")
 
 
 class MessageViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
     """ViewSet for Message model."""
 
-    queryset = models.Message.objects.all().order_by("-received_at")
     serializer_class = serializers.MessageSerializer
     permission_classes = [permissions.IsAllowedToAccessMailbox]
 
     def get_queryset(self):
-        """Return the queryset according to the action."""
-        queryset = super().get_queryset()
-        if self.action == "list":
-            thread_id = self.request.GET.get("thread_id")
-            if thread_id:
-                return queryset.filter(thread__id=thread_id)
-        return queryset
+        """Restrict results to messages of the current user's mailbox."""
+        return models.Message.objects.filter(
+            thread__id=self.request.GET.get("thread_id")
+        ).order_by("-received_at")

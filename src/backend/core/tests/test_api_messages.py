@@ -1,5 +1,7 @@
 """Test API threads."""
 
+import uuid
+
 import pytest
 from rest_framework import status
 from rest_framework.reverse import reverse
@@ -244,5 +246,43 @@ class TestApiMessages:
         client.force_authenticate(user=authenticated_user)
         response = client.get(
             reverse("messages-list"), query_params={"thread_id": jean_thread.id}
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_thread_not_existing(self):
+        """Test thread not existing."""
+        authenticated_user = factories.UserFactory()
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        # Test with a non existing thread id
+        response = client.get(
+            reverse("messages-list"), query_params={"thread_id": uuid.uuid4()}
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        # Test with a thread that is not in the user's mailbox accesses
+        thread = factories.ThreadFactory()
+        response = client.get(
+            reverse("messages-list"), query_params={"thread_id": thread.id}
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_mailbox_not_existing(self):
+        """Test mailbox not existing."""
+        authenticated_user = factories.UserFactory()
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        # Test with a non existing mailbox id
+        response = client.get(
+            reverse("threads-list"), query_params={"mailbox_id": uuid.uuid4()}
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        # Test with a mailbox that is not in the user's mailbox accesses
+        mailbox = factories.MailboxFactory()
+        response = client.get(
+            reverse("threads-list"), query_params={"mailbox_id": mailbox.id}
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN

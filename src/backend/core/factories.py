@@ -87,6 +87,7 @@ class ThreadFactory(factory.django.DjangoModelFactory):
 
     subject = factory.Faker("sentence")
     snippet = factory.Faker("text")
+    mailbox = factory.SubFactory(MailboxFactory)
 
 
 class ContactFactory(factory.django.DjangoModelFactory):
