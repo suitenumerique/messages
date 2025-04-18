@@ -109,11 +109,11 @@ class TestMTAInboundEmail:
             "/api/v1.0/mta/inbound-email/",
             data=sample_email,
             content_type="message/rfc822",
-            HTTP_AUTHORIZATION=f"Bearer {
+            HTTP_AUTHORIZATION=f"""Bearer {
                 valid_jwt_token(
                     sample_email, {'original_recipients': ['recipient@example.com']}
                 )
-            }",
+            }""",
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -135,11 +135,11 @@ class TestMTAInboundEmail:
             "/api/v1.0/mta/inbound-email/",
             data=sample_email,
             content_type="application/json",
-            HTTP_AUTHORIZATION=f"Bearer {
+            HTTP_AUTHORIZATION=f"""Bearer {
                 valid_jwt_token(
                     sample_email, {'original_recipients': ['recipient@example.com']}
                 )
-            }",
+            }""",
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
