@@ -111,7 +111,7 @@ class TestMTAInboundEmail:
             content_type="message/rfc822",
             HTTP_AUTHORIZATION=f"""Bearer {
                 valid_jwt_token(
-                    sample_email, {'original_recipients': ['recipient@example.com']}
+                    sample_email, {"original_recipients": ["recipient@example.com"]}
                 )
             }""",
         )
@@ -137,7 +137,7 @@ class TestMTAInboundEmail:
             content_type="application/json",
             HTTP_AUTHORIZATION=f"""Bearer {
                 valid_jwt_token(
-                    sample_email, {'original_recipients': ['recipient@example.com']}
+                    sample_email, {"original_recipients": ["recipient@example.com"]}
                 )
             }""",
         )
@@ -272,8 +272,10 @@ class TestMTACheckRecipients:
 @pytest.mark.django_db
 class TestEmailAddressParsing:
     """Test email address parsing functionality"""
-    
-    def test_formatted_email_addresses(self, api_client, formatted_email, valid_jwt_token):
+
+    def test_formatted_email_addresses(
+        self, api_client, formatted_email, valid_jwt_token
+    ):
         """Test that emails with formatted addresses (Name <email>) are parsed correctly."""
         # Create the maildomain
         models.MailDomain.objects.create(
@@ -297,14 +299,14 @@ class TestEmailAddressParsing:
         # Check that contacts were created with correct names and emails
         sender = models.Contact.objects.get(email="sender@example.com")
         assert sender.name == "John Doe"
-        
+
         recipient = models.Contact.objects.get(email="recipient@example.com")
         assert recipient.name == "Jane Smith"
-        
+
         # Check for the second recipient
         user2 = models.Contact.objects.get(email="user2@example.com")
         assert user2.name == "Another User"
-        
+
         # Verify message recipients
         message = models.Message.objects.first()
         recipients = models.MessageRecipient.objects.filter(message=message)

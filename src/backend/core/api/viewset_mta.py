@@ -26,23 +26,22 @@ def parse_email_address(address):
     """
     if not address:
         return None, None
-        
+
     # Try to extract email using regex pattern for <email> format
-    email_pattern = r'<([^<>]+)>'
+    email_pattern = r"<([^<>]+)>"
     email_match = re.search(email_pattern, address)
-    
+
     if email_match:
         # If we have a match with angle brackets, extract the email
         email_addr = email_match.group(1).strip()
         # Extract name by removing the angle bracket part
-        name = address.replace(email_match.group(0), '').strip()
+        name = address.replace(email_match.group(0), "").strip()
         # Remove quotes if present
         if name.startswith('"') and name.endswith('"'):
             name = name[1:-1]
         return name or email_addr, email_addr
-    else:
-        # If no angle brackets, assume the whole string is an email
-        return address, address
+    # If no angle brackets, assume the whole string is an email
+    return address, address
 
 
 class MTAJWTAuthentication(authentication.BaseAuthentication):
@@ -196,6 +195,7 @@ class MTAViewSet(viewsets.GenericViewSet):
 
         return drf.response.Response({"status": "ok"})
 
+    # pylint: disable=too-many-locals
     def _deliver_message(self, recipient, email_message, parsed):
         """Deliver a message to the recipients"""
 
@@ -241,7 +241,7 @@ class MTAViewSet(viewsets.GenericViewSet):
         try:
             # Parse the sender address to extract name and email properly
             sender_name, sender_email = parse_email_address(email_message["From"])
-            
+
             # Get or create the sender contact
             sender_contact, _ = models.Contact.objects.get_or_create(
                 email=sender_email,
@@ -273,7 +273,7 @@ class MTAViewSet(viewsets.GenericViewSet):
         for rcpnt in email_message["To"].split(","):
             try:
                 recipient_name, recipient_email = parse_email_address(rcpnt.strip())
-                
+
                 recipient_contact, _ = models.Contact.objects.get_or_create(
                     email=recipient_email,
                     defaults={"name": recipient_name or recipient_email},
