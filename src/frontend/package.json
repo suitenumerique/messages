@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "build-theme": "cunningham -g css,scss -o src/styles",
-    "generate-api": "orval --config ./orval.config.ts"
+    "generate-api": "orval --config ./orval.config.ts",
+    "i18n:extract": "npx i18next -c i18next-parser.config.json"
   },
   "dependencies": {
     "@gouvfr-lasuite/ui-kit": "0.2.0",
