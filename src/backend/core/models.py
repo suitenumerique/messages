@@ -333,11 +333,7 @@ class Message(BaseModel):
         Thread, on_delete=models.CASCADE, related_name="messages"
     )
     subject = models.CharField(_("subject"), max_length=255)
-    # header = models.ForeignKey(EmailHeader, on_delete=models.CASCADE)
-    # body = models.ForeignKey(EmailBody, on_delete=models.CASCADE)
-    body_html = models.TextField(_("body html"), blank=True)
-    body_text = models.TextField(_("body text"), blank=True)
-    raw_mime = models.TextField(_("raw message"), blank=True)
+    raw_mime = models.BinaryField(blank=True, default=b"")
     sender = models.ForeignKey("Contact", on_delete=models.CASCADE)
     received_at = models.DateTimeField(_("received at"), auto_now_add=True)
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)

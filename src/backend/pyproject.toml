@@ -43,6 +43,7 @@ dependencies = [
     "drf_spectacular==0.28.0",
     "easy_thumbnails==2.10",
     "factory_boy==3.3.1",
+    "flanker==0.9.11",
     "gunicorn==23.0.0",
     "jsonschema==4.23.0",
     "markdown==3.7",

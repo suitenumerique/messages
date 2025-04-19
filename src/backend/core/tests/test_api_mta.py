@@ -97,14 +97,27 @@ def fixture_valid_jwt_token():
 class TestMTAInboundEmail:
     """Test the MTA inbound email endpoint."""
 
-    def test_valid_email_submission(self, api_client, sample_email, valid_jwt_token):
-        """Test submitting a valid email with correct JWT token."""
+    @pytest.mark.django_db
+    def test_valid_email_submission(
+        self, api_client: APIClient, sample_email, valid_jwt_token
+    ):
+        """Test submitting a valid email and verify serialized output."""
 
         # Create the maildomain
-        models.MailDomain.objects.create(
-            name="example.com",
+        domain = models.MailDomain.objects.create(name="example.com")
+
+        # Create the recipient mailbox using the fetched domain
+        models.Mailbox.objects.create(
+            local_part="recipient",
+            domain=domain,
         )
 
+        # Check mailbox exists BEFORE posting
+        assert models.Mailbox.objects.filter(
+            local_part="recipient", domain=domain
+        ).exists()
+
+        # Post the email
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
             data=sample_email,
@@ -115,19 +128,49 @@ class TestMTAInboundEmail:
                 )
             }",
         )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), {"status": "ok"})
 
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"status": "ok"}
-
-        # Check that the message was created
-        assert models.Message.objects.count() == 1
-        assert models.Thread.objects.count() == 1
-        assert models.Contact.objects.count() == 2
-        assert models.MessageRecipient.objects.count() == 1
+        # Verify database state
+        self.assertEqual(models.Message.objects.count(), 1)
+        self.assertEqual(models.Thread.objects.count(), 1)
         message = models.Message.objects.first()
-        assert message.subject == "Test Email"
-        assert message.body_html == "This is a test email body.\n"
-        assert message.body_text == "This is a test email body.\n"
+        self.assertEqual(message.subject, "Test Email")
+        self.assertEqual(message.raw_mime, sample_email)
+
+        # Verify API serialization
+        user = models.User.objects.create_user(
+            username="testuser", email="test@example.com"
+        )
+        models.MailboxAccess.objects.create(
+            user=user,
+            mailbox=message.thread.mailbox,
+            permission=models.MailboxPermissionChoices.READ_WRITE,
+        )
+        api_client.force_authenticate(user=user)
+
+        message_url = f"/api/v1.0/messages/{message.id}/"
+        response = api_client.get(message_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        serialized_data = response.json()
+
+        self.assertEqual(serialized_data["subject"], "Test Email")
+        self.assertEqual(len(serialized_data["textBody"]), 1)
+        self.assertEqual(serialized_data["textBody"][0]["type"], "text/plain")
+        self.assertIn(
+            "This is a test email body.", serialized_data["textBody"][0]["content"]
+        )
+        self.assertEqual(serialized_data["htmlBody"], [])
+
+        self.assertEqual(len(serialized_data["to"]), 1)
+        self.assertEqual(serialized_data["to"][0]["email"], "recipient@example.com")
+        self.assertEqual(serialized_data["to"][0]["name"], "")
+
+        self.assertEqual(len(serialized_data["cc"]), 0)
+        self.assertEqual(len(serialized_data["bcc"]), 0)
+
+        self.assertIsNotNone(serialized_data["sender"])
+        self.assertEqual(serialized_data["sender"]["email"], "sender@example.com")
 
     def test_invalid_content_type(self, api_client, sample_email, valid_jwt_token):
         """Test submitting with wrong content type."""
@@ -184,9 +227,13 @@ class TestMTAInboundEmail:
     def test_html_email_submission(self, api_client, html_email, valid_jwt_token):
         """Test submitting an email with HTML content."""
         # Create the maildomain
-        models.MailDomain.objects.create(
-            name="example.com",
-        )
+        domain = models.MailDomain.objects.create(name="example.com")
+
+        # Create the recipient mailbox
+        models.Mailbox.objects.create(local_part="recipient", domain=domain)
+        assert models.Mailbox.objects.filter(
+            local_part="recipient", domain=domain
+        ).exists()
 
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
@@ -201,6 +248,7 @@ class TestMTAInboundEmail:
 
         assert response.status_code == status.HTTP_200_OK
         message = models.Message.objects.first()
+        assert message is not None  # Add check message exists
         assert message.subject == "HTML Test Email"
         assert "<h1>Test HTML Email</h1>" in message.body_html
         # HTML should be used for text when no text part exists
@@ -211,9 +259,13 @@ class TestMTAInboundEmail:
     ):
         """Test submitting a multipart email with both text and HTML parts."""
         # Create the maildomain
-        models.MailDomain.objects.create(
-            name="example.com",
-        )
+        domain = models.MailDomain.objects.create(name="example.com")
+
+        # Create the recipient mailbox
+        models.Mailbox.objects.create(local_part="recipient", domain=domain)
+        assert models.Mailbox.objects.filter(
+            local_part="recipient", domain=domain
+        ).exists()
 
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
@@ -228,6 +280,7 @@ class TestMTAInboundEmail:
 
         assert response.status_code == status.HTTP_200_OK
         message = models.Message.objects.first()
+        assert message is not None  # Add check message exists
         assert message.subject == "Multipart Test Email"
         assert "<h1>Multipart Email</h1>" in message.body_html
         assert "This is the plain text version." in message.body_text
@@ -272,13 +325,21 @@ class TestMTACheckRecipients:
 @pytest.mark.django_db
 class TestEmailAddressParsing:
     """Test email address parsing functionality"""
-    
-    def test_formatted_email_addresses(self, api_client, formatted_email, valid_jwt_token):
+
+    def test_formatted_email_addresses(
+        self, api_client, formatted_email, valid_jwt_token
+    ):
         """Test that emails with formatted addresses (Name <email>) are parsed correctly."""
         # Create the maildomain
-        models.MailDomain.objects.create(
-            name="example.com",
-        )
+        domain = models.MailDomain.objects.create(name="example.com")
+
+        # Create the recipient mailbox
+        models.Mailbox.objects.create(local_part="recipient", domain=domain)
+        # Also create for the other recipient mentioned in the 'To' header if needed by logic
+        models.Mailbox.objects.create(local_part="user2", domain=domain)
+        assert models.Mailbox.objects.filter(
+            local_part="recipient", domain=domain
+        ).exists()
 
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
@@ -286,7 +347,9 @@ class TestEmailAddressParsing:
             content_type="message/rfc822",
             HTTP_AUTHORIZATION=f"Bearer {
                 valid_jwt_token(
-                    formatted_email, {'original_recipients': ['recipient@example.com']}
+                    # Ensure JWT uses the recipient the view should process
+                    formatted_email,
+                    {'original_recipients': ['recipient@example.com']},
                 )
             }",
         )
@@ -297,15 +360,25 @@ class TestEmailAddressParsing:
         # Check that contacts were created with correct names and emails
         sender = models.Contact.objects.get(email="sender@example.com")
         assert sender.name == "John Doe"
-        
+
         recipient = models.Contact.objects.get(email="recipient@example.com")
         assert recipient.name == "Jane Smith"
-        
-        # Check for the second recipient
+
+        # Check for the second recipient contact creation
         user2 = models.Contact.objects.get(email="user2@example.com")
         assert user2.name == "Another User"
-        
-        # Verify message recipients
-        message = models.Message.objects.first()
+
+        # Verify message recipients for the created message
+        message = models.Message.objects.filter(
+            thread__mailbox__local_part="recipient", thread__mailbox__domain=domain
+        ).first()
+        assert message is not None  # Check message was created for this mailbox
         recipients = models.MessageRecipient.objects.filter(message=message)
-        assert recipients.count() == 2  # Both recipients should be added
+        # Should have recipients based on the 'To' header: Jane Smith and Another User
+        assert recipients.count() == 2
+        assert recipients.filter(
+            contact=recipient, type=models.MessageRecipientTypeChoices.TO
+        ).exists()
+        assert recipients.filter(
+            contact=user2, type=models.MessageRecipientTypeChoices.TO
+        ).exists()

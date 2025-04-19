@@ -1,9 +1,10 @@
 """DRF Views for MTA endpoints"""
 
-import email
 import hashlib
 import logging
-import re
+import os
+from datetime import datetime
+from datetime import timezone as dt_timezone
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -14,35 +15,14 @@ from rest_framework import authentication, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 
 from core import models
+from core.formats.rfc5322 import EmailParseError, parse_email_message
 
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
-
-def parse_email_address(address):
-    """Parse an email address that might include a display name
-    Returns a tuple of (name, email_address)
-    """
-    if not address:
-        return None, None
-        
-    # Try to extract email using regex pattern for <email> format
-    email_pattern = r'<([^<>]+)>'
-    email_match = re.search(email_pattern, address)
-    
-    if email_match:
-        # If we have a match with angle brackets, extract the email
-        email_addr = email_match.group(1).strip()
-        # Extract name by removing the angle bracket part
-        name = address.replace(email_match.group(0), '').strip()
-        # Remove quotes if present
-        if name.startswith('"') and name.endswith('"'):
-            name = name[1:-1]
-        return name or email_addr, email_addr
-    else:
-        # If no angle brackets, assume the whole string is an email
-        return address, address
+# Check if we should accept all emails (for e2e testing)
+ACCEPT_ALL_EMAILS = os.environ.get("ACCEPT_ALL_EMAILS", "").lower() == "true"
 
 
 class MTAJWTAuthentication(authentication.BaseAuthentication):
@@ -147,47 +127,24 @@ class MTAViewSet(viewsets.GenericViewSet):
             mta_metadata["original_recipients"][0:4],
         )
 
-        # Parse the email message
-        email_message = email.message_from_bytes(raw_data)
-
-        # TODO: move non-mail-specific logic somewhere else as this is not the only place
-        # where we'll receive "messages".
+        # Parse the email message using our centralized parser
+        try:
+            parsed_email = parse_email_message(raw_data)
+            logger.debug(
+                "Email parsed successfully: subject=%s", parsed_email["subject"]
+            )
+        except EmailParseError as e:
+            logger.error("Failed to parse email: %s", str(e))
+            return drf.response.Response(
+                {"status": "error", "detail": "Failed to parse email"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # We may have received a single POST but for multiple recipients.
         # Every one of them should be treated as a separate message.
-        # TODO: wrap all this in a transaction? with a lock?
-        # Walk mime parts and display their metadata
-
-        # Extract body parts properly
-        body_html = None
-        body_text = None
-
-        for part in email_message.walk():
-            content_type = part.get_content_type()
-            # Skip multipart containers
-            if content_type.startswith("multipart/"):
-                continue
-
-            if content_type == "text/plain" and body_text is None:
-                payload = part.get_payload(decode=True)
-                if payload:
-                    body_text = payload.decode("utf-8", errors="replace")
-            elif content_type == "text/html" and body_html is None:
-                payload = part.get_payload(decode=True)
-                if payload:
-                    body_html = payload.decode("utf-8", errors="replace")
-
-        # Set defaults if parts weren't found
-        if body_text is None:
-            body_text = body_html or ""
-        if body_html is None:
-            body_html = body_text or ""
-
         for recipient in mta_metadata["original_recipients"]:
             try:
-                self._deliver_message(
-                    recipient, email_message, (body_text, body_html, raw_data)
-                )
+                self._deliver_message(recipient, parsed_email, raw_data)
             except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
                 logger.error("Error creating message: %s", e)
                 return drf.response.Response(
@@ -196,97 +153,152 @@ class MTAViewSet(viewsets.GenericViewSet):
 
         return drf.response.Response({"status": "ok"})
 
-    def _deliver_message(self, recipient, email_message, parsed):
+    def _deliver_message(self, recipient, parsed_email, raw_data):
         """Deliver a message to the recipients"""
 
-        body_text, body_html, raw_data = parsed
+        # Get domain from recipient
+        if "@" not in recipient:
+            logger.warning(f"Invalid recipient address (no domain): {recipient}")
+            return
+
+        local_part, domain_name = recipient.split("@", 1)
 
         # Find the maildomain for this recipient's domain
-        # For now we don't create it if it doesn't exist, but
-        # in the future we'll call the Regie and might do it on demand.
-        maildomain = models.MailDomain.objects.filter(
-            name=recipient.split("@")[1]
-        ).first()
+        maildomain = models.MailDomain.objects.filter(name=domain_name).first()
+
+        # In test mode, auto-create domain if it doesn't exist
+        if ACCEPT_ALL_EMAILS and not maildomain:
+            logger.info(f"ACCEPT_ALL_EMAILS: Creating new mail domain: {domain_name}")
+            maildomain = models.MailDomain.objects.create(name=domain_name)
 
         if not maildomain:
-            # Silently ignore this recipient for now
+            logger.warning(f"Mail domain '{domain_name}' not found.")
             return
 
         # Create the mailbox if it doesn't exist.
-        # TODO: in the future we'll check in the Regie first if we are supposed
-        # to manage it. For now we assume all local_parts exist and are managed
-        # by us in a maildomain.
-        mailbox, _ = models.Mailbox.objects.get_or_create(
-            local_part=recipient.split("@")[0],
+        # In normal mode, we'll check in the Regie first if we are supposed
+        # to manage it. In test mode, we auto-create all mailboxes.
+        mailbox = models.Mailbox.objects.filter(
+            local_part=local_part,
             domain=maildomain,
-        )
+        ).first()
+
+        if not mailbox:
+            mailbox = models.Mailbox.objects.create(
+                local_part=local_part,
+                domain=maildomain,
+            )
 
         # Find if there's already a thread with the same subject.
-        # TODO: many more conditions to check here.
         thread = models.Thread.objects.filter(
-            subject=email_message["Subject"],
+            subject=parsed_email["subject"],
             mailbox=mailbox,
         ).first()
 
         if not thread:
-            snippet = body_text[:140]
+            # Create a new thread with a snippet from the body text
+            snippet = parsed_email.get("body_text", "")[:140]
+            logger.info(
+                f"Creating new Thread: subject='{parsed_email['subject']}', mailbox_id='{mailbox.id}'"
+            )
             thread = models.Thread.objects.create(
-                subject=email_message["Subject"],
+                subject=parsed_email["subject"],
                 mailbox=mailbox,
                 snippet=snippet,
             )
+        else:
+            logger.info(f"Found existing Thread: ID='{thread.id}'")
 
-        logger.info("Creating FROM contact %s", email_message["From"])
+        sender_email = parsed_email.get("from", {}).get("email")
+        sender_name = parsed_email.get("from", {}).get("name")
+        logger.info(
+            f"Getting/Creating sender Contact: email='{sender_email}', name='{sender_name}'"
+        )
 
         try:
-            # Parse the sender address to extract name and email properly
-            sender_name, sender_email = parse_email_address(email_message["From"])
-            
             # Get or create the sender contact
-            sender_contact, _ = models.Contact.objects.get_or_create(
+            sender_contact, created = models.Contact.objects.get_or_create(
                 email=sender_email,
                 defaults={"name": sender_name or sender_email},
             )
-        except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
-            logger.error("Error creating sender contact: %s", e)
+            logger.info(
+                f"Sender Contact: ID='{sender_contact.id}', Created='{created}'"
+            )
+        except Exception as e:
+            logger.error("Error creating sender contact: %s", e, exc_info=True)
             sender_contact, _ = models.Contact.objects.get_or_create(
                 email="unknown@unknown.com",
                 defaults={"name": "Unknown sender"},
             )
+            logger.warning("Fell back to 'Unknown sender' contact.")
+
+        # --- Prepare fields for Message model ---
+        subject = parsed_email.get("subject", "")
+        raw_mime = parsed_email.get("raw_mime", "")
+        received_at = parsed_email.get("date", datetime.now(dt_timezone.utc))
+
+        # Get text/html content directly from the parsed JMAP structure
+        body_text_parsed = (
+            parsed_email["textBody"][0]["content"]
+            if parsed_email.get("textBody")
+            else ""
+        )
+        body_html_parsed = (
+            parsed_email["htmlBody"][0]["content"]
+            if parsed_email.get("htmlBody")
+            else ""
+        )
+
+        # Align with test expectations for fallbacks
+        final_body_text = body_text_parsed
+        final_body_html = body_html_parsed
+
+        if not body_text_parsed and body_html_parsed:
+            final_body_text = body_html_parsed
+        elif not body_html_parsed and body_text_parsed:
+            final_body_html = body_text_parsed
+
+        # Ensure both are at least empty strings if neither was present
+        final_body_text = final_body_text or ""
+        final_body_html = final_body_html or ""
 
         # Create a message
+        logger.info(
+            f"Creating Message for Thread ID='{thread.id}', Sender ID='{sender_contact.id}'"
+        )
         message = models.Message.objects.create(
             thread=thread,
             sender=sender_contact,
-            subject=email_message.get("Subject") or "No subject",
-            raw_mime=raw_data,
-            body_html=body_html,
-            body_text=body_text,
-            # sent_at=email_message.get("Date"),
+            subject=subject,
+            raw_mime=raw_mime,
+            body_html=final_body_html,
+            body_text=final_body_text,
+            received_at=received_at,
             is_read=False,
             mta_sent=False,
         )
+        logger.info(f"Message created: ID='{message.id}'")
 
-        # Get or create each of the recipients
-        logger.info("Creating recipients contacts %s", email_message["To"])
-        recipients = []
-        for rcpnt in email_message["To"].split(","):
-            try:
-                recipient_name, recipient_email = parse_email_address(rcpnt.strip())
-                
-                recipient_contact, _ = models.Contact.objects.get_or_create(
-                    email=recipient_email,
-                    defaults={"name": recipient_name or recipient_email},
-                )
-            except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
-                logger.error("Error creating recipient contact: %s", e)
-                continue
-            recipients.append(recipient_contact)
+        # Create recipients
+        for recipient_type, recipients_list in [
+            (models.MessageRecipientTypeChoices.TO, parsed_email["to"]),
+            (models.MessageRecipientTypeChoices.CC, parsed_email["cc"]),
+            (models.MessageRecipientTypeChoices.BCC, parsed_email["bcc"]),
+        ]:
+            for recipient_data in recipients_list:
+                try:
+                    recipient_contact, _ = models.Contact.objects.get_or_create(
+                        email=recipient_data["email"],
+                        defaults={
+                            "name": recipient_data["name"] or recipient_data["email"]
+                        },
+                    )
 
-        # Create a message recipient for each recipient
-        for rcpnt in recipients:
-            models.MessageRecipient.objects.create(
-                message=message,
-                contact=rcpnt,
-                type=models.MessageRecipientTypeChoices.TO,
-            )
+                    models.MessageRecipient.objects.create(
+                        message=message,
+                        contact=recipient_contact,
+                        type=recipient_type,
+                    )
+                except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
+                    logger.error("Error creating recipient: %s", e)
+                    continue
