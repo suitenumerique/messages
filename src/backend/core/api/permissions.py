@@ -85,11 +85,16 @@ class IsAllowedToAccessMailbox(IsAuthenticated):
     def has_permission(self, request, view):
         """Check if user has permission to access the mailbox thread and messages"""
         mailbox_id = request.query_params.get("mailbox_id")
-        if not mailbox_id:
-            thread_id = request.query_params.get("thread_id")
-            if not thread_id:
-                return False
-            thread = models.Thread.objects.get(id=thread_id)
-            return thread.mailbox.accesses.filter(user=request.user).exists()
-        mailbox = models.Mailbox.objects.get(id=mailbox_id)
-        return mailbox.accesses.filter(user=request.user).exists()
+        thread_id = request.query_params.get("thread_id")
+
+        if not mailbox_id and not thread_id:
+            return False
+        if mailbox_id:
+            return models.Mailbox.objects.filter(
+                id=mailbox_id, accesses__user=request.user
+            ).exists()
+        if thread_id:
+            return models.Thread.objects.filter(
+                id=thread_id, mailbox__accesses__user=request.user
+            ).exists()
+        return False

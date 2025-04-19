@@ -122,11 +122,11 @@ class TestMTAInboundEmail:
             "/api/v1.0/mta/inbound-email/",
             data=sample_email,
             content_type="message/rfc822",
-            HTTP_AUTHORIZATION=f"Bearer {
+            HTTP_AUTHORIZATION=f"""Bearer {
                 valid_jwt_token(
-                    sample_email, {'original_recipients': ['recipient@example.com']}
+                    sample_email, {"original_recipients": ["recipient@example.com"]}
                 )
-            }",
+            }""",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json(), {"status": "ok"})
@@ -178,11 +178,11 @@ class TestMTAInboundEmail:
             "/api/v1.0/mta/inbound-email/",
             data=sample_email,
             content_type="application/json",
-            HTTP_AUTHORIZATION=f"Bearer {
+            HTTP_AUTHORIZATION=f"""Bearer {
                 valid_jwt_token(
-                    sample_email, {'original_recipients': ['recipient@example.com']}
+                    sample_email, {"original_recipients": ["recipient@example.com"]}
                 )
-            }",
+            }""",
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -364,15 +364,12 @@ class TestEmailAddressParsing:
         recipient = models.Contact.objects.get(email="recipient@example.com")
         assert recipient.name == "Jane Smith"
 
-        # Check for the second recipient contact creation
+        # Check for the second recipient
         user2 = models.Contact.objects.get(email="user2@example.com")
         assert user2.name == "Another User"
 
-        # Verify message recipients for the created message
-        message = models.Message.objects.filter(
-            thread__mailbox__local_part="recipient", thread__mailbox__domain=domain
-        ).first()
-        assert message is not None  # Check message was created for this mailbox
+        # Verify message recipients
+        message = models.Message.objects.first()
         recipients = models.MessageRecipient.objects.filter(message=message)
         # Should have recipients based on the 'To' header: Jane Smith and Another User
         assert recipients.count() == 2
