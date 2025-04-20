@@ -1,13 +1,17 @@
 """DRF Views for MTA endpoints"""
 
 import hashlib
+import html
 import logging
 import os
+import re
 from datetime import datetime
 from datetime import timezone as dt_timezone
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import Error as DjangoDbError
+from django.forms import ValidationError
 
 import jwt
 import rest_framework as drf
@@ -156,130 +160,68 @@ class MTAViewSet(viewsets.GenericViewSet):
     def _deliver_message(self, recipient, parsed_email, raw_data):
         """Deliver a message to the recipients"""
 
-        # Get domain from recipient
         if "@" not in recipient:
-            logger.warning(f"Invalid recipient address (no domain): {recipient}")
+            logger.warning("Invalid recipient address (no domain): %s", recipient)
             return
-
         local_part, domain_name = recipient.split("@", 1)
-
-        # Find the maildomain for this recipient's domain
         maildomain = models.MailDomain.objects.filter(name=domain_name).first()
-
-        # In test mode, auto-create domain if it doesn't exist
-        if ACCEPT_ALL_EMAILS and not maildomain:
-            logger.info(f"ACCEPT_ALL_EMAILS: Creating new mail domain: {domain_name}")
-            maildomain = models.MailDomain.objects.create(name=domain_name)
-
         if not maildomain:
-            logger.warning(f"Mail domain '{domain_name}' not found.")
+            logger.warning("Mail domain %s not found.", domain_name)
             return
-
-        # Create the mailbox if it doesn't exist.
-        # In normal mode, we'll check in the Regie first if we are supposed
-        # to manage it. In test mode, we auto-create all mailboxes.
         mailbox = models.Mailbox.objects.filter(
-            local_part=local_part,
-            domain=maildomain,
+            local_part=local_part, domain=maildomain
         ).first()
-
         if not mailbox:
-            mailbox = models.Mailbox.objects.create(
-                local_part=local_part,
-                domain=maildomain,
-            )
+            if ACCEPT_ALL_EMAILS:
+                mailbox = models.Mailbox.objects.create(
+                    local_part=local_part, domain=maildomain
+                )
+            else:
+                logger.warning(
+                    "Mailbox not found and auto-create disabled: %s@%s",
+                    local_part,
+                    domain_name,
+                )
+                return
 
-        # Find if there's already a thread with the same subject.
         thread = models.Thread.objects.filter(
-            subject=parsed_email["subject"],
-            mailbox=mailbox,
+            subject=parsed_email["subject"], mailbox=mailbox
         ).first()
 
         if not thread:
-            # Create a new thread with a snippet from the body text
-            snippet = parsed_email.get("body_text", "")[:140]
-            logger.info(
-                f"Creating new Thread: subject='{parsed_email['subject']}', mailbox_id='{mailbox.id}'"
-            )
+            snippet = ""
+            if parsed_email.get("textBody"):
+                snippet = parsed_email["textBody"][0].get("content", "")[:140]
+            elif parsed_email.get("htmlBody"):
+                html_content = parsed_email["htmlBody"][0].get("content", "")
+                clean_text = re.sub("<[^>]+>", " ", html_content)
+                snippet = html.unescape(clean_text).strip()[:140]
+                snippet = " ".join(snippet.split())
+
             thread = models.Thread.objects.create(
-                subject=parsed_email["subject"],
-                mailbox=mailbox,
-                snippet=snippet,
+                subject=parsed_email["subject"], mailbox=mailbox, snippet=snippet
             )
-        else:
-            logger.info(f"Found existing Thread: ID='{thread.id}'")
 
         sender_email = parsed_email.get("from", {}).get("email")
         sender_name = parsed_email.get("from", {}).get("name")
-        logger.info(
-            f"Getting/Creating sender Contact: email='{sender_email}', name='{sender_name}'"
+        sender_contact, _ = models.Contact.objects.get_or_create(
+            email=sender_email, defaults={"name": sender_name or sender_email}
         )
 
-        try:
-            # Get or create the sender contact
-            sender_contact, created = models.Contact.objects.get_or_create(
-                email=sender_email,
-                defaults={"name": sender_name or sender_email},
-            )
-            logger.info(
-                f"Sender Contact: ID='{sender_contact.id}', Created='{created}'"
-            )
-        except Exception as e:
-            logger.error("Error creating sender contact: %s", e, exc_info=True)
-            sender_contact, _ = models.Contact.objects.get_or_create(
-                email="unknown@unknown.com",
-                defaults={"name": "Unknown sender"},
-            )
-            logger.warning("Fell back to 'Unknown sender' contact.")
-
-        # --- Prepare fields for Message model ---
         subject = parsed_email.get("subject", "")
-        raw_mime = parsed_email.get("raw_mime", "")
+        raw_mime_bytes = raw_data if isinstance(raw_data, bytes) else b""
         received_at = parsed_email.get("date", datetime.now(dt_timezone.utc))
 
-        # Get text/html content directly from the parsed JMAP structure
-        body_text_parsed = (
-            parsed_email["textBody"][0]["content"]
-            if parsed_email.get("textBody")
-            else ""
-        )
-        body_html_parsed = (
-            parsed_email["htmlBody"][0]["content"]
-            if parsed_email.get("htmlBody")
-            else ""
-        )
-
-        # Align with test expectations for fallbacks
-        final_body_text = body_text_parsed
-        final_body_html = body_html_parsed
-
-        if not body_text_parsed and body_html_parsed:
-            final_body_text = body_html_parsed
-        elif not body_html_parsed and body_text_parsed:
-            final_body_html = body_text_parsed
-
-        # Ensure both are at least empty strings if neither was present
-        final_body_text = final_body_text or ""
-        final_body_html = final_body_html or ""
-
-        # Create a message
-        logger.info(
-            f"Creating Message for Thread ID='{thread.id}', Sender ID='{sender_contact.id}'"
-        )
         message = models.Message.objects.create(
             thread=thread,
             sender=sender_contact,
             subject=subject,
-            raw_mime=raw_mime,
-            body_html=final_body_html,
-            body_text=final_body_text,
+            raw_mime=raw_mime_bytes,
             received_at=received_at,
             is_read=False,
             mta_sent=False,
         )
-        logger.info(f"Message created: ID='{message.id}'")
 
-        # Create recipients
         for recipient_type, recipients_list in [
             (models.MessageRecipientTypeChoices.TO, parsed_email["to"]),
             (models.MessageRecipientTypeChoices.CC, parsed_email["cc"]),
@@ -293,12 +235,11 @@ class MTAViewSet(viewsets.GenericViewSet):
                             "name": recipient_data["name"] or recipient_data["email"]
                         },
                     )
-
                     models.MessageRecipient.objects.create(
                         message=message,
                         contact=recipient_contact,
                         type=recipient_type,
                     )
-                except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
+                except (DjangoDbError, ValidationError) as e:
                     logger.error("Error creating recipient: %s", e)
                     continue

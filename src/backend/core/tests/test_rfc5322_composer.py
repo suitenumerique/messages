@@ -2,6 +2,7 @@
 Tests for the RFC5322 email composer module.
 """
 
+# pylint: disable=too-many-lines
 import base64
 import email
 import re
@@ -23,6 +24,7 @@ from core.formats.rfc5322.composer import (
 
 # Helper function to decode a header string fully
 def decode_header_string(header_value):
+    """Decode an RFC 2047 encoded header string."""
     if not header_value:
         return ""
     # make_header handles joining decoded parts
@@ -594,10 +596,17 @@ class TestEmailComposition:
             "to": [{"name": "Amélie Poulain", "email": "amelie@example.com"}],
             "subject": "Réunion d'équipe à 15h",
             "textBody": [
-                "Bonjour Amélie,\n\nJ'espère que vous allez bien. Pouvons-nous discuter du projet demain?\n\nCordialement,\nFrançois"
+                """Bonjour Amélie,
+                J'espère que vous allez bien. 
+                Pouvons-nous discuter du projet demain?
+                
+                Cordialement,
+                François"""
             ],
             "htmlBody": [
-                "<p>Bonjour Amélie,</p><p>J'espère que vous allez bien. Pouvons-nous discuter du projet demain?</p><p>Cordialement,<br>François</p>"
+                """<p>Bonjour Amélie,</p>
+                <p>J'espère que vous allez bien. Pouvons-nous discuter du projet demain?</p>
+                <p>Cordialement,<br>François</p>"""
             ],
         }
 
@@ -859,7 +868,7 @@ class TestReplyGeneration:
                     "content": "Original message for testing threading.",
                 }
             ],
-            "references": "<initial-ref@example.com>",
+            "references": "<initial-ref@example.com> <another-ref@example.com>",
         }
 
         reply_text = "This reply should maintain threading information."
@@ -876,6 +885,7 @@ class TestReplyGeneration:
         # Check References header includes original refs and the new In-Reply-To ID
         assert "References" in reply["headers"]
         assert "<initial-ref@example.com>" in reply["headers"]["References"]
+        assert "<another-ref@example.com>" in reply["headers"]["References"]
         assert (
             "<original-message-id-12345@example.com>" in reply["headers"]["References"]
         )
@@ -924,7 +934,7 @@ class TestReplyGeneration:
 
         # The 'to' field should be empty as original had no 'from' address
         assert "to" in reply
-        assert reply["to"] == []
+        assert not reply["to"]  # Check list is empty
 
         # Check quote header contains fallback text
         assert "On an unknown date, someone wrote:" in reply["textBody"][0]["content"]
@@ -990,7 +1000,7 @@ class TestErrorHandling:
 
         # The 'to' field should be empty as original had no 'from' address
         assert "to" in reply
-        assert reply["to"] == []
+        assert not reply["to"]  # Check list is empty
 
         # Check quote header contains fallback text
         assert "On an unknown date, someone wrote:" in reply["textBody"][0]["content"]

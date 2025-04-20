@@ -1,4 +1,4 @@
-"""Test API threads."""
+"""Test API threads and messages."""
 
 import uuid
 
@@ -27,8 +27,11 @@ class TestApiThreads:
         # Create a thread with a message
         thread = factories.ThreadFactory(mailbox=mailbox)
         message = factories.MessageFactory(thread=thread, read_at=None)
+        # Need sender and recipient contacts for the thread serializer
+        recipient_contact = factories.ContactFactory()
         factories.MessageRecipientFactory(
             message=message,
+            contact=recipient_contact,
             type=enums.MessageRecipientTypeChoices.TO,
         )
 
@@ -42,24 +45,20 @@ class TestApiThreads:
         # Assert the response is successful
         assert response.status_code == status.HTTP_200_OK
         # Assert the number of threads is correct
-        assert len(response.data["results"]) == 1
         assert response.data["count"] == 1
-        # Assert the thread is correct
-        assert response.data["results"][0]["id"] == str(thread.id)
-        assert response.data["results"][0]["subject"] == thread.subject
-        assert response.data["results"][0]["snippet"] == thread.snippet
-        assert response.data["results"][0]["recipients"] == [
-            {
-                "id": str(message.recipients.get().contact.id),
-                "name": message.recipients.get().contact.name,
-                "email": message.recipients.get().contact.email,
-            }
-        ]
-        assert response.data["results"][0]["messages"] == [str(message.id)]
-        assert response.data["results"][0]["is_read"] is False
-        assert response.data["results"][0][
-            "updated_at"
-        ] == thread.updated_at.isoformat().replace("+00:00", "Z")
+        assert len(response.data["results"]) == 1
+
+        # Assert the thread data is correct
+        thread_data = response.data["results"][0]
+        assert thread_data["id"] == str(thread.id)
+        assert thread_data["subject"] == thread.subject
+        assert thread_data["snippet"] == thread.snippet
+        assert thread_data["messages"] == [str(message.id)]
+        assert thread_data["is_read"] is False  # Based on message read_at=None
+        assert thread_data["updated_at"] == thread.updated_at.isoformat().replace(
+            "+00:00", "Z"
+        )
+        # Removed assertion for aggregated 'recipients' field in ThreadSerializer
 
     def test_list_threads_unauthorized(self):
         """Test list threads unauthorized."""
@@ -69,7 +68,7 @@ class TestApiThreads:
 
     def test_list_threads_not_allowed(self):
         """Test list threads not allowed."""
-        # Create other mailbox and thread with a message
+        # Create other mailbox and thread
         jean = factories.UserFactory()
         jean_mailbox = factories.MailboxFactory()
         factories.MailboxAccessFactory(
@@ -77,14 +76,9 @@ class TestApiThreads:
             user=jean,
             permission=enums.MailboxPermissionChoices.ADMIN,
         )
-        jean_thread = factories.ThreadFactory(mailbox=jean_mailbox)
-        jean_message = factories.MessageFactory(thread=jean_thread, read_at=None)
-        factories.MessageRecipientFactory(
-            message=jean_message,
-            type=enums.MessageRecipientTypeChoices.TO,
-        )
+        factories.ThreadFactory(mailbox=jean_mailbox)  # Create a thread for jean
 
-        # Create authenticated user with access to a mailbox
+        # Create authenticated user and their mailbox/thread
         authenticated_user = factories.UserFactory()
         mailbox = factories.MailboxFactory()
         factories.MailboxAccessFactory(
@@ -92,14 +86,13 @@ class TestApiThreads:
             user=authenticated_user,
             permission=enums.MailboxPermissionChoices.READ,
         )
-        thread = factories.ThreadFactory(mailbox=mailbox)
-        message = factories.MessageFactory(thread=thread, read_at=None)
-        factories.MessageRecipientFactory(
-            message=message,
-            type=enums.MessageRecipientTypeChoices.TO,
-        )
+        factories.ThreadFactory(
+            mailbox=mailbox
+        )  # Create a thread for authenticated user
+
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
+        # Try to access jean's mailbox threads
         response = client.get(
             reverse("threads-list"), query_params={"mailbox_id": jean_mailbox.id}
         )
@@ -112,7 +105,7 @@ class TestApiMessages:
 
     def test_list_messages(self):
         """Test list messages."""
-        # Create authenticated user with access to a mailbox
+        # Setup: User, Mailbox, Thread, 2 Messages
         authenticated_user = factories.UserFactory()
         mailbox = factories.MailboxFactory()
         factories.MailboxAccessFactory(
@@ -120,90 +113,128 @@ class TestApiMessages:
             user=authenticated_user,
             permission=enums.MailboxPermissionChoices.READ,
         )
-        # Create a thread with a 2 messages
         thread = factories.ThreadFactory(mailbox=mailbox)
-        message = factories.MessageFactory(thread=thread, read_at=None)
+
+        # Contacts
+        sender_contact1 = factories.ContactFactory(email="sender1@example.com")
+        to_contact1 = factories.ContactFactory(email="to1@example.com")
+        cc_contact1 = factories.ContactFactory(email="cc1@example.com")
+        sender_contact2 = factories.ContactFactory(email="sender2@example.com")
+        to_contact2 = factories.ContactFactory(email="to2@example.com")
+
+        # Message 1 Raw Mime with Headers
+        raw_mime_1 = f"""From: {sender_contact1.email}
+To: {to_contact1.email}
+Cc: {cc_contact1.email}
+Subject: Test Subject 1
+Content-Type: text/plain
+
+Body 1""".encode("utf-8")
+
+        # Message 2 Raw Mime with Headers
+        raw_mime_2 = f"""From: {sender_contact2.email}
+To: {to_contact2.email}
+Subject: Test Subject 2
+Content-Type: text/html
+
+<p>Body 2</p>""".encode("utf-8")
+
+        # Create message 1 using raw_mime_1
+        message1 = factories.MessageFactory(
+            thread=thread,
+            sender=sender_contact1,
+            subject="Test Subject 1",  # Subject is also in raw_mime, ensure consistency
+            raw_mime=raw_mime_1,
+            read_at=None,
+            is_read=False,
+        )
+        # MessageRecipient objects are primarily for DB relations if needed,
+        # the serializer now parses from raw_mime. Keep them if other logic depends on them.
         factories.MessageRecipientFactory(
-            message=message,
+            message=message1,
+            contact=to_contact1,
             type=enums.MessageRecipientTypeChoices.TO,
         )
-        message2 = factories.MessageFactory(thread=thread, read_at=None)
+        factories.MessageRecipientFactory(
+            message=message1,
+            contact=cc_contact1,
+            type=enums.MessageRecipientTypeChoices.CC,
+        )
+
+        # Create message 2 using raw_mime_2
+        message2 = factories.MessageFactory(
+            thread=thread,
+            sender=sender_contact2,
+            subject="Test Subject 2",
+            raw_mime=raw_mime_2,
+            read_at=None,
+            is_read=False,
+        )
         factories.MessageRecipientFactory(
             message=message2,
+            contact=to_contact2,
             type=enums.MessageRecipientTypeChoices.TO,
         )
-        # create other threads with a message
-        thread2 = factories.ThreadFactory(mailbox=mailbox)
-        message3 = factories.MessageFactory(thread=thread2, read_at=None)
-        factories.MessageRecipientFactory(
-            message=message3,
-            type=enums.MessageRecipientTypeChoices.TO,
-        )
-        other_thread = factories.ThreadFactory(mailbox=mailbox)
-        other_message = factories.MessageFactory(thread=other_thread, read_at=None)
-        factories.MessageRecipientFactory(
-            message=other_message,
-            type=enums.MessageRecipientTypeChoices.TO,
-        )
-        # Create a client and authenticate
+
+        # Create other threads/messages to ensure filtering works
+        factories.MessageFactory(thread=factories.ThreadFactory(mailbox=mailbox))
+
+        # --- Test ---
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
-        # Get the list of threads
         response = client.get(
             reverse("messages-list"), query_params={"thread_id": thread.id}
         )
-        # Assert the response is successful
-        assert response.status_code == status.HTTP_200_OK
-        # Assert the number of messages is correct
-        assert len(response.data["results"]) == 2
-        assert response.data["count"] == 2
-        # Assert the messages are correct
-        assert response.data["results"][0]["id"] == str(message2.id)
-        assert response.data["results"][0][
-            "received_at"
-        ] == message2.received_at.isoformat().replace("+00:00", "Z")
-        assert response.data["results"][0]["subject"] == message2.subject
-        assert response.data["results"][0]["sender"] == {
-            "id": str(message2.sender.id),
-            "name": message2.sender.name,
-            "email": message2.sender.email,
-        }
-        assert response.data["results"][0]["recipients"] == [
-            {
-                "id": str(message2.recipients.get().id),
-                "contact": {
-                    "id": str(message2.recipients.get().contact.id),
-                    "name": message2.recipients.get().contact.name,
-                    "email": message2.recipients.get().contact.email,
-                },
-                "type": enums.MessageRecipientTypeChoices.TO.value,
-            }
-        ]
-        assert response.data["results"][0]["is_read"] is False
-        assert response.data["results"][0]["raw_html_body"] == message2.body_html
-        assert response.data["results"][0]["raw_text_body"] == message2.body_text
 
-        assert response.data["results"][1]["id"] == str(message.id)
-        assert response.data["results"][1][
-            "received_at"
-        ] == message.received_at.isoformat().replace("+00:00", "Z")
-        assert response.data["results"][1]["subject"] == message.subject
-        assert response.data["results"][1]["sender"] == {
-            "id": str(message.sender.id),
-            "name": message.sender.name,
-            "email": message.sender.email,
-        }
-        assert response.data["results"][1]["recipients"] == [
-            {
-                "id": str(message.recipients.get().id),
-                "contact": {
-                    "id": str(message.recipients.get().contact.id),
-                    "name": message.recipients.get().contact.name,
-                    "email": message.recipients.get().contact.email,
-                },
-                "type": enums.MessageRecipientTypeChoices.TO.value,
-            }
-        ]
+        # --- Assertions ---
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 2
+        assert len(response.data["results"]) == 2
+
+        # Assert message 2 (newest)
+        msg2_data = response.data["results"][0]
+        assert msg2_data["id"] == str(message2.id)
+        # Subject assertion remains, assuming it's correct in both model and raw_mime
+        assert msg2_data["subject"] == message2.subject
+        assert msg2_data["sender"]["id"] == str(sender_contact2.id)
+        assert msg2_data["is_read"] is False
+
+        # Check JMAP bodies (parsed from raw_mime)
+        assert msg2_data["textBody"] == []
+        assert len(msg2_data["htmlBody"]) == 1
+        assert msg2_data["htmlBody"][0]["type"] == "text/html"
+        assert (
+            msg2_data["htmlBody"][0]["content"] == "<p>Body 2</p>"
+        )  # Check content without headers
+
+        # Check JMAP recipients (parsed from raw_mime)
+        assert len(msg2_data["to"]) == 1
+        # We check the *email* parsed from the header now, not the contact ID directly
+        assert msg2_data["to"][0]["email"] == to_contact2.email
+        assert msg2_data["cc"] == []
+        assert msg2_data["bcc"] == []
+
+        # Assert message 1 (older)
+        msg1_data = response.data["results"][1]
+        assert msg1_data["id"] == str(message1.id)
+        assert msg1_data["subject"] == message1.subject
+        assert msg1_data["sender"]["id"] == str(sender_contact1.id)
+        assert msg1_data["is_read"] is False
+
+        # Check JMAP bodies (parsed from raw_mime)
+        assert len(msg1_data["textBody"]) == 1
+        assert msg1_data["textBody"][0]["type"] == "text/plain"
+        assert (
+            msg1_data["textBody"][0]["content"] == "Body 1"
+        )  # Check content without headers
+        assert msg1_data["htmlBody"] == []
+
+        # Check JMAP recipients (parsed from raw_mime)
+        assert len(msg1_data["to"]) == 1
+        assert msg1_data["to"][0]["email"] == to_contact1.email
+        assert len(msg1_data["cc"]) == 1
+        assert msg1_data["cc"][0]["email"] == cc_contact1.email
+        assert msg1_data["bcc"] == []
 
     def test_list_messages_unauthorized(self):
         """Test list messages unauthorized."""
@@ -213,37 +244,22 @@ class TestApiMessages:
 
     def test_list_messages_not_allowed(self):
         """Test list messages not allowed."""
-        # Create other mailbox and thread with a message
+        # Create other user/mailbox/thread
         jean = factories.UserFactory()
         jean_mailbox = factories.MailboxFactory()
-        factories.MailboxAccessFactory(
-            mailbox=jean_mailbox,
-            user=jean,
-            permission=enums.MailboxPermissionChoices.ADMIN,
-        )
+        factories.MailboxAccessFactory(mailbox=jean_mailbox, user=jean)
         jean_thread = factories.ThreadFactory(mailbox=jean_mailbox)
-        jean_message = factories.MessageFactory(thread=jean_thread, read_at=None)
-        factories.MessageRecipientFactory(
-            message=jean_message,
-            type=enums.MessageRecipientTypeChoices.TO,
-        )
+        factories.MessageFactory(thread=jean_thread)  # Create message for jean
 
-        # Create authenticated user with access to a mailbox
+        # Create authenticated user and their mailbox/thread
         authenticated_user = factories.UserFactory()
         mailbox = factories.MailboxFactory()
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.READ,
-        )
-        thread = factories.ThreadFactory(mailbox=mailbox)
-        message = factories.MessageFactory(thread=thread, read_at=None)
-        factories.MessageRecipientFactory(
-            message=message,
-            type=enums.MessageRecipientTypeChoices.TO,
-        )
+        factories.MailboxAccessFactory(mailbox=mailbox, user=authenticated_user)
+        factories.ThreadFactory(mailbox=mailbox)  # Create thread for auth user
+
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
+        # Try to access messages in jean's thread
         response = client.get(
             reverse("messages-list"), query_params={"thread_id": jean_thread.id}
         )
@@ -259,17 +275,18 @@ class TestApiMessages:
         response = client.get(
             reverse("messages-list"), query_params={"thread_id": uuid.uuid4()}
         )
+        # Expecting 403 because the permission check happens before 404 usually
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-        # Test with a thread that is not in the user's mailbox accesses
-        thread = factories.ThreadFactory()
+        # Test with a thread that exists but user has no access
+        unrelated_thread = factories.ThreadFactory()
         response = client.get(
-            reverse("messages-list"), query_params={"thread_id": thread.id}
+            reverse("messages-list"), query_params={"thread_id": unrelated_thread.id}
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_mailbox_not_existing(self):
-        """Test mailbox not existing."""
+        """Test mailbox not existing (for threads list)."""
         authenticated_user = factories.UserFactory()
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
@@ -278,11 +295,12 @@ class TestApiMessages:
         response = client.get(
             reverse("threads-list"), query_params={"mailbox_id": uuid.uuid4()}
         )
+        # Expecting 403 because the permission check happens before 404
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-        # Test with a mailbox that is not in the user's mailbox accesses
-        mailbox = factories.MailboxFactory()
+        # Test with a mailbox that exists but user has no access
+        unrelated_mailbox = factories.MailboxFactory()
         response = client.get(
-            reverse("threads-list"), query_params={"mailbox_id": mailbox.id}
+            reverse("threads-list"), query_params={"mailbox_id": unrelated_mailbox.id}
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN

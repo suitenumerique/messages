@@ -8,7 +8,8 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import exceptions, serializers
 
 from core import models
-from core.formats.rfc5322 import EmailParseError, parse_email_message
+
+# from core.formats.rfc5322 import EmailParseError, parse_email_message # No longer needed here
 
 logger = logging.getLogger(__name__)
 
@@ -168,85 +169,53 @@ class ThreadSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     """
-    Serialize messages, parsing details from raw_mime on demand.
+    Serialize messages, getting parsed details from the Message model.
     Aligns field names with JMAP where appropriate (textBody, htmlBody, to, cc, bcc).
     """
 
-    # JMAP-style body fields (parsed from raw_mime)
+    # JMAP-style body fields (from model's parsed data)
     textBody = serializers.SerializerMethodField(read_only=True)
     htmlBody = serializers.SerializerMethodField(read_only=True)
 
-    # JMAP-style recipient fields (parsed from raw_mime)
+    # JMAP-style recipient fields (from model's parsed data)
     to = serializers.SerializerMethodField(read_only=True)
     cc = serializers.SerializerMethodField(read_only=True)
     bcc = serializers.SerializerMethodField(read_only=True)
 
     # Keep sender (denormalized in model)
     sender = ContactSerializer(read_only=True)
-    # Keep is_read (calculated or from model field)
+    # Keep is_read (denormalized in model)
     is_read = serializers.SerializerMethodField(read_only=True)
-    # Keep messageId (denormalized - though could also be parsed)
-    # Consider adding messageId if needed, parsed from raw_mime or a dedicated model field
-    # messageId = serializers.SerializerMethodField(read_only=True)
-
-    def _get_parsed_email(self, instance):
-        """
-        Helper to parse raw_mime once per instance for the current serialization context.
-        Caches the result directly on the model instance using a temporary attribute.
-        """
-        # Check if already parsed and cached on the instance for this context
-        if hasattr(instance, "_parsed_email_cache"):
-            return instance._parsed_email_cache
-
-        parsed_email = None
-        if instance.raw_mime:  # raw_mime is BinaryField, should be bytes
-            try:
-                # Directly parse bytes from BinaryField
-                parsed_email = parse_email_message(instance.raw_mime)
-            except EmailParseError as e:
-                logger.error(
-                    f"Failed to parse raw_mime for Message {instance.id} during serialization: {e}"
-                )
-            except Exception as e:
-                logger.error(
-                    f"Unexpected error parsing raw_mime for Message {instance.id}: {e}",
-                    exc_info=True,
-                )
-
-        # Store the parsed result (or None) on the instance using a non-persistent attribute
-        # This cache only lives as long as this instance object within the current request/process
-        instance._parsed_email_cache = parsed_email
-        return parsed_email
 
     @extend_schema_field(serializers.ListField(child=serializers.DictField()))
-    def get_textBody(self, instance):
+    def get_textBody(self, instance):  # pylint: disable=invalid-name
         """Return the list of text body parts (JMAP style)."""
-        parsed = self._get_parsed_email(instance)
-        return parsed.get("textBody", []) if parsed else []
+        parsed_data = instance.get_parsed_data()
+        return parsed_data.get("textBody", [])
 
     @extend_schema_field(serializers.ListField(child=serializers.DictField()))
-    def get_htmlBody(self, instance):
+    def get_htmlBody(self, instance):  # pylint: disable=invalid-name
         """Return the list of HTML body parts (JMAP style)."""
-        parsed = self._get_parsed_email(instance)
-        return parsed.get("htmlBody", []) if parsed else []
+        parsed_data = instance.get_parsed_data()
+        return parsed_data.get("htmlBody", [])
 
     @extend_schema_field(ContactSerializer(many=True))
     def get_to(self, instance):
         """Return the 'To' recipients."""
-        parsed = self._get_parsed_email(instance)
-        return parsed.get("to", []) if parsed else []
+        parsed_data = instance.get_parsed_data()
+        return parsed_data.get("to", [])
 
     @extend_schema_field(ContactSerializer(many=True))
     def get_cc(self, instance):
         """Return the 'Cc' recipients."""
-        parsed = self._get_parsed_email(instance)
-        return parsed.get("cc", []) if parsed else []
+        parsed_data = instance.get_parsed_data()
+        return parsed_data.get("cc", [])
 
     @extend_schema_field(ContactSerializer(many=True))
     def get_bcc(self, instance):
         """Return the 'Bcc' recipients."""
-        parsed = self._get_parsed_email(instance)
-        return parsed.get("bcc", []) if parsed else []
+        parsed_data = instance.get_parsed_data()
+        return parsed_data.get("bcc", [])
 
     def get_is_read(self, instance) -> bool:
         """Return the read status of the message."""
@@ -261,15 +230,11 @@ class MessageSerializer(serializers.ModelSerializer):
             "received_at",  # Denormalized from model
             "created_at",  # From model
             "updated_at",  # From model
-            "textBody",  # Parsed from raw_mime
-            "htmlBody",  # Parsed from raw_mime
+            "textBody",  # From model's get_parsed_data()
+            "htmlBody",  # From model's get_parsed_data()
             "sender",  # Denormalized from model (Contact relation)
-            "to",  # Parsed from raw_mime
-            "cc",  # Parsed from raw_mime
-            "bcc",  # Parsed from raw_mime
+            "to",  # From model's get_parsed_data()
+            "cc",  # From model's get_parsed_data()
+            "bcc",  # From model's get_parsed_data()
             "is_read",  # Denormalized from model
-            # Add other desired fields from models.Message here if needed
         ]
-        # Ensure read_only_fields are correctly specified if needed,
-        # although SerializerMethodFields are read-only by default.
-        # read_only_fields = ["id", "created_at", "updated_at", "received_at", "sender", "is_read", ...]

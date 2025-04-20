@@ -6,6 +6,7 @@ Declare and configure the models for the messages core application
 import uuid
 from datetime import timedelta
 from logging import getLogger
+from typing import Any, Dict, Optional
 
 from django.conf import settings
 from django.contrib.auth import models as auth_models
@@ -18,6 +19,7 @@ from django.utils.translation import gettext_lazy as _
 from timezone_field import TimeZoneField
 
 from core.enums import MailboxPermissionChoices, MessageRecipientTypeChoices
+from core.formats.rfc5322 import EmailParseError, parse_email_message
 
 logger = getLogger(__name__)
 
@@ -104,6 +106,22 @@ class BaseModel(models.Model):
 
 class UserManager(auth_models.UserManager):
     """Custom manager for User model with additional methods."""
+
+    def _create_user(self, admin_email, password, **extra_fields):  # pylint: disable=arguments-differ
+        """Create and save a user with the given admin_email and password."""
+        if not admin_email:
+            raise ValueError("The given admin_email must be set")
+        admin_email = self.normalize_email(admin_email)
+        user = self.model(admin_email=admin_email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_user(self, admin_email, password=None, **extra_fields):  # pylint: disable=arguments-differ
+        """Create and save a regular user with the given admin_email and password."""
+        extra_fields.setdefault("is_staff", False)
+        extra_fields.setdefault("is_superuser", False)
+        return self._create_user(admin_email, password, **extra_fields)
 
     def get_user_by_sub_or_email(self, sub, email):
         """Fetch existing user by sub or email."""
@@ -342,6 +360,9 @@ class Message(BaseModel):
     mta_sent = models.BooleanField(_("mta sent"), default=False)
     is_read = models.BooleanField(_("is read"), default=False)
 
+    # Internal cache for parsed data
+    _parsed_email_cache: Optional[Dict[str, Any]] = None
+
     class Meta:
         db_table = "messages_message"
         verbose_name = _("message")
@@ -350,3 +371,34 @@ class Message(BaseModel):
 
     def __str__(self):
         return self.subject
+
+    def get_parsed_data(self) -> Dict[str, Any]:
+        """Parse raw_mime using parser and cache the result."""
+        if self._parsed_email_cache is not None:
+            return self._parsed_email_cache
+
+        parsed_data = {}
+        if self.raw_mime:
+            try:
+                # Use the imported parser function
+                parsed_data = parse_email_message(self.raw_mime)
+            except EmailParseError as e:
+                logger.error("Failed to parse raw_mime for Message %s: %s", self.id, e)
+                # Store empty dict on parse failure
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.error(
+                    "Unexpected error parsing raw_mime for Message %s: %s",
+                    self.id,
+                    e,
+                    exc_info=True,
+                )
+                # Store empty dict on unexpected failure
+
+        # Ensure parsed_data is a dict before caching
+        self._parsed_email_cache = parsed_data if isinstance(parsed_data, dict) else {}
+        return self._parsed_email_cache
+
+    # Methods to access specific parsed fields (optional, serializer can access dict directly)
+    # Example:
+    # def parse_subject(self) -> str:
+    #     return self.get_parsed_data().get("subject", "")

@@ -8,6 +8,7 @@ encodings, and attachments.
 """
 
 import base64
+import binascii
 import datetime
 import html
 import logging
@@ -27,8 +28,6 @@ logger = logging.getLogger(__name__)
 
 class EmailComposeError(Exception):
     """Exception raised for errors during email composition."""
-
-    pass
 
 
 def format_address(name: str, email: str) -> str:
@@ -135,7 +134,7 @@ def set_basic_headers(message_part, jmap_data, in_reply_to=None):
             # Ensure date is timezone-aware
             if date.tzinfo is None or date.tzinfo.utcoffset(date) is None:
                 date = timezone.make_aware(
-                    date, timezone.utc
+                    date, datetime.timezone.utc
                 )  # Use Django's timezone utils
         except (ValueError, TypeError):
             # Default to current time if parsing fails or type is wrong
@@ -143,7 +142,7 @@ def set_basic_headers(message_part, jmap_data, in_reply_to=None):
     elif isinstance(date, datetime.datetime):
         # Ensure provided datetime is timezone-aware
         if date.tzinfo is None or date.tzinfo.utcoffset(date) is None:
-            date = timezone.make_aware(date, timezone.utc)
+            date = timezone.make_aware(date, datetime.timezone.utc)
 
     message_part.headers["Date"] = format_datetime(date)
 
@@ -230,8 +229,8 @@ def create_attachment_part(attachment: Dict[str, Any]) -> Optional[MimePart]:
         if isinstance(content, str):
             try:
                 decoded_content = base64.b64decode(content)
-            except Exception as e:
-                logger.error(f"Failed to decode base64 content: {str(e)}")
+            except binascii.Error as e:
+                logger.error("Failed to decode base64 content: %s", str(e))
                 return None
         else:
             # Assume it's already decoded binary data
@@ -255,12 +254,12 @@ def create_attachment_part(attachment: Dict[str, Any]) -> Optional[MimePart]:
             attachment_part.headers["Content-ID"] = content_id
 
         return attachment_part
-    except Exception as e:
-        logger.error(f"Failed to create attachment part: {str(e)}")
+    except (TypeError, ValueError, mime_errors.MimeError) as e:
+        logger.error("Failed to create attachment part: %s", str(e))
         return None
 
 
-def create_multipart_message(
+def create_multipart_message(  # pylint: disable=too-many-branches
     jmap_data: Dict[str, Any], in_reply_to: Optional[str] = None
 ) -> MimePart:
     """
@@ -337,9 +336,7 @@ def create_multipart_message(
                         else part_data
                     )
                     alternative_part.append(
-                        create.text(
-                            "html", content.replace("&rsquo;", "'"), "utf-8"
-                        )
+                        create.text("html", content.replace("&rsquo;", "'"), "utf-8")
                     )
                 related_part.append(alternative_part)
             else:  # Only HTML + inline
@@ -350,9 +347,7 @@ def create_multipart_message(
                         else part_data
                     )
                     related_part.append(
-                        create.text(
-                            "html", content.replace("&rsquo;", "'"), "utf-8"
-                        )
+                        create.text("html", content.replace("&rsquo;", "'"), "utf-8")
                     )
 
             # Add inline attachments to related part
@@ -382,9 +377,7 @@ def create_multipart_message(
                         else part_data
                     )
                     alternative_part.append(
-                        create.text(
-                            "html", content.replace("&rsquo;", "'"), "utf-8"
-                        )
+                        create.text("html", content.replace("&rsquo;", "'"), "utf-8")
                     )
             main_content_part = alternative_part
 
@@ -394,9 +387,7 @@ def create_multipart_message(
         elif (
             not regular_attachments
         ):  # Should not happen if top_level_part is mixed, but safety check
-            top_level_part.append(
-                create.text("plain", "")
-            )  # Add empty part if needed
+            top_level_part.append(create.text("plain", ""))  # Add empty part if needed
 
         # Add regular attachments to mixed part
         for attachment in regular_attachments:
@@ -538,13 +529,13 @@ def compose_email(
     except mime_errors.MimeError as e:
         # Catch flanker specific errors during composition/string conversion
         logger.error(
-            f"Flanker MIME composition/encoding error: {str(e)}", exc_info=True
+            "Flanker MIME composition/encoding error: %s", str(e), exc_info=True
         )
-        raise EmailComposeError(f"MIME composition error: {str(e)}")
+        raise EmailComposeError(f"MIME composition error: {str(e)}") from e
     except Exception as e:
         # Log other unexpected exceptions
-        logger.exception(f"Unexpected error during email composition: {str(e)}")
-        raise EmailComposeError(f"Failed to compose email: {str(e)}")
+        logger.exception("Unexpected error during email composition: %s", str(e))
+        raise EmailComposeError(f"Failed to compose email: {str(e)}") from e
 
 
 def create_reply_message(
@@ -583,9 +574,9 @@ def create_reply_message(
         if orig_date.tzinfo is None or orig_date.tzinfo.utcoffset(orig_date) is None:
             # If naive, assume UTC (or use a default timezone)
             orig_date = (
-                timezone.make_aware(orig_date, timezone.utc)
+                timezone.make_aware(orig_date, datetime.timezone.utc)
                 if hasattr(timezone, "make_aware")
-                else orig_date.replace(tzinfo=timezone.utc)
+                else orig_date.replace(tzinfo=datetime.timezone.utc)
             )
 
         # Format according to RFC 5322 preferred date format (e.g., "15 May 2023 14:30:00 +0000")

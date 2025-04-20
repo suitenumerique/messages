@@ -24,8 +24,7 @@ UUID_REGEX = (
 )
 FILE_EXT_REGEX = r"(\.[a-zA-Z0-9]+)?$"
 MEDIA_STORAGE_URL_PATTERN = re.compile(
-    f"{settings.MEDIA_URL:s}"
-    f"(?P<key>{ITEM_FOLDER:s}/(?P<pk>{UUID_REGEX:s})/.*{FILE_EXT_REGEX:s})$"
+    f"{settings.MEDIA_URL:s}(?P<key>{ITEM_FOLDER:s}/(?P<pk>{UUID_REGEX:s})/.*{FILE_EXT_REGEX:s})$"
 )
 
 # pylint: disable=too-many-ancestors
@@ -307,14 +306,25 @@ class ThreadViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
         ).order_by("-updated_at")
 
 
-class MessageViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
+class MessageViewSet(
+    viewsets.GenericViewSet, mixins.ListModelMixin, mixins.RetrieveModelMixin
+):
     """ViewSet for Message model."""
 
     serializer_class = serializers.MessageSerializer
     permission_classes = [permissions.IsAllowedToAccessMailbox]
 
     def get_queryset(self):
-        """Restrict results to messages of the current user's mailbox."""
-        return models.Message.objects.filter(
-            thread__id=self.request.GET.get("thread_id")
-        ).order_by("-received_at")
+        """Restrict results based on user access and optional thread_id filter."""
+        # Base queryset: messages in mailboxes the user can access.
+        queryset = models.Message.objects.filter(
+            thread__mailbox__accesses__user=self.request.user
+        )
+
+        # Apply thread_id filter if provided in query parameters (for list view)
+        thread_id = self.request.query_params.get("thread_id")
+        if thread_id:
+            queryset = queryset.filter(thread__id=thread_id)
+
+        # Apply ordering and ensure distinct results.
+        return queryset.order_by("-received_at").distinct()

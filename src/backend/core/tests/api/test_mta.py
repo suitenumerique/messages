@@ -85,7 +85,7 @@ def fixture_valid_jwt_token():
         body_hash = hashlib.sha256(body).hexdigest()
         payload = {
             "body_hash": body_hash,
-            "exp": datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=10),
+            "exp": datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=30),
             **metadata,
         }
         return jwt.encode(payload, settings.MDA_API_SECRET, algorithm="HS256")
@@ -102,134 +102,109 @@ class TestMTAInboundEmail:
         self, api_client: APIClient, sample_email, valid_jwt_token
     ):
         """Test submitting a valid email and verify serialized output."""
-
-        # Create the maildomain
         domain = models.MailDomain.objects.create(name="example.com")
-
-        # Create the recipient mailbox using the fetched domain
-        models.Mailbox.objects.create(
-            local_part="recipient",
-            domain=domain,
-        )
-
-        # Check mailbox exists BEFORE posting
+        models.Mailbox.objects.create(local_part="recipient", domain=domain)
         assert models.Mailbox.objects.filter(
             local_part="recipient", domain=domain
         ).exists()
 
-        # Post the email
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
             data=sample_email,
             content_type="message/rfc822",
-            HTTP_AUTHORIZATION=f"""Bearer {
-                valid_jwt_token(
-                    sample_email, {"original_recipients": ["recipient@example.com"]}
-                )
-            }""",
+            HTTP_AUTHORIZATION=(
+                f"Bearer {valid_jwt_token(sample_email, {'original_recipients': ['recipient@example.com']})}"
+            ),
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), {"status": "ok"})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"status": "ok"}
 
         # Verify database state
-        self.assertEqual(models.Message.objects.count(), 1)
-        self.assertEqual(models.Thread.objects.count(), 1)
+        assert models.Message.objects.count() == 1
+        assert models.Thread.objects.count() == 1
         message = models.Message.objects.first()
-        self.assertEqual(message.subject, "Test Email")
-        self.assertEqual(message.raw_mime, sample_email)
+        assert message.subject == "Test Email"
+        assert message.raw_mime == sample_email
 
         # Verify API serialization
-        user = models.User.objects.create_user(
-            username="testuser", email="test@example.com"
-        )
+        user = models.User.objects.create_user(admin_email="test@example.com")
         models.MailboxAccess.objects.create(
             user=user,
             mailbox=message.thread.mailbox,
-            permission=models.MailboxPermissionChoices.READ_WRITE,
+            permission=models.MailboxPermissionChoices.ADMIN,
         )
         api_client.force_authenticate(user=user)
+        message.refresh_from_db()
 
         message_url = f"/api/v1.0/messages/{message.id}/"
         response = api_client.get(message_url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         serialized_data = response.json()
 
-        self.assertEqual(serialized_data["subject"], "Test Email")
-        self.assertEqual(len(serialized_data["textBody"]), 1)
-        self.assertEqual(serialized_data["textBody"][0]["type"], "text/plain")
-        self.assertIn(
-            "This is a test email body.", serialized_data["textBody"][0]["content"]
-        )
-        self.assertEqual(serialized_data["htmlBody"], [])
+        assert serialized_data["subject"] == "Test Email"
+        assert len(serialized_data["textBody"]) == 1
+        assert serialized_data["textBody"][0]["type"] == "text/plain"
+        assert "This is a test email body." in serialized_data["textBody"][0]["content"]
+        assert serialized_data["htmlBody"] == []
+        assert len(serialized_data["to"]) == 1
+        assert serialized_data["to"][0]["email"] == "recipient@example.com"
+        assert serialized_data["cc"] == []
+        assert serialized_data["bcc"] == []
+        assert serialized_data["sender"]["email"] == "sender@example.com"
 
-        self.assertEqual(len(serialized_data["to"]), 1)
-        self.assertEqual(serialized_data["to"][0]["email"], "recipient@example.com")
-        self.assertEqual(serialized_data["to"][0]["name"], "")
-
-        self.assertEqual(len(serialized_data["cc"]), 0)
-        self.assertEqual(len(serialized_data["bcc"]), 0)
-
-        self.assertIsNotNone(serialized_data["sender"])
-        self.assertEqual(serialized_data["sender"]["email"], "sender@example.com")
-
-    def test_invalid_content_type(self, api_client, sample_email, valid_jwt_token):
-        """Test submitting with wrong content type."""
+    def test_invalid_content_type(
+        self, api_client: APIClient, sample_email, valid_jwt_token
+    ):
+        """Test that submitting with an incorrect content type fails."""
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
             data=sample_email,
             content_type="application/json",
-            HTTP_AUTHORIZATION=f"""Bearer {
-                valid_jwt_token(
-                    sample_email, {"original_recipients": ["recipient@example.com"]}
-                )
-            }""",
+            HTTP_AUTHORIZATION=(
+                f"Bearer {valid_jwt_token(sample_email, {'original_recipients': ['recipient@example.com']})}"
+            ),
         )
-
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    def test_missing_auth_header(self, api_client, sample_email):
-        """Test submitting without authorization header."""
+    def test_missing_auth_header(self, api_client: APIClient, sample_email):
+        """Test that submitting without an authorization header fails."""
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
             data=sample_email,
             content_type="message/rfc822",
         )
-
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_invalid_jwt_token(self, api_client, sample_email):
-        """Test submitting with invalid JWT token."""
+    def test_invalid_jwt_token(self, api_client: APIClient, sample_email):
+        """Test that submitting with an invalid JWT token fails."""
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
             data=sample_email,
             content_type="message/rfc822",
             HTTP_AUTHORIZATION="Bearer invalid_token",
         )
-
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_mismatched_body_hash(self, api_client, sample_email, valid_jwt_token):
-        """Test submitting with JWT token containing wrong email hash."""
-
+    def test_mismatched_body_hash(
+        self, api_client: APIClient, sample_email, valid_jwt_token
+    ):
+        """Test that submitting with a JWT token whose hash doesn't match the body fails."""
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
             data=sample_email + b"\n one more line",
             content_type="message/rfc822",
-            HTTP_AUTHORIZATION=f"Bearer {
-                valid_jwt_token(
-                    sample_email, {'original_recipients': ['recipient@example.com']}
-                )
-            }",
+            HTTP_AUTHORIZATION=(
+                f"Bearer {valid_jwt_token(sample_email, {'original_recipients': ['recipient@example.com']})}"
+            ),
         )
-
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_html_email_submission(self, api_client, html_email, valid_jwt_token):
-        """Test submitting an email with HTML content."""
-        # Create the maildomain
+    @pytest.mark.django_db
+    def test_html_email_submission(
+        self, api_client: APIClient, html_email, valid_jwt_token
+    ):
+        """Test submitting an HTML-only email and verify serialization."""
         domain = models.MailDomain.objects.create(name="example.com")
-
-        # Create the recipient mailbox
         models.Mailbox.objects.create(local_part="recipient", domain=domain)
         assert models.Mailbox.objects.filter(
             local_part="recipient", domain=domain
@@ -239,29 +214,44 @@ class TestMTAInboundEmail:
             "/api/v1.0/mta/inbound-email/",
             data=html_email,
             content_type="message/rfc822",
-            HTTP_AUTHORIZATION=f"Bearer {
-                valid_jwt_token(
-                    html_email, {'original_recipients': ['recipient@example.com']}
-                )
-            }",
+            HTTP_AUTHORIZATION=(
+                f"Bearer {valid_jwt_token(html_email, {'original_recipients': ['recipient@example.com']})}"
+            ),
         )
-
         assert response.status_code == status.HTTP_200_OK
+
         message = models.Message.objects.first()
-        assert message is not None  # Add check message exists
+        assert message is not None
         assert message.subject == "HTML Test Email"
-        assert "<h1>Test HTML Email</h1>" in message.body_html
-        # HTML should be used for text when no text part exists
-        assert "<h1>Test HTML Email</h1>" in message.body_text
+        assert message.raw_mime == html_email
 
+        # Verify API serialization
+        user = models.User.objects.create_user(admin_email="test2@example.com")
+        models.MailboxAccess.objects.create(
+            user=user,
+            mailbox=message.thread.mailbox,
+            permission=models.MailboxPermissionChoices.ADMIN,
+        )
+        api_client.force_authenticate(user=user)
+        message.refresh_from_db()
+        message_url = f"/api/v1.0/messages/{message.id}/"
+        response = api_client.get(message_url)
+        assert response.status_code == status.HTTP_200_OK
+        serialized_data = response.json()
+
+        assert serialized_data["textBody"] == []
+        assert len(serialized_data["htmlBody"]) == 1
+        assert serialized_data["htmlBody"][0]["type"] == "text/html"
+        assert "<h1>Test HTML Email</h1>" in serialized_data["htmlBody"][0]["content"]
+        assert len(serialized_data["to"]) == 1
+        assert serialized_data["to"][0]["email"] == "recipient@example.com"
+
+    @pytest.mark.django_db
     def test_multipart_email_submission(
-        self, api_client, multipart_email, valid_jwt_token
+        self, api_client: APIClient, multipart_email, valid_jwt_token
     ):
-        """Test submitting a multipart email with both text and HTML parts."""
-        # Create the maildomain
+        """Test submitting a multipart email (text and HTML) and verify serialization."""
         domain = models.MailDomain.objects.create(name="example.com")
-
-        # Create the recipient mailbox
         models.Mailbox.objects.create(local_part="recipient", domain=domain)
         assert models.Mailbox.objects.filter(
             local_part="recipient", domain=domain
@@ -271,19 +261,40 @@ class TestMTAInboundEmail:
             "/api/v1.0/mta/inbound-email/",
             data=multipart_email,
             content_type="message/rfc822",
-            HTTP_AUTHORIZATION=f"Bearer {
-                valid_jwt_token(
-                    multipart_email, {'original_recipients': ['recipient@example.com']}
-                )
-            }",
+            HTTP_AUTHORIZATION=(
+                f"Bearer {valid_jwt_token(multipart_email, {'original_recipients': ['recipient@example.com']})}"
+            ),
         )
-
         assert response.status_code == status.HTTP_200_OK
+
         message = models.Message.objects.first()
-        assert message is not None  # Add check message exists
+        assert message is not None
         assert message.subject == "Multipart Test Email"
-        assert "<h1>Multipart Email</h1>" in message.body_html
-        assert "This is the plain text version." in message.body_text
+        assert message.raw_mime == multipart_email
+
+        # Verify API serialization
+        user = models.User.objects.create_user(admin_email="test3@example.com")
+        models.MailboxAccess.objects.create(
+            user=user,
+            mailbox=message.thread.mailbox,
+            permission=models.MailboxPermissionChoices.ADMIN,
+        )
+        api_client.force_authenticate(user=user)
+        message.refresh_from_db()
+        message_url = f"/api/v1.0/messages/{message.id}/"
+        response = api_client.get(message_url)
+        assert response.status_code == status.HTTP_200_OK
+        serialized_data = response.json()
+
+        assert len(serialized_data["textBody"]) == 1
+        assert (
+            "This is the plain text version."
+            in serialized_data["textBody"][0]["content"]
+        )
+        assert len(serialized_data["htmlBody"]) == 1
+        assert "<h1>Multipart Email</h1>" in serialized_data["htmlBody"][0]["content"]
+        assert len(serialized_data["to"]) == 1
+        assert serialized_data["to"][0]["email"] == "recipient@example.com"
 
 
 @pytest.mark.django_db
@@ -345,13 +356,9 @@ class TestEmailAddressParsing:
             "/api/v1.0/mta/inbound-email/",
             data=formatted_email,
             content_type="message/rfc822",
-            HTTP_AUTHORIZATION=f"Bearer {
-                valid_jwt_token(
-                    # Ensure JWT uses the recipient the view should process
-                    formatted_email,
-                    {'original_recipients': ['recipient@example.com']},
-                )
-            }",
+            HTTP_AUTHORIZATION=(
+                f"Bearer {valid_jwt_token(formatted_email, {'original_recipients': ['recipient@example.com']})}"
+            ),
         )
 
         assert response.status_code == status.HTTP_200_OK

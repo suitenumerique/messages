@@ -12,6 +12,6 @@ echo "updating cacert.pem for certifi package in ${CONTAINER_NAME}"
 
 curl --create-dirs https://raw.githubusercontent.com/certifi/python-certifi/refs/heads/master/certifi/cacert.pem -o /tmp/certifi/cacert.pem
 cat "$(mkcert -CAROOT)/rootCA.pem" >> /tmp/certifi/cacert.pem
-docker cp /tmp/certifi/cacert.pem ${CONTAINER_NAME}:/usr/local/lib/python3.12/site-packages/certifi/cacert.pem
+docker cp /tmp/certifi/cacert.pem ${CONTAINER_NAME}:/usr/local/lib/python3.13/site-packages/certifi/cacert.pem
 
 echo "end patching cacert.pem in ${CONTAINER_NAME}"

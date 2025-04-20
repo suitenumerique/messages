@@ -83,12 +83,23 @@ class IsAllowedToAccessMailbox(IsAuthenticated):
     """Permission class for access to a mailbox."""
 
     def has_permission(self, request, view):
-        """Check if user has permission to access the mailbox thread and messages"""
+        """Check if user has permission to access the mailbox thread list or message list."""
+        # This check is primarily for LIST actions based on query params
         mailbox_id = request.query_params.get("mailbox_id")
         thread_id = request.query_params.get("thread_id")
 
+        # If it's a detail action (retrieve, update, destroy), object-level permission is checked
+        # by has_object_permission. If it's a list action without filters, deny access.
+        if view.action != "list":
+            # Allow the view to proceed to object-level checks for detail actions
+            # or handle custom actions appropriately.
+            return True
+
+        # For LIST action, require either mailbox_id or thread_id
         if not mailbox_id and not thread_id:
             return False
+
+        # Check access based on query params for LIST action
         if mailbox_id:
             return models.Mailbox.objects.filter(
                 id=mailbox_id, accesses__user=request.user
@@ -97,4 +108,26 @@ class IsAllowedToAccessMailbox(IsAuthenticated):
             return models.Thread.objects.filter(
                 id=thread_id, mailbox__accesses__user=request.user
             ).exists()
+
+        return False  # Should not be reached if logic above is correct
+
+    def has_object_permission(self, request, view, obj):
+        """Check if user has permission to access the specific object (Message, Thread, Mailbox)."""
+        user = request.user
+
+        if isinstance(obj, models.Message):
+            # Check access via the message's thread's mailbox
+            return models.MailboxAccess.objects.filter(
+                mailbox=obj.thread.mailbox, user=user
+            ).exists()
+        if isinstance(obj, models.Thread):
+            # Check access via the thread's mailbox
+            return models.MailboxAccess.objects.filter(
+                mailbox=obj.mailbox, user=user
+            ).exists()
+        if isinstance(obj, models.Mailbox):
+            # Check access directly on the mailbox
+            return models.MailboxAccess.objects.filter(mailbox=obj, user=user).exists()
+
+        # Deny access for other object types or if type is unknown
         return False
