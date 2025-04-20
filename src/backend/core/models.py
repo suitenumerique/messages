@@ -288,7 +288,7 @@ class Thread(BaseModel):
 class Contact(BaseModel):
     """Contact model to store contact information."""
 
-    name = models.CharField(_("name"), max_length=255)
+    name = models.CharField(_("name"), max_length=255, null=True, blank=True)
     email = models.EmailField(_("email"), unique=True)
     user = models.ForeignKey("User", on_delete=models.CASCADE, null=True, blank=True)
 
