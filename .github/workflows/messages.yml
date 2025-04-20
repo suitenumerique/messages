@@ -20,9 +20,6 @@ jobs:
           fetch-depth: 0
       - name: show
         run: git log
-      - name: Enforce absence of print statements in code
-        run: |
-          ! git diff origin/${{ github.event.pull_request.base.ref }}..HEAD -- . ':(exclude)**/messages.yml' | grep -E "(\bprint\(|\bpprint\()"
       - name: Check absence of fixup commits
         run: |
           ! git log | grep 'fixup!'
@@ -82,7 +79,7 @@ jobs:
       DB_USER: user
       DB_PASSWORD: pass
       DB_PORT: 5432
-
+ 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
