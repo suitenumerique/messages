@@ -216,6 +216,7 @@ class MessageSerializer(serializers.ModelSerializer):
         model = models.Message
         fields = [
             "id",
+            "thread",
             "subject",
             "received_at",
             "created_at",

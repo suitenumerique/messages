@@ -4,7 +4,7 @@ from django.core import exceptions
 
 from rest_framework import permissions
 
-from core import models
+from core import enums, models
 
 ACTION_FOR_METHOD_TO_PERMISSION = {
     "versions_detail": {"DELETE": "versions_destroy", "GET": "versions_retrieve"},
@@ -131,3 +131,37 @@ class IsAllowedToAccessMailbox(IsAuthenticated):
 
         # Deny access for other object types or if type is unknown
         return False
+
+
+class IsAllowedToCreateMessage(IsAuthenticated):
+    """Permission class for access to create a message."""
+
+    def has_permission(self, request, view):
+        """Check if user is allowed to create a message."""
+        # a sender is required to create a message
+        sender_id = request.data.get("senderId")
+        if not sender_id:
+            return False
+        try:
+            sender = models.Contact.objects.get(id=sender_id)
+        except models.Contact.DoesNotExist:
+            return False
+
+        # get mailbox instance from sender email
+        try:
+            mailbox = models.Mailbox.objects.get(
+                domain__name=sender.email.split("@")[1],
+                local_part=sender.email.split("@")[0],
+            )
+            view.mailbox = mailbox
+        except models.Mailbox.DoesNotExist:
+            return False
+        # required permissions to send a message
+        permissions_required = [
+            enums.MailboxPermissionChoices.SEND,
+        ]
+        # check if user has access required to send a message with this mailbox
+        return mailbox.accesses.filter(
+            user=request.user,
+            permission__in=permissions_required,
+        ).exists()

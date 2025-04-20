@@ -9,8 +9,10 @@ from django.contrib.postgres.aggregates import ArrayAgg
 from django.db import models as db
 
 import rest_framework as drf
-from rest_framework import mixins, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from core import enums, models
 
@@ -318,3 +320,99 @@ class MessageViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
         return models.Message.objects.filter(
             thread__id=self.request.GET.get("thread_id")
         ).order_by("-received_at")
+
+
+class MessageCreateView(APIView):
+    """Create a new message or reply to an existing message.
+
+    This endpoint is used to create a new message or reply to an existing message.
+
+    POST /api/v1.0/message-create/ with expected data:
+        - parentId: str (message id if reply, None if first message)
+        - senderId: str (contact id of the sender)
+        - subject: str
+        - htmlBody: str
+        - textBody: str
+        - to: list[str]
+        - cc: list[str]
+        - bcc: list[str]
+        Return newly created message
+    """
+
+    permission_classes = [permissions.IsAllowedToCreateMessage]
+    mailbox = None
+
+    def post(self, request):
+        """Perform the create action."""
+        # First get the sender contact
+        sender_id = (
+            request.data.pop("senderId") if request.data.get("senderId") else None
+        )
+        if not sender_id:
+            raise drf.exceptions.ValidationError("Either a senderId must be provided.")
+        try:
+            sender = models.Contact.objects.get(id=sender_id)
+        except models.Contact.DoesNotExist as exc:
+            raise drf.exceptions.ValidationError("Sender does not exist.") from exc
+        # Then get the parent message if it's a reply
+        parent_id = (
+            request.data.pop("parentId") if request.data.get("parentId") else None
+        )
+        if parent_id:
+            try:
+                # Reply to an existing message in a thread
+                reply_to_message = models.Message.objects.get(id=parent_id)
+                thread = reply_to_message.thread
+            except models.Message.DoesNotExist as exc:
+                raise drf.exceptions.ValidationError(
+                    "Parent message does not exist."
+                ) from exc
+        else:
+            # Create a new thread
+            thread = models.Thread.objects.create(
+                # mailbox is set in the permission class
+                mailbox=self.mailbox,
+                subject=request.data.get("subject"),
+                # TODO: enhance to use htmlBody if is the only one provided
+                snippet=request.data.get("textBody")[:100],
+            )
+
+        # Manage thread and sender
+        request.data["thread"] = thread
+        request.data["sender"] = sender
+
+        # Manage body
+        request.data["body_html"] = (
+            request.data.pop("htmlBody") if request.data.get("htmlBody") else ""
+        )
+        request.data["body_text"] = (
+            request.data.pop("textBody") if request.data.get("textBody") else ""
+        )
+
+        # Manage recipients
+        recipients_to = request.data.pop("to") if request.data.get("to") else []
+        recipients_cc = request.data.pop("cc") if request.data.get("cc") else []
+        recipients_bcc = request.data.pop("bcc") if request.data.get("bcc") else []
+
+        # Create message instance with all data
+        message = models.Message.objects.create(**request.data)
+
+        # Manage recipients
+        recipients = [(email, "to") for email in recipients_to]
+        recipients.extend([(email, "cc") for email in recipients_cc])
+        recipients.extend([(email, "bcc") for email in recipients_bcc])
+        for recipient_email, recipient_type in recipients:
+            # Create contact if it doesn't exist
+            contact, _ = models.Contact.objects.get_or_create(email=recipient_email)
+            # Create message recipient
+            models.MessageRecipient.objects.create(
+                message=message,
+                contact=contact,
+                type=recipient_type,
+            )
+
+        # TODO: send message for real to the MTA
+
+        return Response(
+            serializers.MessageSerializer(message).data, status=status.HTTP_201_CREATED
+        )

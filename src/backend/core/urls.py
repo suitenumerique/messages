@@ -23,4 +23,8 @@ urlpatterns = [
         include([*router.urls, *oidc_urls]),
     ),
     path(f"api/{settings.API_VERSION}/config/", viewsets.ConfigView.as_view()),
+    path(
+        f"api/{settings.API_VERSION}/message-create/",
+        viewsets.MessageCreateView.as_view(),
+    ),
 ]
