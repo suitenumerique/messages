@@ -50,6 +50,10 @@ smtpd_tls_cert_file = {{ TLS_CERT_PATH }}
 smtpd_tls_key_file = {{ TLS_KEY_PATH }}
 smtpd_tls_loglevel = 1
 
+{% if ENABLE_PROXY_PROTOCOL == "haproxy" %}
+postscreen_upstream_proxy_protocol = {{ ENABLE_PROXY_PROTOCOL }}
+{% endif %}
+
 # === Restrictions (Incoming Connections) ===
 # These restrictions apply to clients connecting to this service.
 
@@ -100,6 +104,7 @@ smtp_sasl_auth_enable = no
 # === Other settings ===
 # Allow clients that don't wait for the entire HELO response (compatibility)
 broken_sasl_auth_clients = yes
+disable_vrfy_command = yes
 
 # === Debugging Outgoing ===
 # Optional: Add verbose logging for the smtp client

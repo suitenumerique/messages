@@ -29,7 +29,7 @@ Configuration is done entirely through environment variables:
 - `RELAYHOST`: Upstream SMTP server to relay mail through (e.g., `[smtp.test-server.com]:1025`). If unset (default), mail is delivered directly via DNS MX lookups.
 - `SMTP_RELAY_USERNAME`: Username for this service to use when authenticating to the `RELAYHOST` (only used if `RELAYHOST` is set).
 - `SMTP_RELAY_PASSWORD`: Password for this service to use when authenticating to the `RELAYHOST` (only used if `RELAYHOST` is set).
-- `MYHOSTNAME`: The hostname this MTA identifies itself with in HELO/EHLO commands (default: `localhost`). Setting a proper FQDN is recommended.
+- `MYHOSTNAME`: The hostname this MTA identifies itself with in HELO/EHLO commands (default: `localhost`). Setting a proper FQDN is recommended. If it is not set we will attempt auto-detection from the rRNS of the host.
 - `TLS_CERT_PATH`: Path to the TLS certificate file (default: `/etc/ssl/certs/ssl-cert-snakeoil.pem`). **WARNING:** Mount a real certificate in production.
 - `TLS_KEY_PATH`: Path to the TLS private key file (default: `/etc/ssl/private/ssl-cert-snakeoil.key`). **WARNING:** Mount a real key in production.
 - `MESSAGE_SIZE_LIMIT`: Maximum size of messages in bytes (default: `10240000`).

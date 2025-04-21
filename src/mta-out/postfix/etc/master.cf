@@ -1,16 +1,16 @@
-# Submission (SMTP with STARTTLS) on port 587
-# Configuration inherited from main.cf.
-submission inet n       -       y       -       -       smtpd
+# Submission (SMTP with STARTTLS) on port 587, with postscreen
+submission inet n       -       y       -       1       postscreen
   -o syslog_name=postfix/submission
-  
+smtpd     pass  -       -       y       -       -       smtpd
+
 # Minimal set of required processes
-# smtp      inet  n       -       y       -       -       smtpd
 pickup    unix  n       -       y       60      1       pickup
 cleanup   unix  n       -       y       -       0       cleanup
 qmgr      unix  n       -       n       300     1       qmgr
 tlsmgr    unix  -       -       y       1000?   1       tlsmgr
 rewrite   unix  -       -       y       -       -       trivial-rewrite
 bounce    unix  -       -       y       -       0       bounce
+defer     unix  -       -       y       -       0       bounce
 smtp      unix  -       -       n       -       -       smtp
 # relay     unix  -       -       y       -       -       smtp
 error     unix  -       -       y       -       -       error

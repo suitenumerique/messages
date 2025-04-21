@@ -1,7 +1,4 @@
-import pytest
-import smtplib
 import logging
-import os
 import base64
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -18,11 +15,11 @@ def test_send_email_with_pdf_attachment(smtp_client, mock_smtp_server):
     message["From"] = "sender@example.com"
     message["To"] = "recipient@external-domain.com"
     message["Subject"] = "Test Email with PDF Attachment"
-    
+
     # Add text part
     text_part = MIMEText("This email contains a PDF attachment")
     message.attach(text_part)
-    
+
     # Create a simple PDF (just a base64 encoded dummy PDF)
     pdf_data = base64.b64decode(
         "JVBERi0xLjQKJcOkw7zDtsOfCjIgMCBvYmoKPDwvTGVuZ3RoIDMgMCBSL0ZpbHRlci9GbGF0ZURl"
@@ -44,14 +41,12 @@ def test_send_email_with_pdf_attachment(smtp_client, mock_smtp_server):
         "NTU4NDk4NmRmYjI5ZWU2NGJmZjNmNGFkMT5dL1Jvb3QgMSAwIFIvU2l6ZSA4Pj4Kc3RhcnR4cmVm"
         "CjY2NAolJUVPRgo="
     )
-    
+
     # Attach the PDF
     pdf_attachment = MIMEApplication(pdf_data, _subtype="pdf")
-    pdf_attachment.add_header(
-        "Content-Disposition", "attachment", filename="test.pdf"
-    )
+    pdf_attachment.add_header("Content-Disposition", "attachment", filename="test.pdf")
     message.attach(pdf_attachment)
-    
+
     mock_smtp_server.clear_messages()
 
     # Send the email
@@ -72,23 +67,21 @@ def test_send_email_with_image_attachment(smtp_client, mock_smtp_server):
     message["From"] = "sender@example.com"
     message["To"] = "recipient@external-domain.com"
     message["Subject"] = "Test Email with Image Attachment"
-    
+
     # Add text part
     text_part = MIMEText("This email contains an image attachment")
     message.attach(text_part)
-    
+
     # Create a simple 1x1 pixel PNG
     png_data = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     )
-    
+
     # Attach the image
     img_attachment = MIMEImage(png_data, _subtype="png")
-    img_attachment.add_header(
-        "Content-Disposition", "attachment", filename="test.png"
-    )
+    img_attachment.add_header("Content-Disposition", "attachment", filename="test.png")
     message.attach(img_attachment)
-    
+
     mock_smtp_server.clear_messages()
 
     # Send the email
@@ -109,7 +102,7 @@ def test_send_email_with_inline_image(smtp_client, mock_smtp_server):
     message["From"] = "sender@example.com"
     message["To"] = "recipient@external-domain.com"
     message["Subject"] = "Test Email with Inline Image"
-    
+
     # Create the HTML part with a reference to the inline image
     html = """
     <html>
@@ -121,18 +114,18 @@ def test_send_email_with_inline_image(smtp_client, mock_smtp_server):
     """
     html_part = MIMEText(html, "html")
     message.attach(html_part)
-    
+
     # Create a simple 1x1 pixel PNG
     png_data = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     )
-    
+
     # Attach the image with Content-ID for inline reference
     img = MIMEImage(png_data)
     img.add_header("Content-ID", "<image1>")
     img.add_header("Content-Disposition", "inline")
     message.attach(img)
-    
+
     mock_smtp_server.clear_messages()
 
     # Send the email
@@ -145,6 +138,7 @@ def test_send_email_with_inline_image(smtp_client, mock_smtp_server):
     assert received["from"] == "sender@example.com"
     assert received["to"] == "recipient@external-domain.com"
 
+
 def test_send_large_attachment(smtp_client, mock_smtp_server):
     """Test sending email with a large attachment"""
     # Create a multipart message
@@ -152,26 +146,26 @@ def test_send_large_attachment(smtp_client, mock_smtp_server):
     message["From"] = "sender@example.com"
     message["To"] = "recipient@external-domain.com"
     message["Subject"] = "Test Email with Large Attachment"
-    
+
     # Add text part
     text_part = MIMEText("This email contains a large attachment")
     message.attach(text_part)
-    
+
     # Create a large binary attachment (1MB of random-like data)
     large_data = b"\x00" * (1024 * 1024)  # 1MB of zeros
-    
+
     # Attach the large file
     attachment = MIMEApplication(large_data, _subtype="octet-stream")
     attachment.add_header(
         "Content-Disposition", "attachment", filename="large_file.bin"
     )
     message.attach(attachment)
-    
+
     mock_smtp_server.clear_messages()
 
     # Send the email
     response = smtp_client.send_message(message)
-    assert not response, "Sending should succeed with empty response dict" 
+    assert not response, "Sending should succeed with empty response dict"
 
     mock_smtp_server.wait_for_messages(1)
     received = mock_smtp_server.get_messages()[0]
