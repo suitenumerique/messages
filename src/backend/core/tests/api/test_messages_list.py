@@ -16,6 +16,8 @@ class TestApiThreads:
 
     def test_list_threads(self):
         """Test list threads."""
+        # Create 10 threads to populate the database
+        factories.ThreadFactory.create_batch(10)
         # Create authenticated user with access to a mailbox
         authenticated_user = factories.UserFactory()
         mailbox = factories.MailboxFactory()
@@ -104,6 +106,8 @@ class TestApiMessages:
 
     def test_list_messages(self):
         """Test list messages."""
+        # Create 10 messages to populate the database
+        factories.MessageFactory.create_batch(10)
         # Setup: User, Mailbox, Thread, 2 Messages
         authenticated_user = factories.UserFactory()
         mailbox = factories.MailboxFactory()

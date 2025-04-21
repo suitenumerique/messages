@@ -27,4 +27,9 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/message-create/",
         viewsets.MessageCreateView.as_view(),
     ),
+    path(
+        f"api/{settings.API_VERSION}/read/",
+        viewsets.ChangeReadStatusViewSet.as_view(),
+        name="change-read-status",
+    ),
 ]

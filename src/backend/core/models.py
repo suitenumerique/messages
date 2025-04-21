@@ -289,6 +289,11 @@ class Thread(BaseModel):
     def __str__(self):
         return self.subject
 
+    def update_read_status(self):
+        """Mark the thread as read if all messages in the thread are read."""
+        self.is_read = not self.messages.filter(read_at__isnull=True).exists()
+        self.save(update_fields=["is_read", "updated_at"])
+
 
 class Contact(BaseModel):
     """Contact model to store contact information."""
