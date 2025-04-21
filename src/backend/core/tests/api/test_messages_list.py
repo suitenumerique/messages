@@ -265,8 +265,8 @@ Content-Type: text/html
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_thread_not_existing(self):
-        """Test thread not existing."""
+    def test_list_messages_thread_not_existing(self):
+        """Test list messages thread not existing."""
         authenticated_user = factories.UserFactory()
         client = APIClient()
         client.force_authenticate(user=authenticated_user)

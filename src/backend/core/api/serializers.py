@@ -226,15 +226,14 @@ class MessageSerializer(serializers.ModelSerializer):
         model = models.Message
         fields = [
             "id",
-            "subject",  # Denormalized from model
-            "received_at",  # Denormalized from model
-            "created_at",  # From model
-            "updated_at",  # From model
-            "textBody",  # From model's get_parsed_data()
-            "htmlBody",  # From model's get_parsed_data()
-            "sender",  # Denormalized from model (Contact relation)
-            "to",  # From model's get_parsed_data()
-            "cc",  # From model's get_parsed_data()
-            "bcc",  # From model's get_parsed_data()
-            "is_read",  # Denormalized from model
+            "thread",
+            "subject",
+            "received_at",
+            "created_at",
+            "updated_at",
+            "htmlBody",
+            "textBody",
+            "sender",
+            "recipients",
+            "is_read",
         ]
