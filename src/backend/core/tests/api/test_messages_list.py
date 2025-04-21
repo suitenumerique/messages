@@ -58,7 +58,6 @@ class TestApiThreads:
         assert thread_data["updated_at"] == thread.updated_at.isoformat().replace(
             "+00:00", "Z"
         )
-        # Removed assertion for aggregated 'recipients' field in ThreadSerializer
 
     def test_list_threads_unauthorized(self):
         """Test list threads unauthorized."""

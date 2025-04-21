@@ -1,17 +1,11 @@
 """Client serializers for the messages core app."""
 
-import logging
-
 from django.db.models import Count, Q
 
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import exceptions, serializers
 
 from core import models
-
-# from core.formats.rfc5322 import EmailParseError, parse_email_message # No longer needed here
-
-logger = logging.getLogger(__name__)
 
 
 class UserSerializer(serializers.ModelSerializer):

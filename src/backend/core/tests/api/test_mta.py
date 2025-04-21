@@ -208,18 +208,22 @@ class TestMTAInboundEmail:
         self, api_client: APIClient, html_email, valid_jwt_token
     ):
         """Test submitting an HTML-only email and verify serialization."""
-        domain = models.MailDomain.objects.create(name="example.com")
-        models.Mailbox.objects.create(local_part="recipient", domain=domain)
-        assert models.Mailbox.objects.filter(
-            local_part="recipient", domain=domain
-        ).exists()
+
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            permission=enums.MailboxPermissionChoices.ADMIN,
+        )
+        email = f"{mailbox.local_part}@{mailbox.domain.name}"
 
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
             data=html_email,
             content_type="message/rfc822",
             HTTP_AUTHORIZATION=(
-                f"Bearer {valid_jwt_token(html_email, {'original_recipients': ['recipient@example.com']})}"
+                f"Bearer {valid_jwt_token(html_email, {'original_recipients': [email]})}"
             ),
         )
         assert response.status_code == status.HTTP_200_OK
@@ -228,14 +232,6 @@ class TestMTAInboundEmail:
         assert message is not None
         assert message.subject == "HTML Test Email"
         assert message.raw_mime == html_email
-
-        # Verify API serialization
-        user = models.User.objects.create_user(admin_email="test2@example.com")
-        models.MailboxAccess.objects.create(
-            user=user,
-            mailbox=message.thread.mailbox,
-            permission=models.MailboxPermissionChoices.ADMIN,
-        )
 
         # Verify API serialization
         client = APIClient()
@@ -261,18 +257,22 @@ class TestMTAInboundEmail:
         self, api_client: APIClient, multipart_email, valid_jwt_token
     ):
         """Test submitting a multipart email (text and HTML) and verify serialization."""
-        domain = models.MailDomain.objects.create(name="example.com")
-        models.Mailbox.objects.create(local_part="recipient", domain=domain)
-        assert models.Mailbox.objects.filter(
-            local_part="recipient", domain=domain
-        ).exists()
+
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            permission=enums.MailboxPermissionChoices.ADMIN,
+        )
+        email = f"{mailbox.local_part}@{mailbox.domain.name}"
 
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
             data=multipart_email,
             content_type="message/rfc822",
             HTTP_AUTHORIZATION=(
-                f"Bearer {valid_jwt_token(multipart_email, {'original_recipients': ['recipient@example.com']})}"
+                f"Bearer {valid_jwt_token(multipart_email, {'original_recipients': [email]})}"
             ),
         )
         assert response.status_code == status.HTTP_200_OK
@@ -283,12 +283,6 @@ class TestMTAInboundEmail:
         assert message.raw_mime == multipart_email
 
         # Verify API serialization
-        user = models.User.objects.create_user(admin_email="test3@example.com")
-        models.MailboxAccess.objects.create(
-            user=user,
-            mailbox=message.thread.mailbox,
-            permission=models.MailboxPermissionChoices.READ,
-        )
         client = APIClient()
         client.force_authenticate(user=user)
         response = client.get(

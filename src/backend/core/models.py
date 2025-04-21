@@ -107,22 +107,6 @@ class BaseModel(models.Model):
 class UserManager(auth_models.UserManager):
     """Custom manager for User model with additional methods."""
 
-    def _create_user(self, admin_email, password, **extra_fields):  # pylint: disable=arguments-differ
-        """Create and save a user with the given admin_email and password."""
-        if not admin_email:
-            raise ValueError("The given admin_email must be set")
-        admin_email = self.normalize_email(admin_email)
-        user = self.model(admin_email=admin_email, **extra_fields)
-        user.set_password(password)
-        user.save(using=self._db)
-        return user
-
-    def create_user(self, admin_email, password=None, **extra_fields):  # pylint: disable=arguments-differ
-        """Create and save a regular user with the given admin_email and password."""
-        extra_fields.setdefault("is_staff", False)
-        extra_fields.setdefault("is_superuser", False)
-        return self._create_user(admin_email, password, **extra_fields)
-
     def get_user_by_sub_or_email(self, sub, email):
         """Fetch existing user by sub or email."""
         try:
