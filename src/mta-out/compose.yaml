@@ -2,10 +2,10 @@ services:
   test:
     build: ./
     environment:
-      - MTA_OUT_HOST=mta-out
+      - MTA_OUT_HOST=mta-out:587
       # Credentials for the test client to connect TO mta-out
-      - SMTP_USERNAME=testuser
-      - SMTP_PASSWORD=testpass
+      - MTA_OUT_SMTP_USERNAME=testuser
+      - MTA_OUT_SMTP_PASSWORD=testpass
       # Example: Configure mta-out to relay via MailHog
       # - RELAYHOST=[mailhog:1025]
       # - SMTP_RELAY_USERNAME= # MailHog doesn't need auth

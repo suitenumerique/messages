@@ -3,15 +3,13 @@
 import hashlib
 import html
 import logging
-import os
 import re
-from datetime import datetime
-from datetime import timezone as dt_timezone
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import Error as DjangoDbError
 from django.forms import ValidationError
+from django.utils import timezone
 
 import jwt
 import rest_framework as drf
@@ -24,9 +22,6 @@ from core.formats.rfc5322 import EmailParseError, parse_email_message
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
-
-# Check if we should accept all emails (for e2e testing)
-ACCEPT_ALL_EMAILS = os.environ.get("ACCEPT_ALL_EMAILS", "").lower() == "true"
 
 
 class MTAJWTAuthentication(authentication.BaseAuthentication):
@@ -95,7 +90,22 @@ class MTAViewSet(viewsets.GenericViewSet):
         # Check if each address exists
         ret = {}
         for email_address in email_addresses:
-            ret[email_address] = True  # For now everything exists
+            # For unit testing, we accept all emails
+            if settings.MESSAGES_ACCEPT_ALL_EMAILS:
+                ret[email_address] = True
+                continue
+
+            # MESSAGES_TESTDOMAIN acts as a catch-all, if configured.
+            local_part, domain_name = email_address.split("@")
+            if settings.MESSAGES_TESTDOMAIN == domain_name:
+                ret[email_address] = True
+                continue
+
+            # Check if the email address exists in the database
+            ret[email_address] = models.Mailbox.objects.filter(
+                local_part=local_part,
+                domain__name=domain_name,
+            ).exists()
 
         return drf.response.Response(ret)
 
@@ -131,12 +141,9 @@ class MTAViewSet(viewsets.GenericViewSet):
             mta_metadata["original_recipients"][0:4],
         )
 
-        # Parse the email message using our centralized parser
+        # Parse the email message
         try:
             parsed_email = parse_email_message(raw_data)
-            logger.debug(
-                "Email parsed successfully: subject=%s", parsed_email["subject"]
-            )
         except EmailParseError as e:
             logger.error("Failed to parse email: %s", str(e))
             return drf.response.Response(
@@ -164,26 +171,34 @@ class MTAViewSet(viewsets.GenericViewSet):
             logger.warning("Invalid recipient address (no domain): %s", recipient)
             return
         local_part, domain_name = recipient.split("@", 1)
+
         maildomain = models.MailDomain.objects.filter(name=domain_name).first()
         if not maildomain:
-            logger.warning("Mail domain %s not found.", domain_name)
-            return
+            if settings.MESSAGES_ACCEPT_ALL_EMAILS:
+                maildomain = models.MailDomain.objects.create(name=domain_name)
+            else:
+                logger.warning("Mail domain %s not found.", domain_name)
+                return
+
         mailbox = models.Mailbox.objects.filter(
             local_part=local_part, domain=maildomain
         ).first()
         if not mailbox:
-            if ACCEPT_ALL_EMAILS:
+            if (
+                settings.MESSAGES_ACCEPT_ALL_EMAILS
+                or domain_name == settings.MESSAGES_TESTDOMAIN
+            ):
                 mailbox = models.Mailbox.objects.create(
                     local_part=local_part, domain=maildomain
                 )
             else:
                 logger.warning(
-                    "Mailbox not found and auto-create disabled: %s@%s",
-                    local_part,
-                    domain_name,
+                    "Mailbox not found for delivery: %s",
+                    recipient,
                 )
                 return
 
+        # TODO: better thread grouping algorithm
         thread = models.Thread.objects.filter(
             subject=parsed_email["subject"], mailbox=mailbox
         ).first()
@@ -209,17 +224,15 @@ class MTAViewSet(viewsets.GenericViewSet):
         )
 
         subject = parsed_email.get("subject", "")
-        raw_mime_bytes = raw_data if isinstance(raw_data, bytes) else b""
-        received_at = parsed_email.get("date", datetime.now(dt_timezone.utc))
 
         message = models.Message.objects.create(
             thread=thread,
             sender=sender_contact,
             subject=subject,
-            raw_mime=raw_mime_bytes,
-            received_at=received_at,
-            is_read=False,
-            mta_sent=False,
+            raw_mime=raw_data,
+            # TODO document date fields better
+            sent_at=parsed_email.get("date", timezone.now()),
+            received_at=timezone.now(),
         )
 
         for recipient_type, recipients_list in [

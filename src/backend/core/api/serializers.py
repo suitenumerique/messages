@@ -182,45 +182,33 @@ class MessageSerializer(serializers.ModelSerializer):
     cc = serializers.SerializerMethodField(read_only=True)
     bcc = serializers.SerializerMethodField(read_only=True)
 
-    # Keep sender (denormalized in model)
     sender = ContactSerializer(read_only=True)
-    # Keep is_read (denormalized in model)
-    is_read = serializers.SerializerMethodField(read_only=True)
 
     @extend_schema_field(serializers.ListField(child=serializers.DictField()))
     def get_textBody(self, instance):  # pylint: disable=invalid-name
         """Return the list of text body parts (JMAP style)."""
-        parsed_data = instance.get_parsed_data()
-        return parsed_data.get("textBody", [])
+        return instance.get_parsed_field("textBody") or []
 
     @extend_schema_field(serializers.ListField(child=serializers.DictField()))
     def get_htmlBody(self, instance):  # pylint: disable=invalid-name
         """Return the list of HTML body parts (JMAP style)."""
-        parsed_data = instance.get_parsed_data()
-        return parsed_data.get("htmlBody", [])
+        return instance.get_parsed_field("htmlBody") or []
 
     @extend_schema_field(ContactSerializer(many=True))
     def get_to(self, instance):
         """Return the 'To' recipients."""
-        parsed_data = instance.get_parsed_data()
-        return parsed_data.get("to", [])
+        return instance.get_parsed_field("to") or []
 
     @extend_schema_field(ContactSerializer(many=True))
     def get_cc(self, instance):
         """Return the 'Cc' recipients."""
-        parsed_data = instance.get_parsed_data()
-        return parsed_data.get("cc", [])
+        return instance.get_parsed_field("cc") or []
 
     @extend_schema_field(ContactSerializer(many=True))
     def get_bcc(self, instance):
         """Return the 'Bcc' recipients."""
-        parsed_data = instance.get_parsed_data()
-        return parsed_data.get("bcc", [])
-
-    def get_is_read(self, instance) -> bool:
-        """Return the read status of the message."""
-        # Uses the denormalized is_read field from the model
-        return instance.is_read
+        # TODO: only return the bcc if the user has permission to see it (=is the sender?)
+        return instance.get_parsed_field("bcc") or []
 
     class Meta:
         model = models.Message
@@ -234,6 +222,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "htmlBody",
             "textBody",
             "sender",
-            "recipients",
-            "is_read",
+            "to",
+            "cc",
+            "bcc",
         ]

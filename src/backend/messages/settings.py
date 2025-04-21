@@ -127,6 +127,13 @@ class Base(Configuration):
     MDA_API_SECRET = values.Value(
         "default-mda-api-secret", environ_name="MDA_API_SECRET", environ_prefix=None
     )
+    MTA_OUT_HOST = values.Value(None, environ_name="MTA_OUT_HOST", environ_prefix=None)
+    MTA_OUT_SMTP_USERNAME = values.Value(
+        None, environ_name="MTA_OUT_SMTP_USERNAME", environ_prefix=None
+    )
+    MTA_OUT_SMTP_PASSWORD = values.Value(
+        None, environ_name="MTA_OUT_SMTP_PASSWORD", environ_prefix=None
+    )
 
     # Test domain settings
     MESSAGES_TESTDOMAIN = values.Value(
@@ -135,6 +142,11 @@ class Base(Configuration):
     MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN = values.Value(
         "gouv.fr",
         environ_name="MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN",
+        environ_prefix=None,
+    )
+    MESSAGES_ACCEPT_ALL_EMAILS = values.BooleanValue(
+        default=False,
+        environ_name="MESSAGES_ACCEPT_ALL_EMAILS",
         environ_prefix=None,
     )
 

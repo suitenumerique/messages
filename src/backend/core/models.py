@@ -19,7 +19,7 @@ from django.utils.translation import gettext_lazy as _
 from timezone_field import TimeZoneField
 
 from core.enums import MailboxPermissionChoices, MessageRecipientTypeChoices
-from core.formats.rfc5322 import EmailParseError, parse_email_message
+from core.formats.rfc5322 import parse_email_message
 
 logger = getLogger(__name__)
 
@@ -351,7 +351,6 @@ class Message(BaseModel):
         Thread, on_delete=models.CASCADE, related_name="messages"
     )
     subject = models.CharField(_("subject"), max_length=255)
-    raw_mime = models.BinaryField(blank=True, default=b"")
     sender = models.ForeignKey("Contact", on_delete=models.CASCADE)
     received_at = models.DateTimeField(_("received at"), auto_now_add=True)
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
@@ -359,6 +358,10 @@ class Message(BaseModel):
     read_at = models.DateTimeField(_("read at"), null=True, blank=True)
     mta_sent = models.BooleanField(_("mta sent"), default=False)
     is_read = models.BooleanField(_("is read"), default=False)
+
+    # Stores the raw MIME message. This will be optimized and offloaded
+    # to object storage in the future.
+    raw_mime = models.BinaryField(blank=True, default=b"")
 
     # Internal cache for parsed data
     _parsed_email_cache: Optional[Dict[str, Any]] = None
@@ -377,28 +380,12 @@ class Message(BaseModel):
         if self._parsed_email_cache is not None:
             return self._parsed_email_cache
 
-        parsed_data = {}
         if self.raw_mime:
-            try:
-                # Use the imported parser function
-                parsed_data = parse_email_message(self.raw_mime)
-            except EmailParseError as e:
-                logger.error("Failed to parse raw_mime for Message %s: %s", self.id, e)
-                # Store empty dict on parse failure
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.error(
-                    "Unexpected error parsing raw_mime for Message %s: %s",
-                    self.id,
-                    e,
-                    exc_info=True,
-                )
-                # Store empty dict on unexpected failure
-
-        # Ensure parsed_data is a dict before caching
-        self._parsed_email_cache = parsed_data if isinstance(parsed_data, dict) else {}
+            self._parsed_email_cache = parse_email_message(self.raw_mime)
+        else:
+            self._parsed_email_cache = {}
         return self._parsed_email_cache
 
-    # Methods to access specific parsed fields (optional, serializer can access dict directly)
-    # Example:
-    # def parse_subject(self) -> str:
-    #     return self.get_parsed_data().get("subject", "")
+    def get_parsed_field(self, field_name: str) -> Any:
+        """Get a parsed field from the parsed email data."""
+        return (self.get_parsed_data() or {}).get(field_name)

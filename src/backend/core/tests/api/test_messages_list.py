@@ -146,7 +146,6 @@ Content-Type: text/html
             subject="Test Subject 1",  # Subject is also in raw_mime, ensure consistency
             raw_mime=raw_mime_1,
             read_at=None,
-            is_read=False,
         )
         # MessageRecipient objects are primarily for DB relations if needed,
         # the serializer now parses from raw_mime. Keep them if other logic depends on them.
@@ -168,7 +167,6 @@ Content-Type: text/html
             subject="Test Subject 2",
             raw_mime=raw_mime_2,
             read_at=None,
-            is_read=False,
         )
         factories.MessageRecipientFactory(
             message=message2,
@@ -197,7 +195,6 @@ Content-Type: text/html
         # Subject assertion remains, assuming it's correct in both model and raw_mime
         assert msg2_data["subject"] == message2.subject
         assert msg2_data["sender"]["id"] == str(sender_contact2.id)
-        assert msg2_data["is_read"] is False
 
         # Check JMAP bodies (parsed from raw_mime)
         assert msg2_data["textBody"] == []
@@ -219,7 +216,6 @@ Content-Type: text/html
         assert msg1_data["id"] == str(message1.id)
         assert msg1_data["subject"] == message1.subject
         assert msg1_data["sender"]["id"] == str(sender_contact1.id)
-        assert msg1_data["is_read"] is False
 
         # Check JMAP bodies (parsed from raw_mime)
         assert len(msg1_data["textBody"]) == 1

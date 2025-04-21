@@ -1,6 +1,7 @@
 """Authentication Backends for the messages core app."""
 
 import logging
+import re
 
 from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
@@ -150,10 +151,16 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
             name=settings.MESSAGES_TESTDOMAIN
         )
 
-        if not user.email.endswith(settings.MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN):
+        # Check if the email address ends with the test domain
+        if not re.search(
+            r"[@\.]"
+            + re.escape(settings.MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN)
+            + r"$",
+            user.email,
+        ):
             return
 
-        # <x.y@z.gouv.fr> => <x.y-z@sardinepq.fr>
+        # <x.y@z.base.domain> => <x.y-z@test.domain>
         prefix = user.email.split("@")[1][
             : -len(settings.MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN) - 1
         ]
@@ -178,7 +185,7 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
             domain=maildomain,
         )
 
-        # Create an admin mailbox access for the user if neede
+        # Create an admin mailbox access for the user if needed
         MailboxAccess.objects.get_or_create(
             mailbox=mailbox,
             user=user,

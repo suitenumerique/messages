@@ -5,13 +5,15 @@ import hashlib
 import json
 
 from django.conf import settings
+from django.test import override_settings
 
 import jwt
 import pytest
 from rest_framework import status
+from rest_framework.reverse import reverse
 from rest_framework.test import APIClient
 
-from core import models
+from core import enums, factories, models
 
 
 @pytest.fixture(name="api_client")
@@ -102,18 +104,22 @@ class TestMTAInboundEmail:
         self, api_client: APIClient, sample_email, valid_jwt_token
     ):
         """Test submitting a valid email and verify serialized output."""
-        domain = models.MailDomain.objects.create(name="example.com")
-        models.Mailbox.objects.create(local_part="recipient", domain=domain)
-        assert models.Mailbox.objects.filter(
-            local_part="recipient", domain=domain
-        ).exists()
+
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            permission=enums.MailboxPermissionChoices.ADMIN,
+        )
+        email = f"{mailbox.local_part}@{mailbox.domain.name}"
 
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
             data=sample_email,
             content_type="message/rfc822",
             HTTP_AUTHORIZATION=(
-                f"Bearer {valid_jwt_token(sample_email, {'original_recipients': ['recipient@example.com']})}"
+                f"Bearer {valid_jwt_token(sample_email, {'original_recipients': [email]})}"
             ),
         )
         assert response.status_code == status.HTTP_200_OK
@@ -127,19 +133,17 @@ class TestMTAInboundEmail:
         assert message.raw_mime == sample_email
 
         # Verify API serialization
-        user = models.User.objects.create_user(admin_email="test@example.com")
-        models.MailboxAccess.objects.create(
-            user=user,
-            mailbox=message.thread.mailbox,
-            permission=models.MailboxPermissionChoices.ADMIN,
-        )
-        api_client.force_authenticate(user=user)
-        message.refresh_from_db()
+        client = APIClient()
+        client.force_authenticate(user=user)
 
-        message_url = f"/api/v1.0/messages/{message.id}/"
-        response = api_client.get(message_url)
+        response = client.get(
+            reverse("messages-list"), query_params={"thread_id": message.thread.id}
+        )
         assert response.status_code == status.HTTP_200_OK
-        serialized_data = response.json()
+        serialized_data_all = response.json()
+        assert serialized_data_all["count"] == 1
+        assert serialized_data_all["results"][0]["id"] == str(message.id)
+        serialized_data = serialized_data_all["results"][0]
 
         assert serialized_data["subject"] == "Test Email"
         assert len(serialized_data["textBody"]) == 1
@@ -232,12 +236,18 @@ class TestMTAInboundEmail:
             mailbox=message.thread.mailbox,
             permission=models.MailboxPermissionChoices.ADMIN,
         )
-        api_client.force_authenticate(user=user)
-        message.refresh_from_db()
-        message_url = f"/api/v1.0/messages/{message.id}/"
-        response = api_client.get(message_url)
+
+        # Verify API serialization
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(
+            reverse("messages-list"), query_params={"thread_id": message.thread.id}
+        )
         assert response.status_code == status.HTTP_200_OK
-        serialized_data = response.json()
+        serialized_data_all = response.json()
+        assert serialized_data_all["count"] == 1
+        assert serialized_data_all["results"][0]["id"] == str(message.id)
+        serialized_data = serialized_data_all["results"][0]
 
         assert serialized_data["textBody"] == []
         assert len(serialized_data["htmlBody"]) == 1
@@ -277,14 +287,18 @@ class TestMTAInboundEmail:
         models.MailboxAccess.objects.create(
             user=user,
             mailbox=message.thread.mailbox,
-            permission=models.MailboxPermissionChoices.ADMIN,
+            permission=models.MailboxPermissionChoices.READ,
         )
-        api_client.force_authenticate(user=user)
-        message.refresh_from_db()
-        message_url = f"/api/v1.0/messages/{message.id}/"
-        response = api_client.get(message_url)
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(
+            reverse("messages-list"), query_params={"thread_id": message.thread.id}
+        )
         assert response.status_code == status.HTTP_200_OK
-        serialized_data = response.json()
+        serialized_data_all = response.json()
+        assert serialized_data_all["count"] == 1
+        assert serialized_data_all["results"][0]["id"] == str(message.id)
+        serialized_data = serialized_data_all["results"][0]
 
         assert len(serialized_data["textBody"]) == 1
         assert (
@@ -301,10 +315,25 @@ class TestMTAInboundEmail:
 class TestMTACheckRecipients:
     """Test the MTA check recipients endpoint."""
 
+    @override_settings(MESSAGES_TESTDOMAIN="testdomain.com")
     def test_check_recipients(self, api_client, valid_jwt_token):
         """Test checking recipients with valid JWT token."""
 
-        body = json.dumps({"addresses": ["recipient@example.com"]}).encode("utf-8")
+        # Create a recipient maildomain
+        maildomain = models.MailDomain.objects.create(name="validdomain.com")
+        models.Mailbox.objects.create(local_part="recipient", domain=maildomain)
+
+        body = json.dumps(
+            {
+                "addresses": [
+                    "recipient@validdomain.com",
+                    "recipient@testdomain.com",
+                    "recipient@invaliddomain.com",
+                    "recipient@not.validdomain.com",
+                    "recipient@sub.testdomain.com",
+                ]
+            }
+        ).encode("utf-8")
         token = valid_jwt_token(body, {})
 
         response = api_client.post(
@@ -315,7 +344,13 @@ class TestMTACheckRecipients:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"recipient@example.com": True}
+        assert response.json() == {
+            "recipient@validdomain.com": True,
+            "recipient@testdomain.com": True,
+            "recipient@invaliddomain.com": False,
+            "recipient@not.validdomain.com": False,
+            "recipient@sub.testdomain.com": False,
+        }
 
     def test_check_recipients_invalid_token(self, api_client, valid_jwt_token):
         """Test checking recipients with invalid JWT token."""
