@@ -29,6 +29,9 @@ home_mailbox =
 # Proxy support
 postscreen_client_connection_count_limit = 1000
 
+# Security
+disable_vrfy_command = yes
+
 # Done through postconf in entrypoint.sh:
 # - message_size_limit
 

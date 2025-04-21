@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   procps \
   python3 \
   python3-jinja2 \
+  curl \
+  dnsutils \
   && rm -rf /var/lib/apt/lists/*
 
 # Create directories for Postfix queues and SASL socket area

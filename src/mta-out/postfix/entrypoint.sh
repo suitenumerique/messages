@@ -10,12 +10,18 @@ echo "Configuring Postfix via Jinja2 template..."
 
 # Set optional vars with defaults
 export MESSAGE_SIZE_LIMIT=${MESSAGE_SIZE_LIMIT:-10240000}
-export MYHOSTNAME=${MYHOSTNAME:-localhost}
 export RELAYHOST=${RELAYHOST:-""}
 export SMTP_RELAY_USERNAME=${SMTP_RELAY_USERNAME:-""}
 export SMTP_RELAY_PASSWORD=${SMTP_RELAY_PASSWORD:-""}
 export TLS_CERT_PATH=${TLS_CERT_PATH:-/etc/ssl/certs/ssl-cert-snakeoil.pem}
 export TLS_KEY_PATH=${TLS_KEY_PATH:-/etc/ssl/private/ssl-cert-snakeoil.key}
+
+# Get the rDNS of this host if not set
+# TODO: remove the unreliable external dependency on ifconfig.me
+if [ -z "$MYHOSTNAME" ]; then
+  export MYHOSTNAME=$(dig -x $(curl -s ifconfig.me) +short | tail -n1 | sed 's/\.$//')
+  echo "Detected hostname from rDNS: $MYHOSTNAME"
+fi
 
 # === Validate TLS Files ===
 if [ ! -f "$TLS_CERT_PATH" ] || [ ! -f "$TLS_KEY_PATH" ]; then
@@ -24,12 +30,13 @@ if [ ! -f "$TLS_CERT_PATH" ] || [ ! -f "$TLS_KEY_PATH" ]; then
 fi
 
 # We use the sasldb2 file to store the password for the SMTP user, in the chroot jail.
-echo "$SMTP_PASSWORD" | saslpasswd2 -p -c -f /var/spool/postfix/etc/sasldb2 -u localhost "$SMTP_USERNAME"
+echo "$SMTP_PASSWORD" | saslpasswd2 -p -c -f /var/spool/postfix/etc/sasldb2 -u "$MYHOSTNAME" "$SMTP_USERNAME"
 chown root:postfix /var/spool/postfix/etc/sasldb2
 
 # === Render main.cf from Template ===
 echo "Rendering /app/main.cf.j2 to /etc/postfix/main.cf..."
 # Pass all environment variables to the template context
+
 python3 -c "
 import os
 import jinja2
@@ -73,10 +80,7 @@ echo "Verifying Postfix configuration (/etc/postfix/main.cf)..."
 
 postfix check -v || exit 1
 
-cat /etc/postfix/main.cf
-
-echo "Checking effective relayhost value according to postconf:"
-postconf relayhost || echo "postconf command failed"
+# cat /etc/postfix/main.cf
 
 # Start Postfix in the foreground (standard way)
 postfix start-fg -v

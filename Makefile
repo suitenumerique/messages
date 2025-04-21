@@ -45,6 +45,7 @@ COMPOSE_RUN         = $(COMPOSE) run --rm
 COMPOSE_RUN_APP     = $(COMPOSE_RUN) app-dev
 COMPOSE_RUN_CROWDIN = $(COMPOSE_RUN) crowdin crowdin
 COMPOSE_RUN_MTA_IN_TESTS  = cd src/mta-in && $(COMPOSE_RUN) --build test
+COMPOSE_RUN_MTA_OUT_TESTS = cd src/mta-out && $(COMPOSE_RUN) --build test
 
 # -- Backend
 MANAGE              = $(COMPOSE_RUN_APP) python manage.py
@@ -176,6 +177,12 @@ lint-mta-in: ## lint mta-in python sources with pylint
 	@$(COMPOSE_RUN_MTA_IN_TESTS) ruff check . --fix
 # 	@$(COMPOSE_RUN_MTA_IN_TESTS) pylint .
 .PHONY: lint-mta-in
+
+lint-mta-out: ## lint mta-out python sources with pylint
+	@echo 'lint:mta-out started…'
+	@$(COMPOSE_RUN_MTA_OUT_TESTS) ruff format .
+	@$(COMPOSE_RUN_MTA_OUT_TESTS) ruff check . --fix
+.PHONY: lint-mta-out
 
 test: ## run project tests
 	@$(MAKE) test-back-parallel

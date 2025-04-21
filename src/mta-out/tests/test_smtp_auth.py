@@ -24,10 +24,10 @@ def test_smtp_authentication_invalid_password():
     client.ehlo()
     client.starttls()
     client.ehlo()
-    
+
     with pytest.raises(smtplib.SMTPAuthenticationError):
         client.login(SMTP_USERNAME, "wrong_password")
-    
+
     try:
         client.quit()
     except smtplib.SMTPServerDisconnected:
@@ -40,10 +40,10 @@ def test_smtp_authentication_invalid_username():
     client.ehlo()
     client.starttls()
     client.ehlo()
-    
+
     with pytest.raises(smtplib.SMTPAuthenticationError):
         client.login("wrong_username", SMTP_PASSWORD)
-    
+
     try:
         client.quit()
     except smtplib.SMTPServerDisconnected:
@@ -56,10 +56,10 @@ def test_smtp_authentication_empty_credentials():
     client.ehlo()
     client.starttls()
     client.ehlo()
-    
+
     with pytest.raises(smtplib.SMTPAuthenticationError):
         client.login("", "")
-    
+
     try:
         client.quit()
     except smtplib.SMTPServerDisconnected:
@@ -73,16 +73,16 @@ def test_unauthenticated_relay_attempt():
     client.ehlo()
     client.starttls()
     client.ehlo()
-    
+
     # Try to send email without logging in
     with pytest.raises(smtplib.SMTPRecipientsRefused):
         client.sendmail(
             "sender@example.com",
             ["recipient@example.com"],
-            "From: sender@example.com\nTo: recipient@example.com\nSubject: Test\n\nTest message"
+            "From: sender@example.com\nTo: recipient@example.com\nSubject: Test\n\nTest message",
         )
-    
+
     try:
         client.quit()
     except smtplib.SMTPServerDisconnected:
-        pass 
+        pass

@@ -26,7 +26,7 @@ services:
       - SMTP_PASSWORD=testpass # Required
 
       # Optional: Hostname for HELO/EHLO
-      # - MYHOSTNAME=smtp-relay.yourdomain.com # Set to a meaningful FQDN (recommended for production)
+      - MYHOSTNAME=mta-out-test.localhost # Set to a meaningful FQDN (recommended for production)
 
       # TLS Configuration (WARNING: Mount real certs/keys in production!)
       - TLS_CERT_PATH=/etc/ssl/certs/ssl-cert-snakeoil.pem
