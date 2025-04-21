@@ -277,6 +277,7 @@ class Thread(BaseModel):
     mailbox = models.ForeignKey(
         Mailbox, on_delete=models.CASCADE, related_name="threads"
     )
+    is_read = models.BooleanField(_("is read"), default=False)
 
     class Meta:
         db_table = "messages_thread"
@@ -341,7 +342,6 @@ class Message(BaseModel):
     sent_at = models.DateTimeField(_("sent at"), null=True, blank=True)
     read_at = models.DateTimeField(_("read at"), null=True, blank=True)
     mta_sent = models.BooleanField(_("mta sent"), default=False)
-    is_read = models.BooleanField(_("is read"), default=False)
 
     # Stores the raw MIME message. This will be optimized and offloaded
     # to object storage in the future.

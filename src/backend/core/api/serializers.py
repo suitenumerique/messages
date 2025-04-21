@@ -139,15 +139,10 @@ class ThreadSerializer(serializers.ModelSerializer):
     """Serialize threads."""
 
     messages = serializers.SerializerMethodField(read_only=True)
-    is_read = serializers.SerializerMethodField(read_only=True)
 
     def get_messages(self, instance):
         """Return the messages in the thread."""
         return [str(message.id) for message in instance.messages.all()]
-
-    def get_is_read(self, instance) -> bool:
-        """Return the read status of the thread."""
-        return instance.messages.filter(read_at__isnull=False).exists()
 
     class Meta:
         model = models.Thread
@@ -219,4 +214,5 @@ class MessageSerializer(serializers.ModelSerializer):
             "to",
             "cc",
             "bcc",
+            "read_at",
         ]

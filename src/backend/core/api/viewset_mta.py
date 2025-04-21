@@ -214,7 +214,10 @@ class MTAViewSet(viewsets.GenericViewSet):
                 snippet = " ".join(snippet.split())
 
             thread = models.Thread.objects.create(
-                subject=parsed_email["subject"], mailbox=mailbox, snippet=snippet
+                subject=parsed_email["subject"],
+                mailbox=mailbox,
+                snippet=snippet,
+                is_read=False,
             )
 
         sender_email = parsed_email.get("from", {}).get("email")

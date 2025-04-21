@@ -422,7 +422,6 @@ class MessageCreateView(APIView):
             sender=self.sender_contact,
             raw_mime=raw_mime,
             subject=subject,
-            is_read=True,
             created_at=timezone.now(),
             read_at=timezone.now(),
             mta_sent=False,
