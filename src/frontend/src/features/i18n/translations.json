@@ -8,6 +8,9 @@
       "my_account": "My Account",
       "no_mailbox": "No mailbox.",
       "no_threads": "No threads.",
+      "new_message_form": {
+        "title": "New message"
+      },
       "api": {
         "error": {
           "unexpected": "An unexpected error occurred."
@@ -38,7 +41,9 @@
         "from": "From: ",
         "to": "To: ",
         "cc": "Copy: ",
-        "bcc": "Blind copy: "
+        "bcc": "Blind copy: ",
+        "subject": "Subject: ",
+        "body": "Message: "
       }
     }
   },
@@ -51,6 +56,9 @@
       "my_account": "Mon Compte",
       "no_mailbox": "Aucune boîte aux lettres.",
       "no_threads": "Aucune conversation.",
+      "new_message_form": {
+        "title": "Nouveau message"
+      },
       "api": {
         "error": {
           "unexpected": "Une erreur inattendue est survenue."
@@ -81,7 +89,9 @@
         "from": "De : ",
         "to": "À : ",
         "cc": "Copie : ",
-        "bcc": "Copie cachée : "
+        "bcc": "Copie cachée : ",
+        "subject": "Sujet : ",
+        "body": "Message : "
       }
     }
   }

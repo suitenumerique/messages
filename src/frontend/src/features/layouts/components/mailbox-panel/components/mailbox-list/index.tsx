@@ -59,11 +59,10 @@ const TMP_MAILBOXES: HardcodedMailbox[] = [
 
 export const MailboxList = () => {
     const defaultMailboxId = TMP_MAILBOXES[0].id;
-    const params = useParams<{ mailboxId: string }>()
     const router = useRouter()
 
     useEffect(() => {
-        if (!params?.mailboxId) {
+        if (router.pathname === "/") {
             router.push(`/mailbox/${defaultMailboxId}`)
         }
     }, [])

@@ -79,9 +79,9 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         }
     });
 
-    const invalidateThreadMessages = () => {
+    const invalidateThreadMessages = async () => {
         if (selectedThread) {
-            queryClient.invalidateQueries({ queryKey: ['messages', selectedThread.id] });
+            await queryClient.invalidateQueries({ queryKey: ['messages', selectedThread.id] });
         }
     }
 
