@@ -16,8 +16,7 @@ export interface Thread {
   subject: string;
   snippet?: string;
   readonly messages: string;
-  /** Return the read status of the thread. */
-  readonly is_read: boolean;
+  is_read?: boolean;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
 }

@@ -12,7 +12,13 @@ from django.db import models as db
 from django.utils import timezone
 
 import rest_framework as drf
+from drf_spectacular.utils import (
+    OpenApiExample,
+    extend_schema,
+    inline_serializer,
+)
 from rest_framework import mixins, status, viewsets
+from rest_framework import serializers as drf_serializers
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -327,6 +333,93 @@ class MessageViewSet(
         ).order_by("-received_at")
 
 
+@extend_schema(
+    tags=["messages"],
+    request=inline_serializer(
+        name="MessageCreateRequest",
+        fields={
+            "parentId": drf_serializers.UUIDField(
+                required=False,
+                allow_null=True,
+                help_text="Message ID if replying to an existing message",
+            ),
+            "senderId": drf_serializers.UUIDField(
+                required=True,
+                help_text="Mailbox ID to use as sender",
+            ),
+            "subject": drf_serializers.CharField(
+                required=True, help_text="Subject of the message"
+            ),
+            "htmlBody": drf_serializers.CharField(
+                required=False,
+                allow_blank=True,
+                help_text="HTML content of the message",
+            ),
+            "textBody": drf_serializers.CharField(
+                required=False,
+                allow_blank=True,
+                help_text="Plain text content of the message",
+            ),
+            "to": drf_serializers.ListField(
+                child=drf_serializers.EmailField(),
+                required=True,
+                help_text="List of recipient email addresses",
+            ),
+            "cc": drf_serializers.ListField(
+                child=drf_serializers.EmailField(),
+                required=False,
+                default=list,
+                help_text="List of CC recipient email addresses",
+            ),
+            "bcc": drf_serializers.ListField(
+                child=drf_serializers.EmailField(),
+                required=False,
+                default=list,
+                help_text="List of BCC recipient email addresses",
+            ),
+        },
+    ),
+    responses={
+        201: serializers.MessageSerializer,
+        400: OpenApiExample(
+            "Validation Error", value={"detail": "Parent message does not exist."}
+        ),
+        403: OpenApiExample(
+            "Permission Error",
+            value={"detail": "You do not have permission to perform this action."},
+        ),
+    },
+    description="""
+    Create a new message or reply to an existing message.
+    
+    This endpoint allows you to:
+    - Create a new message in a new thread
+    - Reply to an existing message in an existing thread
+    
+    At least one of htmlBody or textBody must be provided.
+    """,
+    examples=[
+        OpenApiExample(
+            "New Message",
+            value={
+                "subject": "Hello",
+                "textBody": "This is a test message",
+                "to": ["recipient@example.com"],
+                "cc": ["cc@example.com"],
+                "bcc": ["bcc@example.com"],
+            },
+        ),
+        OpenApiExample(
+            "Reply",
+            value={
+                "parentId": "123e4567-e89b-12d3-a456-426614174000",
+                "subject": "Re: Hello",
+                "textBody": "This is a reply",
+                "to": ["recipient@example.com"],
+            },
+        ),
+    ],
+)
 class MessageCreateView(APIView):
     """Create a new message or reply to an existing message.
 

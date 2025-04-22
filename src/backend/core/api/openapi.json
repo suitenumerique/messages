@@ -58,18 +58,120 @@
         "/api/v1.0/message-create/": {
             "post": {
                 "operationId": "message_create_create",
-                "description": "Perform the create action.",
+                "description": "\n    Create a new message or reply to an existing message.\n    \n    This endpoint allows you to:\n    - Create a new message in a new thread\n    - Reply to an existing message in an existing thread\n    \n    At least one of htmlBody or textBody must be provided.\n    ",
                 "tags": [
-                    "message-create"
+                    "messages"
                 ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageCreateRequestRequest"
+                            },
+                            "examples": {
+                                "NewMessage": {
+                                    "value": {
+                                        "subject": "Hello",
+                                        "textBody": "This is a test message",
+                                        "to": [
+                                            "recipient@example.com"
+                                        ],
+                                        "cc": [
+                                            "cc@example.com"
+                                        ],
+                                        "bcc": [
+                                            "bcc@example.com"
+                                        ]
+                                    },
+                                    "summary": "New Message"
+                                },
+                                "Reply": {
+                                    "value": {
+                                        "parentId": "123e4567-e89b-12d3-a456-426614174000",
+                                        "subject": "Re: Hello",
+                                        "textBody": "This is a reply",
+                                        "to": [
+                                            "recipient@example.com"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageCreateRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
                 "security": [
                     {
                         "cookieAuth": []
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "No response body"
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Message"
+                                },
+                                "examples": {
+                                    "NewMessage": {
+                                        "value": {
+                                            "subject": "Hello",
+                                            "textBody": "This is a test message",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ],
+                                            "cc": [
+                                                "cc@example.com"
+                                            ],
+                                            "bcc": [
+                                                "bcc@example.com"
+                                            ]
+                                        },
+                                        "summary": "New Message"
+                                    },
+                                    "Reply": {
+                                        "value": {
+                                            "parentId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Re: Hello",
+                                            "textBody": "This is a reply",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
                     }
                 }
             }
@@ -384,6 +486,11 @@
                             "$ref": "#/components/schemas/Contact"
                         },
                         "readOnly": true
+                    },
+                    "read_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
                     }
                 },
                 "required": [
@@ -399,6 +506,67 @@
                     "thread",
                     "to",
                     "updated_at"
+                ]
+            },
+            "MessageCreateRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "parentId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "nullable": true,
+                        "description": "Message ID if replying to an existing message"
+                    },
+                    "senderId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Mailbox ID to use as sender"
+                    },
+                    "subject": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Subject of the message"
+                    },
+                    "htmlBody": {
+                        "type": "string",
+                        "description": "HTML content of the message"
+                    },
+                    "textBody": {
+                        "type": "string",
+                        "description": "Plain text content of the message"
+                    },
+                    "to": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "email",
+                            "minLength": 1
+                        },
+                        "description": "List of recipient email addresses"
+                    },
+                    "cc": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "email",
+                            "minLength": 1
+                        },
+                        "description": "List of CC recipient email addresses"
+                    },
+                    "bcc": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "email",
+                            "minLength": 1
+                        },
+                        "description": "List of BCC recipient email addresses"
+                    }
+                },
+                "required": [
+                    "senderId",
+                    "subject",
+                    "to"
                 ]
             },
             "PaginatedMessageList": {
@@ -485,9 +653,7 @@
                         "readOnly": true
                     },
                     "is_read": {
-                        "type": "boolean",
-                        "description": "Return the read status of the thread.",
-                        "readOnly": true
+                        "type": "boolean"
                     },
                     "updated_at": {
                         "type": "string",
@@ -499,7 +665,6 @@
                 },
                 "required": [
                     "id",
-                    "is_read",
                     "messages",
                     "subject",
                     "updated_at"
