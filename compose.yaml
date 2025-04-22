@@ -79,6 +79,9 @@ services:
         restart: true
       redis:
         condition: service_started
+      mta-out:
+        condition: service_started
+
       # createbuckets:
       #  condition: service_started
 

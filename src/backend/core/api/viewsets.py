@@ -654,7 +654,7 @@ class MessageCreateView(APIView):
         if dkim_signature is None:
             raw_mime_signed = raw_mime
         else:
-            raw_mime_signed = dkim_signature + b"\r\n" + raw_mime
+            raw_mime_signed = dkim_signature + raw_mime
 
         if not settings.MTA_OUT_HOST:
             logger.warning("MTA_OUT_HOST is not set, skipping message sending")
