@@ -3,6 +3,7 @@ Declare and configure the models for the messages core application
 """
 # pylint: disable=too-many-lines
 
+import base64
 import uuid
 from datetime import timedelta
 from logging import getLogger
@@ -16,6 +17,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from dkim import dkim_sign
 from timezone_field import TimeZoneField
 
 from core.enums import MailboxPermissionChoices, MessageRecipientTypeChoices
@@ -373,3 +375,43 @@ class Message(BaseModel):
     def get_parsed_field(self, field_name: str) -> Any:
         """Get a parsed field from the parsed email data."""
         return (self.get_parsed_data() or {}).get(field_name)
+
+    def generate_dkim_signature(self) -> Optional[str]:
+        """Sign all headers with relaxed/simple canonicalization.
+
+        For now we use a single signing key/selector for all domains of an instance.
+        This will be changed in the future to allow to use different signing keys/selectors for different domains.
+        """
+
+        dkim_private_key = None
+        if settings.MESSAGES_DKIM_PRIVATE_KEY_FILE:
+            with open(settings.MESSAGES_DKIM_PRIVATE_KEY_FILE, "rb") as f:
+                dkim_private_key = f.read()
+        elif settings.MESSAGES_DKIM_PRIVATE_KEY_B64:
+            dkim_private_key = base64.b64decode(settings.MESSAGES_DKIM_PRIVATE_KEY_B64)
+
+        domain = self.sender.email.split("@")[1]
+        if not dkim_private_key:
+            logger.warning(
+                "MESSAGES_DKIM_PRIVATE_KEY_B64/FILE is not set, skipping DKIM signing"
+            )
+            return None
+
+        if domain not in settings.MESSAGES_DKIM_DOMAINS:
+            logger.warning(
+                "Domain %s is not in MESSAGES_DKIM_DOMAINS, skipping DKIM signing",
+                domain,
+            )
+            return None
+
+        return dkim_sign(
+            message=self.raw_mime,
+            selector=settings.MESSAGES_DKIM_SELECTOR.encode("ascii"),
+            domain=domain.encode("ascii"),
+            privkey=dkim_private_key,
+            include_headers=[b"To", b"From", b"Subject"],
+            canonicalize=(
+                b"relaxed",
+                b"simple",
+            ),
+        )

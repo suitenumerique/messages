@@ -535,10 +535,14 @@ class MessageCreateView(APIView):
                     type=kind,
                 )
 
-        # TODO: Add DKIM signature
-        raw_mime_signed = raw_mime
-
         # TODO: Sending to the MTA should be done asynchronously. Move this to a Celery task
+
+        # Prepend the DKIM header to the raw mime message
+        dkim_signature = message.generate_dkim_signature()
+        if dkim_signature is None:
+            raw_mime_signed = raw_mime
+        else:
+            raw_mime_signed = dkim_signature + b"\r\n" + raw_mime
 
         if not settings.MTA_OUT_HOST:
             logger.warning("MTA_OUT_HOST is not set, skipping message sending")

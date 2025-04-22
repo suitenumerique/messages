@@ -149,6 +149,18 @@ class Base(Configuration):
         environ_name="MESSAGES_ACCEPT_ALL_EMAILS",
         environ_prefix=None,
     )
+    MESSAGES_DKIM_SELECTOR = values.Value(
+        "default", environ_name="MESSAGES_DKIM_SELECTOR", environ_prefix=None
+    )
+    MESSAGES_DKIM_DOMAINS = values.ListValue(
+        [], environ_name="MESSAGES_DKIM_DOMAINS", environ_prefix=None
+    )
+    MESSAGES_DKIM_PRIVATE_KEY_B64 = values.Value(
+        None, environ_name="MESSAGES_DKIM_PRIVATE_KEY_B64", environ_prefix=None
+    )
+    MESSAGES_DKIM_PRIVATE_KEY_FILE = values.Value(
+        None, environ_name="MESSAGES_DKIM_PRIVATE_KEY_FILE", environ_prefix=None
+    )
 
     # Media
     AWS_S3_ENDPOINT_URL = values.Value(
