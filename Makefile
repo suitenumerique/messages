@@ -361,3 +361,17 @@ frontend-i18n-generate: \
 frontend-i18n-compile: ## Format the crowin json files used deploy to the apps
 	@$(COMPOSE) run --rm frontend-tools npm run i18n:deploy
 .PHONY: frontend-i18n-compile
+
+back-api-update: ## Update the OpenAPI schema
+	bin/update_openapi_schema
+.PHONY: back-api-update
+
+frontend-api-update: ## Update the frontend API client
+	@$(COMPOSE) run --rm frontend-tools npm run api:update
+.PHONY: frontend-api-update
+
+api-update: ## Update the OpenAPI schema then frontend API client
+api-update: \
+	back-api-update \
+	frontend-api-update
+.PHONY: api-update

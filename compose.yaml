@@ -140,6 +140,7 @@ services:
     build:
       dockerfile: ./src/frontend/Dockerfile.dev
     volumes:
+      - ./src/backend/core/api/openapi.json:/home/backend/core/api/openapi.json
       - ./src/frontend/:/home/frontend/
 
   # frontend:

@@ -13,7 +13,7 @@
     "start": "next start",
     "lint": "next lint",
     "build-theme": "cunningham -g css,scss -o src/styles",
-    "generate-api": "orval --config ./orval.config.ts",
+    "api:update": "orval --config ./orval.config.ts",
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage"

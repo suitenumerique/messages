@@ -76,6 +76,37 @@ Then access [http://localhost:3000](http://localhost:3000) with :
 user: user{1,2,3}
 password: user{1,2,3}
 
+### OpenAPI client
+
+The frontend API client is generated with
+[Orval](https://orval.dev/). It consumes the OpenAPI schema generated from the backend through 
+[drf-spectacular](https://drf-spectacular.readthedocs.io/en/latest/).
+
+The JSON OpenAPI schema is located in
+`src/backend/core/api/openapi.json`.
+
+To update the schema then the frontend API client, run:
+
+```bash
+$ make api-update
+```
+
+You can also generate the schema only with:
+
+```bash
+$ make backend-api-update
+```
+
+And the frontend API client only with:
+
+```bash
+$ make frontend-api-update
+```
+
+
+
+
+
 ## Contributing
 
 This project is intended to be community-driven, so please, do not hesitate to
