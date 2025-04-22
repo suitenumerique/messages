@@ -28,10 +28,10 @@ def mailbox(authenticated_user):
 
 
 @pytest.fixture
-def sender(authenticated_user):
+def sender_contact(mailbox, authenticated_user):
     """Create a contact for the authenticated user, required to send a message."""
     return factories.ContactFactory(
-        name="Julie Dupont", user=authenticated_user, email="julie@example.com"
+        name=authenticated_user.full_name, user=authenticated_user, email=str(mailbox)
     )
 
 
@@ -44,7 +44,7 @@ class TestApiMessageNewCreate:
         [enums.MailboxPermissionChoices.SEND],
     )
     def test_create_message_success(
-        self, permission, mailbox, sender, authenticated_user
+        self, permission, mailbox, sender_contact, authenticated_user
     ):
         """Test create first message without existing thread."""
         # Create a mailbox access on this mailbox for the authenticated user
@@ -61,7 +61,7 @@ class TestApiMessageNewCreate:
         response = client.post(
             f"/api/{settings.API_VERSION}/message-create/",
             {
-                "senderId": sender.id,
+                "senderId": mailbox.id,
                 "subject": "test",
                 "htmlBody": "<p>test</p>",
                 "textBody": "test",
@@ -104,6 +104,7 @@ class TestApiMessageNewCreate:
         assert thread.snippet == "test"
         assert thread.messages.count() == 1
         assert thread.messages.get().id == message.id
+        assert thread.messages.get().sender.email == sender_contact.email
         assert thread.is_read is True
 
     @pytest.mark.parametrize(
@@ -111,7 +112,7 @@ class TestApiMessageNewCreate:
         [enums.MailboxPermissionChoices.READ, enums.MailboxPermissionChoices.EDIT],
     )
     def test_create_message_without_permission_required(
-        self, permission, mailbox, sender, authenticated_user
+        self, permission, mailbox, authenticated_user
     ):
         """Test create message without permission required."""
         # Create a mailbox access on this mailbox for the authenticated user
@@ -127,7 +128,7 @@ class TestApiMessageNewCreate:
         response = client.post(
             f"/api/{settings.API_VERSION}/message-create/",
             {
-                "senderId": sender.id,
+                "senderId": mailbox.id,
                 "subject": "test",
                 "htmlBody": "<p>test</p>",
                 "textBody": "test",
@@ -187,7 +188,9 @@ class TestApiMessageReply:
         "permission",
         [enums.MailboxPermissionChoices.SEND],
     )
-    def test_reply_success(self, permission, mailbox, sender, authenticated_user):
+    def test_reply_success(
+        self, permission, mailbox, sender_contact, authenticated_user
+    ):
         """Create message replying to an existing message in a thread."""
         # Create a mailbox access on this mailbox for the authenticated user
         factories.MailboxAccessFactory(
@@ -210,7 +213,7 @@ class TestApiMessageReply:
             f"/api/{settings.API_VERSION}/message-create/",
             {
                 "parentId": message.id,  # ID of the message we're replying to
-                "senderId": sender.id,
+                "senderId": mailbox.id,
                 "subject": "test",
                 "htmlBody": "<p>test</p>",
                 "textBody": "test",
@@ -227,7 +230,7 @@ class TestApiMessageReply:
         assert message.subject == "test"
         assert message.thread == thread
         # assert message.parent == message
-        assert message.sender.email == sender.email
+        assert message.sender.email == sender_contact.email
         assert message.recipients.count() == 1
         assert message.recipients.get().contact.email == "pierre@example.com"
 
@@ -235,9 +238,7 @@ class TestApiMessageReply:
         "permission",
         [enums.MailboxPermissionChoices.READ, enums.MailboxPermissionChoices.EDIT],
     )
-    def test_reply_without_permission(
-        self, permission, mailbox, sender, authenticated_user
-    ):
+    def test_reply_without_permission(self, permission, mailbox, authenticated_user):
         """Create message replying to an existing thread without permission."""
         # Create a mailbox access on this mailbox for the authenticated user
         factories.MailboxAccessFactory(
@@ -260,7 +261,7 @@ class TestApiMessageReply:
             f"/api/{settings.API_VERSION}/message-create/",
             {
                 "parentId": message.id,
-                "senderId": sender.id,
+                "senderId": mailbox.id,
                 "subject": "test",
                 "htmlBody": "<p>test</p>",
                 "textBody": "test",

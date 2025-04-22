@@ -142,17 +142,9 @@ class IsAllowedToCreateMessage(IsAuthenticated):
         sender_id = request.data.get("senderId")
         if not sender_id:
             return False
+        # get mailbox instance from sender id
         try:
-            view.sender_contact = models.Contact.objects.get(id=sender_id)
-        except models.Contact.DoesNotExist:
-            return False
-
-        # get mailbox instance from sender email
-        try:
-            view.mailbox = models.Mailbox.objects.get(
-                domain__name=view.sender_contact.email.split("@")[1],
-                local_part=view.sender_contact.email.split("@")[0],
-            )
+            view.mailbox = models.Mailbox.objects.get(id=sender_id)
         except models.Mailbox.DoesNotExist:
             return False
         # required permissions to send a message

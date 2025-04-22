@@ -427,7 +427,7 @@ class MessageCreateView(APIView):
 
     POST /api/v1.0/message-create/ with expected data:
         - parentId: str (message id if reply, None if first message)
-        - senderId: str (contact id of the sender)
+        - senderId: str (mailbox id of the sender)
         - subject: str
         - htmlBody: str
         - textBody: str
@@ -439,7 +439,6 @@ class MessageCreateView(APIView):
 
     permission_classes = [permissions.IsAllowedToCreateMessage]
     mailbox = None
-    sender_contact = None
 
     def post(self, request):
         """Perform the create action."""
@@ -482,14 +481,21 @@ class MessageCreateView(APIView):
             for kind, emails in recipients.items()
         }
 
+        try:
+            sender_contact = models.Contact.objects.get(email=str(self.mailbox))
+        except models.Contact.DoesNotExist as exc:
+            raise drf.exceptions.ValidationError(
+                "Sender contact does not exist."
+            ) from exc
+
         # Assemble the raw mime message
         # BCC recipients are not included in the raw mime message
         raw_mime = compose_email(
             {
                 "from": [
                     {
-                        "name": self.sender_contact.name,
-                        "email": self.sender_contact.email,
+                        "name": sender_contact.name,
+                        "email": sender_contact.email,
                     }
                 ],
                 "to": [
@@ -513,7 +519,7 @@ class MessageCreateView(APIView):
         # Create message instance with all data
         message = models.Message.objects.create(
             thread=thread,
-            sender=self.sender_contact,
+            sender=sender_contact,
             raw_mime=raw_mime,
             subject=subject,
             created_at=timezone.now(),
