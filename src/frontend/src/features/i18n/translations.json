@@ -33,7 +33,8 @@
       },
       "thread_message": {
         "from": "From: ",
-        "to": "To: "
+        "to": "To: ",
+        "cc": "Copy: "
       }
     }
   },
@@ -71,7 +72,8 @@
       },
       "thread_message": {
         "from": "De : ",
-        "to": "À : "
+        "to": "À : ",
+        "cc": "Copie: "
       }
     }
   }

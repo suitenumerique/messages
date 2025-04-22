@@ -3,7 +3,6 @@ import { DateHelper } from "@/features/utils/date-helper"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { Thread } from "@/features/api/gen/models"
-import { ThreadItemRecipients } from "./thread-item-recipients"
 
 type ThreadItemProps = {
     thread: Thread
@@ -22,7 +21,8 @@ export const ThreadItem = ({ thread }: ThreadItemProps) => {
                 <div className="thread-item__read-indicator" data-read={thread.is_read} />
                 <div className="thread-item__thread-details">
                     <div className="thread-item__sender-info">
-                        <ThreadItemRecipients recipients={thread.recipients} />
+                        {/* @TODO: Display thread correspondents when it will come back. */}
+                        {/* <ThreadItemRecipients recipients={[...thread., ...thread.cc]} /> */}
                         <div className="thread-item__metadata">
                             {/* {thread.has_attachments ? (
                                 <span className="thread-item__metadata-attachments">

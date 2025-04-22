@@ -9,7 +9,8 @@ type ThreadMessageProps = {
 export const ThreadMessage = ({ message }: ThreadMessageProps) => {
     const { t, i18n } = useTranslation()
     return (
-        <section className="thread-message" data-read={message.is_read}>
+        // @TODO: add the read status to the message when it will come back.
+        <section className="thread-message" data-read>
             <header className="thread-message__header">
                 <div className="thread-message__header-row">
                     <div className="thread-message__header-row-left">
@@ -31,14 +32,20 @@ export const ThreadMessage = ({ message }: ThreadMessageProps) => {
                             <dt>{t('thread_message.from')}</dt>
                             <dd>{message.sender.email}</dd>
                             <dt>{t('thread_message.to')}</dt>
-                            <dd>{message.recipients.map((recipient) => recipient.contact.email).join(', ')}</dd>
+                            <dd>{message.to.map((recipient) => recipient.email).join(', ')}</dd>
+                            {message.cc.length > 0 && (
+                                <>
+                                    <dt>{t('thread_message.cc')}</dt>
+                                    <dd>{message.cc.map((recipient) => recipient.email).join(', ')}</dd>
+                                </>
+                            )}
                         </dl>
                     </div>
                 </div>
             </header>
             <MessageBody
-                rawTextBody={message.raw_text_body}
-                rawHtmlBody={message.raw_html_body}
+                rawTextBody={message.textBody[0]?.content as string}
+                rawHtmlBody={message.htmlBody[0]?.content as string}
             />
         </section>
     )
