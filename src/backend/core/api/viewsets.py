@@ -605,8 +605,10 @@ class MessageCreateView(APIView):
         created_at = timezone.now()
         message_id = (
             hashlib.sha256(
-                f"{created_at.isoformat()} {subject}".encode("utf-8")
-            ).hexdigest()[0:16]
+                f"{int(created_at.timestamp())} {sender_contact.email} {subject}".encode(
+                    "utf-8"
+                )
+            ).hexdigest()[0:24]
             + "@"
             + sender_contact.email.split("@")[1]
         )
