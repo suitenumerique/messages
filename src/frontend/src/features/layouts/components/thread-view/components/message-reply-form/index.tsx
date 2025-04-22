@@ -1,6 +1,7 @@
 import { APIError } from "@/features/api/APIError";
 import { Message, useMessageCreateCreate } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/mailbox/provider";
+import soundbox from "@/features/utils/soundbox";
 import { Alert, Button, Input, TextArea, VariantType } from "@openfun/cunningham-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -25,12 +26,12 @@ const MessageReplyForm = ({ handleClose, message, replyAll }: MessageReplyFormPr
     const { selectedMailbox, invalidateThreadMessages } = useMailboxContext();
     const mutation = useMessageCreateCreate({
         mutation: {
-            onSuccess: () => {
+            onSuccess: async () => {
                 invalidateThreadMessages();
+                await soundbox.play(0.35);
                 handleClose();
             },
             onError: (error: APIError) => {
-                console.log(error);
                 setError(error.data);
             }
         }
@@ -69,6 +70,7 @@ const MessageReplyForm = ({ handleClose, message, replyAll }: MessageReplyFormPr
             const message = formRef.current.message;
             message.focus();
         }
+        soundbox.load("/sounds/mail-sent.ogg");
     }, []);
 
     return (

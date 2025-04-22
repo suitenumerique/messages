@@ -1,0 +1,25 @@
+.new-message-form-container {
+    margin-block: auto;
+    margin-inline: auto;
+    max-width: 680px;
+    padding: var(--c--theme--spacings--base);
+}
+
+.new-message-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--theme--spacings--base);
+}
+
+.form-field-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+}
+
+.form-footer {
+    display: flex;
+    flex-direction: row-reverse;
+    gap: 10px;
+    justify-content: flex-start;
+}
