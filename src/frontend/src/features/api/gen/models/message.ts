@@ -5,25 +5,29 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { MessageHtmlBodyItem } from "./message_html_body_item";
+import type { MessageTextBodyItem } from "./message_text_body_item";
 import type { Contact } from "./contact";
-import type { MessageRecipient } from "./message_recipient";
 
 /**
- * Serialize messages.
+ * Serialize messages, getting parsed details from the Message model.
+Aligns field names with JMAP where appropriate (textBody, htmlBody, to, cc, bcc).
  */
 export interface Message {
   /** primary key for the record as UUID */
   readonly id: string;
+  /** primary key for the record as UUID */
+  thread: string;
   /** @maxLength 255 */
   subject: string;
   readonly received_at: string;
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-  readonly raw_html_body: string;
-  readonly raw_text_body: string;
+  readonly htmlBody: readonly MessageHtmlBodyItem[];
+  readonly textBody: readonly MessageTextBodyItem[];
   readonly sender: Contact;
-  readonly recipients: readonly MessageRecipient[];
-  /** Return the read status of the message. */
-  readonly is_read: boolean;
+  readonly to: readonly Contact[];
+  readonly cc: readonly Contact[];
+  readonly bcc: readonly Contact[];
 }

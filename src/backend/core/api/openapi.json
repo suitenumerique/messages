@@ -55,6 +55,25 @@
                 }
             }
         },
+        "/api/v1.0/message-create/": {
+            "post": {
+                "operationId": "message_create_create",
+                "description": "Perform the create action.",
+                "tags": [
+                    "message-create"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
         "/api/v1.0/messages/": {
             "get": {
                 "operationId": "messages_list",
@@ -84,6 +103,44 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/PaginatedMessageList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/messages/{id}/": {
+            "get": {
+                "operationId": "messages_retrieve",
+                "description": "ViewSet for Message model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Message"
                                 }
                             }
                         },
@@ -198,6 +255,7 @@
                     },
                     "name": {
                         "type": "string",
+                        "nullable": true,
                         "maxLength": 255
                     },
                     "email": {
@@ -208,8 +266,7 @@
                 },
                 "required": [
                     "email",
-                    "id",
-                    "name"
+                    "id"
                 ]
             },
             "Mailbox": {
@@ -229,9 +286,19 @@
                     "perms": {
                         "type": "string",
                         "readOnly": true
+                    },
+                    "count_unread_messages": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "count_messages": {
+                        "type": "string",
+                        "readOnly": true
                     }
                 },
                 "required": [
+                    "count_messages",
+                    "count_unread_messages",
                     "email",
                     "id",
                     "perms"
@@ -239,12 +306,17 @@
             },
             "Message": {
                 "type": "object",
-                "description": "Serialize messages.",
+                "description": "Serialize messages, getting parsed details from the Message model.\nAligns field names with JMAP where appropriate (textBody, htmlBody, to, cc, bcc).",
                 "properties": {
                     "id": {
                         "type": "string",
                         "format": "uuid",
                         "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "thread": {
+                        "type": "string",
+                        "format": "uuid",
                         "description": "primary key for the record as UUID"
                     },
                     "subject": {
@@ -268,12 +340,20 @@
                         "title": "Updated on",
                         "description": "date and time at which a record was last updated"
                     },
-                    "raw_html_body": {
-                        "type": "string",
+                    "htmlBody": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": {}
+                        },
                         "readOnly": true
                     },
-                    "raw_text_body": {
-                        "type": "string",
+                    "textBody": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": {}
+                        },
                         "readOnly": true
                     },
                     "sender": {
@@ -284,57 +364,41 @@
                         ],
                         "readOnly": true
                     },
-                    "recipients": {
+                    "to": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/components/schemas/MessageRecipient"
+                            "$ref": "#/components/schemas/Contact"
                         },
                         "readOnly": true
                     },
-                    "is_read": {
-                        "type": "boolean",
-                        "description": "Return the read status of the message.",
+                    "cc": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Contact"
+                        },
+                        "readOnly": true
+                    },
+                    "bcc": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Contact"
+                        },
                         "readOnly": true
                     }
                 },
                 "required": [
+                    "bcc",
+                    "cc",
                     "created_at",
+                    "htmlBody",
                     "id",
-                    "is_read",
-                    "raw_html_body",
-                    "raw_text_body",
                     "received_at",
-                    "recipients",
                     "sender",
                     "subject",
+                    "textBody",
+                    "thread",
+                    "to",
                     "updated_at"
-                ]
-            },
-            "MessageRecipient": {
-                "type": "object",
-                "description": "Serialize message recipients.",
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "format": "uuid",
-                        "readOnly": true,
-                        "description": "primary key for the record as UUID"
-                    },
-                    "contact": {
-                        "allOf": [
-                            {
-                                "$ref": "#/components/schemas/Contact"
-                            }
-                        ],
-                        "readOnly": true
-                    },
-                    "type": {
-                        "$ref": "#/components/schemas/TypeEnum"
-                    }
-                },
-                "required": [
-                    "contact",
-                    "id"
                 ]
             },
             "PaginatedMessageList": {
@@ -416,13 +480,6 @@
                     "snippet": {
                         "type": "string"
                     },
-                    "recipients": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/components/schemas/Contact"
-                        },
-                        "readOnly": true
-                    },
                     "messages": {
                         "type": "string",
                         "readOnly": true
@@ -444,19 +501,9 @@
                     "id",
                     "is_read",
                     "messages",
-                    "recipients",
                     "subject",
                     "updated_at"
                 ]
-            },
-            "TypeEnum": {
-                "enum": [
-                    "to",
-                    "cc",
-                    "bcc"
-                ],
-                "type": "string",
-                "description": "* `to` - To\n* `cc` - Cc\n* `bcc` - Bcc"
             },
             "User": {
                 "type": "object",

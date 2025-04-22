@@ -12,8 +12,11 @@
 export interface Contact {
   /** primary key for the record as UUID */
   readonly id: string;
-  /** @maxLength 255 */
-  name: string;
+  /**
+   * @maxLength 255
+   * @nullable
+   */
+  name?: string | null;
   /** @maxLength 254 */
   email: string;
 }

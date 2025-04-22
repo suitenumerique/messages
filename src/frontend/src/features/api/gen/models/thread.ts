@@ -5,7 +5,6 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { Contact } from "./contact";
 
 /**
  * Serialize threads.
@@ -16,7 +15,6 @@ export interface Thread {
   /** @maxLength 255 */
   subject: string;
   snippet?: string;
-  readonly recipients: readonly Contact[];
   readonly messages: string;
   /** Return the read status of the thread. */
   readonly is_read: boolean;
