@@ -18,7 +18,11 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { MessagesListParams, PaginatedMessageList } from ".././models";
+import type {
+  Message,
+  MessagesListParams,
+  PaginatedMessageList,
+} from ".././models";
 
 import { fetchAPI } from "../../fetchApi";
 
@@ -178,6 +182,184 @@ export function useMessagesList<
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
   const queryOptions = getMessagesListQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * ViewSet for Message model.
+ */
+export type messagesRetrieveResponse200 = {
+  data: Message;
+  status: 200;
+};
+
+export type messagesRetrieveResponseComposite = messagesRetrieveResponse200;
+
+export type messagesRetrieveResponse = messagesRetrieveResponseComposite & {
+  headers: Headers;
+};
+
+export const getMessagesRetrieveUrl = (id: string) => {
+  return `/api/v1.0/messages/${id}/`;
+};
+
+export const messagesRetrieve = async (
+  id: string,
+  options?: RequestInit,
+): Promise<messagesRetrieveResponse> => {
+  return fetchAPI<messagesRetrieveResponse>(getMessagesRetrieveUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getMessagesRetrieveQueryKey = (id: string) => {
+  return [`/api/v1.0/messages/${id}/`] as const;
+};
+
+export const getMessagesRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof messagesRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof messagesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getMessagesRetrieveQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof messagesRetrieve>>
+  > = ({ signal }) => messagesRetrieve(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof messagesRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MessagesRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof messagesRetrieve>>
+>;
+export type MessagesRetrieveQueryError = unknown;
+
+export function useMessagesRetrieve<
+  TData = Awaited<ReturnType<typeof messagesRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof messagesRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof messagesRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof messagesRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMessagesRetrieve<
+  TData = Awaited<ReturnType<typeof messagesRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof messagesRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof messagesRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof messagesRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMessagesRetrieve<
+  TData = Awaited<ReturnType<typeof messagesRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof messagesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMessagesRetrieve<
+  TData = Awaited<ReturnType<typeof messagesRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof messagesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMessagesRetrieveQueryOptions(id, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<
     TData,

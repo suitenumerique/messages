@@ -14,4 +14,6 @@ export interface Mailbox {
   readonly id: string;
   readonly email: string;
   readonly perms: string;
+  readonly count_unread_messages: string;
+  readonly count_messages: string;
 }

@@ -5,3 +5,4 @@ export * from "./users/users";
 export * from "./models";
 export * from "./messages/messages";
 export * from "./threads/threads";
+export * from "./message-create/message-create";
