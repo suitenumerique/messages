@@ -153,7 +153,7 @@ class MessageAdmin(admin.ModelAdmin):
 class ContactAdmin(admin.ModelAdmin):
     """Admin class for the Contact model"""
 
-    list_display = ("id", "name", "email")
+    list_display = ("id", "name", "email", "owner")
 
 
 @admin.register(models.MessageRecipient)

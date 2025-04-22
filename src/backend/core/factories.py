@@ -98,6 +98,7 @@ class ContactFactory(factory.django.DjangoModelFactory):
 
     name = factory.Faker("name")
     email = factory.Faker("email")
+    owner = factory.SubFactory(MailboxFactory)
 
 
 class MessageFactory(factory.django.DjangoModelFactory):

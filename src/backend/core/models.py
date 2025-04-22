@@ -299,13 +299,18 @@ class Contact(BaseModel):
     """Contact model to store contact information."""
 
     name = models.CharField(_("name"), max_length=255, null=True, blank=True)
-    email = models.EmailField(_("email"), unique=True)
-    user = models.ForeignKey("User", on_delete=models.CASCADE, null=True, blank=True)
+    email = models.EmailField(_("email"))
+    owner = models.ForeignKey(
+        "Mailbox",
+        on_delete=models.CASCADE,
+        related_name="contacts",
+    )
 
     class Meta:
         db_table = "messages_contact"
         verbose_name = _("contact")
         verbose_name_plural = _("contacts")
+        unique_together = ("email", "owner")
 
     def __str__(self):
         if self.name:

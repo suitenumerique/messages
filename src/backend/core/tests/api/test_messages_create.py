@@ -39,7 +39,7 @@ def mailbox(authenticated_user):
 def sender_contact(mailbox, authenticated_user):
     """Create a contact for the authenticated user, required to send a message."""
     return factories.ContactFactory(
-        name=authenticated_user.full_name, user=authenticated_user, email=str(mailbox)
+        name=authenticated_user.full_name, owner=mailbox, email=str(mailbox)
     )
 
 
@@ -99,6 +99,12 @@ class TestApiMessageNewCreate:
         # Assert the message and thread are created
         assert models.Message.objects.count() == 1
         assert models.Thread.objects.count() == 1
+        # Assert the sender contact owner is ok
+        assert models.Contact.objects.get(id=sender_contact.id).owner == mailbox
+        # Assert recipient contacts owner is set
+        assert models.Contact.objects.get(email="pierre@example.com").owner == mailbox
+        assert models.Contact.objects.get(email="paul@example.com").owner == mailbox
+        assert models.Contact.objects.get(email="jean@example.com").owner == mailbox
         # Assert the message is correct
         message = models.Message.objects.get(id=response.data["id"])
         assert message.subject == subject

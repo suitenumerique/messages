@@ -223,7 +223,9 @@ class MTAViewSet(viewsets.GenericViewSet):
         sender_email = parsed_email.get("from", {}).get("email")
         sender_name = parsed_email.get("from", {}).get("name")
         sender_contact, _ = models.Contact.objects.get_or_create(
-            email=sender_email, defaults={"name": sender_name or sender_email}
+            email=sender_email,
+            owner=mailbox,
+            defaults={"name": sender_name or sender_email},
         )
 
         subject = parsed_email.get("subject", "")
@@ -247,6 +249,7 @@ class MTAViewSet(viewsets.GenericViewSet):
                 try:
                     recipient_contact, _ = models.Contact.objects.get_or_create(
                         email=recipient_data["email"],
+                        owner=mailbox,
                         defaults={
                             "name": recipient_data["name"] or recipient_data["email"]
                         },

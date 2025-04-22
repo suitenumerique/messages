@@ -171,14 +171,6 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
             + settings.MESSAGES_TESTDOMAIN
         )
 
-        contact, created = Contact.objects.get_or_create(
-            email=mapped_email,
-            defaults={"name": user.full_name or None, "user": user},
-        )
-        if not created and contact.user != user:
-            contact.user = user
-            contact.save()
-
         # Create a mailbox for the user if missing
         mailbox, _ = Mailbox.objects.get_or_create(
             local_part=mapped_email.split("@")[0],
@@ -191,3 +183,13 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
             user=user,
             permission=MailboxPermissionChoices.ADMIN,
         )
+
+        contact, created = Contact.objects.get_or_create(
+            email=mapped_email,
+            owner=mailbox,
+            defaults={"name": user.full_name or None},
+        )
+
+        if not created and contact.owner != mailbox:
+            contact.owner = mailbox
+            contact.save()

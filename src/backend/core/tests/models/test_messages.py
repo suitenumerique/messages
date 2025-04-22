@@ -28,7 +28,7 @@ def test_generate_dkim_signature():
     mailbox = models.Mailbox.objects.create(
         local_part="alice", domain=models.MailDomain.objects.create(name="example.com")
     )
-    sender = models.Contact.objects.create(email="alice@example.com")
+    sender = models.Contact.objects.create(email="alice@example.com", owner=mailbox)
     thread = models.Thread.objects.create(subject="Test", snippet="", mailbox=mailbox)
     message = models.Message.objects.create(
         thread=thread,

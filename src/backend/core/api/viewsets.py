@@ -589,13 +589,16 @@ class MessageCreateView(APIView):
         # Create contacts if they don't exist
         contacts = {
             kind: [
-                models.Contact.objects.get_or_create(email=email)[0] for email in emails
+                models.Contact.objects.get_or_create(email=email, owner=self.mailbox)[0]
+                for email in emails
             ]
             for kind, emails in recipients.items()
         }
 
         try:
-            sender_contact = models.Contact.objects.get(email=str(self.mailbox))
+            sender_contact = models.Contact.objects.get(
+                email=str(self.mailbox), owner=self.mailbox
+            )
         except models.Contact.DoesNotExist as exc:
             raise drf.exceptions.ValidationError(
                 "Sender contact does not exist."
