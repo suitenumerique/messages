@@ -101,6 +101,9 @@ smtp_host_lookup = dns
 smtp_sasl_auth_enable = no
 {% endif %}
 
+# Try to encrypt deliveries if supported by the remote server
+smtp_tls_security_level = may
+
 # === Other settings ===
 # Allow clients that don't wait for the entire HELO response (compatibility)
 broken_sasl_auth_clients = yes
