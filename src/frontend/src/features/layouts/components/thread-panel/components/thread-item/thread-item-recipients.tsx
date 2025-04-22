@@ -1,7 +1,7 @@
-import { Thread } from "@/features/api/gen/models"
+import { Contact } from "@/features/api/gen/models"
 
 type ThreadItemRecipientsProps = {
-    recipients: Thread["recipients"]
+    recipients: Contact[]
 }
 
 export const ThreadItemRecipients = ({ recipients }: ThreadItemRecipientsProps) => {
