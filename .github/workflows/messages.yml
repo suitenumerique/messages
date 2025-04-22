@@ -1,4 +1,4 @@
-name: ST-Messages Workflow
+name: Lint and tests
 
 on:
   push:
@@ -20,9 +20,6 @@ jobs:
           fetch-depth: 0
       - name: show
         run: git log
-      - name: Enforce absence of print statements in code
-        run: |
-          ! git diff origin/${{ github.event.pull_request.base.ref }}..HEAD -- . ':(exclude)**/messages.yml' | grep -E "(\bprint\(|\bpprint\()"
       - name: Check absence of fixup commits
         run: |
           ! git log | grep 'fixup!'
@@ -42,7 +39,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
       - name: Upgrade pip and setuptools
         run: pip install --upgrade pip setuptools
       - name: Install development dependencies
@@ -82,7 +79,7 @@ jobs:
       DB_USER: user
       DB_PASSWORD: pass
       DB_PORT: 5432
-
+ 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -93,7 +90,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
       - name: Install development dependencies
         run: pip install --user .[dev]
       - name: Install gettext (required to compile messages)

@@ -3,10 +3,13 @@
 
 import logging
 import re
+import smtplib
+import time
 
 from django.conf import settings
 from django.contrib.postgres.aggregates import ArrayAgg
 from django.db import models as db
+from django.utils import timezone
 
 import rest_framework as drf
 from rest_framework import mixins, status, viewsets
@@ -15,6 +18,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core import enums, models
+from core.formats.rfc5322.composer import compose_email
 
 from . import permissions, serializers
 
@@ -26,8 +30,7 @@ UUID_REGEX = (
 )
 FILE_EXT_REGEX = r"(\.[a-zA-Z0-9]+)?$"
 MEDIA_STORAGE_URL_PATTERN = re.compile(
-    f"{settings.MEDIA_URL:s}"
-    f"(?P<key>{ITEM_FOLDER:s}/(?P<pk>{UUID_REGEX:s})/.*{FILE_EXT_REGEX:s})$"
+    f"{settings.MEDIA_URL:s}(?P<key>{ITEM_FOLDER:s}/(?P<pk>{UUID_REGEX:s})/.*{FILE_EXT_REGEX:s})$"
 )
 
 # pylint: disable=too-many-ancestors
@@ -309,7 +312,9 @@ class ThreadViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
         ).order_by("-updated_at")
 
 
-class MessageViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
+class MessageViewSet(
+    viewsets.GenericViewSet, mixins.ListModelMixin, mixins.RetrieveModelMixin
+):
     """ViewSet for Message model."""
 
     serializer_class = serializers.MessageSerializer
@@ -341,23 +346,15 @@ class MessageCreateView(APIView):
 
     permission_classes = [permissions.IsAllowedToCreateMessage]
     mailbox = None
+    sender_contact = None
 
     def post(self, request):
         """Perform the create action."""
-        # First get the sender contact
-        sender_id = (
-            request.data.pop("senderId") if request.data.get("senderId") else None
-        )
-        if not sender_id:
-            raise drf.exceptions.ValidationError("Either a senderId must be provided.")
-        try:
-            sender = models.Contact.objects.get(id=sender_id)
-        except models.Contact.DoesNotExist as exc:
-            raise drf.exceptions.ValidationError("Sender does not exist.") from exc
+
+        subject = request.data.get("subject")
+
         # Then get the parent message if it's a reply
-        parent_id = (
-            request.data.pop("parentId") if request.data.get("parentId") else None
-        )
+        parent_id = request.data.get("parentId")
         if parent_id:
             try:
                 # Reply to an existing message in a thread
@@ -370,48 +367,121 @@ class MessageCreateView(APIView):
         else:
             # Create a new thread
             thread = models.Thread.objects.create(
-                # mailbox is set in the permission class
+                # self.mailbox is set in the permission class
                 mailbox=self.mailbox,
-                subject=request.data.get("subject"),
+                subject=subject,
                 # TODO: enhance to use htmlBody if is the only one provided
                 snippet=request.data.get("textBody")[:100],
             )
 
-        # Manage thread and sender
-        request.data["thread"] = thread
-        request.data["sender"] = sender
+        recipients = {
+            "to": request.data.get("to") or [],
+            "cc": request.data.get("cc") or [],
+            "bcc": request.data.get("bcc") or [],
+        }
 
-        # Manage body
-        request.data["body_html"] = (
-            request.data.pop("htmlBody") if request.data.get("htmlBody") else ""
-        )
-        request.data["body_text"] = (
-            request.data.pop("textBody") if request.data.get("textBody") else ""
-        )
+        # Create contacts if they don't exist
+        contacts = {
+            kind: [
+                models.Contact.objects.get_or_create(email=email)[0] for email in emails
+            ]
+            for kind, emails in recipients.items()
+        }
 
-        # Manage recipients
-        recipients_to = request.data.pop("to") if request.data.get("to") else []
-        recipients_cc = request.data.pop("cc") if request.data.get("cc") else []
-        recipients_bcc = request.data.pop("bcc") if request.data.get("bcc") else []
+        # Assemble the raw mime message
+        # BCC recipients are not included in the raw mime message
+        raw_mime = compose_email(
+            {
+                "from": [
+                    {
+                        "name": self.sender_contact.name,
+                        "email": self.sender_contact.email,
+                    }
+                ],
+                "to": [
+                    {"name": contact.name, "email": contact.email}
+                    for contact in contacts["to"]
+                ],
+                "cc": [
+                    {"name": contact.name, "email": contact.email}
+                    for contact in contacts["cc"]
+                ],
+                "subject": subject,
+                "textBody": [request.data["textBody"]]
+                if request.data.get("textBody")
+                else [],
+                "htmlBody": [request.data["htmlBody"]]
+                if request.data.get("htmlBody")
+                else [],
+            }
+        )
 
         # Create message instance with all data
-        message = models.Message.objects.create(**request.data)
+        message = models.Message.objects.create(
+            thread=thread,
+            sender=self.sender_contact,
+            raw_mime=raw_mime,
+            subject=subject,
+            is_read=True,
+            created_at=timezone.now(),
+            read_at=timezone.now(),
+            mta_sent=False,
+        )
 
-        # Manage recipients
-        recipients = [(email, "to") for email in recipients_to]
-        recipients.extend([(email, "cc") for email in recipients_cc])
-        recipients.extend([(email, "bcc") for email in recipients_bcc])
-        for recipient_email, recipient_type in recipients:
-            # Create contact if it doesn't exist
-            contact, _ = models.Contact.objects.get_or_create(email=recipient_email)
-            # Create message recipient
-            models.MessageRecipient.objects.create(
-                message=message,
-                contact=contact,
-                type=recipient_type,
-            )
+        for kind, cts in contacts.items():
+            for contact in cts:
+                models.MessageRecipient.objects.create(
+                    message=message,
+                    contact=contact,
+                    type=kind,
+                )
 
-        # TODO: send message for real to the MTA
+        # TODO: Add DKIM signature
+        raw_mime_signed = raw_mime
+
+        # TODO: Sending to the MTA should be done asynchronously. Move this to a Celery task
+
+        if not settings.MTA_OUT_HOST:
+            logger.warning("MTA_OUT_HOST is not set, skipping message sending")
+        else:
+            for _ in range(5):
+                try:
+                    client = smtplib.SMTP(
+                        settings.MTA_OUT_HOST.split(":")[0],
+                        int(settings.MTA_OUT_HOST.split(":")[1]),
+                    )
+                    client.ehlo()
+                    client.starttls()
+                    client.ehlo()
+
+                    # Authenticate
+                    if (
+                        settings.MTA_OUT_SMTP_USERNAME
+                        and settings.MTA_OUT_SMTP_PASSWORD
+                    ):
+                        client.login(
+                            settings.MTA_OUT_SMTP_USERNAME,
+                            settings.MTA_OUT_SMTP_PASSWORD,
+                        )
+
+                    envelope_to = [
+                        contact.email
+                        for contact in contacts["to"] + contacts["cc"] + contacts["bcc"]
+                    ]
+                    envelope_from = message.sender.email
+                    smtp_response = client.sendmail(
+                        envelope_from, envelope_to, raw_mime_signed
+                    )
+                    logger.info("SMTP response: %s", smtp_response)
+
+                    message.mta_sent = True
+                    message.sent_at = timezone.now()
+                    message.save()
+
+                    break
+                except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
+                    logger.error("Error sending message to the MTA: %s", e)
+                    time.sleep(1)
 
         return Response(
             serializers.MessageSerializer(message).data, status=status.HTTP_201_CREATED

@@ -598,3 +598,41 @@ def test_authentication_getter_new_user_with_testdomain(monkeypatch):
         user=user,
         permission=models.MailboxPermissionChoices.ADMIN,
     ).exists()
+
+
+@override_settings(
+    OIDC_OP_USER_ENDPOINT="http://oidc.endpoint.test/userinfo",
+    USER_OIDC_ESSENTIAL_CLAIMS=["email", "last_name"],
+    MESSAGES_TESTDOMAIN="testdomain.bzh",
+    MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN="gouv.fr",
+)
+def test_authentication_getter_new_user_with_testdomain_no_mapping(monkeypatch):
+    """
+    Check the TESTDOMAIN creation process
+    """
+
+    klass = OIDCAuthenticationBackend()
+
+    def get_userinfo_mocked(*args):
+        return {
+            "email": "john.doe@notgouv.fr",
+            "last_name": "Doe",
+            "sub": "123",
+        }
+
+    monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
+
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
+
+    assert models.User.objects.filter(id=user.id).exists()
+
+    assert user.sub == "123"
+    assert user.full_name == "Doe"
+    assert user.short_name is None
+    assert user.email == "john.doe@notgouv.fr"
+
+    assert len(models.Contact.objects.all()) == 0
+    assert len(models.Mailbox.objects.all()) == 0
+    assert len(models.MailboxAccess.objects.all()) == 0

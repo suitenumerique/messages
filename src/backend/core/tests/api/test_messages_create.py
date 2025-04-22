@@ -79,8 +79,11 @@ class TestApiMessageNewCreate:
         # Assert the message is correct
         message = models.Message.objects.get(id=response.data["id"])
         assert message.subject == "test"
-        assert message.body_html == "<p>test</p>"
-        assert message.body_text == "test"
+        assert len(message.raw_mime) > 0
+        assert b"test" in message.raw_mime
+        assert message.get_parsed_field("textBody")[0]["content"] == "test"
+        assert message.get_parsed_field("htmlBody")[0]["content"] == "<p>test</p>"
+
         assert message.sender.email == authenticated_user.email
         recipient_to = message.recipients.filter(
             type=enums.MessageRecipientTypeChoices.TO

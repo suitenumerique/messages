@@ -140,7 +140,6 @@ class ThreadSerializer(serializers.ModelSerializer):
 
     messages = serializers.SerializerMethodField(read_only=True)
     is_read = serializers.SerializerMethodField(read_only=True)
-    recipients = serializers.SerializerMethodField(read_only=True)
 
     def get_messages(self, instance):
         """Return the messages in the thread."""
@@ -150,67 +149,60 @@ class ThreadSerializer(serializers.ModelSerializer):
         """Return the read status of the thread."""
         return instance.messages.filter(read_at__isnull=False).exists()
 
-    @extend_schema_field(ContactSerializer(many=True))
-    def get_recipients(self, instance):
-        """Return the recipients of the thread."""
-        contacts = models.Contact.objects.filter(
-            id__in=instance.messages.values_list("recipients__contact__id", flat=True)
-        )
-        return ContactSerializer(contacts, many=True).data
-
     class Meta:
         model = models.Thread
         fields = [
             "id",
             "subject",
             "snippet",
-            "recipients",
             "messages",
             "is_read",
             "updated_at",
         ]
 
 
-class MessageRecipientSerializer(serializers.ModelSerializer):
-    """Serialize message recipients."""
-
-    contact = ContactSerializer(read_only=True)
-
-    class Meta:
-        model = models.MessageRecipient
-        fields = ["id", "contact", "type"]
-
-
 class MessageSerializer(serializers.ModelSerializer):
-    """Serialize messages."""
+    """
+    Serialize messages, getting parsed details from the Message model.
+    Aligns field names with JMAP where appropriate (textBody, htmlBody, to, cc, bcc).
+    """
 
-    raw_html_body = serializers.SerializerMethodField(read_only=True)
-    raw_text_body = serializers.SerializerMethodField(read_only=True)
-    sender = serializers.SerializerMethodField(read_only=True)
-    recipients = serializers.SerializerMethodField(read_only=True)
-    is_read = serializers.SerializerMethodField(read_only=True)
+    # JMAP-style body fields (from model's parsed data)
+    textBody = serializers.SerializerMethodField(read_only=True)
+    htmlBody = serializers.SerializerMethodField(read_only=True)
 
-    def get_raw_html_body(self, instance):
-        """Return the raw HTML body of the message."""
-        return instance.body_html
+    # JMAP-style recipient fields (from model's parsed data)
+    to = serializers.SerializerMethodField(read_only=True)
+    cc = serializers.SerializerMethodField(read_only=True)
+    bcc = serializers.SerializerMethodField(read_only=True)
 
-    def get_raw_text_body(self, instance):
-        """Return the raw text body of the message."""
-        return instance.body_text
+    sender = ContactSerializer(read_only=True)
 
-    @extend_schema_field(ContactSerializer)
-    def get_sender(self, instance):
-        """Return the sender of the message."""
-        return ContactSerializer(instance.sender).data
+    @extend_schema_field(serializers.ListField(child=serializers.DictField()))
+    def get_textBody(self, instance):  # pylint: disable=invalid-name
+        """Return the list of text body parts (JMAP style)."""
+        return instance.get_parsed_field("textBody") or []
 
-    @extend_schema_field(MessageRecipientSerializer(many=True))
-    def get_recipients(self, instance):
-        """Return the recipients of the message."""
-        return MessageRecipientSerializer(instance.recipients, many=True).data
+    @extend_schema_field(serializers.ListField(child=serializers.DictField()))
+    def get_htmlBody(self, instance):  # pylint: disable=invalid-name
+        """Return the list of HTML body parts (JMAP style)."""
+        return instance.get_parsed_field("htmlBody") or []
 
-    def get_is_read(self, instance) -> bool:
-        """Return the read status of the message."""
-        return instance.read_at is not None
+    @extend_schema_field(ContactSerializer(many=True))
+    def get_to(self, instance):
+        """Return the 'To' recipients."""
+        return instance.get_parsed_field("to") or []
+
+    @extend_schema_field(ContactSerializer(many=True))
+    def get_cc(self, instance):
+        """Return the 'Cc' recipients."""
+        return instance.get_parsed_field("cc") or []
+
+    @extend_schema_field(ContactSerializer(many=True))
+    def get_bcc(self, instance):
+        """Return the 'Bcc' recipients."""
+        # TODO: only return the bcc if the user has permission to see it (=is the sender?)
+        return instance.get_parsed_field("bcc") or []
 
     class Meta:
         model = models.Message
@@ -221,9 +213,10 @@ class MessageSerializer(serializers.ModelSerializer):
             "received_at",
             "created_at",
             "updated_at",
-            "raw_html_body",
-            "raw_text_body",
+            "htmlBody",
+            "textBody",
             "sender",
-            "recipients",
-            "is_read",
+            "to",
+            "cc",
+            "bcc",
         ]

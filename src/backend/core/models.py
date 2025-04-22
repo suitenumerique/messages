@@ -6,6 +6,7 @@ Declare and configure the models for the messages core application
 import uuid
 from datetime import timedelta
 from logging import getLogger
+from typing import Any, Dict, Optional
 
 from django.conf import settings
 from django.contrib.auth import models as auth_models
@@ -18,6 +19,7 @@ from django.utils.translation import gettext_lazy as _
 from timezone_field import TimeZoneField
 
 from core.enums import MailboxPermissionChoices, MessageRecipientTypeChoices
+from core.formats.rfc5322 import parse_email_message
 
 logger = getLogger(__name__)
 
@@ -333,11 +335,6 @@ class Message(BaseModel):
         Thread, on_delete=models.CASCADE, related_name="messages"
     )
     subject = models.CharField(_("subject"), max_length=255)
-    # header = models.ForeignKey(EmailHeader, on_delete=models.CASCADE)
-    # body = models.ForeignKey(EmailBody, on_delete=models.CASCADE)
-    body_html = models.TextField(_("body html"), blank=True)
-    body_text = models.TextField(_("body text"), blank=True)
-    raw_mime = models.TextField(_("raw message"), blank=True)
     sender = models.ForeignKey("Contact", on_delete=models.CASCADE)
     received_at = models.DateTimeField(_("received at"), auto_now_add=True)
     created_at = models.DateTimeField(_("created at"), auto_now_add=True)
@@ -345,6 +342,13 @@ class Message(BaseModel):
     read_at = models.DateTimeField(_("read at"), null=True, blank=True)
     mta_sent = models.BooleanField(_("mta sent"), default=False)
     is_read = models.BooleanField(_("is read"), default=False)
+
+    # Stores the raw MIME message. This will be optimized and offloaded
+    # to object storage in the future.
+    raw_mime = models.BinaryField(blank=True, default=b"")
+
+    # Internal cache for parsed data
+    _parsed_email_cache: Optional[Dict[str, Any]] = None
 
     class Meta:
         db_table = "messages_message"
@@ -354,3 +358,18 @@ class Message(BaseModel):
 
     def __str__(self):
         return self.subject
+
+    def get_parsed_data(self) -> Dict[str, Any]:
+        """Parse raw_mime using parser and cache the result."""
+        if self._parsed_email_cache is not None:
+            return self._parsed_email_cache
+
+        if self.raw_mime:
+            self._parsed_email_cache = parse_email_message(self.raw_mime)
+        else:
+            self._parsed_email_cache = {}
+        return self._parsed_email_cache
+
+    def get_parsed_field(self, field_name: str) -> Any:
+        """Get a parsed field from the parsed email data."""
+        return (self.get_parsed_data() or {}).get(field_name)

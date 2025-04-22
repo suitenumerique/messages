@@ -227,6 +227,10 @@ back-i18n-generate: ## create the .pot files used for i18n
 	@$(MANAGE) makemessages -a --keep-pot --all
 .PHONY: back-i18n-generate
 
+back-shell: ## open a shell in the backend container
+	@$(COMPOSE) run --rm --build app-dev /bin/sh
+.PHONY: back-shell
+
 shell: ## connect to django shell
 	@$(MANAGE) shell #_plus
 .PHONY: dbshell
@@ -308,6 +312,10 @@ clean: ## restore repository state as it was freshly cloned
 clean-media: ## remove all media files
 	rm -rf data/media/*
 .PHONY: clean-media
+
+pyclean: ## remove all python cache files
+	find . | grep -E "(/__pycache__$|\.pyc$|\.pyo$)" | xargs rm -rf
+.PHONY: pyclean
 
 help:
 	@echo "$(BOLD)messages Makefile"

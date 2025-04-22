@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 # Get environment variables
 MTA_OUT_HOST = os.getenv("MTA_OUT_HOST")
-SMTP_USERNAME = os.getenv("SMTP_USERNAME")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+MTA_OUT_SMTP_USERNAME = os.getenv("MTA_OUT_SMTP_USERNAME")
+MTA_OUT_SMTP_PASSWORD = os.getenv("MTA_OUT_SMTP_PASSWORD")
 
 
 class MessageStore:
@@ -144,13 +144,13 @@ def smtp_client():
     for attempt in range(max_retries):
         try:
             # First check if SMTP connection can be established
-            client = smtplib.SMTP(MTA_OUT_HOST, 587)
+            client = smtplib.SMTP(MTA_OUT_HOST.split(":")[0], int(MTA_OUT_HOST.split(":")[1]))
             client.ehlo()
             client.starttls()
             client.ehlo()
 
             # Authenticate
-            client.login(SMTP_USERNAME, SMTP_PASSWORD)
+            client.login(MTA_OUT_SMTP_USERNAME, MTA_OUT_SMTP_PASSWORD)
 
             logger.info("SMTP connection established and authenticated")
             break
