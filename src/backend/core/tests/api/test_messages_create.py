@@ -104,6 +104,7 @@ class TestApiMessageNewCreate:
         assert thread.snippet == "test"
         assert thread.messages.count() == 1
         assert thread.messages.get().id == message.id
+        assert thread.is_read is True
 
     @pytest.mark.parametrize(
         "permission",

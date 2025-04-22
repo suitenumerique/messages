@@ -372,6 +372,7 @@ class MessageCreateView(APIView):
                 subject=subject,
                 # TODO: enhance to use htmlBody if is the only one provided
                 snippet=request.data.get("textBody")[:100],
+                is_read=True,
             )
 
         recipients = {
