@@ -161,7 +161,9 @@ class TestApiMessageNewCreate:
             "subject",
             "mime-version",
             "content-type",
+            "message-id",
         }
+        assert recv_email["headers"]["message-id"].endswith("@example.com>")
 
         source = requests.get(
             f"http://mailcatcher:1080/email/{recv_email['id']}/source",

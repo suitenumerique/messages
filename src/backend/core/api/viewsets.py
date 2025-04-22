@@ -1,6 +1,7 @@
 """API endpoints"""
 # pylint: disable=too-many-lines
 
+import hashlib
 import logging
 import re
 import smtplib
@@ -600,6 +601,16 @@ class MessageCreateView(APIView):
                 "Sender contact does not exist."
             ) from exc
 
+        # Generate a unique but deterministic message ID
+        created_at = timezone.now()
+        message_id = (
+            hashlib.sha256(
+                f"{created_at.isoformat()} {subject}".encode("utf-8")
+            ).hexdigest()[0:16]
+            + "@"
+            + sender_contact.email.split("@")[1]
+        )
+
         # Assemble the raw mime message
         # BCC recipients are not included in the raw mime message
         raw_mime = compose_email(
@@ -625,6 +636,7 @@ class MessageCreateView(APIView):
                 "htmlBody": [request.data["htmlBody"]]
                 if request.data.get("htmlBody")
                 else [],
+                "messageId": message_id,
             }
         )
 
@@ -634,7 +646,7 @@ class MessageCreateView(APIView):
             sender=sender_contact,
             raw_mime=raw_mime,
             subject=subject,
-            created_at=timezone.now(),
+            created_at=created_at,
             read_at=timezone.now(),
             mta_sent=False,
         )

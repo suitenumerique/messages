@@ -308,7 +308,12 @@ class Contact(BaseModel):
         verbose_name_plural = _("contacts")
 
     def __str__(self):
-        return self.name
+        if self.name:
+            return f"{self.name} <{self.email}>"
+        return self.email
+
+    def __repr__(self):
+        return str(self)
 
 
 class MessageRecipient(BaseModel):
