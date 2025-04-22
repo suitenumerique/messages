@@ -30,4 +30,6 @@ export interface Message {
   readonly to: readonly Contact[];
   readonly cc: readonly Contact[];
   readonly bcc: readonly Contact[];
+  /** @nullable */
+  read_at?: string | null;
 }

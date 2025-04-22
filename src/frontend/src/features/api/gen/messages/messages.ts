@@ -5,21 +5,27 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
+  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
 import type {
   Message,
+  MessageCreateCreate400,
+  MessageCreateCreate403,
+  MessageCreateRequestRequest,
   MessagesListParams,
   PaginatedMessageList,
 } from ".././models";
@@ -28,6 +34,128 @@ import { fetchAPI } from "../../fetchApi";
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
+/**
+ * 
+    Create a new message or reply to an existing message.
+    
+    This endpoint allows you to:
+    - Create a new message in a new thread
+    - Reply to an existing message in an existing thread
+    
+    At least one of htmlBody or textBody must be provided.
+    
+ */
+export type messageCreateCreateResponse201 = {
+  data: Message;
+  status: 201;
+};
+
+export type messageCreateCreateResponse400 = {
+  data: MessageCreateCreate400;
+  status: 400;
+};
+
+export type messageCreateCreateResponse403 = {
+  data: MessageCreateCreate403;
+  status: 403;
+};
+
+export type messageCreateCreateResponseComposite =
+  | messageCreateCreateResponse201
+  | messageCreateCreateResponse400
+  | messageCreateCreateResponse403;
+
+export type messageCreateCreateResponse =
+  messageCreateCreateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMessageCreateCreateUrl = () => {
+  return `/api/v1.0/message-create/`;
+};
+
+export const messageCreateCreate = async (
+  messageCreateRequestRequest: MessageCreateRequestRequest,
+  options?: RequestInit,
+): Promise<messageCreateCreateResponse> => {
+  return fetchAPI<messageCreateCreateResponse>(getMessageCreateCreateUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(messageCreateRequestRequest),
+  });
+};
+
+export const getMessageCreateCreateMutationOptions = <
+  TError = MessageCreateCreate400 | MessageCreateCreate403,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof messageCreateCreate>>,
+    TError,
+    { data: MessageCreateRequestRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof messageCreateCreate>>,
+  TError,
+  { data: MessageCreateRequestRequest },
+  TContext
+> => {
+  const mutationKey = ["messageCreateCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof messageCreateCreate>>,
+    { data: MessageCreateRequestRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return messageCreateCreate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MessageCreateCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof messageCreateCreate>>
+>;
+export type MessageCreateCreateMutationBody = MessageCreateRequestRequest;
+export type MessageCreateCreateMutationError =
+  | MessageCreateCreate400
+  | MessageCreateCreate403;
+
+export const useMessageCreateCreate = <
+  TError = MessageCreateCreate400 | MessageCreateCreate403,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof messageCreateCreate>>,
+      TError,
+      { data: MessageCreateRequestRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof messageCreateCreate>>,
+  TError,
+  { data: MessageCreateRequestRequest },
+  TContext
+> => {
+  const mutationOptions = getMessageCreateCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
 /**
  * ViewSet for Message model.
  */
