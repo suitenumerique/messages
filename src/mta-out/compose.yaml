@@ -6,10 +6,6 @@ services:
       # Credentials for the test client to connect TO mta-out
       - MTA_OUT_SMTP_USERNAME=testuser
       - MTA_OUT_SMTP_PASSWORD=testpass
-      # Example: Configure mta-out to relay via MailHog
-      # - RELAYHOST=[mailhog:1025]
-      # - SMTP_RELAY_USERNAME= # MailHog doesn't need auth
-      # - SMTP_RELAY_PASSWORD= # MailHog doesn't need auth
     command: pytest -vvs .
     volumes:
       - ./tests:/app
@@ -29,20 +25,20 @@ services:
       - MYHOSTNAME=mta-out-test.localhost # Set to a meaningful FQDN (recommended for production)
 
       # TLS Configuration (WARNING: Mount real certs/keys in production!)
-      - TLS_CERT_PATH=/etc/ssl/certs/ssl-cert-snakeoil.pem
-      - TLS_KEY_PATH=/etc/ssl/private/ssl-cert-snakeoil.key
+      # - TLS_CERT_PATH=/etc/ssl/certs/ssl-cert-snakeoil.pem
+      # - TLS_KEY_PATH=/etc/ssl/private/ssl-cert-snakeoil.key
 
       # Optional: Message Size Limit
       - MESSAGE_SIZE_LIMIT=10240000
 
       # --- Optional: Relay Host Configuration ---
-      # If RELAYHOST is set, mail is sent via this host instead of direct delivery.
-      # Example for testing with MailHog: RELAYHOST=[mailhog:1025]
-      # Example for production relay: RELAYHOST=[smtp.yourprovider.com]:587
-      - RELAYHOST=[test]:2525 # Route mail to the mock server in the 'test' container
+      # If SMTP_RELAY_HOST is set, mail is sent via this host instead of direct delivery.
+      # Example for testing with MailHog: SMTP_RELAY_HOST=[mailhog:1025]
+      # Example for production relay: SMTP_RELAY_HOST=[smtp.yourprovider.com]:587
+      - SMTP_RELAY_HOST=[test]:2525 # Route mail to the mock server in the 'test' container
       # - POSTFIX_DEBUG=1
 
-      # Optional: Credentials for authenticating TO the RELAYHOST (if it requires auth)
+      # Optional: Credentials for authenticating TO the SMTP_RELAY_HOST (if it requires auth)
       # - SMTP_RELAY_USERNAME=
       # - SMTP_RELAY_PASSWORD=
 

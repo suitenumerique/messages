@@ -1,0 +1,3 @@
+SMTP_RELAY_HOST=mailcatcher:1025
+SMTP_USERNAME=testuser
+SMTP_PASSWORD=testpass

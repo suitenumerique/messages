@@ -12,7 +12,7 @@ It is battle-tested with a complete Python test suite.
 - Secure SMTP on port 587 with TLS required for authentication
 - Simple authentication for incoming clients (`SMTP_USERNAME`/`SMTP_PASSWORD`)
 - Direct outbound email delivery via DNS MX lookups (default)
-- Optional relaying via a configured upstream SMTP server (`RELAYHOST`)
+- Optional relaying via a configured upstream SMTP server (`SMTP_RELAY_HOST`)
 - Optional authentication to the upstream relay server (`SMTP_RELAY_USERNAME`/`SMTP_RELAY_PASSWORD`)
 - No local mail handling or unnecessary components
 
@@ -26,9 +26,9 @@ Configuration is done entirely through environment variables:
 - `SMTP_PASSWORD`: Password clients must use to authenticate to this service.
 
 ### Optional Environment Variables
-- `RELAYHOST`: Upstream SMTP server to relay mail through (e.g., `[smtp.test-server.com]:1025`). If unset (default), mail is delivered directly via DNS MX lookups.
-- `SMTP_RELAY_USERNAME`: Username for this service to use when authenticating to the `RELAYHOST` (only used if `RELAYHOST` is set).
-- `SMTP_RELAY_PASSWORD`: Password for this service to use when authenticating to the `RELAYHOST` (only used if `RELAYHOST` is set).
+- `SMTP_RELAY_HOST`: Upstream SMTP server to relay mail through (e.g., `[smtp.test-server.com]:1025`). If unset (default), mail is delivered directly via DNS MX lookups.
+- `SMTP_RELAY_USERNAME`: Username for this service to use when authenticating to the `SMTP_RELAY_HOST` (only used if `SMTP_RELAY_HOST` is set).
+- `SMTP_RELAY_PASSWORD`: Password for this service to use when authenticating to the `SMTP_RELAY_HOST` (only used if `SMTP_RELAY_HOST` is set).
 - `MYHOSTNAME`: The hostname this MTA identifies itself with in HELO/EHLO commands (default: `localhost`). Setting a proper FQDN is recommended. If it is not set we will attempt auto-detection from the rRNS of the host.
 - `TLS_CERT_PATH`: Path to the TLS certificate file (default: `/etc/ssl/certs/ssl-cert-snakeoil.pem`). **WARNING:** Mount a real certificate in production.
 - `TLS_KEY_PATH`: Path to the TLS private key file (default: `/etc/ssl/private/ssl-cert-snakeoil.key`). **WARNING:** Mount a real key in production.

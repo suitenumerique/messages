@@ -103,8 +103,26 @@ And the frontend API client only with:
 $ make frontend-api-update
 ```
 
+## Sending test emails
 
+There are a couple ways of testing the email infrastructure locally.
 
+These examples use [swaks](https://www.jetmore.org/john/code/swaks/), a simple command-line SMTP client.
+
+```
+# First, make sure services are running
+make run
+
+# Send a test message to the MTA-out, which will then relay it to mailcatcher. Read it on http://localhost:1081/
+swaks -tls --to=test@example.com --server 127.0.0.1:8587 --auth-user testuser --auth-password=testpass
+
+# Send a test message to the MTA-in, which will relay it to the Django MDA.
+# The domain must be MESSAGES_TESTDOMAIN if you want the mailbox created automatically.
+# You can then read it on the frontend on http://localhost:3000/ (login as user1/user1) and reply to it there.
+# The replies will then be sent through the MTA-out to the mailcatcher on http://localhost:1081/
+swaks --to=user1@example.local --server 127.0.0.1:8025
+
+```
 
 
 ## Contributing

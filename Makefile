@@ -71,7 +71,8 @@ create-env-files: \
 	env.d/development/postgresql \
 	env.d/development/kc_postgresql \
 	env.d/development/backend \
-	env.d/development/mta-in
+	env.d/development/mta-in \
+	env.d/development/mta-out
 .PHONY: create-env-files
 
 bootstrap: ## Prepare Docker images for the project
@@ -120,7 +121,7 @@ build-run: ## start the wsgi (production) and development server, rebuilding the
 .PHONY: run-rebuild
 
 run: ## start the wsgi (production) and development server
-	@$(COMPOSE) up --force-recreate -d nginx
+	@$(COMPOSE) up --force-recreate --build -d nginx
 .PHONY: run
 
 run-with-frontend: ## Start all the containers needed (backend to frontend)
@@ -129,7 +130,7 @@ run-with-frontend: ## Start all the containers needed (backend to frontend)
 .PHONY: run-with-frontend
 
 run-all-fg: ## Start backend containers and frontend in foreground
-	@$(COMPOSE) up --force-recreate --build nginx frontend-dev
+	@$(COMPOSE) up --force-recreate --build nginx frontend-dev app-dev
 .PHONY: run-all-fg
 
 status: ## an alias for "docker compose ps"
@@ -262,6 +263,9 @@ env.d/development/postgresql:
 
 env.d/development/kc_postgresql:
 	cp -n env.d/development/kc_postgresql.dist env.d/development/kc_postgresql
+
+env.d/development/mta-out:
+	cp -n env.d/development/mta-out.dist env.d/development/mta-out
 
 # -- Internationalization
 

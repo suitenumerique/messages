@@ -78,9 +78,9 @@ smtpd_relay_restrictions =
 message_size_limit = {{ MESSAGE_SIZE_LIMIT }}
 
 # === Delivery Method (Outgoing Connections) ===
-{% if RELAYHOST %}
+{% if SMTP_RELAY_HOST %}
 # Configured to relay through an upstream host
-relayhost = {{ RELAYHOST }}
+relayhost = {{ SMTP_RELAY_HOST }}
  {# --- Authentication TO Relay Host (if specified) --- #}
  {% if SMTP_RELAY_USERNAME and SMTP_RELAY_PASSWORD %}
  # Enable SASL authentication when connecting to the relay host.

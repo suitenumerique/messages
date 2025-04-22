@@ -10,7 +10,7 @@ echo "Configuring Postfix via Jinja2 template..."
 
 # Set optional vars with defaults
 export MESSAGE_SIZE_LIMIT=${MESSAGE_SIZE_LIMIT:-10240000}
-export RELAYHOST=${RELAYHOST:-""}
+export SMTP_RELAY_HOST=${SMTP_RELAY_HOST:-""}
 export SMTP_RELAY_USERNAME=${SMTP_RELAY_USERNAME:-""}
 export SMTP_RELAY_PASSWORD=${SMTP_RELAY_PASSWORD:-""}
 export TLS_CERT_PATH=${TLS_CERT_PATH:-/etc/ssl/certs/ssl-cert-snakeoil.pem}
@@ -62,17 +62,17 @@ print(f'Successfully rendered {output_path}')
 
 # === Configure Authentication TO Relay Host (if needed) ===
 # (Password map file, separate from main.cf)
-if [ -n "$RELAYHOST" ] && [ -n "$SMTP_RELAY_USERNAME" ] && [ -n "$SMTP_RELAY_PASSWORD" ]; then
+if [ -n "$SMTP_RELAY_HOST" ] && [ -n "$SMTP_RELAY_USERNAME" ] && [ -n "$SMTP_RELAY_PASSWORD" ]; then
   RELAY_PASSWD_FILE="/etc/postfix/sasl/relay_passwd"
   echo "Creating $RELAY_PASSWD_FILE for relay host authentication..."
-  echo "$RELAYHOST $SMTP_RELAY_USERNAME:$SMTP_RELAY_PASSWORD" > "$RELAY_PASSWD_FILE"
+  echo "$SMTP_RELAY_HOST $SMTP_RELAY_USERNAME:$SMTP_RELAY_PASSWORD" > "$RELAY_PASSWD_FILE"
   chmod 600 "$RELAY_PASSWD_FILE"
   # Create the Postfix lookup table database
   postmap "$RELAY_PASSWD_FILE"
-  echo "Created $RELAY_PASSWD_FILE.db for relay host $RELAYHOST"
-elif [ -n "$RELAYHOST" ] && ( [ -n "$SMTP_RELAY_USERNAME" ] || [ -n "$SMTP_RELAY_PASSWORD" ] ); then
+  echo "Created $RELAY_PASSWD_FILE.db for relay host $SMTP_RELAY_HOST"
+elif [ -n "$SMTP_RELAY_HOST" ] && ( [ -n "$SMTP_RELAY_USERNAME" ] || [ -n "$SMTP_RELAY_PASSWORD" ] ); then
   # Warn if only one of username/password is provided for relay
-  echo "Warning: SMTP_RELAY_USERNAME or SMTP_RELAY_PASSWORD provided without the other for RELAYHOST=$RELAYHOST. Relay authentication disabled." >&2
+  echo "Warning: SMTP_RELAY_USERNAME or SMTP_RELAY_PASSWORD provided without the other for SMTP_RELAY_HOST=$SMTP_RELAY_HOST. Relay authentication disabled." >&2
 fi
 
 # === Final Steps ===
