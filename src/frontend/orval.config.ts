@@ -5,6 +5,7 @@ export default defineConfig({
         input: "../backend/core/api/openapi.json",
         output: {
             client: "react-query",
+            clean: true,
             httpClient: "fetch",
             mode: 'tags-split',
             workspace: 'src/features/api/gen',
