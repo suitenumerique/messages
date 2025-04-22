@@ -23,6 +23,37 @@ body {
   }
 }
 
+// Class utilities
+.flex-row {
+  display: flex;
+  flex-direction: row;
+}
+
+.flex-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.flex-align-center {
+  align-items: center;
+}
+
+.flex-align-end {
+  align-items: flex-end;
+}
+
+.flex-justify-center {
+  justify-content: center;
+}
+
+.flex-justify-end {
+  justify-content: flex-end;
+}
+
+.p-0 {
+  padding: var(--c--theme--spacings--2xs);
+}
+
 .p-2xs {
   padding: var(--c--theme--spacings--2xs);
 }
@@ -41,4 +72,28 @@ body {
 
 .p-base {
   padding: var(--c--theme--spacings--base);
+}
+
+.m-0 {
+  margin: 0;
+}
+
+.m-2xs {
+  margin: var(--c--theme--spacings--2xs);
+}
+
+.m-xs {
+  margin: var(--c--theme--spacings--xs);
+}
+
+.m-sm {
+  margin: var(--c--theme--spacings--sm);
+}
+
+.m-md {
+  margin: var(--c--theme--spacings--md);
+}
+
+.m-base {
+  margin: var(--c--theme--spacings--base);
 }

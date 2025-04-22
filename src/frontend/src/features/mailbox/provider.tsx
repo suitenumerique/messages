@@ -1,5 +1,6 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
 import { Mailbox, PaginatedMessageList, PaginatedThreadList, Thread, useMailboxesList, useMessagesList, useThreadsList } from "../api/gen";
+import { useQueryClient } from "@tanstack/react-query";
 
 type MailboxContextType = {
     mailboxes: readonly Mailbox[] | null;
@@ -9,6 +10,7 @@ type MailboxContextType = {
     selectMailbox: (mailbox: Mailbox) => void;
     selectedThread: Thread | null;
     selectThread: (thread: Thread | null) => void;
+    invalidateThreadMessages: () => void;
     isPending: boolean;
     status: {
         mailboxes: 'pending' | 'error' | 'success' | null,
@@ -30,6 +32,7 @@ const MailboxContext = createContext<MailboxContextType>({
     selectMailbox: () => {},
     selectedThread: null,
     selectThread: () => {},
+    invalidateThreadMessages: () => {},
     isPending: false,
     status: {
         mailboxes: null,
@@ -49,6 +52,7 @@ const MailboxContext = createContext<MailboxContextType>({
  * It also provides callbacks to select a mailbox, thread or message
  */
 export const MailboxProvider = ({ children }: PropsWithChildren) => {
+    const queryClient = useQueryClient();
     const [selectedMailbox, setSelectedMailbox] = useState<Mailbox | null>(null);
     const [selectedThread, setSelectedThread] = useState<Thread | null>(null);
     const mailboxQuery = useMailboxesList();
@@ -75,6 +79,12 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         }
     });
 
+    const invalidateThreadMessages = () => {
+        if (selectedThread) {
+            queryClient.invalidateQueries({ queryKey: ['messages', selectedThread.id] });
+        }
+    }
+
     const context = useMemo(() => ({
         mailboxes: mailboxQuery.data?.data ?? null,
         threads: threadsQuery.data?.data ?? null,
@@ -83,6 +93,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         selectMailbox: setSelectedMailbox,
         selectedThread,
         selectThread: setSelectedThread,
+        invalidateThreadMessages,
         isPending: mailboxQuery.isPending || threadsQuery.isPending || messagesQuery.isPending,
         status: {
             mailboxes: mailboxQuery.status,

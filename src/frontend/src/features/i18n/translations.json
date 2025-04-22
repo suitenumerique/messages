@@ -21,20 +21,24 @@
         "new_message": "New message",
         "reply": "Reply",
         "reply_all": "Reply all",
-        "forward": "Forward",
-        "print": "Print"
+        "print": "Print",
+        "close_thread": "Close this thread",
+        "cancel": "Cancel",
+        "send": "Send"
       },
       "tooltips": {
         "has_attachments": "This email has an attachment",
         "mark_as_important": "Mark as important",
-        "close_thread": "Close this thread",
         "delete": "Delete",
-        "more_options": "More options"
+        "more_options": "More options",
+        "reply": "Reply",
+        "forward": "Forward"
       },
       "thread_message": {
         "from": "From: ",
         "to": "To: ",
-        "cc": "Copy: "
+        "cc": "Copy: ",
+        "bcc": "Blind copy: "
       }
     }
   },
@@ -60,20 +64,24 @@
         "new_message": "Nouveau message",
         "mark_as_important": "Marquer comme important",
         "reply": "Répondre",
+        "print": "Imprimer",
+        "close_thread": "Fermer cette conversation",
         "reply_all": "Répondre à tous",
-        "forward": "Transférer",
-        "print": "Imprimer"
+        "cancel": "Annuler",
+        "send": "Envoyer"
       },
       "tooltips": {
         "has_attachments": "Cette email contient une pièce jointe",
-        "close_thread": "Fermer cette conversation",
         "delete": "Supprimer",
-        "more_options": "Plus d'options"
+        "more_options": "Plus d'options",
+        "reply": "Répondre",
+        "forward": "Transférer"
       },
       "thread_message": {
         "from": "De : ",
         "to": "À : ",
-        "cc": "Copie: "
+        "cc": "Copie : ",
+        "bcc": "Copie cachée : "
       }
     }
   }
