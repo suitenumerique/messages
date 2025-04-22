@@ -150,6 +150,7 @@ class IsAllowedToCreateMessage(IsAuthenticated):
         # required permissions to send a message
         permissions_required = [
             enums.MailboxPermissionChoices.SEND,
+            enums.MailboxPermissionChoices.ADMIN,
         ]
         # check if user has access required to send a message with this mailbox
         return view.mailbox.accesses.filter(

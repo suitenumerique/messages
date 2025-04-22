@@ -9,6 +9,7 @@ import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 
 import "../styles/main.scss";
 import "../features/i18n/initI18n";
@@ -76,6 +77,7 @@ export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
         />
       </Head>
       <QueryClientProvider client={queryClient}>
+        <ReactQueryDevtools initialIsOpen={false} />
         <CunninghamProvider>
           {getLayout(<Component {...pageProps} />)}
         </CunninghamProvider>

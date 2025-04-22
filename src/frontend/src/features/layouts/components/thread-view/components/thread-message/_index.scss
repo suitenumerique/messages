@@ -13,14 +13,13 @@
     padding-bottom: var(--c--theme--spacings--base);
 }
 
-.thread-message__header-row {
+.thread-message__header-rows {
     display: flex;
     flex-direction: row;
     justify-content: space-between;
-    align-items: flex-end;
 }
 
-.thread-message__header-row > div > * {
+.thread-message__header-rows > div > * {
     margin-block: 0;
 }
 
