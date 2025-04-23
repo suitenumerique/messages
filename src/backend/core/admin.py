@@ -105,10 +105,17 @@ class MailDomainAdmin(admin.ModelAdmin):
     search_fields = ("name",)
 
 
+class MailboxAccessInline(admin.TabularInline):
+    """Inline class for the MailboxAccess model"""
+
+    model = models.MailboxAccess
+
+
 @admin.register(models.Mailbox)
 class MailboxAdmin(admin.ModelAdmin):
     """Admin class for the Mailbox model"""
 
+    inlines = [MailboxAccessInline]
     list_display = ("__str__", "domain", "updated_at")
     search_fields = ("local_part", "domain__name")
 
@@ -128,10 +135,17 @@ class ThreadAdmin(admin.ModelAdmin):
     list_display = ("id", "subject", "snippet", "mailbox", "created_at", "updated_at")
 
 
+class MessageRecipientInline(admin.TabularInline):
+    """Inline class for the MessageRecipient model"""
+
+    model = models.MessageRecipient
+
+
 @admin.register(models.Message)
 class MessageAdmin(admin.ModelAdmin):
     """Admin class for the Message model"""
 
+    inlines = [MessageRecipientInline]
     list_display = ("id", "subject", "sender", "received_at")
 
 
