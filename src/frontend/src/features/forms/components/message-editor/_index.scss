@@ -1,0 +1,36 @@
+.message-editor {
+    border-radius: var(--c--components--forms-input--border-radius);
+    border-width: var(--c--components--forms-input--border-width);
+    border-color: var(--c--components--forms-input--border-color);
+    border-style: var(--c--components--forms-input--border-style);
+    width: 100%;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: var(--c--theme--spacings--2xs);
+    background-color: var(--bn-colors-editor-background);
+    position: relative;
+    min-height: 20rem;
+     
+    & .bn-toolbar.bn-formatting-toolbar {
+        background: none;
+        box-shadow: none;
+        border: none;
+        border-radius: 0;
+        border-bottom-left-radius: var(--c--components--forms-input--border-radius);
+        border-bottom-right-radius: var(--c--components--forms-input--border-radius);
+        width: 100%;
+        border-bottom: 1px solid var(--c--theme--colors--greyscale-200);
+        padding-block: var(--c--theme--spacings--2xs);
+        flex: 0 0 43px;
+        height: 43px;
+    }
+
+    & .bn-editor {
+        border-radius: 0;
+        border-bottom-left-radius: var(--c--components--forms-input--border-radius);
+        border-bottom-right-radius: var(--c--components--forms-input--border-radius);
+        min-height: calc(100% - 43px);
+        padding-inline: var(--c--theme--spacings--base);
+        flex: 1;
+    }
+}

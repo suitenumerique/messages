@@ -19,6 +19,9 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@blocknote/core": "0.29.1",
+    "@blocknote/mantine": "0.29.1",
+    "@blocknote/react": "0.29.1",
     "@gouvfr-lasuite/ui-kit": "0.3.0",
     "@openfun/cunningham-react": "3.0.0",
     "@tanstack/react-query": "5.74.4",
