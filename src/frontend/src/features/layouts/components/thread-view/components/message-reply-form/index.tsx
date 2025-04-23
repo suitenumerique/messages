@@ -59,7 +59,7 @@ const MessageReplyForm = ({ handleClose, message, replyAll }: MessageReplyFormPr
                 parentId: message.id,
                 senderId: selectedMailbox!.id,
                 to: formData.to.split(','),
-                subject: 'Re: ' + message!.subject.replace(/^Re:\s+/i, ''),
+                subject: 'Re: ' + message!.subject.replace(/^((re|fwd|rep|tr|rép)\s*:\s+)+/i, ''),
                 textBody: formData.body,
                 htmlBody: formData.body,
                 cc: formData.cc ? formData.cc.split(',') : undefined,

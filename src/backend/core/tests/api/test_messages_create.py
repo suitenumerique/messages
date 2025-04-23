@@ -169,10 +169,7 @@ class TestApiMessageNewCreate:
             "content-type",
             "message-id",
         }
-        assert (
-            recv_email["headers"]["message-id"]
-            == f"<{base64.urlsafe_b64encode(message.id.bytes).rstrip(b'=')}@_lst.example.com>"
-        )
+        assert recv_email["headers"]["message-id"].endswith("@_lst.example.com>")
 
         source = requests.get(
             f"http://mailcatcher:1080/email/{recv_email['id']}/source",
@@ -311,13 +308,18 @@ class TestApiMessageReply:
         assert models.Message.objects.count() == 2
         assert models.Thread.objects.count() == 1
         # Assert the message is correct
-        message = models.Message.objects.get(id=response.data["id"])
-        assert message.subject == "test"
-        assert message.thread == thread
+        posted_message = models.Message.objects.get(id=response.data["id"])
+        assert posted_message.subject == "test"
+        assert posted_message.thread == thread
         # assert message.parent == message
-        assert message.sender.email == sender_contact.email
-        assert message.recipients.count() == 1
-        assert message.recipients.get().contact.email == "pierre@example.com"
+        assert posted_message.sender.email == sender_contact.email
+        assert posted_message.recipients.count() == 1
+        assert posted_message.recipients.get().contact.email == "pierre@example.com"
+
+        assert (
+            b"In-Reply-To: <" + message.mime_id.encode("utf-8") + b">\r\n"
+            in posted_message.raw_mime
+        )
 
     @pytest.mark.parametrize(
         "permission",

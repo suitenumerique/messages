@@ -446,4 +446,5 @@ class Message(BaseModel):
 
     def generate_mime_id(self) -> str:
         """Get the RFC5322 Message-ID of the message."""
-        return f"{base64.urlsafe_b64encode(uuid.uuid4().bytes).rstrip(b'=')}@_lst.{self.sender.email.split('@')[1]}"
+        _id = base64.urlsafe_b64encode(uuid.uuid4().bytes).rstrip(b"=").decode("ascii")
+        return f"{_id}@_lst.{self.sender.email.split('@')[1]}"

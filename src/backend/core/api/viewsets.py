@@ -642,13 +642,13 @@ class MessageCreateView(APIView):
             "messageId": message.mime_id,
         }
 
-        # TODO: add "References" header if replying to a message.
+        # TODO: add "References" header if replying to a message, with all message ids of the thread
 
         # Assemble the raw mime message
         raw_mime = compose_email(
             mime_data,
-            in_reply_to=reply_to_message.get_rfc5322_message_id()
-            if reply_to_message
+            in_reply_to=reply_to_message.mime_id
+            if reply_to_message and reply_to_message.mime_id
             else None,
         )
 

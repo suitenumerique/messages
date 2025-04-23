@@ -374,7 +374,7 @@ class TestEmailAddressParsing:
         domain = models.MailDomain.objects.create(name="example.com")
 
         # Create the recipient mailbox
-        models.Mailbox.objects.create(local_part="recipient", domain=domain)
+        mailbox = models.Mailbox.objects.create(local_part="recipient", domain=domain)
         # Also create for the other recipient mentioned in the 'To' header if needed by logic
         models.Mailbox.objects.create(local_part="user2", domain=domain)
         assert models.Mailbox.objects.filter(
@@ -394,14 +394,16 @@ class TestEmailAddressParsing:
         assert response.json() == {"status": "ok"}
 
         # Check that contacts were created with correct names and emails
-        sender = models.Contact.objects.get(email="sender@example.com")
+        sender = models.Contact.objects.get(email="sender@example.com", owner=mailbox)
         assert sender.name == "John Doe"
 
-        recipient = models.Contact.objects.get(email="recipient@example.com")
+        recipient = models.Contact.objects.get(
+            email="recipient@example.com", owner=mailbox
+        )
         assert recipient.name == "Jane Smith"
 
         # Check for the second recipient
-        user2 = models.Contact.objects.get(email="user2@example.com")
+        user2 = models.Contact.objects.get(email="user2@example.com", owner=mailbox)
         assert user2.name == "Another User"
 
         # Verify message recipients
@@ -415,3 +417,404 @@ class TestEmailAddressParsing:
         assert recipients.filter(
             contact=user2, type=models.MessageRecipientTypeChoices.TO
         ).exists()
+
+
+@pytest.mark.django_db
+class TestMTAInboundEmailThreading:
+    """Test the threading logic for MTA inbound emails."""
+
+    user: models.User
+    maildomain: models.MailDomain
+    mailbox: models.Mailbox
+    recipient_email: str
+
+    @pytest.fixture(autouse=True)
+    def setup_mailbox(self, db):  # pylint: disable=unused-argument
+        """Set up a common user, mailbox, and domain for threading tests."""
+        self.user = factories.UserFactory()
+        self.maildomain = factories.MailDomainFactory(name="threadtest.com")
+        self.mailbox = factories.MailboxFactory(
+            local_part="testuser", domain=self.maildomain
+        )
+        factories.MailboxAccessFactory(
+            mailbox=self.mailbox,
+            user=self.user,
+            permission=enums.MailboxPermissionChoices.ADMIN,
+        )
+        self.recipient_email = f"{self.mailbox.local_part}@{self.maildomain.name}"
+
+    def _create_initial_message(self, subject, mime_id):
+        """Helper to create an initial message and thread."""
+        sender_contact = factories.ContactFactory(
+            owner=self.mailbox, email="sender@example.com"
+        )
+        thread = factories.ThreadFactory(mailbox=self.mailbox, subject=subject)
+        message = factories.MessageFactory(
+            thread=thread,
+            subject=subject,
+            sender=sender_contact,
+            mime_id=mime_id,
+            raw_mime=b"From: sender@example.com\r\nTo: testuser@threadtest.com\r\nSubject: "
+            + subject.encode("utf-8")
+            + b"\r\nMessage-ID: <"
+            + mime_id.encode("utf-8")
+            + b">\r\n\r\nInitial body.",
+        )
+        # Create recipients for the initial message
+        recipient_contact = factories.ContactFactory(
+            owner=self.mailbox, email=self.recipient_email
+        )
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=recipient_contact,
+            type=models.MessageRecipientTypeChoices.TO,
+        )
+        return thread, message
+
+    def _create_reply_email(  # pylint: disable=too-many-positional-arguments
+        self,
+        to_email,
+        subject,
+        in_reply_to=None,
+        references=None,
+        from_email="reply@example.com",
+    ):
+        """Helper to construct a reply email in RFC822 format."""
+        headers = f"From: {from_email}\r\nTo: {to_email}\r\nSubject: {subject}\r\n"
+        if in_reply_to:
+            headers += f"In-Reply-To: <{in_reply_to}>\r\n"
+        if references:
+            ref_str = " ".join([f"<{ref}>" for ref in references])
+            headers += f"References: {ref_str}\r\n"
+        body = f"{headers}\r\nThis is a reply body."
+        return body.encode("utf-8")
+
+    def test_reply_matches_thread_via_in_reply_to(
+        self, api_client: APIClient, valid_jwt_token
+    ):
+        """Test a reply is threaded correctly using In-Reply-To and matching subject."""
+        initial_subject = "Original Thread Subject"
+        initial_mime_id = "original.123@example.com"
+        initial_thread, initial_message = self._create_initial_message(
+            initial_subject, initial_mime_id
+        )
+
+        reply_subject = f"Re: {initial_subject}"
+        reply_email_bytes = self._create_reply_email(
+            self.recipient_email, reply_subject, in_reply_to=initial_mime_id
+        )
+
+        token = valid_jwt_token(
+            reply_email_bytes, {"original_recipients": [self.recipient_email]}
+        )
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=reply_email_bytes,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert models.Thread.objects.count() == 1  # No new thread created
+        assert models.Message.objects.count() == 2
+        new_message = models.Message.objects.exclude(id=initial_message.id).first()
+        assert new_message is not None
+        assert new_message.thread == initial_thread
+        assert new_message.subject == reply_subject
+
+    def test_reply_matches_thread_via_references(
+        self, api_client: APIClient, valid_jwt_token
+    ):
+        """Test a reply is threaded correctly using References and matching subject."""
+        initial_subject = "Another Subject"
+        initial_mime_id = "original.456@example.com"
+        initial_thread, initial_message = self._create_initial_message(
+            initial_subject, initial_mime_id
+        )
+
+        reply_subject = f"Re: {initial_subject}"
+        reply_email_bytes = self._create_reply_email(
+            self.recipient_email,
+            reply_subject,
+            references=[initial_mime_id, "other.ref@example.com"],
+        )
+
+        token = valid_jwt_token(
+            reply_email_bytes, {"original_recipients": [self.recipient_email]}
+        )
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=reply_email_bytes,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert models.Thread.objects.count() == 1
+        assert models.Message.objects.count() == 2
+        new_message = models.Message.objects.exclude(id=initial_message.id).first()
+        assert new_message is not None
+        assert new_message.thread == initial_thread
+        assert new_message.subject == reply_subject
+
+    def test_reply_matches_thread_different_subject_prefix(
+        self, api_client: APIClient, valid_jwt_token
+    ):
+        """Test reply threads correctly even with different prefixes (Fwd:)."""
+        initial_subject = "Project Update"
+        initial_mime_id = "project.update.1@example.com"
+        initial_thread, initial_message = self._create_initial_message(
+            initial_subject, initial_mime_id
+        )
+
+        reply_subject = f"Fwd: {initial_subject}"  # Note: Fwd prefix
+        reply_email_bytes = self._create_reply_email(
+            self.recipient_email, reply_subject, in_reply_to=initial_mime_id
+        )
+
+        token = valid_jwt_token(
+            reply_email_bytes, {"original_recipients": [self.recipient_email]}
+        )
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=reply_email_bytes,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert models.Thread.objects.count() == 1
+        assert models.Message.objects.count() == 2
+        new_message = models.Message.objects.exclude(id=initial_message.id).first()
+        assert new_message is not None
+        assert new_message.thread == initial_thread
+        assert new_message.subject == reply_subject
+
+    def test_reply_creates_new_thread_different_subject(
+        self, api_client: APIClient, valid_jwt_token
+    ):
+        """Test reply creates a new thread if the canonical subject differs."""
+        initial_subject = "Important Meeting"
+        initial_mime_id = "meeting.789@example.com"
+        initial_thread, initial_message = self._create_initial_message(
+            initial_subject, initial_mime_id
+        )
+
+        reply_subject = "Completely Different Topic"  # Subject changed
+        reply_email_bytes = self._create_reply_email(
+            self.recipient_email, reply_subject, in_reply_to=initial_mime_id
+        )
+
+        token = valid_jwt_token(
+            reply_email_bytes, {"original_recipients": [self.recipient_email]}
+        )
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=reply_email_bytes,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert models.Thread.objects.count() == 2  # New thread created
+        assert models.Message.objects.count() == 2
+        new_message = models.Message.objects.exclude(id=initial_message.id).first()
+        assert new_message is not None
+        assert new_message.thread != initial_thread
+        assert new_message.subject == reply_subject
+
+    def test_reply_creates_new_thread_no_matching_reference(
+        self, api_client: APIClient, valid_jwt_token
+    ):
+        """Test reply creates a new thread if In-Reply-To/References don't match any message."""
+        initial_subject = "Existing Conversation"
+        initial_mime_id = "conv.1@example.com"
+        initial_thread, initial_message = self._create_initial_message(
+            initial_subject, initial_mime_id
+        )
+
+        reply_subject = f"Re: {initial_subject}"
+        reply_email_bytes = self._create_reply_email(
+            self.recipient_email,
+            reply_subject,
+            in_reply_to="nonexistent.id@example.com",  # No matching ID
+        )
+
+        token = valid_jwt_token(
+            reply_email_bytes, {"original_recipients": [self.recipient_email]}
+        )
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=reply_email_bytes,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert models.Thread.objects.count() == 2  # New thread created
+        assert models.Message.objects.count() == 2
+        new_message = models.Message.objects.exclude(id=initial_message.id).first()
+        assert new_message is not None
+        assert new_message.thread != initial_thread
+        assert new_message.subject == reply_subject
+
+    def test_reply_creates_new_thread_reference_in_different_mailbox(
+        self, api_client: APIClient, valid_jwt_token
+    ):
+        """Test reply creates a new thread if referenced message is in another mailbox."""
+        # Create initial message in the main mailbox
+        initial_subject = "Mailbox 1 Subject"
+        initial_mime_id = "mailbox1.msg@example.com"
+        initial_thread = self._create_initial_message(initial_subject, initial_mime_id)[
+            0
+        ]
+
+        # Create a second mailbox and a message within it
+        other_maildomain = factories.MailDomainFactory(name="otherdomain.com")
+        other_mailbox = factories.MailboxFactory(
+            local_part="otheruser", domain=other_maildomain
+        )
+        factories.MailboxAccessFactory(
+            mailbox=other_mailbox,
+            user=self.user,
+            permission=enums.MailboxPermissionChoices.ADMIN,
+        )
+        other_sender = factories.ContactFactory(
+            owner=other_mailbox, email="other@sender.com"
+        )
+        other_thread = factories.ThreadFactory(
+            mailbox=other_mailbox, subject="Other Mailbox Subject"
+        )
+        other_mime_id = "othermailbox.msg@example.com"
+        other_message = factories.MessageFactory(
+            thread=other_thread,
+            subject="Other Mailbox Subject",
+            sender=other_sender,
+            mime_id=other_mime_id,
+            raw_mime=b"From: other@sender.com\r\nTo: otheruser@otherdomain.com"
+            + b"\r\nSubject: Other Mailbox Subject\r\nMessage-ID: <"
+            + other_mime_id.encode("utf-8")
+            + b">\r\n\r\nBody.",
+        )
+        # Add recipient for other message
+        other_recipient_contact = factories.ContactFactory(
+            owner=other_mailbox,
+            email=f"{other_mailbox.local_part}@{other_maildomain.name}",
+        )
+        factories.MessageRecipientFactory(
+            message=other_message,
+            contact=other_recipient_contact,
+            type=models.MessageRecipientTypeChoices.TO,
+        )
+
+        # Create a reply intended for the *first* mailbox, but referencing the message in the *second* mailbox
+        reply_subject = "Re: Other Mailbox Subject"  # Subject matches the other thread
+        reply_email_bytes = self._create_reply_email(
+            self.recipient_email,  # Send to the first mailbox
+            reply_subject,
+            in_reply_to=other_mime_id,  # Reference message in the second mailbox
+        )
+
+        token = valid_jwt_token(
+            reply_email_bytes, {"original_recipients": [self.recipient_email]}
+        )
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=reply_email_bytes,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        # Should be 3 threads: initial one in mailbox1, one in mailbox2, and a *new* one in mailbox1
+        assert models.Thread.objects.count() == 3
+        assert models.Message.objects.count() == 3
+
+        # Verify the new message is in mailbox1 and in a new thread
+        new_message = models.Message.objects.latest(
+            "created_at"
+        )  # Assumes latest is the new one
+        assert new_message.thread.mailbox == self.mailbox
+        assert new_message.subject == reply_subject
+        # Ensure it didn't get added to the thread in the *other* mailbox
+        assert new_message.thread != other_thread
+        # Ensure it didn't get added to the original thread in *this* mailbox either
+        assert new_message.thread != initial_thread
+
+    def test_message_id_header_used_for_threading(
+        self, api_client: APIClient, valid_jwt_token
+    ):
+        """Test that Message-Id header is also checked for threading."""
+        initial_subject = "Test Message ID Threading"
+        initial_mime_id = "messageid.test.1@example.com"
+        initial_thread, initial_message = self._create_initial_message(
+            initial_subject, initial_mime_id
+        )
+
+        # Construct a reply that references the *Message-Id* of the first email in its *References* header
+        reply_subject = f"Re: {initial_subject}"
+        # Note: the reply *itself* will have a new Message-ID, but it references the old one.
+        reply_email_bytes = self._create_reply_email(
+            self.recipient_email, reply_subject, references=[initial_mime_id]
+        )
+
+        token = valid_jwt_token(
+            reply_email_bytes, {"original_recipients": [self.recipient_email]}
+        )
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=reply_email_bytes,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert models.Thread.objects.count() == 1  # Should reuse the thread
+        assert models.Message.objects.count() == 2
+        new_message = models.Message.objects.exclude(id=initial_message.id).first()
+        assert new_message is not None
+        assert new_message.thread == initial_thread
+        assert new_message.subject == reply_subject
+
+    def test_reply_matches_thread_multiple_prefixes(
+        self, api_client: APIClient, valid_jwt_token
+    ):
+        """Test threading works with multiple 'Re:' prefixes."""
+        initial_subject = "Re: Fwd: Original Subject"  # Already has a prefix
+        initial_mime_id = "multi.re.1@example.com"
+        initial_thread, initial_message = self._create_initial_message(
+            initial_subject, initial_mime_id
+        )
+
+        reply_subject = (
+            f"Re: {initial_subject}"  # Becomes "Re: Re: Fwd: Original Subject"
+        )
+        reply_email_bytes = self._create_reply_email(
+            self.recipient_email, reply_subject, in_reply_to=initial_mime_id
+        )
+
+        token = valid_jwt_token(
+            reply_email_bytes, {"original_recipients": [self.recipient_email]}
+        )
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=reply_email_bytes,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert models.Thread.objects.count() == 1
+        assert models.Message.objects.count() == 2
+        new_message = models.Message.objects.exclude(id=initial_message.id).first()
+        assert new_message is not None
+        assert new_message.thread == initial_thread
+        assert new_message.subject == reply_subject

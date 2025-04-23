@@ -589,7 +589,9 @@ def test_authentication_getter_new_user_with_testdomain(monkeypatch):
     maildomain = models.MailDomain.objects.get(name="testdomain.bzh")
     mailbox = models.Mailbox.objects.get(local_part="john.doe-sub", domain=maildomain)
 
-    assert models.Contact.objects.filter(email="john.doe-sub@testdomain.bzh").exists()
+    assert models.Contact.objects.filter(
+        email="john.doe-sub@testdomain.bzh", owner=mailbox
+    ).exists()
     assert models.Mailbox.objects.filter(
         local_part="john.doe-sub", domain=maildomain
     ).exists()

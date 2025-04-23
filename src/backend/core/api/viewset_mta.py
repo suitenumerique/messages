@@ -165,40 +165,40 @@ class MTAViewSet(viewsets.GenericViewSet):
         return drf.response.Response({"status": "ok"})
 
     def _find_thread(self, parsed_email, mailbox):
-        """Find a thread for a message"""
+        """Find an existing thread to put this message into.
 
-        # Find an existing thread to put this message into.
-        # We follow the JMAP spec recommendations:
-        # https://www.ietf.org/rfc/rfc8621.html#section-3
+        We follow the JMAP spec recommendations:
+        https://www.ietf.org/rfc/rfc8621.html#section-3
+        """
 
-        def find_message_id(txt):
-            match = re.match(r"<([^>]+)>", txt)
-            return match[1].replace('"', "") if match[1] else None
+        def find_message_ids(txt):
+            return re.findall(r"<([^<>]+)>", txt)
 
         def canonicalize_subject(subject):
-            return re.sub(r"^((re|fwd|rep|tr)\s*:\s+)+", "", subject.lower()).strip()
+            return re.sub(
+                r"^((re|fwd|rep|tr|rép)\s*:\s+)+", "", subject.lower()
+            ).strip()
 
         references = [
             x
-            for x in [
-                find_message_id(txt)
-                for txt in [
-                    parsed_email.get("in-reply-to", ""),
-                    *parsed_email.get("references", []),
-                ]
-            ]
+            for x in find_message_ids(
+                "<"
+                + parsed_email.get("in_reply_to", "")
+                + ">"
+                + parsed_email.get("references", "")
+            )
             if x
         ][0:100]
 
-        referenced_messages = models.Message.objects.filter(
-            mime_id__in=references,
-            mailbox=mailbox,
+        referenced_messages = list(
+            models.Message.objects.filter(
+                mime_id__in=references,
+                thread__mailbox=mailbox,
+            )
         )
 
         # Sort by index in referenced_messages
-        referenced_messages = sorted(
-            referenced_messages, key=referenced_messages.index
-        )
+        referenced_messages = sorted(referenced_messages, key=referenced_messages.index)
 
         # Find the first message that matches the subject
         for message in referenced_messages:
@@ -275,6 +275,7 @@ class MTAViewSet(viewsets.GenericViewSet):
             sender=sender_contact,
             subject=subject,
             raw_mime=raw_data,
+            mime_id=parsed_email.get("message_id") or None,
             # TODO document date fields better
             sent_at=parsed_email.get("date", timezone.now()),
             received_at=timezone.now(),
