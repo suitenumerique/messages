@@ -1,9 +1,11 @@
 import { APIError } from "@/features/api/APIError";
 import { useMessageCreateCreate } from "@/features/api/gen";
+import MessageEditor from "@/features/forms/components/message-editor";
 import { MainLayout } from "@/features/layouts/components/main";
 import { useMailboxContext } from "@/features/mailbox/provider";
 import soundbox from "@/features/utils/soundbox";
-import { Alert, Button, Input, TextArea, VariantType } from "@openfun/cunningham-react";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Alert, Button, Input, VariantType } from "@openfun/cunningham-react";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -47,6 +49,7 @@ const NewMessageFormPage = () => {
                 cc: formData.cc ? formData.cc.split(",") : undefined,
                 bcc: formData.bcc ? formData.bcc.split(",") : undefined,
                 subject: formData.subject,
+                htmlBody: formData.body,
                 textBody: formData.body,
             },
         });
@@ -79,11 +82,18 @@ const NewMessageFormPage = () => {
                     <Input name="subject" label={t("thread_message.subject")} fullWidth required />
                 </div>
                 <div className="form-field-row">
-                    <TextArea name="body" label={t("thread_message.body")} rows={10} fullWidth required />
+                    <MessageEditor name="body" />
                 </div>
                 {error && <Alert type={VariantType.ERROR} className="message-reply-form__error">{JSON.stringify(error)}</Alert>}
                 <footer className="form-footer">
-                    <Button>{t("actions.send")}</Button>
+                    <Button
+                        color="primary"
+                        disabled={messageMutation.isPending}
+                        type="submit"
+                        icon={messageMutation.isPending ? <Spinner size="sm" /> : undefined}
+                    >
+                        {t("actions.send")}
+                    </Button>
                     <Button type="button" color="secondary" onClick={() => router.back()}>{t("actions.cancel")}</Button>
                 </footer>
             </form>

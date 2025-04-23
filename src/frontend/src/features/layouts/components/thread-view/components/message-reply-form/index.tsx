@@ -1,8 +1,10 @@
 import { APIError } from "@/features/api/APIError";
 import { Message, useMessageCreateCreate } from "@/features/api/gen";
+import MessageEditor from "@/features/forms/components/message-editor";
 import { useMailboxContext } from "@/features/mailbox/provider";
 import soundbox from "@/features/utils/soundbox";
-import { Alert, Button, Input, TextArea, VariantType } from "@openfun/cunningham-react";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Alert, Button, Input, VariantType } from "@openfun/cunningham-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -16,7 +18,7 @@ type ReplyFormData = {
     to: string
     cc: string | null
     bcc: string | null
-    message: string
+    body: string
 }
 
 const MessageReplyForm = ({ handleClose, message, replyAll }: MessageReplyFormProps) => {
@@ -24,7 +26,7 @@ const MessageReplyForm = ({ handleClose, message, replyAll }: MessageReplyFormPr
     const formRef = useRef<HTMLFormElement>(null);
     const [error, setError] = useState<object | null>(null);
     const { selectedMailbox, invalidateThreadMessages } = useMailboxContext();
-    const mutation = useMessageCreateCreate({
+    const messageMutation = useMessageCreateCreate({
         mutation: {
             onSuccess: async () => {
                 invalidateThreadMessages();
@@ -52,13 +54,14 @@ const MessageReplyForm = ({ handleClose, message, replyAll }: MessageReplyFormPr
         event.preventDefault();
         const formData = Object.fromEntries(new FormData(event.currentTarget)) as ReplyFormData;
 
-        mutation.mutate({
+        messageMutation.mutate({
             data: {
                 parentId: message.id,
                 senderId: selectedMailbox!.id,
                 to: formData.to.split(','),
                 subject: 'RE: ' + message!.subject,
-                textBody: formData.message,
+                textBody: formData.body,
+                htmlBody: formData.body,
                 cc: formData.cc ? formData.cc.split(',') : undefined,
                 bcc: formData.bcc ? formData.bcc.split(',') : undefined,
             }
@@ -67,8 +70,10 @@ const MessageReplyForm = ({ handleClose, message, replyAll }: MessageReplyFormPr
 
     useEffect(() => {
         if (formRef.current) {
-            const message = formRef.current.message;
-            message.focus();
+            const editor = formRef.current.querySelector(".message-editor .bn-editor") as HTMLDivElement;
+            if (editor) {
+                editor.focus();
+            }
         }
         soundbox.load("/sounds/mail-sent.ogg");
     }, []);
@@ -78,11 +83,18 @@ const MessageReplyForm = ({ handleClose, message, replyAll }: MessageReplyFormPr
             <Input name="to" required type="text" label={t('thread_message.to')} defaultValue={recipients} icon={<span className="material-icons">person</span>} fullWidth/>
             <Input name="cc" type="text" label={t('thread_message.cc')} icon={<span className="material-icons">person</span>} fullWidth/>
             <Input name="bcc" type="text" label={t('thread_message.bcc')} icon={<span className="material-icons">person</span>} fullWidth/>
-            <TextArea required name="message" label="Message" fullWidth rows={10}/>
+            <MessageEditor name="body" />
             {error && <Alert type={VariantType.ERROR} className="message-reply-form__error">{JSON.stringify(error)}</Alert>}
             <footer className="message-reply-form__footer">
+                    <Button
+                        color="primary"
+                        disabled={messageMutation.isPending}
+                        type="submit"
+                        icon={messageMutation.isPending ? <Spinner size="sm" /> : undefined}
+                    >
+                        {t("actions.send")}
+                    </Button>
             <Button type="button" color="secondary" onClick={handleClose}>{t('actions.cancel')}</Button>
-            <Button type="submit">{t('actions.send')}</Button>
             </footer>
         </form>
     )
