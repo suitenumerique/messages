@@ -23,7 +23,7 @@
 @use "./../features/layouts/components/thread-view/components/thread-action-bar";
 @use "./../features/layouts/components/thread-view/components/thread-message";
 @use "./../features/layouts/components/thread-view/components/message-reply-form";
-
+@use "./../features/forms/components/message-editor";
 // Application views
 @use "./../pages";
 @use "./../pages/mailbox";
