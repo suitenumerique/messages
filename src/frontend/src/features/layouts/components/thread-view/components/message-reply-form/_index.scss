@@ -11,6 +11,7 @@
 .message-reply-form__footer {
     display: flex;
     gap: var(--c--theme--spacings--base);
+    flex-direction: row-reverse;
 }
 
 .message-reply-form__error {
