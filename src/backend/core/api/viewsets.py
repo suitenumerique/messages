@@ -1,7 +1,6 @@
 """API endpoints"""
 # pylint: disable=too-many-lines
 
-import hashlib
 import logging
 import re
 import smtplib
@@ -560,6 +559,7 @@ class MessageCreateView(APIView):
 
         # Then get the parent message if it's a reply
         parent_id = request.data.get("parentId")
+        reply_to_message = None
         if parent_id:
             try:
                 # Reply to an existing message in a thread
@@ -604,57 +604,59 @@ class MessageCreateView(APIView):
                 "Sender contact does not exist."
             ) from exc
 
-        # Generate a unique but deterministic message ID
-        created_at = timezone.now()
-        message_id = (
-            hashlib.sha256(
-                f"{int(created_at.timestamp())} {sender_contact.email} {subject}".encode(
-                    "utf-8"
-                )
-            ).hexdigest()[0:24]
-            + "@"
-            + sender_contact.email.split("@")[1]
-        )
-
-        # Assemble the raw mime message
-        # BCC recipients are not included in the raw mime message
-        raw_mime = compose_email(
-            {
-                "from": [
-                    {
-                        "name": sender_contact.name,
-                        "email": sender_contact.email,
-                    }
-                ],
-                "to": [
-                    {"name": contact.name, "email": contact.email}
-                    for contact in contacts["to"]
-                ],
-                "cc": [
-                    {"name": contact.name, "email": contact.email}
-                    for contact in contacts["cc"]
-                ],
-                "subject": subject,
-                "textBody": [request.data["textBody"]]
-                if request.data.get("textBody")
-                else [],
-                "htmlBody": [request.data["htmlBody"]]
-                if request.data.get("htmlBody")
-                else [],
-                "messageId": message_id,
-            }
-        )
-
         # Create message instance with all data
-        message = models.Message.objects.create(
+        message = models.Message(
             thread=thread,
             sender=sender_contact,
-            raw_mime=raw_mime,
             subject=subject,
-            created_at=created_at,
+            created_at=timezone.now(),
             read_at=timezone.now(),
             mta_sent=False,
         )
+        message.mime_id = message.generate_mime_id()
+
+        # Note that BCC recipients are not included in the raw mime message
+        mime_data = {
+            "from": [
+                {
+                    "name": sender_contact.name,
+                    "email": sender_contact.email,
+                }
+            ],
+            "to": [
+                {"name": contact.name, "email": contact.email}
+                for contact in contacts["to"]
+            ],
+            "cc": [
+                {"name": contact.name, "email": contact.email}
+                for contact in contacts["cc"]
+            ],
+            "subject": subject,
+            "textBody": [request.data["textBody"]]
+            if request.data.get("textBody")
+            else [],
+            "htmlBody": [request.data["htmlBody"]]
+            if request.data.get("htmlBody")
+            else [],
+            # Generate a MIME message ID based on the message.id
+            "messageId": message.mime_id,
+        }
+
+        # TODO: add "References" header if replying to a message.
+
+        # Assemble the raw mime message
+        raw_mime = compose_email(
+            mime_data,
+            in_reply_to=reply_to_message.get_rfc5322_message_id()
+            if reply_to_message
+            else None,
+        )
+
+        # Save the raw mime message.
+        # TODO: Do this later in optimized storage (Object Storage), with deduplication hashes.
+        message.raw_mime = raw_mime
+
+        message.save()
 
         for kind, cts in contacts.items():
             for contact in cts:

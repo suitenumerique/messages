@@ -164,6 +164,49 @@ class MTAViewSet(viewsets.GenericViewSet):
 
         return drf.response.Response({"status": "ok"})
 
+    def _find_thread(self, parsed_email, mailbox):
+        """Find a thread for a message"""
+
+        # Find an existing thread to put this message into.
+        # We follow the JMAP spec recommendations:
+        # https://www.ietf.org/rfc/rfc8621.html#section-3
+
+        def find_message_id(txt):
+            match = re.match(r"<([^>]+)>", txt)
+            return match[1].replace('"', "") if match[1] else None
+
+        def canonicalize_subject(subject):
+            return re.sub(r"^((re|fwd|rep|tr)\s*:\s+)+", "", subject.lower()).strip()
+
+        references = [
+            x
+            for x in [
+                find_message_id(txt)
+                for txt in [
+                    parsed_email.get("in-reply-to", ""),
+                    *parsed_email.get("references", []),
+                ]
+            ]
+            if x
+        ][0:100]
+
+        referenced_messages = models.Message.objects.filter(
+            mime_id__in=references,
+            mailbox=mailbox,
+        )
+
+        # Sort by index in referenced_messages
+        referenced_messages = sorted(
+            referenced_messages, key=referenced_messages.index
+        )
+
+        # Find the first message that matches the subject
+        for message in referenced_messages:
+            if canonicalize_subject(message.subject) == canonicalize_subject(
+                parsed_email["subject"]
+            ):
+                return message.thread
+
     def _deliver_message(self, recipient, parsed_email, raw_data):
         """Deliver a message to the recipients"""
 
@@ -198,10 +241,7 @@ class MTAViewSet(viewsets.GenericViewSet):
                 )
                 return
 
-        # TODO: better thread grouping algorithm
-        thread = models.Thread.objects.filter(
-            subject=parsed_email["subject"], mailbox=mailbox
-        ).first()
+        thread = self._find_thread(parsed_email, mailbox)
 
         if not thread:
             snippet = ""

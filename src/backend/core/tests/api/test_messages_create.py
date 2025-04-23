@@ -169,7 +169,10 @@ class TestApiMessageNewCreate:
             "content-type",
             "message-id",
         }
-        assert recv_email["headers"]["message-id"].endswith("@example.com>")
+        assert (
+            recv_email["headers"]["message-id"]
+            == f"<{base64.urlsafe_b64encode(message.id.bytes).rstrip(b'=')}@_lst.example.com>"
+        )
 
         source = requests.get(
             f"http://mailcatcher:1080/email/{recv_email['id']}/source",

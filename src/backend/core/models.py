@@ -359,6 +359,9 @@ class Message(BaseModel):
     sent_at = models.DateTimeField(_("sent at"), null=True, blank=True)
     read_at = models.DateTimeField(_("read at"), null=True, blank=True)
     mta_sent = models.BooleanField(_("mta sent"), default=False)
+    mime_id = models.CharField(
+        _("mime id"), max_length=998, null=True, blank=True, unique=True
+    )
 
     # Stores the raw MIME message. This will be optimized and offloaded
     # to object storage in the future.
@@ -424,9 +427,23 @@ class Message(BaseModel):
             selector=settings.MESSAGES_DKIM_SELECTOR.encode("ascii"),
             domain=domain.encode("ascii"),
             privkey=dkim_private_key,
-            include_headers=[b"To", b"From", b"Subject"],
+            include_headers=[
+                b"To",
+                b"Cc",
+                b"From",
+                b"Subject",
+                b"Message-ID",
+                b"Reply-To",
+                b"In-Reply-To",
+                b"References",
+                b"Date",
+            ],
             canonicalize=(
                 b"relaxed",
                 b"simple",
             ),
         )
+
+    def generate_mime_id(self) -> str:
+        """Get the RFC5322 Message-ID of the message."""
+        return f"{base64.urlsafe_b64encode(uuid.uuid4().bytes).rstrip(b'=')}@_lst.{self.sender.email.split('@')[1]}"
