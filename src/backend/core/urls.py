@@ -24,12 +24,23 @@ urlpatterns = [
     ),
     path(f"api/{settings.API_VERSION}/config/", viewsets.ConfigView.as_view()),
     path(
-        f"api/{settings.API_VERSION}/message-create/",
-        viewsets.MessageCreateView.as_view(),
-    ),
-    path(
         f"api/{settings.API_VERSION}/read/",
         viewsets.ChangeReadStatusViewSet.as_view(),
         name="change-read-status",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/draft/",
+        viewsets.DraftMessageView.as_view(),
+        name="draft-message",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/draft/<uuid:message_id>/",
+        viewsets.DraftMessageView.as_view(),
+        name="draft-message-detail",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/send/",
+        viewsets.SendMessageView.as_view(),
+        name="send-message",
     ),
 ]
