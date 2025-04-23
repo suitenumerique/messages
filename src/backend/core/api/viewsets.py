@@ -554,8 +554,13 @@ class ChangeReadStatusViewSet(APIView):
 @extend_schema(
     tags=["messages"],
     request=inline_serializer(
-        name="MessageCreateRequest",
+        name="DraftMessageRequest",
         fields={
+            "messageId": drf_serializers.UUIDField(
+                required=False,
+                allow_null=True,
+                help_text="Message ID if updating an existing draft",
+            ),
             "parentId": drf_serializers.UUIDField(
                 required=False,
                 allow_null=True,
@@ -580,7 +585,7 @@ class ChangeReadStatusViewSet(APIView):
             ),
             "to": drf_serializers.ListField(
                 child=drf_serializers.EmailField(),
-                required=True,
+                required=False,
                 help_text="List of recipient email addresses",
             ),
             "cc": drf_serializers.ListField(
@@ -599,8 +604,10 @@ class ChangeReadStatusViewSet(APIView):
     ),
     responses={
         201: serializers.MessageSerializer,
+        200: serializers.MessageSerializer,
         400: OpenApiExample(
-            "Validation Error", value={"detail": "Parent message does not exist."}
+            "Validation Error",
+            value={"detail": "Message does not exist or is not a draft."},
         ),
         403: OpenApiExample(
             "Permission Error",
@@ -608,59 +615,87 @@ class ChangeReadStatusViewSet(APIView):
         ),
     },
     description="""
-    Create a new message or reply to an existing message.
+    Create or update a draft message.
     
     This endpoint allows you to:
-    - Create a new message in a new thread
-    - Reply to an existing message in an existing thread
+    - Create a new draft message in a new thread
+    - Create a draft reply to an existing message in an existing thread
+    - Update an existing draft message
+    
+    For creating a new draft:
+    - Do not include messageId
+    - Include parentId if replying to an existing message
+    
+    For updating an existing draft:
+    - Include messageId of the draft to update
+    - Only the fields that are provided will be updated
     
     At least one of htmlBody or textBody must be provided.
     """,
     examples=[
         OpenApiExample(
-            "New Message",
+            "New Draft Message",
             value={
                 "subject": "Hello",
-                "textBody": "This is a test message",
+                "textBody": "This is a draft message",
                 "to": ["recipient@example.com"],
                 "cc": ["cc@example.com"],
                 "bcc": ["bcc@example.com"],
             },
         ),
         OpenApiExample(
-            "Reply",
+            "Draft Reply",
             value={
                 "parentId": "123e4567-e89b-12d3-a456-426614174000",
                 "subject": "Re: Hello",
-                "textBody": "This is a reply",
+                "textBody": "This is a draft reply",
                 "to": ["recipient@example.com"],
+            },
+        ),
+        OpenApiExample(
+            "Update Draft",
+            value={
+                "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                "subject": "Updated subject",
+                "textBody": "Updated draft content",
+                "to": ["new-recipient@example.com"],
             },
         ),
     ],
 )
-class MessageCreateView(APIView):
-    """Create a new message or reply to an existing message.
+class DraftMessageView(APIView):
+    """Create or update a draft message.
 
-    This endpoint is used to create a new message or reply to an existing message.
+    This endpoint is used to create a new draft message, draft reply, or update an existing draft.
 
-    POST /api/v1.0/message-create/ with expected data:
-        - parentId: str (message id if reply, None if first message)
+    POST /api/v1.0/draft/ with expected data:
+        - parentId: str (optional, message id if reply, None if first message)
         - senderId: str (mailbox id of the sender)
         - subject: str
-        - htmlBody: str
-        - textBody: str
-        - to: list[str]
-        - cc: list[str]
-        - bcc: list[str]
-        Return newly created message
+        - htmlBody: str (optional)
+        - textBody: str (optional)
+        - to: list[str] (optional)
+        - cc: list[str] (optional)
+        - bcc: list[str] (optional)
+        Return newly created draft message
+        
+    PUT /api/v1.0/draft/{message_id}/ with expected data:
+        - subject: str (optional)
+        - htmlBody: str (optional)
+        - textBody: str (optional)
+        - to: list[str] (optional)
+        - cc: list[str] (optional)
+        - bcc: list[str] (optional)
+        Return updated draft message
     """
 
     permission_classes = [permissions.IsAllowedToCreateMessage]
     mailbox = None
 
     def post(self, request):
-        """Perform the create action."""
-
+        """Create a new draft message."""
+        sender_id = request.data.get("senderId")
+        self.mailbox = models.Mailbox.objects.get(id=sender_id)
         subject = request.data.get("subject")
 
         # Then get the parent message if it's a reply
@@ -682,7 +717,7 @@ class MessageCreateView(APIView):
                 mailbox=self.mailbox,
                 subject=subject,
                 # TODO: enhance to use htmlBody if is the only one provided
-                snippet=request.data.get("textBody")[:100],
+                snippet=request.data.get("textBody", "")[:100],
                 is_read=True,
             )
 
@@ -718,6 +753,7 @@ class MessageCreateView(APIView):
             created_at=timezone.now(),
             read_at=timezone.now(),
             mta_sent=False,
+            is_draft=True,  # Mark as draft
         )
         message.mime_id = message.generate_mime_id()
 
@@ -758,10 +794,8 @@ class MessageCreateView(APIView):
             else None,
         )
 
-        # Save the raw mime message.
-        # TODO: Do this later in optimized storage (Object Storage), with deduplication hashes.
+        # Save the raw mime message
         message.raw_mime = raw_mime
-
         message.save()
 
         for kind, cts in contacts.items():
@@ -772,14 +806,209 @@ class MessageCreateView(APIView):
                     type=kind,
                 )
 
+        return Response(
+            serializers.MessageSerializer(message).data, status=status.HTTP_201_CREATED
+        )
+
+    def put(self, request, message_id=None):
+        """Update an existing draft message."""
+        if not message_id:
+            return Response(
+                {"detail": "Message ID is required for updating a draft."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sender_id = request.data.get("senderId")
+        self.mailbox = models.Mailbox.objects.get(id=sender_id)
+
+        try:
+            message = models.Message.objects.get(id=message_id, is_draft=True)
+        except models.Message.DoesNotExist as exc:
+            raise drf.exceptions.ValidationError(
+                "Message does not exist or is not a draft."
+            ) from exc
+
+        # Check if user has permission to update this draft
+        if message.thread.mailbox != self.mailbox:
+            raise drf.exceptions.PermissionDenied(
+                "You do not have permission to update this draft."
+            )
+
+        # Update subject if provided
+        if "subject" in request.data:
+            message.subject = request.data["subject"]
+            # Also update thread subject if this is the first message
+            if message.thread.messages.count() == 1:
+                message.thread.subject = request.data["subject"]
+                message.thread.save(update_fields=["subject", "updated_at"])
+
+        # Update recipients if provided
+        recipient_types = ["to", "cc", "bcc"]
+        recipients_updated = False
+
+        for recipient_type in recipient_types:
+            if recipient_type in request.data:
+                # Delete existing recipients of this type
+                message.recipients.filter(type=recipient_type).delete()
+
+                # Create new recipients
+                emails = request.data.get(recipient_type) or []
+                for email in emails:
+                    contact = models.Contact.objects.get_or_create(
+                        email=email, owner=self.mailbox
+                    )[0]
+                    models.MessageRecipient.objects.create(
+                        message=message,
+                        contact=contact,
+                        type=recipient_type,
+                    )
+                recipients_updated = True
+
+        # Update message content if provided
+        content_updated = False
+        if (
+            "textBody" in request.data
+            or "htmlBody" in request.data
+            or recipients_updated
+        ):
+            content_updated = True
+
+            # Get current sender
+            sender_contact = message.sender
+
+            # Get all recipients for the updated MIME message
+            recipients = {
+                kind: [
+                    {"name": recipient.contact.name, "email": recipient.contact.email}
+                    for recipient in message.recipients.filter(type=kind)
+                ]
+                for kind in ["to", "cc"]  # BCC not included in MIME headers
+            }
+
+            # Prepare MIME data
+            mime_data = {
+                "from": [
+                    {
+                        "name": sender_contact.name,
+                        "email": sender_contact.email,
+                    }
+                ],
+                "to": recipients["to"],
+                "cc": recipients["cc"],
+                "subject": message.subject,
+                "textBody": [request.data.get("textBody", "")],
+                "htmlBody": [request.data.get("htmlBody", "")],
+                "messageId": message.mime_id,
+            }
+
+            # Get parent message if this is a reply
+            parent_message = None
+            thread_messages = message.thread.messages.exclude(id=message.id).order_by(
+                "created_at"
+            )
+            if thread_messages.exists():
+                parent_message = thread_messages.first()
+
+            # Assemble the raw mime message
+            raw_mime = compose_email(
+                mime_data,
+                in_reply_to=parent_message.mime_id
+                if parent_message and parent_message.mime_id
+                else None,
+            )
+
+            # Save the raw mime message
+            # TODO: Do this later in optimized storage (Object Storage), with deduplication hashes.
+            message.raw_mime = raw_mime
+
+        # Update thread snippet if text body was updated
+        if "textBody" in request.data and message.thread.messages.count() == 1:
+            message.thread.snippet = request.data.get("textBody", "")[:100]
+            message.thread.save(update_fields=["snippet", "updated_at"])
+
+        # Save message if any changes were made
+        if content_updated or "subject" in request.data:
+            message.save()
+
+        return Response(serializers.MessageSerializer(message).data)
+
+
+@extend_schema(
+    tags=["messages"],
+    request=inline_serializer(
+        name="SendMessageRequest",
+        fields={
+            "messageId": drf_serializers.UUIDField(
+                required=True,
+                help_text="ID of the draft message to send",
+            ),
+        },
+    ),
+    responses={
+        200: serializers.MessageSerializer,
+        400: OpenApiExample(
+            "Validation Error",
+            value={"detail": "Message does not exist or is not a draft."},
+        ),
+        403: OpenApiExample(
+            "Permission Error",
+            value={"detail": "You do not have permission to perform this action."},
+        ),
+    },
+    description="""
+    Send a previously created draft message.
+    
+    This endpoint allows you to send a message that was previously created as a draft.
+    """,
+    examples=[
+        OpenApiExample(
+            "Send Draft",
+            value={
+                "messageId": "123e4567-e89b-12d3-a456-426614174000",
+            },
+        ),
+    ],
+)
+class SendMessageView(APIView):
+    """Send a previously created draft message.
+
+    This endpoint is used to send a message that was previously created as a draft.
+
+    POST /api/v1.0/send/ with expected data:
+        - messageId: str (ID of the draft message to send)
+        - senderId: str (ID of the mailbox to use as sender)
+        Return the sent message
+    """
+
+    permission_classes = [permissions.IsAllowedToSendMessage]
+    mailbox = None
+
+    def post(self, request):
+        """Send a draft message."""
+        message_id = request.data.get("messageId")
+        sender_id = request.data.get("senderId")
+        self.mailbox = models.Mailbox.objects.get(id=sender_id)
+        try:
+            message = models.Message.objects.get(id=message_id, is_draft=True)
+        except models.Message.DoesNotExist as exc:
+            raise drf.exceptions.ValidationError(
+                "Message does not exist or is not a draft."
+            ) from exc
+
+        # Check if user has permission to send from this mailbox
+        if message.thread.mailbox != self.mailbox:
+            raise drf.exceptions.PermissionDenied(
+                "You do not have permission to send from this mailbox."
+            )
+
         # TODO: Sending to the MTA should be done asynchronously. Move this to a Celery task
 
         # Prepend the DKIM header to the raw mime message
         dkim_signature = message.generate_dkim_signature()
         if dkim_signature is None:
-            raw_mime_signed = raw_mime
+            raw_mime_signed = message.raw_mime
         else:
-            raw_mime_signed = dkim_signature + raw_mime
+            raw_mime_signed = dkim_signature + message.raw_mime
 
         if not settings.MTA_OUT_HOST:
             logger.warning("MTA_OUT_HOST is not set, skipping message sending")
@@ -804,25 +1033,32 @@ class MessageCreateView(APIView):
                             settings.MTA_OUT_SMTP_PASSWORD,
                         )
 
-                    envelope_to = [
-                        contact.email
-                        for contact in contacts["to"] + contacts["cc"] + contacts["bcc"]
-                    ]
+                    # Get all recipients
+                    recipients = message.recipients.all()
+                    envelope_to = [recipient.contact.email for recipient in recipients]
                     envelope_from = message.sender.email
                     smtp_response = client.sendmail(
                         envelope_from, envelope_to, raw_mime_signed
                     )
                     logger.info("SMTP response: %s", smtp_response)
 
+                    # Update message status
                     message.mta_sent = True
                     message.sent_at = timezone.now()
-                    message.save()
+                    message.is_draft = False  # No longer a draft
+                    message.save(
+                        update_fields=["mta_sent", "sent_at", "is_draft", "updated_at"]
+                    )
 
                     break
                 except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
                     logger.error("Error sending message to the MTA: %s", e)
                     time.sleep(1)
+            else:
+                # If we get here, all attempts failed
+                return Response(
+                    {"detail": "Failed to send message after multiple attempts."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
-        return Response(
-            serializers.MessageSerializer(message).data, status=status.HTTP_201_CREATED
-        )
+        return Response(serializers.MessageSerializer(message).data)

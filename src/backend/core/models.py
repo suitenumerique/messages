@@ -362,6 +362,7 @@ class Message(BaseModel):
     mime_id = models.CharField(
         _("mime id"), max_length=998, null=True, blank=True, unique=True
     )
+    is_draft = models.BooleanField(_("is draft"), default=True)
 
     # Stores the raw MIME message. This will be optimized and offloaded
     # to object storage in the future.

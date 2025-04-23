@@ -166,6 +166,32 @@ class IsAllowedToCreateMessage(IsAuthenticated):
             return False
         # required permissions to send a message
         permissions_required = [
+            enums.MailboxPermissionChoices.EDIT,
+            enums.MailboxPermissionChoices.ADMIN,
+        ]
+        # check if user has access required to send a message with this mailbox
+        return view.mailbox.accesses.filter(
+            user=request.user,
+            permission__in=permissions_required,
+        ).exists()
+
+
+class IsAllowedToSendMessage(IsAuthenticated):
+    """Permission class for access to send a message."""
+
+    def has_permission(self, request, view):
+        """Check if user is allowed to send a message."""
+        # a sender is required to create a message
+        sender_id = request.data.get("senderId")
+        if not sender_id:
+            return False
+        # get mailbox instance from sender id
+        try:
+            view.mailbox = models.Mailbox.objects.get(id=sender_id)
+        except models.Mailbox.DoesNotExist:
+            return False
+        # required permissions to send a message
+        permissions_required = [
             enums.MailboxPermissionChoices.SEND,
             enums.MailboxPermissionChoices.ADMIN,
         ]
