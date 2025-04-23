@@ -318,7 +318,7 @@ clean-media: ## remove all media files
 .PHONY: clean-media
 
 pyclean: ## remove all python cache files
-	find . | grep -E "(/__pycache__$|\.pyc$|\.pyo$)" | xargs rm -rf
+	find . | grep -E "\(/__pycache__$|\.pyc$|\.pyo$\)" | xargs rm -rf
 .PHONY: pyclean
 
 help:

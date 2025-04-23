@@ -112,6 +112,7 @@ class MessageFactory(factory.django.DjangoModelFactory):
     sender = factory.SubFactory(ContactFactory)
     received_at = factory.LazyAttribute(lambda o: timezone.now())
     created_at = factory.LazyAttribute(lambda o: timezone.now())
+    mime_id = factory.Sequence(lambda n: f"message{n!s}")
 
 
 class MessageRecipientFactory(factory.django.DjangoModelFactory):
