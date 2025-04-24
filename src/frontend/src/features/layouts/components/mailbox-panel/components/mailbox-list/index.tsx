@@ -1,3 +1,4 @@
+import { useMailboxContext } from "@/features/mailbox/provider"
 import { Badge } from "@/features/ui/components/badge"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -6,7 +7,7 @@ import { useEffect } from "react"
 
 // @TODO: replace with real data when folder will be ready
 type HardcodedMailbox = {
-    id: string;
+    id?: string;
     name: string;
     icon: string;
     unread: number;
@@ -14,7 +15,6 @@ type HardcodedMailbox = {
 
 const TMP_MAILBOXES: HardcodedMailbox[] = [
     {
-        id: "0",
         name: "Tous les messages",
         icon: "folder",
         unread: 10,
@@ -58,14 +58,14 @@ const TMP_MAILBOXES: HardcodedMailbox[] = [
 ]
 
 export const MailboxList = () => {
-    const defaultMailboxId = TMP_MAILBOXES[0].id;
+    const { selectedMailbox } = useMailboxContext();
     const router = useRouter()
 
     useEffect(() => {
-        if (router.pathname === "/") {
-            router.push(`/mailbox/${defaultMailboxId}`)
+        if (router.pathname === "/" && selectedMailbox) {
+            router.push(`/mailbox/${selectedMailbox.id}/`)
         }
-    }, [])
+    }, [selectedMailbox])
 
     return (
         <div className="mailbox-list">
@@ -73,7 +73,7 @@ export const MailboxList = () => {
             {TMP_MAILBOXES.map((mailbox) => (
                 <MailboxListItem
                     key={mailbox.id}
-                    mailbox={mailbox}
+                    mailbox={{...mailbox, id: mailbox?.id || selectedMailbox?.id}}
                 />
             ))}
         </div>
@@ -86,6 +86,7 @@ type MailboxListItemProps = {
 
 const MailboxListItem = ({ mailbox }: MailboxListItemProps) => {
     const params = useParams<{ mailboxId?: string }>()
+
     return (
         <Link
             href={`/mailbox/${mailbox.id}`}

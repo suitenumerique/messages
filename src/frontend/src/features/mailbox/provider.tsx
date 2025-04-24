@@ -1,6 +1,7 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
 import { Mailbox, PaginatedMessageList, PaginatedThreadList, Thread, useMailboxesList, useMessagesList, useThreadsList } from "../api/gen";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/router";
 
 type MailboxContextType = {
     mailboxes: readonly Mailbox[] | null;
@@ -53,6 +54,7 @@ const MailboxContext = createContext<MailboxContextType>({
  */
 export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const queryClient = useQueryClient();
+    const router = useRouter();
     const [selectedMailbox, setSelectedMailbox] = useState<Mailbox | null>(null);
     const [selectedThread, setSelectedThread] = useState<Thread | null>(null);
     const mailboxQuery = useMailboxesList();
@@ -80,6 +82,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     });
 
     const invalidateThreadMessages = async () => {
+        await queryClient.invalidateQueries({ queryKey: ['/api/v1.0/threads/'] });
         if (selectedThread) {
             await queryClient.invalidateQueries({ queryKey: ['messages', selectedThread.id] });
         }
@@ -116,9 +119,30 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     useEffect(() => {
         const mailboxes = mailboxQuery.data?.data;
         if (mailboxes && mailboxes.length > 0) {
-            setSelectedMailbox(mailboxes[0]);
+            const mailboxId = router.query.mailboxId;
+            setSelectedMailbox(mailboxes.find((mailbox) => mailbox.id === mailboxId) ?? mailboxes[0]);
         }
     }, [mailboxQuery.data?.data]);
+
+    useEffect(() => {
+        if (selectedMailbox) {
+            if (router.pathname === '/' || router.query.mailboxId) {
+                router.replace(`/mailbox/${selectedMailbox.id}`);
+            }
+            invalidateThreadMessages();
+        }
+    }, [selectedMailbox, mailboxQuery.data?.data]);
+
+    useEffect(() => {
+        if (selectedMailbox && !selectedThread) {
+            const threadId = router.query.threadId;
+            const thread = threadsQuery.data?.data?.results.find((thread) => thread.id === threadId);
+            if (thread) {
+                setSelectedThread(thread);
+                router.replace(`/mailbox/${selectedMailbox.id}/thread/${thread.id}`);
+            }
+        }
+    }, [threadsQuery.data?.data]);
 
     useEffect(() => {
         if (selectedThread) {

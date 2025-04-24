@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 
 export const MailboxPanel = () => {
     const { t } = useTranslation();
-    const { selectedMailbox, mailboxes, status} = useMailboxContext();
+    const { selectedMailbox, mailboxes, selectMailbox, status} = useMailboxContext();
 
     const getMailboxOptions = () => {
         if(!mailboxes) return [];
@@ -26,12 +26,12 @@ export const MailboxPanel = () => {
             {!selectedMailbox || status.mailboxes === "pending" ? <Spinner /> : 
             (
                 <>
-                    {/* FIXME: For now we consider user has always only one mailbox */}
                     <Select
                         className="mailbox-panel__mailbox-title"
                         options={getMailboxOptions()}
                         defaultValue={selectedMailbox.id}
                         label={t('mailbox')}
+                        onChange={(event) => selectMailbox(mailboxes!.find((mailbox) => mailbox.id === event.target.value)!)}
                         clearable={false}
                         compact
                         fullWidth
