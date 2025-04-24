@@ -34,7 +34,8 @@ const MessageEditor = ({ blockNoteOptions, ...props }: MessageEditorProps) => {
             ...locales[i18n.language as keyof typeof locales],
             placeholders: {
                 ...locales[i18n.language as keyof typeof locales].placeholders,
-                emptyDocument: t('message_editor.start_typing')
+                emptyDocument: t('message_editor.start_typing'),
+                default: t('message_editor.start_typing'),
             }
         },
         ...blockNoteOptions,
