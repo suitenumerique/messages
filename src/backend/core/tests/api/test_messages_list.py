@@ -18,17 +18,32 @@ class TestApiThreads:
         """Test list threads."""
         # Create 10 threads to populate the database
         factories.ThreadFactory.create_batch(10)
-        # Create authenticated user with access to a mailbox
+
+        # Create authenticated user
         authenticated_user = factories.UserFactory()
+
+        # Create a mailbox for the authenticated user with access
         mailbox = factories.MailboxFactory()
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
             permission=enums.MailboxPermissionChoices.READ,
         )
-        # Create a thread with a message
+        # Create an other mailbox for the authenticated user with access
+        other_mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=other_mailbox,
+            user=authenticated_user,
+            permission=enums.MailboxPermissionChoices.READ,
+        )
+
+        # Create a thread with a message in the mailbox
         thread = factories.ThreadFactory(mailbox=mailbox)
         message = factories.MessageFactory(thread=thread, read_at=None)
+        # Create a thread with a message in the other mailbox
+        other_thread = factories.ThreadFactory(mailbox=other_mailbox)
+        factories.MessageFactory(thread=other_thread, read_at=None)
+
         # Need sender and recipient contacts for the thread serializer
         recipient_contact = factories.ContactFactory()
         factories.MessageRecipientFactory(
@@ -40,7 +55,7 @@ class TestApiThreads:
         # Create a client and authenticate
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
-        # Get the list of threads
+        # Get the list of threads for only the first mailbox
         response = client.get(
             reverse("threads-list"), query_params={"mailbox_id": mailbox.id}
         )
