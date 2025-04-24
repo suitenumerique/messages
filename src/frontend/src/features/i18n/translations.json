@@ -44,6 +44,18 @@
         "bcc": "Blind copy: ",
         "subject": "Subject: ",
         "body": "Message: "
+      },
+      "message_form": {
+        "helper_text": {
+          "recipients": "Enter the email addresses of the recipients separated by commas"
+        },
+        "error": {
+          "invalid_recipients": "At least one of the email addresses entered is invalid.",
+          "messageEditorHtml": "You must write a message."
+        }
+      },
+      "message_editor": {
+        "start_typing": "Start typing..."
       }
     }
   },
@@ -92,6 +104,18 @@
         "bcc": "Copie cachée : ",
         "subject": "Sujet : ",
         "body": "Message : "
+      },
+      "message_form": {
+        "helper_text": {
+          "recipients": "Entrez les adresses courriel des destinataires séparées par des virgules"
+        },
+        "error": {
+          "invalid_recipients": "Au moins une des adresses courriel saisie est invalide.",
+          "messageEditorHtml": "Vous devez écrire un message."
+        }
+      },
+      "message_editor": {
+        "start_typing": "Commencer à écrire..."
       }
     }
   }
