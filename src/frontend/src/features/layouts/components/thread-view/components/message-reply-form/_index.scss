@@ -1,19 +1,6 @@
-.message-reply-form {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: var(--c--theme--spacings--base);
+.message-reply-form-container {
     border: 1px solid var(--c--theme--colors--greyscale-200);
     border-radius: 4px;
     padding: var(--c--theme--spacings--base);
 }
 
-.message-reply-form__footer {
-    display: flex;
-    gap: var(--c--theme--spacings--base);
-    flex-direction: row-reverse;
-}
-
-.message-reply-form__error {
-    width: 100%;
-}

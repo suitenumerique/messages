@@ -1,3 +1,15 @@
+.c__field {
+    &--error {
+        .message-editor {
+            border-color: var(--c--theme--colors--error);
+        }
+    }
+    &--success {
+        .message-editor {
+            border-color: var(--c--theme--colors--success);
+        }
+    }
+}
 .message-editor {
     border-radius: var(--c--components--forms-input--border-radius);
     border-width: var(--c--components--forms-input--border-width);
