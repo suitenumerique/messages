@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { sanitize } from "lettersanitizer";
+import DomPurify from "dompurify";
 
 type MessageBodyProps = {
     rawHtmlBody: string;
@@ -38,8 +38,8 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
 
     const sanitizedHtmlBody = useMemo(() => {
-        return sanitize(rawHtmlBody, rawTextBody, {
-            allowedSchemas: ['http', 'https', 'mailto', 'tel'],
+        return DomPurify.sanitize(rawHtmlBody || rawTextBody, {
+            FORBID_TAGS: ['script', 'object', 'iframe', 'embed', 'audio', 'video'],
         });
     }, []);
 
