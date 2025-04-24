@@ -279,6 +279,40 @@
                 }
             }
         },
+        "/api/v1.0/read/": {
+            "post": {
+                "operationId": "read_create",
+                "description": "The type of the None singleton.",
+                "tags": [
+                    "read"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChangeReadStatusRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChangeReadStatusRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
         "/api/v1.0/threads/": {
             "get": {
                 "operationId": "threads_list",
@@ -345,6 +379,33 @@
     },
     "components": {
         "schemas": {
+            "ChangeReadStatusRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "integer"
+                    },
+                    "message_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    "thread_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                },
+                "required": [
+                    "message_ids",
+                    "status",
+                    "thread_ids"
+                ]
+            },
             "Contact": {
                 "type": "object",
                 "description": "Serialize contacts.",

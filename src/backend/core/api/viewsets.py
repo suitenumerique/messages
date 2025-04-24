@@ -459,6 +459,20 @@ class ChangeReadStatusViewSet(APIView):
     permission_classes = [permissions.IsAllowedToAccessMailbox]
     action = "change_read_status"
 
+    @extend_schema(
+        request=inline_serializer(
+            name="ChangeReadStatusRequest",
+            fields={
+                "status": drf_serializers.IntegerField(),
+                "message_ids": drf_serializers.ListField(
+                    child=drf_serializers.UUIDField()
+                ),
+                "thread_ids": drf_serializers.ListField(
+                    child=drf_serializers.UUIDField()
+                ),
+            },
+        ),
+    )
     def post(self, request, *args, **kwargs):
         """
         Mark multiple messages or threads as read or unread.
