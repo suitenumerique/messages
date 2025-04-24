@@ -368,6 +368,8 @@ class Message(BaseModel):
     # to object storage in the future.
     raw_mime = models.BinaryField(blank=True, default=b"")
 
+    draft_body = models.TextField(_("draft body"), blank=True)
+
     # Internal cache for parsed data
     _parsed_email_cache: Optional[Dict[str, Any]] = None
 

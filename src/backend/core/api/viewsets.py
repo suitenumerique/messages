@@ -672,8 +672,7 @@ class DraftMessageView(APIView):
         - parentId: str (optional, message id if reply, None if first message)
         - senderId: str (mailbox id of the sender)
         - subject: str
-        - htmlBody: str (optional)
-        - textBody: str (optional)
+        - draftBody: str (optional)
         - to: list[str] (optional)
         - cc: list[str] (optional)
         - bcc: list[str] (optional)
@@ -681,8 +680,7 @@ class DraftMessageView(APIView):
         
     PUT /api/v1.0/draft/{message_id}/ with expected data:
         - subject: str (optional)
-        - htmlBody: str (optional)
-        - textBody: str (optional)
+        - draftBody: str (optional)
         - to: list[str] (optional)
         - cc: list[str] (optional)
         - bcc: list[str] (optional)
@@ -977,6 +975,10 @@ class SendMessageView(APIView):
     POST /api/v1.0/send/ with expected data:
         - messageId: str (ID of the draft message to send)
         - senderId: str (ID of the mailbox to use as sender)
+        - draftBody: str (optional)
+        - to: list[str] (optional)
+        - cc: list[str] (optional)
+        - bcc: list[str] (optional)
         Return the sent message
     """
 
