@@ -6,8 +6,8 @@ describe('MailHelper', () => {
       const markdown = '**Hello World**';
       const html = await MailHelper.markdownToHtml(markdown);
       expect(html).toMatchInlineSnapshot(`
-        "<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><!--$--><div data-id="react-email-markdown"><p><strong style="font-weight:bold">Hello World</strong></p>
-        </div><!--/$-->"
+        "<div data-id="react-email-markdown"><p><strong style="font-weight:bold">Hello World</strong></p>
+        </div>"
       `);
     });
   });
