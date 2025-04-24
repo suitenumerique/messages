@@ -5,11 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-type ActionBarProps = {
-    handleReplyAll: () => void;
-}
 
-export const ActionBar = ({ handleReplyAll }: ActionBarProps) => {
+export const ActionBar = () => {
     const { t } = useTranslation();
     const { selectThread } = useMailboxContext();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -24,48 +21,39 @@ export const ActionBar = ({ handleReplyAll }: ActionBarProps) => {
     return (
         <div className="thread-action-bar">
             <div className="thread-action-bar__left">
+            <Tooltip content={t('actions.close_thread')} placement="right">
                 <Button
                     onClick={handleCloseThread}
                     color="tertiary-text"
                     aria-label={t('tooltips.close_thread')}
-                    size="small"
+                    size="medium"
                     icon={<span className="material-icons">close</span>}
-                >
-                    {t('actions.close_thread')}
-                </Button>
+                />
+                </Tooltip>
             </div>
             <div className="thread-action-bar__right">
-                <Button
-                    onClick={handleReplyAll}
-                    color="primary"
-                    aria-label={t('tooltips.reply_all')}
-                    size="small"
-                    icon={<span className="material-icons">reply_all</span>}
-                >
-                    {t('actions.reply_all')}
-                </Button>
-                <Tooltip content={t('tooltips.reply')}>
+                <Tooltip content={t('actions.archive')}>
                     <Button
                         color="primary-text"
-                        aria-label={t('tooltips.reply')}
+                        aria-label={t('actions.archive')}
                         size="small"
-                        icon={<span className="material-icons">reply</span>}
+                        icon={<span className="material-icons">archive</span>}
                     />
                 </Tooltip>
-                <Tooltip content={t('tooltips.forward')}>
+                <Tooltip content={t('actions.delete')}>
                     <Button
                         color="primary-text"
-                        aria-label={t('tooltips.forward')}
-                        size="small"
-                        icon={<span className="material-icons">forward</span>}
-                    />
-                </Tooltip>
-                <Tooltip content={t('tooltips.delete')}>
-                    <Button
-                        color="primary-text"
-                        aria-label={t('tooltips.delete')}
+                        aria-label={t('actions.delete')}
                         size="small"
                         icon={<span className="material-icons">delete</span>}
+                    />
+                </Tooltip>
+                <Tooltip content={t('actions.mark_as_unread')}>
+                    <Button
+                        color="primary-text"
+                        aria-label={t('actions.mark_as_unread')}
+                        size="small"
+                        icon={<span className="material-icons">mark_email_unread</span>}
                     />
                 </Tooltip>
                 <DropdownMenu

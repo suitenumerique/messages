@@ -3,12 +3,11 @@ import { useParams } from "next/navigation"
 import { ActionBar } from "./components/thread-action-bar"
 import { ThreadMessage } from "./components/thread-message"
 import { useMailboxContext } from "@/features/mailbox/provider"
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 
 export const ThreadView = () => {
     const params = useParams<{ mailboxId: string, threadId: string }>()
     const { threads, selectedThread, selectThread, messages } = useMailboxContext();
-    const [showReplyAllForm, setShowReplyAllForm] = useState<boolean>(false);
     const latestMessage = messages?.results.reduce((acc, message) => {
         if (message.received_at > acc.received_at) {
             return message;
@@ -25,23 +24,18 @@ export const ThreadView = () => {
         }
     }, [threads, params]);
 
-    useEffect(() => {
-        setShowReplyAllForm(false);
-    }, [selectedThread]);
-
     if (!selectedThread) return null
 
 
     return (
         <div className="thread-view">
-            <ActionBar handleReplyAll={() => setShowReplyAllForm(true)} />
+            <ActionBar />
             <div className="thread-view__messages">
                 {messages?.results.map((message) => (
                     <ThreadMessage
                         key={message.id}
                         message={message}
-                        showReplyAllForm={latestMessage?.id === message.id && showReplyAllForm}
-                        resetReplyAllForm={() => setShowReplyAllForm(false)}
+                        isLatest={latestMessage?.id === message.id}
                     />
                 ))}
             </div>

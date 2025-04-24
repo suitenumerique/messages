@@ -28,12 +28,14 @@
         "print": "Print",
         "close_thread": "Close this thread",
         "cancel": "Cancel",
-        "send": "Send"
+        "delete": "Delete",
+        "send": "Send",
+        "archive": "Archive",
+        "mark_as_unread": "Mark as unread"
       },
       "tooltips": {
         "has_attachments": "This email has an attachment",
         "mark_as_important": "Mark as important",
-        "delete": "Delete",
         "more_options": "More options",
         "reply": "Reply",
         "forward": "Forward"
@@ -90,14 +92,17 @@
         "close_thread": "Fermer cette conversation",
         "reply_all": "Répondre à tous",
         "cancel": "Annuler",
-        "send": "Envoyer"
+        "delete": "Supprimer",
+        "send": "Envoyer",
+        "archive": "Archiver",
+        "mark_as_unread": "Marquer comme non lu",
+        "forward": "Transférer"
       },
       "tooltips": {
         "has_attachments": "Cette email contient une pièce jointe",
-        "delete": "Supprimer",
         "more_options": "Plus d'options",
-        "reply": "Répondre",
-        "forward": "Transférer"
+        "reply": "Répondre"
+        
       },
       "thread_message": {
         "from": "De : ",
