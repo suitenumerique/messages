@@ -54,14 +54,14 @@ RUN chmod g=u /etc/passwd
 # Copy installed python dependencies
 COPY --from=back-builder /install /usr/local
 
-# Copy messages application (see .dockerignore)
-COPY ./src/backend /app/
+# # Copy messages application (see .dockerignore)
+# COPY ./src/backend /app/
 
 WORKDIR /app
 
-# Generate compiled translation messages
-RUN DJANGO_CONFIGURATION=Build \
-    python manage.py compilemessages
+# # Generate compiled translation messages
+# RUN DJANGO_CONFIGURATION=Build \
+#     python manage.py compilemessages
 
 # We wrap commands run in this container by the following entrypoint that
 # creates a user on-the-fly with the container user ID (see USER) and root group

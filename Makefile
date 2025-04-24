@@ -243,11 +243,16 @@ dbshell: ## connect to database shell
 .PHONY: dbshell
 
 resetdb: FLUSH_ARGS ?=
-resetdb: ## flush database and create a superuser "admin"
+resetdb: ## flush database
 	@echo "$(BOLD)Flush database$(RESET)"
 	@$(MANAGE) flush $(FLUSH_ARGS)
-	@${MAKE} superuser
 .PHONY: resetdb
+
+fullresetdb: build ## flush database, including schema
+	@echo "$(BOLD)Flush database$(RESET)"
+	$(MANAGE) drop_all_tables
+	$(MANAGE) migrate
+.PHONY: fullresetdb
 
 env.d/development/common:
 	cp -n env.d/development/common.dist env.d/development/common
