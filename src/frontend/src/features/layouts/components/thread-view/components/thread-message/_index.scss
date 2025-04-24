@@ -13,6 +13,13 @@
     padding-bottom: var(--c--theme--spacings--base);
 }
 
+.thread-message__header-actions {
+    display: flex;
+    flex-direction: row;
+    gap: 0;
+    margin-left: var(--c--theme--spacings--base);
+}
+
 .thread-message__header-rows {
     display: flex;
     flex-direction: row;
@@ -49,3 +56,14 @@
     border: none;
     overflow: auto;
 }
+
+.thread-message__footer {
+    margin-top: var(--c--theme--spacings--base);
+}
+
+.thread-message__footer-actions {
+    display: flex;
+    flex-direction: row;
+    gap: var(--c--theme--spacings--base);
+}
+

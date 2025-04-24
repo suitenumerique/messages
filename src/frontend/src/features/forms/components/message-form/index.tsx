@@ -59,8 +59,8 @@ export const MessageForm = ({
                 setErrors(null);
             },
             onSuccess: async () => {
-                invalidateThreadMessages();
                 await soundbox.play(0.07);
+                invalidateThreadMessages();
                 onSuccess?.();
                 onClose?.();
             },
