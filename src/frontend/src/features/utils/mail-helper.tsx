@@ -1,4 +1,5 @@
-import { Markdown, render } from "@react-email/components";
+import { renderToString } from "react-dom/server";
+import { Markdown } from "@react-email/components";
 import React from "react";
 
 /** An helper which aims to gather all utils related write and send a message */
@@ -9,7 +10,7 @@ class MailHelper {
      * then render HTML ready for email through react-email.
      */
     static async markdownToHtml(markdown: string) {
-        return render(<Markdown>{markdown}</Markdown>);
+        return renderToString(<Markdown>{markdown}</Markdown>);
     }
 
     /**
