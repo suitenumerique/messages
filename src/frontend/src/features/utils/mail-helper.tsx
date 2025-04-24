@@ -46,7 +46,7 @@ class MailHelper {
      */
     static #isValidEmail(email: string): boolean {
         // Trim whitespace and validate format: something@something.something
-        const emailRegex = /^((?!\.)[\w\-_.]*[^.])(@\w+)(\.\w+(\.\w+)?[^.\W])$/;
+        const emailRegex = /^((?!\.)[\w\-_.]*[^.])(@[a-zA-Z0-9\-]+)(\.[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)*[^.\W])$/;
         return emailRegex.test(email);
     }
 }

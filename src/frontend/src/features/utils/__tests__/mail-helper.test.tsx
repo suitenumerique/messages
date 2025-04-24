@@ -91,7 +91,8 @@ describe('MailHelper', () => {
       '@example.com',
       'test@example.',
       '.test@example.com',
-      'test@example..com'
+      'test@example..com',
+      'text@example_23.com'
     ])('should reject emails with invalid format (%s)', (email) => {
         const result = MailHelper.areRecipientsValid([email]);
         expect(result).toBe(false);
@@ -103,6 +104,9 @@ describe('MailHelper', () => {
       'test-test@example.com',
       'test_test@example.com',
       'test@example.co.uk',
+      'test@sub.sub.example.com',
+      'contact@42.com',
+      'test@example-co-uk.com',
       'test123@example.com'
     ])('should accept emails with valid format (%s)', (email) => {
         const result = MailHelper.areRecipientsValid([email]);
