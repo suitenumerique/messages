@@ -5,9 +5,12 @@
 }
 
 .mailbox-panel__mailbox-title {
-    font-size: 1rem;
-    font-weight: 600;
     margin: 0;
     padding-inline: var(--c--theme--spacings--sm);
     padding-top: var(--c--theme--spacings--sm);
+    margin-bottom: var(--c--theme--spacings--sm);
+
+    & .c__select__inner__value {
+        font-weight: 600;
+    }
 }

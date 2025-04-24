@@ -8,6 +8,7 @@
       "my_account": "My Account",
       "no_mailbox": "No mailbox.",
       "no_threads": "No threads.",
+      "mailbox": "Mailbox",
       "new_message_form": {
         "title": "New message"
       },
@@ -68,6 +69,7 @@
       "my_account": "Mon Compte",
       "no_mailbox": "Aucune boîte aux lettres.",
       "no_threads": "Aucune conversation.",
+      "mailbox": "Boîte aux lettres",
       "new_message_form": {
         "title": "Nouveau message"
       },
