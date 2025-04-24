@@ -10,6 +10,10 @@
     align-items: flex-start;
 }
 
+.form-field-row--hidden {
+    display: none;
+}
+
 .form-footer {
     display: flex;
     flex-direction: row-reverse;

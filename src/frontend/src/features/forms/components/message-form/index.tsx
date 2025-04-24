@@ -5,12 +5,14 @@ import { useMailboxContext } from "@/features/mailbox/provider";
 import MailHelper from "@/features/utils/mail-helper";
 import soundbox from "@/features/utils/soundbox";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Alert, Button, Input, VariantType } from "@openfun/cunningham-react";
+import { Alert, Button, Input, Select, VariantType } from "@openfun/cunningham-react";
+import { clsx } from "clsx";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 enum MESSAGE_FORM_FIELDS {
     TO = "to",
+    FROM = "from",
     CC = "cc",
     BCC = "bcc",
     SUBJECT = "subject",
@@ -29,6 +31,7 @@ interface MessageFormProps {
     onClose?: () => void;
     // For new message mode
     showSubject?: boolean;
+    showMailboxes?: boolean;
     onSuccess?: () => void;
 }
 
@@ -37,6 +40,7 @@ export const MessageForm = ({
     replyAll,
     onClose,
     showSubject = false,
+    showMailboxes = false,
     onSuccess
 }: MessageFormProps) => {
     const { t } = useTranslation();
@@ -44,6 +48,7 @@ export const MessageForm = ({
     const [showCCField, setShowCCField] = useState(false);
     const [showBCCField, setShowBCCField] = useState(false);
     const { selectedMailbox, mailboxes, invalidateThreadMessages } = useMailboxContext();
+    const mustShowMailboxes = showMailboxes && mailboxes && mailboxes.length > 1;
 
     const nonFieldErrors = useMemo(() => {
         if (!errors) return null;
@@ -52,6 +57,14 @@ export const MessageForm = ({
         if (filteredErrors.length === 0) return null;
         return filteredErrors.reduce((acc, [key, value]) => ({ ...acc, [key]: value }), {} as Record<string, string>);
     }, [errors]);
+
+    const getMailboxOptions = () => {
+        if(!mailboxes) return [];
+        return mailboxes.map((mailbox) => ({
+            label: mailbox.email,
+            value: mailbox.id
+        }));
+    }
 
     const messageMutation = useMessageCreateCreate({
         mutation: {
@@ -96,6 +109,11 @@ export const MessageForm = ({
         const to = MailHelper.parseRecipients(data.to!);
         const cc = data.cc ? MailHelper.parseRecipients(data.cc) : undefined;
         const bcc = data.bcc ? MailHelper.parseRecipients(data.bcc) : undefined;
+
+        if (!data.from) {
+            setErrors(errors => ({ ...errors, from: t("message_form.error.no_mailbox") }));
+            isValid = false;
+        }
         
         if (!MailHelper.areRecipientsValid(to)) {
             setErrors(errors => ({ ...errors, to: t("message_form.error.invalid_recipients") }));
@@ -117,9 +135,7 @@ export const MessageForm = ({
             isValid = false;
         }
 
-        if (!isValid) {
-            return;
-        }
+        if (!isValid) return;
 
         const subject = parentMessage 
             ? MailHelper.prefixSubjectIfNeeded(parentMessage.subject)
@@ -134,7 +150,7 @@ export const MessageForm = ({
                 parentId: parentMessage?.id,
                 htmlBody: data.messageEditorHtml,
                 textBody: data.messageEditorText,
-                senderId: (selectedMailbox || mailboxes![0]).id,
+                senderId: data.from!,
             }
         });
     };
@@ -155,12 +171,21 @@ export const MessageForm = ({
         }
     }, [showBCCField])
 
-    useEffect(() => {
-        console.log(nonFieldErrors);
-    }, [errors]);
-
     return (
         <form className="message-form" onSubmit={handleSubmit}>
+            <div className={clsx("form-field-row", {'form-field-row--hidden': !mustShowMailboxes})}>
+                <Select
+                    name="from"
+                    options={getMailboxOptions()}
+                    defaultValue={selectedMailbox?.id || mailboxes?.[0].id}
+                    label={t("thread_message.from")}
+                    clearable={false}
+                    compact
+                    fullWidth
+                    showLabelWhenSelected={false}
+                    disabled={!mustShowMailboxes}
+                />
+            </div>
             <div className="form-field-row">
                 <Input 
                     name="to"
