@@ -342,9 +342,7 @@ class MessageViewSet(
         if self.action == "list":
             thread_id = self.request.GET.get("thread_id")
             if thread_id:
-                queryset = queryset.filter(thread__id=thread_id).order_by(
-                    "-received_at"
-                )
+                queryset = queryset.filter(thread__id=thread_id).order_by("received_at")
             else:
                 return queryset.none()
         return queryset

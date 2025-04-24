@@ -208,7 +208,7 @@ Content-Type: text/html
         assert len(response.data["results"]) == 2
 
         # Assert message 2 (newest)
-        msg2_data = response.data["results"][0]
+        msg2_data = response.data["results"][1]
         assert msg2_data["id"] == str(message2.id)
         # Subject assertion remains, assuming it's correct in both model and raw_mime
         assert msg2_data["subject"] == message2.subject
@@ -230,7 +230,7 @@ Content-Type: text/html
         assert msg2_data["bcc"] == []
 
         # Assert message 1 (older)
-        msg1_data = response.data["results"][1]
+        msg1_data = response.data["results"][0]
         assert msg1_data["id"] == str(message1.id)
         assert msg1_data["subject"] == message1.subject
         assert msg1_data["sender"]["id"] == str(sender_contact1.id)
