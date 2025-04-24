@@ -819,7 +819,9 @@ class TestMTAInboundEmailThreading:
         assert new_message.thread == initial_thread
         assert new_message.subject == reply_subject
 
-    def test_single_email_to_multiple_mailboxes(self, api_client: APIClient, valid_jwt_token):
+    def test_single_email_to_multiple_mailboxes(
+        self, api_client: APIClient, valid_jwt_token
+    ):
         """Test sending one email TO multiple distinct mailboxes.
 
         Verifies that one thread is created per recipient mailbox.
@@ -831,10 +833,14 @@ class TestMTAInboundEmailThreading:
             local_part="testuser2", domain=self.maildomain
         )
         factories.MailboxAccessFactory(
-            mailbox=mailbox2, user=self.user, permission=enums.MailboxPermissionChoices.ADMIN
+            mailbox=mailbox2,
+            user=self.user,
+            permission=enums.MailboxPermissionChoices.ADMIN,
         )
         factories.MailboxAccessFactory(
-            mailbox=mailbox2, user=user2, permission=enums.MailboxPermissionChoices.ADMIN
+            mailbox=mailbox2,
+            user=user2,
+            permission=enums.MailboxPermissionChoices.ADMIN,
         )
         recipient_email2 = f"{mailbox2.local_part}@{self.maildomain.name}"
 

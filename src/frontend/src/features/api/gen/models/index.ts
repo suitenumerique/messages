@@ -6,6 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
+export * from "./change_read_status_request_request";
 export * from "./contact";
 export * from "./mailbox";
 export * from "./message";
