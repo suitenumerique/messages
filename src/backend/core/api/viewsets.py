@@ -314,15 +314,12 @@ class ThreadViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
         """Restrict results to threads of the current user's mailboxes."""
         mailbox_id = self.request.GET.get("mailbox_id")
         accesses = self.request.user.mailbox_accesses.all()
-        if mailbox_id:
-            if accesses.filter(mailbox__id=mailbox_id).exists():
-                return models.Thread.objects.filter(
-                    mailbox__id=mailbox_id,
-                ).order_by("-updated_at")
-            return models.Thread.objects.none()
-        return models.Thread.objects.filter(
+        queryset = models.Thread.objects.filter(
             mailbox__id__in=accesses.values_list("mailbox_id", flat=True)
-        ).order_by("-updated_at")
+        ).order_by("-messages__created_at")
+        if mailbox_id:
+            return queryset.filter(mailbox__id=mailbox_id)
+        return queryset
 
 
 class MessageViewSet(
@@ -342,7 +339,7 @@ class MessageViewSet(
         if self.action == "list":
             thread_id = self.request.GET.get("thread_id")
             if thread_id:
-                queryset = queryset.filter(thread__id=thread_id).order_by("received_at")
+                queryset = queryset.filter(thread__id=thread_id).order_by("created_at")
             else:
                 return queryset.none()
         return queryset

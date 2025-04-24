@@ -142,7 +142,7 @@ class ThreadSerializer(serializers.ModelSerializer):
 
     def get_messages(self, instance):
         """Return the messages in the thread."""
-        return [str(message.id) for message in instance.messages.all()]
+        return [str(message.id) for message in instance.messages.order_by("created_at")]
 
     class Meta:
         model = models.Thread

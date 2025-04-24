@@ -37,9 +37,19 @@ class TestApiThreads:
             permission=enums.MailboxPermissionChoices.READ,
         )
 
-        # Create a thread with a message in the mailbox
-        thread = factories.ThreadFactory(mailbox=mailbox)
-        message = factories.MessageFactory(thread=thread, read_at=None)
+        # Create 3 threads with messages in the mailbox
+        thread1 = factories.ThreadFactory(mailbox=mailbox)
+        factories.MessageFactory(thread=thread1, read_at=None)
+
+        thread2 = factories.ThreadFactory(mailbox=mailbox)
+        message2 = factories.MessageFactory(thread=thread2, read_at=None)
+
+        thread3 = factories.ThreadFactory(mailbox=mailbox)
+        factories.MessageFactory(thread=thread3, read_at=None)
+
+        # Create a new message for the second thread to pull it up in the list
+        new_message2 = factories.MessageFactory(thread=thread2, read_at=None)
+
         # Create a thread with a message in the other mailbox
         other_thread = factories.ThreadFactory(mailbox=other_mailbox)
         factories.MessageFactory(thread=other_thread, read_at=None)
@@ -47,7 +57,7 @@ class TestApiThreads:
         # Need sender and recipient contacts for the thread serializer
         recipient_contact = factories.ContactFactory()
         factories.MessageRecipientFactory(
-            message=message,
+            message=new_message2,
             contact=recipient_contact,
             type=enums.MessageRecipientTypeChoices.TO,
         )
@@ -62,17 +72,17 @@ class TestApiThreads:
         # Assert the response is successful
         assert response.status_code == status.HTTP_200_OK
         # Assert the number of threads is correct
-        assert response.data["count"] == 1
-        assert len(response.data["results"]) == 1
+        assert response.data["count"] == 3
+        assert len(response.data["results"]) == 3
 
-        # Assert the thread data is correct
+        # Assert the thread data is correct (first thread is the one with the last new message)
         thread_data = response.data["results"][0]
-        assert thread_data["id"] == str(thread.id)
-        assert thread_data["subject"] == thread.subject
-        assert thread_data["snippet"] == thread.snippet
-        assert thread_data["messages"] == [str(message.id)]
+        assert thread_data["id"] == str(thread2.id)
+        assert thread_data["subject"] == thread2.subject
+        assert thread_data["snippet"] == thread2.snippet
+        assert thread_data["messages"] == [str(message2.id), str(new_message2.id)]
         assert thread_data["is_read"] is False  # Based on message read_at=None
-        assert thread_data["updated_at"] == thread.updated_at.isoformat().replace(
+        assert thread_data["updated_at"] == thread2.updated_at.isoformat().replace(
             "+00:00", "Z"
         )
 
