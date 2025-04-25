@@ -54,8 +54,8 @@ RUN chmod g=u /etc/passwd
 # Copy installed python dependencies
 COPY --from=back-builder /install /usr/local
 
-# # Copy messages application (see .dockerignore)
-# COPY ./src/backend /app/
+# Copy messages application (see .dockerignore)
+COPY ./src/backend /app/
 
 WORKDIR /app
 
