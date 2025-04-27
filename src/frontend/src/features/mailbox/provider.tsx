@@ -2,6 +2,7 @@ import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useSt
 import { Mailbox, PaginatedMessageList, PaginatedThreadList, Thread, useMailboxesList, useMessagesList, useThreadsList } from "../api/gen";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
+import usePrevious from "@/hooks/usePrevious";
 
 type MailboxContextType = {
     mailboxes: readonly Mailbox[] | null;
@@ -11,6 +12,7 @@ type MailboxContextType = {
     selectMailbox: (mailbox: Mailbox) => void;
     selectedThread: Thread | null;
     selectThread: (thread: Thread | null) => void;
+    unselectThread: () => void;
     invalidateThreadMessages: () => void;
     refetchMailboxes: () => void;
     isPending: boolean;
@@ -34,6 +36,7 @@ const MailboxContext = createContext<MailboxContextType>({
     selectMailbox: () => {},
     selectedThread: null,
     selectThread: () => {},
+    unselectThread: () => {},
     invalidateThreadMessages: () => {},
     refetchMailboxes: () => {},
     isPending: false,
@@ -59,11 +62,15 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const router = useRouter();
     const [selectedMailbox, setSelectedMailbox] = useState<Mailbox | null>(null);
     const [selectedThread, setSelectedThread] = useState<Thread | null>(null);
-    const mailboxQuery = useMailboxesList();
+    const mailboxQuery = useMailboxesList({
+        query: {
+            refetchInterval: 30 * 1000, // 30 seconds
+        },
+    });
+    const previousUnreadMessagesCount = usePrevious(selectedMailbox?.count_unread_messages || 0);
     const threadsQuery = useThreadsList(undefined, {
         query: {
             enabled: !!selectedMailbox,
-            refetchInterval: 30 * 1000, // 30 seconds
         },
         request: {
             params: {
@@ -83,10 +90,23 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         }
     });
 
+    /**
+     * Invalidate the threads and messages queries to refresh the data
+     */
     const invalidateThreadMessages = async () => {
         await queryClient.invalidateQueries({ queryKey: ['/api/v1.0/threads/'] });
         if (selectedThread) {
             await queryClient.invalidateQueries({ queryKey: ['messages', selectedThread.id] });
+        }
+    }
+
+    /**
+     * Unselect the current thread and navigate to the mailbox page if needed
+     */
+    const unselectThread = () => {
+        setSelectedThread(null);
+        if (router.query.threadId) {
+            router.push(`/mailbox/${selectedMailbox!.id}`);
         }
     }
 
@@ -97,6 +117,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         selectedMailbox,
         selectMailbox: setSelectedMailbox,
         selectedThread,
+        unselectThread,
         selectThread: setSelectedThread,
         invalidateThreadMessages,
         refetchMailboxes: mailboxQuery.refetch,
@@ -129,12 +150,12 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
 
     useEffect(() => {
         if (selectedMailbox) {
-            if (router.pathname === '/' || router.query.mailboxId) {
+            if (router.pathname === '/' || selectedMailbox.id !== router.query.mailboxId) {
                 router.replace(`/mailbox/${selectedMailbox.id}`);
+                invalidateThreadMessages();
             }
-            invalidateThreadMessages();
         }
-    }, [selectedMailbox, mailboxQuery.data?.data]);
+    }, [selectedMailbox]);
 
     useEffect(() => {
         if (selectedMailbox && !selectedThread) {
@@ -159,6 +180,13 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             }
         }
     }, [threadsQuery.data?.data?.results, selectedThread]);
+
+    // Invalidate the threads query to refresh the threads list when the unread messages count changes
+    useEffect(() => {
+        if (previousUnreadMessagesCount !== selectedMailbox?.count_unread_messages) {
+            queryClient.invalidateQueries({ queryKey: ['/api/v1.0/threads/'] });
+        }
+    }, [selectedMailbox?.count_unread_messages]);
 
     return <MailboxContext.Provider value={context}>{children}</MailboxContext.Provider>
 };

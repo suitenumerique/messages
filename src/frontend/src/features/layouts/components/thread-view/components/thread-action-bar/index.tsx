@@ -1,30 +1,24 @@
 import { useMailboxContext } from "@/features/mailbox/provider";
+import useRead from "@/features/message/useRead";
 import Bar from "@/features/ui/components/bar";
 import { DropdownMenu } from "@gouvfr-lasuite/ui-kit"
 import { Button, Tooltip } from "@openfun/cunningham-react"
-import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 
 export const ActionBar = () => {
     const { t } = useTranslation();
-    const { selectThread } = useMailboxContext();
+    const { selectedThread, unselectThread } = useMailboxContext();
+    const { markAsUnread } = useRead();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-    const params = useParams<{ mailboxId: string }>();
-    const router = useRouter();
-
-    const handleCloseThread = () => {
-        selectThread(null);
-        router.push(`/mailbox/${params?.mailboxId}`);
-    }
 
     return (
         <Bar className="thread-action-bar">
             <div className="thread-action-bar__left">
             <Tooltip content={t('actions.close_thread')} placement="right">
                 <Button
-                    onClick={handleCloseThread}
+                    onClick={unselectThread}
                     color="tertiary-text"
                     aria-label={t('tooltips.close_thread')}
                     size="small"
@@ -33,6 +27,15 @@ export const ActionBar = () => {
                 </Tooltip>
             </div>
             <div className="thread-action-bar__right">
+                <Tooltip content={t('actions.mark_as_unread')}>
+                    <Button
+                        color="primary-text"
+                        aria-label={t('actions.mark_as_unread')}
+                        size="small"
+                        icon={<span className="material-icons">mark_email_unread</span>}
+                        onClick={() => markAsUnread({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                    />
+                </Tooltip>
                 <Tooltip content={t('actions.archive')}>
                     <Button
                         color="primary-text"
@@ -47,14 +50,6 @@ export const ActionBar = () => {
                         aria-label={t('actions.delete')}
                         size="small"
                         icon={<span className="material-icons">delete</span>}
-                    />
-                </Tooltip>
-                <Tooltip content={t('actions.mark_as_unread')}>
-                    <Button
-                        color="primary-text"
-                        aria-label={t('actions.mark_as_unread')}
-                        size="small"
-                        icon={<span className="material-icons">mark_email_unread</span>}
                     />
                 </Tooltip>
                 <DropdownMenu

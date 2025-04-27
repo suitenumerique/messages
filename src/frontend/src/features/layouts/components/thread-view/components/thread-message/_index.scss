@@ -2,10 +2,12 @@
     border-radius: 8px;
     background-color: white;
     padding: var(--c--theme--spacings--base);
+    outline: 3px solid transparent;
+    transition: outline-color 0.1s ease;
 }
 
 .thread-message[data-read="false"] {
-    border: 3px solid var(--c--theme--colors--primary-300);
+    outline-color: var(--c--theme--colors--primary-300);
 }
 
 .thread-message__header {
