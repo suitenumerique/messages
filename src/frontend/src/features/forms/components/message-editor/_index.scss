@@ -28,8 +28,8 @@
         box-shadow: none;
         border: none;
         border-radius: 0;
-        border-bottom-left-radius: var(--c--components--forms-input--border-radius);
-        border-bottom-right-radius: var(--c--components--forms-input--border-radius);
+        border-top-left-radius: var(--c--components--forms-input--border-radius);
+        border-top-right-radius: var(--c--components--forms-input--border-radius);
         width: 100%;
         border-bottom: 1px solid var(--c--theme--colors--greyscale-200);
         padding-block: var(--c--theme--spacings--2xs);
