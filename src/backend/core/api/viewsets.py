@@ -323,12 +323,18 @@ class ThreadViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
 
 
 class MessageViewSet(
-    viewsets.GenericViewSet, mixins.ListModelMixin, mixins.RetrieveModelMixin
+    viewsets.GenericViewSet,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.DestroyModelMixin,
 ):
     """ViewSet for Message model."""
 
     serializer_class = serializers.MessageSerializer
-    permission_classes = [permissions.IsAllowedToAccessMailbox]
+    permission_classes = [
+        permissions.IsAuthenticated,
+        permissions.IsAllowedToAccessMailbox,
+    ]
     queryset = models.Message.objects.all()
     lookup_field = "id"
     lookup_url_kwarg = "id"
@@ -343,6 +349,15 @@ class MessageViewSet(
             else:
                 return queryset.none()
         return queryset
+
+    def destroy(self, request, *args, **kwargs):
+        """Delete a message."""
+        # if message is the last of the thread, delete the thread
+        message = self.get_object()
+        if message.thread.messages.count() == 1:
+            message.thread.delete()
+        message.delete()
+        return drf.response.Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ChangeReadStatusViewSet(APIView):

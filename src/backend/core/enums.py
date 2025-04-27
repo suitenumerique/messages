@@ -19,6 +19,7 @@ class MailboxPermissionChoices(models.TextChoices):
     READ = "read", _("Read")
     EDIT = "edit", _("Edit")
     SEND = "send", _("Send")
+    DELETE = "delete", _("Delete")
     ADMIN = "admin", _("Admin")
 
 

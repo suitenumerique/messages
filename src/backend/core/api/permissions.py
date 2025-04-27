@@ -114,8 +114,16 @@ class IsAllowedToAccessMailbox(IsAuthenticated):
     def has_object_permission(self, request, view, obj):
         """Check if user has permission to access the specific object (Message, Thread, Mailbox)."""
         user = request.user
-
         if isinstance(obj, models.Message):
+            if view.action == "destroy":
+                return models.MailboxAccess.objects.filter(
+                    mailbox=obj.thread.mailbox,
+                    user=user,
+                    permission__in=[
+                        enums.MailboxPermissionChoices.ADMIN,
+                        enums.MailboxPermissionChoices.DELETE,
+                    ],
+                ).exists()
             # Check access via the message's thread's mailbox
             return models.MailboxAccess.objects.filter(
                 mailbox=obj.thread.mailbox, user=user
