@@ -752,50 +752,10 @@ class DraftMessageView(APIView):
             read_at=timezone.now(),
             mta_sent=False,
             is_draft=True,  # Mark as draft
+            draft_body=request.data.get("draftBody", ""),
         )
-        message.mime_id = message.generate_mime_id()
-
-        # Note that BCC recipients are not included in the raw mime message
-        mime_data = {
-            "from": [
-                {
-                    "name": sender_contact.name,
-                    "email": sender_contact.email,
-                }
-            ],
-            "to": [
-                {"name": contact.name, "email": contact.email}
-                for contact in contacts["to"]
-            ],
-            "cc": [
-                {"name": contact.name, "email": contact.email}
-                for contact in contacts["cc"]
-            ],
-            "subject": subject,
-            "textBody": [request.data["textBody"]]
-            if request.data.get("textBody")
-            else [],
-            "htmlBody": [request.data["htmlBody"]]
-            if request.data.get("htmlBody")
-            else [],
-            # Generate a MIME message ID based on the message.id
-            "messageId": message.mime_id,
-        }
-
-        # TODO: add "References" header if replying to a message, with all message ids of the thread
-
-        # Assemble the raw mime message
-        raw_mime = compose_email(
-            mime_data,
-            in_reply_to=reply_to_message.mime_id
-            if reply_to_message and reply_to_message.mime_id
-            else None,
-        )
-
-        # Save the raw mime message
-        message.raw_mime = raw_mime
-        message.save()
-
+        
+        # Create message recipients
         for kind, cts in contacts.items():
             for contact in cts:
                 models.MessageRecipient.objects.create(
@@ -865,8 +825,7 @@ class DraftMessageView(APIView):
         # Update message content if provided
         content_updated = False
         if (
-            "textBody" in request.data
-            or "htmlBody" in request.data
+            "draftBody" in request.data
             or recipients_updated
         ):
             content_updated = True
@@ -882,23 +841,24 @@ class DraftMessageView(APIView):
                 ]
                 for kind in ["to", "cc"]  # BCC not included in MIME headers
             }
-
+            message.draft_body = request.data.get("draftBody", "")
+            ###### remove this
             # Prepare MIME data
-            mime_data = {
-                "from": [
-                    {
-                        "name": sender_contact.name,
-                        "email": sender_contact.email,
-                    }
-                ],
-                "to": recipients["to"],
-                "cc": recipients["cc"],
-                "subject": message.subject,
-                "textBody": [request.data.get("textBody", "")],
-                "htmlBody": [request.data.get("htmlBody", "")],
-                "messageId": message.mime_id,
-            }
-
+            #mime_data = {
+            #    "from": [
+            #        {
+            #            "name": sender_contact.name,
+            #            "email": sender_contact.email,
+            #        }
+            #    ],
+            #    "to": recipients["to"],
+            #    "cc": recipients["cc"],
+            #    "subject": message.subject,
+            #    "textBody": [request.data.get("textBody", "")],
+            #    "htmlBody": [request.data.get("htmlBody", "")],
+            #    "messageId": message.mime_id,
+            #}
+            #####
             # Get parent message if this is a reply
             parent_message = None
             thread_messages = message.thread.messages.exclude(id=message.id).order_by(
@@ -906,22 +866,25 @@ class DraftMessageView(APIView):
             )
             if thread_messages.exists():
                 parent_message = thread_messages.first()
-
+    
+            ##### remove this
             # Assemble the raw mime message
-            raw_mime = compose_email(
-                mime_data,
-                in_reply_to=parent_message.mime_id
-                if parent_message and parent_message.mime_id
-                else None,
-            )
+            #raw_mime = compose_email(
+            #    mime_data,
+            #    in_reply_to=parent_message.mime_id
+            #    if parent_message and parent_message.mime_id
+            #    else None,
+            #)
+            #####
 
             # Save the raw mime message
             # TODO: Do this later in optimized storage (Object Storage), with deduplication hashes.
-            message.raw_mime = raw_mime
+            #message.raw_mime = raw_mime
 
         # Update thread snippet if text body was updated
-        if "textBody" in request.data and message.thread.messages.count() == 1:
-            message.thread.snippet = request.data.get("textBody", "")[:100]
+        if "draftBody" in request.data and message.thread.messages.count() == 1:
+            # FIXME: JB ?
+            message.thread.snippet = request.data.get("draftBody", "")[:100]
             message.thread.save(update_fields=["snippet", "updated_at"])
 
         # Save message if any changes were made
@@ -975,7 +938,9 @@ class SendMessageView(APIView):
     POST /api/v1.0/send/ with expected data:
         - messageId: str (ID of the draft message to send)
         - senderId: str (ID of the mailbox to use as sender)
-        - draftBody: str (optional)
+        - subject: str (optional)
+        - htmlBody: str (optional)
+        - textBody: str (optional)
         - to: list[str] (optional)
         - cc: list[str] (optional)
         - bcc: list[str] (optional)
@@ -986,22 +951,108 @@ class SendMessageView(APIView):
     mailbox = None
 
     def post(self, request):
-        """Send a draft message."""
+        """Send a message."""
         message_id = request.data.get("messageId")
         sender_id = request.data.get("senderId")
         self.mailbox = models.Mailbox.objects.get(id=sender_id)
-        try:
-            message = models.Message.objects.get(id=message_id, is_draft=True)
-        except models.Message.DoesNotExist as exc:
-            raise drf.exceptions.ValidationError(
-                "Message does not exist or is not a draft."
-            ) from exc
+        if message_id:
+            try:
+                message = models.Message.objects.get(id=message_id, is_draft=True)
+            except models.Message.DoesNotExist as exc:
+                raise drf.exceptions.ValidationError(
+                    "Message does not exist or is not a draft."
+                ) from exc
+        else:
+            message = models.Message.objects.create(
+                thread=thread,
+                sender=sender_contact,
+                subject=subject,
+                created_at=timezone.now(),
+                read_at=timezone.now(),
+                mta_sent=False,
+            )
 
         # Check if user has permission to send from this mailbox
         if message.thread.mailbox != self.mailbox:
             raise drf.exceptions.PermissionDenied(
                 "You do not have permission to send from this mailbox."
             )
+
+        # Create or update the message recipients of the message
+        # get last recipients
+        recipients = {
+            "to": request.data.get("to") or [],
+            "cc": request.data.get("cc") or [],
+            "bcc": request.data.get("bcc") or [],
+        }
+        for kind, emails in recipients.items():
+            for email in emails:
+                contact = models.Contact.objects.get_or_create(
+                    email=email, owner=self.mailbox
+                )[0]
+                models.MessageRecipient.objects.get_or_create(
+                    message=message, contact=contact, type=kind
+                )
+
+        # Get parent message if this is a reply
+        parent_message = None
+        thread_messages = message.thread.messages.exclude(id=message.id).order_by(
+            "created_at"
+        )
+        if thread_messages.exists():
+            parent_message = thread_messages.first()
+    
+
+
+        # Generate a MIME id for the message
+        message.mime_id = message.generate_mime_id()
+
+        
+
+
+        # Generate the MIME data for the message
+        # Note that BCC recipients are not included in the raw mime message
+        mime_data = {
+            "from": [
+                {
+                    "name": sender_contact.name,
+                    "email": sender_contact.email,
+                }
+            ],
+            "to": [
+                {"name": contact.name, "email": contact.email}
+                for contact in recipients["to"]
+            ],
+            "cc": [
+                {"name": contact.name, "email": contact.email}
+                for contact in recipients["cc"]
+            ],
+            "subject": subject,
+            "textBody": [request.data["textBody"]]
+            if request.data.get("textBody")
+            else [],
+            "htmlBody": [request.data["htmlBody"]]
+            if request.data.get("htmlBody")
+            else [],
+            # Generate a MIME message ID based on the message.id
+            "messageId": message.mime_id,
+        }
+
+        # TODO: add "References" header if replying to a message, with all message ids of the thread
+
+
+        # Assemble the raw mime message
+        raw_mime = compose_email(
+            mime_data,
+            in_reply_to=parent_message.mime_id
+            if parent_message and parent_message.mime_id
+            else None,
+        )
+
+
+        # Save the raw mime message
+        message.raw_mime = raw_mime
+        message.save()
 
         # TODO: Sending to the MTA should be done asynchronously. Move this to a Celery task
 
