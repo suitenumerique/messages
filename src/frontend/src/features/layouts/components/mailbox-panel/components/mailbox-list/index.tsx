@@ -17,7 +17,7 @@ const TMP_MAILBOXES: HardcodedMailbox[] = [
     {
         name: "Tous les messages",
         icon: "folder",
-        unread: 10,
+        unread: -1,
     },
     {
         id: "1",
@@ -29,7 +29,7 @@ const TMP_MAILBOXES: HardcodedMailbox[] = [
         id: "2",
         name: "Brouillons",
         icon: "drafts",
-        unread: 2,
+        unread: 0,
     },
     {
         id: "3",
@@ -73,7 +73,11 @@ export const MailboxList = () => {
             {TMP_MAILBOXES.map((mailbox) => (
                 <MailboxListItem
                     key={mailbox.id}
-                    mailbox={{...mailbox, id: mailbox?.id || selectedMailbox?.id}}
+                    mailbox={{
+                        ...mailbox,
+                        id: mailbox?.id || selectedMailbox?.id,
+                        unread: mailbox?.unread < 0 ? Number(selectedMailbox?.count_unread_messages) : mailbox?.unread
+                    }}
                 />
             ))}
         </div>
