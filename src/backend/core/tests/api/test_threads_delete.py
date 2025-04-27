@@ -81,3 +81,84 @@ class TestThreadsDelete:
         assert not models.Thread.objects.filter(id=thread.id).exists()
         assert not models.Message.objects.filter(id=message.id).exists()
         assert not models.Message.objects.filter(id=message2.id).exists()
+
+
+class TestThreadsBulkDelete:
+    """Test threads bulk delete."""
+
+    def test_delete_thread_bulk_anonymous(self):
+        """Test delete thread bulk with anonymous user."""
+        client = APIClient()
+        response = client.post(reverse("threads-bulk-delete"))
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_delete_thread_bulk_without_permissions(self):
+        """Test delete thread bulk without permissions."""
+        authenticated_user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        thread = factories.ThreadFactory(mailbox=mailbox)
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+        response = client.post(
+            reverse("threads-bulk-delete"), {"thread_ids": [thread.id]}, format="json"
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @pytest.mark.parametrize(
+        "permission",
+        [
+            enums.MailboxPermissionChoices.EDIT,
+            enums.MailboxPermissionChoices.SEND,
+        ],
+    )
+    def test_delete_thread_bulk_with_bad_permission(self, permission):
+        """Test delete thread bulk with bad permission."""
+        authenticated_user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            permission=permission,
+        )
+        thread = factories.ThreadFactory(mailbox=mailbox)
+        thread2 = factories.ThreadFactory(mailbox=mailbox)
+        thread3 = factories.ThreadFactory(mailbox=mailbox)
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+        response = client.post(
+            reverse("threads-bulk-delete"),
+            {"thread_ids": [thread.id, thread2.id, thread3.id]},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @pytest.mark.parametrize(
+        "permission",
+        [
+            enums.MailboxPermissionChoices.DELETE,
+            enums.MailboxPermissionChoices.ADMIN,
+        ],
+    )
+    def test_delete_thread_bulk(self, permission):
+        """Test delete thread bulk."""
+        authenticated_user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        thread = factories.ThreadFactory(mailbox=mailbox)
+        thread2 = factories.ThreadFactory(mailbox=mailbox)
+        thread3 = factories.ThreadFactory(mailbox=mailbox)
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            permission=permission,
+        )
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+        response = client.post(
+            reverse("threads-bulk-delete"),
+            {"thread_ids": [thread.id, thread2.id, thread3.id]},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert not models.Thread.objects.filter(id=thread.id).exists()
+        assert not models.Thread.objects.filter(id=thread2.id).exists()
+        assert not models.Thread.objects.filter(id=thread3.id).exists()
