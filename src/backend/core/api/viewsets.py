@@ -304,11 +304,19 @@ class MailboxViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
         )
 
 
-class ThreadViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
+class ThreadViewSet(
+    viewsets.GenericViewSet, mixins.ListModelMixin, mixins.DestroyModelMixin
+):
     """ViewSet for Thread model."""
 
     serializer_class = serializers.ThreadSerializer
-    permission_classes = [permissions.IsAllowedToAccessMailbox]
+    permission_classes = [
+        permissions.IsAuthenticated,
+        permissions.IsAllowedToAccessMailbox,
+    ]
+    lookup_field = "id"
+    lookup_url_kwarg = "id"
+    queryset = models.Thread.objects.all()
 
     def get_queryset(self):
         """Restrict results to threads of the current user's mailboxes."""

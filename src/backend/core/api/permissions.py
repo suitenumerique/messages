@@ -129,6 +129,15 @@ class IsAllowedToAccessMailbox(IsAuthenticated):
                 mailbox=obj.thread.mailbox, user=user
             ).exists()
         if isinstance(obj, models.Thread):
+            if view.action == "destroy":
+                return models.MailboxAccess.objects.filter(
+                    mailbox=obj.mailbox,
+                    user=user,
+                    permission__in=[
+                        enums.MailboxPermissionChoices.ADMIN,
+                        enums.MailboxPermissionChoices.DELETE,
+                    ],
+                ).exists()
             # Check access via the thread's mailbox
             return models.MailboxAccess.objects.filter(
                 mailbox=obj.mailbox, user=user
