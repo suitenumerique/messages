@@ -75,6 +75,13 @@ class TestApiThreads:
         assert response.data["count"] == 3
         assert len(response.data["results"]) == 3
 
+        # Assert the threads are sorted by latest message
+        assert [thread["id"] for thread in response.data["results"]] == [
+            str(thread2.id),
+            str(thread3.id),
+            str(thread1.id),
+        ]
+
         # Assert the thread data is correct (first thread is the one with the last new message)
         thread_data = response.data["results"][0]
         assert thread_data["id"] == str(thread2.id)

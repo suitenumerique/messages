@@ -322,9 +322,13 @@ class ThreadViewSet(
         """Restrict results to threads of the current user's mailboxes."""
         mailbox_id = self.request.GET.get("mailbox_id")
         accesses = self.request.user.mailbox_accesses.all()
-        queryset = models.Thread.objects.filter(
-            mailbox__id__in=accesses.values_list("mailbox_id", flat=True)
-        ).order_by("-messages__created_at")
+        queryset = (
+            models.Thread.objects.filter(
+                mailbox_id__in=accesses.values_list("mailbox_id", flat=True)
+            )
+            .annotate(latest_message_created_at=db.Max("messages__created_at"))
+            .order_by("-latest_message_created_at")
+        )
         if mailbox_id:
             return queryset.filter(mailbox__id=mailbox_id)
         return queryset
