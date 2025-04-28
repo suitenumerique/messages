@@ -818,3 +818,71 @@ class TestMTAInboundEmailThreading:
         assert new_message is not None
         assert new_message.thread == initial_thread
         assert new_message.subject == reply_subject
+
+    def test_single_email_to_multiple_mailboxes(self, api_client: APIClient, valid_jwt_token):
+        """Test sending one email TO multiple distinct mailboxes.
+
+        Verifies that one thread is created per recipient mailbox.
+        """
+
+        # 1. Create a second mailbox in the same domain
+        user2 = factories.UserFactory()
+        mailbox2 = factories.MailboxFactory(
+            local_part="testuser2", domain=self.maildomain
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox2, user=self.user, permission=enums.MailboxPermissionChoices.ADMIN
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox2, user=user2, permission=enums.MailboxPermissionChoices.ADMIN
+        )
+        recipient_email2 = f"{mailbox2.local_part}@{self.maildomain.name}"
+
+        # 2. Create email body with both recipients in To header
+        email_subject = "Multi-Mailbox Test"
+        email_body_bytes = (
+            f"From: sender@example.com\r\n"
+            f"To: {self.recipient_email}, {recipient_email2}\r\n"
+            f"Subject: {email_subject}\r\n"
+            f"\r\n"
+            f"This email is for two mailboxes."
+        ).encode("utf-8")
+
+        # 3. Prepare JWT with both original recipients
+        recipients_list = [self.recipient_email, recipient_email2]
+        token = valid_jwt_token(
+            email_body_bytes, {"original_recipients": recipients_list}
+        )
+
+        # 4. Make the API call
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=email_body_bytes,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        # 5. Assertions
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"status": "ok"}
+
+        # Should create exactly one thread per mailbox
+        assert models.Thread.objects.count() == 2
+        # Should create exactly one message copy per delivery
+        assert models.Message.objects.count() == 2
+
+        # Verify message 1 in mailbox 1
+        msg1 = models.Message.objects.filter(thread__mailbox=self.mailbox).first()
+        assert msg1 is not None
+        assert msg1.subject == email_subject
+        assert msg1.thread.mailbox == self.mailbox
+
+        # Verify message 2 in mailbox 2
+        msg2 = models.Message.objects.filter(thread__mailbox=mailbox2).first()
+        assert msg2 is not None
+        assert msg2.subject == email_subject
+        assert msg2.thread.mailbox == mailbox2
+
+        # Verify they are different message instances in different threads
+        assert msg1.id != msg2.id
+        assert msg1.thread.id != msg2.thread.id
