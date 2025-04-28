@@ -1,4 +1,5 @@
 import { useMailboxContext } from "@/features/mailbox/provider";
+import Bar from "@/features/ui/components/bar";
 import { DropdownMenu } from "@gouvfr-lasuite/ui-kit"
 import { Button, Tooltip } from "@openfun/cunningham-react"
 import { useParams, useRouter } from "next/navigation";
@@ -19,14 +20,14 @@ export const ActionBar = () => {
     }
 
     return (
-        <div className="thread-action-bar">
+        <Bar className="thread-action-bar">
             <div className="thread-action-bar__left">
             <Tooltip content={t('actions.close_thread')} placement="right">
                 <Button
                     onClick={handleCloseThread}
                     color="tertiary-text"
                     aria-label={t('tooltips.close_thread')}
-                    size="medium"
+                    size="small"
                     icon={<span className="material-icons">close</span>}
                 />
                 </Tooltip>
@@ -77,6 +78,6 @@ export const ActionBar = () => {
                     </Tooltip>
                 </DropdownMenu>
             </div>
-        </div>
+        </Bar>
     )
 }
