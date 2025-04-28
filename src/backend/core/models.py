@@ -341,6 +341,7 @@ class MessageRecipient(BaseModel):
         db_table = "messages_messagerecipient"
         verbose_name = _("message recipient")
         verbose_name_plural = _("message recipients")
+        unique_together = ("message", "contact", "type")
 
     def __str__(self):
         return f"{self.message} - {self.contact} - {self.type}"
@@ -355,7 +356,6 @@ class Message(BaseModel):
     subject = models.CharField(_("subject"), max_length=255)
     sender = models.ForeignKey("Contact", on_delete=models.CASCADE)
     received_at = models.DateTimeField(_("received at"), auto_now_add=True)
-    created_at = models.DateTimeField(_("created at"), auto_now_add=True)
     sent_at = models.DateTimeField(_("sent at"), null=True, blank=True)
     read_at = models.DateTimeField(_("read at"), null=True, blank=True)
     mta_sent = models.BooleanField(_("mta sent"), default=False)
