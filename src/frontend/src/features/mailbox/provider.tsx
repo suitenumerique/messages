@@ -12,6 +12,7 @@ type MailboxContextType = {
     selectedThread: Thread | null;
     selectThread: (thread: Thread | null) => void;
     invalidateThreadMessages: () => void;
+    refetchMailboxes: () => void;
     isPending: boolean;
     status: {
         mailboxes: 'pending' | 'error' | 'success' | null,
@@ -34,6 +35,7 @@ const MailboxContext = createContext<MailboxContextType>({
     selectedThread: null,
     selectThread: () => {},
     invalidateThreadMessages: () => {},
+    refetchMailboxes: () => {},
     isPending: false,
     status: {
         mailboxes: null,
@@ -97,6 +99,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         selectedThread,
         selectThread: setSelectedThread,
         invalidateThreadMessages,
+        refetchMailboxes: mailboxQuery.refetch,
         isPending: mailboxQuery.isPending || threadsQuery.isPending || messagesQuery.isPending,
         status: {
             mailboxes: mailboxQuery.status,
