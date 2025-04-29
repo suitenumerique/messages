@@ -22,6 +22,10 @@ class TestApiThreads:
         # Create authenticated user
         authenticated_user = factories.UserFactory()
 
+        # Create a client and authenticate
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
         # Create a mailbox for the authenticated user with access
         mailbox = factories.MailboxFactory()
         factories.MailboxAccessFactory(
@@ -40,19 +44,40 @@ class TestApiThreads:
         # Create 3 threads with messages in the mailbox
         thread1 = factories.ThreadFactory(mailbox=mailbox)
         factories.MessageFactory(thread=thread1, read_at=None)
+        thread1.update_counters()
 
         thread2 = factories.ThreadFactory(mailbox=mailbox)
         message2 = factories.MessageFactory(thread=thread2, read_at=None)
+        thread2.update_counters()
 
         thread3 = factories.ThreadFactory(mailbox=mailbox)
         factories.MessageFactory(thread=thread3, read_at=None)
+        thread3.update_counters()
+
+        def fetch_threads_and_assert_order(mailbox_id, thread_ids):
+            response = client.get(
+                reverse("threads-list"), query_params={"mailbox_id": mailbox_id}
+            )
+            assert response.status_code == status.HTTP_200_OK
+            assert response.data["count"] == len(thread_ids)
+            assert [thread["id"] for thread in response.data["results"]] == [
+                str(thread_id) for thread_id in thread_ids
+            ]
+            return response
+
+        fetch_threads_and_assert_order(mailbox.id, [thread3.id, thread2.id, thread1.id])
+        fetch_threads_and_assert_order(other_mailbox.id, [])
 
         # Create a new message for the second thread to pull it up in the list
         new_message2 = factories.MessageFactory(thread=thread2, read_at=None)
+        thread2.update_counters()
+
+        fetch_threads_and_assert_order(mailbox.id, [thread2.id, thread3.id, thread1.id])
 
         # Create a thread with a message in the other mailbox
         other_thread = factories.ThreadFactory(mailbox=other_mailbox)
         factories.MessageFactory(thread=other_thread, read_at=None)
+        other_thread.update_counters()
 
         # Need sender and recipient contacts for the thread serializer
         recipient_contact = factories.ContactFactory()
@@ -62,18 +87,11 @@ class TestApiThreads:
             type=enums.MessageRecipientTypeChoices.TO,
         )
 
-        # Create a client and authenticate
-        client = APIClient()
-        client.force_authenticate(user=authenticated_user)
-        # Get the list of threads for only the first mailbox
-        response = client.get(
-            reverse("threads-list"), query_params={"mailbox_id": mailbox.id}
+        fetch_threads_and_assert_order(other_mailbox.id, [other_thread.id])
+
+        response = fetch_threads_and_assert_order(
+            mailbox.id, [thread2.id, thread3.id, thread1.id]
         )
-        # Assert the response is successful
-        assert response.status_code == status.HTTP_200_OK
-        # Assert the number of threads is correct
-        assert response.data["count"] == 3
-        assert len(response.data["results"]) == 3
 
         # Assert the threads are sorted by latest message
         assert [thread["id"] for thread in response.data["results"]] == [
