@@ -5,42 +5,49 @@ from django.urls import include, path
 
 from rest_framework.routers import DefaultRouter
 
-from core.api import viewsets
-from core.api.viewset_mta import MTAViewSet
+from core.api.viewsets.config import ConfigView
+from core.api.viewsets.draft import DraftMessageView
+from core.api.viewsets.mailbox import MailboxViewSet
+from core.api.viewsets.message import MessageViewSet
+from core.api.viewsets.mta import MTAViewSet
+from core.api.viewsets.read import ChangeReadStatusViewSet
+from core.api.viewsets.send import SendMessageView
+from core.api.viewsets.thread import ThreadViewSet
+from core.api.viewsets.user import UserViewSet
 from core.authentication.urls import urlpatterns as oidc_urls
 
 # - Main endpoints
 router = DefaultRouter()
 router.register("mta", MTAViewSet, basename="mta")
-router.register("users", viewsets.UserViewSet, basename="users")
-router.register("mailboxes", viewsets.MailboxViewSet, basename="mailboxes")
-router.register("threads", viewsets.ThreadViewSet, basename="threads")
-router.register("messages", viewsets.MessageViewSet, basename="messages")
+router.register("users", UserViewSet, basename="users")
+router.register("mailboxes", MailboxViewSet, basename="mailboxes")
+router.register("threads", ThreadViewSet, basename="threads")
+router.register("messages", MessageViewSet, basename="messages")
 
 urlpatterns = [
     path(
         f"api/{settings.API_VERSION}/",
         include([*router.urls, *oidc_urls]),
     ),
-    path(f"api/{settings.API_VERSION}/config/", viewsets.ConfigView.as_view()),
+    path(f"api/{settings.API_VERSION}/config/", ConfigView.as_view()),
     path(
         f"api/{settings.API_VERSION}/read/",
-        viewsets.ChangeReadStatusViewSet.as_view(),
+        ChangeReadStatusViewSet.as_view(),
         name="change-read-status",
     ),
     path(
         f"api/{settings.API_VERSION}/draft/",
-        viewsets.DraftMessageView.as_view(),
+        DraftMessageView.as_view(),
         name="draft-message",
     ),
     path(
         f"api/{settings.API_VERSION}/draft/<uuid:message_id>/",
-        viewsets.DraftMessageView.as_view(),
+        DraftMessageView.as_view(),
         name="draft-message-detail",
     ),
     path(
         f"api/{settings.API_VERSION}/send/",
-        viewsets.SendMessageView.as_view(),
+        SendMessageView.as_view(),
         name="send-message",
     ),
 ]

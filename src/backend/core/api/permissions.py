@@ -90,10 +90,15 @@ class IsAllowedToAccessMailbox(IsAuthenticated):
 
         # If it's a detail action (retrieve, update, destroy), object-level permission is checked
         # by has_object_permission. If it's a list action without filters, deny access.
-        if view.action != "list":
-            # Allow the view to proceed to object-level checks for detail actions
-            # or handle custom actions appropriately.
+        # Check if view has 'action' attribute and if it's 'list'
+        is_list_action = hasattr(view, "action") and view.action == "list"
+
+        if not is_list_action:
+            # Allow non-list actions (like detail views or specific APIViews like SendMessageView)
+            # to proceed to object-level checks or handle permissions within the view.
             return True
+
+        # --- The following logic only applies if is_list_action is True --- #
 
         # For LIST action, require either mailbox_id or thread_id
         if not mailbox_id and not thread_id:

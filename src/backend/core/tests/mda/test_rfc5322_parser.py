@@ -9,7 +9,7 @@ from email.header import Header
 import pytest
 from flanker.mime import create
 
-from core.formats.rfc5322.parser import (
+from core.mda.rfc5322.parser import (
     EmailParseError,
     decode_email_header_text,
     parse_date,

@@ -134,6 +134,9 @@ class Base(Configuration):
     MTA_OUT_SMTP_PASSWORD = values.Value(
         None, environ_name="MTA_OUT_SMTP_PASSWORD", environ_prefix=None
     )
+    MTA_OUT_SMTP_USE_TLS = values.BooleanValue(
+        default=True, environ_name="MTA_OUT_SMTP_USE_TLS", environ_prefix=None
+    )
 
     # Test domain settings
     MESSAGES_TESTDOMAIN = values.Value(

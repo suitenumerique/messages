@@ -98,7 +98,7 @@ class ContactFactory(factory.django.DjangoModelFactory):
 
     name = factory.Faker("name")
     email = factory.Faker("email")
-    owner = factory.SubFactory(MailboxFactory)
+    mailbox = factory.SubFactory(MailboxFactory)
 
 
 class MessageFactory(factory.django.DjangoModelFactory):
@@ -110,7 +110,6 @@ class MessageFactory(factory.django.DjangoModelFactory):
     thread = factory.SubFactory(ThreadFactory)
     subject = factory.Faker("sentence")
     sender = factory.SubFactory(ContactFactory)
-    received_at = factory.LazyAttribute(lambda o: timezone.now())
     created_at = factory.LazyAttribute(lambda o: timezone.now())
     mime_id = factory.Sequence(lambda n: f"message{n!s}")
 

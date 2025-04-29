@@ -1,8 +1,11 @@
 """Tests for MTA API endpoints."""
 
+# pylint: disable=too-many-positional-arguments
+
 import datetime
 import hashlib
 import json
+from unittest.mock import ANY, patch
 
 from django.conf import settings
 from django.test import override_settings
@@ -10,10 +13,10 @@ from django.test import override_settings
 import jwt
 import pytest
 from rest_framework import status
-from rest_framework.reverse import reverse
 from rest_framework.test import APIClient
 
-from core import enums, factories, models
+from core import factories, models
+from core.mda.rfc5322 import EmailParseError
 
 
 @pytest.fixture(name="api_client")
@@ -99,76 +102,175 @@ def fixture_valid_jwt_token():
 class TestMTAInboundEmail:
     """Test the MTA inbound email endpoint."""
 
+    @patch("core.api.viewsets.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.mta.parse_email_message")
     @pytest.mark.django_db
     def test_valid_email_submission(
-        self, api_client: APIClient, sample_email, valid_jwt_token
+        self,
+        mock_parse,
+        mock_deliver,
+        api_client: APIClient,
+        sample_email,
+        valid_jwt_token,
     ):
-        """Test submitting a valid email and verify serialized output."""
+        """Test submitting a valid email calls the delivery service correctly."""
+        parsed_email_mock = {
+            "subject": "Test Email",
+            "from": [{"email": "sender@example.com"}],
+            "to": [],
+        }
+        mock_parse.return_value = parsed_email_mock
+        mock_deliver.return_value = True
 
-        user = factories.UserFactory()
         mailbox = factories.MailboxFactory()
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=user,
-            permission=enums.MailboxPermissionChoices.ADMIN,
-        )
         email = f"{mailbox.local_part}@{mailbox.domain.name}"
+
+        recipients = [email, "another@example.com"]
+        token = valid_jwt_token(sample_email, {"original_recipients": recipients})
 
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
             data=sample_email,
             content_type="message/rfc822",
-            HTTP_AUTHORIZATION=(
-                f"Bearer {valid_jwt_token(sample_email, {'original_recipients': [email]})}"
-            ),
+            HTTP_AUTHORIZATION=f"Bearer {token}",
         )
+
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"status": "ok"}
+        assert response.json() == {"status": "ok", "delivered": len(recipients)}
 
-        # Verify database state
-        assert models.Message.objects.count() == 1
-        assert models.Thread.objects.count() == 1
-        message = models.Message.objects.first()
-        assert message.subject == "Test Email"
-        assert message.raw_mime == sample_email
+        mock_parse.assert_called_once_with(sample_email)
 
-        # Verify API serialization
-        client = APIClient()
-        client.force_authenticate(user=user)
+        assert mock_deliver.call_count == len(recipients)
+        mock_deliver.assert_any_call(email, ANY, sample_email)
+        mock_deliver.assert_any_call("another@example.com", ANY, sample_email)
 
-        response = client.get(
-            reverse("messages-list"), query_params={"thread_id": message.thread.id}
+        first_call_args = mock_deliver.call_args_list[0][0]
+        second_call_args = mock_deliver.call_args_list[1][0]
+        assert first_call_args[1]["subject"] == "Test Email"
+        assert second_call_args[1]["subject"] == "Test Email"
+
+    @patch("core.api.viewsets.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.mta.parse_email_message")
+    def test_email_parse_failure(
+        self,
+        mock_parse,
+        mock_deliver,
+        api_client: APIClient,
+        sample_email,
+        valid_jwt_token,
+    ):
+        """Test that if email parsing fails, a 400 is returned."""
+        mock_parse.side_effect = EmailParseError("Parsing failed")
+
+        email = "recipient@example.com"
+        token = valid_jwt_token(sample_email, {"original_recipients": [email]})
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=sample_email,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
         )
-        assert response.status_code == status.HTTP_200_OK
-        serialized_data_all = response.json()
-        assert serialized_data_all["count"] == 1
-        assert serialized_data_all["results"][0]["id"] == str(message.id)
-        serialized_data = serialized_data_all["results"][0]
 
-        assert serialized_data["subject"] == "Test Email"
-        assert len(serialized_data["textBody"]) == 1
-        assert serialized_data["textBody"][0]["type"] == "text/plain"
-        assert "This is a test email body." in serialized_data["textBody"][0]["content"]
-        assert serialized_data["htmlBody"] == []
-        assert len(serialized_data["to"]) == 1
-        assert serialized_data["to"][0]["email"] == "recipient@example.com"
-        assert serialized_data["cc"] == []
-        assert serialized_data["bcc"] == []
-        assert serialized_data["sender"]["email"] == "sender@example.com"
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json() == {"status": "error", "detail": "Failed to parse email"}
+        mock_parse.assert_called_once_with(sample_email)
+        mock_deliver.assert_not_called()  # Delivery should not be attempted
+
+    @patch("core.api.viewsets.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.mta.parse_email_message")
+    def test_delivery_partial_failure(
+        self,
+        mock_parse,
+        mock_deliver,
+        api_client: APIClient,
+        sample_email,
+        valid_jwt_token,
+    ):
+        """Test that if some deliveries fail, a 207 is returned."""
+        parsed_email_mock = {"subject": "Test"}
+        mock_parse.return_value = parsed_email_mock
+
+        recipients = ["success@example.com", "fail@example.com"]
+        # Make deliver return False for the second recipient
+        mock_deliver.side_effect = [True, False]  # First succeeds, second fails
+
+        token = valid_jwt_token(sample_email, {"original_recipients": recipients})
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=sample_email,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_207_MULTI_STATUS
+        # Check the specific response structure
+        expected_results = {
+            "success@example.com": "Success",
+            "fail@example.com": "Failed",
+        }
+        assert response.json() == {
+            "status": "partial_success",
+            "delivered": 1,
+            "failed": 1,
+            "results": expected_results,
+        }
+        mock_parse.assert_called_once_with(sample_email)
+        assert mock_deliver.call_count == 2  # Called for both recipients
+
+    @patch("core.api.viewsets.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.mta.parse_email_message")
+    def test_delivery_total_failure(
+        self,
+        mock_parse,
+        mock_deliver,
+        api_client: APIClient,
+        sample_email,
+        valid_jwt_token,
+    ):
+        """Test that if all deliveries fail, a 500 is returned."""
+        parsed_email_mock = {"subject": "Test"}
+        mock_parse.return_value = parsed_email_mock
+        mock_deliver.return_value = False  # Fails for all calls
+
+        recipients = ["fail1@example.com", "fail2@example.com"]
+        token = valid_jwt_token(sample_email, {"original_recipients": recipients})
+
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=sample_email,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        expected_results = {
+            "fail1@example.com": "Failed",
+            "fail2@example.com": "Failed",
+        }
+        assert response.json() == {
+            "status": "error",
+            "detail": "Failed to deliver message to any recipient",
+            "results": expected_results,
+        }
+        mock_parse.assert_called_once_with(sample_email)
+        assert mock_deliver.call_count == 2  # Called for both
 
     def test_invalid_content_type(
         self, api_client: APIClient, sample_email, valid_jwt_token
     ):
-        """Test that submitting with an incorrect content type fails."""
+        """Test that submitting with an incorrect content type fails (415)."""
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
-            data=sample_email,
+            data=sample_email,  # Data format doesn't matter if content type rejected
             content_type="application/json",
             HTTP_AUTHORIZATION=(
                 f"Bearer {valid_jwt_token(sample_email, {'original_recipients': ['recipient@example.com']})}"
             ),
         )
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        # Assert 415 Unsupported Media Type due to strict check
+        assert response.status_code == status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
 
     def test_missing_auth_header(self, api_client: APIClient, sample_email):
         """Test that submitting without an authorization header fails."""
@@ -202,107 +304,6 @@ class TestMTAInboundEmail:
             ),
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
-    @pytest.mark.django_db
-    def test_html_email_submission(
-        self, api_client: APIClient, html_email, valid_jwt_token
-    ):
-        """Test submitting an HTML-only email and verify serialization."""
-
-        user = factories.UserFactory()
-        mailbox = factories.MailboxFactory()
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=user,
-            permission=enums.MailboxPermissionChoices.ADMIN,
-        )
-        email = f"{mailbox.local_part}@{mailbox.domain.name}"
-
-        response = api_client.post(
-            "/api/v1.0/mta/inbound-email/",
-            data=html_email,
-            content_type="message/rfc822",
-            HTTP_AUTHORIZATION=(
-                f"Bearer {valid_jwt_token(html_email, {'original_recipients': [email]})}"
-            ),
-        )
-        assert response.status_code == status.HTTP_200_OK
-
-        message = models.Message.objects.first()
-        assert message is not None
-        assert message.subject == "HTML Test Email"
-        assert message.raw_mime == html_email
-
-        # Verify API serialization
-        client = APIClient()
-        client.force_authenticate(user=user)
-        response = client.get(
-            reverse("messages-list"), query_params={"thread_id": message.thread.id}
-        )
-        assert response.status_code == status.HTTP_200_OK
-        serialized_data_all = response.json()
-        assert serialized_data_all["count"] == 1
-        assert serialized_data_all["results"][0]["id"] == str(message.id)
-        serialized_data = serialized_data_all["results"][0]
-
-        assert serialized_data["textBody"] == []
-        assert len(serialized_data["htmlBody"]) == 1
-        assert serialized_data["htmlBody"][0]["type"] == "text/html"
-        assert "<h1>Test HTML Email</h1>" in serialized_data["htmlBody"][0]["content"]
-        assert len(serialized_data["to"]) == 1
-        assert serialized_data["to"][0]["email"] == "recipient@example.com"
-
-    @pytest.mark.django_db
-    def test_multipart_email_submission(
-        self, api_client: APIClient, multipart_email, valid_jwt_token
-    ):
-        """Test submitting a multipart email (text and HTML) and verify serialization."""
-
-        user = factories.UserFactory()
-        mailbox = factories.MailboxFactory()
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=user,
-            permission=enums.MailboxPermissionChoices.ADMIN,
-        )
-        email = f"{mailbox.local_part}@{mailbox.domain.name}"
-
-        response = api_client.post(
-            "/api/v1.0/mta/inbound-email/",
-            data=multipart_email,
-            content_type="message/rfc822",
-            HTTP_AUTHORIZATION=(
-                f"Bearer {valid_jwt_token(multipart_email, {'original_recipients': [email]})}"
-            ),
-        )
-        assert response.status_code == status.HTTP_200_OK
-
-        message = models.Message.objects.first()
-        assert message is not None
-        assert message.subject == "Multipart Test Email"
-        assert message.raw_mime == multipart_email
-
-        # Verify API serialization
-        client = APIClient()
-        client.force_authenticate(user=user)
-        response = client.get(
-            reverse("messages-list"), query_params={"thread_id": message.thread.id}
-        )
-        assert response.status_code == status.HTTP_200_OK
-        serialized_data_all = response.json()
-        assert serialized_data_all["count"] == 1
-        assert serialized_data_all["results"][0]["id"] == str(message.id)
-        serialized_data = serialized_data_all["results"][0]
-
-        assert len(serialized_data["textBody"]) == 1
-        assert (
-            "This is the plain text version."
-            in serialized_data["textBody"][0]["content"]
-        )
-        assert len(serialized_data["htmlBody"]) == 1
-        assert "<h1>Multipart Email</h1>" in serialized_data["htmlBody"][0]["content"]
-        assert len(serialized_data["to"]) == 1
-        assert serialized_data["to"][0]["email"] == "recipient@example.com"
 
 
 @pytest.mark.django_db
