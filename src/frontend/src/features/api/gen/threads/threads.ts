@@ -5,15 +5,19 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import type {
   DataTag,
   DefinedInitialDataOptions,
+  DefinedUseInfiniteQueryResult,
   DefinedUseQueryResult,
+  InfiniteData,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseInfiniteQueryOptions,
+  UseInfiniteQueryResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
@@ -67,6 +71,190 @@ export const threadsList = async (
 export const getThreadsListQueryKey = (params?: ThreadsListParams) => {
   return [`/api/v1.0/threads/`, ...(params ? [params] : [])] as const;
 };
+
+export const getThreadsListInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof threadsList>>,
+    ThreadsListParams["page"]
+  >,
+  TError = unknown,
+>(
+  params?: ThreadsListParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof threadsList>>,
+        TError,
+        TData,
+        Awaited<ReturnType<typeof threadsList>>,
+        QueryKey,
+        ThreadsListParams["page"]
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getThreadsListQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof threadsList>>,
+    QueryKey,
+    ThreadsListParams["page"]
+  > = ({ signal, pageParam }) =>
+    threadsList(
+      { ...params, page: pageParam || params?.["page"] },
+      { signal, ...requestOptions },
+    );
+
+  return { queryKey, queryFn, ...queryOptions } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof threadsList>>,
+    TError,
+    TData,
+    Awaited<ReturnType<typeof threadsList>>,
+    QueryKey,
+    ThreadsListParams["page"]
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ThreadsListInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof threadsList>>
+>;
+export type ThreadsListInfiniteQueryError = unknown;
+
+export function useThreadsListInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof threadsList>>,
+    ThreadsListParams["page"]
+  >,
+  TError = unknown,
+>(
+  params: undefined | ThreadsListParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof threadsList>>,
+        TError,
+        TData,
+        Awaited<ReturnType<typeof threadsList>>,
+        QueryKey,
+        ThreadsListParams["page"]
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof threadsList>>,
+          TError,
+          Awaited<ReturnType<typeof threadsList>>,
+          QueryKey
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useThreadsListInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof threadsList>>,
+    ThreadsListParams["page"]
+  >,
+  TError = unknown,
+>(
+  params?: ThreadsListParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof threadsList>>,
+        TError,
+        TData,
+        Awaited<ReturnType<typeof threadsList>>,
+        QueryKey,
+        ThreadsListParams["page"]
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof threadsList>>,
+          TError,
+          Awaited<ReturnType<typeof threadsList>>,
+          QueryKey
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useThreadsListInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof threadsList>>,
+    ThreadsListParams["page"]
+  >,
+  TError = unknown,
+>(
+  params?: ThreadsListParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof threadsList>>,
+        TError,
+        TData,
+        Awaited<ReturnType<typeof threadsList>>,
+        QueryKey,
+        ThreadsListParams["page"]
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useThreadsListInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof threadsList>>,
+    ThreadsListParams["page"]
+  >,
+  TError = unknown,
+>(
+  params?: ThreadsListParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof threadsList>>,
+        TError,
+        TData,
+        Awaited<ReturnType<typeof threadsList>>,
+        QueryKey,
+        ThreadsListParams["page"]
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getThreadsListInfiniteQueryOptions(params, options);
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const getThreadsListQueryOptions = <
   TData = Awaited<ReturnType<typeof threadsList>>,

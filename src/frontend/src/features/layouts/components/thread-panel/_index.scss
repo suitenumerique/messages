@@ -4,7 +4,7 @@
     max-height: 100%;
 
     .thread-panel__threads_list {
-    overflow-y: auto;
+        overflow-y: auto;
     }
 
     &--loading,
@@ -35,6 +35,15 @@
                 color: var(--c--theme--colors--greyscale-500);
             }
         }
+    }
+
+    &__page-loader {
+        color: var(--c--theme--colors--greyscale-500);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 1rem 0;
+        gap: 1rem;
     }
 }
 

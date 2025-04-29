@@ -1,5 +1,5 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
-import { Mailbox, PaginatedMessageList, PaginatedThreadList, Thread, useMailboxesList, useMessagesList, useThreadsList } from "../api/gen";
+import { Mailbox, PaginatedMessageList, PaginatedThreadList, Thread, useMailboxesList, useMessagesList, useThreadsListInfinite } from "../api/gen";
 import { FetchStatus, QueryStatus, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import usePrevious from "@/hooks/usePrevious";
@@ -24,12 +24,13 @@ type MailboxContextType = {
     selectedThread: Thread | null;
     selectThread: (thread: Thread | null) => void;
     unselectThread: () => void;
+    loadNextThreads: () => Promise<unknown>;
     invalidateThreadMessages: () => void;
     refetchMailboxes: () => void;
     isPending: boolean;
     queryStates: {
         mailboxes: QueryState,
-        threads: QueryState,
+        threads: PaginatedQueryState,
         messages: QueryState,
     };
     error: {
@@ -47,6 +48,7 @@ const MailboxContext = createContext<MailboxContextType>({
     selectMailbox: () => {},
     selectedThread: null,
     selectThread: () => {},
+    loadNextThreads: async () => {},
     unselectThread: () => {},
     invalidateThreadMessages: () => {},
     refetchMailboxes: () => {},
@@ -62,6 +64,7 @@ const MailboxContext = createContext<MailboxContextType>({
             status: 'pending',
             fetchStatus: 'idle',
             isFetching: false,
+            isFetchingNextPage: false,
             isLoading: false,
         },
         messages: {
@@ -94,16 +97,38 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         },
     });
     const previousUnreadMessagesCount = usePrevious(selectedMailbox?.count_unread_messages || 0);
-    const threadsQuery = useThreadsList(undefined, {
+    const threadsQuery = useThreadsListInfinite(undefined, {
         query: {
             enabled: !!selectedMailbox,
+            initialPageParam: 1,
+            queryKey: ['threads', selectedMailbox?.id],
+            getNextPageParam: (lastPage, pages) => {
+                return pages.length + 1;
+            },
         },
         request: {
             params: {
-                mailbox_id: selectedMailbox?.id ?? '',
+                mailbox_id: selectedMailbox?.id ?? ''
             }
         }
     });
+
+    /**
+     * Flatten the threads paginated query to a single result array
+     */
+    const flattenThreads = useMemo(() => {
+        return threadsQuery.data?.pages.reduce((acc, page, index) => {
+            const isLastPage = index === threadsQuery.data?.pages.length - 1;
+            acc.results.push(...page.data.results);
+            if (isLastPage) {
+                acc.count = page.data.count;
+                acc.next = page.data.next;
+                acc.previous = page.data.previous;
+            }
+            return acc;
+            }, {results: [], count: 0, next: null, previous: null} as PaginatedThreadList);
+    }, [threadsQuery.data?.pages]);
+
     const messagesQuery = useMessagesList(undefined, {
         query: {
             enabled: !!selectedThread,
@@ -111,7 +136,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         },
         request: {
             params: {
-                thread_id: selectedThread?.id ?? '',
+                thread_id: selectedThread?.id ?? ''
             }
         }
     });
@@ -120,7 +145,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
      * Invalidate the threads and messages queries to refresh the data
      */
     const invalidateThreadMessages = async () => {
-        await queryClient.invalidateQueries({ queryKey: ['/api/v1.0/threads/'] });
+        await queryClient.invalidateQueries({ queryKey: ['threads', selectedMailbox?.id] });
         if (selectedThread) {
             await queryClient.invalidateQueries({ queryKey: ['messages', selectedThread.id] });
         }
@@ -138,12 +163,13 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
 
     const context = useMemo(() => ({
         mailboxes: mailboxQuery.data?.data ?? null,
-        threads: threadsQuery.data?.data ?? null,
+        threads: flattenThreads ?? null,
         messages: messagesQuery.data?.data ?? null,
         selectedMailbox,
         selectMailbox: setSelectedMailbox,
         selectedThread,
         unselectThread,
+        loadNextThreads: threadsQuery.fetchNextPage,
         selectThread: setSelectedThread,
         invalidateThreadMessages,
         refetchMailboxes: mailboxQuery.refetch,
@@ -159,6 +185,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
                 status: threadsQuery.status,
                 fetchStatus: threadsQuery.fetchStatus,
                 isFetching: threadsQuery.isFetching,
+                isFetchingNextPage: threadsQuery.isFetchingNextPage,
                 isLoading: threadsQuery.isLoading,
                 
             },
@@ -202,17 +229,17 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     useEffect(() => {
         if (selectedMailbox && !selectedThread) {
             const threadId = router.query.threadId;
-            const thread = threadsQuery.data?.data?.results.find((thread) => thread.id === threadId);
+            const thread = flattenThreads?.results.find((thread) => thread.id === threadId);
             if (thread) {
                 setSelectedThread(thread);
                 router.replace(`/mailbox/${selectedMailbox.id}/thread/${thread.id}`);
             }
         }
-    }, [threadsQuery.data?.data]);
+    }, [flattenThreads]);
 
     useEffect(() => {
         if (selectedThread) {
-            const threads = threadsQuery.data?.data?.results;
+            const threads = flattenThreads?.results;
             const newSelectedThread = threads?.find((thread) => thread.id === selectedThread?.id);
             if (newSelectedThread) {
                 if (newSelectedThread?.updated_at !== selectedThread?.updated_at) {
@@ -221,12 +248,12 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
                 }
             }
         }
-    }, [threadsQuery.data?.data?.results, selectedThread]);
+    }, [flattenThreads?.results, selectedThread]);
 
     // Invalidate the threads query to refresh the threads list when the unread messages count changes
     useEffect(() => {
         if (previousUnreadMessagesCount !== selectedMailbox?.count_unread_messages) {
-            queryClient.invalidateQueries({ queryKey: ['/api/v1.0/threads/'] });
+            queryClient.invalidateQueries({ queryKey: ['threads', selectedMailbox?.id] });
         }
     }, [selectedMailbox?.count_unread_messages]);
 

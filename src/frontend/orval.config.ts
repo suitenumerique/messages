@@ -17,6 +17,14 @@ export default defineConfig({
                 mutator: {
                     path: '../fetchApi.ts',
                     name: 'fetchAPI',
+                },
+                operations: {
+                    "threads_list": {
+                        query: {
+                            useInfinite: true,
+                            useInfiniteQueryParam: "page"
+                        }
+                    }
                 }
             },
         }
