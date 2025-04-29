@@ -84,6 +84,8 @@ class ThreadSerializer(serializers.ModelSerializer):
             "count_draft",
             "count_starred",
             "count_sender",
+            "count_messages",
+            "messaged_at",
             "updated_at",
         ]
 
@@ -118,18 +120,43 @@ class MessageSerializer(serializers.ModelSerializer):
     @extend_schema_field(ContactSerializer(many=True))
     def get_to(self, instance):
         """Return the 'To' recipients."""
-        return instance.get_parsed_field("to") or []
+        contacts = models.Contact.objects.filter(
+            id__in=instance.recipients.filter(
+                type=models.MessageRecipientTypeChoices.TO
+            ).values_list("contact", flat=True)
+        )
+        return ContactSerializer(contacts, many=True).data
 
     @extend_schema_field(ContactSerializer(many=True))
     def get_cc(self, instance):
         """Return the 'Cc' recipients."""
-        return instance.get_parsed_field("cc") or []
+        contacts = models.Contact.objects.filter(
+            id__in=instance.recipients.filter(
+                type=models.MessageRecipientTypeChoices.CC
+            ).values_list("contact", flat=True)
+        )
+        return ContactSerializer(contacts, many=True).data
 
     @extend_schema_field(ContactSerializer(many=True))
     def get_bcc(self, instance):
-        """Return the 'Bcc' recipients."""
-        # TODO: only return the bcc if the user has permission to see it (=is the sender?)
-        return instance.get_parsed_field("bcc") or []
+        """
+        Return the 'Bcc' recipients, only if the requesting user is allowed to see them.
+        """
+        request = self.context.get("request")
+        # Only show Bcc if it's a mailbox the user has access to and it's a sent message.
+        if (
+            request
+            and type(self.instance) == models.Message
+            and self.instance.thread.mailbox.accesses.filter(user=request.user).exists()
+            and self.instance.is_sender
+        ):
+            contacts = models.Contact.objects.filter(
+                id__in=instance.recipients.filter(
+                    type=models.MessageRecipientTypeChoices.BCC
+                ).values_list("contact", flat=True)
+            )
+            return ContactSerializer(contacts, many=True).data
+        return []
 
     class Meta:
         model = models.Message
@@ -147,6 +174,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "bcc",
             "read_at",
             "sent_at",
+            "is_sender",
             "is_draft",
             "is_unread",
             "is_starred",

@@ -15,7 +15,6 @@ class ThreadViewSet(
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = "id"
     lookup_url_kwarg = "id"
-    queryset = models.Thread.objects.all()
 
     def get_queryset(self):
         """Restrict results to threads of the current user's mailboxes."""
@@ -29,10 +28,11 @@ class ThreadViewSet(
                     "You do not have access to this mailbox."
                 )
             queryset = queryset.filter(mailbox__id=mailbox_id)
-
-        queryset = queryset.filter(
-            mailbox__id__in=accesses.values_list("mailbox_id", flat=True)
-        ).order_by("-messages__created_at")  # TODO: Consider optimizing default sort
+        else:
+            queryset = queryset.filter(
+                mailbox__id__in=accesses.values_list("mailbox_id", flat=True)
+            )
+        queryset = queryset.order_by("-messaged_at")
 
         # Add filters based on thread counters
         filter_mapping = {

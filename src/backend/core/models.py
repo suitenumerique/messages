@@ -248,6 +248,8 @@ class Thread(BaseModel):
     count_draft = models.IntegerField(_("count draft"), default=0)
     count_starred = models.IntegerField(_("count starred"), default=0)
     count_sender = models.IntegerField(_("count sender"), default=0)
+    count_messages = models.IntegerField(_("count messages"), default=1)
+    messaged_at = models.DateTimeField(_("messaged at"), null=True, blank=True)
 
     class Meta:
         db_table = "messages_thread"
@@ -258,7 +260,16 @@ class Thread(BaseModel):
         return self.subject
 
     def update_counters(
-        self, counters: Tuple[str] = ("unread", "trashed", "draft", "starred", "sender")
+        self,
+        counters: Tuple[str] = (
+            "unread",
+            "trashed",
+            "draft",
+            "starred",
+            "sender",
+            "messages",
+            "messaged_at",
+        ),
     ):
         """Update the counters of the thread."""
         if "unread" in counters:
@@ -279,7 +290,19 @@ class Thread(BaseModel):
             self.count_sender = self.messages.filter(
                 is_sender=True, is_trashed=False
             ).count()
-        self.save(update_fields=["count_" + x for x in counters])
+        if "messages" in counters:
+            self.count_messages = self.messages.filter(is_trashed=False).count()
+        if "messaged_at" in counters:
+            last = (
+                self.messages.filter(is_trashed=False).order_by("-created_at").first()
+            )
+            self.messaged_at = last.created_at if last else None
+
+        self.save(
+            update_fields=[
+                x if x in {"messaged_at"} else "count_" + x for x in counters
+            ]
+        )
 
 
 class Contact(BaseModel):
