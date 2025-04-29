@@ -186,10 +186,10 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
 
         contact, created = Contact.objects.get_or_create(
             email=mapped_email,
-            owner=mailbox,
+            mailbox=mailbox,
             defaults={"name": user.full_name or None},
         )
 
-        if not created and contact.owner != mailbox:
-            contact.owner = mailbox
+        if not created and contact.mailbox != mailbox:
+            contact.mailbox = mailbox
             contact.save()

@@ -12,7 +12,7 @@ from email.parser import BytesParser
 
 import pytest
 
-from core.formats.rfc5322.composer import (
+from core.mda.rfc5322.composer import (
     EmailComposeError,
     compose_email,
     create_attachment_part,

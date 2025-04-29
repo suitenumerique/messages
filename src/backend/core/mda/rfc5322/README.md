@@ -66,7 +66,7 @@ A comprehensive test suite is included to verify the correctness of the parser f
 ## Usage
 
 ```python
-from core.formats.rfc5322 import parse_email_message, EmailParseError
+from core.mda.rfc5322 import parse_email_message, EmailParseError
 
 try:
     # Parse raw email data

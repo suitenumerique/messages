@@ -5,58 +5,22 @@ Declare and configure the models for the messages core application
 
 import base64
 import uuid
-from datetime import timedelta
 from logging import getLogger
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from django.conf import settings
 from django.contrib.auth import models as auth_models
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.core import validators
 from django.db import models
-from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from dkim import dkim_sign
 from timezone_field import TimeZoneField
 
 from core.enums import MailboxPermissionChoices, MessageRecipientTypeChoices
-from core.formats.rfc5322 import parse_email_message
+from core.mda.rfc5322 import parse_email_message
 
 logger = getLogger(__name__)
-
-
-def get_trashbin_cutoff():
-    """
-    Calculate the cutoff datetime for soft-deleted items based on the retention policy.
-
-    The function returns the current datetime minus the number of days specified in
-    the TRASHBIN_CUTOFF_DAYS setting, indicating the oldest date for items that can
-    remain in the trash bin.
-
-    Returns:
-        datetime: The cutoff datetime for soft-deleted items.
-    """
-    return timezone.now() - timedelta(days=settings.TRASHBIN_CUTOFF_DAYS)
-
-
-class LinkRoleChoices(models.TextChoices):
-    """Defines the possible roles a link can offer on a item."""
-
-    READER = "reader", _("Reader")  # Can read
-    EDITOR = "editor", _("Editor")  # Can read and edit
-
-
-class RoleChoices(models.TextChoices):
-    """Defines the possible roles a user can have in a resource."""
-
-    READER = "reader", _("Reader")  # Can read
-    EDITOR = "editor", _("Editor")  # Can read and edit
-    ADMIN = "administrator", _("Administrator")  # Can read, edit, delete and share
-    OWNER = "owner", _("Owner")
-
-
-PRIVILEGED_ROLES = [RoleChoices.ADMIN, RoleChoices.OWNER]
 
 
 class DuplicateEmailError(Exception):
@@ -300,7 +264,7 @@ class Contact(BaseModel):
 
     name = models.CharField(_("name"), max_length=255, null=True, blank=True)
     email = models.EmailField(_("email"))
-    owner = models.ForeignKey(
+    mailbox = models.ForeignKey(
         "Mailbox",
         on_delete=models.CASCADE,
         related_name="contacts",
@@ -310,7 +274,7 @@ class Contact(BaseModel):
         db_table = "messages_contact"
         verbose_name = _("contact")
         verbose_name_plural = _("contacts")
-        unique_together = ("email", "owner")
+        unique_together = ("email", "mailbox")
 
     def __str__(self):
         if self.name:
@@ -355,20 +319,31 @@ class Message(BaseModel):
     )
     subject = models.CharField(_("subject"), max_length=255)
     sender = models.ForeignKey("Contact", on_delete=models.CASCADE)
-    received_at = models.DateTimeField(_("received at"), auto_now_add=True)
+    parent = models.ForeignKey(
+        "Message", on_delete=models.SET_NULL, null=True, blank=True
+    )
+
+    # Flags
+    is_draft = models.BooleanField(_("is draft"), default=False)
+    is_sender = models.BooleanField(_("is sender"), default=False)
+    is_starred = models.BooleanField(_("is starred"), default=False)
+    is_trashed = models.BooleanField(_("is trashed"), default=False)
+    is_read = models.BooleanField(_("is read"), default=False)
+
+    trashed_at = models.DateTimeField(_("trashed at"), null=True, blank=True)
     sent_at = models.DateTimeField(_("sent at"), null=True, blank=True)
     read_at = models.DateTimeField(_("read at"), null=True, blank=True)
+
     mta_sent = models.BooleanField(_("mta sent"), default=False)
-    mime_id = models.CharField(
-        _("mime id"), max_length=998, null=True, blank=True, unique=True
-    )
-    is_draft = models.BooleanField(_("is draft"), default=True)
+    mime_id = models.CharField(_("mime id"), max_length=998, null=True, blank=True)
 
     # Stores the raw MIME message. This will be optimized and offloaded
     # to object storage in the future.
     raw_mime = models.BinaryField(blank=True, default=b"")
 
-    draft_body = models.TextField(_("draft body"), blank=True)
+    # Store the draft body as arbitrary JSON text. Might be offloaded
+    # somewhere else as well.
+    draft_body = models.TextField(_("draft body"), blank=True, null=True)
 
     # Internal cache for parsed data
     _parsed_email_cache: Optional[Dict[str, Any]] = None
@@ -377,7 +352,7 @@ class Message(BaseModel):
         db_table = "messages_message"
         verbose_name = _("message")
         verbose_name_plural = _("messages")
-        ordering = ["-received_at"]
+        ordering = ["-created_at"]
 
     def __str__(self):
         return self.subject
@@ -397,57 +372,16 @@ class Message(BaseModel):
         """Get a parsed field from the parsed email data."""
         return (self.get_parsed_data() or {}).get(field_name)
 
-    def generate_dkim_signature(self) -> Optional[str]:
-        """Sign all headers with relaxed/simple canonicalization.
-
-        For now we use a single signing key/selector for all domains of an instance.
-        This will be changed in the future to allow to use different signing keys/selectors for different domains.
-        """
-
-        dkim_private_key = None
-        if settings.MESSAGES_DKIM_PRIVATE_KEY_FILE:
-            with open(settings.MESSAGES_DKIM_PRIVATE_KEY_FILE, "rb") as f:
-                dkim_private_key = f.read()
-        elif settings.MESSAGES_DKIM_PRIVATE_KEY_B64:
-            dkim_private_key = base64.b64decode(settings.MESSAGES_DKIM_PRIVATE_KEY_B64)
-
-        domain = self.sender.email.split("@")[1]
-        if not dkim_private_key:
-            logger.warning(
-                "MESSAGES_DKIM_PRIVATE_KEY_B64/FILE is not set, skipping DKIM signing"
-            )
-            return None
-
-        if domain not in settings.MESSAGES_DKIM_DOMAINS:
-            logger.warning(
-                "Domain %s is not in MESSAGES_DKIM_DOMAINS, skipping DKIM signing",
-                domain,
-            )
-            return None
-
-        return dkim_sign(
-            message=self.raw_mime,
-            selector=settings.MESSAGES_DKIM_SELECTOR.encode("ascii"),
-            domain=domain.encode("ascii"),
-            privkey=dkim_private_key,
-            include_headers=[
-                b"To",
-                b"Cc",
-                b"From",
-                b"Subject",
-                b"Message-ID",
-                b"Reply-To",
-                b"In-Reply-To",
-                b"References",
-                b"Date",
-            ],
-            canonicalize=(
-                b"relaxed",
-                b"simple",
-            ),
-        )
-
     def generate_mime_id(self) -> str:
         """Get the RFC5322 Message-ID of the message."""
         _id = base64.urlsafe_b64encode(uuid.uuid4().bytes).rstrip(b"=").decode("ascii")
         return f"{_id}@_lst.{self.sender.email.split('@')[1]}"
+
+    def get_all_recipient_contacts(self) -> Dict[str, List[Contact]]:
+        """Get all recipients of the message."""
+        recipients_by_type = {
+            kind: [] for kind, _ in MessageRecipientTypeChoices.choices
+        }
+        for mr in self.recipients.select_related("contact").all():
+            recipients_by_type[mr.type].append(mr.contact)
+        return recipients_by_type

@@ -146,14 +146,14 @@ class MessageAdmin(admin.ModelAdmin):
     """Admin class for the Message model"""
 
     inlines = [MessageRecipientInline]
-    list_display = ("id", "subject", "sender", "received_at")
+    list_display = ("id", "subject", "sender", "created_at")
 
 
 @admin.register(models.Contact)
 class ContactAdmin(admin.ModelAdmin):
     """Admin class for the Contact model"""
 
-    list_display = ("id", "name", "email", "owner")
+    list_display = ("id", "name", "email", "mailbox")
 
 
 @admin.register(models.MessageRecipient)
