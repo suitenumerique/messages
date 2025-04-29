@@ -1,3 +1,5 @@
+"""API ViewSet for Message model."""
+
 import rest_framework as drf
 from rest_framework import mixins, status, viewsets
 

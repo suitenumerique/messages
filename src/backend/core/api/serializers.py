@@ -146,7 +146,7 @@ class MessageSerializer(serializers.ModelSerializer):
         # Only show Bcc if it's a mailbox the user has access to and it's a sent message.
         if (
             request
-            and type(self.instance) == models.Message
+            and isinstance(self.instance, models.Message)
             and self.instance.thread.mailbox.accesses.filter(user=request.user).exists()
             and self.instance.is_sender
         ):

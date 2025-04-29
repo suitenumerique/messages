@@ -191,7 +191,7 @@ class MTAViewSet(viewsets.GenericViewSet):
                     # Delivery function failed (and logged the reason)
                     failure_count += 1
                     delivery_results[recipient] = "Failed"
-            except Exception as e:  # Catch unexpected errors during the loop itself
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.error(
                     "Unexpected error during delivery loop for %s: %s",
                     recipient,
@@ -213,7 +213,8 @@ class MTAViewSet(viewsets.GenericViewSet):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-        elif failure_count > 0:
+
+        if failure_count > 0:
             # If some deliveries failed, return 207 Multi-Status
             logger.warning(
                 "Partial delivery failure: %d successful, %d failed",
@@ -229,9 +230,7 @@ class MTAViewSet(viewsets.GenericViewSet):
                 },
                 status=status.HTTP_207_MULTI_STATUS,
             )
-        else:
-            # All deliveries successful
-            logger.info(
-                "All %d deliveries successful for inbound email.", success_count
-            )
-            return Response({"status": "ok", "delivered": success_count})
+
+        # All deliveries successful
+        logger.info("All %d deliveries successful for inbound email.", success_count)
+        return Response({"status": "ok", "delivered": success_count})

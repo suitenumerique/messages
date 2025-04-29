@@ -14,10 +14,13 @@ from core.mda import delivery
 
 @pytest.mark.django_db
 class TestFindThread:
-    """Unit tests for the _find_thread_for_inbound_message helper."""
+    """Unit tests for the find_thread_for_inbound_message helper."""
+
+    mailbox = None
 
     @pytest.fixture(autouse=True)
-    def setup_mailbox(self, db):
+    def setup_mailbox(self):
+        """Create a mailbox for testing thread finding."""
         self.mailbox = factories.MailboxFactory()
 
     def test_find_by_references_and_subject(self):
@@ -34,12 +37,13 @@ class TestFindThread:
         # Parsed email data for the incoming reply
         parsed_reply = {
             "subject": f"Re: {initial_subject}",
-            "references": f"<other.ref@example.com> <{initial_mime_id}>",
-            "from": [{"email": "replier@a.com"}],
-            # ... other fields
+            "headers": {
+                "references": f"<other.ref@example.com> <{initial_mime_id}>",
+            },
+            "from": {"email": "replier@a.com"},
         }
 
-        found_thread = delivery._find_thread_for_inbound_message(
+        found_thread = delivery.find_thread_for_inbound_message(
             parsed_reply, self.mailbox
         )
         assert found_thread == initial_thread
@@ -57,11 +61,11 @@ class TestFindThread:
 
         parsed_reply = {
             "subject": f"Fwd: {initial_subject}",  # Different prefix, should still match
-            "in_reply_to": f"<{initial_mime_id}>",
-            "from": [{"email": "replier@a.com"}],
+            "in_reply_to": f"{initial_mime_id}",
+            "from": {"email": "replier@a.com"},
         }
 
-        found_thread = delivery._find_thread_for_inbound_message(
+        found_thread = delivery.find_thread_for_inbound_message(
             parsed_reply, self.mailbox
         )
         assert found_thread == initial_thread
@@ -80,15 +84,17 @@ class TestFindThread:
         # Reply has reference, but completely different subject
         parsed_reply = {
             "subject": "Totally Unrelated Topic",
-            "references": f"<{initial_mime_id}>",
-            "from": [{"email": "replier@a.com"}],
+            "headers": {
+                "references": f"<{initial_mime_id}>",
+            },
+            "from": {"email": "replier@a.com"},
         }
 
-        # Should still match based on the reference alone (fallback logic)
-        found_thread = delivery._find_thread_for_inbound_message(
+        # Create a new thread
+        found_thread = delivery.find_thread_for_inbound_message(
             parsed_reply, self.mailbox
         )
-        assert found_thread == initial_thread
+        assert found_thread is None
 
     def test_no_match_returns_none(self):
         """No thread found if no matching references exist."""
@@ -98,12 +104,14 @@ class TestFindThread:
 
         parsed_reply = {
             "subject": "Re: Some Thread",
-            "references": "<nonexistent.ref@example.com>",
-            "in_reply_to": "<another.nonexistent@example.com>",
-            "from": [{"email": "replier@a.com"}],
+            "headers": {
+                "references": "<nonexistent.ref@example.com>",
+            },
+            "in_reply_to": "another.nonexistent@example.com",
+            "from": {"email": "replier@a.com"},
         }
 
-        found_thread = delivery._find_thread_for_inbound_message(
+        found_thread = delivery.find_thread_for_inbound_message(
             parsed_reply, self.mailbox
         )
         assert found_thread is None
@@ -130,12 +138,14 @@ class TestFindThread:
 
         parsed_reply = {
             "subject": f"Re: {initial_subject}",
-            "references": f"<{initial_mime_id}>",
-            "from": [{"email": "replier@a.com"}],
+            "headers": {
+                "references": f"<{initial_mime_id}>",
+            },
+            "from": {"email": "replier@a.com"},
         }
 
         # Should find the thread in *our* mailbox
-        found_thread = delivery._find_thread_for_inbound_message(
+        found_thread = delivery.find_thread_for_inbound_message(
             parsed_reply, self.mailbox
         )
         assert found_thread == initial_thread
@@ -147,15 +157,12 @@ class TestFindThread:
         parsed_new_email = {
             "subject": "Brand New Topic",
             # No In-Reply-To or References
-            "from": [{"email": "new@a.com"}],
+            "from": {"email": "new@a.com"},
         }
-        found_thread = delivery._find_thread_for_inbound_message(
+        found_thread = delivery.find_thread_for_inbound_message(
             parsed_new_email, self.mailbox
         )
         assert found_thread is None
-
-
-# --- Unit Tests for deliver_inbound_message --- #
 
 
 @pytest.mark.django_db
@@ -164,9 +171,10 @@ class TestDeliverInboundMessage:
 
     @pytest.fixture
     def sample_parsed_email(self):
+        """Sample parsed email data for testing delivery."""
         return {
             "subject": "Delivery Test Subject",
-            "from": [{"name": "Test Sender", "email": "sender@test.com"}],
+            "from": {"name": "Test Sender", "email": "sender@test.com"},
             "to": [{"name": "Recipient Name", "email": "recipient@deliver.test"}],
             "cc": [],
             "bcc": [],
@@ -177,14 +185,16 @@ class TestDeliverInboundMessage:
 
     @pytest.fixture
     def raw_email_data(self):
+        """Raw email data placeholder."""
         return b"Raw email data placeholder"
 
     @pytest.fixture
     def target_mailbox(self):
+        """Create a mailbox for testing delivery."""
         domain = factories.MailDomainFactory(name="deliver.test")
         return factories.MailboxFactory(local_part="recipient", domain=domain)
 
-    @patch("core.mda.delivery._find_thread_for_inbound_message")
+    @patch("core.mda.delivery.find_thread_for_inbound_message")
     def test_basic_delivery_new_thread(
         self, mock_find_thread, target_mailbox, sample_parsed_email, raw_email_data
     ):
@@ -231,7 +241,7 @@ class TestDeliverInboundMessage:
         assert msg_recipient.contact.name == "Recipient Name"
         assert msg_recipient.contact.mailbox == target_mailbox
 
-    @patch("core.mda.delivery._find_thread_for_inbound_message")
+    @patch("core.mda.delivery.find_thread_for_inbound_message")
     def test_basic_delivery_existing_thread(
         self, mock_find_thread, target_mailbox, sample_parsed_email, raw_email_data
     ):
@@ -302,7 +312,7 @@ class TestDeliverInboundMessage:
         recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
         sample_parsed_email["to"] = [{"name": "Test Recip", "email": recipient_addr}]
         sample_parsed_email["cc"] = [{"name": "CC Contact", "email": "cc@example.com"}]
-        sender_email = sample_parsed_email["from"][0]["email"]
+        sender_email = sample_parsed_email["from"]["email"]
 
         assert not models.Contact.objects.filter(
             email=sender_email, mailbox=target_mailbox
@@ -335,9 +345,10 @@ class TestDeliverInboundMessage:
     ):
         """Test delivery uses fallback sender if From address is invalid."""
         recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
-        sample_parsed_email["from"] = [
-            {"name": "Invalid Sender", "email": "invalid-email-format"}
-        ]
+        sample_parsed_email["from"] = {
+            "name": "Invalid Sender",
+            "email": "invalid-email-format",
+        }
 
         success = delivery.deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data

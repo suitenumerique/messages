@@ -1,3 +1,5 @@
+"""Tests for the Thread API list endpoint."""
+
 from django.urls import reverse
 from django.utils import timezone
 

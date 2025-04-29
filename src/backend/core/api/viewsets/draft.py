@@ -1,3 +1,5 @@
+"""API ViewSet for creating and updating draft messages."""
+
 import json
 import logging
 
@@ -296,7 +298,7 @@ class DraftMessageView(APIView):
     def put(self, request, message_id=None):
         """Update an existing draft message."""
         if not message_id:
-            raise drf.exceptions.BadRequest(
+            raise drf.exceptions.ValidationError(
                 "Message ID is required for updating a draft."
             )
 
@@ -305,7 +307,7 @@ class DraftMessageView(APIView):
         # Assuming it's required for now, matching POST.
         sender_id = request.data.get("senderId")
         if not sender_id:
-            raise drf.exceptions.BadRequest(
+            raise drf.exceptions.ValidationError(
                 "senderId is required in request body for update."
             )
         try:

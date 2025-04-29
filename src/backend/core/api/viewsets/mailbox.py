@@ -1,3 +1,5 @@
+"""API ViewSet for Mailbox model."""
+
 from rest_framework import mixins, viewsets
 
 from core import models

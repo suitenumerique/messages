@@ -40,4 +40,5 @@ def mailbox_access(mailbox):
 # Add an api_client fixture
 @pytest.fixture
 def api_client():
+    """Provide an instance of the API client for tests."""
     return APIClient()

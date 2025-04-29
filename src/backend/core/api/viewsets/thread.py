@@ -1,3 +1,5 @@
+"""API ViewSet for Thread model."""
+
 import rest_framework as drf
 from rest_framework import mixins, viewsets
 
