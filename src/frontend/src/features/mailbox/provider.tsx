@@ -1,8 +1,19 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
 import { Mailbox, PaginatedMessageList, PaginatedThreadList, Thread, useMailboxesList, useMessagesList, useThreadsList } from "../api/gen";
-import { useQueryClient } from "@tanstack/react-query";
+import { FetchStatus, QueryStatus, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import usePrevious from "@/hooks/usePrevious";
+
+type QueryState = {
+    status: QueryStatus,
+    fetchStatus: FetchStatus,
+    isFetching: boolean;
+    isLoading: boolean;
+}
+
+type PaginatedQueryState = QueryState & {
+    isFetchingNextPage: boolean;
+}
 
 type MailboxContextType = {
     mailboxes: readonly Mailbox[] | null;
@@ -16,10 +27,10 @@ type MailboxContextType = {
     invalidateThreadMessages: () => void;
     refetchMailboxes: () => void;
     isPending: boolean;
-    status: {
-        mailboxes: 'pending' | 'error' | 'success' | null,
-        threads: 'pending' | 'error' | 'success' | null,
-        messages: 'pending' | 'error' | 'success' | null,
+    queryStates: {
+        mailboxes: QueryState,
+        threads: QueryState,
+        messages: QueryState,
     };
     error: {
         mailboxes: unknown | null;
@@ -40,10 +51,25 @@ const MailboxContext = createContext<MailboxContextType>({
     invalidateThreadMessages: () => {},
     refetchMailboxes: () => {},
     isPending: false,
-    status: {
-        mailboxes: null,
-        threads: null,
-        messages: null,
+    queryStates: {
+        mailboxes: {
+            status: 'pending',
+            fetchStatus: 'idle',
+            isFetching: false,
+            isLoading: false,
+        },
+        threads: {
+            status: 'pending',
+            fetchStatus: 'idle',
+            isFetching: false,
+            isLoading: false,
+        },
+        messages: {
+            status: 'pending',
+            fetchStatus: 'idle',
+            isFetching: false,
+            isLoading: false,
+        },
     },
     error: {
         mailboxes: null,
@@ -122,10 +148,26 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         invalidateThreadMessages,
         refetchMailboxes: mailboxQuery.refetch,
         isPending: mailboxQuery.isPending || threadsQuery.isPending || messagesQuery.isPending,
-        status: {
-            mailboxes: mailboxQuery.status,
-            threads: threadsQuery.status,
-            messages: messagesQuery.status,
+        queryStates: {
+            mailboxes: {
+                status: mailboxQuery.status,
+                fetchStatus: mailboxQuery.fetchStatus,
+                isFetching: mailboxQuery.isFetching,
+                isLoading: mailboxQuery.isLoading,
+            },
+            threads: {
+                status: threadsQuery.status,
+                fetchStatus: threadsQuery.fetchStatus,
+                isFetching: threadsQuery.isFetching,
+                isLoading: threadsQuery.isLoading,
+                
+            },
+            messages: {
+                status: messagesQuery.status,
+                fetchStatus: messagesQuery.fetchStatus,
+                isFetching: messagesQuery.isFetching,
+                isLoading: messagesQuery.isLoading,
+            },
         },
         error: {
             mailboxes: mailboxQuery.error,
@@ -133,9 +175,9 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             messages: messagesQuery.error,
         }
     }), [
-        mailboxQuery.data?.data,
-        threadsQuery.data?.data,
-        messagesQuery.data?.data,
+        mailboxQuery,
+        threadsQuery,
+        messagesQuery,
         selectedMailbox,
         selectedThread,
     ]);
