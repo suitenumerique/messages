@@ -1,3 +1,5 @@
+"""Tests for DKIM signing functionality."""
+
 import base64
 
 from django.test import override_settings

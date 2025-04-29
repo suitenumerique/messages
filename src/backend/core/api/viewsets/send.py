@@ -1,3 +1,5 @@
+"""API ViewSet for sending messages."""
+
 import logging
 
 from drf_spectacular.utils import (
@@ -124,15 +126,15 @@ class SendMessageView(APIView):
                 code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             ) from e
 
-        if send_successful:
-            serializer = serializers.MessageSerializer(
-                message, context={"request": request}
-            )
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        else:
+        if not send_successful:
             # Raise exception with explicit status_code attribute
             exc = drf_exceptions.APIException(
                 "Failed to send message via MTA after multiple attempts.",
             )
             exc.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
             raise exc
+
+        serializer = serializers.MessageSerializer(
+            message, context={"request": request}
+        )
+        return Response(serializer.data, status=status.HTTP_200_OK)

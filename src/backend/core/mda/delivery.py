@@ -1,3 +1,6 @@
+"""Handles email delivery logic: receiving inbound and sending outbound messages."""
+# pylint: disable=broad-exception-caught
+
 import html
 import logging
 import re
@@ -20,7 +23,7 @@ logger = logging.getLogger(__name__)
 MESSAGE_ID_RE = re.compile(r"<([^<>]+)>")
 
 
-def _find_thread_for_inbound_message(
+def find_thread_for_inbound_message(
     parsed_email: Dict[str, Any], mailbox: models.Mailbox
 ) -> Optional[models.Thread]:
     """Attempt to find an existing thread for an inbound message.
@@ -42,8 +45,10 @@ def _find_thread_for_inbound_message(
         ).strip()
 
     # --- Logic --- #
-    in_reply_to_ids = find_message_ids(parsed_email.get("in_reply_to"))
-    references_ids = find_message_ids(parsed_email.get("references"))
+    in_reply_to_ids = (
+        {parsed_email.get("in_reply_to")} if parsed_email.get("in_reply_to") else set()
+    )
+    references_ids = find_message_ids(parsed_email.get("headers", {}).get("references"))
     all_referenced_ids = in_reply_to_ids.union(references_ids)
 
     if not all_referenced_ids:
@@ -53,17 +58,17 @@ def _find_thread_for_inbound_message(
     db_query_ids = list(all_referenced_ids)
 
     # Find potential parent messages in the target mailbox based on references
-    potential_parents = (
+    potential_parents = list(
         models.Message.objects.filter(
             # Query only for the bracketless IDs
             mime_id__in=db_query_ids,
             thread__mailbox=mailbox,
         )
         .select_related("thread")
-        .order_by("-sent_at")  # Prefer newer matches if multiple found
+        .order_by("-created_at")  # Prefer newer matches if multiple found
     )
 
-    if not potential_parents.exists():
+    if len(potential_parents) == 0:
         return None  # No matching messages found by ID in this mailbox
 
     # Strategy 1: Match by reference AND canonical subject
@@ -75,7 +80,7 @@ def _find_thread_for_inbound_message(
 
     # Strategy 2 (Fallback): If no subject match, return thread of the most recent parent message
     # The list is ordered by -sent_at, so the first element is the latest match.
-    return potential_parents.first().thread
+    return None  # potential_parents.first().thread
 
 
 def deliver_inbound_message(
@@ -127,13 +132,15 @@ def deliver_inbound_message(
             return False  # Indicate failure
     except Exception as e:
         logger.exception(
-            f"Unexpected error finding/creating mailbox for {recipient_email}: {e}"
+            "Unexpected error finding/creating mailbox for %s: %s",
+            recipient_email,
+            e,
         )
         return False
 
     # --- 2. Find or Create Thread --- #
     try:
-        thread = _find_thread_for_inbound_message(parsed_email, mailbox)
+        thread = find_thread_for_inbound_message(parsed_email, mailbox)
         if not thread:
             snippet = ""
             if text_body := parsed_email.get("textBody"):
@@ -159,18 +166,17 @@ def deliver_inbound_message(
         return False  # Indicate failure
     except Exception as e:
         logger.exception(
-            f"Unexpected error finding/creating thread for {recipient_email}: {e}"
+            "Unexpected error finding/creating thread for %s: %s",
+            recipient_email,
+            e,
         )
         return False
 
     # --- 3. Get or Create Sender Contact --- #
-    sender_info_list = parsed_email.get("from", [])
-    sender_email = None
-    sender_name = None
-    if sender_info_list:
-        sender_info = sender_info_list[0]
-        sender_email = sender_info.get("email")
-        sender_name = sender_info.get("name")
+    logger.warning(parsed_email)
+    sender_info = parsed_email.get("from", {})
+    sender_email = sender_info.get("email")
+    sender_name = sender_info.get("name")
 
     if not sender_email:
         logger.warning(
@@ -224,7 +230,10 @@ def deliver_inbound_message(
         return False  # Indicate failure
     except Exception as e:
         logger.exception(
-            f"Unexpected error with sender contact {sender_email} in mailbox {mailbox.id}: {e}"
+            "Unexpected error with sender contact %s in mailbox %s: %s",
+            sender_email,
+            mailbox.id,
+            e,
         )
         return False
 
@@ -249,7 +258,9 @@ def deliver_inbound_message(
         return False  # Indicate failure
     except Exception as e:
         logger.exception(
-            f"Unexpected error creating message in thread {thread.id}: {e}"
+            "Unexpected error creating message in thread %s: %s",
+            thread.id,
+            e,
         )
         return False
 
@@ -311,7 +322,10 @@ def deliver_inbound_message(
                 # For now, log and continue.
             except Exception as e:
                 logger.exception(
-                    f"Unexpected error with recipient contact/link {email} for msg {message.id}: {e}"
+                    "Unexpected error with recipient contact/link %s for msg %s: %s",
+                    email,
+                    message.id,
+                    e,
                 )
                 # Log and continue
 
@@ -334,13 +348,16 @@ def deliver_inbound_message(
         if new_snippet:
             thread.snippet = new_snippet
             thread.save(update_fields=["snippet"])
-        thread.update_counters(counters=["unread"])
 
     except Exception as e:
         logger.exception(
-            f"Error updating thread {thread.id} after message delivery: {e}"
+            "Error updating thread %s after message delivery: %s",
+            thread.id,
+            e,
         )
         # Don't return False here, delivery was successful
+
+    thread.update_counters()
 
     logger.info(
         "Successfully delivered message %s to mailbox %s (Thread: %s)",

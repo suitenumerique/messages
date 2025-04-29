@@ -1,3 +1,5 @@
+"""API ViewSet for sharing some public settings."""
+
 from django.conf import settings
 
 import rest_framework as drf

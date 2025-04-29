@@ -15,7 +15,7 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from core import factories, models
+from core import enums, factories, models
 from core.mda.rfc5322 import EmailParseError
 
 
@@ -392,19 +392,19 @@ class TestEmailAddressParsing:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"status": "ok"}
+        assert response.json() == {"status": "ok", "delivered": 1}
 
         # Check that contacts were created with correct names and emails
-        sender = models.Contact.objects.get(email="sender@example.com", owner=mailbox)
+        sender = models.Contact.objects.get(email="sender@example.com", mailbox=mailbox)
         assert sender.name == "John Doe"
 
         recipient = models.Contact.objects.get(
-            email="recipient@example.com", owner=mailbox
+            email="recipient@example.com", mailbox=mailbox
         )
         assert recipient.name == "Jane Smith"
 
         # Check for the second recipient
-        user2 = models.Contact.objects.get(email="user2@example.com", owner=mailbox)
+        user2 = models.Contact.objects.get(email="user2@example.com", mailbox=mailbox)
         assert user2.name == "Another User"
 
         # Verify message recipients
@@ -447,7 +447,7 @@ class TestMTAInboundEmailThreading:
     def _create_initial_message(self, subject, mime_id):
         """Helper to create an initial message and thread."""
         sender_contact = factories.ContactFactory(
-            owner=self.mailbox, email="sender@example.com"
+            mailbox=self.mailbox, email="sender@example.com"
         )
         thread = factories.ThreadFactory(mailbox=self.mailbox, subject=subject)
         message = factories.MessageFactory(
@@ -463,7 +463,7 @@ class TestMTAInboundEmailThreading:
         )
         # Create recipients for the initial message
         recipient_contact = factories.ContactFactory(
-            owner=self.mailbox, email=self.recipient_email
+            mailbox=self.mailbox, email=self.recipient_email
         )
         factories.MessageRecipientFactory(
             message=message,
@@ -686,7 +686,7 @@ class TestMTAInboundEmailThreading:
             permission=enums.MailboxPermissionChoices.ADMIN,
         )
         other_sender = factories.ContactFactory(
-            owner=other_mailbox, email="other@sender.com"
+            mailbox=other_mailbox, email="other@sender.com"
         )
         other_thread = factories.ThreadFactory(
             mailbox=other_mailbox, subject="Other Mailbox Subject"
@@ -704,7 +704,7 @@ class TestMTAInboundEmailThreading:
         )
         # Add recipient for other message
         other_recipient_contact = factories.ContactFactory(
-            owner=other_mailbox,
+            mailbox=other_mailbox,
             email=f"{other_mailbox.local_part}@{other_maildomain.name}",
         )
         factories.MessageRecipientFactory(
@@ -871,7 +871,7 @@ class TestMTAInboundEmailThreading:
 
         # 5. Assertions
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"status": "ok"}
+        assert response.json() == {"status": "ok", "delivered": 2}
 
         # Should create exactly one thread per mailbox
         assert models.Thread.objects.count() == 2

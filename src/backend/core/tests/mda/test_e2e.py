@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """End-to-End tests for message sending and receiving flow."""
+# pylint: disable=too-many-positional-arguments
 
 import base64
 import json
@@ -24,13 +23,7 @@ from core import enums, factories, models
 
 
 @pytest.fixture
-def draft_url():
-    """Return the URL to create a draft message."""
-    return reverse("draft-message")  # Correct URL name
-
-
-@pytest.fixture
-def draft_detail_url(draft_url):
+def draft_detail_url():
     """Return the URL to update a draft message."""
 
     def _detail_url_factory(draft_id):
@@ -40,20 +33,14 @@ def draft_detail_url(draft_url):
     return _detail_url_factory
 
 
-@pytest.fixture
-def send_url():
-    """Return the URL to send a draft message."""
-    return reverse("send-message")  # Correct URL name
-
-
-@pytest.fixture
-def authenticated_user():
+@pytest.fixture(name="authenticated_user")
+def fixture_authenticated_user():
     """Return an authenticated user."""
     return factories.UserFactory()
 
 
-@pytest.fixture
-def mailbox(authenticated_user):
+@pytest.fixture(name="mailbox")
+def fixture_mailbox(authenticated_user):
     """Return a mailbox associated with the authenticated user."""
     # Ensure the domain exists
     maildomain, _ = models.MailDomain.objects.get_or_create(name="example.com")
@@ -64,8 +51,8 @@ def mailbox(authenticated_user):
     )
 
 
-@pytest.fixture
-def sender_contact(mailbox, authenticated_user):
+@pytest.fixture(name="sender_contact")
+def fixture_sender_contact(mailbox, authenticated_user):
     """Ensure a Contact exists representing the Mailbox owner."""
     mailbox_email = f"{mailbox.local_part}@{mailbox.domain.name}"
     contact, _ = models.Contact.objects.get_or_create(
@@ -112,7 +99,7 @@ class TestE2EMessageFlow:
         MTA_OUT_SMTP_USE_TLS=False,
     )
     def test_draft_send_receive_verify(
-        self, mailbox, sender_contact, authenticated_user, draft_url, send_url
+        self, mailbox, sender_contact, authenticated_user
     ):
         """Test creating a draft, sending it, receiving via mailcatcher, and verifying content/DKIM."""
         # --- Setup --- #
@@ -149,7 +136,9 @@ class TestE2EMessageFlow:
             "cc": [cc_email],
             "bcc": [bcc_email],
         }
-        draft_response = client.post(draft_url, draft_payload, format="json")
+        draft_response = client.post(
+            reverse("draft-message"), draft_payload, format="json"
+        )
         assert draft_response.status_code == status.HTTP_201_CREATED, (
             draft_response.content
         )
@@ -162,7 +151,9 @@ class TestE2EMessageFlow:
             "textBody": "This is the E2E test body.",
             "htmlBody": "<p>This is the E2E test body.</p>",
         }
-        send_response = client.post(send_url, send_payload, format="json")
+        send_response = client.post(
+            reverse("send-message"), send_payload, format="json"
+        )
         assert send_response.status_code == status.HTTP_200_OK, send_response.content
 
         # Verify DB state after sending

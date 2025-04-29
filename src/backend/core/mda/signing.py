@@ -1,3 +1,5 @@
+"""Handles DKIM signing of email messages."""
+
 import base64
 import logging
 from typing import Optional
@@ -84,6 +86,6 @@ def sign_message_dkim(raw_mime_message: bytes, sender_email: str) -> Optional[by
             signature.split(b"\\r\\n\\r\\n", 1)[0].split(b"DKIM-Signature:")[1].strip()
         )
         return b"DKIM-Signature: " + signature_header
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
         logger.error("Error during DKIM signing for domain %s: %s", domain, e)
         return None

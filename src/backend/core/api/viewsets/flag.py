@@ -1,3 +1,5 @@
+"""API ViewSet for changing flags on messages or threads."""
+
 import uuid
 from typing import Literal
 
@@ -60,8 +62,7 @@ class ChangeFlagViewSet(APIView):
             200: OpenApiExample(
                 "Success Response",
                 value={
-                    "detail": "Successfully updated flag 'unread' for 5 messages and 2 threads",
-                    "updated_messages": 5,
+                    "success": True,
                     "updated_threads": 2,
                 },
             ),
@@ -215,24 +216,9 @@ class ChangeFlagViewSet(APIView):
                 # Refresh thread from DB within transaction if needed, though update_counters handles it
                 thread.update_counters(counters=[flag])
 
-        # Simplified response message
-        response_detail = (
-            f"Successfully updated flag '{flag}' to {value} for "
-            f"{len(updated_threads)} threads."
-        )
-        # Adjust detail message if only messages were specified (meaning 1 thread was affected implicitly)
-        if message_ids_str and not thread_ids_str and len(updated_threads) == 1:
-            response_detail = f"Successfully updated flag '{flag}' to {value} for messages in 1 thread."
-        elif message_ids_str and not thread_ids_str:
-            # Handle cases where multiple threads might be affected by individual message updates
-            response_detail = f"Successfully updated flag '{flag}' to {value} for messages across {len(updated_threads)} threads."
-        elif thread_ids_str and not message_ids_str:
-            response_detail = f"Successfully updated flag '{flag}' to {value} for {len(updated_threads)} threads."
-        # Default message handles the combined case reasonably
-
         return drf.response.Response(
             {
-                "detail": response_detail,
+                "success": True,
                 "updated_threads": len(updated_threads),
             }
         )
