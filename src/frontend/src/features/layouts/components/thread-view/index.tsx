@@ -78,7 +78,7 @@ export const ThreadView = () => {
     return (
         <div className="thread-view" ref={rootRef}>
             <ActionBar />
-            <div className="thread-view__messages">
+            <div className="thread-view__messages-list">
                 {messages?.results.map((message) => {
                     const isLatest = latestMessage?.id === message.id;
                     const isUnread = !message.read_at;

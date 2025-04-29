@@ -33,7 +33,7 @@ export const ThreadPanel = () => {
 
     return (
         <div className="thread-panel">
-            <Bar>
+            <Bar className="thread-panel__bar">
                 <Tooltip content={t('actions.refresh')}>
                     <Button
                         onClick={refetchMailboxes}
@@ -79,9 +79,11 @@ export const ThreadPanel = () => {
                     </Tooltip>
                 </DropdownMenu>
             </Bar>
+            <div className="thread-panel__threads_list">
             {threads.results.map((thread) => (
                 <ThreadItem key={thread.id} thread={thread} />
             ))}
+            </div>
         </div>
     );
 }

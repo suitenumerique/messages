@@ -11,6 +11,15 @@ body {
   box-sizing: border-box;
 }
 
+// Related to 'react-resizable-panels'
+// By default, it sets overflow to 'hidden', this is not compatible
+// with our ui mainly because of tooltips.
+*[data-panel],
+*[data-panel-group],
+.c__main-layout__content__center__children {
+  overflow: inherit !important;
+}
+
 .material-icons {
   font-size: 1.25em;
 }

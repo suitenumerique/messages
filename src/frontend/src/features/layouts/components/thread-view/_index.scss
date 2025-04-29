@@ -1,16 +1,14 @@
 .thread-view {
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
     max-height: 100%;
 }
 
-.thread-action-bar {
-    position: sticky;
-    top: 0;
-}
-
-.thread-view__messages {
+.thread-view__messages-list {
     display: flex;
     flex-direction: column;
     gap: 16px;
     padding: 16px;
+    overflow-y: auto;
+    max-height: 100%;
 }
