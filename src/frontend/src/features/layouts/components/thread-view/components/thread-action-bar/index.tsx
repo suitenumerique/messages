@@ -16,7 +16,7 @@ export const ActionBar = () => {
     return (
         <Bar className="thread-action-bar">
             <div className="thread-action-bar__left">
-            <Tooltip content={t('actions.close_thread')} placement="right">
+            <Tooltip content={t('actions.close_thread')}>
                 <Button
                     onClick={unselectThread}
                     color="tertiary-text"
@@ -62,7 +62,7 @@ export const ActionBar = () => {
                         },
                     ]}
                 >
-                    <Tooltip content={t('tooltips.more_options')} placement="left">
+                    <Tooltip content={t('tooltips.more_options')}>
                         <Button
                             onClick={() => setIsDropdownOpen(true)}
                             icon={<span className="material-icons">more_vert</span>}
