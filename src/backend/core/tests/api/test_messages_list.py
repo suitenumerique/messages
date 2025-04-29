@@ -88,7 +88,6 @@ class TestApiThreads:
         assert thread_data["subject"] == thread2.subject
         assert thread_data["snippet"] == thread2.snippet
         assert thread_data["messages"] == [str(message2.id), str(new_message2.id)]
-        assert thread_data["is_read"] is False  # Based on message read_at=None
         assert thread_data["updated_at"] == thread2.updated_at.isoformat().replace(
             "+00:00", "Z"
         )

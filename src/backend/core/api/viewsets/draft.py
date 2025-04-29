@@ -252,7 +252,6 @@ class DraftMessageView(APIView):
                 # self.mailbox is set in the permission class
                 mailbox=self.mailbox,
                 subject=subject,
-                is_read=True,
             )
 
         # --- Get Sender Contact --- #
@@ -284,6 +283,8 @@ class DraftMessageView(APIView):
 
         # Populate details using helper
         message = self._update_draft_details(message, request.data)
+
+        thread.update_counters()
 
         # Refresh required as _update_draft_details might have saved again
         message.refresh_from_db()

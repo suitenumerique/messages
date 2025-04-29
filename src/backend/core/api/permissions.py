@@ -84,6 +84,10 @@ class IsAllowedToAccessMailbox(IsAuthenticated):
 
     def has_permission(self, request, view):
         """Check if user has permission to access the mailbox thread list or message list."""
+
+        if not IsAuthenticated.has_permission(self, request, view):
+            return False
+
         # This check is primarily for LIST actions based on query params
         mailbox_id = request.query_params.get("mailbox_id")
         thread_id = request.query_params.get("thread_id")
@@ -160,6 +164,10 @@ class IsAllowedToCreateMessage(IsAuthenticated):
 
     def has_permission(self, request, view):
         """Check if user is allowed to create a message."""
+
+        if not IsAuthenticated.has_permission(self, request, view):
+            return False
+
         # a sender is required to create a message
         sender_id = request.data.get("senderId")
         if not sender_id:
@@ -187,6 +195,10 @@ class IsAllowedToSendMessage(IsAuthenticated):
     def has_permission(self, request, view):
         """Check if user is allowed to send a message."""
         # a sender is required to create a message
+
+        if not IsAuthenticated.has_permission(self, request, view):
+            return False
+
         sender_id = request.data.get("senderId")
         if not sender_id:
             return False

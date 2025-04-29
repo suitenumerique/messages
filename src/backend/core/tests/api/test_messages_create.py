@@ -394,11 +394,6 @@ class TestApiDraftAndSendReply:
             in sent_message.raw_mime
         )
 
-        # Verify thread state update (Optional based on requirements)
-        # thread = models.Thread.objects.get(id=sent_message.thread.id)
-        # assert thread.snippet == "<p>test reply</p> or test reply"[:100]
-        # assert thread.is_read is True
-
     def test_draft_reply_without_permission(
         self, mailbox, authenticated_user, draft_url
     ):
@@ -561,11 +556,6 @@ class TestApiDraftAndSendReply:
         assert sent_message.mta_sent is True
         assert sent_message.subject == updated_subject
         assert sent_message.is_draft is False
-
-        # Verify thread state update (Optional based on requirements)
-        # thread = models.Thread.objects.get(id=sent_message.thread.id)
-        # assert thread.snippet == "updated content"[:100]
-        # assert thread.is_read is True
 
     def test_update_nonexistent_draft(
         self, mailbox, authenticated_user, draft_detail_url

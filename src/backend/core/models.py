@@ -6,7 +6,7 @@ Declare and configure the models for the messages core application
 import base64
 import uuid
 from logging import getLogger
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from django.conf import settings
 from django.contrib.auth import models as auth_models
@@ -243,7 +243,11 @@ class Thread(BaseModel):
     mailbox = models.ForeignKey(
         Mailbox, on_delete=models.CASCADE, related_name="threads"
     )
-    is_read = models.BooleanField(_("is read"), default=False)
+    count_unread = models.IntegerField(_("count unread"), default=0)
+    count_trashed = models.IntegerField(_("count trashed"), default=0)
+    count_draft = models.IntegerField(_("count draft"), default=0)
+    count_starred = models.IntegerField(_("count starred"), default=0)
+    count_sender = models.IntegerField(_("count sender"), default=0)
 
     class Meta:
         db_table = "messages_thread"
@@ -253,10 +257,29 @@ class Thread(BaseModel):
     def __str__(self):
         return self.subject
 
-    def update_read_status(self):
-        """Mark the thread as read if all messages in the thread are read."""
-        self.is_read = not self.messages.filter(read_at__isnull=True).exists()
-        self.save(update_fields=["is_read", "updated_at"])
+    def update_counters(
+        self, counters: Tuple[str] = ("unread", "trashed", "draft", "starred", "sender")
+    ):
+        """Update the counters of the thread."""
+        if "unread" in counters:
+            self.count_unread = self.messages.filter(
+                is_unread=True, is_trashed=False
+            ).count()
+        if "trashed" in counters:
+            self.count_trashed = self.messages.filter(is_trashed=True).count()
+        if "draft" in counters:
+            self.count_draft = self.messages.filter(
+                is_draft=True, is_trashed=False
+            ).count()
+        if "starred" in counters:
+            self.count_starred = self.messages.filter(
+                is_starred=True, is_trashed=False
+            ).count()
+        if "sender" in counters:
+            self.count_sender = self.messages.filter(
+                is_sender=True, is_trashed=False
+            ).count()
+        self.save(update_fields=["count_" + x for x in counters])
 
 
 class Contact(BaseModel):
@@ -328,7 +351,7 @@ class Message(BaseModel):
     is_sender = models.BooleanField(_("is sender"), default=False)
     is_starred = models.BooleanField(_("is starred"), default=False)
     is_trashed = models.BooleanField(_("is trashed"), default=False)
-    is_read = models.BooleanField(_("is read"), default=False)
+    is_unread = models.BooleanField(_("is unread"), default=False)
 
     trashed_at = models.DateTimeField(_("trashed at"), null=True, blank=True)
     sent_at = models.DateTimeField(_("sent at"), null=True, blank=True)
