@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 
 export const MailboxPanel = () => {
     const { t } = useTranslation();
-    const { selectedMailbox, mailboxes, selectMailbox, status} = useMailboxContext();
+    const { selectedMailbox, mailboxes, selectMailbox, queryStates } = useMailboxContext();
 
     const getMailboxOptions = () => {
         if(!mailboxes) return [];
@@ -23,7 +23,7 @@ export const MailboxPanel = () => {
                 <MailboxPanelActions />
                 <HorizontalSeparator withPadding={false} />
             </div>
-            {!selectedMailbox || status.mailboxes === "pending" ? <Spinner /> : 
+            {!selectedMailbox || queryStates.mailboxes.isLoading ? <Spinner /> : 
             (
                 <>
                     <Select

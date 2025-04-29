@@ -20,8 +20,8 @@ export const MainLayout = ({ children }: PropsWithChildren) => {
 }
 
 const MainLayoutContent = ({ children }: PropsWithChildren) => {
-    const { mailboxes, status } = useMailboxContext();
-    const hasNoMailbox = status.mailboxes === 'success' && mailboxes!.length === 0;
+    const { mailboxes, queryStates } = useMailboxContext();
+    const hasNoMailbox = queryStates.mailboxes.status === 'success' && mailboxes!.length === 0;
 
     return hasNoMailbox ? (
         <>

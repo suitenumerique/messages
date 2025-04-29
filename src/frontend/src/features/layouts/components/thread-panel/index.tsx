@@ -8,12 +8,11 @@ import useRead from "@/features/message/useRead";
 import { useState } from "react";
 
 export const ThreadPanel = () => {
-    const { threads, status, refetchMailboxes, unselectThread } = useMailboxContext();
+    const { threads, queryStates, refetchMailboxes, unselectThread } = useMailboxContext();
     const { markAsRead, markAsUnread } = useRead();
     const { t } = useTranslation();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-
-    if (status.threads === "pending") {
+    if (queryStates.threads.isLoading) {
         return (
             <div className="thread-panel thread-panel--loading">
                 <Spinner />
