@@ -59,6 +59,15 @@
     overflow: auto;
 }
 
+.thread-message {
+    opacity: 1;
+    transition: opacity 0.3s ease-out;
+}
+
+.thread-message:has(.thread-message__body--loading) {
+    opacity: 0;
+}
+
 .thread-message__footer {
     margin-top: var(--c--theme--spacings--base);
 }

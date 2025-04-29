@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DomPurify from "dompurify";
+import clsx from "clsx";
 
 type MessageBodyProps = {
     rawHtmlBody: string;
@@ -36,6 +37,7 @@ const CSP = [
 
 const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
+    const [isLoaded, setIsLoaded] = useState(false);
 
     const sanitizedHtmlBody = useMemo(() => {
         return DomPurify.sanitize(rawHtmlBody || rawTextBody, {
@@ -88,6 +90,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
     }, [sanitizedHtmlBody]);
 
     const resizeIframe = useCallback(() => {
+        if (!isLoaded) setIsLoaded(true);
         if (iframeRef.current?.contentWindow) {
           const height = iframeRef.current.contentWindow.document.body.getBoundingClientRect().height;
           iframeRef.current.style.height = `${height}px`;
@@ -102,10 +105,16 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
     return (
         <iframe
             ref={iframeRef}
-            className="thread-message__body"
+            className={clsx(
+                'thread-message__body',
+                {
+                    'thread-message__body--loaded': isLoaded,
+                }
+            )}
             srcDoc={wrappedHtml}
-            sandbox="allow-same-origin"
+            sandbox="allow-same-origin allow-popups"
             onLoad={resizeIframe}
+
         />
     )
 }
