@@ -7,297 +7,389 @@ from django.utils import timezone
 
 import pytest
 from rest_framework import status
-from rest_framework.test import APIClient
 
-from core.factories import MessageFactory, ThreadFactory
+from core.factories import MailboxFactory, MessageFactory, ThreadFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
 
-
-@pytest.fixture
-def change_read_status_url():
-    """Get the url for the read status endpoint."""
-    return reverse("change-read-status")
+API_URL = reverse("change-flag")
 
 
-@pytest.fixture
-def thread_with_messages(mailbox):
-    """Create a thread with multiple messages."""
+def test_mark_messages_unread_success(api_client):
+    """Test marking messages as unread successfully."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
     thread = ThreadFactory(mailbox=mailbox)
-    MessageFactory.create_batch(3, thread=thread)
-    return thread
+    # Start with messages marked as read (read_at is set, is_unread=False)
+    msg1 = MessageFactory(
+        thread=thread, is_unread=False, read_at=timezone.now(), is_trashed=False
+    )
+    msg2 = MessageFactory(
+        thread=thread, is_unread=False, read_at=timezone.now(), is_trashed=False
+    )
+    msg3 = MessageFactory(
+        thread=thread, is_unread=True, read_at=None, is_trashed=False
+    )  # Already unread
+
+    # Check initial thread counter
+    thread.update_counters()
+    thread.refresh_from_db()
+    initial_unread_count = thread.count_unread
+    assert initial_unread_count == 1
+
+    message_ids = f"{msg1.id},{msg2.id}"
+    data = {"flag": "unread", "value": "true", "message_ids": message_ids}
+    response = api_client.post(API_URL, data=data, format="json")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 1
+
+    # Verify messages are marked as unread (is_unread=True, read_at=None)
+    msg1.refresh_from_db()
+    msg2.refresh_from_db()
+    msg3.refresh_from_db()
+    assert msg1.is_unread is True
+    assert msg1.read_at is None
+    assert msg2.is_unread is True
+    assert msg2.read_at is None
+    assert msg3.is_unread is True  # Remained unread
+
+    # Verify thread unread counter updated
+    thread.refresh_from_db()
+    assert thread.count_unread == 3
 
 
-class TestMessageReadStatus:
-    """Test marking messages as read/unread."""
+def test_mark_messages_read_success(api_client):
+    """Test marking messages as read successfully."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
+    thread = ThreadFactory(mailbox=mailbox)
+    # Start with messages marked as unread (is_unread=True, read_at=None)
+    msg1 = MessageFactory(thread=thread, is_unread=True, read_at=None, is_trashed=False)
+    msg2 = MessageFactory(thread=thread, is_unread=True, read_at=None, is_trashed=False)
+    msg3 = MessageFactory(
+        thread=thread, is_unread=False, read_at=timezone.now(), is_trashed=False
+    )  # Already read
 
-    def test_mark_single_message_as_read(
-        self, message, change_read_status_url, mailbox_access
-    ):
-        """Test marking a single message as read."""
-        # Ensure message is not read
-        assert message.read_at is None
+    # Check initial thread counter
+    thread.update_counters()
+    thread.refresh_from_db()
+    initial_unread_count = thread.count_unread
+    assert initial_unread_count == 2
 
-        # Mark message as read
-        client = APIClient()
-        client.force_authenticate(user=mailbox_access.user)
-        response = client.post(
-            change_read_status_url,
-            {"status": 1, "message_ids": str(message.id)},
-            format="json",
-        )
+    message_ids = f"{msg1.id},{msg2.id}"
+    data = {"flag": "unread", "value": "false", "message_ids": message_ids}
+    response = api_client.post(API_URL, data=data, format="json")
 
-        assert response.status_code == status.HTTP_200_OK
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 1
 
-        # Verify message is read
-        message.refresh_from_db()
-        assert message.read_at is not None
+    # Verify messages are marked as read (is_unread=False, read_at is set)
+    msg1.refresh_from_db()
+    msg2.refresh_from_db()
+    msg3.refresh_from_db()
+    assert msg1.is_unread is False
+    assert msg1.read_at is not None
+    assert msg2.is_unread is False
+    assert msg2.read_at is not None
+    assert msg3.is_unread is False  # Remained read
 
-        # Verify response data
-        assert response.data["updated_messages"] == 1
-        assert "read" in response.data["detail"]
+    # Verify thread unread counter updated
+    thread.refresh_from_db()
+    assert thread.count_unread == 0
 
-        # Verify thread is read
-        assert message.thread.is_read is True
 
-    def test_mark_single_message_as_unread(
-        self, message, change_read_status_url, mailbox_access
-    ):
-        """Test marking a single message as unread."""
-        # Ensure message is read
-        message.read_at = timezone.now()
-        message.save()
+def test_mark_thread_messages_unread_success(api_client):
+    """Test marking all messages in a thread as unread."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
+    thread = ThreadFactory(mailbox=mailbox)
+    # Messages start as read
+    msg1 = MessageFactory(thread=thread, is_unread=False, read_at=timezone.now())
+    msg2 = MessageFactory(thread=thread, is_unread=False, read_at=timezone.now())
 
-        # Ensure thread is marked as read
-        message.thread.update_read_status()
+    thread.refresh_from_db()
+    thread.update_counters()
+    assert thread.count_unread == 0
 
-        # Mark message as unread
-        client = APIClient()
-        client.force_authenticate(user=mailbox_access.user)
-        response = client.post(
-            change_read_status_url,
-            {"status": 0, "message_ids": str(message.id)},
-            format="json",
-        )
+    data = {"flag": "unread", "value": "true", "thread_ids": str(thread.id)}
+    response = api_client.post(API_URL, data=data, format="json")
 
-        assert response.status_code == status.HTTP_200_OK
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 1
 
-        # Refresh message from database
-        message.refresh_from_db()
-        assert message.read_at is None
+    msg1.refresh_from_db()
+    msg2.refresh_from_db()
+    assert msg1.is_unread is True
+    assert msg1.read_at is None
+    assert msg2.is_unread is True
+    assert msg2.read_at is None
 
-        # Verify response data
-        assert response.data["updated_messages"] == 1
-        assert "unread" in response.data["detail"]
-        # Verify thread is unread
-        assert message.thread.is_read is False
+    thread.refresh_from_db()
+    assert thread.count_unread == thread.messages.count()
 
-    def test_mark_thread_as_read(
-        self, thread_with_messages, change_read_status_url, mailbox_access
-    ):
-        """Test marking an entire thread as read."""
-        # Ensure all messages of the thread are unread and the thread is unread
-        thread = thread_with_messages
-        thread.messages.update(read_at=None)
-        thread.update_read_status()
-        assert thread.is_read is False
 
-        # Mark thread as read
-        client = APIClient()
-        client.force_authenticate(user=mailbox_access.user)
-        response = client.post(
-            change_read_status_url,
-            {"status": 1, "thread_ids": str(thread.id)},
-            format="json",
-        )
+def test_mark_thread_messages_read_success(api_client):
+    """Test marking all messages in a thread as read."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
+    thread = ThreadFactory(mailbox=mailbox)
+    # Messages start as unread
+    msg1 = MessageFactory(thread=thread, is_unread=True, read_at=None)
+    msg2 = MessageFactory(thread=thread, is_unread=True, read_at=None)
 
-        assert response.status_code == status.HTTP_200_OK
+    thread.refresh_from_db()
+    thread.update_counters()
+    assert thread.count_unread == 2
 
-        # Verify all messages in thread are marked as read
-        assert thread.messages.filter(read_at__isnull=True).count() == 0
+    data = {"flag": "unread", "value": "false", "thread_ids": str(thread.id)}
+    response = api_client.post(API_URL, data=data, format="json")
 
-        # Verify thread is marked as read
-        thread.refresh_from_db()
-        assert thread.is_read is True
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 1
 
-    def test_mark_thread_as_unread(
-        self, thread_with_messages, change_read_status_url, mailbox_access
-    ):
-        """Test marking an entire thread as unread."""
-        # Ensure all messages of the thread are read and the thread is read
-        thread = thread_with_messages
-        thread.messages.update(read_at=timezone.now())
-        thread.update_read_status()
-        assert thread.is_read is True
+    msg1.refresh_from_db()
+    msg2.refresh_from_db()
+    assert msg1.is_unread is False
+    assert msg1.read_at is not None
+    assert msg2.is_unread is False
+    assert msg2.read_at is not None
 
-        # Mark thread as unread
-        client = APIClient()
-        client.force_authenticate(user=mailbox_access.user)
-        response = client.post(
-            change_read_status_url,
-            {"status": 0, "thread_ids": str(thread.id)},
-            format="json",
-        )
+    thread.refresh_from_db()
+    assert thread.count_unread == 0
 
-        assert response.status_code == status.HTTP_200_OK
 
-        # Verify all messages in thread are marked as unread
-        assert thread.messages.filter(read_at__isnull=False).count() == 0
+def test_mark_multiple_threads_read_success(api_client):
+    """Test marking all messages in multiple threads as read."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
+    # Threads start with unread messages
+    thread1 = ThreadFactory(mailbox=mailbox)
+    MessageFactory(thread=thread1, is_unread=True)
+    thread2 = ThreadFactory(mailbox=mailbox)
+    MessageFactory(thread=thread2, is_unread=True)
+    thread3 = ThreadFactory(mailbox=mailbox)  # No messages initially
+    MessageFactory(
+        thread=thread3, is_unread=False, read_at=timezone.now()
+    )  # Already read
 
-        # Verify thread is marked as unread
-        thread.refresh_from_db()
-        assert thread.is_read is False
+    thread1.refresh_from_db()
+    thread1.update_counters()
+    thread2.refresh_from_db()
+    thread2.update_counters()
+    thread3.refresh_from_db()
+    thread3.update_counters()
+    assert thread1.count_unread == 1
+    assert thread2.count_unread == 1
+    assert thread3.count_unread == 0
 
-    def test_mark_multiple_messages(
-        self, mailbox, change_read_status_url, mailbox_access
-    ):
-        """Test marking multiple messages at once."""
-        # Create multiple messages using factories
-        thread = ThreadFactory(mailbox=mailbox, is_read=False)
-        message1 = MessageFactory(thread=thread, read_at=None)
-        message2 = MessageFactory(thread=thread, read_at=None)
-        message3 = MessageFactory(thread=thread, read_at=None)
+    thread_ids = f"{thread1.id},{thread2.id}"
+    data = {"flag": "unread", "value": "false", "thread_ids": thread_ids}
+    response = api_client.post(API_URL, data=data, format="json")
 
-        # Mark 2 messages as read
-        client = APIClient()
-        client.force_authenticate(user=mailbox_access.user)
-        response = client.post(
-            change_read_status_url,
-            {"status": 1, "message_ids": f"{message1.id},{message2.id}"},
-            format="json",
-        )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 2
 
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["updated_messages"] == 2
-        assert response.data["detail"] == "Successfully marked 2 messages as read"
+    thread1.refresh_from_db()
+    thread2.refresh_from_db()
+    thread3.refresh_from_db()  # Should remain unchanged
+    assert thread1.count_unread == 0
+    assert thread2.count_unread == 0
+    assert thread3.count_unread == 0
 
-        # Verify only specified messages are marked as read
-        message1.refresh_from_db()
-        message2.refresh_from_db()
-        message3.refresh_from_db()
-        assert message1.read_at is not None
-        assert message2.read_at is not None
-        assert message3.read_at is None
-        # Verify thread still unread
-        assert thread.is_read is False
 
-        # Mark last message as read
-        response = client.post(
-            change_read_status_url,
-            {"status": 1, "message_ids": str(message3.id)},
-            format="json",
-        )
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["updated_messages"] == 1
-        assert response.data["updated_threads"] == 1
-        assert response.data["detail"] == "Successfully marked 1 messages as read"
-        message3.refresh_from_db()
-        assert message3.read_at is not None
-        # Verify thread still read now
-        thread.refresh_from_db()
-        assert thread.is_read is True
+def test_mark_messages_unauthorized(api_client):
+    """Test marking messages without authentication."""
+    response = api_client.post(API_URL, data={}, format="json")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_mark_multiple_threads(
-        self, mailbox, change_read_status_url, mailbox_access
-    ):
-        """Test marking multiple threads at once."""
-        # Create multiple threads with messages using factories
-        thread1 = ThreadFactory(mailbox=mailbox, is_read=False)
-        message1 = MessageFactory(thread=thread1, read_at=None)
 
-        thread2 = ThreadFactory(mailbox=mailbox, is_read=False)
-        message2 = MessageFactory(thread=thread2, read_at=None)
+def test_mark_messages_no_permission(api_client):
+    """Test marking messages in a mailbox the user doesn't have access to."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    other_mailbox = MailboxFactory()  # User does not have access
+    thread = ThreadFactory(mailbox=other_mailbox)
+    msg = MessageFactory(thread=thread, is_unread=True)
 
-        thread3 = ThreadFactory(mailbox=mailbox, is_read=False)
-        message3 = MessageFactory(thread=thread3, read_at=None)
+    data = {"flag": "unread", "value": "false", "message_ids": str(msg.id)}
+    response = api_client.post(API_URL, data=data, format="json")
 
-        # Mark 2 threads as read
-        client = APIClient()
-        client.force_authenticate(user=mailbox_access.user)
-        response = client.post(
-            change_read_status_url,
-            {"status": 1, "thread_ids": f"{thread1.id},{thread2.id}"},
-            format="json",
-        )
+    # The endpoint should process successfully but update 0 messages as the filter excludes them
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 0
 
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["updated_threads"] == 2
+    # Verify message state hasn't changed
+    msg.refresh_from_db()
+    assert msg.is_unread is True
 
-        # Verify only specified threads are marked as read
-        thread1.refresh_from_db()
-        thread2.refresh_from_db()
-        thread3.refresh_from_db()
-        assert thread1.is_read is True
-        assert thread2.is_read is True
-        assert thread3.is_read is False
-        # Verify messages into thread read status
-        message1.refresh_from_db()
-        message2.refresh_from_db()
-        message3.refresh_from_db()
-        assert message1.read_at is not None
-        assert message2.read_at is not None
-        assert message3.read_at is None
 
-    def test_unauthorized_access_message(
-        self, message, change_read_status_url, other_user
-    ):
-        """Test that users without mailbox access cannot mark messages as read/unread."""
-        client = APIClient()
-        client.force_authenticate(user=other_user)
-        response = client.post(
-            change_read_status_url,
-            {"status": 1, "message_ids": str(message.id)},
-            format="json",
-        )
+def test_mark_messages_missing_ids(api_client):
+    """Test request with missing message_ids and thread_ids."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    data = {"flag": "unread", "value": "true"}
+    response = api_client.post(API_URL, data=data, format="json")
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert (
+        "Either message_ids or thread_ids must be provided" in response.data["detail"]
+    )
 
-        # The endpoint should return 200 but not affect any messages
-        # since the user doesn't have access to the mailbox
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["updated_messages"] == 0
 
-        # Verify message wasn't marked as read
-        message.refresh_from_db()
-        assert message.read_at is None
+def test_mark_messages_invalid_flag(api_client):
+    """Test request with an invalid flag parameter."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
+    thread = ThreadFactory(mailbox=mailbox)
+    msg = MessageFactory(thread=thread)
+    data = {"flag": "invalid_flag", "value": "true", "message_ids": str(msg.id)}
+    response = api_client.post(API_URL, data=data, format="json")
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "Flag parameter is required" in response.data["detail"]
 
-    def test_unauthorized_access_thread(
-        self, thread_with_messages, change_read_status_url, other_user
-    ):
-        """Test that users without mailbox access cannot mark threads as read/unread."""
-        client = APIClient()
-        client.force_authenticate(user=other_user)
-        response = client.post(
-            change_read_status_url,
-            {"status": 1, "thread_ids": str(thread_with_messages.id)},
-            format="json",
-        )
 
-        # The endpoint should return 200 but not affect any messages
-        # since the user doesn't have access to the mailbox
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["updated_threads"] == 0
-        assert response.data["updated_messages"] == 0
+def test_mark_messages_invalid_value(api_client):
+    """Test request with an invalid value parameter."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
+    thread = ThreadFactory(mailbox=mailbox)
+    msg = MessageFactory(thread=thread)
+    data = {"flag": "unread", "value": "maybe", "message_ids": str(msg.id)}
+    response = api_client.post(API_URL, data=data, format="json")
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "Value parameter must be 'true' or 'false'" in response.data["detail"]
 
-    def test_invalid_status(self, message, change_read_status_url, mailbox_access):
-        """Test providing an invalid status value."""
-        client = APIClient()
-        client.force_authenticate(user=mailbox_access.user)
-        response = client.post(
-            change_read_status_url,
-            {"status": "invalid", "message_ids": str(message.id)},
-            format="json",
-        )
 
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "Status must be 0 or 1" in response.data["detail"]
+# --- Tests for Starred Flag ---
 
-    def test_missing_ids(self, change_read_status_url, mailbox_access):
-        """Test not providing any message or thread IDs."""
-        client = APIClient()
-        client.force_authenticate(user=mailbox_access.user)
-        response = client.post(change_read_status_url, {"status": 1}, format="json")
 
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert (
-            "Either message_ids or thread_ids must be provided"
-            in response.data["detail"]
-        )
+def test_mark_messages_starred_success(api_client):
+    """Test marking messages as starred successfully."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
+    thread = ThreadFactory(mailbox=mailbox)
+    msg1 = MessageFactory(thread=thread, is_starred=False)
+    msg2 = MessageFactory(thread=thread, is_starred=True)  # Already starred
+
+    thread.refresh_from_db()
+    thread.update_counters()
+    initial_starred_count = thread.count_starred
+    assert initial_starred_count == 1
+
+    message_ids = f"{msg1.id}"
+    data = {"flag": "starred", "value": "true", "message_ids": message_ids}
+    response = api_client.post(API_URL, data=data, format="json")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 1
+
+    msg1.refresh_from_db()
+    msg2.refresh_from_db()
+    assert msg1.is_starred is True
+    assert msg2.is_starred is True
+
+    thread.refresh_from_db()
+    assert thread.count_starred == 2
+
+
+def test_mark_messages_unstarred_success(api_client):
+    """Test marking messages as unstarred successfully."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
+    thread = ThreadFactory(mailbox=mailbox)
+    msg1 = MessageFactory(thread=thread, is_starred=True)
+    msg2 = MessageFactory(thread=thread, is_starred=False)  # Already unstarred
+
+    thread.refresh_from_db()
+    thread.update_counters()
+    initial_starred_count = thread.count_starred
+    assert initial_starred_count == 1
+
+    message_ids = f"{msg1.id}"
+    data = {"flag": "starred", "value": "false", "message_ids": message_ids}
+    response = api_client.post(API_URL, data=data, format="json")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 1
+
+    msg1.refresh_from_db()
+    msg2.refresh_from_db()
+    assert msg1.is_starred is False
+    assert msg2.is_starred is False
+
+    thread.refresh_from_db()
+    assert thread.count_starred == 0
+
+
+# --- Tests for Trashed Flag ---
+
+
+def test_mark_messages_trashed_success(api_client):
+    """Test marking messages as trashed successfully."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])  # Ensure correct permission if needed
+    thread = ThreadFactory(mailbox=mailbox)
+    msg1 = MessageFactory(thread=thread, is_trashed=False)
+    msg2 = MessageFactory(thread=thread, is_trashed=True)  # Already trashed
+
+    thread.refresh_from_db()
+    thread.update_counters()
+    initial_trashed_count = thread.count_trashed
+    assert initial_trashed_count == 1
+
+    message_ids = f"{msg1.id}"
+    data = {"flag": "trashed", "value": "true", "message_ids": message_ids}
+    response = api_client.post(API_URL, data=data, format="json")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 1
+
+    msg1.refresh_from_db()
+    msg2.refresh_from_db()
+    assert msg1.is_trashed is True
+    assert msg1.trashed_at is not None
+    assert msg2.is_trashed is True
+
+    thread.refresh_from_db()
+    assert thread.count_trashed == 2
+
+
+def test_mark_messages_untrashed_success(api_client):
+    """Test marking messages as untrashed successfully."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
+    thread = ThreadFactory(mailbox=mailbox)
+    msg1 = MessageFactory(thread=thread, is_trashed=True, trashed_at=timezone.now())
+    msg2 = MessageFactory(thread=thread, is_trashed=False)  # Already untrashed
+
+    thread.refresh_from_db()
+    thread.update_counters()
+    initial_trashed_count = thread.count_trashed
+    assert initial_trashed_count == 1
+
+    message_ids = f"{msg1.id}"
+    data = {"flag": "trashed", "value": "false", "message_ids": message_ids}
+    response = api_client.post(API_URL, data=data, format="json")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 1
+
+    msg1.refresh_from_db()
+    msg2.refresh_from_db()
+    assert msg1.is_trashed is False
+    assert msg1.trashed_at is None
+    assert msg2.is_trashed is False
+
+    thread.refresh_from_db()
+    assert thread.count_trashed == 0

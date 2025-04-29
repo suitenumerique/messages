@@ -79,7 +79,11 @@ class ThreadSerializer(serializers.ModelSerializer):
             "subject",
             "snippet",
             "messages",
-            "is_read",
+            "count_unread",
+            "count_trashed",
+            "count_draft",
+            "count_starred",
+            "count_sender",
             "updated_at",
         ]
 
@@ -144,7 +148,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "read_at",
             "sent_at",
             "is_draft",
-            "is_read",
+            "is_unread",
             "is_starred",
             "is_trashed",
         ]

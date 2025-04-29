@@ -7,10 +7,10 @@ from rest_framework.routers import DefaultRouter
 
 from core.api.viewsets.config import ConfigView
 from core.api.viewsets.draft import DraftMessageView
+from core.api.viewsets.flag import ChangeFlagViewSet
 from core.api.viewsets.mailbox import MailboxViewSet
 from core.api.viewsets.message import MessageViewSet
 from core.api.viewsets.mta import MTAViewSet
-from core.api.viewsets.read import ChangeReadStatusViewSet
 from core.api.viewsets.send import SendMessageView
 from core.api.viewsets.thread import ThreadViewSet
 from core.api.viewsets.user import UserViewSet
@@ -31,9 +31,9 @@ urlpatterns = [
     ),
     path(f"api/{settings.API_VERSION}/config/", ConfigView.as_view()),
     path(
-        f"api/{settings.API_VERSION}/read/",
-        ChangeReadStatusViewSet.as_view(),
-        name="change-read-status",
+        f"api/{settings.API_VERSION}/flag/",
+        ChangeFlagViewSet.as_view(),
+        name="change-flag",
     ),
     path(
         f"api/{settings.API_VERSION}/draft/",

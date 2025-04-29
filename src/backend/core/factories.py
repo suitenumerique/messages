@@ -65,6 +65,34 @@ class MailboxFactory(factory.django.DjangoModelFactory):
     domain = factory.SubFactory(MailDomainFactory)
     local_part = factory.Sequence(lambda n: f"john.doe{n!s}")
 
+    @factory.post_generation
+    def users_read(self, create, users, **kwargs):
+        """
+        Optionally assign users with read access to this mailbox.
+        Usage: MailboxFactory(users_read=[user1, user2])
+        """
+        if not create or not users:
+            return
+        for user in users:
+            models.MailboxAccess.objects.create(
+                mailbox=self, user=user, permission=models.MailboxPermissionChoices.READ
+            )
+
+    @factory.post_generation
+    def users_admin(self, create, users, **kwargs):
+        """
+        Optionally assign users with admin access to this mailbox.
+        Usage: MailboxFactory(users_admin=[user1, user2])
+        """
+        if not create or not users:
+            return
+        for user in users:
+            models.MailboxAccess.objects.create(
+                mailbox=self,
+                user=user,
+                permission=models.MailboxPermissionChoices.ADMIN,
+            )
+
 
 class MailboxAccessFactory(factory.django.DjangoModelFactory):
     """A factory to random mailbox accesses for testing purposes."""

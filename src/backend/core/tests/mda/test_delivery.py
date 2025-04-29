@@ -211,7 +211,7 @@ class TestDeliverInboundMessage:
         thread = models.Thread.objects.first()
         assert thread.mailbox == target_mailbox
         assert thread.subject == sample_parsed_email["subject"]
-        assert not thread.is_read
+        assert thread.count_unread == 1
         assert thread.snippet == "Test body content."
 
         message = models.Message.objects.first()
@@ -255,7 +255,7 @@ class TestDeliverInboundMessage:
         assert message.thread == existing_thread
         # Ensure thread is marked unread again
         existing_thread.refresh_from_db()
-        assert not existing_thread.is_read
+        assert existing_thread.count_unread == 1
 
     @override_settings(MESSAGES_ACCEPT_ALL_EMAILS=True)
     def test_mailbox_creation_enabled(self, sample_parsed_email, raw_email_data):

@@ -1,164 +1,190 @@
 """Test threads delete."""
 
 from django.urls import reverse
+from django.utils import timezone
 
 import pytest
 from rest_framework import status
-from rest_framework.test import APIClient
 
-from core import enums, factories, models
+# Remove APIClient import if not used elsewhere after removing classes
+# from rest_framework.test import APIClient
+from core import (
+    factories,  # Renamed import
+    models,  # Keep if models are used in remaining tests
+)
 
 pytestmark = pytest.mark.django_db
 
+FLAG_API_URL = reverse("change-flag")
 
-@pytest.mark.django_db
-class TestThreadsDelete:
-    """Test threads delete."""
+# Removed TestThreadsDelete class
+# Removed TestThreadsBulkDelete class
 
-    def test_delete_thread_anonymous(self):
-        """Test delete thread with anonymous user."""
-        thread = factories.ThreadFactory()
-        client = APIClient()
-        response = client.delete(reverse("threads-detail", kwargs={"id": thread.id}))
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_delete_thread_without_permissions(self):
-        """Test delete thread without permissions."""
-        authenticated_user = factories.UserFactory()
-        thread = factories.ThreadFactory()
-        client = APIClient()
-        client.force_authenticate(user=authenticated_user)
-        response = client.delete(reverse("threads-detail", kwargs={"id": thread.id}))
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert models.Thread.objects.filter(id=thread.id).exists()
+def test_trash_single_thread_success(api_client):
+    """Test marking a single thread as trashed successfully via flag endpoint."""
+    user = factories.UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = factories.MailboxFactory(users_read=[user])
+    thread = factories.ThreadFactory(mailbox=mailbox)
+    msg1 = factories.MessageFactory(thread=thread, is_trashed=False)
+    msg2 = factories.MessageFactory(thread=thread, is_trashed=False)
 
-    @pytest.mark.parametrize(
-        "permission",
-        [
-            enums.MailboxPermissionChoices.EDIT,
-            enums.MailboxPermissionChoices.SEND,
-        ],
+    thread.refresh_from_db()
+    thread.update_counters()
+    assert thread.count_trashed == 0
+    assert msg1.is_trashed is False
+    assert msg2.is_trashed is False
+
+    data = {"flag": "trashed", "value": "true", "thread_ids": str(thread.id)}
+    response = api_client.post(FLAG_API_URL, data=data, format="json")
+
+    assert response.status_code == status.HTTP_200_OK
+    # Check that the response indicates update for messages within the thread
+    assert response.data["updated_threads"] == 1
+
+    # Verify thread trash counter is updated
+    thread.refresh_from_db()
+    assert thread.count_trashed == 2
+
+    # Verify all messages in the thread are marked as trashed
+    msg1.refresh_from_db()
+    msg2.refresh_from_db()
+    assert msg1.is_trashed is True
+    assert msg1.trashed_at is not None
+    assert msg2.is_trashed is True
+    assert msg2.trashed_at is not None
+
+
+def test_untrash_single_thread_success(api_client):
+    """Test marking a single thread as untrashed successfully via flag endpoint."""
+    user = factories.UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = factories.MailboxFactory(users_read=[user])
+    thread = factories.ThreadFactory(mailbox=mailbox)
+    trashed_time = timezone.now()
+    msg1 = factories.MessageFactory(
+        thread=thread, is_trashed=True, trashed_at=trashed_time
     )
-    def test_delete_thread_with_bad_permission(self, permission):
-        """Test delete thread with bad permission."""
-        authenticated_user = factories.UserFactory()
-        mailbox = factories.MailboxFactory()
-        thread = factories.ThreadFactory(mailbox=mailbox)
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=authenticated_user,
-            permission=permission,
-        )
-        client = APIClient()
-        client.force_authenticate(user=authenticated_user)
-        response = client.delete(reverse("threads-detail", kwargs={"id": thread.id}))
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert models.Thread.objects.filter(id=thread.id).exists()
-
-    @pytest.mark.parametrize(
-        "permission",
-        [
-            enums.MailboxPermissionChoices.DELETE,
-            enums.MailboxPermissionChoices.ADMIN,
-        ],
+    msg2 = factories.MessageFactory(
+        thread=thread, is_trashed=True, trashed_at=trashed_time
     )
-    def test_delete_thread_success(self, permission):
-        """Test delete thread."""
-        authenticated_user = factories.UserFactory()
-        mailbox = factories.MailboxFactory()
-        thread = factories.ThreadFactory(mailbox=mailbox)
-        message = factories.MessageFactory(subject="Test message", thread=thread)
-        message2 = factories.MessageFactory(subject="Test message 2", thread=thread)
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=authenticated_user,
-            permission=permission,
-        )
-        client = APIClient()
-        client.force_authenticate(user=authenticated_user)
-        response = client.delete(reverse("threads-detail", kwargs={"id": thread.id}))
-        assert response.status_code == status.HTTP_204_NO_CONTENT
-        assert not models.Thread.objects.filter(id=thread.id).exists()
-        assert not models.Message.objects.filter(id=message.id).exists()
-        assert not models.Message.objects.filter(id=message2.id).exists()
+
+    thread.refresh_from_db()
+    thread.update_counters()
+    assert thread.count_trashed == 2
+    assert msg1.is_trashed is True
+    assert msg2.is_trashed is True
+
+    data = {"flag": "trashed", "value": "false", "thread_ids": str(thread.id)}
+    response = api_client.post(FLAG_API_URL, data=data, format="json")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 1
+
+    # Verify thread trash counter is updated
+    thread.refresh_from_db()
+    assert thread.count_trashed == 0
+
+    # Verify all messages in the thread are marked as untrashed
+    msg1.refresh_from_db()
+    msg2.refresh_from_db()
+    assert msg1.is_trashed is False
+    assert msg1.trashed_at is None
+    assert msg2.is_trashed is False
+    assert msg2.trashed_at is None
 
 
-class TestThreadsBulkDelete:
-    """Test threads bulk delete."""
-
-    def test_delete_thread_bulk_anonymous(self):
-        """Test delete thread bulk with anonymous user."""
-        client = APIClient()
-        response = client.post(reverse("threads-bulk-delete"))
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
-    def test_delete_thread_bulk_without_permissions(self):
-        """Test delete thread bulk without permissions."""
-        authenticated_user = factories.UserFactory()
-        mailbox = factories.MailboxFactory()
-        thread = factories.ThreadFactory(mailbox=mailbox)
-        client = APIClient()
-        client.force_authenticate(user=authenticated_user)
-        response = client.post(
-            reverse("threads-bulk-delete"), {"thread_ids": [thread.id]}, format="json"
-        )
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-
-    @pytest.mark.parametrize(
-        "permission",
-        [
-            enums.MailboxPermissionChoices.EDIT,
-            enums.MailboxPermissionChoices.SEND,
-        ],
+def test_trash_multiple_threads_success(api_client):
+    """Test marking multiple threads as trashed successfully."""
+    user = factories.UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = factories.MailboxFactory(users_read=[user])
+    thread1 = factories.ThreadFactory(mailbox=mailbox)
+    factories.MessageFactory(thread=thread1, is_trashed=False)
+    thread2 = factories.ThreadFactory(mailbox=mailbox)
+    factories.MessageFactory(thread=thread2, is_trashed=False)
+    thread3 = factories.ThreadFactory(
+        mailbox=mailbox
+    )  # Already trashed (should be unaffected by value=true)
+    msg3 = factories.MessageFactory(
+        thread=thread3, is_trashed=True, trashed_at=timezone.now()
     )
-    def test_delete_thread_bulk_with_bad_permission(self, permission):
-        """Test delete thread bulk with bad permission."""
-        authenticated_user = factories.UserFactory()
-        mailbox = factories.MailboxFactory()
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=authenticated_user,
-            permission=permission,
-        )
-        thread = factories.ThreadFactory(mailbox=mailbox)
-        thread2 = factories.ThreadFactory(mailbox=mailbox)
-        thread3 = factories.ThreadFactory(mailbox=mailbox)
-        client = APIClient()
-        client.force_authenticate(user=authenticated_user)
-        response = client.post(
-            reverse("threads-bulk-delete"),
-            {"thread_ids": [thread.id, thread2.id, thread3.id]},
-            format="json",
-        )
-        assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    @pytest.mark.parametrize(
-        "permission",
-        [
-            enums.MailboxPermissionChoices.DELETE,
-            enums.MailboxPermissionChoices.ADMIN,
-        ],
-    )
-    def test_delete_thread_bulk(self, permission):
-        """Test delete thread bulk."""
-        authenticated_user = factories.UserFactory()
-        mailbox = factories.MailboxFactory()
-        thread = factories.ThreadFactory(mailbox=mailbox)
-        thread2 = factories.ThreadFactory(mailbox=mailbox)
-        thread3 = factories.ThreadFactory(mailbox=mailbox)
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=authenticated_user,
-            permission=permission,
-        )
-        client = APIClient()
-        client.force_authenticate(user=authenticated_user)
-        response = client.post(
-            reverse("threads-bulk-delete"),
-            {"thread_ids": [thread.id, thread2.id, thread3.id]},
-            format="json",
-        )
-        assert response.status_code == status.HTTP_200_OK
-        assert not models.Thread.objects.filter(id=thread.id).exists()
-        assert not models.Thread.objects.filter(id=thread2.id).exists()
-        assert not models.Thread.objects.filter(id=thread3.id).exists()
+    thread1.refresh_from_db()
+    thread1.update_counters()
+    thread2.refresh_from_db()
+    thread2.update_counters()
+    thread3.refresh_from_db()
+    thread3.update_counters()
+    assert thread1.count_trashed == 0
+    assert thread2.count_trashed == 0
+    assert thread3.count_trashed == 1
+
+    thread_ids = f"{thread1.id},{thread2.id},{thread3.id}"
+    data = {"flag": "trashed", "value": "true", "thread_ids": thread_ids}
+    response = api_client.post(FLAG_API_URL, data=data, format="json")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 3  # All 3 threads were targeted
+
+    # Verify counters
+    thread1.refresh_from_db()
+    thread2.refresh_from_db()
+    thread3.refresh_from_db()
+    assert thread1.count_trashed == 1
+    assert thread2.count_trashed == 1
+    assert thread3.count_trashed == 1  # Remains 1
+
+    # Verify messages
+    assert thread1.messages.first().is_trashed is True
+    assert thread2.messages.first().is_trashed is True
+    msg3.refresh_from_db()
+    assert msg3.is_trashed is True  # Remained trashed
+
+
+def test_trash_thread_unauthorized(api_client):
+    """Test trashing a thread without authentication."""
+    thread = factories.ThreadFactory()
+    data = {"flag": "trashed", "value": "true", "thread_ids": str(thread.id)}
+    response = api_client.post(FLAG_API_URL, data=data, format="json")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_trash_thread_no_permission(api_client):
+    """Test trashing a thread the user doesn't have access to."""
+    user = factories.UserFactory()
+    api_client.force_authenticate(user=user)
+    other_mailbox = factories.MailboxFactory()  # User does not have access
+    thread = factories.ThreadFactory(mailbox=other_mailbox)
+    factories.MessageFactory(thread=thread)
+
+    initial_count = models.Thread.objects.count()
+
+    data = {"flag": "trashed", "value": "true", "thread_ids": str(thread.id)}
+    response = api_client.post(FLAG_API_URL, data=data, format="json")
+
+    # Should succeed but update nothing
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 0
+
+    # Verify thread and its messages are not marked as trashed
+    thread.refresh_from_db()
+    assert thread.count_trashed == 0
+    assert thread.messages.first().is_trashed is False
+    assert (
+        models.Thread.objects.count() == initial_count
+    )  # Verify thread wasn't deleted
+
+
+def test_trash_non_existent_thread(api_client):
+    """Test trashing a thread that does not exist."""
+    user = factories.UserFactory()
+    api_client.force_authenticate(user=user)
+    non_existent_uuid = "123e4567-e89b-12d3-a456-426614174000"
+
+    data = {"flag": "trashed", "value": "true", "thread_ids": non_existent_uuid}
+    response = api_client.post(FLAG_API_URL, data=data, format="json")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 0

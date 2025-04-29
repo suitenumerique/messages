@@ -152,7 +152,7 @@ def deliver_inbound_message(
                 subject=parsed_email.get("subject", "(no subject)"),
                 mailbox=mailbox,
                 snippet=snippet,
-                is_read=False,
+                count_unread=1,
             )
     except (DjangoDbError, ValidationError) as e:
         logger.error("Failed to find or create thread for %s: %s", recipient_email, e)
@@ -238,6 +238,11 @@ def deliver_inbound_message(
             mime_id=parsed_email.get("message_id") or None,
             sent_at=parsed_email.get("date") or timezone.now(),
             read_at=None,
+            is_draft=False,
+            is_sender=False,
+            is_starred=False,
+            is_trashed=False,
+            is_unread=True,
         )
     except (DjangoDbError, ValidationError) as e:
         logger.error("Failed to create message in thread %s: %s", thread.id, e)
@@ -324,12 +329,13 @@ def deliver_inbound_message(
         elif subject_val := parsed_email.get("subject"):  # Fallback to subject
             new_snippet = subject_val[:140]
         else:
-            new_snippet = "(No snippet available)"
+            new_snippet = ""
 
-        thread.snippet = new_snippet
-        thread.is_read = False  # Ensure thread is marked unread
-        # updated_at updates automatically
-        thread.save(update_fields=["snippet", "is_read"])
+        if new_snippet:
+            thread.snippet = new_snippet
+            thread.save(update_fields=["snippet"])
+        thread.update_counters(counters=["unread"])
+
     except Exception as e:
         logger.exception(
             f"Error updating thread {thread.id} after message delivery: {e}"

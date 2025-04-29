@@ -265,7 +265,6 @@ def parse_message_content(message) -> Dict[str, Any]:
                 # Override type if flanker reports text/plain for a part with 'attachment' disposition
                 if is_attachment_disposition and default_type_str == "text/plain":
                     final_part_type = "application/octet-stream"  # Override
-                    # logger.warning(...) # Removed warning log
 
                 elif (
                     has_disposition
@@ -431,7 +430,6 @@ def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
             "htmlBody": body_parts["htmlBody"],
             "attachments": body_parts["attachments"],
             # Raw MIME is passed in, no need to include decoded string version
-            # 'raw_mime': raw_mime_str, # REMOVED
             "headers": headers,
             "message_id": message_id,
             "references": references,

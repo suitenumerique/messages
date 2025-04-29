@@ -2,6 +2,7 @@
 # pylint: disable=redefined-outer-name
 
 import pytest
+from rest_framework.test import APIClient
 
 from core import factories
 
@@ -34,3 +35,9 @@ def other_user():
 def mailbox_access(mailbox):
     """Create a mailbox access."""
     return factories.MailboxAccessFactory(mailbox=mailbox)
+
+
+# Add an api_client fixture
+@pytest.fixture
+def api_client():
+    return APIClient()
