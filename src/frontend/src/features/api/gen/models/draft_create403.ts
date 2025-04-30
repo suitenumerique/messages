@@ -6,9 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export type ThreadsListParams = {
-  /**
-   * A page number within the paginated result set.
-   */
-  page?: number;
-};
+/**
+ * Unspecified response body
+ */
+export type DraftCreate403 = { [key: string]: unknown };
