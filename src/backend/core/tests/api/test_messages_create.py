@@ -382,6 +382,13 @@ class TestApiDraftAndSendReply:
         draft_message = models.Message.objects.get(id=draft_response.data["id"])
         assert draft_message.is_draft is True
         assert draft_message.mta_sent is False
+        assert draft_message.parent == message
+
+        draft_api_message = client.get(
+            reverse("messages-detail", kwargs={"id": draft_message.id})
+        ).data
+        assert draft_api_message["is_draft"] is True
+        assert draft_api_message["parent_id"] == str(message.id)
 
         # Step 2: Send the draft reply
         send_response = client.post(
