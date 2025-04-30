@@ -1,17 +1,15 @@
 """API ViewSet for changing flags on messages or threads."""
 
-import uuid
-from typing import Literal
-
 from django.db import transaction
 from django.utils import timezone
 
 import rest_framework as drf
 from drf_spectacular.utils import (
     OpenApiExample,
-    OpenApiParameter,
     extend_schema,
+    inline_serializer,
 )
+from rest_framework import serializers as drf_serializers
 from rest_framework.views import APIView
 
 from core import models
@@ -19,7 +17,7 @@ from core import models
 from .. import permissions
 
 # Define allowed flag types
-FlagType = Literal["unread", "starred", "trashed"]
+ALLOWED_FLAGS = ["unread", "starred", "trashed"]
 
 
 class ChangeFlagViewSet(APIView):
@@ -30,34 +28,27 @@ class ChangeFlagViewSet(APIView):
 
     @extend_schema(
         tags=["flags"],
-        parameters=[
-            OpenApiParameter(
-                name="flag",
-                type=str,
-                enum=["unread", "starred", "trashed"],
-                required=True,
-                description="The flag to change.",
-            ),
-            OpenApiParameter(
-                name="value",
-                type=bool,
-                required=True,
-                description="The value to set the flag to (true/false).",
-            ),
-            OpenApiParameter(
-                name="message_ids",
-                type=str,
-                required=False,
-                description="Comma-separated list of message UUIDs (optional).",
-            ),
-            OpenApiParameter(
-                name="thread_ids",
-                type=str,
-                required=False,
-                description="Comma-separated list of thread UUIDs (optional).",
-            ),
-        ],
-        request=None,  # Body is not used, parameters are in query
+        request=inline_serializer(
+            name="ChangeFlagRequest",
+            fields={
+                "flag": drf_serializers.ChoiceField(
+                    choices=ALLOWED_FLAGS, allow_blank=False
+                ),
+                "value": drf_serializers.BooleanField(required=True),
+                "message_ids": drf_serializers.ListField(
+                    child=drf_serializers.UUIDField(),
+                    required=False,
+                    allow_empty=True,
+                    help_text="List of message UUIDs to apply the flag change to.",
+                ),
+                "thread_ids": drf_serializers.ListField(
+                    child=drf_serializers.UUIDField(),
+                    required=False,
+                    allow_empty=True,
+                    help_text="List of thread UUIDs where all messages should have the flag change applied.",
+                ),
+            },
+        ),
         responses={
             200: OpenApiExample(
                 "Success Response",
@@ -81,74 +72,68 @@ class ChangeFlagViewSet(APIView):
         },
         description=(
             "Change a specific flag (unread, starred, trashed) for multiple messages "
-            "or all messages within multiple threads."
+            "or all messages within multiple threads. Uses request body."
         ),
+        examples=[
+            OpenApiExample(
+                "Mark messages as read",
+                value={
+                    "flag": "unread",
+                    "value": False,
+                    "message_ids": [
+                        "123e4567-e89b-12d3-a456-426614174001",
+                        "123e4567-e89b-12d3-a456-426614174002",
+                    ],
+                },
+            ),
+            OpenApiExample(
+                "Trash threads",
+                value={
+                    "flag": "trashed",
+                    "value": True,
+                    "thread_ids": [
+                        "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+                        "b2c3d4e5-f6a7-8901-2345-67890abcdef0",
+                    ],
+                },
+            ),
+            OpenApiExample(
+                "Star messages and threads",
+                value={
+                    "flag": "starred",
+                    "value": True,
+                    "message_ids": ["123e4567-e89b-12d3-a456-426614174005"],
+                    "thread_ids": ["a1b2c3d4-e5f6-7890-1234-567890abcdef"],
+                },
+            ),
+        ],
     )
     def post(self, request, *args, **kwargs):
         """
         Change a specific flag (unread, starred, trashed) for messages or threads.
+        Expects data in the request body, not query parameters.
 
-        Query Parameters:
-        - flag: 'unread', 'starred', or 'trashed' (required)
-        - value: 'true' or 'false' (required)
-        - message_ids: comma-separated list of message UUIDs (optional)
-        - thread_ids: comma-separated list of thread UUIDs (optional)
+        Request Body Parameters:
+        - flag: 'unread', 'starred', or 'trashed' (required, string)
+        - value: true or false (required, boolean)
+        - message_ids: list of message UUID strings (optional, list[string])
+        - thread_ids: list of thread UUID strings (optional, list[string])
 
-        At least one of message_ids or thread_ids must be provided.
+        At least one of message_ids or thread_ids must be provided and contain items.
         """
-        flag: FlagType = request.data.get("flag")
-        value_param = request.data.get("value")
-        message_ids_str = request.data.get("message_ids", "")
-        thread_ids_str = request.data.get("thread_ids", "")
+        flag = request.data.get("flag")
+        value = request.data.get("value")  # Should be boolean from parser
+        message_ids = request.data.get("message_ids", [])
+        thread_ids = request.data.get("thread_ids", [])
 
-        # Validate flag parameter
-        allowed_flags = ["unread", "starred", "trashed"]
-        if flag not in allowed_flags:
+        # Validate input parameters
+        if (
+            (flag not in ALLOWED_FLAGS)
+            or (value is None)
+            or (not message_ids and not thread_ids)
+        ):
             return drf.response.Response(
-                {
-                    "detail": f"Flag parameter is required and must be one of: {', '.join(allowed_flags)}."
-                },
-                status=drf.status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Validate value parameter
-        if value_param is None or value_param.lower() not in ["true", "false"]:
-            return drf.response.Response(
-                {"detail": "Value parameter must be 'true' or 'false'."},
-                status=drf.status.HTTP_400_BAD_REQUEST,
-            )
-        value = value_param.lower() == "true"
-
-        # Validate IDs presence
-        if not message_ids_str and not thread_ids_str:
-            return drf.response.Response(
-                {"detail": "Either message_ids or thread_ids must be provided"},
-                status=drf.status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Parse IDs
-        try:
-            message_ids = (
-                [
-                    uuid.UUID(mid.strip())
-                    for mid in message_ids_str.split(",")
-                    if mid.strip()
-                ]
-                if message_ids_str
-                else []
-            )
-            thread_ids = (
-                [
-                    uuid.UUID(tid.strip())
-                    for tid in thread_ids_str.split(",")
-                    if tid.strip()
-                ]
-                if thread_ids_str
-                else []
-            )
-        except ValueError:
-            return drf.response.Response(
-                {"detail": "Invalid UUID format in message_ids or thread_ids."},
+                {"detail": "Missing parameters"},
                 status=drf.status.HTTP_400_BAD_REQUEST,
             )
 
@@ -214,7 +199,9 @@ class ChangeFlagViewSet(APIView):
             # --- Update thread counters ---
             for thread in updated_threads:
                 # Refresh thread from DB within transaction if needed, though update_counters handles it
-                thread.update_counters(counters=[flag])
+                thread.update_counters(
+                    **{"counters": [flag]} if flag in ("unread", "starred") else {}
+                )
 
         return drf.response.Response(
             {

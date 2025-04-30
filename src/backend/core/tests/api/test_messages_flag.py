@@ -2,6 +2,8 @@
 
 # pylint: disable=redefined-outer-name
 
+import json
+
 from django.urls import reverse
 from django.utils import timezone
 
@@ -38,8 +40,8 @@ def test_mark_messages_unread_success(api_client):
     initial_unread_count = thread.count_unread
     assert initial_unread_count == 1
 
-    message_ids = f"{msg1.id},{msg2.id}"
-    data = {"flag": "unread", "value": "true", "message_ids": message_ids}
+    message_ids = [str(msg1.id), str(msg2.id)]
+    data = {"flag": "unread", "value": True, "message_ids": message_ids}
     response = api_client.post(API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK
@@ -79,8 +81,8 @@ def test_mark_messages_read_success(api_client):
     initial_unread_count = thread.count_unread
     assert initial_unread_count == 2
 
-    message_ids = f"{msg1.id},{msg2.id}"
-    data = {"flag": "unread", "value": "false", "message_ids": message_ids}
+    message_ids = [str(msg1.id), str(msg2.id)]
+    data = {"flag": "unread", "value": False, "message_ids": message_ids}
     response = api_client.post(API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK
@@ -115,7 +117,7 @@ def test_mark_thread_messages_unread_success(api_client):
     thread.update_counters()
     assert thread.count_unread == 0
 
-    data = {"flag": "unread", "value": "true", "thread_ids": str(thread.id)}
+    data = {"flag": "unread", "value": True, "thread_ids": [str(thread.id)]}
     response = api_client.post(API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK
@@ -146,7 +148,7 @@ def test_mark_thread_messages_read_success(api_client):
     thread.update_counters()
     assert thread.count_unread == 2
 
-    data = {"flag": "unread", "value": "false", "thread_ids": str(thread.id)}
+    data = {"flag": "unread", "value": False, "thread_ids": [str(thread.id)]}
     response = api_client.post(API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK
@@ -188,8 +190,8 @@ def test_mark_multiple_threads_read_success(api_client):
     assert thread2.count_unread == 1
     assert thread3.count_unread == 0
 
-    thread_ids = f"{thread1.id},{thread2.id}"
-    data = {"flag": "unread", "value": "false", "thread_ids": thread_ids}
+    thread_ids = [str(thread1.id), str(thread2.id)]
+    data = {"flag": "unread", "value": False, "thread_ids": thread_ids}
     response = api_client.post(API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK
@@ -217,7 +219,7 @@ def test_mark_messages_no_permission(api_client):
     thread = ThreadFactory(mailbox=other_mailbox)
     msg = MessageFactory(thread=thread, is_unread=True)
 
-    data = {"flag": "unread", "value": "false", "message_ids": str(msg.id)}
+    data = {"flag": "unread", "value": False, "message_ids": [str(msg.id)]}
     response = api_client.post(API_URL, data=data, format="json")
 
     # The endpoint should process successfully but update 0 messages as the filter excludes them
@@ -229,42 +231,51 @@ def test_mark_messages_no_permission(api_client):
     assert msg.is_unread is True
 
 
-def test_mark_messages_missing_ids(api_client):
-    """Test request with missing message_ids and thread_ids."""
-    user = UserFactory()
-    api_client.force_authenticate(user=user)
-    data = {"flag": "unread", "value": "true"}
-    response = api_client.post(API_URL, data=data, format="json")
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert (
-        "Either message_ids or thread_ids must be provided" in response.data["detail"]
-    )
-
-
-def test_mark_messages_invalid_flag(api_client):
-    """Test request with an invalid flag parameter."""
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"value": True, "message_ids": lambda msg: [str(msg.id)]},  # missing flag
+        {"flag": "unread", "message_ids": lambda msg: [str(msg.id)]},  # missing value
+        {"flag": "unread", "value": True},  # missing message_ids and thread_ids
+        {
+            "flag": "invalid_flag",
+            "value": True,
+            "message_ids": lambda msg: [str(msg.id)],
+        },  # invalid flag
+        {
+            "flag": "unread",
+            "value": "maybe",
+            "message_ids": lambda msg: [str(msg.id)],
+        },  # invalid value
+        {
+            "flag": "unread",
+            "value": True,
+            "message_ids": [],
+            "thread_ids": [],
+        },  # empty ids
+        {"flag": "unread", "value": True, "message_ids": ["aa"]},  # invalid message ids
+        {
+            "flag": "unread",
+            "value": True,
+            "message_ids": {"test": "test"},
+        },  # invalid message ids
+    ],
+)
+def test_mark_messages_invalid_requests(api_client, data):
+    """
+    Parametrized test for invalid flag, missing ids, and invalid value.
+    """
     user = UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = MailboxFactory(users_read=[user])
     thread = ThreadFactory(mailbox=mailbox)
     msg = MessageFactory(thread=thread)
-    data = {"flag": "invalid_flag", "value": "true", "message_ids": str(msg.id)}
+    if callable(data.get("message_ids", None)):
+        data["message_ids"] = json.loads(json.dumps(data["message_ids"](msg)))
+    if callable(data.get("thread_ids", None)):
+        data["thread_ids"] = json.loads(json.dumps(data["thread_ids"](thread)))
     response = api_client.post(API_URL, data=data, format="json")
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "Flag parameter is required" in response.data["detail"]
-
-
-def test_mark_messages_invalid_value(api_client):
-    """Test request with an invalid value parameter."""
-    user = UserFactory()
-    api_client.force_authenticate(user=user)
-    mailbox = MailboxFactory(users_read=[user])
-    thread = ThreadFactory(mailbox=mailbox)
-    msg = MessageFactory(thread=thread)
-    data = {"flag": "unread", "value": "maybe", "message_ids": str(msg.id)}
-    response = api_client.post(API_URL, data=data, format="json")
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "Value parameter must be 'true' or 'false'" in response.data["detail"]
 
 
 # --- Tests for Starred Flag ---
@@ -284,8 +295,8 @@ def test_mark_messages_starred_success(api_client):
     initial_starred_count = thread.count_starred
     assert initial_starred_count == 1
 
-    message_ids = f"{msg1.id}"
-    data = {"flag": "starred", "value": "true", "message_ids": message_ids}
+    message_ids = [str(msg1.id)]
+    data = {"flag": "starred", "value": True, "message_ids": message_ids}
     response = api_client.post(API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK
@@ -314,8 +325,8 @@ def test_mark_messages_unstarred_success(api_client):
     initial_starred_count = thread.count_starred
     assert initial_starred_count == 1
 
-    message_ids = f"{msg1.id}"
-    data = {"flag": "starred", "value": "false", "message_ids": message_ids}
+    message_ids = [str(msg1.id)]
+    data = {"flag": "starred", "value": False, "message_ids": message_ids}
     response = api_client.post(API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK
@@ -347,8 +358,8 @@ def test_mark_messages_trashed_success(api_client):
     initial_trashed_count = thread.count_trashed
     assert initial_trashed_count == 1
 
-    message_ids = f"{msg1.id}"
-    data = {"flag": "trashed", "value": "true", "message_ids": message_ids}
+    message_ids = [str(msg1.id)]
+    data = {"flag": "trashed", "value": True, "message_ids": message_ids}
     response = api_client.post(API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK
@@ -378,8 +389,8 @@ def test_mark_messages_untrashed_success(api_client):
     initial_trashed_count = thread.count_trashed
     assert initial_trashed_count == 1
 
-    message_ids = f"{msg1.id}"
-    data = {"flag": "trashed", "value": "false", "message_ids": message_ids}
+    message_ids = [str(msg1.id)]
+    data = {"flag": "trashed", "value": False, "message_ids": message_ids}
     response = api_client.post(API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK

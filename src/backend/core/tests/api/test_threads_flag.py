@@ -36,7 +36,7 @@ def test_trash_single_thread_success(api_client):
     assert msg1.is_trashed is False
     assert msg2.is_trashed is False
 
-    data = {"flag": "trashed", "value": "true", "thread_ids": str(thread.id)}
+    data = {"flag": "trashed", "value": True, "thread_ids": [str(thread.id)]}
     response = api_client.post(FLAG_API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK
@@ -76,7 +76,7 @@ def test_untrash_single_thread_success(api_client):
     assert msg1.is_trashed is True
     assert msg2.is_trashed is True
 
-    data = {"flag": "trashed", "value": "false", "thread_ids": str(thread.id)}
+    data = {"flag": "trashed", "value": False, "thread_ids": [str(thread.id)]}
     response = api_client.post(FLAG_API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK
@@ -121,8 +121,8 @@ def test_trash_multiple_threads_success(api_client):
     assert thread2.count_trashed == 0
     assert thread3.count_trashed == 1
 
-    thread_ids = f"{thread1.id},{thread2.id},{thread3.id}"
-    data = {"flag": "trashed", "value": "true", "thread_ids": thread_ids}
+    thread_ids = [str(thread1.id), str(thread2.id), str(thread3.id)]
+    data = {"flag": "trashed", "value": True, "thread_ids": thread_ids}
     response = api_client.post(FLAG_API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK
@@ -146,7 +146,7 @@ def test_trash_multiple_threads_success(api_client):
 def test_trash_thread_unauthorized(api_client):
     """Test trashing a thread without authentication."""
     thread = factories.ThreadFactory()
-    data = {"flag": "trashed", "value": "true", "thread_ids": str(thread.id)}
+    data = {"flag": "trashed", "value": True, "thread_ids": [str(thread.id)]}
     response = api_client.post(FLAG_API_URL, data=data, format="json")
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -161,7 +161,7 @@ def test_trash_thread_no_permission(api_client):
 
     initial_count = models.Thread.objects.count()
 
-    data = {"flag": "trashed", "value": "true", "thread_ids": str(thread.id)}
+    data = {"flag": "trashed", "value": True, "thread_ids": [str(thread.id)]}
     response = api_client.post(FLAG_API_URL, data=data, format="json")
 
     # Should succeed but update nothing
@@ -183,7 +183,7 @@ def test_trash_non_existent_thread(api_client):
     api_client.force_authenticate(user=user)
     non_existent_uuid = "123e4567-e89b-12d3-a456-426614174000"
 
-    data = {"flag": "trashed", "value": "true", "thread_ids": non_existent_uuid}
+    data = {"flag": "trashed", "value": True, "thread_ids": [non_existent_uuid]}
     response = api_client.post(FLAG_API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK
