@@ -1,6 +1,10 @@
 """API ViewSet for Thread model."""
 
+from django.db.models import Sum
+
 import rest_framework as drf
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema
 from rest_framework import mixins, viewsets
 
 from core import models
@@ -39,7 +43,7 @@ class ThreadViewSet(
         # Add filters based on thread counters
         filter_mapping = {
             "has_unread": "count_unread__gt",
-            "is_trashed": "count_trashed__gt",
+            "has_trashed": "count_trashed__gt",
             "has_draft": "count_draft__gt",
             "has_starred": "count_starred__gt",
             "has_sender": "count_sender__gt",
@@ -55,6 +59,126 @@ class ThreadViewSet(
                     queryset = queryset.filter(**{filter_lookup.replace("__gt", ""): 0})
 
         return queryset
+
+    @extend_schema(
+        tags=["threads"],
+        parameters=[
+            OpenApiParameter(
+                name="mailbox_id",
+                type=OpenApiTypes.UUID,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads by mailbox ID.",
+            ),
+            OpenApiParameter(
+                name="has_unread",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads with unread messages (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_trashed",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads that are trashed (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_draft",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads with draft messages (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_starred",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads with starred messages (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_sender",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads with messages sent by the user (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="stats_fields",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                required=True,
+                description="Comma-separated list of fields to aggregate (e.g., unread,messages,trashed).",
+            ),
+        ],
+        responses={
+            200: OpenApiExample(
+                "Success Response",
+                value={
+                    "unread": 10,
+                    "messages": 50,
+                    "trashed": 5,
+                    "draft": 2,
+                    "starred": 8,
+                    "sender": 20,
+                },
+            ),
+            400: OpenApiExample(
+                "Bad Request", value={"detail": "Invalid stats_fields requested."}
+            ),
+        },
+        description="Get aggregated statistics for threads based on filters.",
+    )
+    @drf.decorators.action(
+        detail=False,
+        methods=["get"],
+        url_path="stats",
+        url_name="stats",
+    )
+    def stats(self, request):
+        """Retrieve aggregated statistics for threads."""
+        queryset = self.get_queryset()
+        stats_fields_param = request.query_params.get("stats_fields", "")
+
+        if not stats_fields_param:
+            return drf.response.Response(
+                {"detail": "'stats_fields' parameter is required."},
+                status=drf.status.HTTP_400_BAD_REQUEST,
+            )
+
+        requested_fields = [field.strip() for field in stats_fields_param.split(",")]
+
+        valid_fields_map = {
+            "unread": "count_unread",
+            "trashed": "count_trashed",
+            "draft": "count_draft",
+            "starred": "count_starred",
+            "sender": "count_sender",
+            "messages": "count_messages",
+        }
+
+        aggregations = {}
+        for field in requested_fields:
+            model_field = valid_fields_map.get(field)
+            if model_field:
+                aggregations[field] = Sum(model_field)
+            else:
+                return drf.response.Response(
+                    {"detail": f"Invalid field requested in stats_fields: {field}"},
+                    status=drf.status.HTTP_400_BAD_REQUEST,
+                )
+
+        if not aggregations:
+            # Should not happen if stats_fields_param is validated earlier, but good practice
+            return drf.response.Response(
+                {"detail": "No valid fields provided in stats_fields."},
+                status=drf.status.HTTP_400_BAD_REQUEST,
+            )
+
+        aggregated_data = queryset.aggregate(**aggregations)
+
+        # Replace None with 0 for sums where no matching threads exist
+        for key, value in aggregated_data.items():
+            if value is None:
+                aggregated_data[key] = 0
+
+        return drf.response.Response(aggregated_data)
 
     # @extend_schema(
     #     tags=["threads"],
