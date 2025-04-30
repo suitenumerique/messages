@@ -100,6 +100,7 @@ class MessageSerializer(serializers.ModelSerializer):
     # JMAP-style body fields (from model's parsed data)
     textBody = serializers.SerializerMethodField(read_only=True)
     htmlBody = serializers.SerializerMethodField(read_only=True)
+    draftBody = serializers.SerializerMethodField(read_only=True)
 
     # JMAP-style recipient fields (from model's parsed data)
     to = serializers.SerializerMethodField(read_only=True)
@@ -117,6 +118,11 @@ class MessageSerializer(serializers.ModelSerializer):
     def get_htmlBody(self, instance):  # pylint: disable=invalid-name
         """Return the list of HTML body parts (JMAP style)."""
         return instance.get_parsed_field("htmlBody") or []
+
+    @extend_schema_field(serializers.CharField())
+    def get_draftBody(self, instance):  # pylint: disable=invalid-name
+        """Return an arbitrary JSON object representing the draft body."""
+        return instance.draft_body
 
     @extend_schema_field(ContactSerializer(many=True))
     def get_to(self, instance):
@@ -169,6 +175,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "updated_at",
             "htmlBody",
             "textBody",
+            "draftBody",
             "sender",
             "to",
             "cc",
