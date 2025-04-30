@@ -197,7 +197,7 @@ def deliver_inbound_message(
             email__iexact=sender_email,
             mailbox=mailbox,  # Associate contact with the recipient mailbox
             defaults={
-                "name": sender_name or sender_email[:100],
+                "name": sender_name or sender_email.split("@")[0],
                 "email": sender_email,  # Ensure correct casing is saved
             },
         )
@@ -289,7 +289,7 @@ def deliver_inbound_message(
                 recipient_contact, created = models.Contact.objects.get_or_create(
                     email__iexact=email,
                     mailbox=mailbox,  # Associate contact with the recipient mailbox
-                    defaults={"name": name or email[:100], "email": email},
+                    defaults={"name": name or email.split("@")[0], "email": email},
                 )
                 if created:
                     logger.info(
