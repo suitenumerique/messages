@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core import models
-from core.mda.delivery import prepare_outbound_message, send_outbound_message
+from core.mda.delivery import prepare_outbound_message, send_message
 
 from .. import permissions, serializers
 
@@ -102,7 +102,7 @@ class SendMessageView(APIView):
                 "Draft message not found or does not belong to the specified sender mailbox."
             ) from e
 
-        prepared = prepare_outbound_message(
+        prepared, mime_data = prepare_outbound_message(
             message, request.data.get("textBody"), request.data.get("htmlBody")
         )
         if not prepared:
@@ -113,10 +113,11 @@ class SendMessageView(APIView):
 
         # TODO: this part should be done in a background task
         try:
-            send_successful = send_outbound_message(message)
+            send_statuses = send_message(message, mime_data)
+            send_successful = all(send_statuses.values())
         except Exception as e:
             logger.error(
-                "Unexpected error calling send_outbound_message for %s: %s",
+                "Unexpected error calling send_message for %s: %s",
                 message_id,
                 e,
                 exc_info=True,

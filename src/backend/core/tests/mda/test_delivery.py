@@ -468,9 +468,9 @@ class TestSendOutboundMessage:
             mock_smtp_instance  # Mock context manager
         )
 
-        success = delivery.send_outbound_message(draft_message)
+        success = delivery.send_message(draft_message, {}, force_mta_out=True)
 
-        assert success is True
+        assert all(success.values()) is True
 
         # Check raw_mime was generated and passed to dkim
         assert draft_message.raw_mime is not None
@@ -513,9 +513,9 @@ class TestSendOutboundMessage:
         with patch(
             "core.mda.delivery.time.sleep"
         ) as mock_sleep:  # Mock sleep to speed up test
-            success = delivery.send_outbound_message(draft_message)
+            success = delivery.send_message(draft_message, {}, force_mta_out=True)
 
-        assert success is False
+        assert any(success.values()) is False
         assert mock_smtp_instance.sendmail.call_count == 5  # Default max retries
         assert mock_sleep.call_count == 4  # Sleeps between retries
 

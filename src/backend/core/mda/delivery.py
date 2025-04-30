@@ -23,6 +23,46 @@ logger = logging.getLogger(__name__)
 MESSAGE_ID_RE = re.compile(r"<([^<>]+)>")
 
 
+def check_local_recipient(
+    email_address: str, create_if_missing: bool = False
+) -> bool | models.Mailbox:
+    """Check if a recipient email is locally deliverable."""
+
+    is_deliverable = False
+
+    try:
+        local_part, domain_name = email_address.split("@", 1)
+    except ValueError:
+        return False  # Invalid format
+
+    # For unit testing, we accept all emails
+    if settings.MESSAGES_ACCEPT_ALL_EMAILS:
+        is_deliverable = True
+    # MESSAGES_TESTDOMAIN acts as a catch-all, if configured.
+    elif settings.MESSAGES_TESTDOMAIN == domain_name:
+        is_deliverable = True
+    else:
+        # Check if the email address exists in the database
+        is_deliverable = models.Mailbox.objects.filter(
+            local_part=local_part,
+            domain__name=domain_name,
+        ).exists()
+
+    if not is_deliverable:
+        return False
+
+    if create_if_missing:
+        # Create a new mailbox if it doesn't exist
+        maildomain, _ = models.MailDomain.objects.get_or_create(name=domain_name)
+        mailbox, _ = models.Mailbox.objects.get_or_create(
+            local_part=local_part,
+            domain=maildomain,
+        )
+        return mailbox
+
+    return True
+
+
 def find_thread_for_inbound_message(
     parsed_email: Dict[str, Any], mailbox: models.Mailbox
 ) -> Optional[models.Thread]:
@@ -89,53 +129,14 @@ def deliver_inbound_message(
     """Deliver a parsed inbound email message to the correct mailbox and thread."""
 
     # --- 1. Find or Create Mailbox --- #
-    if "@" not in recipient_email:
-        logger.warning("Invalid recipient address (no domain): %s", recipient_email)
-        return False  # Indicate failure
-    local_part, domain_name = recipient_email.split("@", 1)
-
     try:
-        mailbox = models.Mailbox.objects.select_related("domain").get(
-            local_part__iexact=local_part, domain__name__iexact=domain_name
-        )
-    except models.Mailbox.DoesNotExist:
-        if (
-            settings.MESSAGES_ACCEPT_ALL_EMAILS
-            or domain_name.lower() == settings.MESSAGES_TESTDOMAIN.lower()
-        ):
-            try:
-                # Use get_or_create for domain as well
-                maildomain, domain_created = models.MailDomain.objects.get_or_create(
-                    name__iexact=domain_name,
-                    defaults={"name": domain_name},  # Save with original casing
-                )
-                if domain_created:
-                    logger.info("Auto-created mail domain %s", domain_name)
-
-                # Create the mailbox
-                mailbox = models.Mailbox.objects.create(
-                    local_part=local_part, domain=maildomain
-                )
-                logger.info("Auto-created mailbox for %s", recipient_email)
-            except (DjangoDbError, ValidationError) as e:
-                logger.error(
-                    "Failed to auto-create mailbox/domain for %s: %s",
-                    recipient_email,
-                    e,
-                )
-                return False  # Indicate failure
-        else:
-            logger.warning(
-                "Mailbox not found for delivery and auto-creation disabled/not applicable: %s",
-                recipient_email,
-            )
-            return False  # Indicate failure
+        mailbox = check_local_recipient(recipient_email, create_if_missing=True)
     except Exception as e:
-        logger.exception(
-            "Unexpected error finding/creating mailbox for %s: %s",
-            recipient_email,
-            e,
-        )
+        logger.exception("Error checking local recipient: %s", e)
+        return False
+
+    if not mailbox:
+        logger.warning("Invalid recipient address: %s", recipient_email)
         return False
 
     # --- 2. Find or Create Thread --- #
@@ -370,7 +371,7 @@ def deliver_inbound_message(
 
 def prepare_outbound_message(
     message: models.Message, text_body: str, html_body: str
-) -> bool:
+) -> tuple[bool, Optional[Dict[str, Any]]]:
     """Compose and sign an existing draft Message object before sending via SMTP."""
 
     # Get recipients from the MessageRecipient model
@@ -413,7 +414,7 @@ def prepare_outbound_message(
         )
     except Exception as e:  # noqa: BLE001
         logger.error("Failed to compose MIME for message %s: %s", message.id, e)
-        return False
+        return False, mime_data
 
     # Sign the message with DKIM
     dkim_signature_header: Optional[bytes] = sign_message_dkim(
@@ -434,10 +435,10 @@ def prepare_outbound_message(
         update_fields=["updated_at", "raw_mime", "mime_id"]
     )  # "is_draft", "draft_body", "created_at"
 
-    return True
+    return True, mime_data
 
 
-def _mark_message_as_sent(message: models.Message) -> bool:
+def _mark_message_as_sent(message: models.Message, mta_sent: bool) -> bool:
     """Mark a message as sent and update its fields."""
 
     # TODO: move these 3 back to prepare_outbound_message when we have workers
@@ -445,7 +446,7 @@ def _mark_message_as_sent(message: models.Message) -> bool:
     message.draft_body = None
     message.created_at = timezone.now()
 
-    message.mta_sent = True
+    message.mta_sent = mta_sent
     message.sent_at = timezone.now()
     message.save(
         update_fields=["mta_sent", "sent_at", "is_draft", "draft_body", "created_at"]
@@ -454,8 +455,47 @@ def _mark_message_as_sent(message: models.Message) -> bool:
     message.thread.update_stats()
 
 
-def send_outbound_message(message: models.Message) -> bool:
-    """Compose, sign, and send an existing Message object via SMTP."""
+def send_message(
+    message: models.Message, mime_data: Dict[str, Any], force_mta_out: bool = False
+) -> Dict[str, bool]:
+    """Send an existing Message, internally or externally."""
+
+    # Include all recipients in the envelope, including BCC
+    envelope_to = [
+        contact.email
+        for contacts in message.get_all_recipient_contacts().values()
+        for contact in contacts
+    ]
+
+    successes = {}
+    external_recipients = []
+    for recipient_email in envelope_to:
+        if (
+            check_local_recipient(recipient_email, create_if_missing=True)
+            and not force_mta_out
+        ):
+            successes[recipient_email] = deliver_inbound_message(
+                recipient_email, mime_data, message.raw_mime
+            )
+        else:
+            external_recipients.append(recipient_email)
+
+    if len(external_recipients) > 0:
+        # TODO: get success for each recipient
+        all_success = send_outbound_message(external_recipients, message)
+        for recipient_email in external_recipients:
+            successes[recipient_email] = all_success
+
+        if all_success:
+            _mark_message_as_sent(message, True)
+    else:
+        _mark_message_as_sent(message, False)
+
+    return successes
+
+
+def send_outbound_message(recipient_emails: list[str], message: models.Message) -> bool:
+    """Send an existing Message object via MTA out (SMTP)."""
 
     # Send via SMTP
     if not settings.MTA_OUT_HOST:
@@ -468,12 +508,6 @@ def send_outbound_message(message: models.Message) -> bool:
 
     smtp_host, smtp_port_str = settings.MTA_OUT_HOST.split(":")
     smtp_port = int(smtp_port_str)
-    # Include all recipients in the envelope as a flat list, including BCC
-    envelope_to = [
-        contact.email
-        for contacts in message.get_all_recipient_contacts().values()
-        for contact in contacts
-    ]
     envelope_from = message.sender.email
 
     # Retry sending logic
@@ -494,7 +528,7 @@ def send_outbound_message(message: models.Message) -> bool:
                     )
 
                 smtp_response = client.sendmail(
-                    envelope_from, envelope_to, message.raw_mime
+                    envelope_from, recipient_emails, message.raw_mime
                 )
                 logger.info(
                     "Sent message %s via SMTP (attempt %d). Response: %s",
@@ -502,8 +536,6 @@ def send_outbound_message(message: models.Message) -> bool:
                     attempt + 1,
                     smtp_response,
                 )
-
-                _mark_message_as_sent(message)
 
                 return True
 

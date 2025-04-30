@@ -13,8 +13,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from core import models
-from core.mda.delivery import deliver_inbound_message
+from core.mda.delivery import check_local_recipient, deliver_inbound_message
 from core.mda.rfc5322 import EmailParseError, parse_email_message
 
 logger = logging.getLogger(__name__)
@@ -87,31 +86,11 @@ class MTAViewSet(viewsets.GenericViewSet):
                 {"detail": "Missing addresses"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Check if each address exists
-        ret = {}
-        for email_address in email_addresses:
-            # For unit testing, we accept all emails
-            if settings.MESSAGES_ACCEPT_ALL_EMAILS:
-                ret[email_address] = True
-                continue
-
-            # MESSAGES_TESTDOMAIN acts as a catch-all, if configured.
-            try:
-                local_part, domain_name = email_address.split("@", 1)
-            except ValueError:
-                ret[email_address] = False  # Invalid format
-                continue
-
-            if settings.MESSAGES_TESTDOMAIN == domain_name:
-                ret[email_address] = True
-                continue
-
-            # Check if the email address exists in the database
-            ret[email_address] = models.Mailbox.objects.filter(
-                local_part=local_part,
-                domain__name=domain_name,
-                # is_active=True, # Removed: Mailbox model has no is_active field
-            ).exists()
+        # Check if each address is locally deliverable
+        ret = {
+            email_address: check_local_recipient(email_address, create_if_missing=False)
+            for email_address in email_addresses
+        }
 
         return Response(ret)
 
