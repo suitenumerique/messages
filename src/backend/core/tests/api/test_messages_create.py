@@ -15,6 +15,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core import enums, factories, models
+from core.mda.delivery import _mark_message_as_sent
 
 
 @pytest.fixture
@@ -94,6 +95,19 @@ class TestApiDraftAndSendMessage:
         # Test that the message is a draft
         draft_message = models.Message.objects.get(id=draft_message_id)
         assert draft_message.is_draft is True
+        assert draft_message.is_sender is True
+        assert draft_message.is_unread is False
+        assert draft_message.is_trashed is False
+        assert draft_message.is_starred is False
+        assert draft_message.mta_sent is False
+
+        assert draft_message.thread.count_messages == 1
+        assert draft_message.thread.count_sender == 1
+        assert draft_message.thread.count_unread == 0
+        assert draft_message.thread.count_trashed == 0
+        assert draft_message.thread.count_starred == 0
+        assert draft_message.thread.count_draft == 1
+        assert draft_message.thread.sender_names == [draft_message.sender.name]
 
         send_response = client.post(
             send_url,
@@ -115,11 +129,30 @@ class TestApiDraftAndSendMessage:
         sent_message_data = send_response.data
         assert sent_message_data["id"] == draft_message_id
 
-        draft_message = models.Message.objects.get(id=draft_message_id)
-        assert draft_message.raw_mime
-        assert subject in draft_message.raw_mime.decode("utf-8")
+        # TODO: remove this once we have background tasks
+        _mark_message_as_sent(sent_message_arg)
 
-        # TODO: when we have workers, we'll check that the message is no longer a draft
+        sent_message = models.Message.objects.get(id=draft_message_id)
+        assert sent_message.raw_mime
+        assert subject in sent_message.raw_mime.decode("utf-8")
+
+        assert sent_message.is_draft is False
+        assert sent_message.is_sender is True
+        assert sent_message.is_unread is False
+        assert sent_message.is_trashed is False
+        assert sent_message.is_starred is False
+        assert sent_message.mta_sent is True
+        assert sent_message.sent_at is not None
+
+        # Assert the thread is updated
+        assert sent_message.thread.count_messages == 1
+        assert sent_message.thread.count_sender == 1
+        assert sent_message.thread.count_unread == 0
+        assert sent_message.thread.count_trashed == 0
+        assert sent_message.thread.count_starred == 0
+        assert sent_message.thread.count_draft == 0
+        assert sent_message.thread.sender_names == [sent_message.sender.name]
+        assert sent_message.thread.messaged_at is not None
 
     @patch("core.api.viewsets.send.send_outbound_message")
     def test_send_message_failure(

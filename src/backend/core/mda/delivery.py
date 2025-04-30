@@ -357,7 +357,7 @@ def deliver_inbound_message(
         )
         # Don't return False here, delivery was successful
 
-    thread.update_counters()
+    thread.update_stats()
 
     logger.info(
         "Successfully delivered message %s to mailbox %s (Thread: %s)",
@@ -450,6 +450,8 @@ def _mark_message_as_sent(message: models.Message) -> bool:
     message.save(
         update_fields=["mta_sent", "sent_at", "is_draft", "draft_body", "created_at"]
     )
+
+    message.thread.update_stats()
 
 
 def send_outbound_message(message: models.Message) -> bool:

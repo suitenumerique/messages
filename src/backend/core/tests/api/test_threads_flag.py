@@ -31,7 +31,7 @@ def test_trash_single_thread_success(api_client):
     msg2 = factories.MessageFactory(thread=thread, is_trashed=False)
 
     thread.refresh_from_db()
-    thread.update_counters()
+    thread.update_stats()
     assert thread.count_trashed == 0
     assert msg1.is_trashed is False
     assert msg2.is_trashed is False
@@ -71,7 +71,7 @@ def test_untrash_single_thread_success(api_client):
     )
 
     thread.refresh_from_db()
-    thread.update_counters()
+    thread.update_stats()
     assert thread.count_trashed == 2
     assert msg1.is_trashed is True
     assert msg2.is_trashed is True
@@ -112,11 +112,11 @@ def test_trash_multiple_threads_success(api_client):
     )
 
     thread1.refresh_from_db()
-    thread1.update_counters()
+    thread1.update_stats()
     thread2.refresh_from_db()
-    thread2.update_counters()
+    thread2.update_stats()
     thread3.refresh_from_db()
-    thread3.update_counters()
+    thread3.update_stats()
     assert thread1.count_trashed == 0
     assert thread2.count_trashed == 0
     assert thread3.count_trashed == 1

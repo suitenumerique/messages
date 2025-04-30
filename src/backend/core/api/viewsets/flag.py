@@ -198,9 +198,9 @@ class ChangeFlagViewSet(APIView):
 
             # --- Update thread counters ---
             for thread in updated_threads:
-                # Refresh thread from DB within transaction if needed, though update_counters handles it
-                thread.update_counters(
-                    **{"counters": [flag]} if flag in ("unread", "starred") else {}
+                # Refresh thread from DB within transaction if needed, though update_stats handles it
+                thread.update_stats(
+                    **{"fields": [flag]} if flag in ("unread", "starred") else {}
                 )
 
         return drf.response.Response(

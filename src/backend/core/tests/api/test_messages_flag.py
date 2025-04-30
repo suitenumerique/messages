@@ -35,7 +35,7 @@ def test_mark_messages_unread_success(api_client):
     )  # Already unread
 
     # Check initial thread counter
-    thread.update_counters()
+    thread.update_stats()
     thread.refresh_from_db()
     initial_unread_count = thread.count_unread
     assert initial_unread_count == 1
@@ -76,7 +76,7 @@ def test_mark_messages_read_success(api_client):
     )  # Already read
 
     # Check initial thread counter
-    thread.update_counters()
+    thread.update_stats()
     thread.refresh_from_db()
     initial_unread_count = thread.count_unread
     assert initial_unread_count == 2
@@ -114,7 +114,7 @@ def test_mark_thread_messages_unread_success(api_client):
     msg2 = MessageFactory(thread=thread, is_unread=False, read_at=timezone.now())
 
     thread.refresh_from_db()
-    thread.update_counters()
+    thread.update_stats()
     assert thread.count_unread == 0
 
     data = {"flag": "unread", "value": True, "thread_ids": [str(thread.id)]}
@@ -145,7 +145,7 @@ def test_mark_thread_messages_read_success(api_client):
     msg2 = MessageFactory(thread=thread, is_unread=True, read_at=None)
 
     thread.refresh_from_db()
-    thread.update_counters()
+    thread.update_stats()
     assert thread.count_unread == 2
 
     data = {"flag": "unread", "value": False, "thread_ids": [str(thread.id)]}
@@ -181,11 +181,11 @@ def test_mark_multiple_threads_read_success(api_client):
     )  # Already read
 
     thread1.refresh_from_db()
-    thread1.update_counters()
+    thread1.update_stats()
     thread2.refresh_from_db()
-    thread2.update_counters()
+    thread2.update_stats()
     thread3.refresh_from_db()
-    thread3.update_counters()
+    thread3.update_stats()
     assert thread1.count_unread == 1
     assert thread2.count_unread == 1
     assert thread3.count_unread == 0
@@ -291,7 +291,7 @@ def test_mark_messages_starred_success(api_client):
     msg2 = MessageFactory(thread=thread, is_starred=True)  # Already starred
 
     thread.refresh_from_db()
-    thread.update_counters()
+    thread.update_stats()
     initial_starred_count = thread.count_starred
     assert initial_starred_count == 1
 
@@ -321,7 +321,7 @@ def test_mark_messages_unstarred_success(api_client):
     msg2 = MessageFactory(thread=thread, is_starred=False)  # Already unstarred
 
     thread.refresh_from_db()
-    thread.update_counters()
+    thread.update_stats()
     initial_starred_count = thread.count_starred
     assert initial_starred_count == 1
 
@@ -354,7 +354,7 @@ def test_mark_messages_trashed_success(api_client):
     msg2 = MessageFactory(thread=thread, is_trashed=True)  # Already trashed
 
     thread.refresh_from_db()
-    thread.update_counters()
+    thread.update_stats()
     initial_trashed_count = thread.count_trashed
     assert initial_trashed_count == 1
 
@@ -385,7 +385,7 @@ def test_mark_messages_untrashed_success(api_client):
     msg2 = MessageFactory(thread=thread, is_trashed=False)  # Already untrashed
 
     thread.refresh_from_db()
-    thread.update_counters()
+    thread.update_stats()
     initial_trashed_count = thread.count_trashed
     assert initial_trashed_count == 1
 

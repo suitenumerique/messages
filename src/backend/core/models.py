@@ -1,7 +1,7 @@
 """
 Declare and configure the models for the messages core application
 """
-# pylint: disable=too-many-lines
+# pylint: disable=too-many-lines,too-many-instance-attributes
 
 import base64
 import uuid
@@ -250,6 +250,7 @@ class Thread(BaseModel):
     count_sender = models.IntegerField(_("count sender"), default=0)
     count_messages = models.IntegerField(_("count messages"), default=1)
     messaged_at = models.DateTimeField(_("messaged at"), null=True, blank=True)
+    sender_names = models.JSONField(_("sender names"), null=True, blank=True)
 
     class Meta:
         db_table = "messages_thread"
@@ -259,9 +260,9 @@ class Thread(BaseModel):
     def __str__(self):
         return self.subject
 
-    def update_counters(
+    def update_stats(
         self,
-        counters: Tuple[str] = (
+        fields: Tuple[str] = (
             "unread",
             "trashed",
             "draft",
@@ -269,38 +270,59 @@ class Thread(BaseModel):
             "sender",
             "messages",
             "messaged_at",
+            "sender_names",
         ),
     ):
-        """Update the counters of the thread."""
-        if "unread" in counters:
+        """Update the denormalized stats of the thread."""
+        if "unread" in fields:
             self.count_unread = self.messages.filter(
                 is_unread=True, is_trashed=False
             ).count()
-        if "trashed" in counters:
+        if "trashed" in fields:
             self.count_trashed = self.messages.filter(is_trashed=True).count()
-        if "draft" in counters:
+        if "draft" in fields:
             self.count_draft = self.messages.filter(
                 is_draft=True, is_trashed=False
             ).count()
-        if "starred" in counters:
+        if "starred" in fields:
             self.count_starred = self.messages.filter(
                 is_starred=True, is_trashed=False
             ).count()
-        if "sender" in counters:
+        if "sender" in fields:
             self.count_sender = self.messages.filter(
                 is_sender=True, is_trashed=False
             ).count()
-        if "messages" in counters:
+        if "messages" in fields:
             self.count_messages = self.messages.filter(is_trashed=False).count()
-        if "messaged_at" in counters:
+        if "messaged_at" in fields:
             last = (
                 self.messages.filter(is_trashed=False).order_by("-created_at").first()
             )
             self.messaged_at = last.created_at if last else None
+        if "sender_names" in fields:
+            # Store the first and last sender names as a list of strings
+            if "messages" in fields and self.count_messages == 0:
+                self.sender_names = None
+            elif "messages" in fields and self.count_messages == 1:
+                self.sender_names = [
+                    self.messages.filter(is_trashed=False)
+                    .values_list("sender__name", flat=True)
+                    .first(),
+                ]
+            else:
+                self.sender_names = [
+                    self.messages.filter(is_trashed=False)
+                    .values_list("sender__name", flat=True)
+                    .last(),
+                    self.messages.filter(is_trashed=False)
+                    .values_list("sender__name", flat=True)
+                    .first(),
+                ]
 
         self.save(
             update_fields=[
-                x if x in {"messaged_at"} else "count_" + x for x in counters
+                x if x in {"messaged_at", "sender_names"} else "count_" + x
+                for x in fields
             ]
         )
 
