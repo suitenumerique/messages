@@ -86,6 +86,7 @@ class ThreadSerializer(serializers.ModelSerializer):
             "count_sender",
             "count_messages",
             "messaged_at",
+            "sender_names",
             "updated_at",
         ]
 

@@ -29,8 +29,8 @@ def test_list_threads_success(api_client):
     ThreadFactory(mailbox=other_mailbox)  # Inaccessible thread
 
     # Update counters after creating messages
-    thread1.update_counters()
-    thread2.update_counters()
+    thread1.update_stats()
+    thread2.update_stats()
 
     response = api_client.get(API_URL)
 
@@ -87,18 +87,24 @@ def test_list_threads_filter_has_unread(api_client):
     mailbox = MailboxFactory(users_read=[user])
     # Thread 1: Has unread messages
     thread1 = ThreadFactory(mailbox=mailbox)
-    MessageFactory(thread=thread1, is_unread=True)
+    message1 = MessageFactory(thread=thread1, is_unread=True)
+    MessageFactory(thread=thread1, is_unread=False, read_at=timezone.now())
+    message3 = MessageFactory(thread=thread1, is_unread=False, read_at=timezone.now())
     # Thread 2: No unread messages
     thread2 = ThreadFactory(mailbox=mailbox)
     MessageFactory(thread=thread2, is_unread=False, read_at=timezone.now())
 
-    thread1.update_counters()
-    thread2.update_counters()
+    thread1.update_stats()
+    thread2.update_stats()
 
     response = api_client.get(API_URL, {"has_unread": "1"})
     assert response.status_code == status.HTTP_200_OK
     assert response.data["count"] == 1
     assert response.data["results"][0]["id"] == str(thread1.id)
+    assert response.data["results"][0]["sender_names"] == [
+        message1.sender.name,
+        message3.sender.name,
+    ]
 
     response = api_client.get(API_URL, {"has_unread": "true"})
     assert response.status_code == status.HTTP_200_OK
@@ -128,8 +134,8 @@ def test_list_threads_filter_is_trashed(api_client):
     thread2 = ThreadFactory(mailbox=mailbox)
     MessageFactory(thread=thread2, is_trashed=False)
 
-    thread1.update_counters()
-    thread2.update_counters()
+    thread1.update_stats()
+    thread2.update_stats()
 
     response = api_client.get(API_URL, {"is_trashed": "1"})
     assert response.status_code == status.HTTP_200_OK
@@ -154,8 +160,8 @@ def test_list_threads_filter_has_starred(api_client):
     thread2 = ThreadFactory(mailbox=mailbox)
     MessageFactory(thread=thread2, is_starred=False)
 
-    thread1.update_counters()
-    thread2.update_counters()
+    thread1.update_stats()
+    thread2.update_stats()
 
     response = api_client.get(API_URL, {"has_starred": "1"})
     assert response.status_code == status.HTTP_200_OK
@@ -191,7 +197,7 @@ def test_list_threads_filter_combined(api_client):
     )
 
     for t in [thread1, thread2, thread3, thread4]:
-        t.update_counters()
+        t.update_stats()
 
     # Filter: has_unread=1 AND has_starred=1
     response = api_client.get(API_URL, {"has_unread": "1", "has_starred": "1"})

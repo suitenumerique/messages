@@ -275,10 +275,10 @@ class DraftMessageView(APIView):
             sender=sender_contact,
             parent=reply_to_message,
             subject=subject,
-            created_at=timezone.now(),
-            read_at=timezone.now(),  # Drafts are typically marked read for the sender
+            read_at=timezone.now(),
             mta_sent=False,
-            is_draft=True,  # Mark as draft
+            is_draft=True,
+            is_sender=True,
             draft_body=request.data.get("draftBody", ""),  # Get content from draftBody
         )
         message.save()  # Save message before adding recipients
@@ -286,7 +286,7 @@ class DraftMessageView(APIView):
         # Populate details using helper
         message = self._update_draft_details(message, request.data)
 
-        thread.update_counters()
+        thread.update_stats()
 
         # Refresh required as _update_draft_details might have saved again
         message.refresh_from_db()

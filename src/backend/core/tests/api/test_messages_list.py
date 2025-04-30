@@ -44,15 +44,15 @@ class TestApiThreads:
         # Create 3 threads with messages in the mailbox
         thread1 = factories.ThreadFactory(mailbox=mailbox)
         factories.MessageFactory(thread=thread1, read_at=None)
-        thread1.update_counters()
+        thread1.update_stats()
 
         thread2 = factories.ThreadFactory(mailbox=mailbox)
         message2 = factories.MessageFactory(thread=thread2, read_at=None)
-        thread2.update_counters()
+        thread2.update_stats()
 
         thread3 = factories.ThreadFactory(mailbox=mailbox)
         factories.MessageFactory(thread=thread3, read_at=None)
-        thread3.update_counters()
+        thread3.update_stats()
 
         def fetch_threads_and_assert_order(mailbox_id, thread_ids):
             response = client.get(
@@ -70,14 +70,14 @@ class TestApiThreads:
 
         # Create a new message for the second thread to pull it up in the list
         new_message2 = factories.MessageFactory(thread=thread2, read_at=None)
-        thread2.update_counters()
+        thread2.update_stats()
 
         fetch_threads_and_assert_order(mailbox.id, [thread2.id, thread3.id, thread1.id])
 
         # Create a thread with a message in the other mailbox
         other_thread = factories.ThreadFactory(mailbox=other_mailbox)
         factories.MessageFactory(thread=other_thread, read_at=None)
-        other_thread.update_counters()
+        other_thread.update_stats()
 
         # Need sender and recipient contacts for the thread serializer
         recipient_contact = factories.ContactFactory()
