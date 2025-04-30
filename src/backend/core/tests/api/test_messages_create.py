@@ -48,12 +48,12 @@ def fixture_mailbox(authenticated_user):
 class TestApiDraftAndSendMessage:
     """Test API draft and send message endpoints."""
 
-    @patch("core.api.viewsets.send.send_outbound_message")
+    @patch("core.api.viewsets.send.send_message")
     def test_draft_and_send_message_success(
         self, mock_send_outbound, mailbox, authenticated_user, send_url
     ):
         """Test create draft message and then successfully send it via the service."""
-        mock_send_outbound.return_value = True
+        mock_send_outbound.return_value = {"x": True}
 
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -75,9 +75,9 @@ class TestApiDraftAndSendMessage:
                 "senderId": mailbox.id,
                 "subject": subject,
                 "draftBody": draft_content,
-                "to": ["pierre@example.com"],
-                "cc": ["paul@example.com"],
-                "bcc": ["jean@example.com"],
+                "to": ["pierre@external.com"],
+                "cc": ["paul@external.com"],
+                "bcc": ["jean@external.com"],
             },
             format="json",
         )
@@ -129,7 +129,7 @@ class TestApiDraftAndSendMessage:
         assert sent_message_data["id"] == draft_message_id
 
         # TODO: remove this once we have background tasks
-        _mark_message_as_sent(sent_message_arg)
+        _mark_message_as_sent(sent_message_arg, True)
 
         sent_message = models.Message.objects.get(id=draft_message_id)
         assert sent_message.raw_mime
@@ -153,7 +153,7 @@ class TestApiDraftAndSendMessage:
         assert sent_message.thread.sender_names == [sent_message.sender.name]
         assert sent_message.thread.messaged_at is not None
 
-    @patch("core.api.viewsets.send.send_outbound_message")
+    @patch("core.api.viewsets.send.send_message")
     def test_send_message_failure(
         self,
         mock_send_outbound,
@@ -162,7 +162,7 @@ class TestApiDraftAndSendMessage:
         send_url,
     ):
         """Test sending a draft message when the delivery service fails."""
-        mock_send_outbound.return_value = False
+        mock_send_outbound.return_value = {"x": False}
 
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -179,7 +179,7 @@ class TestApiDraftAndSendMessage:
                 "senderId": mailbox.id,
                 "subject": subject,
                 "draftBody": "test content",
-                "to": ["fail@example.com"],
+                "to": ["fail@external.com"],
             },
             format="json",
         )
