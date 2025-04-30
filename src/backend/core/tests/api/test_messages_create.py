@@ -1,5 +1,4 @@
 """Test API messages create."""
-# pylint: disable=redefined-outer-name
 # pylint: disable=too-many-positional-arguments
 
 import json
@@ -18,32 +17,26 @@ from core import enums, factories, models
 from core.mda.delivery import _mark_message_as_sent
 
 
-@pytest.fixture
-def draft_url():
-    """Return the draft message URL."""
-    return reverse("draft-message")
-
-
-@pytest.fixture
-def draft_detail_url(draft_url):
+@pytest.fixture(name="draft_detail_url")
+def fixture_draft_detail_url():
     """Return the draft message detail URL with a placeholder for the message ID."""
-    return lambda message_id: f"{draft_url}{message_id}/"
+    return lambda message_id: f"{reverse('draft-message')}{message_id}/"
 
 
-@pytest.fixture
-def send_url():
+@pytest.fixture(name="send_url")
+def fixture_send_url():
     """Return the send message URL."""
     return reverse("send-message")
 
 
-@pytest.fixture
-def authenticated_user():
+@pytest.fixture(name="authenticated_user")
+def fixture_authenticated_user():
     """Create an authenticated user to authenticate."""
     return factories.UserFactory(full_name="Julie Dupont", email="julie@example.com")
 
 
-@pytest.fixture
-def mailbox(authenticated_user):
+@pytest.fixture(name="mailbox")
+def fixture_mailbox(authenticated_user):
     """Create a mailbox for the authenticated user."""
     return factories.MailboxFactory(
         local_part=authenticated_user.email.split("@")[0],
@@ -57,12 +50,7 @@ class TestApiDraftAndSendMessage:
 
     @patch("core.api.viewsets.send.send_outbound_message")
     def test_draft_and_send_message_success(
-        self,
-        mock_send_outbound,
-        mailbox,
-        authenticated_user,
-        draft_url,
-        send_url,
+        self, mock_send_outbound, mailbox, authenticated_user, send_url
     ):
         """Test create draft message and then successfully send it via the service."""
         mock_send_outbound.return_value = True
@@ -76,13 +64,17 @@ class TestApiDraftAndSendMessage:
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
 
+        draft_content = json.dumps(
+            {"arbitrary": f"json content {random.randint(0, 1000000000)}"}
+        )
+
         subject = f"test_draft_send_success {random.randint(0, 1000000000)}"
         draft_response = client.post(
-            draft_url,
+            reverse("draft-message"),
             {
                 "senderId": mailbox.id,
                 "subject": subject,
-                "draftBody": json.dumps({"arbitrary": "json content"}),
+                "draftBody": draft_content,
                 "to": ["pierre@example.com"],
                 "cc": ["paul@example.com"],
                 "bcc": ["jean@example.com"],
@@ -100,6 +92,7 @@ class TestApiDraftAndSendMessage:
         assert draft_message.is_trashed is False
         assert draft_message.is_starred is False
         assert draft_message.mta_sent is False
+        assert draft_message.draft_body == draft_content
 
         assert draft_message.thread.count_messages == 1
         assert draft_message.thread.count_sender == 1
@@ -108,6 +101,12 @@ class TestApiDraftAndSendMessage:
         assert draft_message.thread.count_starred == 0
         assert draft_message.thread.count_draft == 1
         assert draft_message.thread.sender_names == [draft_message.sender.name]
+
+        draft_api_message = client.get(
+            reverse("messages-detail", kwargs={"id": draft_message_id})
+        ).data
+        assert draft_api_message["draftBody"] == draft_content
+        assert draft_api_message["is_draft"] is True
 
         send_response = client.post(
             send_url,
@@ -160,7 +159,6 @@ class TestApiDraftAndSendMessage:
         mock_send_outbound,
         mailbox,
         authenticated_user,
-        draft_url,
         send_url,
     ):
         """Test sending a draft message when the delivery service fails."""
@@ -176,7 +174,7 @@ class TestApiDraftAndSendMessage:
 
         subject = f"test_draft_send_fail {random.randint(0, 1000000000)}"
         draft_response = client.post(
-            draft_url,
+            reverse("draft-message"),
             {
                 "senderId": mailbox.id,
                 "subject": subject,
@@ -214,10 +212,7 @@ class TestApiDraftAndSendMessage:
         assert db_message.sent_at is None
 
     def test_draft_message_without_permission_required(
-        self,
-        mailbox,
-        authenticated_user,
-        draft_url,
+        self, mailbox, authenticated_user
     ):
         """Test create draft message without permission required."""
         # Create a mailbox access on this mailbox for the authenticated user
@@ -231,7 +226,7 @@ class TestApiDraftAndSendMessage:
         client.force_authenticate(user=authenticated_user)
         # Create a new draft message
         response = client.post(
-            draft_url,
+            reverse("draft-message"),
             {
                 "senderId": mailbox.id,
                 "subject": "test",
@@ -243,14 +238,14 @@ class TestApiDraftAndSendMessage:
         # Assert the response is forbidden
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_draft_message_not_allowed(self, authenticated_user, draft_url):
+    def test_draft_message_not_allowed(self, authenticated_user):
         """Test create draft message not allowed."""
         # Create a client and authenticate the user
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
         # Create a new draft message
         response = client.post(
-            draft_url,
+            reverse("draft-message"),
             {
                 "senderId": uuid.uuid4(),
                 "subject": "test",
@@ -262,14 +257,14 @@ class TestApiDraftAndSendMessage:
         # Assert the response is forbidden, there is no mailbox access
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_draft_message_unauthorized(self, draft_url):
+    def test_draft_message_unauthorized(self):
         """Test create draft message unauthorized."""
         # Create a client
         client = APIClient()
         # No one is authenticated
         # Try to create a new draft message
         response = client.post(
-            draft_url,
+            reverse("draft-message"),
             {
                 "senderId": uuid.uuid4(),
                 "subject": "test",
@@ -342,9 +337,7 @@ class TestApiDraftAndSendMessage:
 class TestApiDraftAndSendReply:
     """Test API draft and send reply endpoints."""
 
-    def test_draft_and_send_reply_success(
-        self, mailbox, authenticated_user, draft_url, send_url
-    ):
+    def test_draft_and_send_reply_success(self, mailbox, authenticated_user, send_url):
         """Create draft reply to an existing message and then send it."""
         # Create a mailbox access on this mailbox for the authenticated user
         factories.MailboxAccessFactory(
@@ -371,7 +364,7 @@ class TestApiDraftAndSendReply:
 
         # Step 1: Create a draft reply
         draft_response = client.post(
-            draft_url,
+            reverse("draft-message"),
             {
                 "parentId": message.id,  # ID of the message we're replying to
                 "senderId": mailbox.id,
@@ -427,9 +420,7 @@ class TestApiDraftAndSendReply:
             in sent_message.raw_mime
         )
 
-    def test_draft_reply_without_permission(
-        self, mailbox, authenticated_user, draft_url
-    ):
+    def test_draft_reply_without_permission(self, mailbox, authenticated_user):
         """Create draft reply to an existing thread without permission."""
         # Create a mailbox access on this mailbox for the authenticated user
         factories.MailboxAccessFactory(
@@ -449,7 +440,7 @@ class TestApiDraftAndSendReply:
         client.force_authenticate(user=authenticated_user)
         # Create new draft reply
         response = client.post(
-            draft_url,
+            reverse("draft-message"),
             {
                 "parentId": message.id,
                 "senderId": mailbox.id,
@@ -461,14 +452,14 @@ class TestApiDraftAndSendReply:
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_draft_reply_unauthorized(self, draft_url):
+    def test_draft_reply_unauthorized(self):
         """Test draft reply unauthorized."""
         # Create a client
         client = APIClient()
         # No one is authenticated
         # Try to create a new draft reply
         response = client.post(
-            draft_url,
+            reverse("draft-message"),
             {
                 "parentId": uuid.uuid4(),
                 "senderId": uuid.uuid4(),
@@ -484,7 +475,6 @@ class TestApiDraftAndSendReply:
         self,
         mailbox,
         authenticated_user,
-        draft_url,
         draft_detail_url,
         send_url,
     ):
@@ -507,7 +497,7 @@ class TestApiDraftAndSendReply:
         # Step 1: Create a draft message
         subject = f"test {random.randint(0, 1000000000)}"
         draft_response = client.post(
-            draft_url,
+            reverse("draft-message"),
             {
                 "senderId": mailbox.id,
                 "subject": subject,
