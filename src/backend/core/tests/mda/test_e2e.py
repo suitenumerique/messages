@@ -83,8 +83,8 @@ private_key_pem = private_key_for_tests.private_bytes(
 
 
 @pytest.mark.django_db
-class TestE2EMessageFlow:
-    """Test the full flow: API -> MDA -> MTA-OUT -> Mailcatcher -> Verification."""
+class TestE2EMessageOutboundFlow:
+    """Test the outbound flow: API -> MDA -> Mailcatcher -> Verification."""
 
     @override_settings(
         # Ensure DKIM settings are configured for the test domain
@@ -115,6 +115,11 @@ class TestE2EMessageFlow:
             permission=enums.MailboxPermissionChoices.SEND,  # Needed by send view permission
         )
 
+        local_mailbox = factories.MailboxFactory(
+            local_part="other-user",
+            domain=mailbox.domain,
+        )
+
         # Ensure sender contact exists (handled by fixture)
         assert sender_contact is not None
 
@@ -125,6 +130,7 @@ class TestE2EMessageFlow:
         subject = f"e2e_test_{random.randint(0, 1000000000)}"
         draft_body_content = json.dumps({"test": "json content"})
         to_email = "recipient1@external-test.com"
+        to_email_local = str(local_mailbox)
         cc_email = "recipient2@external-test.com"
         bcc_email = "recipient3@hidden-test.com"
 
@@ -132,7 +138,7 @@ class TestE2EMessageFlow:
             "senderId": str(mailbox.id),
             "subject": subject,
             "draftBody": draft_body_content,
-            "to": [to_email],
+            "to": [to_email, to_email_local],
             "cc": [cc_email],
             "bcc": [bcc_email],
         }
@@ -214,6 +220,7 @@ class TestE2EMessageFlow:
             x["address"] for x in received_email.get("envelope", {}).get("to", [])
         ]
         assert to_email in envelope_to
+        assert to_email_local not in envelope_to
         assert cc_email in envelope_to
         assert bcc_email in envelope_to
 
@@ -234,3 +241,19 @@ class TestE2EMessageFlow:
         assert dkim_verify(email_source, dnsfunc=get_dns_txt), (
             "DKIM verification failed"
         )
+
+        # Ensure the local mailbox received the email
+        local_mailbox_messages = models.Message.objects.filter(
+            is_sender=False,
+            thread__mailbox=local_mailbox,
+        )
+        assert local_mailbox_messages.count() == 1
+        local_message = local_mailbox_messages.first()
+        assert local_message.subject == subject
+        assert local_message.raw_mime == sent_message.raw_mime
+        assert local_message.sender.email == sender_contact.email
+        assert local_message.parent is None
+        assert local_message.is_draft is False
+        assert local_message.mta_sent is False
+
+        assert models.Message.objects.all().count() == 2
