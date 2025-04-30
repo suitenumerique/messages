@@ -1,5 +1,6 @@
 import { useMailboxContext } from "@/features/mailbox/provider";
 import useRead from "@/features/message/useRead";
+import useTrash from "@/features/message/useTrash";
 import Bar from "@/features/ui/components/bar";
 import { DropdownMenu } from "@gouvfr-lasuite/ui-kit"
 import { Button, Tooltip } from "@openfun/cunningham-react"
@@ -11,6 +12,7 @@ export const ActionBar = () => {
     const { t } = useTranslation();
     const { selectedThread, unselectThread } = useMailboxContext();
     const { markAsUnread } = useRead();
+    const { markAsTrashed } = useTrash();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
     return (
@@ -36,20 +38,13 @@ export const ActionBar = () => {
                         onClick={() => markAsUnread({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
                     />
                 </Tooltip>
-                <Tooltip content={t('actions.archive')}>
-                    <Button
-                        color="primary-text"
-                        aria-label={t('actions.archive')}
-                        size="small"
-                        icon={<span className="material-icons">archive</span>}
-                    />
-                </Tooltip>
                 <Tooltip content={t('actions.delete')}>
                     <Button
                         color="primary-text"
                         aria-label={t('actions.delete')}
                         size="small"
                         icon={<span className="material-icons">delete</span>}
+                        onClick={() => markAsTrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
                     />
                 </Tooltip>
                 <DropdownMenu
