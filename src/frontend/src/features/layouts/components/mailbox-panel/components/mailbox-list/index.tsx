@@ -1,106 +1,109 @@
-import { useMailboxContext } from "@/features/mailbox/provider"
-import { Badge } from "@/features/ui/components/badge"
+import clsx from "clsx"
 import Link from "next/link"
-import { useParams } from "next/navigation"
-import { useRouter } from "next/router"
-import { useEffect } from "react"
+import { useParams, useSearchParams } from "next/navigation"
+import { useMemo } from "react"
 
 // @TODO: replace with real data when folder will be ready
-type HardcodedMailbox = {
-    id?: string;
+type Folder = {
     name: string;
     icon: string;
-    unread: number;
+    filter?: Record<string, string>;
 }
 
-const TMP_MAILBOXES: HardcodedMailbox[] = [
+export const DEFAULT_FOLDERS: Folder[] = [
     {
         name: "Tous les messages",
         icon: "folder",
-        unread: -1,
+        filter: {
+            has_trashed: "0"
+        },
     },
+    // {
+    //     name: "Boîte de réception",
+    //     icon: "inbox",
+    //     filter: {
+    //         has_unread: "1",
+    //     },
+    // },
     {
-        id: "1",
-        name: "Boîte de réception",
-        icon: "inbox",
-        unread: 0,
-    },
-    {
-        id: "2",
         name: "Brouillons",
         icon: "drafts",
-        unread: 0,
+        filter: {
+            has_draft: "1",
+        },
     },
     {
-        id: "3",
         name: "Envoyés",
         icon: "outbox",
-        unread: 0,
+        filter: {
+            has_sender: "1",
+        },
     },
     {
-        id: "4",
-        name: "Pourriels",
-        icon: "report",
-        unread: 0,
-    },
-    {
-        id: "5",
-        name: "Archives",
-        icon: "inventory_2",
-        unread: 0,
-    },
-    {
-        id: "6",
         name: "Corbeille",
         icon: "delete",
-        unread: 0,
+        filter: {
+            has_trashed: "1",
+        },
     }
+    // {
+    //     name: "Pourriels",
+    //     icon: "report",
+    // },
+    // {
+    //     name: "Archives",
+    //     icon: "inventory_2",
+    // },
 ]
 
 export const MailboxList = () => {
-    const { selectedMailbox } = useMailboxContext();
-    const router = useRouter()
-
-    useEffect(() => {
-        if (router.pathname === "/" && selectedMailbox) {
-            router.push(`/mailbox/${selectedMailbox.id}/`)
-        }
-    }, [selectedMailbox])
-
     return (
         <div className="mailbox-list">
-            {/* TODO: replace with real data */}
-            {TMP_MAILBOXES.map((mailbox) => (
-                <MailboxListItem
-                    key={mailbox.id}
-                    mailbox={{
-                        ...mailbox,
-                        id: mailbox?.id || selectedMailbox?.id,
-                        unread: mailbox?.unread < 0 ? Number(selectedMailbox?.count_unread_messages) : mailbox?.unread
-                    }}
+            {DEFAULT_FOLDERS.map((folder) => (
+                <FolderItem
+                    key={folder.icon}
+                    folder={folder}
                 />
             ))}
         </div>
     )
 }
 
-type MailboxListItemProps = {
-    mailbox: HardcodedMailbox
+type FolderItemProps = {
+    folder: Folder
 }
 
-const MailboxListItem = ({ mailbox }: MailboxListItemProps) => {
+const FolderItem = ({ folder }: FolderItemProps) => {
     const params = useParams<{ mailboxId?: string }>()
+    const searchParams = useSearchParams()
+    const queryParams = useMemo(() => {
+        const params = new URLSearchParams(Object.entries(folder.filter || {}));
+        return params.toString();
+    }, [folder.filter]);
+
+    const isActive = useMemo(() => {
+        const folderFilter = Object.entries(folder.filter || {});
+        if (folderFilter.length !== searchParams.size) return false;
+
+        return folderFilter.every(([key, value]) => {
+            return searchParams.get(key) === value;
+        });
+        
+        
+    }, [searchParams, folder.filter]);
 
     return (
         <Link
-            href={`/mailbox/${mailbox.id}`}
-            className={`mailbox__item ${mailbox.id === params?.mailboxId ? "mailbox__item--active" : ""}`}
+            href={`/mailbox/${params?.mailboxId}?${queryParams}`}
+            className={clsx("mailbox__item", {
+                "mailbox__item--active": isActive
+            })}
         >
             <p className="mailbox__item-label">
-                <span className="material-icons" aria-hidden="true">{mailbox.icon}</span>
-                {mailbox.name}
+                <span className="material-icons" aria-hidden="true">{folder.icon}</span>
+                {folder.name}
             </p>
-            {mailbox.unread > 0 && <Badge>{mailbox.unread}</Badge>}
+            {/* {mailbox.unread > 0 && <Badge>{mailbox.unread}</Badge>} */}
         </Link>
     )
 }

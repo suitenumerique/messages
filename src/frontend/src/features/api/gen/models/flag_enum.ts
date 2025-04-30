@@ -6,12 +6,16 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export type FlagCreateFlag =
-  (typeof FlagCreateFlag)[keyof typeof FlagCreateFlag];
+/**
+ * * `unread` - unread
+ * `starred` - starred
+ * `trashed` - trashed
+ */
+export type FlagEnum = (typeof FlagEnum)[keyof typeof FlagEnum];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
-export const FlagCreateFlag = {
+export const FlagEnum = {
+  unread: "unread",
   starred: "starred",
   trashed: "trashed",
-  unread: "unread",
 } as const;

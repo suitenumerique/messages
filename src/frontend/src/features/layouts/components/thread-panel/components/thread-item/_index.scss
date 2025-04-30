@@ -57,11 +57,11 @@
     box-sizing: border-box;
     background-color: transparent;
     border: 2px solid var(--c--theme--colors--greyscale-300);
+}
 
-    &[data-unread="true"] {
-        background-color: var(--c--theme--colors--primary-400);
-        border-color: var(--c--theme--colors--primary-400);
-    }
+.thread-item[data-unread="true"] .thread-item__read-indicator {
+    background-color: var(--c--theme--colors--primary-400);
+    border-color: var(--c--theme--colors--primary-400);
 }
 
 .thread-item__sender-info {
@@ -73,7 +73,7 @@
     min-width: 0;
 }
 
-.thread-item__recipients,
+.thread-item__senders,
 .thread-item__subject {
     margin: 0;
     text-wrap: nowrap;
@@ -82,7 +82,7 @@
     max-width: 100%;
 }
 
-.thread-item__recipients-container {
+.thread-item__senders-container {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -91,30 +91,41 @@
     min-width: 0;
 }
 
-.thread-item__recipients {
+.thread-item__senders {
     list-style: none;
     padding: 0;
-    font-weight: 600;
     max-width: 100%;
 }
 
-.thread-item__recipient {
+.thread-item__sender {
     display: inline;
     text-overflow: ellipsis;
     white-space: nowrap;
+
+    & > strong {
+        font-weight: 600;
+    }
 }
 
-.thread-item__recipient:not(:last-child):after {
-    content: ", ";
+.thread-item__sender:nth-child(2):before {
+    content: "..";
 }
 
-.thread-item__recipients-count {
+.thread-item__messages-count {
     font-weight: 300;
     font-size: var(--c--theme--font--sizes--xs);
 }
 
 .thread-item__subject {
     color: var(--c--theme--colors--greyscale-600);
+}
+
+.thread-item__sender-info:has(.thread-item__senders) + .thread-item__subject {
+    color: var(--c--theme--colors--greyscale-400);
+}
+
+.thread-item[data-unread="true"]:not(:has(.thread-item__senders)) .thread-item__subject {
+    font-weight: 600;
 }
 
 .thread-item__date {

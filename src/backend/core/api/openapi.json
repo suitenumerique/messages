@@ -875,51 +875,62 @@
         "/api/v1.0/flag/": {
             "post": {
                 "operationId": "flag_create",
-                "description": "Change a specific flag (unread, starred, trashed) for multiple messages or all messages within multiple threads.",
-                "parameters": [
-                    {
-                        "in": "query",
-                        "name": "flag",
-                        "schema": {
-                            "type": "string",
-                            "enum": [
-                                "starred",
-                                "trashed",
-                                "unread"
-                            ]
-                        },
-                        "description": "The flag to change.",
-                        "required": true
-                    },
-                    {
-                        "in": "query",
-                        "name": "message_ids",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "description": "Comma-separated list of message UUIDs (optional)."
-                    },
-                    {
-                        "in": "query",
-                        "name": "thread_ids",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "description": "Comma-separated list of thread UUIDs (optional)."
-                    },
-                    {
-                        "in": "query",
-                        "name": "value",
-                        "schema": {
-                            "type": "boolean"
-                        },
-                        "description": "The value to set the flag to (true/false).",
-                        "required": true
-                    }
-                ],
+                "description": "Change a specific flag (unread, starred, trashed) for multiple messages or all messages within multiple threads. Uses request body.",
                 "tags": [
                     "flags"
                 ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChangeFlagRequestRequest"
+                            },
+                            "examples": {
+                                "MarkMessagesAsRead": {
+                                    "value": {
+                                        "flag": "unread",
+                                        "value": false,
+                                        "message_ids": [
+                                            "123e4567-e89b-12d3-a456-426614174001",
+                                            "123e4567-e89b-12d3-a456-426614174002"
+                                        ]
+                                    },
+                                    "summary": "Mark messages as read"
+                                },
+                                "TrashThreads": {
+                                    "value": {
+                                        "flag": "trashed",
+                                        "value": true,
+                                        "thread_ids": [
+                                            "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+                                            "b2c3d4e5-f6a7-8901-2345-67890abcdef0"
+                                        ]
+                                    },
+                                    "summary": "Trash threads"
+                                },
+                                "StarMessagesAndThreads": {
+                                    "value": {
+                                        "flag": "starred",
+                                        "value": true,
+                                        "message_ids": [
+                                            "123e4567-e89b-12d3-a456-426614174005"
+                                        ],
+                                        "thread_ids": [
+                                            "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                                        ]
+                                    },
+                                    "summary": "Star messages and threads"
+                                }
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChangeFlagRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
                 "security": [
                     {
                         "cookieAuth": []
@@ -933,6 +944,43 @@
                                     "type": "object",
                                     "additionalProperties": {},
                                     "description": "Unspecified response body"
+                                },
+                                "examples": {
+                                    "MarkMessagesAsRead": {
+                                        "value": {
+                                            "flag": "unread",
+                                            "value": false,
+                                            "message_ids": [
+                                                "123e4567-e89b-12d3-a456-426614174001",
+                                                "123e4567-e89b-12d3-a456-426614174002"
+                                            ]
+                                        },
+                                        "summary": "Mark messages as read"
+                                    },
+                                    "TrashThreads": {
+                                        "value": {
+                                            "flag": "trashed",
+                                            "value": true,
+                                            "thread_ids": [
+                                                "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+                                                "b2c3d4e5-f6a7-8901-2345-67890abcdef0"
+                                            ]
+                                        },
+                                        "summary": "Trash threads"
+                                    },
+                                    "StarMessagesAndThreads": {
+                                        "value": {
+                                            "flag": "starred",
+                                            "value": true,
+                                            "message_ids": [
+                                                "123e4567-e89b-12d3-a456-426614174005"
+                                            ],
+                                            "thread_ids": [
+                                                "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                                            ]
+                                        },
+                                        "summary": "Star messages and threads"
+                                    }
                                 }
                             }
                         },
@@ -1420,6 +1468,37 @@
     },
     "components": {
         "schemas": {
+            "ChangeFlagRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "flag": {
+                        "$ref": "#/components/schemas/FlagEnum"
+                    },
+                    "value": {
+                        "type": "boolean"
+                    },
+                    "message_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "List of message UUIDs to apply the flag change to."
+                    },
+                    "thread_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "List of thread UUIDs where all messages should have the flag change applied."
+                    }
+                },
+                "required": [
+                    "flag",
+                    "value"
+                ]
+            },
             "Contact": {
                 "type": "object",
                 "description": "Serialize contacts.",
@@ -1507,6 +1586,15 @@
                     "senderId",
                     "subject"
                 ]
+            },
+            "FlagEnum": {
+                "enum": [
+                    "unread",
+                    "starred",
+                    "trashed"
+                ],
+                "type": "string",
+                "description": "* `unread` - unread\n* `starred` - starred\n* `trashed` - trashed"
             },
             "Mailbox": {
                 "type": "object",

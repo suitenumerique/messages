@@ -3,6 +3,8 @@ import { Mailbox, PaginatedMessageList, PaginatedThreadList, Thread, useMailboxe
 import { FetchStatus, QueryStatus, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import usePrevious from "@/hooks/usePrevious";
+import { useSearchParams } from "next/navigation";
+import { DEFAULT_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
 
 type QueryState = {
     status: QueryStatus,
@@ -89,6 +91,7 @@ const MailboxContext = createContext<MailboxContextType>({
 export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const queryClient = useQueryClient();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [selectedMailbox, setSelectedMailbox] = useState<Mailbox | null>(null);
     const [selectedThread, setSelectedThread] = useState<Thread | null>(null);
     const mailboxQuery = useMailboxesList({
@@ -96,19 +99,21 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             refetchInterval: 30 * 1000, // 30 seconds
         },
     });
+
     const previousUnreadMessagesCount = usePrevious(selectedMailbox?.count_unread_messages || 0);
     const threadsQuery = useThreadsListInfinite(undefined, {
         query: {
             enabled: !!selectedMailbox,
             initialPageParam: 1,
-            queryKey: ['threads', selectedMailbox?.id],
+            queryKey: ['threads', selectedMailbox?.id, searchParams.toString()],
             getNextPageParam: (lastPage, pages) => {
                 return pages.length + 1;
             },
         },
         request: {
             params: {
-                mailbox_id: selectedMailbox?.id ?? ''
+                ...(router.query as Record<string, string>),
+                mailbox_id: selectedMailbox?.id ?? '',
             }
         }
     });
@@ -157,7 +162,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const unselectThread = () => {
         setSelectedThread(null);
         if (router.query.threadId) {
-            router.push(`/mailbox/${selectedMailbox!.id}`);
+            router.push(`/mailbox/${selectedMailbox!.id}?${searchParams}`);
         }
     }
 
@@ -219,8 +224,9 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
 
     useEffect(() => {
         if (selectedMailbox) {
-            if (router.pathname === '/' || selectedMailbox.id !== router.query.mailboxId) {
-                router.replace(`/mailbox/${selectedMailbox.id}`);
+            if (router.pathname === '/' ||  (selectedMailbox.id !== router.query.mailboxId && !router.pathname.includes('new'))) {
+                const defaultFolder = DEFAULT_FOLDERS[0];
+                router.replace(`/mailbox/${selectedMailbox.id}?${new URLSearchParams(defaultFolder.filter).toString()}`);
                 invalidateThreadMessages();
             }
         }
@@ -232,7 +238,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             const thread = flattenThreads?.results.find((thread) => thread.id === threadId);
             if (thread) {
                 setSelectedThread(thread);
-                router.replace(`/mailbox/${selectedMailbox.id}/thread/${thread.id}`);
+                router.replace(`/mailbox/${selectedMailbox.id}/thread/${thread.id}?${searchParams}`);
             }
         }
     }, [flattenThreads]);

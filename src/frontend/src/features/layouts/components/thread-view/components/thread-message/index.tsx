@@ -9,11 +9,12 @@ import useRead from "@/features/message/useRead";
 import { useMailboxContext } from "@/features/mailbox/provider";
 type ThreadMessageProps = {
     message: Message,
-    isLatest: boolean
+    isLatest: boolean,
+    draftMessage?: Message
 } & React.HTMLAttributes<HTMLElement>
 
 export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
-    ({ message, isLatest, ...props }, ref) => {
+    ({ message, isLatest, draftMessage, ...props }, ref) => {
         const { t, i18n } = useTranslation()
         const [showReplyForm, setShowReplyForm] = useState<'all' | 'to' | null>(null)
         const { markAsUnread } = useRead()
@@ -124,7 +125,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                 />
                 <footer className="thread-message__footer">
                     {
-                        isLatest && !showReplyForm && (
+                        isLatest && !showReplyForm && !message.is_draft && !message.is_trashed && !draftMessage && (
                             <div className="thread-message__footer-actions">
                                 {hasSeveralRecipients && (
                                     <Button
@@ -147,10 +148,10 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                             </div>
                         )
                     }
-                    {showReplyForm && <MessageReplyForm
+                    {(!message.is_trashed && (showReplyForm || message.is_draft || draftMessage)) && <MessageReplyForm
                         replyAll={showReplyForm === 'all'}
                         handleClose={handleCloseReplyForm}
-                        message={message}
+                        message={draftMessage || message}
                     />}
                 </footer>
             </section>
