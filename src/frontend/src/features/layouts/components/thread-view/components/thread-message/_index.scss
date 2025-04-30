@@ -6,7 +6,7 @@
     transition: outline-color 0.1s ease;
 }
 
-.thread-message[data-read="false"] {
+.thread-message[data-unread="true"] {
     outline-color: var(--c--theme--colors--primary-300);
 }
 

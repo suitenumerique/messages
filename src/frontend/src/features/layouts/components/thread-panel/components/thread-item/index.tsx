@@ -18,7 +18,7 @@ export const ThreadItem = ({ thread }: ThreadItemProps) => {
             className={`thread-item ${thread.id === params?.threadId && "thread-item--active"} `}
         >
             <div className="thread-item__left">
-                <div className="thread-item__read-indicator" data-read={thread.is_read} />
+                <div className="thread-item__read-indicator" data-unread={(thread.count_unread ?? 0) > 0} />
                 <div className="thread-item__thread-details">
                     <div className="thread-item__sender-info">
                         {/* @TODO: Display thread correspondents when it will come back. */}
@@ -46,9 +46,11 @@ export const ThreadItem = ({ thread }: ThreadItemProps) => {
                         </Button>
                     </Tooltip>
                 </div> */}
-                <span className="thread-item__date">
-                    {DateHelper.formatDate(thread.updated_at, i18n.language)}
-                </span>
+                {thread.messaged_at && (
+                    <span className="thread-item__date">
+                        {DateHelper.formatDate(thread.messaged_at, i18n.language)}
+                    </span>
+                )}
             </div>
         </Link>
     )

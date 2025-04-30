@@ -1,4 +1,4 @@
-import { useReadCreate } from "@/features/api/gen"
+import { useFlagCreate, useReadCreate } from "@/features/api/gen"
 import { Thread, Message } from "@/features/api/gen/models"
 import { useQueryClient } from "@tanstack/react-query";
 import { useMailboxContext } from "../mailbox/provider";
@@ -18,7 +18,7 @@ const useRead = () => {
     const queryClient = useQueryClient();
     const { invalidateThreadMessages } = useMailboxContext();
 
-    const { mutate, status } = useReadCreate({
+    const { mutate, status } = useFlagCreate({
         mutation: {
             onSuccess: () => {
                 invalidateThreadMessages();
@@ -32,7 +32,8 @@ const useRead = () => {
         ({ threadIds = [], messageIds = [], onSuccess }: MarkAsOptions) =>
             mutate({
                 data: {
-                    status: status === 'read' ? 1 : 0,
+                    flag: 'unread',
+                    value: status === 'unread',
                     thread_ids: threadIds,
                     message_ids: messageIds,
                 },
