@@ -38,14 +38,14 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         }, [messages, unselectThread, markAsUnread])
 
         return (
-            <section ref={ref} className="thread-message" data-read={Boolean(message.read_at)} {...props}>
+            <section ref={ref} className="thread-message" data-unread={message.is_unread} {...props}>
                 <header className="thread-message__header">
                     <div className="thread-message__header-rows">
                         <div className="thread-message__header-column thread-message__header-column--left">
                             <h2 className="thread-message__subject">{message.subject}</h2>
                         </div>
                         <div className=" thread-message__header-column thread-message__header-column--right flex-row flex-align-center">
-                            <p className="thread-message__date m-0">{new Date(message.received_at).toLocaleString(i18n.language, {
+                            <p className="thread-message__date m-0">{new Date(message.sent_at!).toLocaleString(i18n.language, {
                                 minute: '2-digit',
                                 hour: '2-digit',
                                 day: '2-digit',

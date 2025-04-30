@@ -58,7 +58,7 @@
     background-color: transparent;
     border: 2px solid var(--c--theme--colors--greyscale-300);
 
-    &[data-read="false"] {
+    &[data-unread="true"] {
         background-color: var(--c--theme--colors--primary-400);
         border-color: var(--c--theme--colors--primary-400);
     }
