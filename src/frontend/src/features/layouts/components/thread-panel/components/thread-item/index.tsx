@@ -1,8 +1,10 @@
 import { useTranslation } from "react-i18next"
 import { DateHelper } from "@/features/utils/date-helper"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import { Thread } from "@/features/api/gen/models"
+import { ThreadItemSenders } from "./thread-item-senders"
+import ThreadHelper from "@/features/utils/thread-helper"
 
 type ThreadItemProps = {
     thread: Thread
@@ -11,18 +13,26 @@ type ThreadItemProps = {
 export const ThreadItem = ({ thread }: ThreadItemProps) => {
     const { i18n } = useTranslation();
     const params = useParams<{mailboxId: string, threadId: string}>()
+    const isUnread = ThreadHelper.isUnread(thread, true)
+    const searchParams = useSearchParams()
     
     return (
         <Link
-            href={`/mailbox/${params?.mailboxId}/thread/${thread.id}`}
+            href={`/mailbox/${params?.mailboxId}/thread/${thread.id}?${searchParams}`}
             className={`thread-item ${thread.id === params?.threadId && "thread-item--active"} `}
+            data-unread={isUnread}
         >
             <div className="thread-item__left">
-                <div className="thread-item__read-indicator" data-unread={(thread.count_unread ?? 0) > 0} />
+                <div className="thread-item__read-indicator" />
                 <div className="thread-item__thread-details">
                     <div className="thread-item__sender-info">
-                        {/* @TODO: Display thread correspondents when it will come back. */}
-                        {/* <ThreadItemRecipients recipients={[...thread., ...thread.cc]} /> */}
+                        {thread.sender_names && thread.sender_names.length > 0 && (
+                            <ThreadItemSenders
+                                senders={thread.sender_names}
+                                isUnread={ThreadHelper.isUnread(thread, false)}
+                                messagesCount={thread.count_messages ?? 0}
+                            />
+                        )}
                         <div className="thread-item__metadata">
                             {/* {thread.has_attachments ? (
                                 <span className="thread-item__metadata-attachments">

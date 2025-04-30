@@ -1,4 +1,4 @@
-import { useFlagCreate, useReadCreate } from "@/features/api/gen"
+import { useFlagCreate } from "@/features/api/gen"
 import { Thread, Message } from "@/features/api/gen/models"
 import { useQueryClient } from "@tanstack/react-query";
 import { useMailboxContext } from "../mailbox/provider";

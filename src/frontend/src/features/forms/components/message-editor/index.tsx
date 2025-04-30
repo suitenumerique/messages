@@ -12,6 +12,7 @@ import { Field, FieldProps } from '@openfun/cunningham-react';
 
 type MessageEditorProps = FieldProps & {
     blockNoteOptions?: Partial<BlockNoteEditorOptions<BlockSchema, InlineContentSchema, StyleSchema>>
+    defaultValue?: string;
 }
 
 /**
@@ -23,13 +24,14 @@ type MessageEditorProps = FieldProps & {
  * when the editor is blurred. Those inputs must be used in the parent form
  * to retrieve text and html content.
  */
-const MessageEditor = ({ blockNoteOptions, ...props }: MessageEditorProps) => {
+const MessageEditor = ({ blockNoteOptions, defaultValue, ...props }: MessageEditorProps) => {
     const { t, i18n } = useTranslation();
     const [html, setHtml] = useState<string>(""); 
     const [text, setText] = useState<string>(""); 
     const editor = useCreateBlockNote({
         tabBehavior: "prefer-navigate-ui",
         trailingBlock: false,
+        initialContent: defaultValue ? JSON.parse(defaultValue) : undefined,
         dictionary: {
             ...locales[i18n.language as keyof typeof locales],
             placeholders: {
@@ -39,7 +41,7 @@ const MessageEditor = ({ blockNoteOptions, ...props }: MessageEditorProps) => {
             }
         },
         ...blockNoteOptions,
-    }, [i18n.resolvedLanguage]);
+    }, [i18n.resolvedLanguage, defaultValue]);
 
     const handleBlur = async () => {
         const markdown = await editor.blocksToMarkdownLossy(editor.document);
@@ -57,12 +59,14 @@ const MessageEditor = ({ blockNoteOptions, ...props }: MessageEditorProps) => {
                 sideMenu={false}
                 slashMenu={false}
                 formattingToolbar={false}
+                onChange={handleBlur}
                 onBlur={handleBlur}
             >
                 <MessageEditorToolbar />
             </BlockNoteView>
             <input type="hidden" name="messageEditorHtml" value={html} required />
             <input type="hidden" name="messageEditorText" value={text} required />
+            <input type="hidden" name="messageEditorDraft" value={JSON.stringify(editor.document)} required />
         </Field>
     );
 };

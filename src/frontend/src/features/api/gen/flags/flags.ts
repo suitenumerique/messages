@@ -14,10 +14,10 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  ChangeFlagRequestRequest,
   FlagCreate200,
   FlagCreate400,
   FlagCreate403,
-  FlagCreateParams,
 } from ".././models";
 
 import { fetchAPI } from "../../fetchApi";
@@ -25,7 +25,7 @@ import { fetchAPI } from "../../fetchApi";
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
- * Change a specific flag (unread, starred, trashed) for multiple messages or all messages within multiple threads.
+ * Change a specific flag (unread, starred, trashed) for multiple messages or all messages within multiple threads. Uses request body.
  */
 export type flagCreateResponse200 = {
   data: FlagCreate200;
@@ -51,29 +51,19 @@ export type flagCreateResponse = flagCreateResponseComposite & {
   headers: Headers;
 };
 
-export const getFlagCreateUrl = (params: FlagCreateParams) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0
-    ? `/api/v1.0/flag/?${stringifiedParams}`
-    : `/api/v1.0/flag/`;
+export const getFlagCreateUrl = () => {
+  return `/api/v1.0/flag/`;
 };
 
 export const flagCreate = async (
-  params: FlagCreateParams,
+  changeFlagRequestRequest: ChangeFlagRequestRequest,
   options?: RequestInit,
 ): Promise<flagCreateResponse> => {
-  return fetchAPI<flagCreateResponse>(getFlagCreateUrl(params), {
+  return fetchAPI<flagCreateResponse>(getFlagCreateUrl(), {
     ...options,
     method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(changeFlagRequestRequest),
   });
 };
 
@@ -84,14 +74,14 @@ export const getFlagCreateMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof flagCreate>>,
     TError,
-    { params: FlagCreateParams },
+    { data: ChangeFlagRequestRequest },
     TContext
   >;
   request?: SecondParameter<typeof fetchAPI>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof flagCreate>>,
   TError,
-  { params: FlagCreateParams },
+  { data: ChangeFlagRequestRequest },
   TContext
 > => {
   const mutationKey = ["flagCreate"];
@@ -105,11 +95,11 @@ export const getFlagCreateMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof flagCreate>>,
-    { params: FlagCreateParams }
+    { data: ChangeFlagRequestRequest }
   > = (props) => {
-    const { params } = props ?? {};
+    const { data } = props ?? {};
 
-    return flagCreate(params, requestOptions);
+    return flagCreate(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -118,7 +108,7 @@ export const getFlagCreateMutationOptions = <
 export type FlagCreateMutationResult = NonNullable<
   Awaited<ReturnType<typeof flagCreate>>
 >;
-
+export type FlagCreateMutationBody = ChangeFlagRequestRequest;
 export type FlagCreateMutationError = FlagCreate400 | FlagCreate403;
 
 export const useFlagCreate = <
@@ -129,7 +119,7 @@ export const useFlagCreate = <
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof flagCreate>>,
       TError,
-      { params: FlagCreateParams },
+      { data: ChangeFlagRequestRequest },
       TContext
     >;
     request?: SecondParameter<typeof fetchAPI>;
@@ -138,7 +128,7 @@ export const useFlagCreate = <
 ): UseMutationResult<
   Awaited<ReturnType<typeof flagCreate>>,
   TError,
-  { params: FlagCreateParams },
+  { data: ChangeFlagRequestRequest },
   TContext
 > => {
   const mutationOptions = getFlagCreateMutationOptions(options);
