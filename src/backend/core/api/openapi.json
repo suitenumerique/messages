@@ -26,39 +26,10 @@
                 }
             }
         },
-        "/api/v1.0/mailboxes/": {
-            "get": {
-                "operationId": "mailboxes_list",
-                "description": "ViewSet for Mailbox model.",
-                "tags": [
-                    "mailboxes"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/components/schemas/Mailbox"
-                                    }
-                                }
-                            }
-                        },
-                        "description": ""
-                    }
-                }
-            }
-        },
-        "/api/v1.0/message-create/": {
+        "/api/v1.0/draft/": {
             "post": {
-                "operationId": "message_create_create",
-                "description": "\n    Create a new message or reply to an existing message.\n    \n    This endpoint allows you to:\n    - Create a new message in a new thread\n    - Reply to an existing message in an existing thread\n    \n    At least one of htmlBody or textBody must be provided.\n    ",
+                "operationId": "draft_create",
+                "description": "\n    Create or update a draft message.\n    \n    This endpoint allows you to:\n    - Create a new draft message in a new thread\n    - Create a draft reply to an existing message in an existing thread\n    - Update an existing draft message\n    \n    For creating a new draft:\n    - Do not include messageId\n    - Include parentId if replying to an existing message\n    \n    For updating an existing draft:\n    - Include messageId of the draft to update\n    - Only the fields that are provided will be updated\n    \n    At least one of draftBody must be provided.\n    ",
                 "tags": [
                     "messages"
                 ],
@@ -66,13 +37,13 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/MessageCreateRequestRequest"
+                                "$ref": "#/components/schemas/DraftMessageRequestRequest"
                             },
                             "examples": {
-                                "NewMessage": {
+                                "NewDraftMessage": {
                                     "value": {
                                         "subject": "Hello",
-                                        "textBody": "This is a test message",
+                                        "draftBody": "{\"arbitrary\": \"json content\"}",
                                         "to": [
                                             "recipient@example.com"
                                         ],
@@ -83,23 +54,35 @@
                                             "bcc@example.com"
                                         ]
                                     },
-                                    "summary": "New Message"
+                                    "summary": "New Draft Message"
                                 },
-                                "Reply": {
+                                "DraftReply": {
                                     "value": {
                                         "parentId": "123e4567-e89b-12d3-a456-426614174000",
                                         "subject": "Re: Hello",
-                                        "textBody": "This is a reply",
+                                        "draftBody": "{\"arbitrary\": \"json content\"}",
                                         "to": [
                                             "recipient@example.com"
                                         ]
-                                    }
+                                    },
+                                    "summary": "Draft Reply"
+                                },
+                                "UpdateDraft": {
+                                    "value": {
+                                        "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                        "subject": "Updated subject",
+                                        "draftBody": "{\"arbitrary\": \"new json content\"}",
+                                        "to": [
+                                            "new-recipient@example.com"
+                                        ]
+                                    },
+                                    "summary": "Update Draft"
                                 }
                             }
                         },
                         "multipart/form-data": {
                             "schema": {
-                                "$ref": "#/components/schemas/MessageCreateRequestRequest"
+                                "$ref": "#/components/schemas/DraftMessageRequestRequest"
                             }
                         }
                     },
@@ -118,10 +101,10 @@
                                     "$ref": "#/components/schemas/Message"
                                 },
                                 "examples": {
-                                    "NewMessage": {
+                                    "NewDraftMessage": {
                                         "value": {
                                             "subject": "Hello",
-                                            "textBody": "This is a test message",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
                                             "to": [
                                                 "recipient@example.com"
                                             ],
@@ -132,17 +115,79 @@
                                                 "bcc@example.com"
                                             ]
                                         },
-                                        "summary": "New Message"
+                                        "summary": "New Draft Message"
                                     },
-                                    "Reply": {
+                                    "DraftReply": {
                                         "value": {
                                             "parentId": "123e4567-e89b-12d3-a456-426614174000",
                                             "subject": "Re: Hello",
-                                            "textBody": "This is a reply",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
                                             "to": [
                                                 "recipient@example.com"
                                             ]
-                                        }
+                                        },
+                                        "summary": "Draft Reply"
+                                    },
+                                    "UpdateDraft": {
+                                        "value": {
+                                            "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Updated subject",
+                                            "draftBody": "{\"arbitrary\": \"new json content\"}",
+                                            "to": [
+                                                "new-recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Update Draft"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Message"
+                                },
+                                "examples": {
+                                    "NewDraftMessage": {
+                                        "value": {
+                                            "subject": "Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ],
+                                            "cc": [
+                                                "cc@example.com"
+                                            ],
+                                            "bcc": [
+                                                "bcc@example.com"
+                                            ]
+                                        },
+                                        "summary": "New Draft Message"
+                                    },
+                                    "DraftReply": {
+                                        "value": {
+                                            "parentId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Re: Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Draft Reply"
+                                    },
+                                    "UpdateDraft": {
+                                        "value": {
+                                            "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Updated subject",
+                                            "draftBody": "{\"arbitrary\": \"new json content\"}",
+                                            "to": [
+                                                "new-recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Update Draft"
                                     }
                                 }
                             }
@@ -168,6 +213,779 @@
                                     "type": "object",
                                     "additionalProperties": {},
                                     "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "draft_update",
+                "description": "\n    Create or update a draft message.\n    \n    This endpoint allows you to:\n    - Create a new draft message in a new thread\n    - Create a draft reply to an existing message in an existing thread\n    - Update an existing draft message\n    \n    For creating a new draft:\n    - Do not include messageId\n    - Include parentId if replying to an existing message\n    \n    For updating an existing draft:\n    - Include messageId of the draft to update\n    - Only the fields that are provided will be updated\n    \n    At least one of draftBody must be provided.\n    ",
+                "tags": [
+                    "messages"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DraftMessageRequestRequest"
+                            },
+                            "examples": {
+                                "NewDraftMessage": {
+                                    "value": {
+                                        "subject": "Hello",
+                                        "draftBody": "{\"arbitrary\": \"json content\"}",
+                                        "to": [
+                                            "recipient@example.com"
+                                        ],
+                                        "cc": [
+                                            "cc@example.com"
+                                        ],
+                                        "bcc": [
+                                            "bcc@example.com"
+                                        ]
+                                    },
+                                    "summary": "New Draft Message"
+                                },
+                                "DraftReply": {
+                                    "value": {
+                                        "parentId": "123e4567-e89b-12d3-a456-426614174000",
+                                        "subject": "Re: Hello",
+                                        "draftBody": "{\"arbitrary\": \"json content\"}",
+                                        "to": [
+                                            "recipient@example.com"
+                                        ]
+                                    },
+                                    "summary": "Draft Reply"
+                                },
+                                "UpdateDraft": {
+                                    "value": {
+                                        "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                        "subject": "Updated subject",
+                                        "draftBody": "{\"arbitrary\": \"new json content\"}",
+                                        "to": [
+                                            "new-recipient@example.com"
+                                        ]
+                                    },
+                                    "summary": "Update Draft"
+                                }
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DraftMessageRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Message"
+                                },
+                                "examples": {
+                                    "NewDraftMessage": {
+                                        "value": {
+                                            "subject": "Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ],
+                                            "cc": [
+                                                "cc@example.com"
+                                            ],
+                                            "bcc": [
+                                                "bcc@example.com"
+                                            ]
+                                        },
+                                        "summary": "New Draft Message"
+                                    },
+                                    "DraftReply": {
+                                        "value": {
+                                            "parentId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Re: Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Draft Reply"
+                                    },
+                                    "UpdateDraft": {
+                                        "value": {
+                                            "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Updated subject",
+                                            "draftBody": "{\"arbitrary\": \"new json content\"}",
+                                            "to": [
+                                                "new-recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Update Draft"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Message"
+                                },
+                                "examples": {
+                                    "NewDraftMessage": {
+                                        "value": {
+                                            "subject": "Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ],
+                                            "cc": [
+                                                "cc@example.com"
+                                            ],
+                                            "bcc": [
+                                                "bcc@example.com"
+                                            ]
+                                        },
+                                        "summary": "New Draft Message"
+                                    },
+                                    "DraftReply": {
+                                        "value": {
+                                            "parentId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Re: Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Draft Reply"
+                                    },
+                                    "UpdateDraft": {
+                                        "value": {
+                                            "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Updated subject",
+                                            "draftBody": "{\"arbitrary\": \"new json content\"}",
+                                            "to": [
+                                                "new-recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Update Draft"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/draft/{message_id}/": {
+            "post": {
+                "operationId": "draft_create_2",
+                "description": "\n    Create or update a draft message.\n    \n    This endpoint allows you to:\n    - Create a new draft message in a new thread\n    - Create a draft reply to an existing message in an existing thread\n    - Update an existing draft message\n    \n    For creating a new draft:\n    - Do not include messageId\n    - Include parentId if replying to an existing message\n    \n    For updating an existing draft:\n    - Include messageId of the draft to update\n    - Only the fields that are provided will be updated\n    \n    At least one of draftBody must be provided.\n    ",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "message_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DraftMessageRequestRequest"
+                            },
+                            "examples": {
+                                "NewDraftMessage": {
+                                    "value": {
+                                        "subject": "Hello",
+                                        "draftBody": "{\"arbitrary\": \"json content\"}",
+                                        "to": [
+                                            "recipient@example.com"
+                                        ],
+                                        "cc": [
+                                            "cc@example.com"
+                                        ],
+                                        "bcc": [
+                                            "bcc@example.com"
+                                        ]
+                                    },
+                                    "summary": "New Draft Message"
+                                },
+                                "DraftReply": {
+                                    "value": {
+                                        "parentId": "123e4567-e89b-12d3-a456-426614174000",
+                                        "subject": "Re: Hello",
+                                        "draftBody": "{\"arbitrary\": \"json content\"}",
+                                        "to": [
+                                            "recipient@example.com"
+                                        ]
+                                    },
+                                    "summary": "Draft Reply"
+                                },
+                                "UpdateDraft": {
+                                    "value": {
+                                        "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                        "subject": "Updated subject",
+                                        "draftBody": "{\"arbitrary\": \"new json content\"}",
+                                        "to": [
+                                            "new-recipient@example.com"
+                                        ]
+                                    },
+                                    "summary": "Update Draft"
+                                }
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DraftMessageRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Message"
+                                },
+                                "examples": {
+                                    "NewDraftMessage": {
+                                        "value": {
+                                            "subject": "Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ],
+                                            "cc": [
+                                                "cc@example.com"
+                                            ],
+                                            "bcc": [
+                                                "bcc@example.com"
+                                            ]
+                                        },
+                                        "summary": "New Draft Message"
+                                    },
+                                    "DraftReply": {
+                                        "value": {
+                                            "parentId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Re: Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Draft Reply"
+                                    },
+                                    "UpdateDraft": {
+                                        "value": {
+                                            "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Updated subject",
+                                            "draftBody": "{\"arbitrary\": \"new json content\"}",
+                                            "to": [
+                                                "new-recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Update Draft"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Message"
+                                },
+                                "examples": {
+                                    "NewDraftMessage": {
+                                        "value": {
+                                            "subject": "Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ],
+                                            "cc": [
+                                                "cc@example.com"
+                                            ],
+                                            "bcc": [
+                                                "bcc@example.com"
+                                            ]
+                                        },
+                                        "summary": "New Draft Message"
+                                    },
+                                    "DraftReply": {
+                                        "value": {
+                                            "parentId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Re: Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Draft Reply"
+                                    },
+                                    "UpdateDraft": {
+                                        "value": {
+                                            "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Updated subject",
+                                            "draftBody": "{\"arbitrary\": \"new json content\"}",
+                                            "to": [
+                                                "new-recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Update Draft"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "draft_update_2",
+                "description": "\n    Create or update a draft message.\n    \n    This endpoint allows you to:\n    - Create a new draft message in a new thread\n    - Create a draft reply to an existing message in an existing thread\n    - Update an existing draft message\n    \n    For creating a new draft:\n    - Do not include messageId\n    - Include parentId if replying to an existing message\n    \n    For updating an existing draft:\n    - Include messageId of the draft to update\n    - Only the fields that are provided will be updated\n    \n    At least one of draftBody must be provided.\n    ",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "message_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DraftMessageRequestRequest"
+                            },
+                            "examples": {
+                                "NewDraftMessage": {
+                                    "value": {
+                                        "subject": "Hello",
+                                        "draftBody": "{\"arbitrary\": \"json content\"}",
+                                        "to": [
+                                            "recipient@example.com"
+                                        ],
+                                        "cc": [
+                                            "cc@example.com"
+                                        ],
+                                        "bcc": [
+                                            "bcc@example.com"
+                                        ]
+                                    },
+                                    "summary": "New Draft Message"
+                                },
+                                "DraftReply": {
+                                    "value": {
+                                        "parentId": "123e4567-e89b-12d3-a456-426614174000",
+                                        "subject": "Re: Hello",
+                                        "draftBody": "{\"arbitrary\": \"json content\"}",
+                                        "to": [
+                                            "recipient@example.com"
+                                        ]
+                                    },
+                                    "summary": "Draft Reply"
+                                },
+                                "UpdateDraft": {
+                                    "value": {
+                                        "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                        "subject": "Updated subject",
+                                        "draftBody": "{\"arbitrary\": \"new json content\"}",
+                                        "to": [
+                                            "new-recipient@example.com"
+                                        ]
+                                    },
+                                    "summary": "Update Draft"
+                                }
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DraftMessageRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Message"
+                                },
+                                "examples": {
+                                    "NewDraftMessage": {
+                                        "value": {
+                                            "subject": "Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ],
+                                            "cc": [
+                                                "cc@example.com"
+                                            ],
+                                            "bcc": [
+                                                "bcc@example.com"
+                                            ]
+                                        },
+                                        "summary": "New Draft Message"
+                                    },
+                                    "DraftReply": {
+                                        "value": {
+                                            "parentId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Re: Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Draft Reply"
+                                    },
+                                    "UpdateDraft": {
+                                        "value": {
+                                            "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Updated subject",
+                                            "draftBody": "{\"arbitrary\": \"new json content\"}",
+                                            "to": [
+                                                "new-recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Update Draft"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Message"
+                                },
+                                "examples": {
+                                    "NewDraftMessage": {
+                                        "value": {
+                                            "subject": "Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ],
+                                            "cc": [
+                                                "cc@example.com"
+                                            ],
+                                            "bcc": [
+                                                "bcc@example.com"
+                                            ]
+                                        },
+                                        "summary": "New Draft Message"
+                                    },
+                                    "DraftReply": {
+                                        "value": {
+                                            "parentId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Re: Hello",
+                                            "draftBody": "{\"arbitrary\": \"json content\"}",
+                                            "to": [
+                                                "recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Draft Reply"
+                                    },
+                                    "UpdateDraft": {
+                                        "value": {
+                                            "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "subject": "Updated subject",
+                                            "draftBody": "{\"arbitrary\": \"new json content\"}",
+                                            "to": [
+                                                "new-recipient@example.com"
+                                            ]
+                                        },
+                                        "summary": "Update Draft"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/flag/": {
+            "post": {
+                "operationId": "flag_create",
+                "description": "Change a specific flag (unread, starred, trashed) for multiple messages or all messages within multiple threads.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "flag",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "starred",
+                                "trashed",
+                                "unread"
+                            ]
+                        },
+                        "description": "The flag to change.",
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "message_ids",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Comma-separated list of message UUIDs (optional)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "thread_ids",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Comma-separated list of thread UUIDs (optional)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "value",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "The value to set the flag to (true/false).",
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "flags"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/": {
+            "get": {
+                "operationId": "mailboxes_list",
+                "description": "ViewSet for Mailbox model.",
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Mailbox"
+                                    }
                                 }
                             }
                         },
@@ -249,12 +1067,41 @@
                         "description": ""
                     }
                 }
+            },
+            "delete": {
+                "operationId": "messages_destroy",
+                "description": "Delete a message.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
             }
         },
         "/api/v1.0/mta/check-recipients/": {
             "post": {
                 "operationId": "mta_check_recipients_create",
-                "description": "Handle incoming email from MTA",
+                "description": "Check if recipient email addresses exist for the MTA.",
                 "tags": [
                     "mta"
                 ],
@@ -268,7 +1115,7 @@
         "/api/v1.0/mta/inbound-email/": {
             "post": {
                 "operationId": "mta_inbound_email_create",
-                "description": "Handle incoming email from MTA",
+                "description": "Handle incoming raw email (message/rfc822) from MTA.",
                 "tags": [
                     "mta"
                 ],
@@ -279,23 +1126,34 @@
                 }
             }
         },
-        "/api/v1.0/read/": {
+        "/api/v1.0/send/": {
             "post": {
-                "operationId": "read_create",
-                "description": "The type of the None singleton.",
+                "operationId": "send_create",
+                "description": "\n    Send a previously created draft message.\n\n    This endpoint finalizes and sends a message previously saved as a draft.\n    The message content (subject, body, recipients) should be set when creating/updating the draft.\n    ",
                 "tags": [
-                    "read"
+                    "messages"
                 ],
                 "requestBody": {
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/ChangeReadStatusRequestRequest"
+                                "$ref": "#/components/schemas/SendMessageRequestRequest"
+                            },
+                            "examples": {
+                                "SendDraft": {
+                                    "value": {
+                                        "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                        "senderId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+                                        "textBody": "Hello, world!",
+                                        "htmlBody": "<p>Hello, world!</p>"
+                                    },
+                                    "summary": "Send Draft"
+                                }
                             }
                         },
                         "multipart/form-data": {
                             "schema": {
-                                "$ref": "#/components/schemas/ChangeReadStatusRequestRequest"
+                                "$ref": "#/components/schemas/SendMessageRequestRequest"
                             }
                         }
                     },
@@ -308,7 +1166,61 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "No response body"
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Message"
+                                },
+                                "examples": {
+                                    "SendDraft": {
+                                        "value": {
+                                            "messageId": "123e4567-e89b-12d3-a456-426614174000",
+                                            "senderId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+                                            "textBody": "Hello, world!",
+                                            "htmlBody": "<p>Hello, world!</p>"
+                                        },
+                                        "summary": "Send Draft"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "503": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
                     }
                 }
             }
@@ -350,6 +1262,135 @@
                 }
             }
         },
+        "/api/v1.0/threads/{id}/": {
+            "delete": {
+                "operationId": "threads_destroy",
+                "description": "ViewSet for Thread model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "threads"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/threads/stats/": {
+            "get": {
+                "operationId": "threads_stats_retrieve",
+                "description": "Get aggregated statistics for threads based on filters.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "has_draft",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads with draft messages (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "has_sender",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads with messages sent by the user (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "has_starred",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads with starred messages (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "has_trashed",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads that are trashed (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "has_unread",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads with unread messages (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter threads by mailbox ID."
+                    },
+                    {
+                        "in": "query",
+                        "name": "stats_fields",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Comma-separated list of fields to aggregate (e.g., unread,messages,trashed).",
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "threads"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/users/me/": {
             "get": {
                 "operationId": "users_me_retrieve",
@@ -379,33 +1420,6 @@
     },
     "components": {
         "schemas": {
-            "ChangeReadStatusRequestRequest": {
-                "type": "object",
-                "properties": {
-                    "status": {
-                        "type": "integer"
-                    },
-                    "message_ids": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "format": "uuid"
-                        }
-                    },
-                    "thread_ids": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "format": "uuid"
-                        }
-                    }
-                },
-                "required": [
-                    "message_ids",
-                    "status",
-                    "thread_ids"
-                ]
-            },
             "Contact": {
                 "type": "object",
                 "description": "Serialize contacts.",
@@ -430,6 +1444,68 @@
                 "required": [
                     "email",
                     "id"
+                ]
+            },
+            "DraftMessageRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "messageId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "nullable": true,
+                        "description": "Message ID if updating an existing draft"
+                    },
+                    "parentId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "nullable": true,
+                        "description": "Message ID if replying to an existing message"
+                    },
+                    "senderId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Mailbox ID to use as sender"
+                    },
+                    "subject": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Subject of the message"
+                    },
+                    "draftBody": {
+                        "type": "string",
+                        "description": "Content of the draft message as arbitrary text (usually JSON)"
+                    },
+                    "to": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "email",
+                            "minLength": 1
+                        },
+                        "description": "List of recipient email addresses"
+                    },
+                    "cc": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "email",
+                            "minLength": 1
+                        },
+                        "description": "List of CC recipient email addresses"
+                    },
+                    "bcc": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "email",
+                            "minLength": 1
+                        },
+                        "description": "List of BCC recipient email addresses"
+                    }
+                },
+                "required": [
+                    "senderId",
+                    "subject"
                 ]
             },
             "Mailbox": {
@@ -482,19 +1558,22 @@
                         "format": "uuid",
                         "description": "primary key for the record as UUID"
                     },
+                    "parent_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "nullable": true
+                    },
                     "subject": {
                         "type": "string",
                         "maxLength": 255
                     },
-                    "received_at": {
-                        "type": "string",
-                        "format": "date-time",
-                        "readOnly": true
-                    },
                     "created_at": {
                         "type": "string",
                         "format": "date-time",
-                        "readOnly": true
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
                     },
                     "updated_at": {
                         "type": "string",
@@ -517,6 +1596,10 @@
                             "type": "object",
                             "additionalProperties": {}
                         },
+                        "readOnly": true
+                    },
+                    "draftBody": {
+                        "type": "string",
                         "readOnly": true
                     },
                     "sender": {
@@ -552,82 +1635,42 @@
                         "type": "string",
                         "format": "date-time",
                         "nullable": true
+                    },
+                    "sent_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "is_sender": {
+                        "type": "boolean"
+                    },
+                    "is_draft": {
+                        "type": "boolean"
+                    },
+                    "is_unread": {
+                        "type": "boolean"
+                    },
+                    "is_starred": {
+                        "type": "boolean"
+                    },
+                    "is_trashed": {
+                        "type": "boolean"
                     }
                 },
                 "required": [
                     "bcc",
                     "cc",
                     "created_at",
+                    "draftBody",
                     "htmlBody",
                     "id",
-                    "received_at",
+                    "parent_id",
                     "sender",
                     "subject",
                     "textBody",
                     "thread",
                     "to",
                     "updated_at"
-                ]
-            },
-            "MessageCreateRequestRequest": {
-                "type": "object",
-                "properties": {
-                    "parentId": {
-                        "type": "string",
-                        "format": "uuid",
-                        "nullable": true,
-                        "description": "Message ID if replying to an existing message"
-                    },
-                    "senderId": {
-                        "type": "string",
-                        "format": "uuid",
-                        "description": "Mailbox ID to use as sender"
-                    },
-                    "subject": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "Subject of the message"
-                    },
-                    "htmlBody": {
-                        "type": "string",
-                        "description": "HTML content of the message"
-                    },
-                    "textBody": {
-                        "type": "string",
-                        "description": "Plain text content of the message"
-                    },
-                    "to": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "format": "email",
-                            "minLength": 1
-                        },
-                        "description": "List of recipient email addresses"
-                    },
-                    "cc": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "format": "email",
-                            "minLength": 1
-                        },
-                        "description": "List of CC recipient email addresses"
-                    },
-                    "bcc": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "format": "email",
-                            "minLength": 1
-                        },
-                        "description": "List of BCC recipient email addresses"
-                    }
-                },
-                "required": [
-                    "senderId",
-                    "subject",
-                    "to"
                 ]
             },
             "PaginatedMessageList": {
@@ -692,6 +1735,35 @@
                     }
                 }
             },
+            "SendMessageRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "messageId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "ID of the draft message to send"
+                    },
+                    "senderId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Mailbox ID from which to send (must match draft)"
+                    },
+                    "textBody": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Text body of the message"
+                    },
+                    "htmlBody": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "HTML body of the message"
+                    }
+                },
+                "required": [
+                    "messageId",
+                    "senderId"
+                ]
+            },
             "Thread": {
                 "type": "object",
                 "description": "Serialize threads.",
@@ -713,8 +1785,47 @@
                         "type": "string",
                         "readOnly": true
                     },
-                    "is_read": {
-                        "type": "boolean"
+                    "count_unread": {
+                        "type": "integer",
+                        "maximum": 2147483647,
+                        "minimum": -2147483648
+                    },
+                    "count_trashed": {
+                        "type": "integer",
+                        "maximum": 2147483647,
+                        "minimum": -2147483648
+                    },
+                    "count_draft": {
+                        "type": "integer",
+                        "maximum": 2147483647,
+                        "minimum": -2147483648
+                    },
+                    "count_starred": {
+                        "type": "integer",
+                        "maximum": 2147483647,
+                        "minimum": -2147483648
+                    },
+                    "count_sender": {
+                        "type": "integer",
+                        "maximum": 2147483647,
+                        "minimum": -2147483648
+                    },
+                    "count_messages": {
+                        "type": "integer",
+                        "maximum": 2147483647,
+                        "minimum": -2147483648
+                    },
+                    "messaged_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "sender_names": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "readOnly": true
                     },
                     "updated_at": {
                         "type": "string",
@@ -727,6 +1838,7 @@
                 "required": [
                     "id",
                     "messages",
+                    "sender_names",
                     "subject",
                     "updated_at"
                 ]

@@ -67,6 +67,7 @@ class ThreadSerializer(serializers.ModelSerializer):
     """Serialize threads."""
 
     messages = serializers.SerializerMethodField(read_only=True)
+    sender_names = serializers.ListField(child=serializers.CharField(), read_only=True)
 
     def get_messages(self, instance):
         """Return the messages in the thread."""
