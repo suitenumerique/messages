@@ -1,5 +1,5 @@
 """Test API messages create."""
-# pylint: disable=too-many-positional-arguments
+# pylint: disable=too-many-positional-arguments, too-many-lines
 
 import json
 import random
@@ -60,6 +60,13 @@ class TestApiDraftAndSendMessage:
             user=authenticated_user,
             permission=enums.MailboxPermissionChoices.EDIT,
         )
+        # TODO: check if this action is needed to create a draft and send a message
+        # is mailbox access enough?
+
+        # thread_access = factories.ThreadAccessFactory(
+        #    mailbox=mailbox,
+        #    role=enums.ThreadAccessRoleChoices.EDITOR,
+        # )
 
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
@@ -81,6 +88,7 @@ class TestApiDraftAndSendMessage:
             },
             format="json",
         )
+
         assert draft_response.status_code == status.HTTP_201_CREATED
         draft_message_id = draft_response.data["id"]
 
@@ -151,6 +159,147 @@ class TestApiDraftAndSendMessage:
         assert sent_message.thread.count_starred == 0
         assert sent_message.thread.count_draft == 0
         assert sent_message.thread.sender_names == [sent_message.sender.name]
+        assert sent_message.thread.messaged_at is not None
+
+    @patch("core.api.viewsets.send.send_message")
+    def test_draft_and_send_message_success_delegated_access(
+        self, mock_send_outbound, mailbox, authenticated_user, send_url
+    ):
+        """Test create draft message and then successfully send it via the service."""
+        mock_send_outbound.return_value = {"x": True}
+
+        other_mailbox = factories.MailboxFactory(
+            local_part="cantine", domain__name="tataouin.fr"
+        )
+
+        # Initialize a thread
+        thread = factories.ThreadFactory()
+        # First delegate access to the other mailbox
+        factories.MailboxAccessFactory(
+            mailbox=other_mailbox,
+            permission=enums.MailboxPermissionChoices.EDIT,
+        )
+        factories.ThreadAccessFactory(
+            thread=thread,
+            mailbox=other_mailbox,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        sender = factories.ContactFactory(mailbox=other_mailbox)
+        # create a message in the thread
+        message = factories.MessageFactory(thread=thread, sender=sender)
+
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            permission=enums.MailboxPermissionChoices.EDIT,
+        )
+        # add access for the current mailbox to the thread
+        factories.ThreadAccessFactory(
+            thread=thread,
+            mailbox=mailbox,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        draft_content = json.dumps(
+            {"arbitrary": f"json content {random.randint(0, 1000000000)}"}
+        )
+
+        subject = f"test_draft_send_success {random.randint(0, 1000000000)}"
+        draft_response = client.post(
+            reverse("draft-message"),
+            {
+                "parentId": message.id,
+                "senderId": mailbox.id,
+                "subject": subject,
+                "draftBody": draft_content,
+                "to": ["pierre@external.com"],
+                "cc": ["paul@external.com"],
+                "bcc": ["jean@external.com"],
+            },
+            format="json",
+        )
+
+        assert draft_response.status_code == status.HTTP_201_CREATED
+        draft_message_id = draft_response.data["id"]
+
+        # Test that the message is a draft
+        draft_message = models.Message.objects.get(id=draft_message_id)
+        assert draft_message.is_draft is True
+        assert draft_message.is_sender is True
+        assert draft_message.is_unread is False
+        assert draft_message.is_trashed is False
+        assert draft_message.is_starred is False
+        assert draft_message.mta_sent is False
+        assert draft_message.draft_body == draft_content
+
+        assert draft_message.thread.count_messages == 2
+        assert draft_message.thread.count_sender == 1  # fixme 2?
+        assert draft_message.thread.count_unread == 0
+        assert draft_message.thread.count_trashed == 0
+        assert draft_message.thread.count_starred == 0
+        assert draft_message.thread.count_draft == 1
+        assert draft_message.thread.sender_names == [
+            message.sender.name,
+            draft_message.sender.name,
+        ]
+
+        message_response = client.get(
+            reverse("messages-detail", kwargs={"id": draft_message_id})
+        )
+        draft_api_message = message_response.data
+        assert message_response.status_code == status.HTTP_200_OK
+        assert draft_api_message["draftBody"] == draft_content
+        assert draft_api_message["is_draft"] is True
+
+        send_response = client.post(
+            send_url,
+            {
+                "messageId": draft_message_id,
+                "senderId": mailbox.id,
+            },
+            format="json",
+        )
+
+        assert send_response.status_code == status.HTTP_200_OK
+
+        mock_send_outbound.assert_called_once()
+        call_args, _ = mock_send_outbound.call_args
+        sent_message_arg = call_args[0]
+        assert isinstance(sent_message_arg, models.Message)
+        assert str(sent_message_arg.id) == draft_message_id
+
+        sent_message_data = send_response.data
+        assert sent_message_data["id"] == draft_message_id
+
+        # TODO: remove this once we have background tasks
+        _mark_message_as_sent(sent_message_arg, True)
+
+        sent_message = models.Message.objects.get(id=draft_message_id)
+        assert sent_message.raw_mime
+        assert subject in sent_message.raw_mime.decode("utf-8")
+
+        assert sent_message.is_draft is False
+        assert sent_message.is_sender is True
+        assert sent_message.is_unread is False
+        assert sent_message.is_trashed is False
+        assert sent_message.is_starred is False
+        assert sent_message.mta_sent is True
+        assert sent_message.sent_at is not None
+
+        # Assert the thread is updated
+        assert sent_message.thread.count_messages == 2
+        assert sent_message.thread.count_sender == 1
+        assert sent_message.thread.count_unread == 0
+        assert sent_message.thread.count_trashed == 0
+        assert sent_message.thread.count_starred == 0
+        assert sent_message.thread.count_draft == 0
+        assert sent_message.thread.sender_names == [
+            message.sender.name,
+            sent_message.sender.name,
+        ]
         assert sent_message.thread.messaged_at is not None
 
     @patch("core.api.viewsets.send.send_message")
@@ -238,6 +387,10 @@ class TestApiDraftAndSendMessage:
         # Assert the response is forbidden
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    # TODO: implement this test
+    # def test_send_message_without_permission_required(self, authenticated_user, send_url):
+    #    """Test send message without permission required."""
+
     def test_draft_message_not_allowed(self, authenticated_user):
         """Test create draft message not allowed."""
         # Create a client and authenticate the user
@@ -257,6 +410,10 @@ class TestApiDraftAndSendMessage:
         # Assert the response is forbidden, there is no mailbox access
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    # TODO: implement this test
+    #   def test_send_message_not_allowed(self, authenticated_user, send_url):
+    #    """Test send message not allowed."""
+
     def test_draft_message_unauthorized(self):
         """Test create draft message unauthorized."""
         # Create a client
@@ -275,6 +432,10 @@ class TestApiDraftAndSendMessage:
         )
         # Assert the response is unauthorized
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    # TODO: implement this test
+    # def test_send_message_unauthorized(self, mailbox, authenticated_user, send_url):
+    #    """Test send message unauthorized."""
 
     def test_send_nonexistent_message(self, mailbox, authenticated_user, send_url):
         """Test sending a message that does not exist."""
@@ -308,9 +469,12 @@ class TestApiDraftAndSendMessage:
         )
 
         # Create a thread with a *sent* message
-        thread = factories.ThreadFactory(mailbox=mailbox)
+        thread_access = factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
         message = factories.MessageFactory(
-            thread=thread,
+            thread=thread_access.thread,
             is_draft=False,
             mta_sent=True,
             sent_at=timezone.now(),
@@ -351,8 +515,11 @@ class TestApiDraftAndSendReply:
             permission=enums.MailboxPermissionChoices.SEND,
         )
         # Create a thread with a message
-        thread = factories.ThreadFactory(mailbox=mailbox)
-        message = factories.MessageFactory(thread=thread, read_at=None)
+        thread_access = factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        message = factories.MessageFactory(thread=thread_access.thread, read_at=None)
         factories.MessageRecipientFactory(
             message=message,
             type=enums.MessageRecipientTypeChoices.TO,
@@ -415,7 +582,7 @@ class TestApiDraftAndSendReply:
 
         # Assert the message is correct
         assert sent_message.subject == "test reply"
-        assert sent_message.thread == thread
+        assert sent_message.thread == thread_access.thread
         assert (
             sent_message.sender.email == mailbox.local_part + "@" + mailbox.domain.name
         )
@@ -427,7 +594,9 @@ class TestApiDraftAndSendReply:
             in sent_message.raw_mime
         )
 
-    def test_draft_reply_without_permission(self, mailbox, authenticated_user):
+    def test_draft_reply_without_permission_on_mailbox(
+        self, mailbox, authenticated_user
+    ):
         """Create draft reply to an existing thread without permission."""
         # Create a mailbox access on this mailbox for the authenticated user
         factories.MailboxAccessFactory(
@@ -436,8 +605,43 @@ class TestApiDraftAndSendReply:
             permission=enums.MailboxPermissionChoices.READ,
         )
         # Create a thread with a message
-        thread = factories.ThreadFactory(mailbox=mailbox)
-        message = factories.MessageFactory(thread=thread, read_at=None)
+        thread_access = factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            role=enums.ThreadAccessRoleChoices.VIEWER,
+        )
+        message = factories.MessageFactory(thread=thread_access.thread, read_at=None)
+        factories.MessageRecipientFactory(
+            message=message,
+            type=enums.MessageRecipientTypeChoices.TO,
+        )
+        # Create a client and authenticate the user
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+        # Create new draft reply
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "parentId": message.id,
+                "senderId": mailbox.id,
+                "subject": "test",
+                "draftBody": "<p>test</p> or test",
+                "to": ["pierre@example.com"],
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_draft_reply_without_permission_on_thread(
+        self, mailbox, authenticated_user
+    ):
+        """Create draft reply to an existing thread without permission."""
+
+        # Create a thread with a message
+        thread_access = factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            role=enums.ThreadAccessRoleChoices.VIEWER,
+        )
+        message = factories.MessageFactory(thread=thread_access.thread, read_at=None)
         factories.MessageRecipientFactory(
             message=message,
             type=enums.MessageRecipientTypeChoices.TO,
@@ -625,9 +829,12 @@ class TestApiDraftAndSendReply:
         )
 
         # Create a thread with a sent message
-        thread = factories.ThreadFactory(mailbox=mailbox)
+        thread_access = factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
         message = factories.MessageFactory(
-            thread=thread,
+            thread=thread_access.thread,
             is_draft=False,
             mta_sent=True,
             sent_at=timezone.now(),
@@ -712,8 +919,7 @@ class TestApiDraftAndSendReply:
         # Message should be marked as sent immediately for local delivery
         message1 = models.Message.objects.get(id=message1_id)
         thread1 = message1.thread  # The thread in mailbox1
-        assert thread1.mailbox == mailbox1
-        assert models.Thread.objects.filter(mailbox=mailbox1).count() == 1
+        assert thread1.accesses.filter(mailbox=mailbox1).exists()
         assert thread1.messages.count() == 1
         assert message1.is_draft is False
         assert message1.mta_sent is False  # Local delivery doesn't use MTA
@@ -721,8 +927,9 @@ class TestApiDraftAndSendReply:
         assert message1.mime_id is not None
 
         # Verify the received message in mailbox2
-        thread2 = models.Thread.objects.get(mailbox=mailbox2)
-        assert models.Thread.objects.filter(mailbox=mailbox2).count() == 1
+        thread2 = models.Thread.objects.get(accesses__mailbox=mailbox2)
+        assert models.Thread.objects.filter(accesses__mailbox=mailbox2).count() == 1
+        assert thread2.accesses.filter(mailbox=mailbox2).exists()
         assert thread2.messages.count() == 1
         message1_received = thread2.messages.first()
         assert message1_received.subject == subject
@@ -842,5 +1049,5 @@ class TestApiDraftAndSendReply:
         assert message3_received.parent == message2
 
         # Final check: Still only one thread per mailbox
-        assert models.Thread.objects.filter(mailbox=mailbox1).count() == 1
-        assert models.Thread.objects.filter(mailbox=mailbox2).count() == 1
+        assert models.Thread.objects.filter(accesses__mailbox=mailbox1).count() == 1
+        assert models.Thread.objects.filter(accesses__mailbox=mailbox2).count() == 1

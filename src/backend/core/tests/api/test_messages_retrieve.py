@@ -7,6 +7,8 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from core import factories, models
+
 pytestmark = pytest.mark.django_db
 
 
@@ -27,9 +29,33 @@ class TestRetrieveMessage:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["id"] == str(message.id)
 
+    def test_retrieve_message_delegated_to_other_mailbox(
+        self, message, message_url, other_user
+    ):
+        """Test retrieving a message."""
+        client = APIClient()
+        client.force_authenticate(user=other_user)
+        # create a mailbox access for the other user
+        other_mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=other_mailbox,
+            user=other_user,
+            permission=models.MailboxPermissionChoices.READ,
+        )
+        # create a thread access for the other user
+        factories.ThreadAccessFactory(
+            thread=message.thread,
+            mailbox=other_mailbox,
+            role=models.ThreadAccessRoleChoices.VIEWER,
+        )
+        response = client.get(message_url)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["id"] == str(message.id)
+
     def test_retrieve_message_unauthorized(self, message_url, other_user):
         """Test retrieving a message."""
         client = APIClient()
         client.force_authenticate(user=other_user)
         response = client.get(message_url)
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        # we should get a 404 because the message is not accessible by the other user
+        assert response.status_code == status.HTTP_404_NOT_FOUND

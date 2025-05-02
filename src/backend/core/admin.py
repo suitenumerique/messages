@@ -128,11 +128,18 @@ class MailboxAccessAdmin(admin.ModelAdmin):
     search_fields = ("mailbox__local_part", "mailbox__domain__name", "user__email")
 
 
+class ThreadAccessInline(admin.TabularInline):
+    """Inline class for the ThreadAccess model"""
+
+    model = models.ThreadAccess
+
+
 @admin.register(models.Thread)
 class ThreadAdmin(admin.ModelAdmin):
     """Admin class for the Thread model"""
 
-    list_display = ("id", "subject", "snippet", "mailbox", "created_at", "updated_at")
+    inlines = [ThreadAccessInline]
+    list_display = ("id", "subject", "snippet", "created_at", "updated_at")
 
 
 class MessageRecipientInline(admin.TabularInline):

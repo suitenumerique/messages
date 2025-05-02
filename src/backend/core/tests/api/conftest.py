@@ -4,7 +4,7 @@
 import pytest
 from rest_framework.test import APIClient
 
-from core import factories
+from core import enums, factories
 
 
 @pytest.fixture
@@ -16,7 +16,13 @@ def mailbox():
 @pytest.fixture
 def thread(mailbox):
     """Create a thread for a mailbox."""
-    return factories.ThreadFactory(mailbox=mailbox)
+    thread = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=thread,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
+    return thread
 
 
 @pytest.fixture

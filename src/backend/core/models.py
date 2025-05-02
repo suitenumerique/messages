@@ -17,7 +17,11 @@ from django.utils.translation import gettext_lazy as _
 
 from timezone_field import TimeZoneField
 
-from core.enums import MailboxPermissionChoices, MessageRecipientTypeChoices
+from core.enums import (
+    MailboxPermissionChoices,
+    MessageRecipientTypeChoices,
+    ThreadAccessRoleChoices,
+)
 from core.mda.rfc5322 import parse_email_message
 
 logger = getLogger(__name__)
@@ -232,7 +236,7 @@ class MailboxAccess(BaseModel):
         verbose_name_plural = _("mailbox accesses")
 
     def __str__(self):
-        return f"Access to {self.mailbox} for {self.user}"
+        return f"Access to {self.mailbox} for {self.user} with {self.permission} permission"
 
 
 class Thread(BaseModel):
@@ -240,9 +244,6 @@ class Thread(BaseModel):
 
     subject = models.CharField(_("subject"), max_length=255)
     snippet = models.TextField(_("snippet"), blank=True)
-    mailbox = models.ForeignKey(
-        Mailbox, on_delete=models.CASCADE, related_name="threads"
-    )
     count_unread = models.IntegerField(_("count unread"), default=0)
     count_trashed = models.IntegerField(_("count trashed"), default=0)
     count_draft = models.IntegerField(_("count draft"), default=0)
@@ -325,6 +326,32 @@ class Thread(BaseModel):
                 for x in fields
             ]
         )
+
+
+class ThreadAccess(BaseModel):
+    """Thread access model to store thread access information for a mailbox."""
+
+    thread = models.ForeignKey(
+        "Thread", on_delete=models.CASCADE, related_name="accesses"
+    )
+    mailbox = models.ForeignKey(
+        "Mailbox", on_delete=models.CASCADE, related_name="thread_accesses"
+    )
+    role = models.CharField(
+        _("role"),
+        max_length=20,
+        choices=ThreadAccessRoleChoices.choices,
+        default=ThreadAccessRoleChoices.VIEWER,
+    )
+
+    class Meta:
+        db_table = "messages_threadaccess"
+        verbose_name = _("thread access")
+        verbose_name_plural = _("thread accesses")
+        unique_together = ("thread", "mailbox")
+
+    def __str__(self):
+        return f"{self.thread} - {self.mailbox} - {self.role}"
 
 
 class Contact(BaseModel):

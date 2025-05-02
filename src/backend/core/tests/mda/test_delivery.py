@@ -8,7 +8,7 @@ from django.utils import timezone
 
 import pytest
 
-from core import factories, models
+from core import enums, factories, models
 from core.mda import delivery
 
 
@@ -23,12 +23,22 @@ class TestFindThread:
         """Create a mailbox for testing thread finding."""
         self.mailbox = factories.MailboxFactory()
 
-    def test_find_by_references_and_subject(self):
+    @pytest.mark.parametrize(
+        "role",
+        [
+            enums.ThreadAccessRoleChoices.EDITOR,
+            enums.ThreadAccessRoleChoices.VIEWER,
+        ],
+    )
+    def test_find_by_references_and_subject(self, role):
         """Thread found via References header and matching normalized subject."""
-        initial_subject = "Original Thread Subject"
         initial_mime_id = "original.123@example.com"
-        initial_thread = factories.ThreadFactory(
-            mailbox=self.mailbox, subject=initial_subject
+        initial_subject = "Original Thread Subject"
+        initial_thread = factories.ThreadFactory(subject=initial_subject)
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=initial_thread,
+            role=role,
         )
         factories.MessageFactory(
             thread=initial_thread, mime_id=initial_mime_id, subject=initial_subject
@@ -48,12 +58,22 @@ class TestFindThread:
         )
         assert found_thread == initial_thread
 
-    def test_find_by_in_reply_to_and_subject(self):
+    @pytest.mark.parametrize(
+        "role",
+        [
+            enums.ThreadAccessRoleChoices.EDITOR,
+            enums.ThreadAccessRoleChoices.VIEWER,
+        ],
+    )
+    def test_find_by_in_reply_to_and_subject(self, role):
         """Thread found via In-Reply-To header and matching normalized subject."""
         initial_subject = "Another Subject"
         initial_mime_id = "original.456@example.com"
-        initial_thread = factories.ThreadFactory(
-            mailbox=self.mailbox, subject=initial_subject
+        initial_thread = factories.ThreadFactory(subject=initial_subject)
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=initial_thread,
+            role=role,
         )
         factories.MessageFactory(
             thread=initial_thread, mime_id=initial_mime_id, subject=initial_subject
@@ -70,12 +90,22 @@ class TestFindThread:
         )
         assert found_thread == initial_thread
 
-    def test_find_fallback_no_subject_match(self):
+    @pytest.mark.parametrize(
+        "role",
+        [
+            enums.ThreadAccessRoleChoices.EDITOR,
+            enums.ThreadAccessRoleChoices.VIEWER,
+        ],
+    )
+    def test_find_fallback_no_subject_match(self, role):
         """Thread found via References header, falling back when subjects don't normalize."""
         initial_subject = "Meeting Request"
         initial_mime_id = "meeting.abc@example.com"
-        initial_thread = factories.ThreadFactory(
-            mailbox=self.mailbox, subject=initial_subject
+        initial_thread = factories.ThreadFactory(subject=initial_subject)
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=initial_thread,
+            role=role,
         )
         factories.MessageFactory(
             thread=initial_thread, mime_id=initial_mime_id, subject=initial_subject
@@ -96,11 +126,23 @@ class TestFindThread:
         )
         assert found_thread is None
 
-    def test_no_match_returns_none(self):
+    @pytest.mark.parametrize(
+        "role",
+        [
+            enums.ThreadAccessRoleChoices.EDITOR,
+            enums.ThreadAccessRoleChoices.VIEWER,
+        ],
+    )
+    def test_no_match_returns_none(self, role):
         """No thread found if no matching references exist."""
-        factories.ThreadFactory(
-            mailbox=self.mailbox, subject="Some Thread"
+        initial_thread = factories.ThreadFactory(
+            subject="Some Thread"
         )  # Existing thread
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=initial_thread,
+            role=role,
+        )
 
         parsed_reply = {
             "subject": "Re: Some Thread",
@@ -116,12 +158,22 @@ class TestFindThread:
         )
         assert found_thread is None
 
-    def test_reference_in_different_mailbox(self):
+    @pytest.mark.parametrize(
+        "role",
+        [
+            enums.ThreadAccessRoleChoices.EDITOR,
+            enums.ThreadAccessRoleChoices.VIEWER,
+        ],
+    )
+    def test_reference_in_different_mailbox(self, role):
         """No thread found if referenced message is in a different mailbox."""
         initial_subject = "My Mailbox Subject"
         initial_mime_id = "mine.xyz@example.com"
-        initial_thread = factories.ThreadFactory(
-            mailbox=self.mailbox, subject=initial_subject
+        initial_thread = factories.ThreadFactory(subject=initial_subject)
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=initial_thread,
+            role=role,
         )
         factories.MessageFactory(
             thread=initial_thread, mime_id=initial_mime_id, subject=initial_subject
@@ -129,8 +181,11 @@ class TestFindThread:
 
         # Create a message in another mailbox with the same mime_id (unlikely but for test)
         other_mailbox = factories.MailboxFactory()
-        other_thread = factories.ThreadFactory(
-            mailbox=other_mailbox, subject="Other Subject"
+        other_thread = factories.ThreadFactory(subject="Other Subject")
+        factories.ThreadAccessFactory(
+            mailbox=other_mailbox,
+            thread=other_thread,
+            role=role,
         )
         factories.MessageFactory(
             thread=other_thread, mime_id=initial_mime_id, subject="Other Subject"
@@ -150,9 +205,21 @@ class TestFindThread:
         )
         assert found_thread == initial_thread
 
-    def test_no_references_returns_none(self):
+    @pytest.mark.parametrize(
+        "role",
+        [
+            enums.ThreadAccessRoleChoices.EDITOR,
+            enums.ThreadAccessRoleChoices.VIEWER,
+        ],
+    )
+    def test_no_references_returns_none(self, role):
         """No thread found if the incoming email has no reference headers."""
-        factories.ThreadFactory(mailbox=self.mailbox, subject="Some Thread")
+        initial_thread = factories.ThreadFactory(subject="Some Thread")
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=initial_thread,
+            role=role,
+        )
 
         parsed_new_email = {
             "subject": "Brand New Topic",
@@ -219,7 +286,7 @@ class TestDeliverInboundMessage:
         assert models.Contact.objects.count() == 2
 
         thread = models.Thread.objects.first()
-        assert thread.mailbox == target_mailbox
+        assert thread.accesses.first().mailbox == target_mailbox
         assert thread.subject == sample_parsed_email["subject"]
         assert thread.count_unread == 1
         assert thread.snippet == "Test body content."
@@ -241,12 +308,29 @@ class TestDeliverInboundMessage:
         assert msg_recipient.contact.name == "Recipient Name"
         assert msg_recipient.contact.mailbox == target_mailbox
 
+    @pytest.mark.parametrize(
+        "role",
+        [
+            enums.ThreadAccessRoleChoices.EDITOR,
+            enums.ThreadAccessRoleChoices.VIEWER,
+        ],
+    )
     @patch("core.mda.delivery.find_thread_for_inbound_message")
     def test_basic_delivery_existing_thread(
-        self, mock_find_thread, target_mailbox, sample_parsed_email, raw_email_data
-    ):
+        self,
+        mock_find_thread,
+        target_mailbox,
+        sample_parsed_email,
+        raw_email_data,
+        role,
+    ):  # pylint: disable=too-many-positional-arguments
         """Test successful delivery adding message to an existing thread."""
-        existing_thread = factories.ThreadFactory(mailbox=target_mailbox)
+        existing_thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=target_mailbox,
+            thread=existing_thread,
+            role=role,
+        )
         mock_find_thread.return_value = existing_thread
         recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
 
@@ -433,9 +517,9 @@ class TestDeliverInboundMessage:
 
         success1 = delivery.deliver_inbound_message(addr2, parsed_email_1, raw_email_1)
         assert success1 is True
-        assert models.Thread.objects.filter(mailbox=mailbox1).count() == 0
-        assert models.Thread.objects.filter(mailbox=mailbox2).count() == 1
-        thread2 = models.Thread.objects.get(mailbox=mailbox2)
+        assert models.Thread.objects.filter(accesses__mailbox=mailbox1).count() == 0
+        assert models.Thread.objects.filter(accesses__mailbox=mailbox2).count() == 1
+        thread2 = models.Thread.objects.get(accesses__mailbox=mailbox2)
         assert thread2.messages.count() == 1
         assert thread2.subject == subject
         message1 = thread2.messages.first()
@@ -456,9 +540,9 @@ class TestDeliverInboundMessage:
 
         success2 = delivery.deliver_inbound_message(addr1, parsed_email_2, raw_email_2)
         assert success2 is True
-        assert models.Thread.objects.filter(mailbox=mailbox1).count() == 1
-        assert models.Thread.objects.filter(mailbox=mailbox2).count() == 1
-        thread1 = models.Thread.objects.get(mailbox=mailbox1)
+        assert models.Thread.objects.filter(accesses__mailbox=mailbox1).count() == 1
+        assert models.Thread.objects.filter(accesses__mailbox=mailbox2).count() == 1
+        thread1 = models.Thread.objects.get(accesses__mailbox=mailbox1)
         assert thread1.messages.count() == 1
         message2 = thread1.messages.first()
         assert message2.mime_id == parsed_email_2["message_id"]
@@ -482,8 +566,8 @@ class TestDeliverInboundMessage:
         success3 = delivery.deliver_inbound_message(addr2, parsed_email_3, raw_email_3)
         assert success3 is True
         # Counts should remain 1 thread per mailbox
-        assert models.Thread.objects.filter(mailbox=mailbox1).count() == 1
-        assert models.Thread.objects.filter(mailbox=mailbox2).count() == 1
+        assert models.Thread.objects.filter(accesses__mailbox=mailbox1).count() == 1
+        assert models.Thread.objects.filter(accesses__mailbox=mailbox2).count() == 1
 
         # Verify message3 landed in thread2
         thread1.refresh_from_db()
@@ -507,7 +591,12 @@ class TestSendOutboundMessage:
         """Create a valid draft message with sender and recipients."""
         sender_contact = factories.ContactFactory(email="sender@sendtest.com")
         mailbox = sender_contact.mailbox
-        thread = factories.ThreadFactory(mailbox=mailbox)
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
         message = factories.MessageFactory(
             thread=thread,
             sender=sender_contact,

@@ -29,7 +29,10 @@ class TestMessagesDelete:
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
         response = client.delete(reverse("messages-detail", kwargs={"id": message.id}))
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert models.Message.objects.filter(id=message.id).exists()
+        message.refresh_from_db()
+        assert not message.is_trashed
 
     @pytest.mark.parametrize(
         "permission",
@@ -51,7 +54,74 @@ class TestMessagesDelete:
         client.force_authenticate(user=authenticated_user)
         message = factories.MessageFactory(subject="Test message")
         response = client.delete(reverse("messages-detail", kwargs={"id": message.id}))
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+        assert models.Message.objects.filter(id=message.id).exists()
+        message.refresh_from_db()
+        assert not message.is_trashed
+
+    def test_delete_message_with_delegated_permission(self):
+        """Test delete message with delegated permission."""
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            permission=enums.MailboxPermissionChoices.ADMIN,
+        )
+        message_to_delete = factories.MessageFactory(subject="Test message")
+        delegated_mailbox = factories.MailboxFactory()
+        authenticated_user = factories.UserFactory()
+        factories.MailboxAccessFactory(
+            mailbox=delegated_mailbox,
+            user=authenticated_user,
+            permission=enums.MailboxPermissionChoices.ADMIN,
+        )
+        # second mailbox with delegated delete permission
+        factories.ThreadAccessFactory(
+            mailbox=delegated_mailbox,
+            thread=message_to_delete.thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        response = client.delete(
+            reverse("messages-detail", kwargs={"id": message_to_delete.id})
+        )
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not models.Message.objects.filter(id=message_to_delete.id).exists()
+
+    def test_delete_message_with_bad_delegated_permission(self):
+        """Test delete message with bad delegated permission."""
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            permission=enums.MailboxPermissionChoices.ADMIN,
+        )
+        message_to_delete = factories.MessageFactory(subject="Test message")
+        delegated_mailbox = factories.MailboxFactory()
+        authenticated_user = factories.UserFactory()
+        factories.MailboxAccessFactory(
+            mailbox=delegated_mailbox,
+            user=authenticated_user,
+            permission=enums.MailboxPermissionChoices.ADMIN,
+        )
+        # second mailbox with delegated permission but not delete permission
+        factories.ThreadAccessFactory(
+            mailbox=delegated_mailbox,
+            thread=message_to_delete.thread,
+            role=enums.ThreadAccessRoleChoices.VIEWER,
+        )
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        response = client.delete(
+            reverse("messages-detail", kwargs={"id": message_to_delete.id})
+        )
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        assert models.Message.objects.filter(id=message_to_delete.id).exists()
+        message_to_delete.refresh_from_db()
+        assert not message_to_delete.is_trashed
 
     @pytest.mark.parametrize(
         "permission",
@@ -64,7 +134,12 @@ class TestMessagesDelete:
         """Test delete message."""
         authenticated_user = factories.UserFactory()
         mailbox = factories.MailboxFactory()
-        thread = factories.ThreadFactory(mailbox=mailbox)
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
         message = factories.MessageFactory(subject="Test message", thread=thread)
         message2 = factories.MessageFactory(subject="Test message 2", thread=thread)
         factories.MailboxAccessFactory(
@@ -96,7 +171,12 @@ class TestMessagesDelete:
             user=authenticated_user,
             permission=permission,
         )
-        thread = factories.ThreadFactory(mailbox=mailbox)
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
         message = factories.MessageFactory(subject="Test message", thread=thread)

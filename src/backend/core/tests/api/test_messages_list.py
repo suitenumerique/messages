@@ -14,7 +14,34 @@ from core import enums, factories
 class TestApiThreads:
     """Test API threads."""
 
-    def test_list_threads(self):
+    @pytest.mark.parametrize(
+        "permission,role",
+        [
+            (enums.MailboxPermissionChoices.READ, enums.ThreadAccessRoleChoices.EDITOR),
+            (enums.MailboxPermissionChoices.READ, enums.ThreadAccessRoleChoices.VIEWER),
+            (enums.MailboxPermissionChoices.EDIT, enums.ThreadAccessRoleChoices.EDITOR),
+            (enums.MailboxPermissionChoices.EDIT, enums.ThreadAccessRoleChoices.VIEWER),
+            (enums.MailboxPermissionChoices.SEND, enums.ThreadAccessRoleChoices.EDITOR),
+            (enums.MailboxPermissionChoices.SEND, enums.ThreadAccessRoleChoices.VIEWER),
+            (
+                enums.MailboxPermissionChoices.ADMIN,
+                enums.ThreadAccessRoleChoices.EDITOR,
+            ),
+            (
+                enums.MailboxPermissionChoices.ADMIN,
+                enums.ThreadAccessRoleChoices.VIEWER,
+            ),
+            (
+                enums.MailboxPermissionChoices.DELETE,
+                enums.ThreadAccessRoleChoices.EDITOR,
+            ),
+            (
+                enums.MailboxPermissionChoices.DELETE,
+                enums.ThreadAccessRoleChoices.VIEWER,
+            ),
+        ],
+    )
+    def test_list_threads(self, permission, role):
         """Test list threads."""
         # Create 10 threads to populate the database
         factories.ThreadFactory.create_batch(10)
@@ -31,26 +58,41 @@ class TestApiThreads:
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.READ,
+            permission=permission,
         )
         # Create an other mailbox for the authenticated user with access
         other_mailbox = factories.MailboxFactory()
         factories.MailboxAccessFactory(
             mailbox=other_mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.READ,
+            permission=permission,
         )
 
         # Create 3 threads with messages in the mailbox
-        thread1 = factories.ThreadFactory(mailbox=mailbox)
+        thread1 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread1,
+            role=role,
+        )
         factories.MessageFactory(thread=thread1, read_at=None)
         thread1.update_stats()
 
-        thread2 = factories.ThreadFactory(mailbox=mailbox)
+        thread2 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread2,
+            role=role,
+        )
         message2 = factories.MessageFactory(thread=thread2, read_at=None)
         thread2.update_stats()
 
-        thread3 = factories.ThreadFactory(mailbox=mailbox)
+        thread3 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread3,
+            role=role,
+        )
         factories.MessageFactory(thread=thread3, read_at=None)
         thread3.update_stats()
 
@@ -75,7 +117,12 @@ class TestApiThreads:
         fetch_threads_and_assert_order(mailbox.id, [thread2.id, thread3.id, thread1.id])
 
         # Create a thread with a message in the other mailbox
-        other_thread = factories.ThreadFactory(mailbox=other_mailbox)
+        other_thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=other_mailbox,
+            thread=other_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
         factories.MessageFactory(thread=other_thread, read_at=None)
         other_thread.update_stats()
 
@@ -110,6 +157,80 @@ class TestApiThreads:
             "+00:00", "Z"
         )
 
+    @pytest.mark.parametrize(
+        "permission,role",
+        [
+            (enums.MailboxPermissionChoices.READ, enums.ThreadAccessRoleChoices.EDITOR),
+            (enums.MailboxPermissionChoices.READ, enums.ThreadAccessRoleChoices.VIEWER),
+            (enums.MailboxPermissionChoices.EDIT, enums.ThreadAccessRoleChoices.EDITOR),
+            (enums.MailboxPermissionChoices.EDIT, enums.ThreadAccessRoleChoices.VIEWER),
+            (enums.MailboxPermissionChoices.SEND, enums.ThreadAccessRoleChoices.EDITOR),
+            (enums.MailboxPermissionChoices.SEND, enums.ThreadAccessRoleChoices.VIEWER),
+            (
+                enums.MailboxPermissionChoices.ADMIN,
+                enums.ThreadAccessRoleChoices.EDITOR,
+            ),
+            (
+                enums.MailboxPermissionChoices.ADMIN,
+                enums.ThreadAccessRoleChoices.VIEWER,
+            ),
+            (
+                enums.MailboxPermissionChoices.DELETE,
+                enums.ThreadAccessRoleChoices.EDITOR,
+            ),
+            (
+                enums.MailboxPermissionChoices.DELETE,
+                enums.ThreadAccessRoleChoices.VIEWER,
+            ),
+        ],
+    )
+    def test_list_threads_delegated_mailbox(self, permission, role):
+        """Test list threads delegated mailbox."""
+        # First create Thread for a initial mailbox
+        message = factories.MessageFactory()
+        initial_mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=initial_mailbox,
+            permission=permission,
+        )
+        factories.ThreadAccessFactory(
+            mailbox=initial_mailbox,
+            thread=message.thread,
+            role=role,
+        )
+
+        # Create an other mailbox to delegate access to
+        user_to_delegate = factories.UserFactory()
+        mailbox_to_delegate = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox_to_delegate,
+            user=user_to_delegate,
+            permission=permission,
+        )
+
+        # Try to access the threads list
+        client = APIClient()
+        client.force_authenticate(user=user_to_delegate)
+        response = client.get(
+            reverse("threads-list"), query_params={"mailbox_id": mailbox_to_delegate.id}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 0
+
+        # Delegate access to the new mailbox
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_to_delegate,
+            thread=message.thread,
+            role=role,
+        )
+        # Try to access the threads list again
+        response = client.get(
+            reverse("threads-list"), query_params={"mailbox_id": mailbox_to_delegate.id}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 1
+        assert response.data["results"][0]["id"] == str(message.thread.id)
+
     def test_list_threads_unauthorized(self):
         """Test list threads unauthorized."""
         client = APIClient()
@@ -126,7 +247,12 @@ class TestApiThreads:
             user=jean,
             permission=enums.MailboxPermissionChoices.ADMIN,
         )
-        factories.ThreadFactory(mailbox=jean_mailbox)  # Create a thread for jean
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=jean_mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
 
         # Create authenticated user and their mailbox/thread
         authenticated_user = factories.UserFactory()
@@ -136,9 +262,13 @@ class TestApiThreads:
             user=authenticated_user,
             permission=enums.MailboxPermissionChoices.READ,
         )
-        factories.ThreadFactory(
-            mailbox=mailbox
-        )  # Create a thread for authenticated user
+        # Create a thread for authenticated user
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
 
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
@@ -165,7 +295,12 @@ class TestApiMessages:
             user=authenticated_user,
             permission=enums.MailboxPermissionChoices.READ,
         )
-        thread = factories.ThreadFactory(mailbox=mailbox)
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
 
         # Contacts
         sender_contact1 = factories.ContactFactory(email="sender1@example.com")
@@ -227,7 +362,13 @@ Content-Type: text/html
         )
 
         # Create other threads/messages to ensure filtering works
-        factories.MessageFactory(thread=factories.ThreadFactory(mailbox=mailbox))
+        thread2 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread2,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        factories.MessageFactory(thread=thread2)
 
         # --- Test ---
         client = APIClient()
@@ -296,14 +437,24 @@ Content-Type: text/html
         jean = factories.UserFactory()
         jean_mailbox = factories.MailboxFactory()
         factories.MailboxAccessFactory(mailbox=jean_mailbox, user=jean)
-        jean_thread = factories.ThreadFactory(mailbox=jean_mailbox)
+        jean_thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=jean_mailbox,
+            thread=jean_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
         factories.MessageFactory(thread=jean_thread)  # Create message for jean
 
         # Create authenticated user and their mailbox/thread
         authenticated_user = factories.UserFactory()
         mailbox = factories.MailboxFactory()
         factories.MailboxAccessFactory(mailbox=mailbox, user=authenticated_user)
-        factories.ThreadFactory(mailbox=mailbox)  # Create thread for auth user
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
 
         client = APIClient()
         client.force_authenticate(user=authenticated_user)

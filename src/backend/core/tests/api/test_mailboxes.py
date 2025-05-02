@@ -7,7 +7,7 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from core import factories, models
+from core import enums, factories, models
 
 
 @pytest.mark.django_db
@@ -46,15 +46,30 @@ class TestMailboxViewSet:
         )
 
         # create a thread with one unread message for user_mailbox1
-        thread1 = factories.ThreadFactory(mailbox=user_mailbox1)
+        thread1 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=user_mailbox1,
+            thread=thread1,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
         factories.MessageFactory(thread=thread1, read_at=None)
 
         # create a thread with one read message for user_mailbox2
-        thread2 = factories.ThreadFactory(mailbox=user_mailbox2)
+        thread2 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=user_mailbox2,
+            thread=thread2,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
         factories.MessageFactory(thread=thread2, read_at=timezone.now())
 
         # create a thread with one unread message for user_mailbox2
-        thread3 = factories.ThreadFactory(mailbox=user_mailbox2)
+        thread3 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=user_mailbox2,
+            thread=thread3,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
         factories.MessageFactory(thread=thread3, read_at=None)
 
         # Authenticate user

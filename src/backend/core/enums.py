@@ -31,6 +31,13 @@ class MessageRecipientTypeChoices(models.TextChoices):
     BCC = "bcc", _("Bcc")
 
 
+class ThreadAccessRoleChoices(models.TextChoices):
+    """Defines the possible roles a mailbox can have to access to a thread."""
+
+    VIEWER = "viewer", _("Viewer")
+    EDITOR = "editor", _("Editor")
+
+
 THREAD_STATS_FIELDS_MAP = {
     "unread": "count_unread",
     "trashed": "count_trashed",
@@ -39,3 +46,6 @@ THREAD_STATS_FIELDS_MAP = {
     "sender": "count_sender",
     "messages": "count_messages",
 }
+
+
+

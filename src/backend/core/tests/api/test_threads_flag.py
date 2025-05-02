@@ -9,6 +9,7 @@ from rest_framework import status
 # Remove APIClient import if not used elsewhere after removing classes
 # from rest_framework.test import APIClient
 from core import (
+    enums,
     factories,  # Renamed import
     models,  # Keep if models are used in remaining tests
 )
@@ -26,7 +27,12 @@ def test_trash_single_thread_success(api_client):
     user = factories.UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = factories.MailboxFactory(users_read=[user])
-    thread = factories.ThreadFactory(mailbox=mailbox)
+    thread = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=thread,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
     msg1 = factories.MessageFactory(thread=thread, is_trashed=False)
     msg2 = factories.MessageFactory(thread=thread, is_trashed=False)
 
@@ -61,7 +67,12 @@ def test_untrash_single_thread_success(api_client):
     user = factories.UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = factories.MailboxFactory(users_read=[user])
-    thread = factories.ThreadFactory(mailbox=mailbox)
+    thread = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=thread,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
     trashed_time = timezone.now()
     msg1 = factories.MessageFactory(
         thread=thread, is_trashed=True, trashed_at=trashed_time
@@ -100,13 +111,29 @@ def test_trash_multiple_threads_success(api_client):
     user = factories.UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = factories.MailboxFactory(users_read=[user])
-    thread1 = factories.ThreadFactory(mailbox=mailbox)
+    thread1 = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=thread1,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
     factories.MessageFactory(thread=thread1, is_trashed=False)
-    thread2 = factories.ThreadFactory(mailbox=mailbox)
+    thread2 = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=thread2,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
     factories.MessageFactory(thread=thread2, is_trashed=False)
-    thread3 = factories.ThreadFactory(
-        mailbox=mailbox
+
+    thread3 = (
+        factories.ThreadFactory()
     )  # Already trashed (should be unaffected by value=true)
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=thread3,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
     msg3 = factories.MessageFactory(
         thread=thread3, is_trashed=True, trashed_at=timezone.now()
     )
@@ -156,7 +183,12 @@ def test_trash_thread_no_permission(api_client):
     user = factories.UserFactory()
     api_client.force_authenticate(user=user)
     other_mailbox = factories.MailboxFactory()  # User does not have access
-    thread = factories.ThreadFactory(mailbox=other_mailbox)
+    thread = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=other_mailbox,
+        thread=thread,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
     factories.MessageFactory(thread=thread)
 
     initial_count = models.Thread.objects.count()

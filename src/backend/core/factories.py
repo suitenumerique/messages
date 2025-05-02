@@ -116,7 +116,19 @@ class ThreadFactory(factory.django.DjangoModelFactory):
 
     subject = factory.Faker("sentence")
     snippet = factory.Faker("text")
+
+
+class ThreadAccessFactory(factory.django.DjangoModelFactory):
+    """A factory to random thread accesses for testing purposes."""
+
+    class Meta:
+        model = models.ThreadAccess
+
+    thread = factory.SubFactory(ThreadFactory)
     mailbox = factory.SubFactory(MailboxFactory)
+    role = factory.fuzzy.FuzzyChoice(
+        [role[0] for role in models.ThreadAccessRoleChoices.choices]
+    )
 
 
 class ContactFactory(factory.django.DjangoModelFactory):

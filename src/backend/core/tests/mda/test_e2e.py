@@ -245,8 +245,9 @@ class TestE2EMessageOutboundFlow:
         # Ensure the local mailbox received the email
         local_mailbox_messages = models.Message.objects.filter(
             is_sender=False,
-            thread__mailbox=local_mailbox,
+            thread__accesses__mailbox=local_mailbox,
         )
+
         assert local_mailbox_messages.count() == 1
         local_message = local_mailbox_messages.first()
         assert local_message.subject == subject

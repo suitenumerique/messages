@@ -10,7 +10,14 @@ from django.utils import timezone
 import pytest
 from rest_framework import status
 
-from core.factories import MailboxFactory, MessageFactory, ThreadFactory, UserFactory
+from core import enums
+from core.factories import (
+    MailboxFactory,
+    MessageFactory,
+    ThreadAccessFactory,
+    ThreadFactory,
+    UserFactory,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -22,7 +29,10 @@ def test_mark_messages_unread_success(api_client):
     user = UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = MailboxFactory(users_read=[user])
-    thread = ThreadFactory(mailbox=mailbox)
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
     # Start with messages marked as read (read_at is set, is_unread=False)
     msg1 = MessageFactory(
         thread=thread, is_unread=False, read_at=timezone.now(), is_trashed=False
@@ -67,7 +77,10 @@ def test_mark_messages_read_success(api_client):
     user = UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = MailboxFactory(users_read=[user])
-    thread = ThreadFactory(mailbox=mailbox)
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
     # Start with messages marked as unread (is_unread=True, read_at=None)
     msg1 = MessageFactory(thread=thread, is_unread=True, read_at=None, is_trashed=False)
     msg2 = MessageFactory(thread=thread, is_unread=True, read_at=None, is_trashed=False)
@@ -108,7 +121,10 @@ def test_mark_thread_messages_unread_success(api_client):
     user = UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = MailboxFactory(users_read=[user])
-    thread = ThreadFactory(mailbox=mailbox)
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
     # Messages start as read
     msg1 = MessageFactory(thread=thread, is_unread=False, read_at=timezone.now())
     msg2 = MessageFactory(thread=thread, is_unread=False, read_at=timezone.now())
@@ -139,7 +155,10 @@ def test_mark_thread_messages_read_success(api_client):
     user = UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = MailboxFactory(users_read=[user])
-    thread = ThreadFactory(mailbox=mailbox)
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
     # Messages start as unread
     msg1 = MessageFactory(thread=thread, is_unread=True, read_at=None)
     msg2 = MessageFactory(thread=thread, is_unread=True, read_at=None)
@@ -171,11 +190,20 @@ def test_mark_multiple_threads_read_success(api_client):
     api_client.force_authenticate(user=user)
     mailbox = MailboxFactory(users_read=[user])
     # Threads start with unread messages
-    thread1 = ThreadFactory(mailbox=mailbox)
+    thread1 = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread1, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
     MessageFactory(thread=thread1, is_unread=True)
-    thread2 = ThreadFactory(mailbox=mailbox)
+    thread2 = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread2, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
     MessageFactory(thread=thread2, is_unread=True)
-    thread3 = ThreadFactory(mailbox=mailbox)  # No messages initially
+    thread3 = ThreadFactory()  # No messages initially
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread3, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
     MessageFactory(
         thread=thread3, is_unread=False, read_at=timezone.now()
     )  # Already read
@@ -216,7 +244,10 @@ def test_mark_messages_no_permission(api_client):
     user = UserFactory()
     api_client.force_authenticate(user=user)
     other_mailbox = MailboxFactory()  # User does not have access
-    thread = ThreadFactory(mailbox=other_mailbox)
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=other_mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
     msg = MessageFactory(thread=thread, is_unread=True)
 
     data = {"flag": "unread", "value": False, "message_ids": [str(msg.id)]}
@@ -268,7 +299,10 @@ def test_mark_messages_invalid_requests(api_client, data):
     user = UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = MailboxFactory(users_read=[user])
-    thread = ThreadFactory(mailbox=mailbox)
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
     msg = MessageFactory(thread=thread)
     if callable(data.get("message_ids", None)):
         data["message_ids"] = json.loads(json.dumps(data["message_ids"](msg)))
@@ -286,7 +320,10 @@ def test_mark_messages_starred_success(api_client):
     user = UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = MailboxFactory(users_read=[user])
-    thread = ThreadFactory(mailbox=mailbox)
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
     msg1 = MessageFactory(thread=thread, is_starred=False)
     msg2 = MessageFactory(thread=thread, is_starred=True)  # Already starred
 
@@ -316,7 +353,10 @@ def test_mark_messages_unstarred_success(api_client):
     user = UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = MailboxFactory(users_read=[user])
-    thread = ThreadFactory(mailbox=mailbox)
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
     msg1 = MessageFactory(thread=thread, is_starred=True)
     msg2 = MessageFactory(thread=thread, is_starred=False)  # Already unstarred
 
@@ -349,7 +389,10 @@ def test_mark_messages_trashed_success(api_client):
     user = UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = MailboxFactory(users_read=[user])  # Ensure correct permission if needed
-    thread = ThreadFactory(mailbox=mailbox)
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
     msg1 = MessageFactory(thread=thread, is_trashed=False)
     msg2 = MessageFactory(thread=thread, is_trashed=True)  # Already trashed
 
@@ -380,7 +423,10 @@ def test_mark_messages_untrashed_success(api_client):
     user = UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = MailboxFactory(users_read=[user])
-    thread = ThreadFactory(mailbox=mailbox)
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
     msg1 = MessageFactory(thread=thread, is_trashed=True, trashed_at=timezone.now())
     msg2 = MessageFactory(thread=thread, is_trashed=False)  # Already untrashed
 
