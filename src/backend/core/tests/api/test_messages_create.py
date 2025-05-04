@@ -664,3 +664,183 @@ class TestApiDraftAndSendReply:
         )
         # Assert the response is unauthorized
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_api_email_exchange_single_thread(self, send_url):
+        """Test a multi-step API email exchange results in one thread per mailbox."""
+        # Setup Users and Mailboxes
+        user1 = factories.UserFactory(email="user1@exchange.api")
+        user2 = factories.UserFactory(email="user2@exchange.api")
+        domain = factories.MailDomainFactory(name="exchange.api")
+        mailbox1 = factories.MailboxFactory(local_part="user1", domain=domain)
+        mailbox2 = factories.MailboxFactory(local_part="user2", domain=domain)
+        factories.MailboxAccessFactory(
+            mailbox=mailbox1, user=user1, permission=enums.MailboxPermissionChoices.EDIT
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox2, user=user2, permission=enums.MailboxPermissionChoices.EDIT
+        )
+        addr1 = str(mailbox1)
+        addr2 = str(mailbox2)
+        client = APIClient()
+
+        # --- Message 1: user1 -> user2 ---
+        client.force_authenticate(user=user1)
+        subject = "API Conversation Starter"
+        draft1_payload = {
+            "senderId": str(mailbox1.id),
+            "subject": subject,
+            "draftBody": "Hello User Two!",
+            "to": [addr2],
+        }
+        draft1_response = client.post(
+            reverse("draft-message"), draft1_payload, format="json"
+        )
+        assert draft1_response.status_code == status.HTTP_201_CREATED
+        message1_id = draft1_response.data["id"]
+
+        send1_response = client.post(
+            send_url,
+            {
+                "messageId": message1_id,
+                "senderId": str(mailbox1.id),
+                "textBody": "Hello User Two!",
+            },
+            format="json",
+        )
+        assert send1_response.status_code == status.HTTP_200_OK
+
+        # Message should be marked as sent immediately for local delivery
+        message1 = models.Message.objects.get(id=message1_id)
+        thread1 = message1.thread  # The thread in mailbox1
+        assert thread1.mailbox == mailbox1
+        assert models.Thread.objects.filter(mailbox=mailbox1).count() == 1
+        assert thread1.messages.count() == 1
+        assert message1.is_draft is False
+        assert message1.mta_sent is False  # Local delivery doesn't use MTA
+        assert message1.is_sender is True
+        assert message1.mime_id is not None
+
+        # Verify the received message in mailbox2
+        thread2 = models.Thread.objects.get(mailbox=mailbox2)
+        assert models.Thread.objects.filter(mailbox=mailbox2).count() == 1
+        assert thread2.messages.count() == 1
+        message1_received = thread2.messages.first()
+        assert message1_received.subject == subject
+        assert message1_received.is_sender is False
+        assert message1_received.is_unread is True
+        assert message1_received.sender.email == addr1
+        # Should use the same MIME ID
+        assert message1_received.mime_id == message1.mime_id
+
+        assert models.Thread.objects.count() == 2  # Sender + receiver threads
+
+        # --- Message 2: user2 -> user1 (Reply) ---
+        client.force_authenticate(user=user2)
+        reply_subject = f"Re: {subject}"
+        draft2_payload = {
+            "parentId": str(
+                message1_received.id
+            ),  # Reply to the message user2 received
+            "senderId": str(mailbox2.id),
+            "subject": reply_subject,
+            "draftBody": "Hi User One, thanks!",
+            "to": [addr1],
+        }
+        draft2_response = client.post(
+            reverse("draft-message"), draft2_payload, format="json"
+        )
+        assert draft2_response.status_code == status.HTTP_201_CREATED
+        message2_id = draft2_response.data["id"]
+
+        send2_response = client.post(
+            send_url,
+            {
+                "messageId": message2_id,
+                "senderId": str(mailbox2.id),
+                "textBody": "Hi User One, thanks!",
+            },
+            format="json",
+        )
+        assert send2_response.status_code == status.HTTP_200_OK
+
+        # Mark message as sent (local delivery)
+        message2 = models.Message.objects.get(id=message2_id)
+
+        # Verify sent message from user2
+        message2.refresh_from_db()
+        assert message2.is_draft is False
+        assert message2.parent == message1_received
+        assert message2.thread == thread2
+        thread2.refresh_from_db()
+        assert thread2.messages.count() == 2  # user2 sees msg1 and sent msg2
+
+        # Verify received message in user1's mailbox
+        thread1.refresh_from_db()
+        assert (
+            thread1.messages.count() == 2
+        )  # user1 sees original sent + reply received
+        message2_received = thread1.messages.exclude(id=message1.id).first()
+        assert message2_received.subject == reply_subject
+        assert message2_received.sender.email == addr2
+        assert message2_received.is_sender is False
+        assert message2_received.is_unread is True
+        assert message2_received.parent == message1
+
+        # Should use the same MIME ID
+        assert message2_received.mime_id == message2.mime_id
+
+        assert models.Thread.objects.count() == 2  # Sender + receiver threads
+
+        # --- Message 3: user1 -> user2 (Reply to Reply) ---
+        client.force_authenticate(user=user1)
+        rereply_subject = f"Re: {subject}"  # Subject might stay the same
+        draft3_payload = {
+            "parentId": str(
+                message2_received.id
+            ),  # Reply to the message user1 received
+            "senderId": str(mailbox1.id),
+            "subject": rereply_subject,
+            "draftBody": "You are welcome!",
+            "to": [addr2],
+        }
+        draft3_response = client.post(
+            reverse("draft-message"), draft3_payload, format="json"
+        )
+        assert draft3_response.status_code == status.HTTP_201_CREATED
+        message3_id = draft3_response.data["id"]
+
+        send3_response = client.post(
+            send_url,
+            {"messageId": message3_id, "senderId": str(mailbox1.id)},
+            format="json",
+        )
+        assert send3_response.status_code == status.HTTP_200_OK
+
+        assert models.Thread.objects.count() == 2  # Still only 2 threads
+
+        # Mark message as sent (local delivery)
+        message3 = models.Message.objects.get(id=message3_id)
+        thread1.refresh_from_db()
+        assert thread1.messages.count() == 3  # user1 sees msg1, msg2_received, msg3
+        assert message3.is_draft is False
+        assert message3.is_sender is True
+        assert message3.parent == message2_received
+
+        # Verify received message in user2's mailbox
+        thread2.refresh_from_db()
+        assert (
+            thread2.messages.count() == 3
+        )  # User2 sees msg1_received, msg2, msg3_received
+        message3_received = thread2.messages.exclude(
+            id__in=[message1_received.id, message2.id]
+        ).first()
+        assert message3_received.subject == rereply_subject
+        assert message3_received.sender.email == addr1
+        assert message3_received.is_sender is False
+        assert message3_received.is_unread is True
+        assert message3_received.mime_id == message3.mime_id
+        assert message3_received.parent == message2
+
+        # Final check: Still only one thread per mailbox
+        assert models.Thread.objects.filter(mailbox=mailbox1).count() == 1
+        assert models.Thread.objects.filter(mailbox=mailbox2).count() == 1

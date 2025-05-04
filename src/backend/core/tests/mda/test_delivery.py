@@ -410,6 +410,90 @@ class TestDeliverInboundMessage:
         assert not models.Contact.objects.filter(email="bad-email").exists()
         assert not models.Contact.objects.filter(email="@no-localpart.com").exists()
 
+    def test_email_exchange_single_thread(self):
+        """Test a multi-step email exchange results in one thread per mailbox."""
+        # Setup mailboxes
+        domain = factories.MailDomainFactory(name="exchange.test")
+        mailbox1 = factories.MailboxFactory(local_part="user1", domain=domain)
+        mailbox2 = factories.MailboxFactory(local_part="user2", domain=domain)
+        addr1 = str(mailbox1)
+        addr2 = str(mailbox2)
+
+        # 1. user1 -> user2
+        subject = "Conversation Starter"
+        parsed_email_1 = {
+            "subject": subject,
+            "from": {"name": "User One", "email": addr1},
+            "to": [{"name": "User Two", "email": addr2}],
+            "textBody": [{"content": "Hello User Two!"}],
+            "message_id": "msg1.part1@exchange.test",
+            "date": timezone.now(),
+        }
+        raw_email_1 = b"Raw for message 1"
+
+        success1 = delivery.deliver_inbound_message(addr2, parsed_email_1, raw_email_1)
+        assert success1 is True
+        assert models.Thread.objects.filter(mailbox=mailbox1).count() == 0
+        assert models.Thread.objects.filter(mailbox=mailbox2).count() == 1
+        thread2 = models.Thread.objects.get(mailbox=mailbox2)
+        assert thread2.messages.count() == 1
+        assert thread2.subject == subject
+        message1 = thread2.messages.first()
+        assert message1.mime_id == parsed_email_1["message_id"]
+
+        # 2. user2 -> user1 (Reply)
+        parsed_email_2 = {
+            "subject": f"Re: {subject}",
+            "from": {"name": "User Two", "email": addr2},
+            "to": [{"name": "User One", "email": addr1}],
+            "textBody": [{"content": "Hi User One, thanks!"}],
+            "message_id": "msg2.part2.reply@exchange.test",
+            "in_reply_to": message1.mime_id,  # Link to previous message
+            "headers": {"references": f"<{message1.mime_id}>"},
+            "date": timezone.now(),
+        }
+        raw_email_2 = b"Raw for message 2"
+
+        success2 = delivery.deliver_inbound_message(addr1, parsed_email_2, raw_email_2)
+        assert success2 is True
+        assert models.Thread.objects.filter(mailbox=mailbox1).count() == 1
+        assert models.Thread.objects.filter(mailbox=mailbox2).count() == 1
+        thread1 = models.Thread.objects.get(mailbox=mailbox1)
+        assert thread1.messages.count() == 1
+        message2 = thread1.messages.first()
+        assert message2.mime_id == parsed_email_2["message_id"]
+        assert thread1.subject == f"Re: {subject}"
+
+        # 3. user1 -> user2 (Reply to Reply)
+        parsed_email_3 = {
+            "subject": f"Re: {subject}",
+            "from": {"name": "User One", "email": addr1},
+            "to": [{"name": "User Two", "email": addr2}],
+            "textBody": [{"content": "You are welcome!"}],
+            "message_id": "msg3.part3.rereply@exchange.test",
+            "in_reply_to": message2.mime_id,  # Link to user2's reply
+            "headers": {
+                "references": f"<{message1.mime_id}> <{message2.mime_id}>"
+            },  # Full chain
+            "date": timezone.now(),
+        }
+        raw_email_3 = b"Raw for message 3"
+
+        success3 = delivery.deliver_inbound_message(addr2, parsed_email_3, raw_email_3)
+        assert success3 is True
+        # Counts should remain 1 thread per mailbox
+        assert models.Thread.objects.filter(mailbox=mailbox1).count() == 1
+        assert models.Thread.objects.filter(mailbox=mailbox2).count() == 1
+
+        # Verify message3 landed in thread2
+        thread1.refresh_from_db()
+        thread2.refresh_from_db()
+        assert thread1.messages.count() == 1  # Still just message 2
+        assert thread2.messages.count() == 2  # Now message 1 and message 3
+        message3 = thread2.messages.exclude(id=message1.id).first()
+        assert thread2.subject == subject  # Make sure the original subject is kept
+        assert message3.mime_id == parsed_email_3["message_id"]
+
 
 # --- Unit Tests for send_outbound_message --- #
 

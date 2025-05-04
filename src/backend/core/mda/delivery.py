@@ -91,6 +91,8 @@ def find_thread_for_inbound_message(
     references_ids = find_message_ids(parsed_email.get("headers", {}).get("references"))
     all_referenced_ids = in_reply_to_ids.union(references_ids)
 
+    # logger.info("All referenced IDs: %s %s", all_referenced_ids, parsed_email)
+
     if not all_referenced_ids:
         return None  # No headers to match on
 
@@ -107,6 +109,8 @@ def find_thread_for_inbound_message(
         .select_related("thread")
         .order_by("-created_at")  # Prefer newer matches if multiple found
     )
+
+    # logger.info("Potential parents: %s", potential_parents)
 
     if len(potential_parents) == 0:
         return None  # No matching messages found by ID in this mailbox
@@ -240,12 +244,22 @@ def deliver_inbound_message(
 
     # --- 4. Create Message --- #
     try:
+        # Can we get a parent message for reference?
+        # TODO: validate this doesn't create security issues
+        parent_message = None
+        if parsed_email.get("in_reply_to"):
+            parent_message = models.Message.objects.filter(
+                mime_id=parsed_email.get("in_reply_to"), thread=thread
+            ).first()
+
         message = models.Message.objects.create(
             thread=thread,
             sender=sender_contact,
             subject=parsed_email.get("subject", "(no subject)"),
             raw_mime=raw_data,
-            mime_id=parsed_email.get("message_id") or None,
+            mime_id=parsed_email.get("messageId", parsed_email.get("message_id"))
+            or None,
+            parent=parent_message,
             sent_at=parsed_email.get("date") or timezone.now(),
             read_at=None,
             is_draft=False,
@@ -402,14 +416,15 @@ def prepare_outbound_message(
         "subject": message.subject,
         "textBody": [{"content": text_body}] if text_body else [],
         "htmlBody": [{"content": html_body}] if html_body else [],
-        "messageId": message.mime_id,
+        "message_id": message.mime_id,
+        "in_reply_to": message.parent.mime_id if message.parent else None,
     }
 
     # Assemble the raw mime message
     try:
         raw_mime = compose_email(
             mime_data,
-            in_reply_to=message.parent.mime_id if message.parent else None,
+            in_reply_to=mime_data["in_reply_to"],
             # TODO: Add References header logic
         )
     except Exception as e:  # noqa: BLE001
