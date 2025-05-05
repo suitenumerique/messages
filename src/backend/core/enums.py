@@ -29,3 +29,12 @@ class MessageRecipientTypeChoices(models.TextChoices):
     TO = "to", _("To")
     CC = "cc", _("Cc")
     BCC = "bcc", _("Bcc")
+
+
+class MessageDeliveryStatusChoices(models.TextChoices):
+    """Defines the possible statuses of a message delivery."""
+
+    INTERNAL = "internal", _("Internal")
+    SENT = "sent", _("Sent")
+    FAILED = "failed", _("Failed")
+    RETRY = "retry", _("Retry")

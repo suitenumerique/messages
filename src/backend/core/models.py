@@ -17,7 +17,11 @@ from django.utils.translation import gettext_lazy as _
 
 from timezone_field import TimeZoneField
 
-from core.enums import MailboxPermissionChoices, MessageRecipientTypeChoices
+from core.enums import (
+    MailboxPermissionChoices,
+    MessageDeliveryStatusChoices,
+    MessageRecipientTypeChoices,
+)
 from core.mda.rfc5322 import parse_email_message
 
 logger = getLogger(__name__)
@@ -369,6 +373,18 @@ class MessageRecipient(BaseModel):
         default=MessageRecipientTypeChoices.TO,
     )
 
+    delivered_at = models.DateTimeField(_("delivered at"), null=True, blank=True)
+    delivery_status = models.CharField(
+        _("delivery status"),
+        max_length=20,
+        null=True,
+        blank=True,
+        choices=MessageDeliveryStatusChoices.choices,
+    )
+    delivery_message = models.TextField(_("delivery message"), null=True, blank=True)
+    retry_count = models.IntegerField(_("retry count"), default=0)
+    retry_at = models.DateTimeField(_("retry at"), null=True, blank=True)
+
     class Meta:
         db_table = "messages_messagerecipient"
         verbose_name = _("message recipient")
@@ -402,7 +418,6 @@ class Message(BaseModel):
     sent_at = models.DateTimeField(_("sent at"), null=True, blank=True)
     read_at = models.DateTimeField(_("read at"), null=True, blank=True)
 
-    mta_sent = models.BooleanField(_("mta sent"), default=False)
     mime_id = models.CharField(_("mime id"), max_length=998, null=True, blank=True)
 
     # Stores the raw MIME message. This will be optimized and offloaded

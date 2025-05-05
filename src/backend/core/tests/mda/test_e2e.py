@@ -132,7 +132,7 @@ class TestE2EMessageOutboundFlow:
         to_email = "recipient1@external-test.com"
         to_email_local = str(local_mailbox)
         cc_email = "recipient2@external-test.com"
-        bcc_email = "recipient3@hidden-test.com"
+        bcc_email = "recipient3@external-test.com"
 
         draft_payload = {
             "senderId": str(mailbox.id),
@@ -150,6 +150,11 @@ class TestE2EMessageOutboundFlow:
         )
         draft_message_id = draft_response.data["id"]
 
+        assert (
+            models.MessageRecipient.objects.filter(message__id=draft_message_id).count()
+            == 4
+        )
+
         # --- Step 2: Send Draft --- #
         send_payload = {
             "messageId": draft_message_id,
@@ -162,10 +167,24 @@ class TestE2EMessageOutboundFlow:
         )
         assert send_response.status_code == status.HTTP_200_OK, send_response.content
 
+        assert (
+            models.MessageRecipient.objects.filter(
+                message__id=draft_message_id,
+                delivery_status=enums.MessageDeliveryStatusChoices.INTERNAL,
+            ).count()
+            == 1
+        )
+        assert (
+            models.MessageRecipient.objects.filter(
+                message__id=draft_message_id,
+                delivery_status=enums.MessageDeliveryStatusChoices.SENT,
+            ).count()
+            == 3
+        )
+
         # Verify DB state after sending
         sent_message = models.Message.objects.get(id=draft_message_id)
         assert not sent_message.is_draft
-        assert sent_message.mta_sent
         assert sent_message.sent_at is not None
         assert len(sent_message.raw_mime) > 0  # Ensure raw_mime was generated
 
@@ -206,7 +225,7 @@ class TestE2EMessageOutboundFlow:
         assert to_email.encode() in email_source
         assert cc_email.encode() in email_source
 
-        # BCC should NOT be in headers
+        # BCC should NOT be in raw mime
         assert bcc_email.encode() not in email_source
 
         assert "Bcc: ".encode() not in email_source
@@ -219,10 +238,8 @@ class TestE2EMessageOutboundFlow:
         envelope_to = [
             x["address"] for x in received_email.get("envelope", {}).get("to", [])
         ]
-        assert to_email in envelope_to
-        assert to_email_local not in envelope_to
-        assert cc_email in envelope_to
-        assert bcc_email in envelope_to
+        # NO BCC in envelope
+        assert sorted(envelope_to) == sorted([to_email, cc_email, bcc_email])
 
         # --- Step 5: Verify DKIM Signature --- #
         def get_dns_txt(fqdn, **kwargs):
@@ -254,6 +271,5 @@ class TestE2EMessageOutboundFlow:
         assert local_message.sender.email == sender_contact.email
         assert local_message.parent is None
         assert local_message.is_draft is False
-        assert local_message.mta_sent is False
 
         assert models.Message.objects.all().count() == 2

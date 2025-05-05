@@ -14,7 +14,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core import models
-from core.mda.delivery import prepare_outbound_message, send_message
+from core.mda.outbound import prepare_outbound_message
+from core.tasks import send_message_task
 
 from .. import permissions, serializers
 
@@ -45,7 +46,13 @@ logger = logging.getLogger(__name__)
         },
     ),
     responses={
-        200: serializers.MessageSerializer,
+        200: inline_serializer(
+            name="SendMessageResponse",
+            fields={
+                "message": serializers.MessageSerializer(),
+                "task_id": drf_serializers.CharField(help_text="Task ID for tracking"),
+            },
+        ),
         400: OpenApiExample(
             "Validation Error",
             value={"detail": "Message does not exist or is not a draft."},
@@ -55,7 +62,8 @@ logger = logging.getLogger(__name__)
             value={"detail": "You do not have permission to send this message."},
         ),
         503: OpenApiExample(
-            "Service Unavailable", value={"detail": "Failed to send message via MTA."}
+            "Service Unavailable",
+            value={"detail": "Failed to prepare message for sending."},
         ),
     },
     description="""
@@ -63,6 +71,7 @@ logger = logging.getLogger(__name__)
 
     This endpoint finalizes and sends a message previously saved as a draft.
     The message content (subject, body, recipients) should be set when creating/updating the draft.
+    Returns a task ID that can be used to track the sending status.
     """,
     examples=[
         OpenApiExample(
@@ -102,7 +111,7 @@ class SendMessageView(APIView):
                 "Draft message not found or does not belong to the specified sender mailbox."
             ) from e
 
-        prepared, mime_data = prepare_outbound_message(
+        prepared = prepare_outbound_message(
             message, request.data.get("textBody"), request.data.get("htmlBody")
         )
         if not prepared:
@@ -111,31 +120,7 @@ class SendMessageView(APIView):
                 code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        # TODO: this part should be done in a background task
-        try:
-            send_statuses = send_message(message, mime_data)
-            send_successful = all(send_statuses.values())
-        except Exception as e:
-            logger.error(
-                "Unexpected error calling send_message for %s: %s",
-                message_id,
-                e,
-                exc_info=True,
-            )
-            raise drf_exceptions.APIException(
-                "An unexpected error occurred while preparing to send the message.",
-                code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            ) from e
+        # Launch async task for sending the message
+        task = send_message_task.delay(str(message.id))
 
-        if not send_successful:
-            # Raise exception with explicit status_code attribute
-            exc = drf_exceptions.APIException(
-                "Failed to send message via MTA after multiple attempts.",
-            )
-            exc.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-            raise exc
-
-        serializer = serializers.MessageSerializer(
-            message, context={"request": request}
-        )
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response({"task_id": task.id}, status=status.HTTP_200_OK)

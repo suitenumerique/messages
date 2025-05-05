@@ -1,7 +1,6 @@
-"""Tests for the core.mda.delivery module."""
+"""Tests for the core.mda.inbound module."""
 
-import smtplib
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from django.test import override_settings
 from django.utils import timezone
@@ -9,7 +8,7 @@ from django.utils import timezone
 import pytest
 
 from core import factories, models
-from core.mda import delivery
+from core.mda import inbound
 
 
 @pytest.mark.django_db
@@ -43,7 +42,7 @@ class TestFindThread:
             "from": {"email": "replier@a.com"},
         }
 
-        found_thread = delivery.find_thread_for_inbound_message(
+        found_thread = inbound.find_thread_for_inbound_message(
             parsed_reply, self.mailbox
         )
         assert found_thread == initial_thread
@@ -65,7 +64,7 @@ class TestFindThread:
             "from": {"email": "replier@a.com"},
         }
 
-        found_thread = delivery.find_thread_for_inbound_message(
+        found_thread = inbound.find_thread_for_inbound_message(
             parsed_reply, self.mailbox
         )
         assert found_thread == initial_thread
@@ -91,7 +90,7 @@ class TestFindThread:
         }
 
         # Create a new thread
-        found_thread = delivery.find_thread_for_inbound_message(
+        found_thread = inbound.find_thread_for_inbound_message(
             parsed_reply, self.mailbox
         )
         assert found_thread is None
@@ -111,7 +110,7 @@ class TestFindThread:
             "from": {"email": "replier@a.com"},
         }
 
-        found_thread = delivery.find_thread_for_inbound_message(
+        found_thread = inbound.find_thread_for_inbound_message(
             parsed_reply, self.mailbox
         )
         assert found_thread is None
@@ -145,7 +144,7 @@ class TestFindThread:
         }
 
         # Should find the thread in *our* mailbox
-        found_thread = delivery.find_thread_for_inbound_message(
+        found_thread = inbound.find_thread_for_inbound_message(
             parsed_reply, self.mailbox
         )
         assert found_thread == initial_thread
@@ -159,7 +158,7 @@ class TestFindThread:
             # No In-Reply-To or References
             "from": {"email": "new@a.com"},
         }
-        found_thread = delivery.find_thread_for_inbound_message(
+        found_thread = inbound.find_thread_for_inbound_message(
             parsed_new_email, self.mailbox
         )
         assert found_thread is None
@@ -194,7 +193,7 @@ class TestDeliverInboundMessage:
         domain = factories.MailDomainFactory(name="deliver.test")
         return factories.MailboxFactory(local_part="recipient", domain=domain)
 
-    @patch("core.mda.delivery.find_thread_for_inbound_message")
+    @patch("core.mda.inbound.find_thread_for_inbound_message")
     def test_basic_delivery_new_thread(
         self, mock_find_thread, target_mailbox, sample_parsed_email, raw_email_data
     ):
@@ -206,7 +205,7 @@ class TestDeliverInboundMessage:
         assert models.Contact.objects.count() == 0
         assert models.Message.objects.count() == 0
 
-        success = delivery.deliver_inbound_message(
+        success = inbound.deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
@@ -241,7 +240,7 @@ class TestDeliverInboundMessage:
         assert msg_recipient.contact.name == "Recipient Name"
         assert msg_recipient.contact.mailbox == target_mailbox
 
-    @patch("core.mda.delivery.find_thread_for_inbound_message")
+    @patch("core.mda.inbound.find_thread_for_inbound_message")
     def test_basic_delivery_existing_thread(
         self, mock_find_thread, target_mailbox, sample_parsed_email, raw_email_data
     ):
@@ -253,7 +252,7 @@ class TestDeliverInboundMessage:
         assert models.Thread.objects.count() == 1
         assert models.Message.objects.count() == 0
 
-        success = delivery.deliver_inbound_message(
+        success = inbound.deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
@@ -275,7 +274,7 @@ class TestDeliverInboundMessage:
             local_part="newuser", domain__name="autocreate.test"
         ).exists()
 
-        success = delivery.deliver_inbound_message(
+        success = inbound.deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
@@ -295,7 +294,7 @@ class TestDeliverInboundMessage:
             local_part="nonexistent", domain__name="disabled.test"
         ).exists()
 
-        success = delivery.deliver_inbound_message(
+        success = inbound.deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
@@ -324,7 +323,7 @@ class TestDeliverInboundMessage:
             email="cc@example.com", mailbox=target_mailbox
         ).exists()
 
-        success = delivery.deliver_inbound_message(
+        success = inbound.deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
@@ -350,7 +349,7 @@ class TestDeliverInboundMessage:
             "email": "invalid-email-format",
         }
 
-        success = delivery.deliver_inbound_message(
+        success = inbound.deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
@@ -369,7 +368,7 @@ class TestDeliverInboundMessage:
         recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
         del sample_parsed_email["from"]  # Remove From header
 
-        success = delivery.deliver_inbound_message(
+        success = inbound.deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
@@ -396,7 +395,7 @@ class TestDeliverInboundMessage:
             {"name": "Another Invalid", "email": "@no-localpart.com"},  # Invalid
         ]
 
-        success = delivery.deliver_inbound_message(
+        success = inbound.deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
@@ -431,7 +430,7 @@ class TestDeliverInboundMessage:
         }
         raw_email_1 = b"Raw for message 1"
 
-        success1 = delivery.deliver_inbound_message(addr2, parsed_email_1, raw_email_1)
+        success1 = inbound.deliver_inbound_message(addr2, parsed_email_1, raw_email_1)
         assert success1 is True
         assert models.Thread.objects.filter(mailbox=mailbox1).count() == 0
         assert models.Thread.objects.filter(mailbox=mailbox2).count() == 1
@@ -454,7 +453,7 @@ class TestDeliverInboundMessage:
         }
         raw_email_2 = b"Raw for message 2"
 
-        success2 = delivery.deliver_inbound_message(addr1, parsed_email_2, raw_email_2)
+        success2 = inbound.deliver_inbound_message(addr1, parsed_email_2, raw_email_2)
         assert success2 is True
         assert models.Thread.objects.filter(mailbox=mailbox1).count() == 1
         assert models.Thread.objects.filter(mailbox=mailbox2).count() == 1
@@ -479,7 +478,7 @@ class TestDeliverInboundMessage:
         }
         raw_email_3 = b"Raw for message 3"
 
-        success3 = delivery.deliver_inbound_message(addr2, parsed_email_3, raw_email_3)
+        success3 = inbound.deliver_inbound_message(addr2, parsed_email_3, raw_email_3)
         assert success3 is True
         # Counts should remain 1 thread per mailbox
         assert models.Thread.objects.filter(mailbox=mailbox1).count() == 1
@@ -493,118 +492,3 @@ class TestDeliverInboundMessage:
         message3 = thread2.messages.exclude(id=message1.id).first()
         assert thread2.subject == subject  # Make sure the original subject is kept
         assert message3.mime_id == parsed_email_3["message_id"]
-
-
-# --- Unit Tests for send_outbound_message --- #
-
-
-@pytest.mark.django_db
-class TestSendOutboundMessage:
-    """Unit tests for the send_outbound_message function."""
-
-    @pytest.fixture
-    def draft_message(self):
-        """Create a valid draft message with sender and recipients."""
-        sender_contact = factories.ContactFactory(email="sender@sendtest.com")
-        mailbox = sender_contact.mailbox
-        thread = factories.ThreadFactory(mailbox=mailbox)
-        message = factories.MessageFactory(
-            thread=thread,
-            sender=sender_contact,
-            is_draft=True,
-            mta_sent=False,
-            subject="Test Outbound",
-            draft_body="Outbound body",
-        )
-        # Add recipients
-        to_contact = factories.ContactFactory(mailbox=mailbox, email="to@example.com")
-        cc_contact = factories.ContactFactory(mailbox=mailbox, email="cc@example.com")
-        bcc_contact = factories.ContactFactory(mailbox=mailbox, email="bcc@example.com")
-        factories.MessageRecipientFactory(
-            message=message,
-            contact=to_contact,
-            type=models.MessageRecipientTypeChoices.TO,
-        )
-        factories.MessageRecipientFactory(
-            message=message,
-            contact=cc_contact,
-            type=models.MessageRecipientTypeChoices.CC,
-        )
-        factories.MessageRecipientFactory(
-            message=message,
-            contact=bcc_contact,
-            type=models.MessageRecipientTypeChoices.BCC,
-        )
-        return message
-
-    @patch("core.mda.delivery.smtplib.SMTP")  # Mock SMTP client
-    @override_settings(
-        MTA_OUT_HOST="smtp.test:1025",
-        MTA_OUT_SMTP_USE_TLS=False,  # Explicitly override TLS setting
-        # Ensure other auth settings are None for this test
-        MTA_OUT_SMTP_USERNAME=None,
-        MTA_OUT_SMTP_PASSWORD=None,
-    )
-    def test_send_success(self, mock_smtp, draft_message):
-        """Test successful sending: calls composer, dkim, smtp and updates message."""
-        mock_smtp_instance = MagicMock()
-        mock_smtp.return_value.__enter__.return_value = (
-            mock_smtp_instance  # Mock context manager
-        )
-
-        success = delivery.send_message(draft_message, {}, force_mta_out=True)
-
-        assert all(success.values()) is True
-
-        # Check raw_mime was generated and passed to dkim
-        assert draft_message.raw_mime is not None
-
-        # Check SMTP calls
-        mock_smtp.assert_called_once_with("smtp.test", 1025, timeout=10)
-        mock_smtp_instance.ehlo.assert_called()
-        # Assume no TLS/auth configured in this test override
-        mock_smtp_instance.starttls.assert_not_called()
-        mock_smtp_instance.login.assert_not_called()
-        mock_smtp_instance.sendmail.assert_called_once()
-        # Verify sendmail arguments
-        call_args, _ = mock_smtp_instance.sendmail.call_args
-        assert call_args[0] == draft_message.sender.email  # envelope_from
-        assert set(call_args[1]) == {
-            "to@example.com",
-            "cc@example.com",
-            "bcc@example.com",
-        }  # envelope_to
-        # Check that the signed message was sent
-        assert call_args[2].endswith(draft_message.raw_mime)
-
-        # Check message object updated
-        draft_message.refresh_from_db()
-        assert not draft_message.is_draft
-        assert draft_message.mta_sent
-        assert draft_message.sent_at is not None
-
-    @patch("core.mda.delivery.smtplib.SMTP")
-    @override_settings(MTA_OUT_HOST="smtp.fail:1025")
-    def test_send_smtp_failure_retries(self, mock_smtp, draft_message):
-        """Test that SMTP failures are retried and eventually fail."""
-        mock_smtp_instance = MagicMock()
-        # Make sendmail fail repeatedly
-        mock_smtp_instance.sendmail.side_effect = smtplib.SMTPException(
-            "Connection failed"
-        )
-        mock_smtp.return_value.__enter__.return_value = mock_smtp_instance
-
-        with patch(
-            "core.mda.delivery.time.sleep"
-        ) as mock_sleep:  # Mock sleep to speed up test
-            success = delivery.send_message(draft_message, {}, force_mta_out=True)
-
-        assert any(success.values()) is False
-        assert mock_smtp_instance.sendmail.call_count == 5  # Default max retries
-        assert mock_sleep.call_count == 4  # Sleeps between retries
-
-        # Check message object state (should remain draft)
-        draft_message.refresh_from_db()
-        assert draft_message.is_draft
-        assert not draft_message.mta_sent
-        assert draft_message.sent_at is None

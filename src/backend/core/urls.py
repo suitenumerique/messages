@@ -12,6 +12,7 @@ from core.api.viewsets.mailbox import MailboxViewSet
 from core.api.viewsets.message import MessageViewSet
 from core.api.viewsets.mta import MTAViewSet
 from core.api.viewsets.send import SendMessageView
+from core.api.viewsets.task import TaskDetailView
 from core.api.viewsets.thread import ThreadViewSet
 from core.api.viewsets.user import UserViewSet
 from core.authentication.urls import urlpatterns as oidc_urls
@@ -49,5 +50,10 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/send/",
         SendMessageView.as_view(),
         name="send-message",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/tasks/<str:task_id>/",
+        TaskDetailView.as_view(),
+        name="task-detail",
     ),
 ]

@@ -276,10 +276,9 @@ class DraftMessageView(APIView):
             parent=reply_to_message,
             subject=subject,
             read_at=timezone.now(),
-            mta_sent=False,
             is_draft=True,
             is_sender=True,
-            draft_body=request.data.get("draftBody", ""),  # Get content from draftBody
+            draft_body=request.data.get("draftBody", ""),
         )
         message.save()  # Save message before adding recipients
 

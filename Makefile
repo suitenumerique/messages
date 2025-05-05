@@ -130,7 +130,7 @@ run-with-frontend: ## Start all the containers needed (backend to frontend)
 .PHONY: run-with-frontend
 
 run-all-fg: ## Start backend containers and frontend in foreground
-	@$(COMPOSE) up --force-recreate --build nginx frontend-dev app-dev
+	@$(COMPOSE) up --force-recreate --build nginx frontend-dev app-dev celery-dev
 .PHONY: run-all-fg
 
 status: ## an alias for "docker compose ps"
