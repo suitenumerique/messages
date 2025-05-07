@@ -6,6 +6,7 @@ import { useMailboxContext } from "@/features/mailbox/provider"
 import useRead from "@/features/message/useRead"
 import { useDebounceCallback } from "@/hooks/useDebounceCallback"
 import { Message } from "@/features/api/gen/models"
+import { Spinner } from "@gouvfr-lasuite/ui-kit"
 
 type MessageWithDraftChild = Message & {
     draft_message?: Message;
@@ -24,7 +25,7 @@ export const ThreadView = () => {
             }   
         })
     }, 300);
-    const { threads, selectedThread, selectThread, messages } = useMailboxContext();
+    const { threads, selectedThread, selectThread, messages, queryStates } = useMailboxContext();
     const rootRef = useRef<HTMLDivElement>(null);
     const { markAsRead } = useRead();
     const filteredMessages = useMemo(() => {
@@ -100,6 +101,12 @@ export const ThreadView = () => {
 
     if (!selectedThread) return null
 
+    if (queryStates.messages.isLoading) return (
+        <div className="thread-view thread-view--loading">
+            <Spinner />
+        </div>
+    )
+
     return (
         <div className="thread-view" ref={rootRef}>
             <ActionBar />
@@ -114,7 +121,7 @@ export const ThreadView = () => {
                             isLatest={isLatest}
                             ref={isUnread ? (el => { unreadRefs.current[message.id] = el; }) : undefined}
                             data-message-id={message.id}
-                            draftMessage={message?.draft_message}
+                            draftMessage={messages!.results.find((m) => m.parent_id === message.id)}
                         />
                     );
                 })}

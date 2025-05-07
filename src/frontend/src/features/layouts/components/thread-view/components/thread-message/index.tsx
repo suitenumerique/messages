@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, forwardRef } from "react";
+import { useMemo, useState, useCallback, forwardRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Message } from "@/features/api/gen/models";
 import MessageBody from "./message-body"
@@ -7,6 +7,7 @@ import { Button, Tooltip } from "@openfun/cunningham-react";
 import { DropdownMenu } from "@gouvfr-lasuite/ui-kit";
 import useRead from "@/features/message/useRead";
 import { useMailboxContext } from "@/features/mailbox/provider";
+import { Badge } from "@/features/ui/components/badge";
 type ThreadMessageProps = {
     message: Message,
     isLatest: boolean,
@@ -16,9 +17,13 @@ type ThreadMessageProps = {
 export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
     ({ message, isLatest, draftMessage, ...props }, ref) => {
         const { t, i18n } = useTranslation()
-        const [showReplyForm, setShowReplyForm] = useState<'all' | 'to' | null>(null)
+        const [showReplyForm, setShowReplyForm] = useState<'all' | 'to' | null>(() => {
+            if (!message.is_trashed && (message.is_draft || draftMessage?.is_draft)) return 'to';
+            return null;
+        })
         const { markAsUnread } = useRead()
-        const { unselectThread, selectedThread, messages } = useMailboxContext()
+        const { unselectThread, selectedThread, messages, queryStates } = useMailboxContext()
+        const isFetchingMessages = queryStates.messages.isFetching;
         const [isDropdownOpen, setIsDropdownOpen] = useState(false)
         const hasSiblingMessages = useMemo(() => {
             if (!selectedThread) return false;
@@ -27,6 +32,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         const hasSeveralRecipients = useMemo(() => {
             return message.to.length + message.cc.length > 1;
         }, [message])
+        const showReplyButton = isLatest && !showReplyForm && !message.is_draft && !message.is_trashed && !draftMessage
 
         const handleCloseReplyForm = () => {
             setShowReplyForm(null);
@@ -38,6 +44,10 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
             return markAsUnread({ messageIds, onSuccess: unselectThread });
         }, [messages, unselectThread, markAsUnread])
 
+        useEffect(() => {
+            setShowReplyForm(!message.is_trashed && (message.is_draft || draftMessage?.is_draft) ? 'to' : null);
+        }, [message, draftMessage])
+
         return (
             <section ref={ref} className="thread-message" data-unread={message.is_unread} {...props}>
                 <header className="thread-message__header">
@@ -46,13 +56,20 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                             <h2 className="thread-message__subject">{message.subject}</h2>
                         </div>
                         <div className=" thread-message__header-column thread-message__header-column--right flex-row flex-align-center">
-                            <p className="thread-message__date m-0">{new Date(message.sent_at!).toLocaleString(i18n.language, {
-                                minute: '2-digit',
-                                hour: '2-digit',
-                                day: '2-digit',
-                                month: '2-digit',
-                                year: 'numeric',
-                            })}</p>
+                            {message.is_draft && (
+                                <Badge>
+                                    {t('thread_message.draft')}
+                                </Badge>
+                            )}
+                            {message.sent_at && (
+                                <p className="thread-message__date m-0">{new Date(message.sent_at).toLocaleString(i18n.language, {
+                                    minute: '2-digit',
+                                    hour: '2-digit',
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                })}</p>
+                            )}
                             <div className="thread-message__header-actions">
                                 {hasSeveralRecipients && (
                                     <Tooltip content={t('actions.reply_all')}>
@@ -125,7 +142,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                 />
                 <footer className="thread-message__footer">
                     {
-                        isLatest && !showReplyForm && !message.is_draft && !message.is_trashed && !draftMessage && (
+                        showReplyButton && (
                             <div className="thread-message__footer-actions">
                                 {hasSeveralRecipients && (
                                     <Button
@@ -148,7 +165,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                             </div>
                         )
                     }
-                    {(!message.is_trashed && (showReplyForm || message.is_draft || draftMessage)) && <MessageReplyForm
+                    { !isFetchingMessages && showReplyForm && <MessageReplyForm
                         replyAll={showReplyForm === 'all'}
                         handleClose={handleCloseReplyForm}
                         message={draftMessage || message}

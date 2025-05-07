@@ -22,8 +22,6 @@ const MessageReplyForm = ({ handleClose, message, replyAll }: MessageReplyFormPr
             <MessageForm
                 draftMessage={message.is_draft ? message : undefined}
                 parentMessage={message.is_draft ? undefined : message}
-                showSubject={message.is_draft}
-                showMailboxes={message.is_draft}
                 replyAll={replyAll}
                 onSuccess={goToDefaultFolder}
                 onClose={message.is_draft ? undefined : handleClose}
