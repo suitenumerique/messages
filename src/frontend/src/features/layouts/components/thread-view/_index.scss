@@ -4,6 +4,13 @@
     max-height: 100%;
 }
 
+.thread-view--loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
 .thread-view__messages-list {
     display: flex;
     flex-direction: column;

@@ -3,12 +3,13 @@ import * as locales from '@blocknote/core/locales';
 import { BlockNoteView } from "@blocknote/mantine";
 import "@blocknote/mantine/style.css";
 import { useCreateBlockNote } from "@blocknote/react";
-import { useState } from 'react';
 import { useTranslation } from "react-i18next";
 import { BlockNoteEditorOptions, BlockSchema, InlineContentSchema, StyleSchema } from '@blocknote/core';
 import MailHelper from '@/features/utils/mail-helper';
 import MessageEditorToolbar from './toolbar';
 import { Field, FieldProps } from '@openfun/cunningham-react';
+import { useFormContext } from 'react-hook-form';
+import { useEffect } from 'react';
 
 type MessageEditorProps = FieldProps & {
     blockNoteOptions?: Partial<BlockNoteEditorOptions<BlockSchema, InlineContentSchema, StyleSchema>>
@@ -16,8 +17,8 @@ type MessageEditorProps = FieldProps & {
 }
 
 /**
- * A component aimed to be used within a form 
- * that allows the user to edit a message in a BlockNote editor.
+ * A component that allows the user to edit a message in a BlockNote editor.
+ * !!! This component must be used within a FormProvider (from react-hook-form)
  * 
  * Two hidden inputs (`htmlBody` and `textBody`) are rendered to store
  * the HTML and text content of the message. Their values are updated
@@ -25,9 +26,8 @@ type MessageEditorProps = FieldProps & {
  * to retrieve text and html content.
  */
 const MessageEditor = ({ blockNoteOptions, defaultValue, ...props }: MessageEditorProps) => {
+    const form = useFormContext();
     const { t, i18n } = useTranslation();
-    const [html, setHtml] = useState<string>(""); 
-    const [text, setText] = useState<string>(""); 
     const editor = useCreateBlockNote({
         tabBehavior: "prefer-navigate-ui",
         trailingBlock: false,
@@ -41,15 +41,23 @@ const MessageEditor = ({ blockNoteOptions, defaultValue, ...props }: MessageEdit
             }
         },
         ...blockNoteOptions,
-    }, [i18n.resolvedLanguage, defaultValue]);
+    }, [i18n.resolvedLanguage]);
 
-    const handleBlur = async () => {
+    const handleChange = async () => {
+        form.setValue("messageEditorDraft", JSON.stringify(editor.document), { shouldDirty: true });
         const markdown = await editor.blocksToMarkdownLossy(editor.document);
         const html = await MailHelper.markdownToHtml(markdown);
-        setHtml(html);
-        setText(markdown);
+        form.setValue("messageEditorText", markdown, { shouldDirty: true });
+        form.setValue("messageEditorHtml", html, { shouldDirty: true });
     }
-    
+
+    /**
+     * Process the html and text content of the message when the editor is mounted.
+     */
+    useEffect(() => {
+        handleChange();
+    }, [])
+
     return (
         <Field {...props}>
             <BlockNoteView
@@ -59,14 +67,13 @@ const MessageEditor = ({ blockNoteOptions, defaultValue, ...props }: MessageEdit
                 sideMenu={false}
                 slashMenu={false}
                 formattingToolbar={false}
-                onChange={handleBlur}
-                onBlur={handleBlur}
+                onChange={handleChange}
             >
                 <MessageEditorToolbar />
             </BlockNoteView>
-            <input type="hidden" name="messageEditorHtml" value={html} required />
-            <input type="hidden" name="messageEditorText" value={text} required />
-            <input type="hidden" name="messageEditorDraft" value={JSON.stringify(editor.document)} required />
+            <input {...form.register("messageEditorHtml")} type="hidden" />
+            <input {...form.register("messageEditorText")} type="hidden" />
+            <input {...form.register("messageEditorDraft")} type="hidden" />
         </Field>
     );
 };

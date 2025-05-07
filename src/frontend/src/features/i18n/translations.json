@@ -52,14 +52,18 @@
         "cc": "Copy: ",
         "bcc": "Blind copy: ",
         "subject": "Subject: ",
-        "body": "Message: "
+        "body": "Message: ",
+        "draft": "Draft"
       },
       "message_form": {
         "helper_text": {
           "recipients": "Enter the email addresses of the recipients separated by commas"
         },
         "error": {
-          "invalid_recipients": "At least one of the email addresses entered is invalid.",
+          "min_recipient": "At least one recipient is required.",
+          "subject_required": "Subject is required.",
+          "mailbox_required": "Mailbox is required.",
+          "invalid_recipient": "The email {{email}} is invalid.",
           "messageEditorHtml": "You must write a message."
         }
       },
@@ -122,14 +126,18 @@
         "cc": "Copie : ",
         "bcc": "Copie cachée : ",
         "subject": "Sujet : ",
-        "body": "Message : "
+        "body": "Message : ",
+        "draft": "Brouillon"
       },
       "message_form": {
         "helper_text": {
           "recipients": "Entrez les adresses courriel des destinataires séparées par des virgules"
         },
         "error": {
-          "invalid_recipients": "Au moins une des adresses courriel saisie est invalide.",
+          "min_recipient": "Au moins un destinataire est requis.",
+          "subject_required": "Vous devez saisir un sujet.",
+          "mailbox_required": "Vous devez choisir une boîte d'envoi.",
+          "invalid_recipient": "Le courriel {{email}} est invalide.",
           "messageEditorHtml": "Vous devez écrire un message."
         }
       },
