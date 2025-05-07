@@ -20,7 +20,7 @@ import type {
 
 import type { Mailbox } from ".././models";
 
-import { fetchAPI } from "../../fetchApi";
+import { fetchAPI } from "../../fetch-api";
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 

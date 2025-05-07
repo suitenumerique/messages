@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import i18n from "@/features/i18n/initI18n";
-import { AppError } from "../errors/AppError";
+import { AppError } from "../errors/app-error";
 
 export class APIError extends Error {
   data?: any;

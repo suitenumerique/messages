@@ -16,8 +16,8 @@ import "../features/i18n/initI18n";
 import {
   addToast,
   ToasterItem,
-} from "@/features/ui/components/toaster/Toaster";
-import { errorToString } from "@/features/api/APIError";
+} from "@/features/ui/components/toaster";
+import { errorToString } from "@/features/api/api-error";
 import Head from "next/head";
 import { useTranslation } from "react-i18next";
 

@@ -4,7 +4,7 @@ import { DropdownMenu, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import Bar from "@/features/ui/components/bar";
 import { Button, Tooltip } from "@openfun/cunningham-react";
-import useRead from "@/features/message/useRead";
+import useRead from "@/features/message/use-read";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 

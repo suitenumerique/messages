@@ -1,5 +1,5 @@
 import { User as UserType } from "@/features/api/gen/models/user";
-import { UserAvatar } from "./UserAvatar";
+import { UserAvatar } from "./user-avatar";
 
 interface UserProps {
   user: UserType;
