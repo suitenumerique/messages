@@ -6,14 +6,14 @@
 @use "./globals.scss";
 
 // Application Components 
-@use "./../features/layouts/components/global/GlobalLayout.scss";
+@use "./../features/layouts/components/global/global-layout.scss";
 @use "./../features/layouts/components/main";
 @use "./../features/layouts/components/header";
-@use "./../features/users/components/User.scss";
+@use "./../features/ui/components/users";
 @use "./../features/ui/components/breadcrumbs";
 @use "./../features/ui/components/toaster";
 @use "./../features/ui/components/badge";
-@use "./../features/ui/components/info/InfoRow.scss";
+@use "./../features/ui/components/info-row";
 @use "./../features/ui/components/bar";
 @use "./../features/layouts/components/mailbox-panel";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-actions";

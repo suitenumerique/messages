@@ -2,7 +2,7 @@ import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useSt
 import { Mailbox, PaginatedMessageList, PaginatedThreadList, Thread, useMailboxesList, useMessagesList, useThreadsListInfinite } from "../api/gen";
 import { FetchStatus, QueryStatus, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
-import usePrevious from "@/hooks/usePrevious";
+import usePrevious from "@/hooks/use-previous";
 import { useSearchParams } from "next/navigation";
 import { DEFAULT_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
 

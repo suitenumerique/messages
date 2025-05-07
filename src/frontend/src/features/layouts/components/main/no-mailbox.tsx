@@ -1,5 +1,5 @@
 import { Button } from "@openfun/cunningham-react"
-import { logout } from "@/features/auth/Auth";
+import { logout } from "@/features/auth";
 import { useTranslation } from "react-i18next";
 
 export const NoMailbox = () => {

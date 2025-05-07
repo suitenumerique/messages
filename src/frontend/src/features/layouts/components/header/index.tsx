@@ -1,6 +1,6 @@
 import { DropdownMenu, Header as KitHeader } from "@gouvfr-lasuite/ui-kit";
 import { Button } from "@openfun/cunningham-react";
-import { useAuth, logout } from "@/features/auth/Auth";
+import { useAuth, logout } from "@/features/auth";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 

@@ -1,4 +1,4 @@
-import { useAuth } from "@/features/auth/Auth";
+import { useAuth } from "@/features/auth";
 import { useRouter } from "next/router";
 import { useEffect } from "react";
 

@@ -1,4 +1,4 @@
-import { CheckIcon } from "../icon/Icon";
+import { CheckIcon } from "../icon";
 
 interface CircularProgressProps {
   progress: number;

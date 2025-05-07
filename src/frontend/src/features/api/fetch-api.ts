@@ -1,7 +1,7 @@
 // Inspired by https://github.com/orval-labs/orval/blob/master/samples/next-app-with-fetch/custom-fetch.ts
 
-import { logout } from "../auth/Auth";
-import { APIError } from "./APIError";
+import { logout } from "../auth";
+import { APIError } from "./api-error";
 import { getHeaders, getRequestUrl, isJson } from "./utils";
 
 export interface fetchAPIOptions {

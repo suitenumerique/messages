@@ -1,4 +1,4 @@
-import MailHelper from '../mail-helper';
+import MailHelper from './mail-helper';
 
 describe('MailHelper', () => {
   describe('markdownToHtml', () => {

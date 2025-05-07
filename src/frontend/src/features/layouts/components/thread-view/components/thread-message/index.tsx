@@ -5,7 +5,7 @@ import MessageBody from "./message-body"
 import MessageReplyForm from "../message-reply-form";
 import { Button, Tooltip } from "@openfun/cunningham-react";
 import { DropdownMenu } from "@gouvfr-lasuite/ui-kit";
-import useRead from "@/features/message/useRead";
+import useRead from "@/features/message/use-read";
 import { useMailboxContext } from "@/features/mailbox/provider";
 import { Badge } from "@/features/ui/components/badge";
 type ThreadMessageProps = {

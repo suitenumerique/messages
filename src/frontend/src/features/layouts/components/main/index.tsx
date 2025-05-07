@@ -2,7 +2,7 @@ import { MainLayout as KitMainLayout } from "@gouvfr-lasuite/ui-kit";
 import { Header, HeaderRight } from "../header";
 import { MailboxPanel } from "@/features/layouts/components/mailbox-panel";
 import { PropsWithChildren } from "react";
-import { GlobalLayout } from "../global/GlobalLayout";
+import { GlobalLayout } from "../global/global-layout";
 import AuthenticatedView from "./authenticated-view";
 import { MailboxProvider, useMailboxContext } from "@/features/mailbox/provider";
 import { NoMailbox } from "./no-mailbox";

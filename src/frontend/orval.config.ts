@@ -15,7 +15,7 @@ export default defineConfig({
             prettier: true,
             override: {
                 mutator: {
-                    path: '../fetchApi.ts',
+                    path: '../fetch-api.ts',
                     name: 'fetchAPI',
                 },
                 operations: {

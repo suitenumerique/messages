@@ -1,4 +1,4 @@
-import { Auth } from "@/features/auth/Auth";
+import { Auth } from "@/features/auth";
 
 /**
  * This layout is used for the global contexts (auth, etc).

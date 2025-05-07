@@ -1,6 +1,6 @@
 import { useMailboxContext } from "@/features/mailbox/provider";
-import useRead from "@/features/message/useRead";
-import useTrash from "@/features/message/useTrash";
+import useRead from "@/features/message/use-read";
+import useTrash from "@/features/message/use-trash";
 import Bar from "@/features/ui/components/bar";
 import { DropdownMenu } from "@gouvfr-lasuite/ui-kit"
 import { Button, Tooltip } from "@openfun/cunningham-react"
