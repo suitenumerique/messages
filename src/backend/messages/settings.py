@@ -62,6 +62,19 @@ class Base(Configuration):
 
     API_VERSION = "v1.0"
 
+    # Elasticsearch configuration
+    ELASTICSEARCH_HOSTS = values.ListValue(
+        ["http://elasticsearch:9200"],
+        environ_name="ELASTICSEARCH_URL",
+        environ_prefix=None,
+    )
+    ELASTICSEARCH_TIMEOUT = values.PositiveIntegerValue(
+        20, environ_name="ELASTICSEARCH_TIMEOUT", environ_prefix=None
+    )
+    ELASTICSEARCH_INDEX_THREADS = values.BooleanValue(
+        True, environ_name="ELASTICSEARCH_INDEX_THREADS", environ_prefix=None
+    )
+
     # Security
     ALLOWED_HOSTS = values.ListValue([])
     SECRET_KEY = values.Value(None)

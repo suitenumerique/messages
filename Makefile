@@ -43,6 +43,7 @@ COMPOSE_EXEC        = $(COMPOSE) exec
 COMPOSE_EXEC_APP    = $(COMPOSE_EXEC) app-dev
 COMPOSE_RUN         = $(COMPOSE) run --rm
 COMPOSE_RUN_APP     = $(COMPOSE_RUN) app-dev
+COMPOSE_RUN_APP_TOOLS = $(COMPOSE_RUN) --no-deps app-dev
 COMPOSE_RUN_CROWDIN = $(COMPOSE_RUN) crowdin crowdin
 COMPOSE_RUN_MTA_IN_TESTS  = cd src/mta-in && $(COMPOSE_RUN) --build test
 COMPOSE_RUN_MTA_OUT_TESTS = cd src/mta-out && $(COMPOSE_RUN) --build test
@@ -159,12 +160,12 @@ lint: \
 
 lint-ruff-format: ## format back-end python sources with ruff
 	@echo 'lint:ruff-format started…'
-	@$(COMPOSE_RUN_APP) ruff format .
+	@$(COMPOSE_RUN_APP_TOOLS) ruff format .
 .PHONY: lint-ruff-format
 
 lint-ruff-check: ## lint back-end python sources with ruff
 	@echo 'lint:ruff-check started…'
-	@$(COMPOSE_RUN_APP) ruff check . --fix
+	@$(COMPOSE_RUN_APP_TOOLS) ruff check . --fix
 .PHONY: lint-ruff-check
 
 lint-pylint: ## lint back-end python sources with pylint only on changed files from main

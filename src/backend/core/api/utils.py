@@ -35,29 +35,6 @@ def flat_to_nested(items):
     return roots[0] if roots else {}
 
 
-def filter_root_paths(paths, skip_sorting=False):
-    """
-    Filters root paths from a list of paths representing a tree structure.
-    A root path is defined as a path that is not a prefix of any other path.
-
-    Args:
-        paths (list of PathValue): The list of paths.
-
-    Returns:
-        list of str: The filtered list of root paths.
-    """
-    if not skip_sorting:
-        paths.sort()
-
-    root_paths = []
-    for path in paths:
-        # If the current path is not a prefix of the last added root path, add it
-        if not root_paths or not str(path).startswith(str(root_paths[-1])):
-            root_paths.append(path)
-
-    return root_paths
-
-
 def generate_s3_authorization_headers(key):
     """
     Generate authorization headers for an s3 object.

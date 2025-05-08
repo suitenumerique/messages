@@ -16,6 +16,32 @@ services:
   redis:
     image: redis:5
 
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.10.2
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+      - http.cors.enabled=true
+      - "http.cors.allow-origin=/.*/"
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  elasticvue:
+    image: cars10/elasticvue:latest
+    ports:
+      - "8093:8080"
+    environment:
+      - "ELASTICVUE_CLUSTERS=[{\"name\": \"dev cluster\", \"uri\": \"http://localhost:9200\"}]"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
   mailcatcher:
     image: maildev/maildev:2.2.1
     ports:
@@ -81,6 +107,8 @@ services:
         condition: service_started
       mta-out:
         condition: service_started
+      elasticsearch:
+        condition: service_healthy
 
       # createbuckets:
       #  condition: service_started
@@ -93,7 +121,7 @@ services:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
     image: st-messages:backend-development
-    command: ["celery", "-A", "people.celery_app", "worker", "-l", "DEBUG"]
+    command: ["celery", "-A", "messages.celery_app", "worker", "-l", "DEBUG"]
     environment:
       - DJANGO_CONFIGURATION=Development
     env_file:

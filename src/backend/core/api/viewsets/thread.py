@@ -1,5 +1,6 @@
 """API ViewSet for Thread model."""
 
+from django.conf import settings
 from django.db.models import Sum
 
 import rest_framework as drf
@@ -8,6 +9,7 @@ from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schem
 from rest_framework import mixins, viewsets
 
 from core import models
+from core.search import search_threads
 
 from .. import permissions, serializers
 
@@ -68,6 +70,12 @@ class ThreadViewSet(
                 type=OpenApiTypes.UUID,
                 location=OpenApiParameter.QUERY,
                 description="Filter threads by mailbox ID.",
+            ),
+            OpenApiParameter(
+                name="search",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Search threads by content (subject, sender, recipients, message body).",
             ),
             OpenApiParameter(
                 name="has_unread",
@@ -179,6 +187,113 @@ class ThreadViewSet(
                 aggregated_data[key] = 0
 
         return drf.response.Response(aggregated_data)
+
+    @extend_schema(
+        tags=["threads"],
+        parameters=[
+            OpenApiParameter(
+                name="mailbox_id",
+                type=OpenApiTypes.UUID,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads by mailbox ID.",
+            ),
+            OpenApiParameter(
+                name="search",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Search threads by content (subject, sender, recipients, message body).",
+            ),
+            OpenApiParameter(
+                name="has_unread",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads with unread messages (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_trashed",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads that are trashed (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_draft",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads with draft messages (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_starred",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads with starred messages (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_sender",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads with messages sent by the user (1=true, 0=false).",
+            ),
+        ],
+    )
+    def list(self, request, *args, **kwargs):
+        """List threads with optional search functionality."""
+        search_query = request.query_params.get("search", "").strip()
+
+        # If search is provided and Elasticsearch is available, use it
+        if search_query and hasattr(settings, "ELASTICSEARCH_HOSTS"):
+            # Get the mailbox_id for filtering
+            mailbox_id = request.query_params.get("mailbox_id")
+
+            # Build filters from query parameters
+            es_filters = {}
+            for param, value in request.query_params.items():
+                if param.startswith("has_") and value in ["0", "1"]:
+                    field_name = param[4:]  # Remove 'has_' prefix
+                    if value == "1":
+                        es_filters[f"is_{field_name}"] = True
+                    else:
+                        es_filters[f"is_{field_name}"] = False
+
+            # Get page parameters
+            page = self.paginator.get_page_number(request, self)
+            page_size = self.paginator.get_page_size(request)
+
+            # Get search results from Elasticsearch
+            results = search_threads(
+                query=search_query,
+                mailbox_id=mailbox_id,
+                filters=es_filters,
+                from_offset=(page - 1) * page_size,
+                size=page_size,
+            )
+
+            # If we have results, use them
+            if results.get("threads"):
+                # Get the thread IDs from the search results
+                thread_ids = [thread["id"] for thread in results["threads"]]
+
+                # Retrieve the actual thread objects from the database
+                threads = models.Thread.objects.filter(id__in=thread_ids)
+
+                # Order the threads in the same order as the search results
+                thread_dict = {str(thread.id): thread for thread in threads}
+                ordered_threads = [
+                    thread_dict[thread_id]
+                    for thread_id in thread_ids
+                    if thread_id in thread_dict
+                ]
+
+                # Use the paginator to create a paginated response
+                page = self.paginate_queryset(ordered_threads)
+                if page is not None:
+                    serializer = self.get_serializer(page, many=True)
+                    return self.get_paginated_response(serializer.data)
+
+                serializer = self.get_serializer(ordered_threads, many=True)
+                return drf.response.Response(serializer.data)
+
+        # Fall back to regular DB query if no search query or Elasticsearch not available
+        return super().list(request, *args, **kwargs)
 
     # @extend_schema(
     #     tags=["threads"],
