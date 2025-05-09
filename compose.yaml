@@ -17,6 +17,7 @@ services:
     image: redis:5
 
   elasticsearch:
+    # Same version as Scalingo
     image: docker.elastic.co/elasticsearch/elasticsearch:7.10.2
     environment:
       - discovery.type=single-node
@@ -28,9 +29,9 @@ services:
       - "9200:9200"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9200"]
-      interval: 10s
+      interval: 1s
       timeout: 5s
-      retries: 10
+      retries: 60
 
   elasticvue:
     image: cars10/elasticvue:latest
@@ -79,10 +80,10 @@ services:
   #     /usr/bin/mc version enable st-messages/st-messages-media-storage && \
   #     exit 0;"
 
-  app-dev:
+  backend-dev:
     build:
-      context: .
-      target: backend-development
+      context: src/backend
+      target: runtime-dev
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
@@ -113,6 +114,17 @@ services:
       # createbuckets:
       #  condition: service_started
 
+  backend-poetry:
+    profiles:
+      - tools
+    volumes:
+      - ./src/backend:/app
+    build:
+      context: src/backend/
+      target: poetry
+    pull_policy: build
+
+
   celery-dev:
     build:
       context: .
@@ -132,7 +144,7 @@ services:
       - ./src/backend:/app
       - ./data/static:/data/static
     depends_on:
-      - app-dev
+      - backend-dev
 
   # app:
   #   build:
@@ -165,7 +177,7 @@ services:
       - ./docker/files/development/etc/nginx/conf.d:/etc/nginx/conf.d:ro
     depends_on:
       - keycloak
-      - app-dev
+      - backend-dev
       - mta-in
       - mta-out
 
@@ -235,7 +247,7 @@ services:
     ports:
       - "8025:25"
     depends_on:
-      - app-dev
+      - backend-dev
 
   mta-out:
     image: mta-out:latest

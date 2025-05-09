@@ -40,19 +40,14 @@ MESSAGE_MAPPING = {
                 "fields": {"keyword": {"type": "keyword", "ignore_above": 256}},
             },
             # Contacts
-            "sender": {
-                "properties": {
-                    "name": {"type": "text", "analyzer": "email_analyzer"},
-                    "email": {"type": "text", "analyzer": "email_analyzer"},
-                }
-            },
-            "recipients": {
-                "properties": {
-                    "type": {"type": "keyword"},
-                    "name": {"type": "text", "analyzer": "email_analyzer"},
-                    "email": {"type": "text", "analyzer": "email_analyzer"},
-                }
-            },
+            "sender_name": {"type": "text", "analyzer": "email_analyzer"},
+            "sender_email": {"type": "keyword"},
+            "to_name": {"type": "text", "analyzer": "email_analyzer"},
+            "to_email": {"type": "keyword"},
+            "cc_name": {"type": "text", "analyzer": "email_analyzer"},
+            "cc_email": {"type": "keyword"},
+            "bcc_name": {"type": "text", "analyzer": "email_analyzer"},
+            "bcc_email": {"type": "keyword"},
             # Content fields
             "text_body": {"type": "text", "analyzer": "email_analyzer"},
             "html_body": {"type": "text", "analyzer": "email_analyzer"},
@@ -61,6 +56,7 @@ MESSAGE_MAPPING = {
             "is_trashed": {"type": "boolean"},
             "is_starred": {"type": "boolean"},
             "is_unread": {"type": "boolean"},
+            "is_sender": {"type": "boolean"},
         }
     },
 }

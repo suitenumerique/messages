@@ -124,6 +124,7 @@ class ContactFactory(factory.django.DjangoModelFactory):
 
     class Meta:
         model = models.Contact
+        django_get_or_create = ("email", "mailbox")
 
     name = factory.Faker("name")
     email = factory.Faker("email")

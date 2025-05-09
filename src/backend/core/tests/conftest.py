@@ -16,3 +16,16 @@ def mock_user_teams():
         "core.models.User.teams", new_callable=mock.PropertyMock
     ) as mock_teams:
         yield mock_teams
+
+
+# @pytest.fixture
+# @pytest.mark.django_db
+# def create_testdomain():
+#     """Create the TESTDOMAIN."""
+#     from core import models
+#     models.MailDomain.objects.get_or_create(
+#         name=settings.MESSAGES_TESTDOMAIN,
+#         defaults={
+#             "oidc_autojoin": True
+#         }
+#     )

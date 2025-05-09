@@ -7,7 +7,7 @@ from django.conf import settings
 from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError
 
-from core import models
+from core import enums, models
 from core.mda.rfc5322 import parse_email_message
 from core.search.mapping import MESSAGE_INDEX, MESSAGE_MAPPING
 
@@ -29,7 +29,7 @@ def create_index_if_not_exists():
     # Check if the index exists
     if not es.indices.exists(index=MESSAGE_INDEX):
         # Create the index with our mapping
-        es.indices.create(index=MESSAGE_INDEX, body=MESSAGE_MAPPING)
+        es.indices.create(index=MESSAGE_INDEX, **MESSAGE_MAPPING)
         logger.info("Created Elasticsearch index: %s", MESSAGE_INDEX)
     return True
 
@@ -74,15 +74,7 @@ def index_message(message: models.Message) -> bool:
         )
 
     # Get recipient details
-    recipients = []
-    for recipient in message.recipients.select_related("contact").all():
-        recipients.append(
-            {
-                "type": recipient.type,
-                "name": recipient.contact.name,
-                "email": recipient.contact.email,
-            }
-        )
+    recipients = message.recipients.select_related("contact").all()
 
     # Build document
     doc = {
@@ -94,14 +86,45 @@ def index_message(message: models.Message) -> bool:
         "created_at": message.created_at.isoformat() if message.created_at else None,
         "sent_at": message.sent_at.isoformat() if message.sent_at else None,
         "subject": message.subject,
-        "sender": {"name": message.sender.name, "email": message.sender.email},
-        "recipients": recipients,
+        "sender_name": message.sender.email + " " + message.sender.name,
+        "sender_email": message.sender.email,
+        "to_name": [
+            r.contact.email + " " + r.contact.name
+            for r in recipients
+            if r.type == enums.MessageRecipientTypeChoices.TO
+        ],
+        "to_email": [
+            r.contact.email
+            for r in recipients
+            if r.type == enums.MessageRecipientTypeChoices.TO
+        ],
+        "cc_name": [
+            r.contact.email + " " + r.contact.name
+            for r in recipients
+            if r.type == enums.MessageRecipientTypeChoices.CC
+        ],
+        "cc_email": [
+            r.contact.email
+            for r in recipients
+            if r.type == enums.MessageRecipientTypeChoices.CC
+        ],
+        "bcc_name": [
+            r.contact.email + " " + r.contact.name
+            for r in recipients
+            if r.type == enums.MessageRecipientTypeChoices.BCC
+        ],
+        "bcc_email": [
+            r.contact.email
+            for r in recipients
+            if r.type == enums.MessageRecipientTypeChoices.BCC
+        ],
         "text_body": text_body,
         "html_body": html_body,
         "is_draft": message.is_draft,
         "is_trashed": message.is_trashed,
         "is_starred": message.is_starred,
         "is_unread": message.is_unread,
+        "is_sender": message.is_sender,
     }
 
     try:
@@ -109,7 +132,7 @@ def index_message(message: models.Message) -> bool:
             index=MESSAGE_INDEX,
             id=str(message.id),
             routing=str(message.thread_id),  # Ensure parent-child routing
-            body=doc,
+            document=doc,
         )
         logger.debug("Indexed message %s", message.id)
         return True
@@ -132,7 +155,7 @@ def index_thread(thread: models.Thread) -> bool:
 
     try:
         # Index thread as parent document
-        es.index(index=MESSAGE_INDEX, id=str(thread.id), body=thread_doc)
+        es.index(index=MESSAGE_INDEX, id=str(thread.id), document=thread_doc)
 
         # Index all messages in the thread
         messages = thread.messages.all()

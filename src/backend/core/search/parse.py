@@ -54,17 +54,17 @@ def parse_search_query(query: str) -> Dict[str, Any]:
     # Split modifiers into value-taking and flag modifiers
     value_modifiers = ["from", "to", "cc", "bcc", "subject"]
     flag_modifiers = {
-        "in_trash": "in_folder",
-        "in_sent": "in_folder",
-        "in_draft": "in_folder",
+        "in_trash": "in_trash",
+        "in_sent": "in_sent",
+        "in_draft": "in_draft",
         "is_starred": "is_starred",
         "is_read_true": "is_read",
         "is_read_false": "is_read",
     }
     flag_values = {
-        "in_trash": "trash",
-        "in_sent": "sent",
-        "in_draft": "draft",
+        "in_trash": True,
+        "in_sent": True,
+        "in_draft": True,
         "is_starred": True,
         "is_read_true": True,
         "is_read_false": False,

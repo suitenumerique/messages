@@ -186,7 +186,17 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
 class MailDomain(BaseModel):
     """Mail domain model to store mail domain information."""
 
-    name = models.CharField(_("name"), max_length=255)
+    name = models.CharField(_("name"), max_length=255, unique=True)
+
+    alias_of = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True
+    )
+
+    oidc_autojoin = models.BooleanField(
+        _("oidc autojoin"),
+        default=False,
+        help_text=_("Create mailboxes automatically based on OIDC emails."),
+    )
 
     class Meta:
         db_table = "messages_maildomain"
@@ -196,12 +206,38 @@ class MailDomain(BaseModel):
     def __str__(self):
         return self.name
 
+    def get_expected_dns_records(self) -> List[str]:
+        """Get the list of DNS records we expect to be present for this domain."""
+        records = [
+            {"target": "", "type": "mx", "value": "TODO"},
+            {
+                "target": "",
+                "type": "txt",
+                "value": "v=spf1 include:_spf.TODO -all",
+            },
+            {
+                "target": "_dmarc",
+                "type": "txt",
+                "value": "v=DMARC1; p=reject; adkim=s; aspf=s;",
+            },
+            {
+                "target": "s1._domainkey",
+                "type": "cname",
+                "value": "TODO",
+            },
+        ]
+        return records
+
 
 class Mailbox(BaseModel):
     """Mailbox model to store mailbox information."""
 
     local_part = models.CharField(_("local part"), max_length=255)
     domain = models.ForeignKey("MailDomain", on_delete=models.CASCADE)
+
+    alias_of = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True
+    )
 
     class Meta:
         db_table = "messages_mailbox"

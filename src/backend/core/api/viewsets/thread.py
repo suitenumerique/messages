@@ -267,8 +267,8 @@ class ThreadViewSet(
                 size=page_size,
             )
 
-            # If we have results, use them
-            if results.get("threads"):
+            ordered_threads = []
+            if len(results["threads"]) > 0:
                 # Get the thread IDs from the search results
                 thread_ids = [thread["id"] for thread in results["threads"]]
 
@@ -283,14 +283,14 @@ class ThreadViewSet(
                     if thread_id in thread_dict
                 ]
 
-                # Use the paginator to create a paginated response
-                page = self.paginate_queryset(ordered_threads)
-                if page is not None:
-                    serializer = self.get_serializer(page, many=True)
-                    return self.get_paginated_response(serializer.data)
+            # Use the paginator to create a paginated response
+            page = self.paginate_queryset(ordered_threads)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
 
-                serializer = self.get_serializer(ordered_threads, many=True)
-                return drf.response.Response(serializer.data)
+            serializer = self.get_serializer(ordered_threads, many=True)
+            return drf.response.Response(serializer.data)
 
         # Fall back to regular DB query if no search query or Elasticsearch not available
         return super().list(request, *args, **kwargs)

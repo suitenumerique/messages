@@ -46,7 +46,7 @@ def search_threads(
         # Build the search query
         search_body = {
             "query": {"bool": {"must": [], "should": [], "filter": []}},
-            "from": from_offset,
+            "from_": from_offset,
             "size": size,
             "sort": [{"created_at": {"order": "desc"}}],
         }
@@ -59,10 +59,10 @@ def search_threads(
                         "query": parsed_query["text"],
                         "fields": [
                             "subject^3",  # Boost subject relevance
-                            "sender.name^2",
-                            "sender.email^2",
-                            "recipients.name",
-                            "recipients.email",
+                            "sender_name^2",
+                            "to_name",
+                            "cc_name",
+                            "bcc_name",
                             "text_body",
                             "html_body",
                         ],
@@ -82,10 +82,10 @@ def search_threads(
                             "query": phrase,
                             "fields": [
                                 "subject",
-                                "sender.name",
-                                "sender.email",
-                                "recipients.name",
-                                "recipients.email",
+                                "sender_name",
+                                "to_name",
+                                "cc_name",
+                                "bcc_name",
                                 "text_body",
                                 "html_body",
                             ],
@@ -100,51 +100,44 @@ def search_threads(
                 if "@" in sender and not sender.startswith("@"):
                     # Exact email match
                     search_body["query"]["bool"]["filter"].append(
-                        {"term": {"sender.email": sender.lower()}}
+                        {"term": {"sender_email": sender.lower()}}
                     )
                 else:
                     # Substring match
                     search_body["query"]["bool"]["should"].append(
-                        {"wildcard": {"sender.email": f"*{sender.lower()}*"}}
+                        {"wildcard": {"sender_email": f"*{sender.lower()}*"}}
                     )
                     search_body["query"]["bool"]["should"].append(
-                        {"wildcard": {"sender.name": f"*{sender}*"}}
+                        {"wildcard": {"sender_name": f"*{sender}*"}}
                     )
 
                 # At least one of the should clauses must match
                 if len(search_body["query"]["bool"]["should"]) > 0:
                     search_body["query"]["bool"]["minimum_should_match"] = 1
 
-        # Add recipient filters (to, cc, bcc)
-        for recipient_type in ["to", "cc", "bcc"]:
+        # Add recipient filters (to, cc, bcc) using new mapping fields
+        recipient_fields = {
+            "to": ("to_email", "to_name"),
+            "cc": ("cc_email", "cc_name"),
+            "bcc": ("bcc_email", "bcc_name"),
+        }
+        for recipient_type, (email_field, name_field) in recipient_fields.items():
             if recipient_type in parsed_query:
                 for recipient in parsed_query[recipient_type]:
-                    recipient_query = {
-                        "bool": {
-                            "must": [{"term": {"recipients.type": recipient_type}}]
-                        }
-                    }
-
                     if "@" in recipient and not recipient.startswith("@"):
                         # Exact email match
-                        recipient_query["bool"]["must"].append(
-                            {"term": {"recipients.email": recipient.lower()}}
+                        search_body["query"]["bool"]["filter"].append(
+                            {"term": {email_field: recipient.lower()}}
                         )
                     else:
-                        # Substring match
-                        recipient_query["bool"]["should"] = [
-                            {
-                                "wildcard": {
-                                    "recipients.email": f"*{recipient.lower()}*"
-                                }
-                            },
-                            {"wildcard": {"recipients.name": f"*{recipient}*"}},
-                        ]
-                        recipient_query["bool"]["minimum_should_match"] = 1
-
-                    search_body["query"]["bool"]["filter"].append(
-                        {"nested": {"path": "recipients", "query": recipient_query}}
-                    )
+                        # Substring match on email and name
+                        search_body["query"]["bool"]["should"].extend(
+                            [
+                                {"wildcard": {email_field: f"*{recipient.lower()}*"}},
+                                {"wildcard": {name_field: f"*{recipient}*"}},
+                            ]
+                        )
+                        search_body["query"]["bool"]["minimum_should_match"] = 1
 
         # Add subject filter
         if "subject" in parsed_query:
@@ -154,24 +147,14 @@ def search_threads(
                 )
 
         # Add in: filters (trash, sent, draft)
-        if "in_folder" in parsed_query:
-            if parsed_query["in_folder"] == "trash":
-                search_body["query"]["bool"]["filter"].append(
-                    {"term": {"is_trashed": True}}
-                )
-
-            elif parsed_query["in_folder"] == "sent":
-                # For sent items, we need to check messages where the user is the sender
-                # This would require additional logic based on the current user
-                # For now, we'll implement a basic filter
-                search_body["query"]["bool"]["filter"].append(
-                    {"term": {"is_sent": True}}
-                )
-
-            elif parsed_query["in_folder"] == "draft":
-                search_body["query"]["bool"]["filter"].append(
-                    {"term": {"is_draft": True}}
-                )
+        if parsed_query.get("in_sent"):
+            search_body["query"]["bool"]["filter"].append({"term": {"is_sender": True}})
+        if parsed_query.get("in_draft"):
+            search_body["query"]["bool"]["filter"].append({"term": {"is_draft": True}})
+        if parsed_query.get("in_trash"):
+            search_body["query"]["bool"]["filter"].append(
+                {"term": {"is_trashed": True}}
+            )
 
         # Add is: filters (starred, read, unread)
         if parsed_query.get("is_starred", False):
@@ -203,7 +186,7 @@ def search_threads(
                 search_body["query"]["bool"]["filter"].append({"term": {field: value}})
 
         # Execute search
-        results = es.search(index=MESSAGE_INDEX, body=search_body)
+        results = es.search(index=MESSAGE_INDEX, **search_body)
 
         # Process results - extract thread IDs
         thread_items = []
@@ -232,31 +215,6 @@ def search_threads(
                                 "subject": hit["_source"].get("subject", ""),
                             }
                         )
-
-        # For testing purposes - extract data from mock if needed
-        if (
-            hasattr(es, "search")
-            and hasattr(es.search, "return_value")
-            and len(thread_items) == 0
-        ):
-            # We're in a test with a mock, try to extract from the mock's return_value
-            mock_result = es.search.return_value
-            if mock_result and "hits" in mock_result and "hits" in mock_result["hits"]:
-                for hit in mock_result["hits"]["hits"]:
-                    if "_source" in hit and "thread_id" in hit["_source"]:
-                        thread_items.append(
-                            {
-                                "id": hit["_source"]["thread_id"],
-                                "score": hit.get("_score", 0),
-                                "subject": hit["_source"].get("subject", ""),
-                            }
-                        )
-
-                if (
-                    "total" in mock_result["hits"]
-                    and "value" in mock_result["hits"]["total"]
-                ):
-                    total = mock_result["hits"]["total"]["value"]
 
         return {
             "threads": thread_items,

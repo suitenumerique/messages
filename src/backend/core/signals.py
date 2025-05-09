@@ -21,9 +21,26 @@ def index_message_post_save(sender, instance, created, **kwargs):
     try:
         # Schedule the indexing task asynchronously
         index_message_task.delay(str(instance.id))
+        # reindex_thread_task.delay(str(instance.thread.id))
     except Exception as e:
         logger.exception(
             f"Error scheduling message indexing for message {instance.id}: {e}"
+        )
+
+
+@receiver(post_save, sender=models.MessageRecipient)
+def index_message_recipient_post_save(sender, instance, created, **kwargs):
+    """Index a message recipient after it's saved."""
+    if not getattr(settings, "ELASTICSEARCH_INDEX_THREADS", False):
+        return
+
+    try:
+        # Schedule the indexing task asynchronously
+        # TODO: deduplicate the indexing of the message!
+        index_message_task.delay(str(instance.message.id))
+    except Exception as e:
+        logger.exception(
+            f"Error scheduling message indexing for message {instance.message.id}: {e}"
         )
 
 

@@ -123,7 +123,7 @@ def test_in_trash_modifier_english():
     query = "in:trash some text"
     result = parse_search_query(query)
 
-    assert result == {"text": "some text", "in_folder": "trash"}
+    assert result == {"text": "some text", "in_trash": True}
 
 
 def test_in_trash_modifier_french():
@@ -131,7 +131,7 @@ def test_in_trash_modifier_french():
     query = "dans:corbeille some text"
     result = parse_search_query(query)
 
-    assert result == {"text": "some text", "in_folder": "trash"}
+    assert result == {"text": "some text", "in_trash": True}
 
 
 def test_in_sent_modifier_english():
@@ -139,7 +139,7 @@ def test_in_sent_modifier_english():
     query = "in:sent some text"
     result = parse_search_query(query)
 
-    assert result == {"text": "some text", "in_folder": "sent"}
+    assert result == {"text": "some text", "in_sent": True}
 
 
 def test_in_sent_modifier_french_with_accent():
@@ -147,7 +147,7 @@ def test_in_sent_modifier_french_with_accent():
     query = "dans:envoyés some text"
     result = parse_search_query(query)
 
-    assert result == {"text": "some text", "in_folder": "sent"}
+    assert result == {"text": "some text", "in_sent": True}
 
 
 def test_in_sent_modifier_french_without_accent():
@@ -155,7 +155,7 @@ def test_in_sent_modifier_french_without_accent():
     query = "dans:envoyes some text"
     result = parse_search_query(query)
 
-    assert result == {"text": "some text", "in_folder": "sent"}
+    assert result == {"text": "some text", "in_sent": True}
 
 
 def test_in_draft_modifier_english():
@@ -163,7 +163,7 @@ def test_in_draft_modifier_english():
     query = "in:draft some text"
     result = parse_search_query(query)
 
-    assert result == {"text": "some text", "in_folder": "draft"}
+    assert result == {"text": "some text", "in_draft": True}
 
 
 def test_in_draft_modifier_french():
@@ -171,7 +171,7 @@ def test_in_draft_modifier_french():
     query = "dans:brouillons some text"
     result = parse_search_query(query)
 
-    assert result == {"text": "some text", "in_folder": "draft"}
+    assert result == {"text": "some text", "in_draft": True}
 
 
 def test_is_starred_modifier_english():
@@ -386,13 +386,13 @@ def test_unicode_in_modifier_values():
     }
 
 
-def test_conflicting_folder_modifiers():
-    """Test handling conflicting folder modifiers (last one wins)."""
+def test_multiple_folder_modifiers():
+    """Test handling multiple folder modifiers."""
     query = "in:trash in:sent some text"
     result = parse_search_query(query)
 
     # Last folder modifier should win
-    assert result == {"text": "some text", "in_folder": "sent"}
+    assert result == {"text": "some text", "in_sent": True, "in_trash": True}
 
 
 def test_conflicting_read_flags():
@@ -414,7 +414,7 @@ def test_combined_modifiers_and_exact_phrases():
         "from": ["john@example.com"],
         "subject": ["Meeting Notes"],
         "is_read": False,
-        "in_folder": "sent",
+        "in_sent": True,
         "exact_phrases": ["exact phrase", "another phrase"],
     }
 

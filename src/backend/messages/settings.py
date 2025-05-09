@@ -399,7 +399,7 @@ class Base(Configuration):
 
     # OIDC - Authorization Code Flow
     OIDC_CREATE_USER = values.BooleanValue(
-        default=True,
+        default=False,
         environ_name="OIDC_CREATE_USER",
     )
     OIDC_RP_SIGN_ALGO = values.Value(

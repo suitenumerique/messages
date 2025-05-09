@@ -9,22 +9,18 @@ from core.search.search import search_threads
 
 @pytest.fixture
 def mock_es_client():
-    """Fixture providing a mocked ES client."""
-    with mock.patch("core.search.index.get_es_client") as mock_get_es_client:
+    """Mock the Elasticsearch client."""
+    with mock.patch("core.search.search.get_es_client") as mock_get_es_client:
         mock_es = mock.MagicMock()
         # Setup standard mock returns
         mock_es.indices.exists.return_value = False
         mock_es.indices.create.return_value = {"acknowledged": True}
         mock_es.indices.delete.return_value = {"acknowledged": True}
 
-        # Setup search mock with minimal structure
+        # Setup search mock
         mock_es.search.return_value = {"hits": {"total": {"value": 0}, "hits": []}}
 
         mock_get_es_client.return_value = mock_es
-
-        # Reset mock before each test to avoid interaction between tests
-        mock_es.reset_mock()
-
         yield mock_es
 
 
@@ -37,7 +33,7 @@ def test_search_threads_with_from_modifier(mock_es_client):
     assert mock_es_client.search.called
 
     # Get the parameters that were passed to ES client search
-    call_args = mock_es_client.search.call_args[1]["body"]
+    call_args = mock_es_client.search.call_args[1]
 
     # Verify the query includes the sender filter
     assert "query" in call_args
@@ -46,14 +42,14 @@ def test_search_threads_with_from_modifier(mock_es_client):
 
     sender_query_found = False
     for filter_item in call_args["query"]["bool"]["filter"]:
-        if "term" in filter_item and "sender.email" in filter_item["term"]:
+        if "term" in filter_item and "sender_email" in filter_item["term"]:
             sender_query_found = True
-            assert filter_item["term"]["sender.email"] == "john@example.com"
+            assert filter_item["term"]["sender_email"] == "john@example.com"
             break
 
     if not sender_query_found:
         for item in call_args["query"]["bool"]["should"]:
-            if "wildcard" in item and "sender.email" in item["wildcard"]:
+            if "wildcard" in item and "sender_email" in item["wildcard"]:
                 sender_query_found = True
                 break
 
@@ -72,7 +68,7 @@ def test_search_threads_with_multiple_modifiers(mock_es_client):
     assert mock_es_client.search.called
 
     # Get the parameters that were passed to ES client search
-    call_args = mock_es_client.search.call_args[1]["body"]
+    call_args = mock_es_client.search.call_args[1]
 
     # Verify the query includes all expected filters
     assert "query" in call_args
@@ -81,33 +77,22 @@ def test_search_threads_with_multiple_modifiers(mock_es_client):
     # Check for sender filter
     sender_query_found = False
     for filter_item in call_args["query"]["bool"]["filter"]:
-        if "term" in filter_item and "sender.email" in filter_item["term"]:
+        if "term" in filter_item and "sender_email" in filter_item["term"]:
             sender_query_found = True
-            assert filter_item["term"]["sender.email"] == "john@example.com"
+            assert filter_item["term"]["sender_email"] == "john@example.com"
             break
-
-    if not sender_query_found:
-        for item in call_args["query"]["bool"]["should"]:
-            if "wildcard" in item and "sender.email" in item["wildcard"]:
-                sender_query_found = True
-                break
 
     assert sender_query_found, "Sender query was not found in the Elasticsearch query"
 
-    # Check for recipient filter (to:)
-    recipient_query_found = False
+    # Check for to filter
+    to_query_found = False
     for filter_item in call_args["query"]["bool"]["filter"]:
-        if "nested" in filter_item and filter_item["nested"]["path"] == "recipients":
-            nested_query = filter_item["nested"]["query"]
-            if "bool" in nested_query and "must" in nested_query["bool"]:
-                for condition in nested_query["bool"]["must"]:
-                    if "term" in condition and "recipients.type" in condition["term"]:
-                        if condition["term"]["recipients.type"] == "to":
-                            recipient_query_found = True
-                            break
-    assert recipient_query_found, (
-        "Recipient query (to:) was not found in the Elasticsearch query"
-    )
+        if "term" in filter_item and "to_email" in filter_item["term"]:
+            to_query_found = True
+            assert filter_item["term"]["to_email"] == "sarah@example.com"
+            break
+
+    assert to_query_found, "To query was not found in the Elasticsearch query"
 
     # Check for subject filter
     subject_query_found = False
@@ -145,7 +130,7 @@ def test_search_threads_with_exact_phrase(mock_es_client):
     assert mock_es_client.search.called
 
     # Get the parameters that were passed to ES client search
-    call_args = mock_es_client.search.call_args[1]["body"]
+    call_args = mock_es_client.search.call_args[1]
 
     # Verify the query includes the exact phrase match
     assert "query" in call_args
@@ -176,7 +161,7 @@ def test_search_threads_with_folder_filter(mock_es_client):
     assert mock_es_client.search.called
 
     # Get the parameters that were passed to ES client search
-    call_args = mock_es_client.search.call_args[1]["body"]
+    call_args = mock_es_client.search.call_args[1]
 
     # Verify the query includes the trash filter
     assert "query" in call_args

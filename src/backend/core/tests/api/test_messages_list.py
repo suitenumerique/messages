@@ -168,11 +168,15 @@ class TestApiMessages:
         thread = factories.ThreadFactory(mailbox=mailbox)
 
         # Contacts
-        sender_contact1 = factories.ContactFactory(email="sender1@example.com")
-        to_contact1 = factories.ContactFactory(email="to1@example.com")
-        cc_contact1 = factories.ContactFactory(email="cc1@example.com")
-        sender_contact2 = factories.ContactFactory(email="sender2@example.com")
-        to_contact2 = factories.ContactFactory(email="to2@example.com")
+        sender_contact1 = factories.ContactFactory(
+            email="sender1@example.com", mailbox=mailbox
+        )
+        to_contact1 = factories.ContactFactory(email="to1@example.com", mailbox=mailbox)
+        cc_contact1 = factories.ContactFactory(email="cc1@example.com", mailbox=mailbox)
+        sender_contact2 = factories.ContactFactory(
+            email="sender2@example.com", mailbox=mailbox
+        )
+        to_contact2 = factories.ContactFactory(email="to2@example.com", mailbox=mailbox)
 
         # Message 1 Raw Mime with Headers
         raw_mime_1 = f"""From: {sender_contact1.email}

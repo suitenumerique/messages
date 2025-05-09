@@ -40,10 +40,10 @@ DOCKER_GID          = $(shell id -g)
 DOCKER_USER         = $(DOCKER_UID):$(DOCKER_GID)
 COMPOSE             = DOCKER_USER=$(DOCKER_USER) docker compose
 COMPOSE_EXEC        = $(COMPOSE) exec
-COMPOSE_EXEC_APP    = $(COMPOSE_EXEC) app-dev
+COMPOSE_EXEC_APP    = $(COMPOSE_EXEC) backend-dev
 COMPOSE_RUN         = $(COMPOSE) run --rm
-COMPOSE_RUN_APP     = $(COMPOSE_RUN) app-dev
-COMPOSE_RUN_APP_TOOLS = $(COMPOSE_RUN) --no-deps app-dev
+COMPOSE_RUN_APP     = $(COMPOSE_RUN) backend-dev
+COMPOSE_RUN_APP_TOOLS = $(COMPOSE_RUN) --no-deps backend-dev
 COMPOSE_RUN_CROWDIN = $(COMPOSE_RUN) crowdin crowdin
 COMPOSE_RUN_MTA_IN_TESTS  = cd src/mta-in && $(COMPOSE_RUN) --build test
 COMPOSE_RUN_MTA_OUT_TESTS = cd src/mta-out && $(COMPOSE_RUN) --build test
@@ -95,8 +95,8 @@ build: ## build the project containers
 .PHONY: build
 
 build-backend: cache ?=
-build-backend: ## build the app-dev container
-	@$(COMPOSE) build app-dev $(cache)
+build-backend: ## build the backend-dev container
+	@$(COMPOSE) build backend-dev $(cache)
 .PHONY: build-backend
 
 build-frontend-dev: cache ?=
@@ -113,8 +113,8 @@ down: ## stop and remove containers, networks, images, and volumes
 	@$(COMPOSE) down
 .PHONY: down
 
-logs: ## display app-dev logs (follow mode)
-	@$(COMPOSE) logs -f app-dev
+logs: ## display backend-dev logs (follow mode)
+	@$(COMPOSE) logs -f backend-dev
 .PHONY: logs
 
 build-run: ## start the wsgi (production) and development server, rebuilding the containers
@@ -131,7 +131,7 @@ run-with-frontend: ## Start all the containers needed (backend to frontend)
 .PHONY: run-with-frontend
 
 run-all-fg: ## Start backend containers and frontend in foreground
-	@$(COMPOSE) up --force-recreate --build nginx frontend-dev app-dev celery-dev
+	@$(COMPOSE) up --force-recreate --build nginx frontend-dev backend-dev celery-dev
 .PHONY: run-all-fg
 
 status: ## an alias for "docker compose ps"
@@ -230,8 +230,20 @@ back-i18n-generate: ## create the .pot files used for i18n
 .PHONY: back-i18n-generate
 
 back-shell: ## open a shell in the backend container
-	@$(COMPOSE) run --rm --build app-dev /bin/sh
+	@$(COMPOSE) run --rm --build backend-dev /bin/sh
 .PHONY: back-shell
+
+back-poetry-lock: ## lock the dependencies
+	@$(COMPOSE) run --rm --build backend-poetry poetry lock
+.PHONY: back-poetry-lock
+
+back-poetry-check: ## check the dependencies
+	@$(COMPOSE) run --rm --build backend-poetry poetry check
+.PHONY: back-poetry-check
+
+back-poetry-outdated: ## show outdated dependencies
+	@$(COMPOSE) run --rm --build backend-poetry poetry show --outdated
+.PHONY: back-poetry-outdated
 
 shell: ## connect to django shell
 	@$(MANAGE) shell #_plus
@@ -240,7 +252,7 @@ shell: ## connect to django shell
 # -- Database
 
 dbshell: ## connect to database shell
-	docker compose exec app-dev python manage.py dbshell
+	docker compose exec backend-dev python manage.py dbshell
 .PHONY: dbshell
 
 resetdb: FLUSH_ARGS ?=

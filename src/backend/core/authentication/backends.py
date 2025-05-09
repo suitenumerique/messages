@@ -112,17 +112,19 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
         except DuplicateEmailError as err:
             raise SuspiciousOperation(err.message) from err
 
+        self.create_testdomain()
+
         if user:
             if not user.is_active:
                 raise SuspiciousOperation(_("User account is disabled"))
             self.update_user_if_needed(user, claims)
 
-        elif self.get_settings("OIDC_CREATE_USER", True):
+        elif self.should_create_user(email):
             user = User.objects.create(sub=sub, password="!", **claims)  # noqa: S106
 
-        self.setup_testdomain(user)
-
-        return user
+        if user:
+            self.autojoin_mailbox(user)
+            return user
 
     def compute_full_name(self, user_info):
         """Compute user's full name based on OIDC fields in settings."""
@@ -141,39 +143,83 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
             updated_claims = {key: value for key, value in claims.items() if value}
             self.UserModel.objects.filter(id=user.id).update(**updated_claims)
 
-    def setup_testdomain(self, user):
-        """Setup test domain for user."""
+    def create_testdomain(self):
+        """Create the test domain if it doesn't exist."""
 
-        if not settings.MESSAGES_TESTDOMAIN or not user.email:
+        # Create the test domain if it doesn't exist
+        if settings.MESSAGES_TESTDOMAIN:
+            MailDomain.objects.get_or_create(
+                name=settings.MESSAGES_TESTDOMAIN, defaults={"oidc_autojoin": True}
+            )
+
+    def should_create_user(self, email):
+        """Check if a user should be created based on the email address."""
+
+        if not email:
+            return False
+
+        # With this setting, we always create a user locally
+        if self.get_settings("OIDC_CREATE_USER", True):
+            return True
+
+        # MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN is a special case of autojoin
+        testdomain_mapped_email = self.get_testdomain_mapped_email(email)
+        if testdomain_mapped_email:
+            return True
+
+        # If the email address ends with a domain that has autojoin enabled
+        if MailDomain.objects.filter(
+            name=email.split("@")[1], oidc_autojoin=True
+        ).exists():
+            return True
+
+        # Don't create a user locally
+        return False
+
+    def get_testdomain_mapped_email(self, email):
+        """If it exists, return the mapped email address for the test domain."""
+        if not settings.MESSAGES_TESTDOMAIN or not email:
             return
-
-        maildomain, _ = MailDomain.objects.get_or_create(
-            name=settings.MESSAGES_TESTDOMAIN
-        )
 
         # Check if the email address ends with the test domain
         if not re.search(
             r"[@\.]"
             + re.escape(settings.MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN)
             + r"$",
-            user.email,
+            email,
         ):
             return
 
         # <x.y@z.base.domain> => <x.y-z@test.domain>
-        prefix = user.email.split("@")[1][
+        prefix = email.split("@")[1][
             : -len(settings.MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN) - 1
         ]
-        mapped_email = (
-            user.email.split("@")[0]
+        return (
+            email.split("@")[0]
             + ("-" + prefix if prefix else "")
             + "@"
             + settings.MESSAGES_TESTDOMAIN
         )
 
+    def autojoin_mailbox(self, user):
+        """Setup autojoin mailbox for user."""
+
+        email = self.get_testdomain_mapped_email(user.email)
+        if not email and user.email:
+            # TODO aliases?
+            if MailDomain.objects.filter(
+                name=user.email.split("@")[1], oidc_autojoin=True
+            ).exists():
+                email = user.email
+
+        if not email:
+            return
+
+        maildomain = MailDomain.objects.get(name=email.split("@")[1])
+
         # Create a mailbox for the user if missing
         mailbox, _ = Mailbox.objects.get_or_create(
-            local_part=mapped_email.split("@")[0],
+            local_part=email.split("@")[0],
             domain=maildomain,
         )
 
@@ -185,11 +231,11 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
         )
 
         contact, created = Contact.objects.get_or_create(
-            email=mapped_email,
+            email=email,
             mailbox=mailbox,
-            defaults={"name": user.full_name or mapped_email.split("@")[0]},
+            defaults={"name": user.full_name or email.split("@")[0]},
         )
 
-        if not created and contact.mailbox != mailbox:
-            contact.mailbox = mailbox
-            contact.save()
+        # if not created and contact.mailbox != mailbox:
+        #     contact.mailbox = mailbox
+        #     contact.save()

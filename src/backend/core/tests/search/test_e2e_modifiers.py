@@ -61,16 +61,6 @@ def test_mailboxes(test_user):
 
 
 @pytest.fixture
-def test_contacts():
-    """Create test contacts."""
-    contact1 = ContactFactory(email="john@example.com", name="John Smith")
-    contact2 = ContactFactory(email="sarah@example.com", name="Sarah Johnson")
-    contact3 = ContactFactory(email="robert@example.com", name="Robert Brown")
-    contact4 = ContactFactory(email="maria@example.com", name="Maria Garcia")
-    return contact1, contact2, contact3, contact4
-
-
-@pytest.fixture
 def api_client(test_user):
     """Create an authenticated API client."""
     client = APIClient()
@@ -103,10 +93,22 @@ def wait_for_indexing():
 
 
 @pytest.fixture
-def test_threads(test_mailboxes, test_contacts, wait_for_indexing):
+def test_threads(test_mailboxes, wait_for_indexing):
     """Create test threads with various configurations for testing modifiers."""
     mailbox1, mailbox2 = test_mailboxes
-    contact1, contact2, contact3, contact4 = test_contacts
+
+    contact1 = ContactFactory(
+        email="john@example.com", mailbox=mailbox1, name="John Smith"
+    )
+    contact2 = ContactFactory(
+        email="sarah@example.com", mailbox=mailbox1, name="Sarah Johnson"
+    )
+    contact3 = ContactFactory(
+        email="robert@example.com", mailbox=mailbox1, name="Robert Brown"
+    )
+    contact4 = ContactFactory(
+        email="maria@example.com", mailbox=mailbox1, name="Maria Garcia"
+    )
 
     # Thread 1: Standard thread with basic content
     thread1 = ThreadFactory(mailbox=mailbox1, subject="Meeting Agenda")
@@ -285,6 +287,26 @@ def test_threads(test_mailboxes, test_contacts, wait_for_indexing):
 @pytest.mark.django_db
 class TestSearchModifiersE2E:
     """End-to-end tests for Gmail-style search modifiers."""
+
+    def test_basic_searches(
+        self, setup_elasticsearch, api_client, test_url, test_threads
+    ):
+        """Test searching with empty query."""
+
+        # No search
+        response = api_client.get(f"{test_url}?search=")
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 9
+
+        # Now find all
+        response = api_client.get(f"{test_url}?search=example")
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 9
+
+        # Now find none
+        response = api_client.get(f"{test_url}?search=aozeigsdpfgoidosfgi")
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 0
 
     def test_from_search_modifier(
         self, setup_elasticsearch, api_client, test_url, test_threads
