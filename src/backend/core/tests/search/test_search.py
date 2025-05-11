@@ -58,16 +58,16 @@ def fixture_mock_es_client_index():
         yield mock_es
 
 
-@pytest.fixture
-def test_thread():
+@pytest.fixture(name="test_thread")
+def fixture_test_thread(test_mailbox):
     """Create a test thread with a message."""
-    thread = ThreadFactory()
+    thread = ThreadFactory(mailbox=test_mailbox)
     MessageFactory(thread=thread)
     return thread
 
 
-@pytest.fixture
-def test_mailbox():
+@pytest.fixture(name="test_mailbox")
+def fixture_test_mailbox():
     """Create a test mailbox."""
     return MailboxFactory()
 
@@ -144,6 +144,8 @@ def test_reindex_all(mock_es_client_index):
 @pytest.mark.django_db
 def test_reindex_mailbox(mock_es_client_index, test_mailbox, test_thread):
     """Test reindexing a specific mailbox."""
+
+    assert test_thread.mailbox == test_mailbox
 
     # Call the function
     result = reindex_mailbox(str(test_mailbox.id))
@@ -223,7 +225,7 @@ def test_search_threads_disabled(mock_es_client_search):
     result = search_threads("test query")
 
     # Verify empty results
-    assert result["threads"] == []
+    assert len(result["threads"]) == 0
     assert result["total"] == 0
 
     # Verify ES client was not called

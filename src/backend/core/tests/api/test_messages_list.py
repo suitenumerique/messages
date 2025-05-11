@@ -11,142 +11,141 @@ from core import enums, factories
 
 
 @pytest.mark.django_db
-class TestApiThreads:
-    """Test API threads."""
+def test_list_threads():
+    """Test list threads."""
+    # Create 10 threads to populate the database
+    factories.ThreadFactory.create_batch(10)
 
-    def test_list_threads(self):
-        """Test list threads."""
-        # Create 10 threads to populate the database
-        factories.ThreadFactory.create_batch(10)
+    # Create authenticated user
+    authenticated_user = factories.UserFactory()
 
-        # Create authenticated user
-        authenticated_user = factories.UserFactory()
+    # Create a client and authenticate
+    client = APIClient()
+    client.force_authenticate(user=authenticated_user)
 
-        # Create a client and authenticate
-        client = APIClient()
-        client.force_authenticate(user=authenticated_user)
+    # Create a mailbox for the authenticated user with access
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox,
+        user=authenticated_user,
+        permission=enums.MailboxPermissionChoices.READ,
+    )
+    # Create an other mailbox for the authenticated user with access
+    other_mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=other_mailbox,
+        user=authenticated_user,
+        permission=enums.MailboxPermissionChoices.READ,
+    )
 
-        # Create a mailbox for the authenticated user with access
-        mailbox = factories.MailboxFactory()
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.READ,
-        )
-        # Create an other mailbox for the authenticated user with access
-        other_mailbox = factories.MailboxFactory()
-        factories.MailboxAccessFactory(
-            mailbox=other_mailbox,
-            user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.READ,
-        )
+    # Create 3 threads with messages in the mailbox
+    thread1 = factories.ThreadFactory(mailbox=mailbox)
+    factories.MessageFactory(thread=thread1, read_at=None)
+    thread1.update_stats()
 
-        # Create 3 threads with messages in the mailbox
-        thread1 = factories.ThreadFactory(mailbox=mailbox)
-        factories.MessageFactory(thread=thread1, read_at=None)
-        thread1.update_stats()
+    thread2 = factories.ThreadFactory(mailbox=mailbox)
+    message2 = factories.MessageFactory(thread=thread2, read_at=None)
+    thread2.update_stats()
 
-        thread2 = factories.ThreadFactory(mailbox=mailbox)
-        message2 = factories.MessageFactory(thread=thread2, read_at=None)
-        thread2.update_stats()
+    thread3 = factories.ThreadFactory(mailbox=mailbox)
+    factories.MessageFactory(thread=thread3, read_at=None)
+    thread3.update_stats()
 
-        thread3 = factories.ThreadFactory(mailbox=mailbox)
-        factories.MessageFactory(thread=thread3, read_at=None)
-        thread3.update_stats()
-
-        def fetch_threads_and_assert_order(mailbox_id, thread_ids):
-            response = client.get(
-                reverse("threads-list"), query_params={"mailbox_id": mailbox_id}
-            )
-            assert response.status_code == status.HTTP_200_OK
-            assert response.data["count"] == len(thread_ids)
-            assert [thread["id"] for thread in response.data["results"]] == [
-                str(thread_id) for thread_id in thread_ids
-            ]
-            return response
-
-        fetch_threads_and_assert_order(mailbox.id, [thread3.id, thread2.id, thread1.id])
-        fetch_threads_and_assert_order(other_mailbox.id, [])
-
-        # Create a new message for the second thread to pull it up in the list
-        new_message2 = factories.MessageFactory(thread=thread2, read_at=None)
-        thread2.update_stats()
-
-        fetch_threads_and_assert_order(mailbox.id, [thread2.id, thread3.id, thread1.id])
-
-        # Create a thread with a message in the other mailbox
-        other_thread = factories.ThreadFactory(mailbox=other_mailbox)
-        factories.MessageFactory(thread=other_thread, read_at=None)
-        other_thread.update_stats()
-
-        # Need sender and recipient contacts for the thread serializer
-        recipient_contact = factories.ContactFactory()
-        factories.MessageRecipientFactory(
-            message=new_message2,
-            contact=recipient_contact,
-            type=enums.MessageRecipientTypeChoices.TO,
-        )
-
-        fetch_threads_and_assert_order(other_mailbox.id, [other_thread.id])
-
-        response = fetch_threads_and_assert_order(
-            mailbox.id, [thread2.id, thread3.id, thread1.id]
-        )
-
-        # Assert the threads are sorted by latest message
-        assert [thread["id"] for thread in response.data["results"]] == [
-            str(thread2.id),
-            str(thread3.id),
-            str(thread1.id),
-        ]
-
-        # Assert the thread data is correct (first thread is the one with the last new message)
-        thread_data = response.data["results"][0]
-        assert thread_data["id"] == str(thread2.id)
-        assert thread_data["subject"] == thread2.subject
-        assert thread_data["snippet"] == thread2.snippet
-        assert thread_data["messages"] == [str(message2.id), str(new_message2.id)]
-        assert thread_data["updated_at"] == thread2.updated_at.isoformat().replace(
-            "+00:00", "Z"
-        )
-
-    def test_list_threads_unauthorized(self):
-        """Test list threads unauthorized."""
-        client = APIClient()
-        response = client.get(reverse("threads-list"))
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
-    def test_list_threads_not_allowed(self):
-        """Test list threads not allowed."""
-        # Create other mailbox and thread
-        jean = factories.UserFactory()
-        jean_mailbox = factories.MailboxFactory()
-        factories.MailboxAccessFactory(
-            mailbox=jean_mailbox,
-            user=jean,
-            permission=enums.MailboxPermissionChoices.ADMIN,
-        )
-        factories.ThreadFactory(mailbox=jean_mailbox)  # Create a thread for jean
-
-        # Create authenticated user and their mailbox/thread
-        authenticated_user = factories.UserFactory()
-        mailbox = factories.MailboxFactory()
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.READ,
-        )
-        factories.ThreadFactory(
-            mailbox=mailbox
-        )  # Create a thread for authenticated user
-
-        client = APIClient()
-        client.force_authenticate(user=authenticated_user)
-        # Try to access jean's mailbox threads
+    def fetch_threads_and_assert_order(mailbox_id, thread_ids):
         response = client.get(
-            reverse("threads-list"), query_params={"mailbox_id": jean_mailbox.id}
+            reverse("threads-list"), query_params={"mailbox_id": mailbox_id}
         )
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == len(thread_ids)
+        assert [thread["id"] for thread in response.data["results"]] == [
+            str(thread_id) for thread_id in thread_ids
+        ]
+        return response
+
+    fetch_threads_and_assert_order(mailbox.id, [thread3.id, thread2.id, thread1.id])
+    fetch_threads_and_assert_order(other_mailbox.id, [])
+
+    # Create a new message for the second thread to pull it up in the list
+    new_message2 = factories.MessageFactory(thread=thread2, read_at=None)
+    thread2.update_stats()
+
+    fetch_threads_and_assert_order(mailbox.id, [thread2.id, thread3.id, thread1.id])
+
+    # Create a thread with a message in the other mailbox
+    other_thread = factories.ThreadFactory(mailbox=other_mailbox)
+    factories.MessageFactory(thread=other_thread, read_at=None)
+    other_thread.update_stats()
+
+    # Need sender and recipient contacts for the thread serializer
+    recipient_contact = factories.ContactFactory()
+    factories.MessageRecipientFactory(
+        message=new_message2,
+        contact=recipient_contact,
+        type=enums.MessageRecipientTypeChoices.TO,
+    )
+
+    fetch_threads_and_assert_order(other_mailbox.id, [other_thread.id])
+
+    response = fetch_threads_and_assert_order(
+        mailbox.id, [thread2.id, thread3.id, thread1.id]
+    )
+
+    # Assert the threads are sorted by latest message
+    assert [thread["id"] for thread in response.data["results"]] == [
+        str(thread2.id),
+        str(thread3.id),
+        str(thread1.id),
+    ]
+
+    # Assert the thread data is correct (first thread is the one with the last new message)
+    thread_data = response.data["results"][0]
+    assert thread_data["id"] == str(thread2.id)
+    assert thread_data["subject"] == thread2.subject
+    assert thread_data["snippet"] == thread2.snippet
+    assert thread_data["messages"] == [str(message2.id), str(new_message2.id)]
+    assert thread_data["updated_at"] == thread2.updated_at.isoformat().replace(
+        "+00:00", "Z"
+    )
+
+
+@pytest.mark.django_db
+def test_list_threads_unauthorized():
+    """Test list threads unauthorized."""
+    client = APIClient()
+    response = client.get(reverse("threads-list"))
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+def test_list_threads_not_allowed():
+    """Test list threads not allowed."""
+    # Create other mailbox and thread
+    jean = factories.UserFactory()
+    jean_mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=jean_mailbox,
+        user=jean,
+        permission=enums.MailboxPermissionChoices.ADMIN,
+    )
+    factories.ThreadFactory(mailbox=jean_mailbox)  # Create a thread for jean
+
+    # Create authenticated user and their mailbox/thread
+    authenticated_user = factories.UserFactory()
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox,
+        user=authenticated_user,
+        permission=enums.MailboxPermissionChoices.READ,
+    )
+    factories.ThreadFactory(mailbox=mailbox)  # Create a thread for authenticated user
+
+    client = APIClient()
+    client.force_authenticate(user=authenticated_user)
+    # Try to access jean's mailbox threads
+    response = client.get(
+        reverse("threads-list"), query_params={"mailbox_id": jean_mailbox.id}
+    )
+    assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 @pytest.mark.django_db

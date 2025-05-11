@@ -73,6 +73,7 @@ dev = [
     "pytest-django==4.9.0",
     "pytest==8.3.4",
     "pytest-icdiff==0.9",
+    "pytest-repeat==0.9.4",
     "pytest-xdist==3.6.1",
     "responses==0.25.6",
     "ruff==0.9.3"

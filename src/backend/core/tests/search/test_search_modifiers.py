@@ -7,8 +7,8 @@ import pytest
 from core.search.search import search_threads
 
 
-@pytest.fixture
-def mock_es_client():
+@pytest.fixture(name="mock_es_client")
+def fixture_mock_es_client():
     """Mock the Elasticsearch client."""
     with mock.patch("core.search.search.get_es_client") as mock_get_es_client:
         mock_es = mock.MagicMock()

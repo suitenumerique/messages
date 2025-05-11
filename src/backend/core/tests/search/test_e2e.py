@@ -1,5 +1,6 @@
 """End-to-end tests for the Elasticsearch search functionality."""
 
+# pylint: disable=too-many-positional-arguments,unused-argument
 import time
 
 from django.conf import settings
@@ -21,8 +22,8 @@ from core.search import create_index_if_not_exists, delete_index, get_es_client
 from core.search.mapping import MESSAGE_INDEX
 
 
-@pytest.fixture
-def setup_elasticsearch():
+@pytest.fixture(name="setup_elasticsearch")
+def fixture_setup_elasticsearch():
     """Setup Elasticsearch index for testing."""
 
     delete_index()
@@ -30,40 +31,43 @@ def setup_elasticsearch():
 
     # Check if Elasticsearch is actually available
     es = get_es_client()
+
+    # pylint: disable=unexpected-keyword-arg
     es.cluster.health(wait_for_status="yellow", timeout="10s")
     yield
 
     # Teardown
     try:
         delete_index()
+    # pylint: disable=broad-exception-caught
     except Exception:  # noqa: BLE001
         pass
 
 
-@pytest.fixture
-def test_user():
+@pytest.fixture(name="test_user")
+def fixture_test_user():
     """Create a test user."""
     return UserFactory()
 
 
-@pytest.fixture
-def test_mailbox(test_user):
+@pytest.fixture(name="test_mailbox")
+def fixture_test_mailbox(test_user):
     """Create a test mailbox with user access."""
     mailbox = MailboxFactory()
     MailboxAccessFactory(user=test_user, mailbox=mailbox)
     return mailbox
 
 
-@pytest.fixture
-def api_client(test_user):
+@pytest.fixture(name="api_client")
+def fixture_api_client(test_user):
     """Create an authenticated API client."""
     client = APIClient()
     client.force_authenticate(user=test_user)
     return client
 
 
-@pytest.fixture
-def test_url():
+@pytest.fixture(name="test_url")
+def fixture_test_url():
     """Get the thread list API URL."""
     return reverse("threads-list")
 
@@ -79,6 +83,7 @@ def fixture_wait_for_indexing():
             try:
                 es.indices.refresh(index=MESSAGE_INDEX)
                 return True
+            # pylint: disable=broad-exception-caught
             except Exception:  # noqa: BLE001
                 time.sleep(delay)
         return False
@@ -86,8 +91,8 @@ def fixture_wait_for_indexing():
     return _wait
 
 
-@pytest.fixture
-def create_test_thread(test_mailbox, wait_for_indexing):
+@pytest.fixture(name="create_test_thread")
+def fixture_create_test_thread(test_mailbox, wait_for_indexing):
     """Create a function to create test threads with messages."""
 
     def _create_thread_with_message(

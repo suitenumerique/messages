@@ -186,6 +186,7 @@ def search_threads(
                 search_body["query"]["bool"]["filter"].append({"term": {field: value}})
 
         # Execute search
+        # pylint: disable=unexpected-keyword-arg
         results = es.search(index=MESSAGE_INDEX, **search_body)
 
         # Process results - extract thread IDs
@@ -222,6 +223,8 @@ def search_threads(
             "from": from_offset,
             "size": size,
         }
+
+    # pylint: disable=broad-exception-caught
     except Exception as e:  # noqa: BLE001
         logger.error("Error searching threads: %s", e)
         return {

@@ -1,5 +1,6 @@
 """Core tasks."""
 
+# pylint: disable=unused-argument
 from django.conf import settings
 
 from celery.utils.log import get_task_logger
@@ -53,23 +54,13 @@ def send_message_task(self, message_id, force_mta_out=False):
             "message_id": str(message_id),
             "success": True,
         }
+    # pylint: disable=broad-exception-caught
     except Exception as e:
         logger.exception("Error in send_message_task for message %s: %s", message_id, e)
         self.update_state(
             state="FAILURE",
             meta={"status": "failed", "message_id": str(message_id), "error": str(e)},
         )
-        raise
-
-
-@celery_app.task(bind=True)
-def ensure_es_index(self):
-    """Ensure Elasticsearch index exists with the correct schema."""
-    try:
-        create_index_if_not_exists()
-        return {"success": True}
-    except Exception as e:
-        logger.exception("Error creating Elasticsearch index: %s", e)
         raise
 
 
@@ -96,6 +87,7 @@ def reindex_all(self):
                     success_count += 1
                 else:
                     failure_count += 1
+            # pylint: disable=broad-exception-caught
             except Exception as e:
                 failure_count += 1
                 logger.exception("Error indexing thread %s: %s", thread.id, e)
@@ -118,6 +110,7 @@ def reindex_all(self):
             "success_count": success_count,
             "failure_count": failure_count,
         }
+    # pylint: disable=broad-exception-caught
     except Exception as e:
         logger.exception("Error in reindex_all task: %s", e)
         raise
@@ -179,6 +172,7 @@ def reindex_mailbox_task(self, mailbox_id):
                     success_count += 1
                 else:
                     failure_count += 1
+            # pylint: disable=broad-exception-caught
             except Exception as e:
                 failure_count += 1
                 logger.exception("Error indexing thread %s: %s", thread.id, e)

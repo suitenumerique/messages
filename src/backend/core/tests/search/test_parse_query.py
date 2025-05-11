@@ -1,3 +1,5 @@
+"""Unit tests for the Gmail-style search query parser."""
+
 from core.search.parse import parse_search_query
 
 

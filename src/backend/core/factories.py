@@ -48,12 +48,12 @@ class ParentNodeFactory(factory.declarations.ParameteredAttribute):
 
 
 class MailDomainFactory(factory.django.DjangoModelFactory):
-    """A factory to random mail domains for testing purposes."""
+    """A factory to random mail domains for testing purposes, ensuring uniqueness."""
 
     class Meta:
         model = models.MailDomain
 
-    name = factory.Faker("domain_name")
+    name = factory.Sequence(lambda n: f"example{n}.com")
 
 
 class MailboxFactory(factory.django.DjangoModelFactory):

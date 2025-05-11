@@ -1,4 +1,5 @@
 """Elasticsearch client and indexing functionality."""
+# pylint: disable=unexpected-keyword-arg
 
 import logging
 
@@ -55,6 +56,7 @@ def index_message(message: models.Message) -> bool:
     if message.raw_mime:
         try:
             parsed_data = parse_email_message(message.raw_mime)
+        # pylint: disable=broad-exception-caught
         except Exception as e:  # noqa: BLE001
             logger.error("Error parsing raw MIME for message %s: %s", message.id, e)
             return False
@@ -128,6 +130,7 @@ def index_message(message: models.Message) -> bool:
     }
 
     try:
+        # pylint: disable=no-value-for-parameter
         es.index(
             index=MESSAGE_INDEX,
             id=str(message.id),
@@ -136,6 +139,7 @@ def index_message(message: models.Message) -> bool:
         )
         logger.debug("Indexed message %s", message.id)
         return True
+    # pylint: disable=broad-exception-caught
     except Exception as e:  # noqa: BLE001
         logger.error("Error indexing message %s: %s", message.id, e)
         return False
@@ -155,6 +159,7 @@ def index_thread(thread: models.Thread) -> bool:
 
     try:
         # Index thread as parent document
+        # pylint: disable=no-value-for-parameter
         es.index(index=MESSAGE_INDEX, id=str(thread.id), document=thread_doc)
 
         # Index all messages in the thread
@@ -165,6 +170,7 @@ def index_thread(thread: models.Thread) -> bool:
                 success = False
 
         return success
+    # pylint: disable=broad-exception-caught
     except Exception as e:  # noqa: BLE001
         logger.error("Error indexing thread %s: %s", thread.id, e)
         return False
@@ -172,7 +178,6 @@ def index_thread(thread: models.Thread) -> bool:
 
 def reindex_all():
     """Reindex all messages and threads."""
-    from core.models import Thread
 
     # Delete and recreate the index
     delete_index()
@@ -183,7 +188,7 @@ def reindex_all():
     indexed_messages = 0
 
     # Index all threads
-    for thread in Thread.objects.all():
+    for thread in models.Thread.objects.all():
         if index_thread(thread):
             indexed_threads += 1
             indexed_messages += thread.messages.count()
@@ -197,14 +202,13 @@ def reindex_all():
 
 def reindex_mailbox(mailbox_id: str):
     """Reindex all messages and threads for a specific mailbox."""
-    from core.models import Thread
 
     # Count indexed items
     indexed_threads = 0
     indexed_messages = 0
 
     # Index all threads in the mailbox
-    for thread in Thread.objects.filter(mailbox_id=mailbox_id):
+    for thread in models.Thread.objects.filter(mailbox_id=mailbox_id):
         if index_thread(thread):
             indexed_threads += 1
             indexed_messages += thread.messages.count()
@@ -219,10 +223,9 @@ def reindex_mailbox(mailbox_id: str):
 
 def reindex_thread(thread_id: str):
     """Reindex a specific thread."""
-    from core.models import Thread
 
     try:
-        thread = Thread.objects.get(id=thread_id)
+        thread = models.Thread.objects.get(id=thread_id)
         success = index_thread(thread)
 
         return {
@@ -230,7 +233,8 @@ def reindex_thread(thread_id: str):
             "thread": thread_id,
             "indexed_messages": thread.messages.count() if success else 0,
         }
-    except Thread.DoesNotExist:
+    except models.Thread.DoesNotExist:
         return {"status": "error", "thread": thread_id, "error": "Thread not found"}
+    # pylint: disable=broad-exception-caught
     except Exception as e:  # noqa: BLE001
         return {"status": "error", "thread": thread_id, "error": str(e)}

@@ -1706,6 +1706,22 @@ pprintpp = "*"
 pytest = "*"
 
 [[package]]
+name = "pytest-repeat"
+version = "0.9.4"
+description = "pytest plugin for repeating tests"
+optional = true
+python-versions = ">=3.9"
+groups = ["main"]
+markers = "extra == \"dev\""
+files = [
+    {file = "pytest_repeat-0.9.4-py3-none-any.whl", hash = "sha256:c1738b4e412a6f3b3b9e0b8b29fcd7a423e50f87381ad9307ef6f5a8601139f3"},
+    {file = "pytest_repeat-0.9.4.tar.gz", hash = "sha256:d92ac14dfaa6ffcfe6917e5d16f0c9bc82380c135b03c2a5f412d2637f224485"},
+]
+
+[package.dependencies]
+pytest = "*"
+
+[[package]]
 name = "pytest-xdist"
 version = "3.6.1"
 description = "pytest xdist plugin for distributed testing, most importantly across multiple CPUs"
@@ -2424,9 +2440,9 @@ files = [
 brotli = ["brotli"]
 
 [extras]
-dev = ["django-extensions", "drf-spectacular-sidecar", "pylint", "pylint-django", "pytest", "pytest-cov", "pytest-django", "pytest-icdiff", "pytest-xdist", "responses", "ruff"]
+dev = ["django-extensions", "drf-spectacular-sidecar", "pylint", "pylint-django", "pytest", "pytest-cov", "pytest-django", "pytest-icdiff", "pytest-repeat", "pytest-xdist", "responses", "ruff"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0"
-content-hash = "745abf022dc51380a8295a0d99e1d7b3a5906183e9ee98c7cffcf434653706f0"
+content-hash = "eed834596ab98dbefdddb91affe59404e57067ae32f4c96c7d669f02baa673d7"

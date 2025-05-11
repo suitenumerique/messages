@@ -19,9 +19,7 @@ pytestmark = pytest.mark.django_db
 
 
 @override_settings(MESSAGES_TESTDOMAIN=None)
-def test_authentication_getter_existing_user_no_email(
-    django_assert_num_queries, monkeypatch
-):
+def test_authentication_getter_existing_user_no_email(monkeypatch):
     """
     If an existing user matches the user's info sub, the user should be returned.
     """
@@ -42,9 +40,7 @@ def test_authentication_getter_existing_user_no_email(
 
 
 @override_settings(MESSAGES_TESTDOMAIN=None)
-def test_authentication_getter_existing_user_via_email(
-    django_assert_num_queries, monkeypatch
-):
+def test_authentication_getter_existing_user_via_email(monkeypatch):
     """
     If an existing user doesn't match the sub but matches the email,
     the user should be returned.
@@ -91,9 +87,7 @@ def test_authentication_getter_email_none(monkeypatch):
 
 
 @override_settings(MESSAGES_TESTDOMAIN=None)
-def test_authentication_getter_existing_user_with_email(
-    django_assert_num_queries, monkeypatch
-):
+def test_authentication_getter_existing_user_with_email(monkeypatch):
     """
     When the user's info contains an email and targets an existing user,
     """
@@ -128,7 +122,7 @@ def test_authentication_getter_existing_user_with_email(
     ],
 )
 def test_authentication_getter_existing_user_change_fields_sub(
-    first_name, last_name, email, django_assert_num_queries, monkeypatch
+    first_name, last_name, email, monkeypatch
 ):
     """
     It should update the email or name fields on the user when they change
@@ -169,7 +163,7 @@ def test_authentication_getter_existing_user_change_fields_sub(
     ],
 )
 def test_authentication_getter_existing_user_change_fields_email(
-    first_name, last_name, email, django_assert_num_queries, monkeypatch
+    first_name, last_name, email, monkeypatch
 ):
     """
     It should update the name fields on the user when they change
@@ -318,9 +312,7 @@ def test_authentication_get_userinfo_invalid_response():
         oidc_backend.get_userinfo("fake_access_token", None, None)
 
 
-def test_authentication_getter_existing_disabled_user_via_sub(
-    django_assert_num_queries, monkeypatch
-):
+def test_authentication_getter_existing_disabled_user_via_sub(monkeypatch):
     """
     If an existing user matches the sub but is disabled,
     an error should be raised and a user should not be created.
@@ -347,9 +339,7 @@ def test_authentication_getter_existing_disabled_user_via_sub(
     assert models.User.objects.count() == 1
 
 
-def test_authentication_getter_existing_disabled_user_via_email(
-    django_assert_num_queries, monkeypatch
-):
+def test_authentication_getter_existing_disabled_user_via_email(monkeypatch):
     """
     If an existing user does not match the sub but matches the email and is disabled,
     an error should be raised and a user should not be created.
@@ -379,7 +369,7 @@ def test_authentication_getter_existing_disabled_user_via_email(
 # Essential claims
 
 
-def test_authentication_verify_claims_default(django_assert_num_queries, monkeypatch):
+def test_authentication_verify_claims_default(monkeypatch):
     """The sub claim should be mandatory by default."""
     klass = OIDCAuthenticationBackend()
 
@@ -414,7 +404,6 @@ def test_authentication_verify_claims_essential_missing(
     mock_logger,
     essential_claims,
     missing_claims,
-    django_assert_num_queries,
     monkeypatch,
 ):
     """Ensure SuspiciousOperation is raised if essential claims are missing."""

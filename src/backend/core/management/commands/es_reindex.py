@@ -77,6 +77,7 @@ class Command(BaseCommand):
                     success_count += 1
                 else:
                     failure_count += 1
+            # pylint: disable=broad-exception-caught
             except Exception as e:  # noqa: BLE001
                 failure_count += 1
                 self.stdout.write(
@@ -100,7 +101,7 @@ class Command(BaseCommand):
         try:
             thread_uuid = uuid.UUID(thread_id)
             thread = models.Thread.objects.get(id=thread_uuid)
-        except (ValueError, uuid.Error) as e:
+        except ValueError as e:
             raise CommandError(f"Invalid thread ID: {thread_id}") from e
         except models.Thread.DoesNotExist as e:
             raise CommandError(f"Thread with ID {thread_id} does not exist") from e
@@ -120,7 +121,7 @@ class Command(BaseCommand):
         try:
             mailbox_uuid = uuid.UUID(mailbox_id)
             mailbox = models.Mailbox.objects.get(id=mailbox_uuid)
-        except (ValueError, uuid.Error) as e:
+        except ValueError as e:
             raise CommandError(f"Invalid mailbox ID: {mailbox_id}") from e
         except models.Mailbox.DoesNotExist as e:
             raise CommandError(f"Mailbox with ID {mailbox_id} does not exist") from e
@@ -148,6 +149,7 @@ class Command(BaseCommand):
                     success_count += 1
                 else:
                     failure_count += 1
+            # pylint: disable=broad-exception-caught
             except Exception as e:  # noqa: BLE001
                 failure_count += 1
                 self.stdout.write(

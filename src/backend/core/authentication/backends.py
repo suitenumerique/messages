@@ -126,6 +126,8 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
             self.autojoin_mailbox(user)
             return user
 
+        return None
+
     def compute_full_name(self, user_info):
         """Compute user's full name based on OIDC fields in settings."""
         name_fields = settings.USER_OIDC_FIELDS_TO_FULLNAME
@@ -179,7 +181,7 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
     def get_testdomain_mapped_email(self, email):
         """If it exists, return the mapped email address for the test domain."""
         if not settings.MESSAGES_TESTDOMAIN or not email:
-            return
+            return None
 
         # Check if the email address ends with the test domain
         if not re.search(
@@ -188,7 +190,7 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
             + r"$",
             email,
         ):
-            return
+            return None
 
         # <x.y@z.base.domain> => <x.y-z@test.domain>
         prefix = email.split("@")[1][
@@ -230,7 +232,7 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
             permission=MailboxPermissionChoices.ADMIN,
         )
 
-        contact, created = Contact.objects.get_or_create(
+        Contact.objects.get_or_create(
             email=email,
             mailbox=mailbox,
             defaults={"name": user.full_name or email.split("@")[0]},
