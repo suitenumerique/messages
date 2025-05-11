@@ -6,6 +6,7 @@ import { GlobalLayout } from "../global/global-layout";
 import AuthenticatedView from "./authenticated-view";
 import { MailboxProvider, useMailboxContext } from "@/features/mailbox/provider";
 import { NoMailbox } from "./no-mailbox";
+import { Toaster } from "@/features/ui/components/toaster";
 
 export const MainLayout = ({ children }: PropsWithChildren) => {
     return (
@@ -13,6 +14,7 @@ export const MainLayout = ({ children }: PropsWithChildren) => {
             <AuthenticatedView>
                 <MailboxProvider>
                     <MainLayoutContent>{children}</MainLayoutContent>
+                    <Toaster />
                 </MailboxProvider>
             </AuthenticatedView>
         </GlobalLayout>

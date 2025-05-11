@@ -1,6 +1,6 @@
 import { Button } from "@openfun/cunningham-react";
 import clsx from "clsx";
-import { ToastContainer, ToastContentProps, toast } from "react-toastify";
+import { Slide, ToastContainer, ToastContentProps, toast } from "react-toastify";
 
 export const Toaster = () => {
   return <ToastContainer />;
@@ -9,7 +9,7 @@ export const Toaster = () => {
 export const ToasterItem = ({
   children,
   closeToast,
-  closeButton = false,
+  closeButton = true,
   className,
   type = "info",
 }: {
@@ -44,10 +44,11 @@ export const addToast = (
   options: Parameters<typeof toast>[1] = {}
 ) => {
   return toast(children, {
-    position: "bottom-center",
+    position: "bottom-left",
     closeButton: false,
     className: "suite__toaster__wrapper",
-    autoClose: 8000,
+    autoClose: 5000,
+    transition: Slide,
     hideProgressBar: true,
     ...options,
   });

@@ -65,6 +65,10 @@
           "mailbox_required": "Mailbox is required.",
           "invalid_recipient": "The email {{email}} is invalid.",
           "messageEditorHtml": "You must write a message."
+        },
+        "success": {
+          "sent": "Message sent successfully",
+          "saved": "Draft saved"
         }
       },
       "message_editor": {
@@ -139,6 +143,10 @@
           "mailbox_required": "Vous devez choisir une boîte d'envoi.",
           "invalid_recipient": "Le courriel {{email}} est invalide.",
           "messageEditorHtml": "Vous devez écrire un message."
+        },
+        "success": {
+          "sent": "Message envoyé avec succès.",
+          "saved": "Brouillon sauvegardé."
         }
       },
       "message_editor": {

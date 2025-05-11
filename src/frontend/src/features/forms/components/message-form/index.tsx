@@ -1,12 +1,11 @@
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Alert, Button, VariantType } from "@openfun/cunningham-react";
+import { Button } from "@openfun/cunningham-react";
 import { clsx } from "clsx";
 import { useEffect, useMemo, useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { APIError } from "@/features/api/api-error";
 import { Message, useDraftCreate, useDraftUpdate2, useSendCreate } from "@/features/api/gen";
 import MessageEditor from "@/features/forms/components/message-editor";
 import { useMailboxContext } from "@/features/mailbox/provider";
@@ -14,6 +13,8 @@ import useTrash from "@/features/message/use-trash";
 import MailHelper from "@/features/utils/mail-helper";
 import soundbox from "@/features/utils/soundbox";
 import { RhfInput, RhfSelect } from "../react-hook-form";
+import { addToast, ToasterItem } from "@/features/ui/components/toaster";
+import { toast } from "react-toastify";
 
 interface MessageFormProps {
     // For reply mode
@@ -57,6 +58,8 @@ const messageFormSchema = z.object({
 });
 
 type MessageFormFields = z.infer<typeof messageFormSchema>;
+
+const DRAFT_TOAST_ID = "MESSAGE_FORM_DRAFT_TOAST";
 
 export const MessageForm = ({
     parentMessage,
@@ -122,33 +125,39 @@ export const MessageForm = ({
             onSettled: () => {
                 form.clearErrors();
                 setPendingSubmit(false);
+                toast.dismiss(DRAFT_TOAST_ID);
             },
             onSuccess: async () => {
                 await soundbox.play(0.07);
                 invalidateThreadMessages();
                 onSuccess?.();
                 onClose?.();
-            },
-            onError: (error: APIError) => {
-                form.setError('root.api', { message: error.data.detail });
+                addToast(
+                    <ToasterItem type="info">
+                        <span>{t("message_form.success.sent")}</span>
+                    </ToasterItem>
+                );
             }
         }
     });
 
+    const handleDraftMutationSuccess = () => {
+        addToast(
+            <ToasterItem type="info">
+                <span>{t("message_form.success.saved")}</span>
+            </ToasterItem>,
+            {
+                toastId: DRAFT_TOAST_ID
+            }
+        );
+    }
+
     const draftCreateMutation = useDraftCreate({
-        mutation : {
-            onError: (error: APIError) => {
-                form.setError('root.api', { message: error.data.detail });
-            },
-        }
+        mutation: { onSuccess: handleDraftMutationSuccess }
     });
 
     const draftUpdateMutation = useDraftUpdate2({
-        mutation : {
-            onError: (error: APIError) => {
-                form.setError('root.api', { message: error.data.detail });
-            },
-        }
+        mutation: { onSuccess: handleDraftMutationSuccess }
     });
 
     /**
@@ -314,14 +323,6 @@ export const MessageForm = ({
                         text={form.formState.errors?.messageEditorDraft?.message}
                     />
                 </div>
-
-                {form.formState.errors.root?.api && 
-                    <Alert type={VariantType.ERROR} className="message-form__error">
-                        <ul>
-                            <li>{form.formState.errors.root.api.message}</li>
-                        </ul>
-                    </Alert>
-                }
 
                 <footer className="form-footer">
                     <Button
