@@ -35,7 +35,10 @@ const onError = (error: Error, query: unknown) => {
   addToast(
     <ToasterItem type="error">
       <span>{errorToString(error)}</span>
-    </ToasterItem>
+    </ToasterItem>,
+    {
+      toastId: "APPLICATION_ERROR_TOAST",
+    }
   );
 };
 
