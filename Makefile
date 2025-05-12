@@ -149,14 +149,18 @@ demo: ## flush db then create a demo for load testing purpose
 	@$(MANAGE) create_demo
 .PHONY: demo
 
-# Nota bene: Black should come after isort just in case they don't agree...
-lint: ## lint back-end python sources
 lint: \
   lint-ruff-format \
-  lint-ruff-check \
-  lint-pylint \
-  lint-mta-in
+  lint-check
 .PHONY: lint
+
+## Check-only version
+lint-check: \
+  lint-ruff-check \
+  lint-back \
+  lint-mta-in \
+  lint-mta-out
+.PHONY: lint-check
 
 lint-ruff-format: ## format back-end python sources with ruff
 	@echo 'lint:ruff-format started…'
@@ -168,10 +172,10 @@ lint-ruff-check: ## lint back-end python sources with ruff
 	@$(COMPOSE_RUN_APP_TOOLS) ruff check . --fix
 .PHONY: lint-ruff-check
 
-lint-pylint: ## lint back-end python sources with pylint only on changed files from main
+lint-back: ## lint back-end python sources with pylint
 	@echo 'lint:pylint started…'
-	bin/pylint --diff-only=origin/main
-.PHONY: lint-pylint
+	@$(COMPOSE_RUN_APP_TOOLS) sh -c "pylint **/*.py"
+.PHONY: lint-back
 
 lint-mta-in: ## lint mta-in python sources with pylint
 	@echo 'lint:mta-in started…'

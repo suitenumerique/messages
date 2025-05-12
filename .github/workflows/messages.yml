@@ -10,15 +10,15 @@ on:
 
 jobs:
 
-  lint-back:
+  lint-all:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Create env files
         run: make create-env-files
-      - name: Run backend linting
-        run: make lint
+      - name: Run linting checks
+        run: make lint-check
         env:
           COMPOSE_BAKE: true
 
