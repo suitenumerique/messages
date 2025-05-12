@@ -19,7 +19,7 @@ export const ThreadPanel = () => {
     const hideSend = hideDrafts && !(searchParams.get('has_sender') === '1');
     const filteredThreads = threads?.results.filter((thread) =>
         !(hideDrafts && thread.count_messages === 1 && thread.count_draft === 1)
-        || !(hideSend && thread.count_messages === 1 && thread.count_sender === 1)
+        && !(hideSend && thread.count_messages === 1 && thread.count_sender === 1)
     ) ?? [];
 
     const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {

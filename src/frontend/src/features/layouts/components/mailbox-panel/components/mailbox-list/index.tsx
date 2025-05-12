@@ -1,6 +1,9 @@
+import { ThreadsStatsRetrieve200, ThreadsStatsRetrieveStatsFields, useThreadsStatsRetrieve } from "@/features/api/gen"
+import { useMailboxContext } from "@/features/mailbox/provider"
+import { Badge } from "@/features/ui/components/badge"
 import clsx from "clsx"
 import Link from "next/link"
-import { useParams, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { useMemo } from "react"
 
 // @TODO: replace with real data when folder will be ready
@@ -74,12 +77,27 @@ type FolderItemProps = {
 }
 
 const FolderItem = ({ folder }: FolderItemProps) => {
-    const params = useParams<{ mailboxId?: string }>()
+    const { selectedMailbox } = useMailboxContext();
     const searchParams = useSearchParams()
     const queryParams = useMemo(() => {
         const params = new URLSearchParams(Object.entries(folder.filter || {}));
         return params.toString();
     }, [folder.filter]);
+    const stats_fields = useMemo(() => {
+        if (folder.filter?.has_draft === "1") return ThreadsStatsRetrieveStatsFields.messages;
+        return ThreadsStatsRetrieveStatsFields.unread;
+    }, []);
+    const { data } = useThreadsStatsRetrieve({
+        mailbox_id: selectedMailbox?.id,
+        stats_fields,
+        ...folder.filter
+    }, {
+        query: {
+            queryKey: ['threads', 'stats', selectedMailbox!.id, queryParams],
+        }
+    });
+
+    const folderStats = data?.data as ThreadsStatsRetrieve200;
 
     const isActive = useMemo(() => {
         const folderFilter = Object.entries(folder.filter || {});
@@ -88,13 +106,11 @@ const FolderItem = ({ folder }: FolderItemProps) => {
         return folderFilter.every(([key, value]) => {
             return searchParams.get(key) === value;
         });
-        
-        
     }, [searchParams, folder.filter]);
 
     return (
         <Link
-            href={`/mailbox/${params?.mailboxId}?${queryParams}`}
+            href={`/mailbox/${selectedMailbox?.id}?${queryParams}`}
             className={clsx("mailbox__item", {
                 "mailbox__item--active": isActive
             })}
@@ -103,7 +119,7 @@ const FolderItem = ({ folder }: FolderItemProps) => {
                 <span className="material-icons" aria-hidden="true">{folder.icon}</span>
                 {folder.name}
             </p>
-            {/* {mailbox.unread > 0 && <Badge>{mailbox.unread}</Badge>} */}
+            {(folderStats?.[stats_fields] ?? 0) > 0 && <Badge>{folderStats[stats_fields]}</Badge>}
         </Link>
     )
 }

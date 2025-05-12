@@ -28,6 +28,7 @@ type MailboxContextType = {
     unselectThread: () => void;
     loadNextThreads: () => Promise<unknown>;
     invalidateThreadMessages: () => void;
+    invalidateThreadsStats: () => void;
     refetchMailboxes: () => void;
     isPending: boolean;
     queryStates: {
@@ -53,6 +54,7 @@ const MailboxContext = createContext<MailboxContextType>({
     loadNextThreads: async () => {},
     unselectThread: () => {},
     invalidateThreadMessages: () => {},
+    invalidateThreadsStats: () => {},
     refetchMailboxes: () => {},
     isPending: false,
     queryStates: {
@@ -156,6 +158,10 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         }
     }
 
+    const invalidateThreadsStats = async () => {
+        await queryClient.invalidateQueries({ queryKey: ['threads', 'stats', selectedMailbox?.id] });
+    }
+
     /**
      * Unselect the current thread and navigate to the mailbox page if needed
      */
@@ -177,6 +183,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         loadNextThreads: threadsQuery.fetchNextPage,
         selectThread: setSelectedThread,
         invalidateThreadMessages,
+        invalidateThreadsStats,
         refetchMailboxes: mailboxQuery.refetch,
         isPending: mailboxQuery.isPending || threadsQuery.isPending || messagesQuery.isPending,
         queryStates: {

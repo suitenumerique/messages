@@ -74,7 +74,7 @@ export const MessageForm = ({
     const [showBCCField, setShowBCCField] = useState((draftMessage?.bcc?.length ?? 0) > 0);
     const [pendingSubmit, setPendingSubmit] = useState(false);
     const { markAsTrashed } = useTrash();
-    const { selectedMailbox, mailboxes, invalidateThreadMessages } = useMailboxContext();
+    const { selectedMailbox, mailboxes, invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
     const hideSubjectField = Boolean(parentMessage);
     const hideFromField = (mailboxes?.length ?? 0) === 0 || draft;
 
@@ -130,6 +130,7 @@ export const MessageForm = ({
             onSuccess: async () => {
                 await soundbox.play(0.07);
                 invalidateThreadMessages();
+                invalidateThreadsStats();
                 onSuccess?.();
                 onClose?.();
                 addToast(
@@ -343,11 +344,11 @@ export const MessageForm = ({
                         </Button>
                     )}
                     {
-                        draftMessage && (
+                        draft && (
                             <Button 
                                 type="button" 
                                 color="secondary" 
-                                onClick={() => markAsTrashed({ messageIds: [draftMessage.id] })}
+                                onClick={() => markAsTrashed({ messageIds: [draft.id] })}
                             >
                                 {t("actions.delete_draft")}
                             </Button>
