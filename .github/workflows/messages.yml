@@ -20,7 +20,7 @@ jobs:
       - name: Run backend linting
         run: make lint
         env:
-          COMPOSE_BAKE=true
+          COMPOSE_BAKE: true
 
   test-back:
     runs-on: ubuntu-latest
