@@ -41,4 +41,5 @@ export * from "./threads_list_params";
 export * from "./threads_stats_retrieve200";
 export * from "./threads_stats_retrieve400";
 export * from "./threads_stats_retrieve_params";
+export * from "./threads_stats_retrieve_stats_fields";
 export * from "./user";

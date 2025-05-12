@@ -6,7 +6,11 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-/**
- * Unspecified response body
- */
-export type ThreadsStatsRetrieve200 = { [key: string]: unknown };
+export type ThreadsStatsRetrieve200 = {
+  unread?: number;
+  trashed?: number;
+  draft?: number;
+  starred?: number;
+  sender?: number;
+  messages?: number;
+};

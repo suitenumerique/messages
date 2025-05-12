@@ -16,12 +16,13 @@ type MarkAsOptions = {
  */
 const useRead = () => {
     const queryClient = useQueryClient();
-    const { invalidateThreadMessages } = useMailboxContext();
+    const { invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
 
     const { mutate, status } = useFlagCreate({
         mutation: {
             onSuccess: () => {
                 invalidateThreadMessages();
+                invalidateThreadsStats();
                 queryClient.invalidateQueries({ queryKey: ["/api/v1.0/mailboxes/"] });
             },
         }
