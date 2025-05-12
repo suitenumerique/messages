@@ -76,7 +76,7 @@ class MailboxFactory(factory.django.DjangoModelFactory):
             return
         for user in users:
             models.MailboxAccess.objects.create(
-                mailbox=self, user=user, permission=models.MailboxPermissionChoices.READ
+                mailbox=self, user=user, role=models.MailboxRoleChoices.VIEWER
             )
 
     @factory.post_generation
@@ -91,7 +91,7 @@ class MailboxFactory(factory.django.DjangoModelFactory):
             models.MailboxAccess.objects.create(
                 mailbox=self,
                 user=user,
-                permission=models.MailboxPermissionChoices.ADMIN,
+                role=models.MailboxRoleChoices.ADMIN,
             )
 
 
@@ -103,8 +103,8 @@ class MailboxAccessFactory(factory.django.DjangoModelFactory):
 
     mailbox = factory.SubFactory(MailboxFactory)
     user = factory.SubFactory(UserFactory)
-    permission = factory.fuzzy.FuzzyChoice(
-        [permission[0] for permission in models.MailboxPermissionChoices.choices]
+    role = factory.fuzzy.FuzzyChoice(
+        [role[0] for role in models.MailboxRoleChoices.choices]
     )
 
 

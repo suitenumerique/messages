@@ -440,7 +440,7 @@ class TestMTAInboundEmailThreading:
         factories.MailboxAccessFactory(
             mailbox=self.mailbox,
             user=self.user,
-            permission=enums.MailboxPermissionChoices.ADMIN,
+            role=enums.MailboxRoleChoices.ADMIN,
         )
         self.recipient_email = f"{self.mailbox.local_part}@{self.maildomain.name}"
 
@@ -688,7 +688,7 @@ class TestMTAInboundEmailThreading:
         factories.MailboxAccessFactory(
             mailbox=other_mailbox,
             user=self.user,
-            permission=enums.MailboxPermissionChoices.ADMIN,
+            role=enums.MailboxRoleChoices.ADMIN,
         )
         other_sender = factories.ContactFactory(
             mailbox=other_mailbox, email="other@sender.com"
@@ -844,12 +844,12 @@ class TestMTAInboundEmailThreading:
         factories.MailboxAccessFactory(
             mailbox=mailbox2,
             user=self.user,
-            permission=enums.MailboxPermissionChoices.ADMIN,
+            role=enums.MailboxRoleChoices.ADMIN,
         )
         factories.MailboxAccessFactory(
             mailbox=mailbox2,
             user=user2,
-            permission=enums.MailboxPermissionChoices.ADMIN,
+            role=enums.MailboxRoleChoices.ADMIN,
         )
         recipient_email2 = f"{mailbox2.local_part}@{self.maildomain.name}"
 

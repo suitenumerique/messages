@@ -25,24 +25,20 @@ class TestMailboxViewSet:
         factories.MailboxAccessFactory(
             mailbox=user_mailbox1,
             user=authenticated_user,
-            permission=models.MailboxPermissionChoices.SEND,
+            role=models.MailboxRoleChoices.VIEWER,
         )
-        factories.MailboxAccessFactory(
-            mailbox=user_mailbox1,
-            user=authenticated_user,
-            permission=models.MailboxPermissionChoices.READ,
-        )
+
         factories.MailboxAccessFactory(
             mailbox=user_mailbox2,
             user=authenticated_user,
-            permission=models.MailboxPermissionChoices.READ,
+            role=models.MailboxRoleChoices.EDITOR,
         )
         # Create an other user with access to other mailbox
         other_user = factories.UserFactory()
         factories.MailboxAccessFactory(
             mailbox=other_mailbox,
             user=other_user,
-            permission=models.MailboxPermissionChoices.SEND,
+            role=models.MailboxRoleChoices.EDITOR,
         )
 
         # create a thread with one unread message for user_mailbox1
@@ -86,17 +82,14 @@ class TestMailboxViewSet:
             {
                 "id": str(user_mailbox2.id),
                 "email": str(user_mailbox2),
-                "perms": [models.MailboxPermissionChoices.READ],
+                "role": str(models.MailboxRoleChoices.EDITOR),
                 "count_unread_messages": 1,
                 "count_messages": 2,
             },
             {
                 "id": str(user_mailbox1.id),
                 "email": str(user_mailbox1),
-                "perms": [
-                    models.MailboxPermissionChoices.SEND,
-                    models.MailboxPermissionChoices.READ,
-                ],
+                "role": str(models.MailboxRoleChoices.VIEWER),
                 "count_unread_messages": 1,
                 "count_messages": 1,
             },

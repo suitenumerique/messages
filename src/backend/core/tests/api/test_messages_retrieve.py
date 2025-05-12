@@ -40,7 +40,7 @@ class TestRetrieveMessage:
         factories.MailboxAccessFactory(
             mailbox=other_mailbox,
             user=other_user,
-            permission=models.MailboxPermissionChoices.READ,
+            role=models.MailboxRoleChoices.VIEWER,
         )
         # create a thread access for the other user
         factories.ThreadAccessFactory(

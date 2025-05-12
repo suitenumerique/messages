@@ -58,7 +58,7 @@ class TestApiDraftAndSendMessage:
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.EDIT,
+            role=enums.MailboxRoleChoices.EDITOR,
         )
         # TODO: check if this action is needed to create a draft and send a message
         # is mailbox access enough?
@@ -177,7 +177,7 @@ class TestApiDraftAndSendMessage:
         # First delegate access to the other mailbox
         factories.MailboxAccessFactory(
             mailbox=other_mailbox,
-            permission=enums.MailboxPermissionChoices.EDIT,
+            role=enums.MailboxRoleChoices.EDITOR,
         )
         factories.ThreadAccessFactory(
             thread=thread,
@@ -191,7 +191,7 @@ class TestApiDraftAndSendMessage:
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.EDIT,
+            role=enums.MailboxRoleChoices.EDITOR,
         )
         # add access for the current mailbox to the thread
         factories.ThreadAccessFactory(
@@ -316,7 +316,7 @@ class TestApiDraftAndSendMessage:
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.EDIT,
+            role=enums.MailboxRoleChoices.EDITOR,
         )
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
@@ -368,7 +368,7 @@ class TestApiDraftAndSendMessage:
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.READ,
+            role=enums.MailboxRoleChoices.VIEWER,
         )
         # Create a client and authenticate the user
         client = APIClient()
@@ -442,7 +442,7 @@ class TestApiDraftAndSendMessage:
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.EDIT,
+            role=enums.MailboxRoleChoices.EDITOR,
         )
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
@@ -465,7 +465,7 @@ class TestApiDraftAndSendMessage:
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.EDIT,
+            role=enums.MailboxRoleChoices.EDITOR,
         )
 
         # Create a thread with a *sent* message
@@ -507,12 +507,7 @@ class TestApiDraftAndSendReply:
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.EDIT,
-        )
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.SEND,
+            role=enums.MailboxRoleChoices.EDITOR,
         )
         # Create a thread with a message
         thread_access = factories.ThreadAccessFactory(
@@ -594,20 +589,27 @@ class TestApiDraftAndSendReply:
             in sent_message.raw_mime
         )
 
+    @pytest.mark.parametrize(
+        "thread_role",
+        [
+            enums.ThreadAccessRoleChoices.VIEWER,
+            enums.ThreadAccessRoleChoices.EDITOR,
+        ],
+    )
     def test_draft_reply_without_permission_on_mailbox(
-        self, mailbox, authenticated_user
+        self, mailbox, authenticated_user, thread_role
     ):
         """Create draft reply to an existing thread without permission."""
         # Create a mailbox access on this mailbox for the authenticated user
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.READ,
+            role=enums.MailboxRoleChoices.VIEWER,
         )
         # Create a thread with a message
         thread_access = factories.ThreadAccessFactory(
             mailbox=mailbox,
-            role=enums.ThreadAccessRoleChoices.VIEWER,
+            role=thread_role,
         )
         message = factories.MessageFactory(thread=thread_access.thread, read_at=None)
         factories.MessageRecipientFactory(
@@ -631,10 +633,23 @@ class TestApiDraftAndSendReply:
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    @pytest.mark.parametrize(
+        "mailbox_role",
+        [
+            enums.MailboxRoleChoices.VIEWER,
+            enums.MailboxRoleChoices.EDITOR,
+            enums.MailboxRoleChoices.ADMIN,
+        ],
+    )
     def test_draft_reply_without_permission_on_thread(
-        self, mailbox, authenticated_user
+        self, mailbox, authenticated_user, mailbox_role
     ):
         """Create draft reply to an existing thread without permission."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=mailbox_role,
+        )
 
         # Create a thread with a message
         thread_access = factories.ThreadAccessFactory(
@@ -682,10 +697,18 @@ class TestApiDraftAndSendReply:
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    @pytest.mark.parametrize(
+        "mailbox_role",
+        [
+            enums.MailboxRoleChoices.EDITOR,
+            enums.MailboxRoleChoices.ADMIN,
+        ],
+    )
     def test_update_draft_message_success(
         self,
         mailbox,
         authenticated_user,
+        mailbox_role,
         draft_detail_url,
         send_url,
     ):
@@ -694,13 +717,13 @@ class TestApiDraftAndSendReply:
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.EDIT,
+            role=mailbox_role,
         )
-        factories.MailboxAccessFactory(
+        factories.ThreadAccessFactory(
             mailbox=mailbox,
-            user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.SEND,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
         )
+
         # Create a client and authenticate the user
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
@@ -803,7 +826,7 @@ class TestApiDraftAndSendReply:
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.EDIT,
+            role=enums.MailboxRoleChoices.EDITOR,
         )
 
         # Try to update a non-existent draft
@@ -819,13 +842,22 @@ class TestApiDraftAndSendReply:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_update_sent_message(self, mailbox, authenticated_user, draft_detail_url):
+    @pytest.mark.parametrize(
+        "mailbox_role",
+        [
+            enums.MailboxRoleChoices.EDITOR,
+            enums.MailboxRoleChoices.ADMIN,
+        ],
+    )
+    def test_update_sent_message(
+        self, mailbox, authenticated_user, draft_detail_url, mailbox_role
+    ):
         """Test updating an already sent message."""
         # Create a mailbox access on this mailbox for the authenticated user
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.EDIT,
+            role=mailbox_role,
         )
 
         # Create a thread with a sent message
@@ -881,10 +913,10 @@ class TestApiDraftAndSendReply:
         mailbox1 = factories.MailboxFactory(local_part="user1", domain=domain)
         mailbox2 = factories.MailboxFactory(local_part="user2", domain=domain)
         factories.MailboxAccessFactory(
-            mailbox=mailbox1, user=user1, permission=enums.MailboxPermissionChoices.EDIT
+            mailbox=mailbox1, user=user1, role=enums.MailboxRoleChoices.EDITOR
         )
         factories.MailboxAccessFactory(
-            mailbox=mailbox2, user=user2, permission=enums.MailboxPermissionChoices.EDIT
+            mailbox=mailbox2, user=user2, role=enums.MailboxRoleChoices.EDITOR
         )
         addr1 = str(mailbox1)
         addr2 = str(mailbox2)

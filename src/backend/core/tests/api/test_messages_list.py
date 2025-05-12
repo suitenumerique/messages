@@ -15,33 +15,17 @@ class TestApiThreads:
     """Test API threads."""
 
     @pytest.mark.parametrize(
-        "permission,role",
+        "mailbox_role, thread_role",
         [
-            (enums.MailboxPermissionChoices.READ, enums.ThreadAccessRoleChoices.EDITOR),
-            (enums.MailboxPermissionChoices.READ, enums.ThreadAccessRoleChoices.VIEWER),
-            (enums.MailboxPermissionChoices.EDIT, enums.ThreadAccessRoleChoices.EDITOR),
-            (enums.MailboxPermissionChoices.EDIT, enums.ThreadAccessRoleChoices.VIEWER),
-            (enums.MailboxPermissionChoices.SEND, enums.ThreadAccessRoleChoices.EDITOR),
-            (enums.MailboxPermissionChoices.SEND, enums.ThreadAccessRoleChoices.VIEWER),
-            (
-                enums.MailboxPermissionChoices.ADMIN,
-                enums.ThreadAccessRoleChoices.EDITOR,
-            ),
-            (
-                enums.MailboxPermissionChoices.ADMIN,
-                enums.ThreadAccessRoleChoices.VIEWER,
-            ),
-            (
-                enums.MailboxPermissionChoices.DELETE,
-                enums.ThreadAccessRoleChoices.EDITOR,
-            ),
-            (
-                enums.MailboxPermissionChoices.DELETE,
-                enums.ThreadAccessRoleChoices.VIEWER,
-            ),
+            (enums.MailboxRoleChoices.EDITOR, enums.ThreadAccessRoleChoices.VIEWER),
+            (enums.MailboxRoleChoices.VIEWER, enums.ThreadAccessRoleChoices.VIEWER),
+            (enums.MailboxRoleChoices.ADMIN, enums.ThreadAccessRoleChoices.VIEWER),
+            (enums.MailboxRoleChoices.EDITOR, enums.ThreadAccessRoleChoices.EDITOR),
+            (enums.MailboxRoleChoices.VIEWER, enums.ThreadAccessRoleChoices.EDITOR),
+            (enums.MailboxRoleChoices.ADMIN, enums.ThreadAccessRoleChoices.EDITOR),
         ],
     )
-    def test_list_threads(self, permission, role):
+    def test_list_threads(self, mailbox_role, thread_role):
         """Test list threads."""
         # Create 10 threads to populate the database
         factories.ThreadFactory.create_batch(10)
@@ -58,14 +42,14 @@ class TestApiThreads:
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=permission,
+            role=mailbox_role,
         )
         # Create an other mailbox for the authenticated user with access
         other_mailbox = factories.MailboxFactory()
         factories.MailboxAccessFactory(
             mailbox=other_mailbox,
             user=authenticated_user,
-            permission=permission,
+            role=mailbox_role,
         )
 
         # Create 3 threads with messages in the mailbox
@@ -73,7 +57,7 @@ class TestApiThreads:
         factories.ThreadAccessFactory(
             mailbox=mailbox,
             thread=thread1,
-            role=role,
+            role=thread_role,
         )
         factories.MessageFactory(thread=thread1, read_at=None)
         thread1.update_stats()
@@ -82,7 +66,7 @@ class TestApiThreads:
         factories.ThreadAccessFactory(
             mailbox=mailbox,
             thread=thread2,
-            role=role,
+            role=thread_role,
         )
         message2 = factories.MessageFactory(thread=thread2, read_at=None)
         thread2.update_stats()
@@ -91,7 +75,7 @@ class TestApiThreads:
         factories.ThreadAccessFactory(
             mailbox=mailbox,
             thread=thread3,
-            role=role,
+            role=thread_role,
         )
         factories.MessageFactory(thread=thread3, read_at=None)
         thread3.update_stats()
@@ -158,45 +142,29 @@ class TestApiThreads:
         )
 
     @pytest.mark.parametrize(
-        "permission,role",
+        "mailbox_role, thread_role",
         [
-            (enums.MailboxPermissionChoices.READ, enums.ThreadAccessRoleChoices.EDITOR),
-            (enums.MailboxPermissionChoices.READ, enums.ThreadAccessRoleChoices.VIEWER),
-            (enums.MailboxPermissionChoices.EDIT, enums.ThreadAccessRoleChoices.EDITOR),
-            (enums.MailboxPermissionChoices.EDIT, enums.ThreadAccessRoleChoices.VIEWER),
-            (enums.MailboxPermissionChoices.SEND, enums.ThreadAccessRoleChoices.EDITOR),
-            (enums.MailboxPermissionChoices.SEND, enums.ThreadAccessRoleChoices.VIEWER),
-            (
-                enums.MailboxPermissionChoices.ADMIN,
-                enums.ThreadAccessRoleChoices.EDITOR,
-            ),
-            (
-                enums.MailboxPermissionChoices.ADMIN,
-                enums.ThreadAccessRoleChoices.VIEWER,
-            ),
-            (
-                enums.MailboxPermissionChoices.DELETE,
-                enums.ThreadAccessRoleChoices.EDITOR,
-            ),
-            (
-                enums.MailboxPermissionChoices.DELETE,
-                enums.ThreadAccessRoleChoices.VIEWER,
-            ),
+            (enums.MailboxRoleChoices.EDITOR, enums.ThreadAccessRoleChoices.VIEWER),
+            (enums.MailboxRoleChoices.VIEWER, enums.ThreadAccessRoleChoices.VIEWER),
+            (enums.MailboxRoleChoices.ADMIN, enums.ThreadAccessRoleChoices.VIEWER),
+            (enums.MailboxRoleChoices.EDITOR, enums.ThreadAccessRoleChoices.EDITOR),
+            (enums.MailboxRoleChoices.VIEWER, enums.ThreadAccessRoleChoices.EDITOR),
+            (enums.MailboxRoleChoices.ADMIN, enums.ThreadAccessRoleChoices.EDITOR),
         ],
     )
-    def test_list_threads_delegated_mailbox(self, permission, role):
+    def test_list_threads_delegated_mailbox(self, mailbox_role, thread_role):
         """Test list threads delegated mailbox."""
         # First create Thread for a initial mailbox
         message = factories.MessageFactory()
         initial_mailbox = factories.MailboxFactory()
         factories.MailboxAccessFactory(
             mailbox=initial_mailbox,
-            permission=permission,
+            role=mailbox_role,
         )
         factories.ThreadAccessFactory(
             mailbox=initial_mailbox,
             thread=message.thread,
-            role=role,
+            role=thread_role,
         )
 
         # Create an other mailbox to delegate access to
@@ -205,7 +173,7 @@ class TestApiThreads:
         factories.MailboxAccessFactory(
             mailbox=mailbox_to_delegate,
             user=user_to_delegate,
-            permission=permission,
+            role=mailbox_role,
         )
 
         # Try to access the threads list
@@ -221,7 +189,7 @@ class TestApiThreads:
         factories.ThreadAccessFactory(
             mailbox=mailbox_to_delegate,
             thread=message.thread,
-            role=role,
+            role=thread_role,
         )
         # Try to access the threads list again
         response = client.get(
@@ -245,7 +213,7 @@ class TestApiThreads:
         factories.MailboxAccessFactory(
             mailbox=jean_mailbox,
             user=jean,
-            permission=enums.MailboxPermissionChoices.ADMIN,
+            role=enums.MailboxRoleChoices.ADMIN,
         )
         thread = factories.ThreadFactory()
         factories.ThreadAccessFactory(
@@ -260,7 +228,7 @@ class TestApiThreads:
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.READ,
+            role=enums.MailboxRoleChoices.ADMIN,
         )
         # Create a thread for authenticated user
         thread = factories.ThreadFactory()
@@ -293,7 +261,7 @@ class TestApiMessages:
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
-            permission=enums.MailboxPermissionChoices.READ,
+            role=enums.MailboxRoleChoices.VIEWER,
         )
         thread = factories.ThreadFactory()
         factories.ThreadAccessFactory(

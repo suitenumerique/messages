@@ -124,7 +124,7 @@ class MailboxAdmin(admin.ModelAdmin):
 class MailboxAccessAdmin(admin.ModelAdmin):
     """Admin class for the MailboxAccess model"""
 
-    list_display = ("id", "mailbox", "user", "permission")
+    list_display = ("id", "mailbox", "user", "role")
     search_fields = ("mailbox__local_part", "mailbox__domain__name", "user__email")
 
 

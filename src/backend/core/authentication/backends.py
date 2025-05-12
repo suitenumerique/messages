@@ -12,7 +12,7 @@ from mozilla_django_oidc.auth import (
     OIDCAuthenticationBackend as MozillaOIDCAuthenticationBackend,
 )
 
-from core.enums import MailboxPermissionChoices
+from core.enums import MailboxRoleChoices
 from core.models import (
     Contact,
     DuplicateEmailError,
@@ -181,7 +181,7 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
         MailboxAccess.objects.get_or_create(
             mailbox=mailbox,
             user=user,
-            permission=MailboxPermissionChoices.ADMIN,
+            role=MailboxRoleChoices.ADMIN,
         )
 
         contact, created = Contact.objects.get_or_create(

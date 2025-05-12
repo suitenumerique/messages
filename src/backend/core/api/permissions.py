@@ -137,19 +137,8 @@ class IsAllowedToAccess(IsAuthenticated):
                 return False
 
             if view.action in ["destroy", "send"]:
-                permissions_required = (
-                    [
-                        enums.MailboxPermissionChoices.DELETE,
-                        enums.MailboxPermissionChoices.ADMIN,
-                    ]
-                    if view.action == "destroy"
-                    else [
-                        enums.MailboxPermissionChoices.SEND,
-                        enums.MailboxPermissionChoices.ADMIN,
-                    ]
-                )
+                # Only EDITOR or ADMIN role can destroy or send
                 mailbox = thread.accesses.get(mailbox__accesses__user=user).mailbox
-                # Delete and send permissions are only allowed for EDITOR role and some mailbox permissions
                 if (
                     models.ThreadAccess.objects.filter(
                         thread=thread,
@@ -159,7 +148,10 @@ class IsAllowedToAccess(IsAuthenticated):
                     and models.MailboxAccess.objects.filter(
                         mailbox=mailbox,
                         user=user,
-                        permission__in=permissions_required,
+                        role__in=[
+                            enums.MailboxRoleChoices.EDITOR,
+                            enums.MailboxRoleChoices.ADMIN,
+                        ],
                     ).exists()
                 ):
                     return True
@@ -193,19 +185,14 @@ class IsAllowedToCreateMessage(IsAuthenticated):
         except models.Mailbox.DoesNotExist:
             return False  # Invalid senderId
 
-        # Check if user has required permissions on the sender Mailbox
-        permissions_required = [
-            enums.MailboxPermissionChoices.EDIT,
-            enums.MailboxPermissionChoices.ADMIN,
-        ]
-        # check if user has access required to send a message with this mailbox
-        has_edit_permission = view.mailbox.accesses.filter(
+        # Check if user has required role on the sender Mailbox
+        has_edit_role = view.mailbox.accesses.filter(
             user=request.user,
-            permission__in=permissions_required,
+            role__in=[enums.MailboxRoleChoices.EDITOR, enums.MailboxRoleChoices.ADMIN],
         ).exists()
 
-        # if user does not have edit permission with this sender mailbox, return False
-        if not has_edit_permission:
+        # if user does not have edit role with this sender mailbox, return False
+        if not has_edit_role:
             return False
 
         # --- Additional check for replies ---

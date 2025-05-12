@@ -598,7 +598,7 @@ def test_authentication_getter_new_user_with_testdomain(monkeypatch):
     assert models.MailboxAccess.objects.filter(
         mailbox=mailbox,
         user=user,
-        permission=models.MailboxPermissionChoices.ADMIN,
+        role=models.MailboxRoleChoices.ADMIN,
     ).exists()
 
 

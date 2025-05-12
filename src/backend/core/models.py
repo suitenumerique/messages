@@ -18,7 +18,7 @@ from django.utils.translation import gettext_lazy as _
 from timezone_field import TimeZoneField
 
 from core.enums import (
-    MailboxPermissionChoices,
+    MailboxRoleChoices,
     MessageRecipientTypeChoices,
     ThreadAccessRoleChoices,
 )
@@ -223,20 +223,21 @@ class MailboxAccess(BaseModel):
     user = models.ForeignKey(
         "User", on_delete=models.CASCADE, related_name="mailbox_accesses"
     )
-    permission = models.CharField(
-        _("permission"),
+    role = models.CharField(
+        _("role"),
         max_length=20,
-        choices=MailboxPermissionChoices.choices,
-        default=MailboxPermissionChoices.READ,
+        choices=MailboxRoleChoices.choices,
+        default=MailboxRoleChoices.VIEWER,
     )
 
     class Meta:
         db_table = "messages_mailboxaccess"
         verbose_name = _("mailbox access")
         verbose_name_plural = _("mailbox accesses")
+        unique_together = ("mailbox", "user")
 
     def __str__(self):
-        return f"Access to {self.mailbox} for {self.user} with {self.permission} permission"
+        return f"Access to {self.mailbox} for {self.user} with {self.role} role"
 
 
 class Thread(BaseModel):

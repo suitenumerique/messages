@@ -21,7 +21,7 @@ class MailboxSerializer(serializers.ModelSerializer):
     """Serialize mailboxes."""
 
     email = serializers.SerializerMethodField(read_only=True)
-    perms = serializers.SerializerMethodField(read_only=True)
+    role = serializers.SerializerMethodField(read_only=True)
     count_unread_messages = serializers.SerializerMethodField(read_only=True)
     count_messages = serializers.SerializerMethodField(read_only=True)
 
@@ -29,16 +29,12 @@ class MailboxSerializer(serializers.ModelSerializer):
         """Return the email of the mailbox."""
         return str(instance)
 
-    def get_perms(self, instance):
+    def get_role(self, instance):
         """Return the allowed actions of the logged-in user on the instance."""
         request = self.context.get("request")
         if request:
-            return list(
-                instance.accesses.filter(user=request.user).values_list(
-                    "permission", flat=True
-                )
-            )
-        return []
+            return instance.accesses.get(user=request.user).role
+        return None
 
     def get_count_unread_messages(self, instance):
         """Return the number of unread messages in the mailbox."""
@@ -56,7 +52,7 @@ class MailboxSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.Mailbox
-        fields = ["id", "email", "perms", "count_unread_messages", "count_messages"]
+        fields = ["id", "email", "role", "count_unread_messages", "count_messages"]
 
 
 class ContactSerializer(serializers.ModelSerializer):
