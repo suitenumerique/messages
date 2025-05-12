@@ -60,13 +60,7 @@ class TestApiDraftAndSendMessage:
             user=authenticated_user,
             role=enums.MailboxRoleChoices.EDITOR,
         )
-        # TODO: check if this action is needed to create a draft and send a message
-        # is mailbox access enough?
-
-        # thread_access = factories.ThreadAccessFactory(
-        #    mailbox=mailbox,
-        #    role=enums.ThreadAccessRoleChoices.EDITOR,
-        # )
+        assert not models.ThreadAccess.objects.exists()
 
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
@@ -109,6 +103,13 @@ class TestApiDraftAndSendMessage:
         assert draft_message.thread.count_starred == 0
         assert draft_message.thread.count_draft == 1
         assert draft_message.thread.sender_names == [draft_message.sender.name]
+
+        # check thread access was created
+        assert models.ThreadAccess.objects.filter(
+            thread=draft_message.thread,
+            mailbox=mailbox,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        ).exists()
 
         draft_api_message = client.get(
             reverse("messages-detail", kwargs={"id": draft_message_id})
