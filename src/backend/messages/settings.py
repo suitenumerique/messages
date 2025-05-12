@@ -62,6 +62,19 @@ class Base(Configuration):
 
     API_VERSION = "v1.0"
 
+    # Elasticsearch configuration
+    ELASTICSEARCH_HOSTS = values.ListValue(
+        ["http://elasticsearch:9200"],
+        environ_name="ELASTICSEARCH_URL",
+        environ_prefix=None,
+    )
+    ELASTICSEARCH_TIMEOUT = values.PositiveIntegerValue(
+        20, environ_name="ELASTICSEARCH_TIMEOUT", environ_prefix=None
+    )
+    ELASTICSEARCH_INDEX_THREADS = values.BooleanValue(
+        True, environ_name="ELASTICSEARCH_INDEX_THREADS", environ_prefix=None
+    )
+
     # Security
     ALLOWED_HOSTS = values.ListValue([])
     SECRET_KEY = values.Value(None)
@@ -274,11 +287,12 @@ class Base(Configuration):
         "drf_spectacular",
         # Third party apps
         "corsheaders",
+        "django_celery_beat",
+        "django_celery_results",
         "django_filters",
         "dockerflow.django",
         "rest_framework",
         "parler",
-        "easy_thumbnails",
         # Django
         "django.contrib.admin",
         "django.contrib.auth",
@@ -367,11 +381,16 @@ class Base(Configuration):
         None, environ_name="POSTHOG_KEY", environ_prefix=None
     )
 
-    # Easy thumbnails
-    THUMBNAIL_EXTENSION = "webp"
-    THUMBNAIL_TRANSPARENCY_EXTENSION = "webp"
-    THUMBNAIL_DEFAULT_STORAGE_ALIAS = "default"
-    THUMBNAIL_ALIASES = {}
+    # Celery
+    CELERY_BROKER_URL = values.Value(
+        "redis://redis:6379/0", environ_name="CELERY_BROKER_URL", environ_prefix=None
+    )
+    CELERY_RESULT_BACKEND = "django-db"
+    CELERY_CACHE_BACKEND = "django-cache"
+    CELERY_BROKER_TRANSPORT_OPTIONS = values.DictValue({})
+    CELERY_RESULT_EXTENDED = True
+    CELERY_TASK_RESULT_EXPIRES = 60 * 60 * 24 * 30  # 30 days
+    CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
     # Session
     SESSION_ENGINE = "django.contrib.sessions.backends.cache"
@@ -380,7 +399,7 @@ class Base(Configuration):
 
     # OIDC - Authorization Code Flow
     OIDC_CREATE_USER = values.BooleanValue(
-        default=True,
+        default=False,
         environ_name="OIDC_CREATE_USER",
     )
     OIDC_RP_SIGN_ALGO = values.Value(

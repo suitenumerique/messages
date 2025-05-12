@@ -1,4 +1,6 @@
-# Gunicorn-django settings
+"""Gunicorn-django settings"""
+# pylint: disable=invalid-name
+
 bind = ["0.0.0.0:8000"]
 name = "messages"
 python_path = "/app"

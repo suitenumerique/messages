@@ -13,7 +13,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from core.mda.delivery import check_local_recipient, deliver_inbound_message
+from core.mda.inbound import check_local_recipient, deliver_inbound_message
 from core.mda.rfc5322 import EmailParseError, parse_email_message
 
 logger = logging.getLogger(__name__)

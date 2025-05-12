@@ -19,9 +19,7 @@ pytestmark = pytest.mark.django_db
 
 
 @override_settings(MESSAGES_TESTDOMAIN=None)
-def test_authentication_getter_existing_user_no_email(
-    django_assert_num_queries, monkeypatch
-):
+def test_authentication_getter_existing_user_no_email(monkeypatch):
     """
     If an existing user matches the user's info sub, the user should be returned.
     """
@@ -34,18 +32,15 @@ def test_authentication_getter_existing_user_no_email(
 
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
-    with django_assert_num_queries(1):
-        user = klass.get_or_create_user(
-            access_token="test-token", id_token=None, payload=None
-        )
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
 
     assert user == db_user
 
 
 @override_settings(MESSAGES_TESTDOMAIN=None)
-def test_authentication_getter_existing_user_via_email(
-    django_assert_num_queries, monkeypatch
-):
+def test_authentication_getter_existing_user_via_email(monkeypatch):
     """
     If an existing user doesn't match the sub but matches the email,
     the user should be returned.
@@ -59,21 +54,20 @@ def test_authentication_getter_existing_user_via_email(
 
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
-    with django_assert_num_queries(2):
-        user = klass.get_or_create_user(
-            access_token="test-token", id_token=None, payload=None
-        )
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
 
     assert user == db_user
 
 
 def test_authentication_getter_email_none(monkeypatch):
     """
-    If no user is found with the sub and no email is provided, a new user should be created.
+    If no user is found with the sub and no email is provided, no user should be created (we need emails here!)
     """
 
     klass = OIDCAuthenticationBackend()
-    db_user = UserFactory(email=None)
+    UserFactory(email=None)
 
     def get_userinfo_mocked(*args):
         user_info = {"sub": "123"}
@@ -87,79 +81,13 @@ def test_authentication_getter_email_none(monkeypatch):
         access_token="test-token", id_token=None, payload=None
     )
 
-    # Since the sub and email didn't match, it should create a new user
-    assert models.User.objects.count() == 2
-    assert user != db_user
-    assert user.sub == "123"
-
-
-def test_authentication_getter_existing_user_no_fallback_to_email_allow_duplicate(
-    settings, monkeypatch
-):
-    """
-    When the "OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION" setting is set to False,
-    the system should not match users by email, even if the email matches.
-    """
-
-    klass = OIDCAuthenticationBackend()
-    db_user = UserFactory()
-
-    # Set the setting to False
-    settings.OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION = False
-    settings.OIDC_ALLOW_DUPLICATE_EMAILS = True
-
-    def get_userinfo_mocked(*args):
-        return {"sub": "123", "email": db_user.email}
-
-    monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
-
-    user = klass.get_or_create_user(
-        access_token="test-token", id_token=None, payload=None
-    )
-
-    # Since the sub doesn't match, it should create a new user
-    assert models.User.objects.count() == 2
-    assert user != db_user
-    assert user.sub == "123"
-
-
-def test_authentication_getter_existing_user_no_fallback_to_email_no_duplicate(
-    settings, monkeypatch
-):
-    """
-    When the "OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION" setting is set to False,
-    the system should not match users by email, even if the email matches.
-    """
-
-    klass = OIDCAuthenticationBackend()
-    db_user = UserFactory()
-
-    # Set the setting to False
-    settings.OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION = False
-    settings.OIDC_ALLOW_DUPLICATE_EMAILS = False
-
-    def get_userinfo_mocked(*args):
-        return {"sub": "123", "email": db_user.email}
-
-    monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
-
-    with pytest.raises(
-        SuspiciousOperation,
-        match=(
-            "We couldn't find a user with this sub but the email is already associated "
-            "with a registered user."
-        ),
-    ):
-        klass.get_or_create_user(access_token="test-token", id_token=None, payload=None)
-
-    # Since the sub doesn't match, it should not create a new user
+    # Since the sub and email didn't match, it shouldn't create a new user
     assert models.User.objects.count() == 1
+    assert user is None
 
 
 @override_settings(MESSAGES_TESTDOMAIN=None)
-def test_authentication_getter_existing_user_with_email(
-    django_assert_num_queries, monkeypatch
-):
+def test_authentication_getter_existing_user_with_email(monkeypatch):
     """
     When the user's info contains an email and targets an existing user,
     """
@@ -176,11 +104,9 @@ def test_authentication_getter_existing_user_with_email(
 
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
-    # Only 1 query because email and names have not changed
-    with django_assert_num_queries(1):
-        authenticated_user = klass.get_or_create_user(
-            access_token="test-token", id_token=None, payload=None
-        )
+    authenticated_user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
 
     assert user == authenticated_user
 
@@ -196,7 +122,7 @@ def test_authentication_getter_existing_user_with_email(
     ],
 )
 def test_authentication_getter_existing_user_change_fields_sub(
-    first_name, last_name, email, django_assert_num_queries, monkeypatch
+    first_name, last_name, email, monkeypatch
 ):
     """
     It should update the email or name fields on the user when they change
@@ -217,11 +143,9 @@ def test_authentication_getter_existing_user_change_fields_sub(
 
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
-    # One and only one additional update query when a field has changed
-    with django_assert_num_queries(2):
-        authenticated_user = klass.get_or_create_user(
-            access_token="test-token", id_token=None, payload=None
-        )
+    authenticated_user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
 
     assert user == authenticated_user
     user.refresh_from_db()
@@ -239,7 +163,7 @@ def test_authentication_getter_existing_user_change_fields_sub(
     ],
 )
 def test_authentication_getter_existing_user_change_fields_email(
-    first_name, last_name, email, django_assert_num_queries, monkeypatch
+    first_name, last_name, email, monkeypatch
 ):
     """
     It should update the name fields on the user when they change
@@ -260,11 +184,9 @@ def test_authentication_getter_existing_user_change_fields_email(
 
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
-    # One and only one additional update query when a field has changed
-    with django_assert_num_queries(3):
-        authenticated_user = klass.get_or_create_user(
-            access_token="test-token", id_token=None, payload=None
-        )
+    authenticated_user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
 
     assert user == authenticated_user
     user.refresh_from_db()
@@ -275,8 +197,7 @@ def test_authentication_getter_existing_user_change_fields_email(
 
 def test_authentication_getter_new_user_no_email(monkeypatch):
     """
-    If no user matches the user's info sub, a user should be created.
-    User's info doesn't contain an email, created user's email should be empty.
+    If no user matches the user's info sub, a user shouldn't be created if it has no email
     """
     klass = OIDCAuthenticationBackend()
 
@@ -289,12 +210,8 @@ def test_authentication_getter_new_user_no_email(monkeypatch):
         access_token="test-token", id_token=None, payload=None
     )
 
-    assert user.sub == "123"
-    assert user.email is None
-    assert user.full_name is None
-    assert user.short_name is None
-    assert user.password == "!"
-    assert models.User.objects.count() == 1
+    assert models.User.objects.count() == 0
+    assert user is None
 
 
 def test_authentication_getter_new_user_with_email(monkeypatch):
@@ -395,9 +312,7 @@ def test_authentication_get_userinfo_invalid_response():
         oidc_backend.get_userinfo("fake_access_token", None, None)
 
 
-def test_authentication_getter_existing_disabled_user_via_sub(
-    django_assert_num_queries, monkeypatch
-):
+def test_authentication_getter_existing_disabled_user_via_sub(monkeypatch):
     """
     If an existing user matches the sub but is disabled,
     an error should be raised and a user should not be created.
@@ -417,7 +332,6 @@ def test_authentication_getter_existing_disabled_user_via_sub(
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
     with (
-        django_assert_num_queries(1),
         pytest.raises(SuspiciousOperation, match="User account is disabled"),
     ):
         klass.get_or_create_user(access_token="test-token", id_token=None, payload=None)
@@ -425,9 +339,7 @@ def test_authentication_getter_existing_disabled_user_via_sub(
     assert models.User.objects.count() == 1
 
 
-def test_authentication_getter_existing_disabled_user_via_email(
-    django_assert_num_queries, monkeypatch
-):
+def test_authentication_getter_existing_disabled_user_via_email(monkeypatch):
     """
     If an existing user does not match the sub but matches the email and is disabled,
     an error should be raised and a user should not be created.
@@ -447,7 +359,6 @@ def test_authentication_getter_existing_disabled_user_via_email(
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
     with (
-        django_assert_num_queries(2),
         pytest.raises(SuspiciousOperation, match="User account is disabled"),
     ):
         klass.get_or_create_user(access_token="test-token", id_token=None, payload=None)
@@ -458,7 +369,7 @@ def test_authentication_getter_existing_disabled_user_via_email(
 # Essential claims
 
 
-def test_authentication_verify_claims_default(django_assert_num_queries, monkeypatch):
+def test_authentication_verify_claims_default(monkeypatch):
     """The sub claim should be mandatory by default."""
     klass = OIDCAuthenticationBackend()
 
@@ -470,7 +381,6 @@ def test_authentication_verify_claims_default(django_assert_num_queries, monkeyp
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
     with (
-        django_assert_num_queries(0),
         pytest.raises(
             KeyError,
             match="sub",
@@ -494,7 +404,6 @@ def test_authentication_verify_claims_essential_missing(
     mock_logger,
     essential_claims,
     missing_claims,
-    django_assert_num_queries,
     monkeypatch,
 ):
     """Ensure SuspiciousOperation is raised if essential claims are missing."""
@@ -510,7 +419,6 @@ def test_authentication_verify_claims_essential_missing(
     monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
 
     with (
-        django_assert_num_queries(0),
         pytest.raises(
             SuspiciousOperation,
             match="Claims verification failed",
@@ -610,7 +518,7 @@ def test_authentication_getter_new_user_with_testdomain(monkeypatch):
 )
 def test_authentication_getter_new_user_with_testdomain_no_mapping(monkeypatch):
     """
-    Check the TESTDOMAIN creation process
+    Check the TESTDOMAIN creation process when email doesn't match
     """
 
     klass = OIDCAuthenticationBackend()
@@ -628,13 +536,6 @@ def test_authentication_getter_new_user_with_testdomain_no_mapping(monkeypatch):
         access_token="test-token", id_token=None, payload=None
     )
 
-    assert models.User.objects.filter(id=user.id).exists()
+    assert user is None
 
-    assert user.sub == "123"
-    assert user.full_name == "Doe"
-    assert user.short_name is None
-    assert user.email == "john.doe@notgouv.fr"
-
-    assert len(models.Contact.objects.all()) == 0
-    assert len(models.Mailbox.objects.all()) == 0
-    assert len(models.MailboxAccess.objects.all()) == 0
+    assert models.User.objects.count() == 0

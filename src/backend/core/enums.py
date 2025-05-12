@@ -44,3 +44,12 @@ THREAD_STATS_FIELDS_MAP = {
     "sender": "count_sender",
     "messages": "count_messages",
 }
+
+
+class MessageDeliveryStatusChoices(models.TextChoices):
+    """Defines the possible statuses of a message delivery."""
+
+    INTERNAL = "internal", _("Internal")
+    SENT = "sent", _("Sent")
+    FAILED = "failed", _("Failed")
+    RETRY = "retry", _("Retry")

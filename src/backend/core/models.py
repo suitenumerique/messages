@@ -19,6 +19,7 @@ from timezone_field import TimeZoneField
 
 from core.enums import (
     MailboxRoleChoices,
+    MessageDeliveryStatusChoices,
     MessageRecipientTypeChoices,
     ThreadAccessRoleChoices,
 )
@@ -186,7 +187,17 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
 class MailDomain(BaseModel):
     """Mail domain model to store mail domain information."""
 
-    name = models.CharField(_("name"), max_length=255)
+    name = models.CharField(_("name"), max_length=255, unique=True)
+
+    alias_of = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True
+    )
+
+    oidc_autojoin = models.BooleanField(
+        _("oidc autojoin"),
+        default=False,
+        help_text=_("Create mailboxes automatically based on OIDC emails."),
+    )
 
     class Meta:
         db_table = "messages_maildomain"
@@ -196,12 +207,38 @@ class MailDomain(BaseModel):
     def __str__(self):
         return self.name
 
+    def get_expected_dns_records(self) -> List[str]:
+        """Get the list of DNS records we expect to be present for this domain."""
+        records = [
+            {"target": "", "type": "mx", "value": "TODO"},
+            {
+                "target": "",
+                "type": "txt",
+                "value": "v=spf1 include:_spf.TODO -all",
+            },
+            {
+                "target": "_dmarc",
+                "type": "txt",
+                "value": "v=DMARC1; p=reject; adkim=s; aspf=s;",
+            },
+            {
+                "target": "s1._domainkey",
+                "type": "cname",
+                "value": "TODO",
+            },
+        ]
+        return records
+
 
 class Mailbox(BaseModel):
     """Mailbox model to store mailbox information."""
 
     local_part = models.CharField(_("local part"), max_length=255)
     domain = models.ForeignKey("MailDomain", on_delete=models.CASCADE)
+
+    alias_of = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True
+    )
 
     class Meta:
         db_table = "messages_mailbox"
@@ -212,6 +249,21 @@ class Mailbox(BaseModel):
 
     def __str__(self):
         return f"{self.local_part}@{self.domain.name}"
+
+    @property
+    def threads_viewer(self):
+        """Return queryset of threads where the mailbox has at least viewer access."""
+        return Thread.objects.filter(
+            accesses__mailbox=self,
+        )
+
+    @property
+    def threads_editor(self):
+        """Return queryset of threads where the mailbox has editor access."""
+        return Thread.objects.filter(
+            accesses__mailbox=self,
+            accesses__role=ThreadAccessRoleChoices.EDITOR,
+        )
 
 
 class MailboxAccess(BaseModel):
@@ -397,6 +449,18 @@ class MessageRecipient(BaseModel):
         default=MessageRecipientTypeChoices.TO,
     )
 
+    delivered_at = models.DateTimeField(_("delivered at"), null=True, blank=True)
+    delivery_status = models.CharField(
+        _("delivery status"),
+        max_length=20,
+        null=True,
+        blank=True,
+        choices=MessageDeliveryStatusChoices.choices,
+    )
+    delivery_message = models.TextField(_("delivery message"), null=True, blank=True)
+    retry_count = models.IntegerField(_("retry count"), default=0)
+    retry_at = models.DateTimeField(_("retry at"), null=True, blank=True)
+
     class Meta:
         db_table = "messages_messagerecipient"
         verbose_name = _("message recipient")
@@ -430,7 +494,6 @@ class Message(BaseModel):
     sent_at = models.DateTimeField(_("sent at"), null=True, blank=True)
     read_at = models.DateTimeField(_("read at"), null=True, blank=True)
 
-    mta_sent = models.BooleanField(_("mta sent"), default=False)
     mime_id = models.CharField(_("mime id"), max_length=998, null=True, blank=True)
 
     # Stores the raw MIME message. This will be optimized and offloaded

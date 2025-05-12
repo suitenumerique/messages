@@ -1,12 +1,9 @@
 #
-# messages package
+# messages backend package
 #
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
 
 [project]
-name = "messages"
+name = "messages-backend"
 version = "0.0.1"
 authors = [{ "name" = "ANCT", "email" = "suiteterritoriale@anct.gouv.fr" }]
 classifiers = [
@@ -21,33 +18,33 @@ classifiers = [
 ]
 description = "A Django MDA"
 keywords = ["Django", "Contacts", "Templates", "RBAC"]
-license = { file = "LICENSE" }
+license = "MIT"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<4.0"
 dependencies = [
     "boto3==1.36.7",
-    "Brotli==1.1.0",
+    "celery[redis]==5.5.2",
     "dj-database-url==2.3.0",
     "django==5.1.8",
+    "django-celery-beat==2.8.0",
+    "django-celery-results==2.6.0",
     "django-configurations==2.5.1",
     "django-cors-headers==4.6.0",
     "django-countries==7.6.1",
     "django-filter==24.3",
-    "django-ltree@git+https://github.com/mariocesar/django-ltree@5d955bc82021a50c522ee524106f6709e3b414e4",
     "django-parler==2.3",   
     "django-redis==5.4.0",
     "django-storages[s3]==1.14.4",
-    "django-timezone-field>=5.1",
+    "django-timezone-field==7.1",
     "djangorestframework==3.15.2",
     "dkimpy==1.1.8",
+    "dnspython==2.7.0",
     "dockerflow==2024.4.2",
     "drf_spectacular==0.28.0",
-    "easy_thumbnails==2.10",
+    "elasticsearch==7.17.12",
     "factory_boy==3.3.1",
     "flanker@git+https://github.com/sylvinus/flanker@f94ba2c15ab310e333610a78828d09be4e11a6b6",
     "gunicorn==23.0.0",
-    "jsonschema==4.23.0",
-    "markdown==3.7",
     "mozilla-django-oidc==4.0.1",
     "nested-multipart-parser==1.5.0",
     "psycopg[binary]==3.2.4",
@@ -55,7 +52,7 @@ dependencies = [
     "python-magic==0.4.27",
     "redis==5.2.1",
     "requests==2.32.3",
-    "sentry-sdk==2.20.0",
+    "sentry-sdk[django]==2.27.0",
     "url-normalize==1.4.3",
     "whitenoise==6.8.2",
 ]
@@ -76,18 +73,14 @@ dev = [
     "pytest-django==4.9.0",
     "pytest==8.3.4",
     "pytest-icdiff==0.9",
+    "pytest-repeat==0.9.4",
     "pytest-xdist==3.6.1",
     "responses==0.25.6",
-    "ruff==0.9.3",
-    "types-requests==2.32.0.20241016",
+    "ruff==0.9.3"
 ]
 
-[tool.setuptools]
-packages = { find = { where = ["."], exclude = ["tests"] } }
-zip-safe = true
-
-[tool.distutils.bdist_wheel]
-universal = true
+[tool.poetry]
+package-mode = false
 
 [tool.ruff]
 exclude = [
