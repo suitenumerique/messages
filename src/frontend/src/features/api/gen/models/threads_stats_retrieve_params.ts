@@ -5,6 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { ThreadsStatsRetrieveStatsFields } from "./threads_stats_retrieve_stats_fields";
 
 export type ThreadsStatsRetrieveParams = {
   /**
@@ -32,7 +33,7 @@ export type ThreadsStatsRetrieveParams = {
    */
   mailbox_id?: string;
   /**
-   * Comma-separated list of fields to aggregate (e.g., unread,messages,trashed).
+   * Comma-separated list of fields to aggregate. Allowed values: unread, trashed, draft, starred, sender, messages
    */
-  stats_fields: string;
+  stats_fields: ThreadsStatsRetrieveStatsFields;
 };

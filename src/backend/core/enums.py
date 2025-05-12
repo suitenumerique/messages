@@ -29,3 +29,13 @@ class MessageRecipientTypeChoices(models.TextChoices):
     TO = "to", _("To")
     CC = "cc", _("Cc")
     BCC = "bcc", _("Bcc")
+
+
+THREAD_STATS_FIELDS_MAP = {
+    "unread": "count_unread",
+    "trashed": "count_trashed",
+    "draft": "count_draft",
+    "starred": "count_starred",
+    "sender": "count_sender",
+    "messages": "count_messages",
+}

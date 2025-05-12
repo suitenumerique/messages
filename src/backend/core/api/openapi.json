@@ -1397,10 +1397,20 @@
                         "in": "query",
                         "name": "stats_fields",
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "enum": [
+                                "draft",
+                                "messages",
+                                "sender",
+                                "starred",
+                                "trashed",
+                                "unread"
+                            ]
                         },
-                        "description": "Comma-separated list of fields to aggregate (e.g., unread,messages,trashed).",
-                        "required": true
+                        "description": "Comma-separated list of fields to aggregate. Allowed values: unread, trashed, draft, starred, sender, messages",
+                        "required": true,
+                        "explode": false,
+                        "style": "form"
                     }
                 ],
                 "tags": [
@@ -1417,24 +1427,45 @@
                             "application/json": {
                                 "schema": {
                                     "type": "object",
-                                    "additionalProperties": {},
-                                    "description": "Unspecified response body"
+                                    "properties": {
+                                        "unread": {
+                                            "type": "integer"
+                                        },
+                                        "trashed": {
+                                            "type": "integer"
+                                        },
+                                        "draft": {
+                                            "type": "integer"
+                                        },
+                                        "starred": {
+                                            "type": "integer"
+                                        },
+                                        "sender": {
+                                            "type": "integer"
+                                        },
+                                        "messages": {
+                                            "type": "integer"
+                                        }
+                                    }
                                 }
                             }
                         },
-                        "description": ""
+                        "description": "A dictionary containing the aggregated counts. Keys correspond to the fields requested via the `stats_fields` query parameter. All possible keys (derived from THREAD_STATS_FIELDS_MAP) are defined in the schema, each mapping to an integer count. Keys not requested will not be present in the response."
                     },
                     "400": {
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
-                                    "additionalProperties": {},
-                                    "description": "Unspecified response body"
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
                                 }
                             }
                         },
-                        "description": ""
+                        "description": "Returned if `stats_fields` parameter is missing or contains invalid fields. Allowed fields: unread, trashed, draft, starred, sender, messages"
                     }
                 }
             }

@@ -6,7 +6,6 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-/**
- * Unspecified response body
- */
-export type ThreadsStatsRetrieve400 = { [key: string]: unknown };
+export type ThreadsStatsRetrieve400 = {
+  detail?: string;
+};

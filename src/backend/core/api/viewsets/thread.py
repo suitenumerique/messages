@@ -4,10 +4,14 @@ from django.db.models import Sum
 
 import rest_framework as drf
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+)
 from rest_framework import mixins, viewsets
 
-from core import models
+from core import enums, models
 
 from .. import permissions, serializers
 
@@ -104,23 +108,40 @@ class ThreadViewSet(
                 type=OpenApiTypes.STR,
                 location=OpenApiParameter.QUERY,
                 required=True,
-                description="Comma-separated list of fields to aggregate (e.g., unread,messages,trashed).",
+                description=(
+                    f"Comma-separated list of fields to aggregate. "
+                    f"Allowed values: {', '.join(enums.THREAD_STATS_FIELDS_MAP.keys())}"
+                ),
+                enum=list(enums.THREAD_STATS_FIELDS_MAP.keys()),
+                style="form",
+                explode=False,
             ),
         ],
         responses={
-            200: OpenApiExample(
-                "Success Response",
-                value={
-                    "unread": 10,
-                    "messages": 50,
-                    "trashed": 5,
-                    "draft": 2,
-                    "starred": 8,
-                    "sender": 20,
+            200: OpenApiResponse(
+                response={
+                    "type": "object",
+                    "properties": {
+                        key: {"type": "integer"}
+                        for key in enums.THREAD_STATS_FIELDS_MAP
+                    },
                 },
+                description=(
+                    "A dictionary containing the aggregated counts. "
+                    "Keys correspond to the fields requested via the `stats_fields` query parameter. "
+                    "All possible keys (derived from THREAD_STATS_FIELDS_MAP) are defined in the schema, "
+                    "each mapping to an integer count. Keys not requested will not be present in the response."
+                ),
             ),
-            400: OpenApiExample(
-                "Bad Request", value={"detail": "Invalid stats_fields requested."}
+            400: OpenApiResponse(
+                response={
+                    "type": "object",
+                    "properties": {"detail": {"type": "string"}},
+                },
+                description=(
+                    f"Returned if `stats_fields` parameter is missing or contains invalid fields. "
+                    f"Allowed fields: {', '.join(enums.THREAD_STATS_FIELDS_MAP.keys())}"
+                ),
             ),
         },
         description="Get aggregated statistics for threads based on filters.",
@@ -144,18 +165,9 @@ class ThreadViewSet(
 
         requested_fields = [field.strip() for field in stats_fields_param.split(",")]
 
-        valid_fields_map = {
-            "unread": "count_unread",
-            "trashed": "count_trashed",
-            "draft": "count_draft",
-            "starred": "count_starred",
-            "sender": "count_sender",
-            "messages": "count_messages",
-        }
-
         aggregations = {}
         for field in requested_fields:
-            model_field = valid_fields_map.get(field)
+            model_field = enums.THREAD_STATS_FIELDS_MAP.get(field)
             if model_field:
                 aggregations[field] = Sum(model_field)
             else:
