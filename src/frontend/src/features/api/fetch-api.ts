@@ -25,7 +25,7 @@ export const fetchAPI= async <T>(
   }
 
   if (response.ok) {
-    const data = await response.json();
+    const data = response.status === 204 ? null : await response.json();
     return { status: response.status, data, headers: response.headers } as T;
   }
 

@@ -6,10 +6,9 @@ import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Message, useDraftCreate, useDraftUpdate2, useSendCreate } from "@/features/api/gen";
+import { Message, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
 import MessageEditor from "@/features/forms/components/message-editor";
 import { useMailboxContext } from "@/features/mailbox/provider";
-import useTrash from "@/features/message/use-trash";
 import MailHelper from "@/features/utils/mail-helper";
 import soundbox from "@/features/utils/soundbox";
 import { RhfInput, RhfSelect } from "../react-hook-form";
@@ -73,8 +72,7 @@ export const MessageForm = ({
     const [showCCField, setShowCCField] = useState((draftMessage?.cc?.length ?? 0) > 0);
     const [showBCCField, setShowBCCField] = useState((draftMessage?.bcc?.length ?? 0) > 0);
     const [pendingSubmit, setPendingSubmit] = useState(false);
-    const { markAsTrashed } = useTrash();
-    const { selectedMailbox, mailboxes, invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
+    const { selectedMailbox, mailboxes, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
     const hideSubjectField = Boolean(parentMessage);
     const hideFromField = (mailboxes?.length ?? 0) === 0 || draft;
 
@@ -163,6 +161,31 @@ export const MessageForm = ({
     const draftUpdateMutation = useDraftUpdate2({
         mutation: { onSuccess: handleDraftMutationSuccess }
     });
+
+    const deleteMessageMutation = useMessagesDestroy({
+        mutation: {
+            onSuccess: () => {
+                setDraft(undefined);
+                invalidateThreadMessages();
+                invalidateThreadsStats();
+                unselectThread();
+                addToast(
+                    <ToasterItem type="info">
+                        
+                        <span>{t("message_form.success.draft_deleted")}</span>
+                    </ToasterItem>
+                );
+            },
+        }
+    });
+
+    const handleDeleteMessage = (messageId: string) => {
+        if(window.confirm(t("message_form.confirm.delete"))) {
+            deleteMessageMutation.mutate({
+                id: messageId
+            });
+        }
+    }
 
     /**
      * Update or create a draft message if any field to change.
@@ -351,7 +374,7 @@ export const MessageForm = ({
                             <Button 
                                 type="button" 
                                 color="secondary" 
-                                onClick={() => markAsTrashed({ messageIds: [draft.id] })}
+                                onClick={() => handleDeleteMessage(draft.id)}
                             >
                                 {t("actions.delete_draft")}
                             </Button>
