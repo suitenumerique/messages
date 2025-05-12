@@ -144,7 +144,9 @@ def smtp_client():
     for attempt in range(max_retries):
         try:
             # First check if SMTP connection can be established
-            client = smtplib.SMTP(MTA_OUT_HOST.split(":")[0], int(MTA_OUT_HOST.split(":")[1]))
+            client = smtplib.SMTP(
+                MTA_OUT_HOST.split(":")[0], int(MTA_OUT_HOST.split(":")[1])
+            )
             client.ehlo()
             client.starttls()
             client.ehlo()

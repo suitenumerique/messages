@@ -10,3 +10,10 @@ class CoreConfig(AppConfig):
     name = "core"
     app_label = "core"
     verbose_name = _("messages core application")
+
+    def ready(self):
+        """Register signal handlers when the app is ready."""
+        # Import signal handlers to register them
+
+        # pylint: disable=unused-import, import-outside-toplevel
+        import core.signals  # noqa

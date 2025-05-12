@@ -16,6 +16,33 @@ services:
   redis:
     image: redis:5
 
+  elasticsearch:
+    # Same version as Scalingo
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.10.2
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+      - http.cors.enabled=true
+      - "http.cors.allow-origin=/.*/"
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 1s
+      timeout: 5s
+      retries: 60
+
+  elasticvue:
+    image: cars10/elasticvue:latest
+    ports:
+      - "8093:8080"
+    environment:
+      - "ELASTICVUE_CLUSTERS=[{\"name\": \"dev cluster\", \"uri\": \"http://localhost:9200\"}]"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
   mailcatcher:
     image: maildev/maildev:2.2.1
     ports:
@@ -53,10 +80,10 @@ services:
   #     /usr/bin/mc version enable st-messages/st-messages-media-storage && \
   #     exit 0;"
 
-  app-dev:
+  backend-dev:
     build:
-      context: .
-      target: backend-development
+      context: src/backend
+      target: runtime-dev
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
@@ -81,9 +108,43 @@ services:
         condition: service_started
       mta-out:
         condition: service_started
+      elasticsearch:
+        condition: service_healthy
 
       # createbuckets:
       #  condition: service_started
+
+  backend-poetry:
+    profiles:
+      - tools
+    volumes:
+      - ./src/backend:/app
+    build:
+      context: src/backend/
+      target: poetry
+    pull_policy: build
+
+
+  celery-dev:
+    build:
+      context: .
+      target: backend-development
+      args:
+        DOCKER_USER: ${DOCKER_USER:-1000}
+    user: ${DOCKER_USER:-1000}
+    image: st-messages:backend-development
+    command: ["celery", "-A", "messages.celery_app", "worker", "-l", "DEBUG"]
+    environment:
+      - DJANGO_CONFIGURATION=Development
+    env_file:
+      - env.d/development/common
+      - env.d/development/backend
+      - env.d/development/postgresql
+    volumes:
+      - ./src/backend:/app
+      - ./data/static:/data/static
+    depends_on:
+      - backend-dev
 
   # app:
   #   build:
@@ -116,7 +177,7 @@ services:
       - ./docker/files/development/etc/nginx/conf.d:/etc/nginx/conf.d:ro
     depends_on:
       - keycloak
-      - app-dev
+      - backend-dev
       - mta-in
       - mta-out
 
@@ -186,7 +247,7 @@ services:
     ports:
       - "8025:25"
     depends_on:
-      - app-dev
+      - backend-dev
 
   mta-out:
     image: mta-out:latest

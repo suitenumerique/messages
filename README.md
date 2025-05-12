@@ -31,7 +31,7 @@ The easiest way to start working on the project is to use GNU Make:
 $ make bootstrap
 ```
 
-This command builds the `app-dev` container, installs dependencies, performs
+This command builds the `backend-dev` container, installs dependencies, performs
 database migrations and compile translations. It's a good idea to use this
 command each time you are pulling code from the project repository to avoid
 dependency-related or migration-related issues.

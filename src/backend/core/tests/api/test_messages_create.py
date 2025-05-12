@@ -14,7 +14,6 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core import enums, factories, models
-from core.mda.delivery import _mark_message_as_sent
 
 
 @pytest.fixture(name="draft_detail_url")
@@ -48,12 +47,19 @@ def fixture_mailbox(authenticated_user):
 class TestApiDraftAndSendMessage:
     """Test API draft and send message endpoints."""
 
-    @patch("core.api.viewsets.send.send_message")
+    @patch("core.mda.outbound.send_outbound_message")
     def test_draft_and_send_message_success(
-        self, mock_send_outbound, mailbox, authenticated_user, send_url
+        self, mock_send_outbound_message, mailbox, authenticated_user, send_url
     ):
         """Test create draft message and then successfully send it via the service."""
-        mock_send_outbound.return_value = {"x": True}
+
+        mock_send_outbound_message.side_effect = lambda recipient_emails, message: {
+            recipient_email: {
+                "delivered": True,
+                "error": None,
+            }
+            for recipient_email in recipient_emails
+        }
 
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -93,8 +99,17 @@ class TestApiDraftAndSendMessage:
         assert draft_message.is_unread is False
         assert draft_message.is_trashed is False
         assert draft_message.is_starred is False
-        assert draft_message.mta_sent is False
+        assert draft_message.sent_at is None
         assert draft_message.draft_body == draft_content
+
+        assert all(
+            recipient.delivery_status is None
+            for recipient in draft_message.recipients.all()
+        )
+        assert all(
+            recipient.delivered_at is None
+            for recipient in draft_message.recipients.all()
+        )
 
         assert draft_message.thread.count_messages == 1
         assert draft_message.thread.count_sender == 1
@@ -122,23 +137,16 @@ class TestApiDraftAndSendMessage:
             {
                 "messageId": draft_message_id,
                 "senderId": mailbox.id,
+                "textBody": "test",
             },
             format="json",
         )
 
         assert send_response.status_code == status.HTTP_200_OK
 
-        mock_send_outbound.assert_called_once()
-        call_args, _ = mock_send_outbound.call_args
-        sent_message_arg = call_args[0]
-        assert isinstance(sent_message_arg, models.Message)
-        assert str(sent_message_arg.id) == draft_message_id
+        mock_send_outbound_message.assert_called()
 
-        sent_message_data = send_response.data
-        assert sent_message_data["id"] == draft_message_id
-
-        # TODO: remove this once we have background tasks
-        _mark_message_as_sent(sent_message_arg, True)
+        # TODO: checks on returned task_id
 
         sent_message = models.Message.objects.get(id=draft_message_id)
         assert sent_message.raw_mime
@@ -149,7 +157,6 @@ class TestApiDraftAndSendMessage:
         assert sent_message.is_unread is False
         assert sent_message.is_trashed is False
         assert sent_message.is_starred is False
-        assert sent_message.mta_sent is True
         assert sent_message.sent_at is not None
 
         # Assert the thread is updated
@@ -162,12 +169,18 @@ class TestApiDraftAndSendMessage:
         assert sent_message.thread.sender_names == [sent_message.sender.name]
         assert sent_message.thread.messaged_at is not None
 
-    @patch("core.api.viewsets.send.send_message")
+    @patch("core.mda.outbound.send_outbound_message")
     def test_draft_and_send_message_success_delegated_access(
-        self, mock_send_outbound, mailbox, authenticated_user, send_url
+        self, mock_send_outbound_message, mailbox, authenticated_user, send_url
     ):
         """Test create draft message and then successfully send it via the service."""
-        mock_send_outbound.return_value = {"x": True}
+        mock_send_outbound_message.side_effect = lambda recipient_emails, message: {
+            recipient_email: {
+                "delivered": True,
+                "error": None,
+            }
+            for recipient_email in recipient_emails
+        }
 
         other_mailbox = factories.MailboxFactory(
             local_part="cantine", domain__name="tataouin.fr"
@@ -233,7 +246,6 @@ class TestApiDraftAndSendMessage:
         assert draft_message.is_unread is False
         assert draft_message.is_trashed is False
         assert draft_message.is_starred is False
-        assert draft_message.mta_sent is False
         assert draft_message.draft_body == draft_content
 
         assert draft_message.thread.count_messages == 2
@@ -266,17 +278,7 @@ class TestApiDraftAndSendMessage:
 
         assert send_response.status_code == status.HTTP_200_OK
 
-        mock_send_outbound.assert_called_once()
-        call_args, _ = mock_send_outbound.call_args
-        sent_message_arg = call_args[0]
-        assert isinstance(sent_message_arg, models.Message)
-        assert str(sent_message_arg.id) == draft_message_id
-
-        sent_message_data = send_response.data
-        assert sent_message_data["id"] == draft_message_id
-
-        # TODO: remove this once we have background tasks
-        _mark_message_as_sent(sent_message_arg, True)
+        mock_send_outbound_message.assert_called()
 
         sent_message = models.Message.objects.get(id=draft_message_id)
         assert sent_message.raw_mime
@@ -287,7 +289,6 @@ class TestApiDraftAndSendMessage:
         assert sent_message.is_unread is False
         assert sent_message.is_trashed is False
         assert sent_message.is_starred is False
-        assert sent_message.mta_sent is True
         assert sent_message.sent_at is not None
 
         # Assert the thread is updated
@@ -303,16 +304,37 @@ class TestApiDraftAndSendMessage:
         ]
         assert sent_message.thread.messaged_at is not None
 
-    @patch("core.api.viewsets.send.send_message")
+        assert all(
+            recipient.delivery_status == enums.MessageDeliveryStatusChoices.SENT
+            for recipient in sent_message.recipients.all()
+        )
+        assert all(
+            recipient.delivered_at is not None
+            for recipient in sent_message.recipients.all()
+        )
+
+    @patch("core.mda.outbound.send_outbound_message")
     def test_send_message_failure(
         self,
-        mock_send_outbound,
+        mock_send_outbound_message,
         mailbox,
         authenticated_user,
         send_url,
     ):
         """Test sending a draft message when the delivery service fails."""
-        mock_send_outbound.return_value = {"x": False}
+
+        mock_send_outbound_message.side_effect = lambda recipient_emails, message: {
+            recipient_email: {
+                "delivered": False,
+                "error": "Custom error message",
+            }
+            if recipient_email == "fail@external.com"
+            else {
+                "delivered": True,
+                "error": None,
+            }
+            for recipient_email in recipient_emails
+        }
 
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -329,7 +351,7 @@ class TestApiDraftAndSendMessage:
                 "senderId": mailbox.id,
                 "subject": subject,
                 "draftBody": "test content",
-                "to": ["fail@external.com"],
+                "to": ["fail@external.com", "success@external.com"],
             },
             format="json",
         )
@@ -341,25 +363,34 @@ class TestApiDraftAndSendMessage:
             {
                 "messageId": draft_message_id,
                 "senderId": str(mailbox.id),
+                "textBody": "test",
             },
             format="json",
         )
 
-        assert send_response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert send_response.status_code == status.HTTP_200_OK
 
-        mock_send_outbound.assert_called_once()
-        call_args, _ = mock_send_outbound.call_args
-        sent_message_arg = call_args[0]
-        assert isinstance(sent_message_arg, models.Message)
-        assert str(sent_message_arg.id) == draft_message_id
+        mock_send_outbound_message.assert_called()
 
-        # For now the message is still a draft
-        # When we'll have workers, we'll set the is_draft to False and wait for a worker
-        # to process and retry if needed.
         db_message = models.Message.objects.get(id=draft_message_id)
-        assert db_message.is_draft is True
-        assert db_message.mta_sent is False
-        assert db_message.sent_at is None
+        assert db_message.is_draft is False
+        assert db_message.sent_at is not None
+
+        fail_recipient = db_message.recipients.get(contact__email="fail@external.com")
+        assert (
+            fail_recipient.delivery_status == enums.MessageDeliveryStatusChoices.RETRY
+        )
+        assert fail_recipient.retry_at is not None
+        assert fail_recipient.retry_count == 1
+
+        success_recipient = db_message.recipients.get(
+            contact__email="success@external.com"
+        )
+        assert (
+            success_recipient.delivery_status == enums.MessageDeliveryStatusChoices.SENT
+        )
+        assert success_recipient.delivered_at is not None
+        assert success_recipient.retry_count == 0
 
     def test_draft_message_without_permission_required(
         self, mailbox, authenticated_user
@@ -477,7 +508,6 @@ class TestApiDraftAndSendMessage:
         message = factories.MessageFactory(
             thread=thread_access.thread,
             is_draft=False,
-            mta_sent=True,
             sent_at=timezone.now(),
         )
 
@@ -544,7 +574,6 @@ class TestApiDraftAndSendReply:
         # Assert the draft message is created
         draft_message = models.Message.objects.get(id=draft_response.data["id"])
         assert draft_message.is_draft is True
-        assert draft_message.mta_sent is False
         assert draft_message.parent == message
 
         draft_api_message = client.get(
@@ -559,6 +588,7 @@ class TestApiDraftAndSendReply:
             {
                 "messageId": draft_message.id,
                 "senderId": mailbox.id,
+                "textBody": "test",
             },
             format="json",
         )
@@ -569,7 +599,6 @@ class TestApiDraftAndSendReply:
         # Assert the message is now sent
         sent_message = models.Message.objects.get(id=draft_message.id)
         assert sent_message.is_draft is False
-        assert sent_message.mta_sent is True
         assert sent_message.sent_at is not None
 
         # Assert the message and thread are created correctly
@@ -811,9 +840,9 @@ class TestApiDraftAndSendReply:
 
         # Assert the message is now sent with the updated content
         sent_message = models.Message.objects.get(id=updated_message.id)
-        assert sent_message.mta_sent is True
         assert sent_message.subject == updated_subject
         assert sent_message.is_draft is False
+        assert sent_message.sent_at is not None
 
     def test_update_nonexistent_draft(
         self, mailbox, authenticated_user, draft_detail_url
@@ -869,7 +898,6 @@ class TestApiDraftAndSendReply:
         message = factories.MessageFactory(
             thread=thread_access.thread,
             is_draft=False,
-            mta_sent=True,
             sent_at=timezone.now(),
         )
 
@@ -955,7 +983,6 @@ class TestApiDraftAndSendReply:
         assert thread1.accesses.filter(mailbox=mailbox1).exists()
         assert thread1.messages.count() == 1
         assert message1.is_draft is False
-        assert message1.mta_sent is False  # Local delivery doesn't use MTA
         assert message1.is_sender is True
         assert message1.mime_id is not None
 
