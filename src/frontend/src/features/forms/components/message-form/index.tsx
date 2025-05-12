@@ -154,7 +154,10 @@ export const MessageForm = ({
     }
 
     const draftCreateMutation = useDraftCreate({
-        mutation: { onSuccess: handleDraftMutationSuccess }
+        mutation: { onSuccess: () => {
+            invalidateThreadsStats();
+            handleDraftMutationSuccess();
+        }}
     });
 
     const draftUpdateMutation = useDraftUpdate2({
