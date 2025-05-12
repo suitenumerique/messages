@@ -44,6 +44,3 @@ THREAD_STATS_FIELDS_MAP = {
     "sender": "count_sender",
     "messages": "count_messages",
 }
-
-
-

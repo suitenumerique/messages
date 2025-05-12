@@ -136,7 +136,7 @@ class IsAllowedToAccess(IsAuthenticated):
             ).exists()
             if not has_access:
                 return False
-        
+
             # Only EDITOR or ADMIN role can destroy or send
             if view.action in ["destroy", "send"]:
                 mailbox = thread.accesses.get(mailbox__accesses__user=user).mailbox
