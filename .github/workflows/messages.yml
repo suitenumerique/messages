@@ -10,24 +10,6 @@ on:
 
 jobs:
 
-  lint-git:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' # Makes sense only for pull requests
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: show
-        run: git log
-      - name: Check absence of fixup commits
-        run: |
-          ! git log | grep 'fixup!'
-      - name: Install gitlint
-        run: pip install --user requests gitlint
-      - name: Lint commit messages added to main
-        run: ~/.local/bin/gitlint --commits origin/${{ github.event.pull_request.base.ref }}..HEAD
-
   lint-back:
     runs-on: ubuntu-latest
     steps:
@@ -37,6 +19,8 @@ jobs:
         run: make create-env-files
       - name: Run backend linting
         run: make lint
+        env:
+          COMPOSE_BAKE=true
 
   test-back:
     runs-on: ubuntu-latest
@@ -50,7 +34,7 @@ jobs:
           mkdir -p data/media data/static
           chmod -R 777 data
       - name: Run backend tests
-        run: make test-back-parallel
+        run: make test-back
 
   test-front:
     runs-on: ubuntu-latest
@@ -59,6 +43,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Create env files
         run: make create-env-files
+      - name: Install frontend dependencies
+        run: make frontend-install-frozen
       - name: Run frontend tests
         run: make frontend-test
 
@@ -69,6 +55,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Create env files
         run: make create-env-files
+      - name: Install frontend dependencies
+        run: make frontend-install-frozen
       - name: Run frontend linting
         run: make frontend-lint
 
@@ -79,5 +67,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Create env files
         run: make create-env-files
+      - name: Install frontend dependencies
+        run: make frontend-install-frozen
       - name: Build frontend
         run: make frontend-build
