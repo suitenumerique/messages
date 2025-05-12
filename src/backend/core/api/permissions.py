@@ -79,18 +79,21 @@ class AccessPermission(permissions.BasePermission):
         return abilities.get(action, False)
 
 
-class IsAllowedToAccessMailbox(IsAuthenticated):
-    """Permission class for access to a mailbox."""
+class IsAllowedToAccess(IsAuthenticated):
+    """Permission class for access to a mailbox context or specific threads/messages."""
 
     def has_permission(self, request, view):
-        """Check if user has permission to access the mailbox thread list or message list."""
+        """Check if user has permission to access the mailbox thread list or message list.
+        Only role VIEWER is required to access the mailbox threads/messages.
+        So we just need to check if user has any access role on mailbox or thread.
+        """
 
         if not IsAuthenticated.has_permission(self, request, view):
             return False
 
         # This check is primarily for LIST actions based on query params
-        mailbox_id = request.query_params.get("mailbox_id")
-        thread_id = request.query_params.get("thread_id")
+        mailbox_id = request.query_params.get("mailbox_id")  # Used by Thread list
+        thread_id = request.query_params.get("thread_id")  # Used by Message list
 
         # If it's a detail action (retrieve, update, destroy), object-level permission is checked
         # by has_object_permission. If it's a list action without filters, deny access.
@@ -103,19 +106,16 @@ class IsAllowedToAccessMailbox(IsAuthenticated):
             return True
 
         # --- The following logic only applies if is_list_action is True --- #
-
-        # For LIST action, require either mailbox_id or thread_id
-        if not mailbox_id and not thread_id:
-            return False
-
         # Check access based on query params for LIST action
         if mailbox_id:
+            # Check if the user has access to this specific mailbox to list threads
             return models.Mailbox.objects.filter(
                 id=mailbox_id, accesses__user=request.user
             ).exists()
         if thread_id:
-            return models.Thread.objects.filter(
-                id=thread_id, mailbox__accesses__user=request.user
+            # Check if the user has access to this specific thread to list messages
+            return models.ThreadAccess.objects.filter(
+                thread_id=thread_id, mailbox__accesses__user=request.user
             ).exists()
 
         return False  # Should not be reached if logic above is correct
@@ -123,37 +123,42 @@ class IsAllowedToAccessMailbox(IsAuthenticated):
     def has_object_permission(self, request, view, obj):
         """Check if user has permission to access the specific object (Message, Thread, Mailbox)."""
         user = request.user
-        if isinstance(obj, models.Message):
-            if view.action == "destroy":
-                return models.MailboxAccess.objects.filter(
-                    mailbox=obj.thread.mailbox,
-                    user=user,
-                    permission__in=[
-                        enums.MailboxPermissionChoices.ADMIN,
-                        enums.MailboxPermissionChoices.DELETE,
-                    ],
-                ).exists()
-            # Check access via the message's thread's mailbox
-            return models.MailboxAccess.objects.filter(
-                mailbox=obj.thread.mailbox, user=user
-            ).exists()
-        if isinstance(obj, models.Thread):
-            if view.action in ["destroy", "bulk_delete"]:
-                return models.MailboxAccess.objects.filter(
-                    mailbox=obj.mailbox,
-                    user=user,
-                    permission__in=[
-                        enums.MailboxPermissionChoices.ADMIN,
-                        enums.MailboxPermissionChoices.DELETE,
-                    ],
-                ).exists()
-            # Check access via the thread's mailbox
-            return models.MailboxAccess.objects.filter(
-                mailbox=obj.mailbox, user=user
-            ).exists()
         if isinstance(obj, models.Mailbox):
             # Check access directly on the mailbox
             return models.MailboxAccess.objects.filter(mailbox=obj, user=user).exists()
+
+        if isinstance(obj, (models.Message, models.Thread)):
+            thread = obj.thread if isinstance(obj, models.Message) else obj
+            # Check access via the message's thread using ThreadAccess
+            # First, just check if *any* access exists for the user to this thread.
+            has_access = models.ThreadAccess.objects.filter(
+                thread=thread, mailbox__accesses__user=user
+            ).exists()
+            if not has_access:
+                return False
+
+            # Only EDITOR or ADMIN role can destroy or send
+            if view.action in ["destroy", "send"]:
+                mailbox = thread.accesses.get(mailbox__accesses__user=user).mailbox
+                if (
+                    models.ThreadAccess.objects.filter(
+                        thread=thread,
+                        mailbox=mailbox,
+                        role=enums.ThreadAccessRoleChoices.EDITOR,
+                    ).exists()
+                    and models.MailboxAccess.objects.filter(
+                        mailbox=mailbox,
+                        user=user,
+                        role__in=[
+                            enums.MailboxRoleChoices.EDITOR,
+                            enums.MailboxRoleChoices.ADMIN,
+                        ],
+                    ).exists()
+                ):
+                    return True
+            # for retrieve action has_access is already checked above
+            else:
+                return True
 
         # Deny access for other object types or if type is unknown
         return False
@@ -168,52 +173,106 @@ class IsAllowedToCreateMessage(IsAuthenticated):
         if not IsAuthenticated.has_permission(self, request, view):
             return False
 
-        # a sender is required to create a message
+        # a sender mailbox is required to create/send a message
         sender_id = request.data.get("senderId")
+        parent_id = request.data.get("parentId")
         if not sender_id:
             return False
+
         # get mailbox instance from sender id
         try:
+            # Store mailbox on the view for later use (e.g., in the view logic)
             view.mailbox = models.Mailbox.objects.get(id=sender_id)
         except models.Mailbox.DoesNotExist:
-            return False
-        # required permissions to send a message
-        permissions_required = [
-            enums.MailboxPermissionChoices.EDIT,
-            enums.MailboxPermissionChoices.ADMIN,
-        ]
-        # check if user has access required to send a message with this mailbox
-        return view.mailbox.accesses.filter(
+            return False  # Invalid senderId
+
+        # Check if user has required role on the sender Mailbox
+        has_edit_role = view.mailbox.accesses.filter(
             user=request.user,
-            permission__in=permissions_required,
+            role__in=[enums.MailboxRoleChoices.EDITOR, enums.MailboxRoleChoices.ADMIN],
         ).exists()
 
-
-class IsAllowedToSendMessage(IsAuthenticated):
-    """Permission class for access to send a message."""
-
-    def has_permission(self, request, view):
-        """Check if user is allowed to send a message."""
-        # a sender is required to create a message
-
-        if not IsAuthenticated.has_permission(self, request, view):
+        # if user does not have edit role with this sender mailbox, return False
+        if not has_edit_role:
             return False
 
-        sender_id = request.data.get("senderId")
-        if not sender_id:
-            return False
-        # get mailbox instance from sender id
-        try:
-            view.mailbox = models.Mailbox.objects.get(id=sender_id)
-        except models.Mailbox.DoesNotExist:
-            return False
-        # required permissions to send a message
-        permissions_required = [
-            enums.MailboxPermissionChoices.SEND,
-            enums.MailboxPermissionChoices.ADMIN,
-        ]
-        # check if user has access required to send a message with this mailbox
-        return view.mailbox.accesses.filter(
-            user=request.user,
-            permission__in=permissions_required,
-        ).exists()
+        # --- Additional check for replies ---
+        # If creating a reply (parentId is provided), check access to the parent thread
+        if parent_id:
+            try:
+                parent_message = models.Message.objects.select_related("thread").get(
+                    id=parent_id
+                )
+                # Check if the user has access to the thread they are replying to
+                if models.ThreadAccess.objects.filter(
+                    thread=parent_message.thread,
+                    mailbox=view.mailbox,
+                    role=models.ThreadAccessRoleChoices.EDITOR,
+                ).exists():
+                    return True
+            except models.Message.DoesNotExist:
+                return False  # Treat invalid parentId as permission failure
+
+        # --- Additional check for updating existing draft ---
+        # If updating (messageId is provided), check access to the draft's thread
+        message_id = request.data.get("messageId")
+        if message_id and request.method == "PUT":  # Check only needed for updates
+            try:
+                draft_message = models.Message.objects.select_related("thread").get(
+                    id=message_id, is_draft=True
+                )
+                # Check if the user has access to the thread of the draft being updated
+                if not models.ThreadAccess.objects.filter(
+                    thread=draft_message.thread,
+                    mailbox=view.mailbox,
+                    role=models.ThreadAccessRoleChoices.EDITOR,
+                ).exists():
+                    return False
+            except models.Message.DoesNotExist:
+                # Let the view handle invalid messageId
+                return False  # Treat invalid messageId as permission failure
+
+        # If all checks pass
+        return True
+
+
+# class IsAllowedToSendMessage(IsAuthenticated):
+#    """Permission class for access to send a message."""
+#
+#    def has_permission(self, request, view):
+#        """Check if user is allowed to send a message."""
+#        # a sender is required to create a message
+#
+#        if not IsAuthenticated.has_permission(self, request, view):
+#            return False
+#
+#        sender_id = request.data.get("senderId")
+#        if not sender_id:
+#            return False
+#        # get mailbox instance from sender id
+#        try:
+#            view.mailbox = models.Mailbox.objects.get(id=sender_id)
+#        except models.Mailbox.DoesNotExist:
+#            return False
+#        # required permissions to send a message
+#        permissions_required = [
+#            enums.MailboxPermissionChoices.SEND,
+#            enums.MailboxPermissionChoices.ADMIN,
+#        ]
+#        # check if user has access required to send a message with this mailbox
+#        if not view.mailbox.accesses.filter(
+#            user=request.user,
+#            permission__in=permissions_required,
+#        ).exists():
+#            # user does not have permission to send a message with this mailbox
+#            return False
+#
+#        # check if user has access to the thread
+#        if models.ThreadAccess.objects.filter(
+#            mailbox=view.mailbox,
+#            thread=view.thread,
+#            role=models.ThreadAccessRoleChoices.EDITOR,
+#        ).exists():
+#            return True
+#
+#        return False

@@ -79,7 +79,11 @@ logger = logging.getLogger(__name__)
 class SendMessageView(APIView):
     """Send a previously created draft message."""
 
-    permission_classes = [permissions.IsAllowedToAccessMailbox]
+    permission_classes = [permissions.IsAllowedToAccess]
+    # Note: IsAllowedToAccess checks object permission based on ThreadAccess now.
+    # We still need senderId for the sending context.
+
+    action = "send"  # TODO: check permission for this action
 
     def post(self, request):
         """Send a draft message identified by messageId."""
@@ -93,9 +97,11 @@ class SendMessageView(APIView):
 
         try:
             message = (
-                models.Message.objects.select_related("thread__mailbox", "sender")
-                .prefetch_related("recipients__contact")
-                .get(id=message_id, is_draft=True, thread__mailbox_id=sender_id)
+                models.Message.objects.select_related("sender")
+                .prefetch_related("thread__accesses", "recipients__contact")
+                .get(
+                    id=message_id, is_draft=True, thread__accesses__mailbox_id=sender_id
+                )
             )
         except models.Message.DoesNotExist as e:
             raise drf_exceptions.NotFound(
@@ -134,6 +140,14 @@ class SendMessageView(APIView):
             )
             exc.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
             raise exc
+
+        # --- Finalize ---
+        # Message state should be updated by prepare_outbound_message/send_message
+        # Refresh from DB to get final state (e.g., sent_at, is_draft=False)
+        message.refresh_from_db()
+
+        # Update thread stats after successful send
+        message.thread.update_stats()
 
         serializer = serializers.MessageSerializer(
             message, context={"request": request}

@@ -440,7 +440,7 @@ class TestMTAInboundEmailThreading:
         factories.MailboxAccessFactory(
             mailbox=self.mailbox,
             user=self.user,
-            permission=enums.MailboxPermissionChoices.ADMIN,
+            role=enums.MailboxRoleChoices.ADMIN,
         )
         self.recipient_email = f"{self.mailbox.local_part}@{self.maildomain.name}"
 
@@ -449,7 +449,12 @@ class TestMTAInboundEmailThreading:
         sender_contact = factories.ContactFactory(
             mailbox=self.mailbox, email="sender@example.com"
         )
-        thread = factories.ThreadFactory(mailbox=self.mailbox, subject=subject)
+        thread = factories.ThreadFactory(subject=subject)
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
         message = factories.MessageFactory(
             thread=thread,
             subject=subject,
@@ -683,13 +688,16 @@ class TestMTAInboundEmailThreading:
         factories.MailboxAccessFactory(
             mailbox=other_mailbox,
             user=self.user,
-            permission=enums.MailboxPermissionChoices.ADMIN,
+            role=enums.MailboxRoleChoices.ADMIN,
         )
         other_sender = factories.ContactFactory(
             mailbox=other_mailbox, email="other@sender.com"
         )
-        other_thread = factories.ThreadFactory(
-            mailbox=other_mailbox, subject="Other Mailbox Subject"
+        other_thread = factories.ThreadFactory(subject="Other Mailbox Subject")
+        factories.ThreadAccessFactory(
+            mailbox=other_mailbox,
+            thread=other_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
         )
         other_mime_id = "othermailbox.msg@example.com"
         other_message = factories.MessageFactory(
@@ -741,7 +749,7 @@ class TestMTAInboundEmailThreading:
         new_message = models.Message.objects.latest(
             "created_at"
         )  # Assumes latest is the new one
-        assert new_message.thread.mailbox == self.mailbox
+        assert new_message.thread.accesses.get().mailbox == self.mailbox
         assert new_message.subject == reply_subject
         # Ensure it didn't get added to the thread in the *other* mailbox
         assert new_message.thread != other_thread
@@ -836,12 +844,12 @@ class TestMTAInboundEmailThreading:
         factories.MailboxAccessFactory(
             mailbox=mailbox2,
             user=self.user,
-            permission=enums.MailboxPermissionChoices.ADMIN,
+            role=enums.MailboxRoleChoices.ADMIN,
         )
         factories.MailboxAccessFactory(
             mailbox=mailbox2,
             user=user2,
-            permission=enums.MailboxPermissionChoices.ADMIN,
+            role=enums.MailboxRoleChoices.ADMIN,
         )
         recipient_email2 = f"{mailbox2.local_part}@{self.maildomain.name}"
 
@@ -879,16 +887,18 @@ class TestMTAInboundEmailThreading:
         assert models.Message.objects.count() == 2
 
         # Verify message 1 in mailbox 1
-        msg1 = models.Message.objects.filter(thread__mailbox=self.mailbox).first()
+        msg1 = models.Message.objects.filter(
+            thread__accesses__mailbox=self.mailbox
+        ).first()
         assert msg1 is not None
         assert msg1.subject == email_subject
-        assert msg1.thread.mailbox == self.mailbox
+        assert msg1.thread.accesses.get().mailbox == self.mailbox
 
         # Verify message 2 in mailbox 2
-        msg2 = models.Message.objects.filter(thread__mailbox=mailbox2).first()
+        msg2 = models.Message.objects.filter(thread__accesses__mailbox=mailbox2).first()
         assert msg2 is not None
         assert msg2.subject == email_subject
-        assert msg2.thread.mailbox == mailbox2
+        assert msg2.thread.accesses.get().mailbox == mailbox2
 
         # Verify they are different message instances in different threads
         assert msg1.id != msg2.id

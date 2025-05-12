@@ -104,7 +104,7 @@ def find_thread_for_inbound_message(
         models.Message.objects.filter(
             # Query only for the bracketless IDs
             mime_id__in=db_query_ids,
-            thread__mailbox=mailbox,
+            thread__accesses__mailbox=mailbox,
         )
         .select_related("thread")
         .order_by("-created_at")  # Prefer newer matches if multiple found
@@ -162,9 +162,14 @@ def deliver_inbound_message(
 
             thread = models.Thread.objects.create(
                 subject=parsed_email.get("subject", "(no subject)"),
-                mailbox=mailbox,
                 snippet=snippet,
                 count_unread=1,
+            )
+            # Create a thread access for the sender mailbox
+            models.ThreadAccess.objects.create(
+                thread=thread,
+                mailbox=mailbox,
+                role=models.ThreadAccessRoleChoices.EDITOR,
             )
     except (DjangoDbError, ValidationError) as e:
         logger.error("Failed to find or create thread for %s: %s", recipient_email, e)

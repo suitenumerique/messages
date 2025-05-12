@@ -13,13 +13,11 @@ from django.utils.translation import gettext_lazy as _
 ALL_LANGUAGES = {language: _(name) for language, name in global_settings.LANGUAGES}
 
 
-class MailboxPermissionChoices(models.TextChoices):
-    """Defines the possible permissions a user can have to access to a mailbox."""
+class MailboxRoleChoices(models.TextChoices):
+    """Defines the unique roles a user can have to access a mailbox."""
 
-    READ = "read", _("Read")
-    EDIT = "edit", _("Edit")
-    SEND = "send", _("Send")
-    DELETE = "delete", _("Delete")
+    VIEWER = "viewer", _("Viewer")
+    EDITOR = "editor", _("Editor")
     ADMIN = "admin", _("Admin")
 
 
@@ -29,6 +27,13 @@ class MessageRecipientTypeChoices(models.TextChoices):
     TO = "to", _("To")
     CC = "cc", _("Cc")
     BCC = "bcc", _("Bcc")
+
+
+class ThreadAccessRoleChoices(models.TextChoices):
+    """Defines the possible roles a mailbox can have to access to a thread."""
+
+    VIEWER = "viewer", _("Viewer")
+    EDITOR = "editor", _("Editor")
 
 
 THREAD_STATS_FIELDS_MAP = {

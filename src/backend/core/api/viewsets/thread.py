@@ -1,6 +1,6 @@
 """API ViewSet for Thread model."""
 
-from django.db.models import Sum
+from django.db.models import Exists, OuterRef, Sum
 
 import rest_framework as drf
 from drf_spectacular.types import OpenApiTypes
@@ -27,30 +27,47 @@ class ThreadViewSet(
     lookup_url_kwarg = "id"
 
     def get_queryset(self):
-        """Restrict results to threads of the current user's mailboxes."""
+        """Restrict results to threads accessible by the current user."""
+        user = self.request.user
         mailbox_id = self.request.GET.get("mailbox_id")
-        accesses = self.request.user.mailbox_accesses.all()
-        queryset = models.Thread.objects
+
+        # Base queryset: Threads the user has access to via ThreadAccess
+        queryset = models.Thread.objects.filter(
+            Exists(
+                models.ThreadAccess.objects.filter(
+                    mailbox__accesses__user=user, thread=OuterRef("pk")
+                )
+            )
+        ).distinct()
 
         if mailbox_id:
-            if not accesses.filter(mailbox__id=mailbox_id).exists():
-                raise drf.exceptions.PermissionDenied(
-                    "You do not have access to this mailbox."
-                )
-            queryset = queryset.filter(mailbox__id=mailbox_id)
-        else:
+            # Further filter by mailbox_id using the ThreadAccess link
             queryset = queryset.filter(
-                mailbox__id__in=accesses.values_list("mailbox_id", flat=True)
+                Exists(
+                    models.ThreadAccess.objects.filter(
+                        mailbox__accesses__user=user,
+                        thread=OuterRef("pk"),
+                        mailbox_id=mailbox_id,
+                    )
+                )
             )
-        queryset = queryset.order_by("-messaged_at")
+            # Ensure the user actually has access to the specified mailbox_id itself
+            # (Prevents users guessing mailbox IDs they don't have access to)
+            if not models.MailboxAccess.objects.filter(
+                user=user, mailbox_id=mailbox_id
+            ).exists():
+                raise drf.exceptions.PermissionDenied(
+                    "You do not have access to this mailbox context."
+                )
 
-        # Add filters based on thread counters
+        # Apply boolean filters (has_unread, etc.)
+        # These filters operate on the Thread model's aggregated fields
         filter_mapping = {
             "has_unread": "count_unread__gt",
             "has_trashed": "count_trashed__gt",
             "has_draft": "count_draft__gt",
             "has_starred": "count_starred__gt",
-            "has_sender": "count_sender__gt",
+            "has_sender": "count_sender__gt",  # Assuming count_sender relates to messages from the user
         }
 
         for param, filter_lookup in filter_mapping.items():
@@ -62,6 +79,7 @@ class ThreadViewSet(
                     # Allow filtering for threads with zero count
                     queryset = queryset.filter(**{filter_lookup.replace("__gt", ""): 0})
 
+        queryset = queryset.order_by("-messaged_at")
         return queryset
 
     @extend_schema(
@@ -151,15 +169,16 @@ class ThreadViewSet(
         methods=["get"],
         url_path="stats",
         url_name="stats",
+        permission_classes=[permissions.IsAuthenticated],
     )
     def stats(self, request):
-        """Retrieve aggregated statistics for threads."""
+        """Retrieve aggregated statistics for threads accessible by the user."""
         queryset = self.get_queryset()
         stats_fields_param = request.query_params.get("stats_fields", "")
 
         if not stats_fields_param:
             return drf.response.Response(
-                {"detail": "'stats_fields' parameter is required."},
+                {"detail": "Missing 'stats_fields' query parameter."},
                 status=drf.status.HTTP_400_BAD_REQUEST,
             )
 
@@ -175,7 +194,6 @@ class ThreadViewSet(
                     {"detail": f"Invalid field requested in stats_fields: {field}"},
                     status=drf.status.HTTP_400_BAD_REQUEST,
                 )
-
         if not aggregations:
             # Should not happen if stats_fields_param is validated earlier, but good practice
             return drf.response.Response(
@@ -189,7 +207,6 @@ class ThreadViewSet(
         for key, value in aggregated_data.items():
             if value is None:
                 aggregated_data[key] = 0
-
         return drf.response.Response(aggregated_data)
 
     # @extend_schema(

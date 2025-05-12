@@ -17,7 +17,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core import models
+from core import enums, models
 
 from .. import permissions, serializers
 
@@ -166,9 +166,25 @@ class DraftMessageView(APIView):
     def _update_draft_details(
         self, message: models.Message, request_data: dict
     ) -> models.Message:
-        """Helper method to update draft details (subject, recipients, body)."""
+        """Helper method to update draft details (subject, recipients, body).
+        Ensures user has access to the thread."""
+
         updated_fields = []
-        thread_updated_fields = []
+        thread_updated_fields = ["updated_at"]  # Always update thread timestamp
+
+        # --- Check Access (redundant if permission class covers it, but safe) ---
+        # Ensure user has access to the thread this message belongs to
+        if (
+            message.thread
+            and not models.ThreadAccess.objects.filter(
+                thread=message.thread,
+                mailbox=self.mailbox,
+                role=models.ThreadAccessRoleChoices.EDITOR,
+            ).exists()
+        ):
+            raise drf.exceptions.PermissionDenied(
+                "Access denied to this message's thread."
+            )
 
         # Update subject if provided
         if "subject" in request_data:
@@ -231,29 +247,41 @@ class DraftMessageView(APIView):
         self.mailbox = models.Mailbox.objects.get(id=sender_id)
         subject = request.data.get("subject")
 
+        sender_mailbox = self.mailbox
+
         # Then get the parent message if it's a reply
         parent_id = request.data.get("parentId")
         reply_to_message = None
         if parent_id:
             try:
                 # Reply to an existing message in a thread
-                reply_to_message = models.Message.objects.get(id=parent_id)
-                thread = reply_to_message.thread
-                # Permission check: ensure parent thread belongs to the mailbox
-                if thread.mailbox != self.mailbox:
+                reply_to_message = models.Message.objects.select_related("thread").get(
+                    id=parent_id
+                )
+                # Ensure user has access to parent thread (already checked by permission, but safe)
+                if not models.ThreadAccess.objects.filter(
+                    thread=reply_to_message.thread,
+                    mailbox=sender_mailbox,
+                    role=models.ThreadAccessRoleChoices.EDITOR,
+                ).exists():
                     raise drf.exceptions.PermissionDenied(
-                        "Cannot reply to a message in a different mailbox."
+                        "Access denied to the thread you are replying to."
                     )
+                thread = reply_to_message.thread
+
             except models.Message.DoesNotExist as exc:
-                raise drf.exceptions.ValidationError(
-                    "Parent message does not exist."
-                ) from exc
+                raise drf.exceptions.NotFound("Parent message not found.") from exc
         else:
-            # Create a new thread
+            # Create a new thread for the new draft
             thread = models.Thread.objects.create(
-                # self.mailbox is set in the permission class
-                mailbox=self.mailbox,
                 subject=subject,
+            )
+            # Grant access to the creator via the sending mailbox context
+            # permission to create a draft message if already check with permission class
+            models.ThreadAccess.objects.create(
+                thread=thread,
+                mailbox=sender_mailbox,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
             )
 
         # --- Get Sender Contact --- #
@@ -295,13 +323,12 @@ class DraftMessageView(APIView):
         )
 
     @transaction.atomic
-    def put(self, request, message_id=None):
+    def put(self, request, message_id: str):
         """Update an existing draft message."""
         if not message_id:
             raise drf.exceptions.ValidationError(
                 "Message ID is required for updating a draft."
             )
-
         # Get sender mailbox (needed for contact creation in helper)
         # TODO: Should senderId be required in PUT? Or derive from message?
         # Assuming it's required for now, matching POST.
@@ -318,28 +345,33 @@ class DraftMessageView(APIView):
                 f"Mailbox with senderId {sender_id} not found."
             ) from exc
 
-        # --- Get Existing Draft --- #
+        # Permission class checks senderId validity, send permission, and thread access.
+        sender_mailbox = self.mailbox  # Set by permission class
+
         try:
-            message = models.Message.objects.select_related(
-                "thread__mailbox"
-            ).get(
+            # Fetch the draft message, ensuring it belongs to the user indirectly via ThreadAccess
+            # and matches the sender mailbox context if that's a requirement for *updating*.
+            message = models.Message.objects.select_related("thread").get(
                 id=message_id,
                 is_draft=True,
-                thread__mailbox=self.mailbox,  # Ensure message belongs to the claimed sender mailbox
+                # Ensure the user has access to this thread
+                thread__accesses__mailbox=sender_mailbox,
+                thread__accesses__role=models.ThreadAccessRoleChoices.EDITOR,
             )
         except models.Message.DoesNotExist as exc:
             raise drf.exceptions.NotFound(
-                "Draft message not found or does not belong to the specified sender mailbox."
+                "Draft message not found, is not a draft, or access denied."
             ) from exc
 
-        # --- Check Permissions --- #
-        # Permission class IsAllowedToCreateMessage likely checks based on self.mailbox set above.
-        # If more granular checks needed (e.g., based on message.thread.mailbox explicitly),
-        # they could be added here or in the permission class.
-
-        # Populate details using helper
+        # Populate details using helper, passing user for potential checks
         updated_message = self._update_draft_details(message, request.data)
 
-        # Refresh needed as helper might save
+        # Update thread stats
+        updated_message.thread.update_stats()
+
+        # Refresh needed as helper might save thread
         updated_message.refresh_from_db()
-        return Response(serializers.MessageSerializer(updated_message).data)
+        serializer = serializers.MessageSerializer(
+            updated_message, context={"request": request}
+        )
+        return Response(serializer.data)

@@ -10,6 +10,7 @@ from drf_spectacular.utils import (
     inline_serializer,
 )
 from rest_framework import serializers as drf_serializers
+from rest_framework import status
 from rest_framework.views import APIView
 
 from core import models
@@ -23,7 +24,7 @@ ALLOWED_FLAGS = ["unread", "starred", "trashed"]
 class ChangeFlagViewSet(APIView):
     """ViewSet for changing flags on messages or threads."""
 
-    permission_classes = [permissions.IsAllowedToAccessMailbox]
+    permission_classes = [permissions.IsAllowedToAccess]
     action = "change_flag"
 
     @extend_schema(
@@ -137,70 +138,110 @@ class ChangeFlagViewSet(APIView):
                 status=drf.status.HTTP_400_BAD_REQUEST,
             )
 
+        # --- Authorization & Processing ---
+
         # Get accessible mailboxes
-        accessible_mailbox_ids = self.request.user.mailbox_accesses.values_list(
-            "mailbox_id", flat=True
-        )
-
-        updated_threads = set()
+        # accessible_mailbox_ids = self.request.user.mailbox_accesses.values_list(
+        #    "mailbox_id", flat=True
+        # )
         current_time = timezone.now()
+        updated_threads = set()  # Keep track of threads whose stats need updating
 
-        # Use a transaction to ensure atomicity
+        # Get IDs of threads the user has access to
+        accessible_thread_ids_qs = models.ThreadAccess.objects.filter(
+            mailbox__accesses__user=request.user
+        ).values_list("thread_id", flat=True)
+        accessible_thread_ids = set(accessible_thread_ids_qs)
+        if not accessible_thread_ids:
+            # User has no access to any threads, so cannot modify anything
+            return drf.response.Response(
+                {
+                    "success": True,
+                    "updated_threads": 0,
+                    "detail": "No accessible items found.",
+                },
+                status=status.HTTP_200_OK,  # Or 403 if preferred
+            )
+
         with transaction.atomic():
             # --- Process direct message IDs ---
             if message_ids:
+                # Filter messages by ID AND ensure their thread is accessible
                 messages_to_update = models.Message.objects.select_related(
                     "thread"
                 ).filter(
-                    thread__mailbox__id__in=accessible_mailbox_ids, id__in=message_ids
+                    id__in=message_ids,
+                    thread_id__in=accessible_thread_ids,  # Check access via thread
                 )
 
-                batch_update_data = {"updated_at": current_time}
-                if flag == "unread":
-                    batch_update_data["is_unread"] = value
-                    batch_update_data["read_at"] = None if value else current_time
-                elif flag == "starred":
-                    batch_update_data["is_starred"] = value
-                elif flag == "trashed":
-                    batch_update_data["is_trashed"] = value
-                    batch_update_data["trashed_at"] = current_time if value else None
+                if messages_to_update.exists():
+                    batch_update_data = {"updated_at": current_time}
+                    if flag == "unread":
+                        batch_update_data["is_unread"] = value
+                        batch_update_data["read_at"] = None if value else current_time
+                    elif flag == "starred":
+                        batch_update_data["is_starred"] = value
+                    elif flag == "trashed":
+                        batch_update_data["is_trashed"] = value
+                        batch_update_data["trashed_at"] = (
+                            current_time if value else None
+                        )
 
-                messages_to_update.update(**batch_update_data)
-                updated_threads.update(msg.thread for msg in messages_to_update)
+                    messages_to_update.update(**batch_update_data)
+                    # Collect threads affected by direct message updates
+                    updated_threads.update(
+                        msg.thread for msg in messages_to_update
+                    )  # In-memory objects ok here
 
-            # --- Process thread IDs (update all messages within) ---
+            # --- Process thread IDs ---
             if thread_ids:
-                # Get all threads the user has access to that match the IDs
-                accessible_threads = models.Thread.objects.filter(
-                    mailbox__id__in=accessible_mailbox_ids, id__in=thread_ids
+                # Filter threads by ID AND ensure they are accessible
+                threads_to_process = models.Thread.objects.filter(
+                    id__in=thread_ids
+                ).filter(
+                    id__in=accessible_thread_ids  # Redundant but safe check
                 )
 
-                # Get all message IDs within these accessible threads
-                messages_in_threads_qs = models.Message.objects.filter(
-                    thread__in=accessible_threads
-                )
+                if threads_to_process.exists():
+                    # Find all messages within these accessible threads
+                    messages_in_threads_qs = models.Message.objects.filter(
+                        thread__in=threads_to_process
+                    )
 
-                batch_update_data = {"updated_at": current_time}
-                if flag == "unread":
-                    batch_update_data["is_unread"] = value
-                    batch_update_data["read_at"] = None if value else current_time
-                elif flag == "starred":
-                    batch_update_data["is_starred"] = value
-                elif flag == "trashed":
-                    batch_update_data["is_trashed"] = value
-                    batch_update_data["trashed_at"] = current_time if value else None
+                    # Prepare update data for messages within these threads
+                    batch_update_data = {"updated_at": current_time}
+                    if flag == "unread":
+                        batch_update_data["is_unread"] = value
+                        batch_update_data["read_at"] = None if value else current_time
+                    elif flag == "starred":
+                        batch_update_data["is_starred"] = value
+                    elif flag == "trashed":
+                        batch_update_data["is_trashed"] = value
+                        batch_update_data["trashed_at"] = (
+                            current_time if value else None
+                        )
+                        # Note: Trashing a thread might have other side effects (e.g., updating thread state)
+                        # This current logic only updates the is_trashed flag on messages within.
+                        # If Thread model itself has state, update threads_to_process separately.
 
-                # Apply the update to messages within the selected threads
-                messages_in_threads_qs.update(**batch_update_data)
+                    # Apply the update to messages within the selected threads
+                    messages_in_threads_qs.update(**batch_update_data)
 
-                # Add affected threads to the set for counter update
-                updated_threads.update(accessible_threads)
+                    # Add affected threads to the set for counter update
+                    updated_threads.update(
+                        threads_to_process
+                    )  # Add the QuerySet directly
 
             # --- Update thread counters ---
-            for thread in updated_threads:
-                # Refresh thread from DB within transaction if needed, though update_stats handles it
+            # Fetch threads from DB again to ensure consistency within transaction
+            threads_to_update_stats = models.Thread.objects.filter(
+                pk__in=[t.pk for t in updated_threads]
+            )
+            for thread in threads_to_update_stats:
+                # update_stats likely recalculates based on current message states
                 thread.update_stats(
-                    **{"fields": [flag]} if flag in ("unread", "starred") else {}
+                    # Pass specific fields if update_stats optimizes, otherwise it recalculates all
+                    fields=[flag] if flag in ("unread", "starred", "trashed") else None
                 )
 
         return drf.response.Response(
