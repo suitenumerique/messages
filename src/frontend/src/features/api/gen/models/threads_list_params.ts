@@ -8,7 +8,35 @@
 
 export type ThreadsListParams = {
   /**
+   * Filter threads with draft messages (1=true, 0=false).
+   */
+  has_draft?: number;
+  /**
+   * Filter threads with messages sent by the user (1=true, 0=false).
+   */
+  has_sender?: number;
+  /**
+   * Filter threads with starred messages (1=true, 0=false).
+   */
+  has_starred?: number;
+  /**
+   * Filter threads that are trashed (1=true, 0=false).
+   */
+  has_trashed?: number;
+  /**
+   * Filter threads with unread messages (1=true, 0=false).
+   */
+  has_unread?: number;
+  /**
+   * Filter threads by mailbox ID.
+   */
+  mailbox_id?: string;
+  /**
    * A page number within the paginated result set.
    */
   page?: number;
+  /**
+   * Search threads by content (subject, sender, recipients, message body).
+   */
+  search?: string;
 };

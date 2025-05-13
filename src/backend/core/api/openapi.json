@@ -1118,7 +1118,7 @@
             },
             "delete": {
                 "operationId": "messages_destroy",
-                "description": "Delete a message.",
+                "description": "Delete a message. Object permission checked by IsAllowedToAccess.",
                 "parameters": [
                     {
                         "in": "path",
@@ -1177,7 +1177,7 @@
         "/api/v1.0/send/": {
             "post": {
                 "operationId": "send_create",
-                "description": "\n    Send a previously created draft message.\n\n    This endpoint finalizes and sends a message previously saved as a draft.\n    The message content (subject, body, recipients) should be set when creating/updating the draft.\n    ",
+                "description": "\n    Send a previously created draft message.\n\n    This endpoint finalizes and sends a message previously saved as a draft.\n    The message content (subject, body, recipients) should be set when creating/updating the draft.\n    Returns a task ID that can be used to track the sending status.\n    ",
                 "tags": [
                     "messages"
                 ],
@@ -1217,7 +1217,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/Message"
+                                    "$ref": "#/components/schemas/SendMessageResponse"
                                 },
                                 "examples": {
                                     "SendDraft": {
@@ -1273,11 +1273,120 @@
                 }
             }
         },
+        "/api/v1.0/tasks/{task_id}/": {
+            "get": {
+                "operationId": "tasks_retrieve",
+                "description": "\n    Get the status of an async task.\n\n    This endpoint returns the current status of a task identified by its ID.\n    ",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "task_id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TaskStatusResponse"
+                                },
+                                "examples": {
+                                    "TaskStatus": {
+                                        "value": {
+                                            "status": "SUCCESS",
+                                            "result": {
+                                                "success": true
+                                            },
+                                            "error": null
+                                        },
+                                        "summary": "Task Status"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/threads/": {
             "get": {
                 "operationId": "threads_list",
-                "description": "ViewSet for Thread model.",
+                "description": "List threads with optional search functionality.",
                 "parameters": [
+                    {
+                        "in": "query",
+                        "name": "has_draft",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads with draft messages (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "has_sender",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads with messages sent by the user (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "has_starred",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads with starred messages (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "has_trashed",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads that are trashed (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "has_unread",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads with unread messages (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter threads by mailbox ID."
+                    },
                     {
                         "name": "page",
                         "required": false,
@@ -1286,6 +1395,14 @@
                         "schema": {
                             "type": "integer"
                         }
+                    },
+                    {
+                        "in": "query",
+                        "name": "search",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Search threads by content (subject, sender, recipients, message body)."
                     }
                 ],
                 "tags": [
@@ -1392,6 +1509,14 @@
                             "format": "uuid"
                         },
                         "description": "Filter threads by mailbox ID."
+                    },
+                    {
+                        "in": "query",
+                        "name": "search",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Search threads by content (subject, sender, recipients, message body)."
                     },
                     {
                         "in": "query",
@@ -1641,7 +1766,7 @@
                         "type": "string",
                         "readOnly": true
                     },
-                    "perms": {
+                    "role": {
                         "type": "string",
                         "readOnly": true
                     },
@@ -1659,7 +1784,7 @@
                     "count_unread_messages",
                     "email",
                     "id",
-                    "perms"
+                    "role"
                 ]
             },
             "Message": {
@@ -1672,11 +1797,6 @@
                         "readOnly": true,
                         "description": "primary key for the record as UUID"
                     },
-                    "thread": {
-                        "type": "string",
-                        "format": "uuid",
-                        "description": "primary key for the record as UUID"
-                    },
                     "parent_id": {
                         "type": "string",
                         "format": "uuid",
@@ -1685,7 +1805,7 @@
                     },
                     "subject": {
                         "type": "string",
-                        "maxLength": 255
+                        "readOnly": true
                     },
                     "created_at": {
                         "type": "string",
@@ -1753,27 +1873,34 @@
                     "read_at": {
                         "type": "string",
                         "format": "date-time",
+                        "readOnly": true,
                         "nullable": true
                     },
                     "sent_at": {
                         "type": "string",
                         "format": "date-time",
+                        "readOnly": true,
                         "nullable": true
                     },
                     "is_sender": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "readOnly": true
                     },
                     "is_draft": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "readOnly": true
                     },
                     "is_unread": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "readOnly": true
                     },
                     "is_starred": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "readOnly": true
                     },
                     "is_trashed": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "readOnly": true
                     }
                 },
                 "required": [
@@ -1783,11 +1910,17 @@
                     "draftBody",
                     "htmlBody",
                     "id",
+                    "is_draft",
+                    "is_sender",
+                    "is_starred",
+                    "is_trashed",
+                    "is_unread",
                     "parent_id",
+                    "read_at",
                     "sender",
+                    "sent_at",
                     "subject",
                     "textBody",
-                    "thread",
                     "to",
                     "updated_at"
                 ]
@@ -1883,6 +2016,55 @@
                     "senderId"
                 ]
             },
+            "SendMessageResponse": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "$ref": "#/components/schemas/Message"
+                    },
+                    "task_id": {
+                        "type": "string",
+                        "description": "Task ID for tracking"
+                    }
+                },
+                "required": [
+                    "message",
+                    "task_id"
+                ]
+            },
+            "StatusEnum": {
+                "enum": [
+                    "RECEIVED",
+                    "PENDING",
+                    "STARTED",
+                    "SUCCESS",
+                    "REVOKED",
+                    "RETRY",
+                    "FAILURE"
+                ],
+                "type": "string",
+                "description": "* `RECEIVED` - RECEIVED\n* `PENDING` - PENDING\n* `STARTED` - STARTED\n* `SUCCESS` - SUCCESS\n* `REVOKED` - REVOKED\n* `RETRY` - RETRY\n* `FAILURE` - FAILURE"
+            },
+            "TaskStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/StatusEnum"
+                    },
+                    "result": {
+                        "nullable": true
+                    },
+                    "error": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "error",
+                    "result",
+                    "status"
+                ]
+            },
             "Thread": {
                 "type": "object",
                 "description": "Serialize threads.",
@@ -1895,10 +2077,11 @@
                     },
                     "subject": {
                         "type": "string",
-                        "maxLength": 255
+                        "readOnly": true
                     },
                     "snippet": {
-                        "type": "string"
+                        "type": "string",
+                        "readOnly": true
                     },
                     "messages": {
                         "type": "string",
@@ -1906,37 +2089,32 @@
                     },
                     "count_unread": {
                         "type": "integer",
-                        "maximum": 2147483647,
-                        "minimum": -2147483648
+                        "readOnly": true
                     },
                     "count_trashed": {
                         "type": "integer",
-                        "maximum": 2147483647,
-                        "minimum": -2147483648
+                        "readOnly": true
                     },
                     "count_draft": {
                         "type": "integer",
-                        "maximum": 2147483647,
-                        "minimum": -2147483648
+                        "readOnly": true
                     },
                     "count_starred": {
                         "type": "integer",
-                        "maximum": 2147483647,
-                        "minimum": -2147483648
+                        "readOnly": true
                     },
                     "count_sender": {
                         "type": "integer",
-                        "maximum": 2147483647,
-                        "minimum": -2147483648
+                        "readOnly": true
                     },
                     "count_messages": {
                         "type": "integer",
-                        "maximum": 2147483647,
-                        "minimum": -2147483648
+                        "readOnly": true
                     },
                     "messaged_at": {
                         "type": "string",
                         "format": "date-time",
+                        "readOnly": true,
                         "nullable": true
                     },
                     "sender_names": {
@@ -1952,14 +2130,27 @@
                         "readOnly": true,
                         "title": "Updated on",
                         "description": "date and time at which a record was last updated"
+                    },
+                    "user_role": {
+                        "type": "string",
+                        "readOnly": true
                     }
                 },
                 "required": [
+                    "count_draft",
+                    "count_messages",
+                    "count_sender",
+                    "count_starred",
+                    "count_trashed",
+                    "count_unread",
                     "id",
+                    "messaged_at",
                     "messages",
                     "sender_names",
+                    "snippet",
                     "subject",
-                    "updated_at"
+                    "updated_at",
+                    "user_role"
                 ]
             },
             "User": {

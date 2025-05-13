@@ -12,43 +12,19 @@
 export interface Thread {
   /** primary key for the record as UUID */
   readonly id: string;
-  /** @maxLength 255 */
-  subject: string;
-  snippet?: string;
+  readonly subject: string;
+  readonly snippet: string;
   readonly messages: string;
-  /**
-   * @minimum -2147483648
-   * @maximum 2147483647
-   */
-  count_unread?: number;
-  /**
-   * @minimum -2147483648
-   * @maximum 2147483647
-   */
-  count_trashed?: number;
-  /**
-   * @minimum -2147483648
-   * @maximum 2147483647
-   */
-  count_draft?: number;
-  /**
-   * @minimum -2147483648
-   * @maximum 2147483647
-   */
-  count_starred?: number;
-  /**
-   * @minimum -2147483648
-   * @maximum 2147483647
-   */
-  count_sender?: number;
-  /**
-   * @minimum -2147483648
-   * @maximum 2147483647
-   */
-  count_messages?: number;
+  readonly count_unread: number;
+  readonly count_trashed: number;
+  readonly count_draft: number;
+  readonly count_starred: number;
+  readonly count_sender: number;
+  readonly count_messages: number;
   /** @nullable */
-  messaged_at?: string | null;
+  readonly messaged_at: string | null;
   readonly sender_names: readonly string[];
   /** date and time at which a record was last updated */
   readonly updated_at: string;
+  readonly user_role: string;
 }

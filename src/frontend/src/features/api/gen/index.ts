@@ -3,6 +3,7 @@ export * from "./messages/messages";
 export * from "./flags/flags";
 export * from "./mailboxes/mailboxes";
 export * from "./mta/mta";
+export * from "./tasks/tasks";
 export * from "./threads/threads";
 export * from "./users/users";
 export * from "./models";

@@ -13,7 +13,7 @@ export interface Mailbox {
   /** primary key for the record as UUID */
   readonly id: string;
   readonly email: string;
-  readonly perms: string;
+  readonly role: string;
   readonly count_unread_messages: string;
   readonly count_messages: string;
 }
