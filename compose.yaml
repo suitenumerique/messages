@@ -127,8 +127,8 @@ services:
 
   celery-dev:
     build:
-      context: .
-      target: backend-development
+      context: src/backend
+      target: runtime-dev
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
