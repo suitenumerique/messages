@@ -241,8 +241,8 @@ export const MessageForm = ({
             data: {
                 messageId: draft.id,
                 senderId: data.from,
-                htmlBody: data.messageEditorHtml,
-                textBody: data.messageEditorText,
+                htmlBody: form.getValues('messageEditorHtml'),
+                textBody: form.getValues('messageEditorText'),
             }
         });
     };
@@ -256,11 +256,7 @@ export const MessageForm = ({
     
     useEffect(() => {
         if (draft) {
-            form.reset({
-                ...formDefaultValues,
-                messageEditorHtml: form.getValues('messageEditorHtml'),
-                messageEditorText: form.getValues('messageEditorText'),
-            }, { keepSubmitCount: true });
+            form.reset(undefined, { keepSubmitCount: true, keepDirty: false, keepValues: true, keepDefaultValues: false });
         }
     }, [draft]);
 
