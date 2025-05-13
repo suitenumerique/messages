@@ -67,13 +67,18 @@
           "messageEditorHtml": "You must write a message."
         },
         "success": {
-          "sent": "Message sent successfully",
           "saved": "Draft saved",
           "draft_deleted": "Draft deleted"
         },
         "confirm": {
           "delete": "Are you sure you want to delete this draft? This action cannot be undone."
         }
+      },
+      "queued_message": {
+        "sending": "Sending message...",
+        "sent": "Message sent successfully",
+        "error": "The message could not be sent.",
+        "not_found": "No sending message found."
       },
       "message_editor": {
         "start_typing": "Start typing..."
@@ -149,13 +154,18 @@
           "messageEditorHtml": "Vous devez écrire un message."
         },
         "success": {
-          "sent": "Message envoyé avec succès.",
           "saved": "Brouillon sauvegardé.",
           "draft_deleted": "Brouillon supprimé."
         },
         "confirm": {
           "delete": "Êtes-vous sûr de vouloir supprimer ce brouillon ? Cette action est irréversible."
         }
+      },
+      "queued_message": {
+        "sending": "Envoi du message en cours...",
+        "sent": "Message envoyé avec succès.",
+        "error": "Le message n'a pas pu être envoyé.",
+        "not_found": "Aucun message en cours d'envoi trouvé."
       },
       "message_editor": {
         "start_typing": "Commencer à écrire..."
