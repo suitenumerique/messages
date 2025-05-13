@@ -47,8 +47,8 @@ const MessageEditor = ({ blockNoteOptions, defaultValue, ...props }: MessageEdit
         form.setValue("messageEditorDraft", JSON.stringify(editor.document), { shouldDirty: true });
         const markdown = await editor.blocksToMarkdownLossy(editor.document);
         const html = await MailHelper.markdownToHtml(markdown);
-        form.setValue("messageEditorText", markdown, { shouldDirty: true });
-        form.setValue("messageEditorHtml", html, { shouldDirty: true });
+        form.setValue("messageEditorText", markdown);
+        form.setValue("messageEditorHtml", html);
     }
 
     /**
