@@ -144,9 +144,26 @@ class TestApiDraftAndSendMessage:
 
         assert send_response.status_code == status.HTTP_200_OK
 
-        mock_send_outbound_message.assert_called()
+        # Checks on the returned task_id
+        task_id = send_response.data["task_id"]
+        assert task_id is not None
 
-        # TODO: checks on returned task_id
+        # Check with an unknown task_id
+        task_response = client.get(
+            reverse("task-detail", kwargs={"task_id": "unknown-task-id"})
+        )
+        assert task_response.status_code == status.HTTP_200_OK
+        assert task_response.data["status"] == "PENDING"
+
+        # Call the task API
+        task_response = client.get(reverse("task-detail", kwargs={"task_id": task_id}))
+        assert task_response.status_code == status.HTTP_200_OK
+        assert task_response.data["status"] == "SUCCESS"
+        assert task_response.data["result"] is not None
+        assert task_response.data["result"]["message_id"] == draft_message_id
+        assert task_response.data["error"] is None
+
+        mock_send_outbound_message.assert_called()
 
         sent_message = models.Message.objects.get(id=draft_message_id)
         assert sent_message.raw_mime

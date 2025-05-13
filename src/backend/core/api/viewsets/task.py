@@ -2,14 +2,13 @@
 
 import logging
 
-from celery.result import AsyncResult
 from celery import states as celery_states
+from celery.result import AsyncResult
 from drf_spectacular.utils import (
     OpenApiExample,
     extend_schema,
     inline_serializer,
 )
-from rest_framework import exceptions as drf_exceptions
 from rest_framework import permissions
 from rest_framework import serializers as drf_serializers
 from rest_framework.response import Response
@@ -66,10 +65,11 @@ class TaskDetailView(APIView):
     def get(self, request, task_id):
         """Get the status of a Celery task."""
 
-        # Check if the task exists
         task_result = AsyncResult(task_id, app=celery_app)
-        if not task_result.id:
-            raise drf_exceptions.NotFound("Task not found")
+
+        # By default unknown tasks will be in PENDING. There is no reliable
+        # way to check if a task exists or not with Celery.
+        # https://github.com/celery/celery/issues/3596#issuecomment-262102185
 
         # Prepare the response data
         result_data = {
