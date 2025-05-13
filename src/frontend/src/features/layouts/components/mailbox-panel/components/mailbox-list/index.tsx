@@ -1,5 +1,5 @@
 import { ThreadsStatsRetrieve200, ThreadsStatsRetrieveStatsFields, useThreadsStatsRetrieve } from "@/features/api/gen"
-import { useMailboxContext } from "@/features/mailbox/provider"
+import { useMailboxContext } from "@/features/providers/mailbox"
 import { Badge } from "@/features/ui/components/badge"
 import clsx from "clsx"
 import Link from "next/link"

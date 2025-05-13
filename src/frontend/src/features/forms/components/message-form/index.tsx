@@ -6,14 +6,14 @@ import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Message, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
+import { Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
 import MessageEditor from "@/features/forms/components/message-editor";
-import { useMailboxContext } from "@/features/mailbox/provider";
+import { useMailboxContext } from "@/features/providers/mailbox";
 import MailHelper from "@/features/utils/mail-helper";
-import soundbox from "@/features/utils/soundbox";
 import { RhfInput, RhfSelect } from "../react-hook-form";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { toast } from "react-toastify";
+import { useSentBox } from "@/features/providers/sent-box";
 
 interface MessageFormProps {
     // For reply mode
@@ -75,6 +75,7 @@ export const MessageForm = ({
     const { selectedMailbox, mailboxes, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
     const hideSubjectField = Boolean(parentMessage);
     const hideFromField = (mailboxes?.length ?? 0) === 0 || draft;
+    const { addQueuedMessage } = useSentBox();
 
     const getMailboxOptions = () => {
         if(!mailboxes) return [];
@@ -125,17 +126,13 @@ export const MessageForm = ({
                 setPendingSubmit(false);
                 toast.dismiss(DRAFT_TOAST_ID);
             },
-            onSuccess: async () => {
-                await soundbox.play(0.07);
+            onSuccess: async (response) => {
+                const taskId = (response as sendCreateResponse200).data.task_id;
+                addQueuedMessage(taskId); 
                 invalidateThreadMessages();
                 invalidateThreadsStats();
                 onSuccess?.();
                 onClose?.();
-                addToast(
-                    <ToasterItem type="info">
-                        <span>{t("message_form.success.sent")}</span>
-                    </ToasterItem>
-                );
             }
         }
     });
@@ -248,8 +245,6 @@ export const MessageForm = ({
     };
 
     useEffect(() => {
-        soundbox.load("/sounds/mail-sent.ogg");
-
         if (draftMessage) form.setFocus("subject");
         else form.setFocus("to")
     }, []);

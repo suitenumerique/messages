@@ -4,17 +4,20 @@ import { MailboxPanel } from "@/features/layouts/components/mailbox-panel";
 import { PropsWithChildren } from "react";
 import { GlobalLayout } from "../global/global-layout";
 import AuthenticatedView from "./authenticated-view";
-import { MailboxProvider, useMailboxContext } from "@/features/mailbox/provider";
+import { MailboxProvider, useMailboxContext } from "@/features/providers/mailbox";
 import { NoMailbox } from "./no-mailbox";
 import { Toaster } from "@/features/ui/components/toaster";
+import { SentBoxProvider } from "@/features/providers/sent-box";
 
 export const MainLayout = ({ children }: PropsWithChildren) => {
     return (
         <GlobalLayout>
             <AuthenticatedView>
                 <MailboxProvider>
-                    <MainLayoutContent>{children}</MainLayoutContent>
-                    <Toaster />
+                    <SentBoxProvider>
+                        <MainLayoutContent>{children}</MainLayoutContent>
+                        <Toaster />
+                    </SentBoxProvider>
                 </MailboxProvider>
             </AuthenticatedView>
         </GlobalLayout>

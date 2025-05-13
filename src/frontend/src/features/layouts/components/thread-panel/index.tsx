@@ -1,4 +1,4 @@
-import { useMailboxContext } from "@/features/mailbox/provider";
+import { useMailboxContext } from "@/features/providers/mailbox";
 import { ThreadItem } from "./components/thread-item";
 import { DropdownMenu, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";

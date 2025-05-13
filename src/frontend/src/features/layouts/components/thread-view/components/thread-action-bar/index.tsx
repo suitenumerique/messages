@@ -1,4 +1,4 @@
-import { useMailboxContext } from "@/features/mailbox/provider";
+import { useMailboxContext } from "@/features/providers/mailbox";
 import useRead from "@/features/message/use-read";
 import useTrash from "@/features/message/use-trash";
 import Bar from "@/features/ui/components/bar";
