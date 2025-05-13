@@ -7,6 +7,7 @@ parsing and is intended to be the central place for all email parsing
 operations in the application.
 """
 
+import hashlib
 import logging
 import re
 from datetime import datetime
@@ -291,14 +292,24 @@ def parse_message_content(message) -> Dict[str, Any]:
                 )
                 # DEBUG LOGGING END
 
+                # Convert body to bytes if it's a string
+                if isinstance(body, str):
+                    body_bytes = body.encode("utf-8")
+                else:
+                    body_bytes = body
+
+                content_hash = hashlib.sha256(body_bytes).hexdigest()
+
+                # Store attachment info for later processing
                 result["attachments"].append(
                     {
-                        "partId": part_id,
                         "type": final_part_type,
                         "name": final_filename,
-                        "size": len(body) if isinstance(body, (str, bytes)) else 0,
+                        "size": len(body_bytes),
                         "disposition": attach_disposition,
                         "cid": content_id,
+                        "content": body_bytes,
+                        "sha256": content_hash,
                     }
                 )
 
@@ -336,14 +347,19 @@ def parse_message_content(message) -> Dict[str, Any]:
             final_filename = filename if filename else "unnamed"
             # Use default type determined by flanker for bytes without disposition
             final_part_type = default_type_str
+
+            content_hash = hashlib.sha256(body).hexdigest()
+
+            # Store attachment info for processing later
             result["attachments"].append(
                 {
-                    "partId": part_id,
                     "type": final_part_type,
                     "name": final_filename,
                     "size": len(body),
                     "disposition": attach_disposition,
                     "cid": content_id,
+                    "content": body,
+                    "sha256": content_hash,
                 }
             )
 

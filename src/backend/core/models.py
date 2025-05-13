@@ -544,3 +544,104 @@ class Message(BaseModel):
         for mr in self.recipients.select_related("contact").all():
             recipients_by_type[mr.type].append(mr.contact)
         return recipients_by_type
+
+
+class Blob(BaseModel):
+    """
+    Blob model to store immutable binary data.
+
+    This model follows the JMAP blob design, storing raw content that can
+    be referenced by multiple attachments.
+    """
+
+    sha256 = models.CharField(
+        _("sha256 hash"),
+        max_length=64,
+        db_index=True,
+        help_text=_("SHA-256 hash of the blob content"),
+    )
+
+    size = models.PositiveIntegerField(
+        _("file size"), help_text=_("Size of the blob in bytes")
+    )
+
+    type = models.CharField(
+        _("content type"), max_length=255, help_text=_("MIME type of the blob")
+    )
+
+    raw_content = models.BinaryField(
+        _("raw content"),
+        help_text=_(
+            "Binary content of the blob, will be offloaded to object storage in the future"
+        ),
+    )
+
+    mailbox = models.ForeignKey(
+        "Mailbox",
+        on_delete=models.CASCADE,
+        related_name="blobs",
+        help_text=_("Mailbox that owns this blob"),
+    )
+
+    class Meta:
+        db_table = "messages_blob"
+        verbose_name = _("blob")
+        verbose_name_plural = _("blobs")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Blob {self.id} ({self.size} bytes)"
+
+
+class Attachment(BaseModel):
+    """Attachment model to link messages with blobs."""
+
+    name = models.CharField(
+        _("file name"),
+        max_length=255,
+        help_text=_("Original filename of the attachment"),
+    )
+
+    blob = models.ForeignKey(
+        "Blob",
+        on_delete=models.CASCADE,
+        related_name="attachments",
+        help_text=_("Reference to the blob containing the attachment data"),
+    )
+
+    mailbox = models.ForeignKey(
+        "Mailbox",
+        on_delete=models.CASCADE,
+        related_name="attachments",
+        help_text=_("Mailbox that owns this attachment"),
+    )
+
+    messages = models.ManyToManyField(
+        "Message",
+        related_name="attachments",
+        help_text=_("Messages that use this attachment"),
+    )
+
+    class Meta:
+        db_table = "messages_attachment"
+        verbose_name = _("attachment")
+        verbose_name_plural = _("attachments")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.name} ({self.blob.size} bytes)"
+
+    @property
+    def content_type(self):
+        """Return the content type of the associated blob."""
+        return self.blob.type
+
+    @property
+    def size(self):
+        """Return the size of the associated blob."""
+        return self.blob.size
+
+    @property
+    def sha256(self):
+        """Return the SHA-256 hash of the associated blob."""
+        return self.blob.sha256

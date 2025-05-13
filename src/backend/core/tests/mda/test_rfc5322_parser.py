@@ -619,7 +619,6 @@ Content-Type: application/pdf
 Content-Disposition: attachment
 
 PDF data
-
 --boundary--
 """
         message_obj = create.from_string(raw_email)
@@ -630,6 +629,7 @@ PDF data
         attachment = content["attachments"][0]
         assert attachment.get("name") == "unnamed"
         assert attachment["type"] == "application/pdf"
+        assert attachment["content"] == b"PDF data"
 
 
 # --- Fixtures for TestEmailMessageParsing ---

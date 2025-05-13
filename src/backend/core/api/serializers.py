@@ -63,6 +63,43 @@ class ContactSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "email"]
 
 
+class BlobSerializer(serializers.ModelSerializer):
+    """Serialize blobs."""
+
+    blobId = serializers.UUIDField(source="id", read_only=True)
+
+    class Meta:
+        model = models.Blob
+        fields = [
+            "blobId",
+            "size",
+            "type",
+            "sha256",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class AttachmentSerializer(serializers.ModelSerializer):
+    """Serialize attachments."""
+
+    blobId = serializers.UUIDField(source="blob.id", read_only=True)
+    type = serializers.CharField(source="content_type", read_only=True)
+
+    class Meta:
+        model = models.Attachment
+        fields = [
+            "id",
+            "blobId",
+            "name",
+            "size",
+            "type",
+            "sha256",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
 class ThreadSerializer(serializers.ModelSerializer):
     """Serialize threads."""
 
@@ -125,6 +162,7 @@ class MessageSerializer(serializers.ModelSerializer):
     textBody = serializers.SerializerMethodField(read_only=True)
     htmlBody = serializers.SerializerMethodField(read_only=True)
     draftBody = serializers.SerializerMethodField(read_only=True)
+    attachments = serializers.SerializerMethodField(read_only=True)
 
     # JMAP-style recipient fields (from model's parsed data)
     to = serializers.SerializerMethodField(read_only=True)
@@ -152,6 +190,22 @@ class MessageSerializer(serializers.ModelSerializer):
     def get_draftBody(self, instance):  # pylint: disable=invalid-name
         """Return an arbitrary JSON object representing the draft body."""
         return instance.draft_body
+
+    @extend_schema_field(AttachmentSerializer(many=True))
+    def get_attachments(self, instance):
+        """Return the parsed email attachments or linked attachments for drafts."""
+        # First check for directly linked attachments (for drafts)
+        if instance.attachments.exists():
+            return AttachmentSerializer(instance.attachments.all(), many=True).data
+
+        # Then get any parsed attachments from the email if available
+        parsed_attachments = instance.get_parsed_field("attachments") or []
+
+        # Convert parsed attachments to a format similar to AttachmentSerializer
+        if parsed_attachments:
+            return parsed_attachments
+
+        return []
 
     @extend_schema_field(ContactSerializer(many=True))
     def get_to(self, instance):
@@ -210,6 +264,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "htmlBody",
             "textBody",
             "draftBody",
+            "attachments",
             "sender",
             "to",
             "cc",

@@ -4,7 +4,7 @@
 import html
 import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -17,6 +17,46 @@ logger = logging.getLogger(__name__)
 
 # Helper function to extract Message-IDs
 MESSAGE_ID_RE = re.compile(r"<([^<>]+)>")
+
+
+def _process_attachments(
+    message: models.Message, attachment_data: List[Dict], mailbox: models.Mailbox
+) -> None:
+    """
+    Process attachments found during email parsing.
+
+    Creates Blob records for each attachment and links them to the message.
+
+    Args:
+        message: The message object to link attachments to
+        attachment_data: List of attachment data dictionaries from parsing
+        mailbox: The mailbox that owns these attachments
+    """
+    for attachment_info in attachment_data:
+        try:
+            # Check if we have content to store
+            if "content" in attachment_info and attachment_info["content"]:
+                # Create a blob for this attachment
+                content = attachment_info["content"]
+                blob = models.Blob.objects.create(
+                    sha256=attachment_info["sha256"],
+                    size=attachment_info["size"],
+                    type=attachment_info["type"],
+                    raw_content=content,
+                    mailbox=mailbox,
+                )
+
+                # Create an attachment record linking to this blob
+                attachment = models.Attachment.objects.create(
+                    name=attachment_info.get("name", "unnamed"),
+                    blob=blob,
+                    mailbox=mailbox,
+                )
+
+                # Link the attachment to the message
+                message.attachments.add(attachment)
+        except Exception as e:
+            logger.exception(f"Error processing attachment: {str(e)}")
 
 
 def check_local_recipient(
@@ -126,7 +166,10 @@ def find_thread_for_inbound_message(
 def deliver_inbound_message(
     recipient_email: str, parsed_email: Dict[str, Any], raw_data: bytes
 ) -> bool:  # Return True on success, False on failure
-    """Deliver a parsed inbound email message to the correct mailbox and thread."""
+    """Deliver a parsed inbound email message to the correct mailbox and thread.
+
+    raw_data is not parsed again, just stored as is.
+    """
 
     # --- 1. Find or Create Mailbox --- #
     try:
@@ -345,7 +388,11 @@ def deliver_inbound_message(
                 )
                 # Log and continue
 
-    # --- 6. Final Updates (Optional) --- #
+    # --- 6. Process Attachments if present --- #
+    if parsed_email.get("attachments"):
+        _process_attachments(message, parsed_email["attachments"], mailbox)
+
+    # --- 7. Final Updates --- #
     try:
         # Update snippet using the new message's body if possible
         # (This assumes the subject was used for the initial snippet if body was empty)

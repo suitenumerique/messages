@@ -107,7 +107,9 @@ class SendMessageView(APIView):
         try:
             message = (
                 models.Message.objects.select_related("sender")
-                .prefetch_related("thread__accesses", "recipients__contact")
+                .prefetch_related(
+                    "thread__accesses", "recipients__contact", "attachments__blob"
+                )
                 .get(
                     id=message_id, is_draft=True, thread__accesses__mailbox_id=sender_id
                 )
