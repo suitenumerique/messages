@@ -16,12 +16,9 @@ Aligns field names with JMAP where appropriate (textBody, htmlBody, to, cc, bcc)
 export interface Message {
   /** primary key for the record as UUID */
   readonly id: string;
-  /** primary key for the record as UUID */
-  thread: string;
   /** @nullable */
   readonly parent_id: string | null;
-  /** @maxLength 255 */
-  subject: string;
+  readonly subject: string;
   /** date and time at which a record was created */
   readonly created_at: string;
   /** date and time at which a record was last updated */
@@ -34,12 +31,12 @@ export interface Message {
   readonly cc: readonly Contact[];
   readonly bcc: readonly Contact[];
   /** @nullable */
-  read_at?: string | null;
+  readonly read_at: string | null;
   /** @nullable */
-  sent_at?: string | null;
-  is_sender?: boolean;
-  is_draft?: boolean;
-  is_unread?: boolean;
-  is_starred?: boolean;
-  is_trashed?: boolean;
+  readonly sent_at: string | null;
+  readonly is_sender: boolean;
+  readonly is_draft: boolean;
+  readonly is_unread: boolean;
+  readonly is_starred: boolean;
+  readonly is_trashed: boolean;
 }

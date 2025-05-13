@@ -33,6 +33,10 @@ export type ThreadsStatsRetrieveParams = {
    */
   mailbox_id?: string;
   /**
+   * Search threads by content (subject, sender, recipients, message body).
+   */
+  search?: string;
+  /**
    * Comma-separated list of fields to aggregate. Allowed values: unread, trashed, draft, starred, sender, messages
    */
   stats_fields: ThreadsStatsRetrieveStatsFields;

@@ -42,6 +42,7 @@ import type {
   SendCreate403,
   SendCreate503,
   SendMessageRequestRequest,
+  SendMessageResponse,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -942,7 +943,7 @@ export function useMessagesRetrieve<
 }
 
 /**
- * Delete a message.
+ * Delete a message. Object permission checked by IsAllowedToAccess.
  */
 export type messagesDestroyResponse204 = {
   data: void;
@@ -1040,10 +1041,11 @@ export const useMessagesDestroy = <TError = unknown, TContext = unknown>(
 
     This endpoint finalizes and sends a message previously saved as a draft.
     The message content (subject, body, recipients) should be set when creating/updating the draft.
+    Returns a task ID that can be used to track the sending status.
     
  */
 export type sendCreateResponse200 = {
-  data: Message;
+  data: SendMessageResponse;
   status: 200;
 };
 

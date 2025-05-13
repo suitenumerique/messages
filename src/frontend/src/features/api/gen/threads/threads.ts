@@ -38,7 +38,7 @@ import { fetchAPI } from "../../fetch-api";
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
- * ViewSet for Thread model.
+ * List threads with optional search functionality.
  */
 export type threadsListResponse200 = {
   data: PaginatedThreadList;
