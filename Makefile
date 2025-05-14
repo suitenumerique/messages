@@ -401,3 +401,8 @@ api-update: \
 	back-api-update \
 	frontend-api-update
 .PHONY: api-update
+
+elasticsearch-index: ## Create and/or reindex elasticsearch data
+	@$(MANAGE) es_create_index
+	@$(MANAGE) es_reindex --all
+.PHONY: elasticsearch-index
