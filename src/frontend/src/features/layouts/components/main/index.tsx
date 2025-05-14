@@ -1,4 +1,4 @@
-import { MainLayout as KitMainLayout } from "@gouvfr-lasuite/ui-kit";
+import { AppLayout } from "./layout";
 import { Header, HeaderRight } from "../header";
 import { MailboxPanel } from "@/features/layouts/components/mailbox-panel";
 import { PropsWithChildren } from "react";
@@ -34,13 +34,15 @@ const MainLayoutContent = ({ children }: PropsWithChildren) => {
             <NoMailbox />
         </>
     ) : (
-        <KitMainLayout
-            enableResize
-            leftPanelContent={<MailboxPanel />}
-            icon={<img src="/images/app-logo.svg" alt="logo" height={32} />}
-            rightHeaderContent={<HeaderRight />}
-        >
+        <>
+            <AppLayout
+                enableResize
+                leftPanelContent={<MailboxPanel />}
+                icon={<img src="/images/app-logo.svg" alt="logo" height={32} />}
+                rightHeaderContent={<HeaderRight />}
+            >
             {children}
-        </KitMainLayout>
+        </AppLayout>
+        </>
     )
 }

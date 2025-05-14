@@ -1,0 +1,50 @@
+.c__header {
+  --header-height: 52px;
+  display: flex;
+  background-color: var(--c--theme--colors--greyscale-000);
+  border-bottom: 1px solid var(--c--theme--colors--greyscale-200);
+  justify-content: space-between;
+  align-items: center;
+  height: var(--header-height);
+  min-height: var(--header-height);
+  max-height: var(--header-height);
+  padding: 0 1.125rem;
+
+  @media screen and (max-width: 1024px) {
+    padding: 0 1rem;
+  }
+
+  &__toggle-menu {
+    display: none;
+
+    @media screen and (max-width: 1024px) {
+      display: block;
+    }
+
+    &__icon {
+      color: var(--c--theme--colors--primary-800);
+    }
+  }
+
+  &__left,
+  &__center,
+  &__right {
+    display: flex;
+    align-items: center;
+  }
+
+  &__center {
+    background: red;
+  }
+
+  &__right {
+    display: flex;
+    align-items: center;
+
+    &__language-picker {
+      @media screen and (max-width: 1024px) {
+        display: none;
+      }
+    }
+  }
+}

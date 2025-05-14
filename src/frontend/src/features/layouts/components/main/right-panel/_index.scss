@@ -1,0 +1,27 @@
+.c__right-panel {
+    height: calc(100dvh - var(--header-height));
+    width: 0;
+    border-left: 1px solid var(--c--theme--colors--greyscale-200);
+    transition: width 0.15s ease-in-out;
+    overflow-y: auto;
+  
+    &.open {
+      width: 300px;
+    }
+  }
+  
+  .c__right-panel__mobile {
+    z-index: 998;
+    width: 100dvw;
+    height: calc(100dvh - var(--header-height));
+    overflow-y: auto;
+    position: fixed;
+    background-color: var(--c--theme--colors--greyscale-000);
+    transition: transform 0.15s ease-in-out;
+    transform: translateX(100dvw);
+  
+    &.open {
+      transform: translateX(0);
+    }
+  }
+  

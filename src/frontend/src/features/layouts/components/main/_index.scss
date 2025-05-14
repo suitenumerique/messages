@@ -7,7 +7,7 @@
     place-items: center;
     justify-content: center;
     text-align: center;
-    height: calc(100vh - 52px);
+    height: calc(100vh - var(--header-height));
     
     & > div {
         font-size: var(--c--theme--font--sizes--h4);

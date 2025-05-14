@@ -275,8 +275,8 @@ class ThreadViewSet(
                         es_filters[f"is_{field_name}"] = False
 
             # Get page parameters
-            page = self.paginator.get_page_number(request, self)
-            page_size = self.paginator.get_page_size(request)
+            page = int(self.paginator.get_page_number(request, self))
+            page_size = int(self.paginator.get_page_size(request))
 
             # Get search results from Elasticsearch
             results = search_threads(

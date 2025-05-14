@@ -82,6 +82,9 @@
       },
       "message_editor": {
         "start_typing": "Start typing..."
+      },
+      "search": {
+        "placeholder": "Search..."
       }
     }
   },
@@ -170,6 +173,9 @@
       },
       "message_editor": {
         "start_typing": "Commencer à écrire..."
+      },
+      "search": {
+        "placeholder": "Rechercher..."
       }
     }
   }
