@@ -104,7 +104,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
             ref={iframeRef}
             className="thread-message__body"
             srcDoc={wrappedHtml}
-            sandbox="allow-same-origin"
+            sandbox="allow-same-origin allow-popups"
             onLoad={resizeIframe}
         />
     )
