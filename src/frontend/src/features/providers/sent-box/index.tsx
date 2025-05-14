@@ -1,5 +1,6 @@
 import { createContext, PropsWithChildren, useContext, useMemo, useState } from "react";
 import { QueueMessage } from "./queued-message";
+import { useMailboxContext } from "../mailbox";
 
 type SentBoxContextType = {
     queuedMessages: readonly string[];
@@ -19,6 +20,7 @@ const SentBoxContext = createContext<SentBoxContextType>({
  * toast to inform the user of the sending status.
  */
 export const SentBoxProvider = ({ children }: PropsWithChildren) => {
+    const { invalidateThreadsStats, invalidateThreadMessages } = useMailboxContext();
     const [queuedMessages, setQueuedMessages] = useState<string []>([]);
 
     const addQueuedMessage = (taskId: string) => {
@@ -27,6 +29,12 @@ export const SentBoxProvider = ({ children }: PropsWithChildren) => {
 
     const removeQueuedMessage = (taskId: string) => {
         setQueuedMessages(queuedMessages.filter(id => id !== taskId));
+    }
+
+    const handleSettled = (taskId: string) => {
+        removeQueuedMessage(taskId);
+        invalidateThreadsStats();
+        invalidateThreadMessages();
     }
 
     const context = useMemo(
@@ -42,7 +50,7 @@ export const SentBoxProvider = ({ children }: PropsWithChildren) => {
                     <QueueMessage
                         key={taskId}
                         taskId={taskId}
-                        onSettled={() => removeQueuedMessage(taskId)}
+                        onSettled={() => handleSettled(taskId)}
                     />
                 ))
             }

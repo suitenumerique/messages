@@ -2,7 +2,7 @@ import { StatusEnum, useTasksRetrieve } from "@/features/api/gen";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import soundbox from "@/features/utils/soundbox";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Id, toast } from "react-toastify";
 
@@ -13,13 +13,17 @@ type QueueMessageProps = {
 
 const QUEUED_MESSAGE_POLL_INTERVAL = 1000;
 const QUEUED_MESSAGE_CLOSE_DELAY = 2000;
+const QUEUED_MESSAGE_TIMEOUT = 30000;
 
 export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
     const { t } = useTranslation();
+    const [retryCount, setRetryCount] = useState(0);
+    const hasTimedOut = useMemo(() => retryCount * QUEUED_MESSAGE_POLL_INTERVAL > QUEUED_MESSAGE_TIMEOUT, [retryCount]);
     const [toastId, setToastId] = useState<Id>('');
     const taskQuery = useTasksRetrieve(taskId, {
         query: {
             refetchInterval: QUEUED_MESSAGE_POLL_INTERVAL,
+            enabled: !hasTimedOut,
             meta: {
                 noGlobalError: true,
             }
@@ -41,19 +45,13 @@ export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
     }, []);
 
     useEffect(() => {
-        const status_code = taskQuery?.data?.status ?? taskQuery.error?.code;
+        const status_code = taskQuery?.data?.status;
         
         if (!status_code) return;
-        if (status_code === 404) {
-            toast.update(toastId, {
-                render: <ToasterItem type="error"><span>{t('queued_message.not_found')}</span></ToasterItem>,
-                autoClose: QUEUED_MESSAGE_CLOSE_DELAY * 2,
-            });
-            onSettled?.();
-            return;
-        }
+
+        setRetryCount(retryCount => retryCount + 1);
         
-        const status = taskQuery.data!.data.status!;
+        const status = taskQuery.data!.data.status;
 
         if (status === StatusEnum.SUCCESS) {
             toast.update(toastId, {
@@ -80,6 +78,17 @@ export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
             onSettled?.();
         }
     }, [taskQuery.error, taskQuery.data]);
+
+    useEffect(() => {
+        if (hasTimedOut) {
+            toast.update(toastId, {
+                render: <ToasterItem type="error"><span>{t('queued_message.sent_too_long')}</span></ToasterItem>,
+                autoClose: QUEUED_MESSAGE_CLOSE_DELAY * 2,
+            });
+            onSettled?.();
+            return;
+        }
+    }, [hasTimedOut]);
 
     return null;
 }

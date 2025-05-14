@@ -38,8 +38,7 @@ logger = logging.getLogger(__name__)
                 "result": drf_serializers.JSONField(allow_null=True),
                 "error": drf_serializers.CharField(allow_null=True),
             },
-        ),
-        404: OpenApiExample("Not Found", value={"detail": "Task not found"}),
+        )
     },
     description="""
     Get the status of an async task.
