@@ -111,6 +111,7 @@ const FolderItem = ({ folder }: FolderItemProps) => {
     return (
         <Link
             href={`/mailbox/${selectedMailbox?.id}?${queryParams}`}
+            shallow={false}
             className={clsx("mailbox__item", {
                 "mailbox__item--active": isActive
             })}

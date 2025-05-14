@@ -1,7 +1,19 @@
 .thread-view {
+    background-color: var(--c--theme--colors--greyscale-050);
     display: flex;
     flex-direction: column;
     max-height: 100%;
+}
+
+@media screen and (max-width: 1024px) {
+    .thread-view {
+        position: fixed;
+        top: var(--header-height);
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 900;
+    }
 }
 
 .thread-view--loading {

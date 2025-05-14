@@ -4,8 +4,6 @@
 $tablet: map.get($themes, "default", "theme", "breakpoints", "tablet");
 
 .app__home {
-    --header-height: 52px;
-
     .c__header {
         height: var(--header-height);
         min-height: var(--header-height);
@@ -31,8 +29,6 @@ $tablet: map.get($themes, "default", "theme", "breakpoints", "tablet");
     }
 
     @media (max-width: $tablet) {
-        --header-height: 52px;
-
         .c__header {
         .drive__header__left {
             img:first-child {

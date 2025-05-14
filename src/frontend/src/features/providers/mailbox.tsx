@@ -5,6 +5,7 @@ import { useRouter } from "next/router";
 import usePrevious from "@/hooks/use-previous";
 import { useSearchParams } from "next/navigation";
 import { DEFAULT_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
+import { useDebounceCallback } from "@/hooks/use-debounce-callback";
 
 type QueryState = {
     status: QueryStatus,
@@ -94,6 +95,10 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const queryClient = useQueryClient();
     const router = useRouter();
     const searchParams = useSearchParams();
+    const previousSearchParams = usePrevious(searchParams);
+    const hasSearchParamsChanged = useMemo(() => {
+        return previousSearchParams?.toString() !== searchParams.toString();
+    }, [previousSearchParams, searchParams]);
     const [selectedMailbox, setSelectedMailbox] = useState<Mailbox | null>(null);
     const [selectedThread, setSelectedThread] = useState<Thread | null>(null);
     const mailboxQuery = useMailboxesList({
@@ -103,11 +108,18 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     });
 
     const previousUnreadMessagesCount = usePrevious(selectedMailbox?.count_unread_messages || 0);
+    const threadQueryKey = useMemo(() => {
+        const queryKey = ['threads', selectedMailbox?.id];
+        if (searchParams.get('search')) {
+            return [...queryKey, 'search'];
+        }
+        return [...queryKey, searchParams.toString()];
+    }, [selectedMailbox?.id, searchParams]);
     const threadsQuery = useThreadsListInfinite(undefined, {
         query: {
             enabled: !!selectedMailbox,
             initialPageParam: 1,
-            queryKey: ['threads', selectedMailbox?.id, searchParams.toString()],
+            queryKey: threadQueryKey,
             getNextPageParam: (lastPage, pages) => {
                 return pages.length + 1;
             },
@@ -157,6 +169,11 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             await queryClient.invalidateQueries({ queryKey: ['messages', selectedThread.id] });
         }
     }
+    const resetSearchQueryDebounced = useDebounceCallback(() => {
+        queryClient.resetQueries(
+            { predicate: ({ queryKey}) => queryKey.includes('search') },
+        );
+    }, 500);
 
     const invalidateThreadsStats = async () => {
         await queryClient.invalidateQueries({ queryKey: ['threads', 'stats', selectedMailbox?.id] });
@@ -167,7 +184,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
      */
     const unselectThread = () => {
         setSelectedThread(null);
-        if (router.query.threadId) {
+        if (selectedMailbox && router.query.threadId) {
             router.push(`/mailbox/${selectedMailbox!.id}?${searchParams}`);
         }
     }
@@ -269,6 +286,13 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             queryClient.invalidateQueries({ queryKey: ['threads', selectedMailbox?.id] });
         }
     }, [selectedMailbox?.count_unread_messages]);
+
+    useEffect(() => {
+        if (searchParams.get('search') !== previousSearchParams?.get('search')) {
+            resetSearchQueryDebounced();
+        }
+        unselectThread();
+    }, [hasSearchParamsChanged])
 
     return <MailboxContext.Provider value={context}>{children}</MailboxContext.Provider>
 };

@@ -1,0 +1,39 @@
+.c__main-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+.c__main-layout__header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+}
+
+.c__main-layout__content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  margin-top: var(--header-height);
+
+  &__left-panel {
+    height: calc(100dvh - var(--header-height));
+    width: 300px;
+    border-right: 1px solid var(--c--theme--colors--greyscale-200);
+    @media screen and (max-width: 1024px) {
+      width: 100dvw;
+    }
+  }
+  &__center {
+    display: flex;
+
+    &__children {
+      height: calc(100dvh - var(--header-height));
+      width: 100%;
+      flex: 1;
+      overflow-y: auto;
+    }
+  }
+}

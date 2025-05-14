@@ -1,5 +1,12 @@
 :root {
   font-size: 14px;
+  --header-height: 52px;
+}
+
+@media screen and (max-width: 1024px) {
+  :root {
+    --header-height: 104px;
+  }
 }
 
 body {
@@ -108,4 +115,8 @@ body {
 
 .m-base {
   margin: var(--c--theme--spacings--base);
+}
+
+.text-nowrap {
+  white-space: nowrap;
 }

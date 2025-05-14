@@ -18,7 +18,7 @@ export const HeaderRight = () => {
   const [isOpen, setIsOpen] = useState(false);
   const { t } = useTranslation();
   return (
-    <div className="c__header-right">
+    <>
       {user && (
         <DropdownMenu
           options={[
@@ -41,12 +41,12 @@ export const HeaderRight = () => {
             }
             iconPosition="right"
           >
-            {t("my_account")}
+            <span className="text-nowrap">{t("my_account")}</span>
           </Button>
         </DropdownMenu>
       )}
       <LanguagePicker />
-    </div>
+    </>
   );
 };
 
