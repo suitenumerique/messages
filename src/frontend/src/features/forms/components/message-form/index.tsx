@@ -36,18 +36,17 @@ const emailArraySchema = z.array(z.string().trim().email("message_form.error.inv
 const messageFormSchema = z.object({
     from: z.string().nonempty("message_form.error.mailbox_required"),
     to: z.string()
-         .min(1, "message_form.error.min_recipient")
+         .optional()
          .transform(toEmailArray)
          .pipe(emailArraySchema),
     cc: z.string()
-         .trim()
          .optional()
          .transform(toEmailArray)
-        .pipe(emailArraySchema),
+         .pipe(emailArraySchema),
     bcc: z.string()
           .optional()
           .transform(toEmailArray)
-          .pipe(emailArraySchema.optional()),
+          .pipe(emailArraySchema),
     subject: z.string()
         .trim()
         .nonempty("message_form.error.subject_required"),
@@ -89,13 +88,27 @@ export const MessageForm = ({
         if (draft) return draft.to.map(contact => contact.email);
         if (!parentMessage) return [];
         if (replyAll) {
-            return [
+            return [...new Set([
                 {email: parentMessage.sender.email},
                 ...parentMessage.to,
                 ...parentMessage.cc
-            ]
+                ]
                 .filter(contact => contact.email !== selectedMailbox!.email)
                 .map(contact => contact.email)
+            )]
+        }
+        // If the sender is replying to himself, we can consider that it prefers
+        // to reply to the message recipient from onw of its message.
+        if (parentMessage.sender.email === selectedMailbox?.email) {
+            if (parentMessage.to.length > 0) {
+                return parentMessage.to.map(contact => contact.email);
+            }
+            if (parentMessage.cc.length > 0) {
+                return parentMessage.cc.map(contact => contact.email);
+            }
+            if (parentMessage.bcc.length > 0) {
+                return parentMessage.bcc.map(contact => contact.email);
+            }
         }
         return [parentMessage.sender.email];
     }, [parentMessage, replyAll, selectedMailbox]);
@@ -128,9 +141,8 @@ export const MessageForm = ({
             },
             onSuccess: async (response) => {
                 const taskId = (response as sendCreateResponse200).data.task_id;
-                addQueuedMessage(taskId); 
+                addQueuedMessage(taskId);
                 invalidateThreadMessages();
-                invalidateThreadsStats();
                 onSuccess?.();
                 onClose?.();
             }
@@ -172,6 +184,7 @@ export const MessageForm = ({
                         <span>{t("message_form.success.draft_deleted")}</span>
                     </ToasterItem>
                 );
+                onClose?.();
             },
         }
     });
@@ -226,7 +239,15 @@ export const MessageForm = ({
     const handleSubmit = async (data: MessageFormFields) => {
         setPendingSubmit(true);
 
-        // Ensure the draft is up to date before sending the message
+        // recipients are optional to save the draft but required to send the message
+        // so we have to manually check that at least one recipient is present.
+        const hasNoRecipients = data.to.length === 0 && data.cc.length === 0 && data.bcc.length === 0;
+        if (hasNoRecipients) {
+            setPendingSubmit(false);
+            form.setError("to", { message: t("message_form.error.min_recipient") });
+            return;
+        }
+
         const draft = await saveDraft(data);
 
         if (!draft) { 
@@ -287,12 +308,11 @@ export const MessageForm = ({
                 <div className="form-field-row">
                     <RhfInput 
                         name="to"
-                        required
                         label={t("thread_message.to")} 
                         icon={<span className="material-icons">group</span>}
                         fullWidth
                         text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? t(form.formState.errors.to.message as string) : t("message_form.helper_text.recipients")}
-                        textItems={Array.isArray(form.formState.errors.to) ? form.formState.errors.to?.map((error, index) => t(error!.message as string, { email: form.getValues(`to`).split(',')[index] })) : undefined}
+                        textItems={Array.isArray(form.formState.errors.to) ? form.formState.errors.to?.map((error, index) => t(error!.message as string, { email: form.getValues(`to`)!.split(',')[index] })) : undefined}
                     />
                     <Button tabIndex={-1} type="button" size="nano" color={showCCField ? "tertiary" : "tertiary-text"} onClick={() => setShowCCField(!showCCField)}>cc</Button>
                     <Button tabIndex={-1} type="button" size="nano" color={showBCCField ? "tertiary" : "tertiary-text"} onClick={() => setShowBCCField(!showBCCField)}>bcc</Button>
@@ -351,7 +371,7 @@ export const MessageForm = ({
                     >
                         {t("actions.send")}
                     </Button>
-                    {onClose && (
+                    {!draft && onClose && (
                         <Button 
                             type="button" 
                             color="secondary" 
