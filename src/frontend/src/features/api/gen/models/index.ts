@@ -40,7 +40,6 @@ export * from "./send_message_response";
 export * from "./status_enum";
 export * from "./task_status_response";
 export * from "./task_status_response_result";
-export * from "./tasks_retrieve404";
 export * from "./thread";
 export * from "./threads_list_params";
 export * from "./threads_stats_retrieve200";

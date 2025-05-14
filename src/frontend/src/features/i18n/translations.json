@@ -165,7 +165,8 @@
         "sending": "Envoi du message en cours...",
         "sent": "Message envoyé avec succès.",
         "error": "Le message n'a pas pu être envoyé.",
-        "not_found": "Aucun message en cours d'envoi trouvé."
+        "not_found": "Aucun message en cours d'envoi trouvé.",
+        "sent_too_long": "Le message n'a pas pu être envoyé. Veuillez réessayer plus tard."
       },
       "message_editor": {
         "start_typing": "Commencer à écrire..."

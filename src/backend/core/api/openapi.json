@@ -1317,18 +1317,6 @@
                             }
                         },
                         "description": ""
-                    },
-                    "404": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": {},
-                                    "description": "Unspecified response body"
-                                }
-                            }
-                        },
-                        "description": ""
                     }
                 }
             }
@@ -2034,16 +2022,16 @@
             },
             "StatusEnum": {
                 "enum": [
+                    "STARTED",
+                    "RETRY",
                     "RECEIVED",
                     "PENDING",
-                    "STARTED",
                     "SUCCESS",
                     "REVOKED",
-                    "RETRY",
                     "FAILURE"
                 ],
                 "type": "string",
-                "description": "* `RECEIVED` - RECEIVED\n* `PENDING` - PENDING\n* `STARTED` - STARTED\n* `SUCCESS` - SUCCESS\n* `REVOKED` - REVOKED\n* `RETRY` - RETRY\n* `FAILURE` - FAILURE"
+                "description": "* `STARTED` - STARTED\n* `RETRY` - RETRY\n* `RECEIVED` - RECEIVED\n* `PENDING` - PENDING\n* `SUCCESS` - SUCCESS\n* `REVOKED` - REVOKED\n* `FAILURE` - FAILURE"
             },
             "TaskStatusResponse": {
                 "type": "object",

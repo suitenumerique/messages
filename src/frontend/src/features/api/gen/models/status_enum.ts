@@ -7,23 +7,23 @@
  */
 
 /**
- * * `RECEIVED` - RECEIVED
+ * * `STARTED` - STARTED
+ * `RETRY` - RETRY
+ * `RECEIVED` - RECEIVED
  * `PENDING` - PENDING
- * `STARTED` - STARTED
  * `SUCCESS` - SUCCESS
  * `REVOKED` - REVOKED
- * `RETRY` - RETRY
  * `FAILURE` - FAILURE
  */
 export type StatusEnum = (typeof StatusEnum)[keyof typeof StatusEnum];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const StatusEnum = {
+  STARTED: "STARTED",
+  RETRY: "RETRY",
   RECEIVED: "RECEIVED",
   PENDING: "PENDING",
-  STARTED: "STARTED",
   SUCCESS: "SUCCESS",
   REVOKED: "REVOKED",
-  RETRY: "RETRY",
   FAILURE: "FAILURE",
 } as const;

@@ -18,7 +18,7 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { TaskStatusResponse, TasksRetrieve404 } from ".././models";
+import type { TaskStatusResponse } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
 
@@ -36,14 +36,7 @@ export type tasksRetrieveResponse200 = {
   status: 200;
 };
 
-export type tasksRetrieveResponse404 = {
-  data: TasksRetrieve404;
-  status: 404;
-};
-
-export type tasksRetrieveResponseComposite =
-  | tasksRetrieveResponse200
-  | tasksRetrieveResponse404;
+export type tasksRetrieveResponseComposite = tasksRetrieveResponse200;
 
 export type tasksRetrieveResponse = tasksRetrieveResponseComposite & {
   headers: Headers;
@@ -69,7 +62,7 @@ export const getTasksRetrieveQueryKey = (taskId: string) => {
 
 export const getTasksRetrieveQueryOptions = <
   TData = Awaited<ReturnType<typeof tasksRetrieve>>,
-  TError = TasksRetrieve404,
+  TError = unknown,
 >(
   taskId: string,
   options?: {
@@ -102,11 +95,11 @@ export const getTasksRetrieveQueryOptions = <
 export type TasksRetrieveQueryResult = NonNullable<
   Awaited<ReturnType<typeof tasksRetrieve>>
 >;
-export type TasksRetrieveQueryError = TasksRetrieve404;
+export type TasksRetrieveQueryError = unknown;
 
 export function useTasksRetrieve<
   TData = Awaited<ReturnType<typeof tasksRetrieve>>,
-  TError = TasksRetrieve404,
+  TError = unknown,
 >(
   taskId: string,
   options: {
@@ -129,7 +122,7 @@ export function useTasksRetrieve<
 };
 export function useTasksRetrieve<
   TData = Awaited<ReturnType<typeof tasksRetrieve>>,
-  TError = TasksRetrieve404,
+  TError = unknown,
 >(
   taskId: string,
   options?: {
@@ -152,7 +145,7 @@ export function useTasksRetrieve<
 };
 export function useTasksRetrieve<
   TData = Awaited<ReturnType<typeof tasksRetrieve>>,
-  TError = TasksRetrieve404,
+  TError = unknown,
 >(
   taskId: string,
   options?: {
@@ -168,7 +161,7 @@ export function useTasksRetrieve<
 
 export function useTasksRetrieve<
   TData = Awaited<ReturnType<typeof tasksRetrieve>>,
-  TError = TasksRetrieve404,
+  TError = unknown,
 >(
   taskId: string,
   options?: {
