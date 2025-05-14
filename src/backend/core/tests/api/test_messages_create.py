@@ -131,6 +131,7 @@ class TestApiDraftAndSendMessage:
         ).data
         assert draft_api_message["draftBody"] == draft_content
         assert draft_api_message["is_draft"] is True
+        assert draft_api_message["bcc"][0]["email"] == "jean@external.com"
 
         send_response = client.post(
             send_url,
@@ -185,6 +186,7 @@ class TestApiDraftAndSendMessage:
         assert sent_message.thread.count_draft == 0
         assert sent_message.thread.sender_names == [sent_message.sender.name]
         assert sent_message.thread.messaged_at is not None
+
 
     @patch("core.mda.outbound.send_outbound_message")
     def test_draft_and_send_message_success_delegated_access(
