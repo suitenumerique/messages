@@ -54,8 +54,10 @@ class MessageViewSet(
         """Delete a message. Object permission checked by IsAllowedToAccess."""
         # if message is the last of the thread, delete the thread
         message = self.get_object()
-        if message.thread.messages.count() == 1:
-            message.thread.delete()
-        message.delete()
-
+        thread = message.thread
+        if thread.messages.count() == 1:
+            thread.delete()
+        else:
+            message.delete()
+            thread.update_stats()
         return drf.response.Response(status=status.HTTP_204_NO_CONTENT)

@@ -116,10 +116,6 @@ class TestMessagesDelete:
     def test_delete_message_with_bad_delegated_permission(self, mailbox_role):
         """Test delete message with bad delegated permission."""
         mailbox = factories.MailboxFactory()
-        # factories.MailboxAccessFactory(
-        #    mailbox=mailbox,
-        #    permission=enums.MailboxPermissionChoices.ADMIN,
-        # )
         message_to_delete = factories.MessageFactory(subject="Test message")
         factories.ThreadAccessFactory(
             mailbox=mailbox,
@@ -133,7 +129,7 @@ class TestMessagesDelete:
             user=authenticated_user,
             role=mailbox_role,
         )
-        # second mailbox with delegated permission but not delete permission
+        # second mailbox with delegated permission but is only viewer
         factories.ThreadAccessFactory(
             mailbox=delegated_mailbox,
             thread=message_to_delete.thread,
@@ -175,6 +171,12 @@ class TestMessagesDelete:
             user=authenticated_user,
             role=mailbox_role,
         )
+
+        # check thread stats before delete
+        thread.refresh_from_db()
+        thread.update_stats()
+        assert thread.count_messages == 2
+
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
         response = client.delete(reverse("messages-detail", kwargs={"id": message.id}))
@@ -182,6 +184,9 @@ class TestMessagesDelete:
         assert not models.Message.objects.filter(id=message.id).exists()
         assert models.Message.objects.filter(id=message2.id).exists()
         assert models.Thread.objects.filter(id=message.thread.id).exists()
+        # check thread stats was updated after message was deleted
+        thread.refresh_from_db()
+        assert thread.count_messages == 1
 
     @pytest.mark.parametrize(
         "mailbox_role",
