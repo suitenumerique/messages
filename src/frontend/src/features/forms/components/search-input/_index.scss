@@ -52,6 +52,12 @@
     font-size: 0.875rem;
     font-family: var(--c--theme--fonts--body);
     color: var(--c--theme--colors--greyscale-600);
+
+    // Hide the clear button
+    &::-webkit-search-cancel-button {
+        -webkit-appearance: none;
+        appearance: none;
+    }
 }
 
 @media screen and (max-width: 1024px) {

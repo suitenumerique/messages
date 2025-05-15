@@ -88,6 +88,8 @@
         "filters": {
           "submit": "Search",
           "reset": "Reset",
+          "open": "Open filters",
+          "close": "Close filters",
           "label": {
             "from": "From",
             "to": "To",
@@ -197,6 +199,8 @@
         "filters": {
           "submit": "Rechercher",
           "reset": "Réinitialiser",
+          "open": "Ouvrir les filtres",
+          "close": "Fermer les filtres",
           "label": {
             "from": "De",
             "to": "À",
