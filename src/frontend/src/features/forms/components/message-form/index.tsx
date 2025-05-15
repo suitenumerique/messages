@@ -6,7 +6,7 @@ import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
+import { DraftMessageRequestRequest, Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
 import MessageEditor from "@/features/forms/components/message-editor";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import MailHelper from "@/features/utils/mail-helper";
@@ -14,6 +14,7 @@ import { RhfInput, RhfSelect } from "../react-hook-form";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { toast } from "react-toastify";
 import { useSentBox } from "@/features/providers/sent-box";
+import { useRouter } from "next/router";
 
 interface MessageFormProps {
     // For reply mode
@@ -67,13 +68,18 @@ export const MessageForm = ({
     onSuccess
 }: MessageFormProps) => {
     const { t } = useTranslation();
+    const router = useRouter();
     const [draft, setDraft] = useState<Message | undefined>(draftMessage);
     const [showCCField, setShowCCField] = useState((draftMessage?.cc?.length ?? 0) > 0);
     const [showBCCField, setShowBCCField] = useState((draftMessage?.bcc?.length ?? 0) > 0);
     const [pendingSubmit, setPendingSubmit] = useState(false);
     const { selectedMailbox, mailboxes, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
     const hideSubjectField = Boolean(parentMessage);
-    const hideFromField = (mailboxes?.length ?? 0) === 0 || draft;
+    const defaultSenderId = mailboxes?.find((mailbox) => {
+        if (draft?.sender) return draft.sender.email === mailbox.email;
+        return selectedMailbox?.id === mailbox.id;
+    })?.id ?? mailboxes?.[0]?.id;
+    const hideFromField = defaultSenderId && (mailboxes?.length ?? 0) === 1;
     const { addQueuedMessage } = useSentBox();
 
     const getMailboxOptions = () => {
@@ -114,7 +120,7 @@ export const MessageForm = ({
     }, [parentMessage, replyAll, selectedMailbox]);
 
     const formDefaultValues = useMemo(() => ({
-        from: selectedMailbox?.id || mailboxes?.[0]?.id || '',
+        from: defaultSenderId ?? '',
         to: (draft?.to?.map(contact => contact.email) ?? recipients).join(', '),
         cc: (draft?.cc?.map(contact => contact.email) ?? []).join(', '),
         bcc: (draft?.bcc?.map(contact => contact.email) ?? []).join(', '),
@@ -171,29 +177,55 @@ export const MessageForm = ({
         mutation: { onSuccess: handleDraftMutationSuccess }
     });
 
-    const deleteMessageMutation = useMessagesDestroy({
-        mutation: {
-            onSuccess: () => {
-                setDraft(undefined);
-                invalidateThreadMessages();
-                invalidateThreadsStats();
-                unselectThread();
-                addToast(
-                    <ToasterItem type="info">
-                        
-                        <span>{t("message_form.success.draft_deleted")}</span>
-                    </ToasterItem>
-                );
-                onClose?.();
-            },
-        }
-    });
+    const deleteMessageMutation = useMessagesDestroy();
 
     const handleDeleteMessage = (messageId: string) => {
         if(window.confirm(t("message_form.confirm.delete"))) {
             deleteMessageMutation.mutate({
                 id: messageId
+            }, {
+                onSuccess: () => {
+                    setDraft(undefined);
+                    invalidateThreadMessages();
+                    invalidateThreadsStats();
+                    unselectThread();
+                    addToast(
+                        <ToasterItem type="info">
+                            
+                            <span>{t("message_form.success.draft_deleted")}</span>
+                        </ToasterItem>
+                    );
+                    onClose?.();
+                },
             });
+        }
+    }
+
+    /**
+     * If the user changes the message sender, we need to delete the draft,
+     * then recreate a new one. Once the new draft is created, we need to
+     * redirect the user to the new draft view.
+     */
+    const handleChangeSender = async (data: DraftMessageRequestRequest) => {
+        if (draft && form.formState.dirtyFields.from) {
+            await deleteMessageMutation.mutateAsync({ id: draft.id });
+            const response = await draftCreateMutation.mutateAsync({ data }, {
+                onSuccess: () => {addToast(
+                    <ToasterItem type="info">
+                        <span>{t("message_form.success.draft_transferred")}</span>
+                    </ToasterItem>,
+                );
+                }
+            });
+
+            if(router.asPath.includes("new")) {
+                setDraft(response.data as Message);
+                return;
+            }
+            const mailboxId = data.senderId;
+            const threadId = response.data.thread_id
+            // @TODO: Make something less hardcoded to improve the maintainability of the code
+            router.replace(`/mailbox/${mailboxId}/thread/${threadId}?has_draft=1`);
         }
     }
 
@@ -212,15 +244,19 @@ export const MessageForm = ({
             cc: data.cc || [],
             bcc: data.bcc || [],
             subject: subject,
-            senderId: data.from!,
+            senderId: data.from,
             parentId: parentMessage?.id,
             draftBody: data.messageEditorDraft,
         }
         let response;
+        
         if (!draft) {
             response = await draftCreateMutation.mutateAsync({
                 data: payload,
             });
+        } else if (form.formState.dirtyFields.from) {
+            handleChangeSender(payload);
+            return;
         } else {
             response = await draftUpdateMutation.mutateAsync({
                 messageId: draft.id,
@@ -269,7 +305,7 @@ export const MessageForm = ({
         if (draftMessage) form.setFocus("subject");
         else form.setFocus("to")
     }, []);
-    
+
     useEffect(() => {
         if (draft) {
             form.reset(undefined, { keepSubmitCount: true, keepDirty: false, keepValues: true, keepDefaultValues: false });
