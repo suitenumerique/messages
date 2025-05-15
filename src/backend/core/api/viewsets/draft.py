@@ -2,6 +2,7 @@
 
 import json
 import logging
+import uuid
 
 from django.db import transaction
 from django.utils import timezone
@@ -69,6 +70,12 @@ logger = logging.getLogger(__name__)
                 default=list,
                 help_text="List of BCC recipient email addresses",
             ),
+            "attachments": drf_serializers.ListField(
+                child=drf_serializers.DictField(),
+                required=False,
+                default=list,
+                help_text="List of attachment objects with blobId, partId, and name",
+            ),
         },
     ),
     responses={
@@ -104,6 +111,9 @@ logger = logging.getLogger(__name__)
     - Only the fields that are provided will be updated
     
     At least one of draftBody must be provided.
+    
+    To add attachments, upload them first using the /api/v1.0/blob/upload/{mailbox_id}/ endpoint
+    and include the returned blobIds in the attachmentIds field.
     """,
     examples=[
         OpenApiExample(
@@ -126,12 +136,19 @@ logger = logging.getLogger(__name__)
             },
         ),
         OpenApiExample(
-            "Update Draft",
+            "Update Draft with Attachments",
             value={
                 "messageId": "123e4567-e89b-12d3-a456-426614174000",
                 "subject": "Updated subject",
                 "draftBody": json.dumps({"arbitrary": "new json content"}),
                 "to": ["new-recipient@example.com"],
+                "attachments": [
+                    {
+                        "partId": "att-1",
+                        "blobId": "123e4567-e89b-12d3-a456-426614174001",
+                        "name": "document.pdf",
+                    }
+                ],
             },
         ),
     ],
@@ -149,6 +166,7 @@ class DraftMessageView(APIView):
         - to: list[str] (optional)
         - cc: list[str] (optional)
         - bcc: list[str] (optional)
+        - attachmentIds: list[str] (optional, IDs of previously uploaded blobs)
         Return newly created draft message
 
     PUT /api/v1.0/draft/{message_id}/ with expected data:
@@ -157,6 +175,7 @@ class DraftMessageView(APIView):
         - to: list[str] (optional)
         - cc: list[str] (optional)
         - bcc: list[str] (optional)
+        - attachmentIds: list[str] (optional, IDs of previously uploaded blobs)
         Return updated draft message
     """
 
@@ -166,7 +185,7 @@ class DraftMessageView(APIView):
     def _update_draft_details(
         self, message: models.Message, request_data: dict
     ) -> models.Message:
-        """Helper method to update draft details (subject, recipients, body).
+        """Helper method to update draft details (subject, recipients, body, attachments).
         Ensures user has access to the thread."""
 
         updated_fields = []
@@ -229,6 +248,80 @@ class DraftMessageView(APIView):
         if "draftBody" in request_data:
             message.draft_body = request_data.get("draftBody", "")
             updated_fields.append("draft_body")
+
+        # Update attachments if provided
+        if "attachments" in request_data:
+            # Only process attachments if message has been saved
+            if message.pk:
+                # Get the current attachment IDs
+                current_attachment_ids = set(
+                    message.attachments.values_list("id", flat=True)
+                )
+
+                # Process the new attachments from request
+                new_attachment_ids = []
+
+                for attachment_data in request_data.get("attachments", []):
+                    if not attachment_data:  # Skip empty values
+                        continue
+
+                    # Get the blob ID
+                    blob_id = attachment_data.get("blobId")
+                    # TODO
+                    # part_id = attachment_data.get("partId", f"att-{uuid.uuid4()}")
+                    name = attachment_data.get("name", "unnamed")
+
+                    if not blob_id:
+                        logger.warning(
+                            f"Missing blobId in attachment data: {attachment_data}"
+                        )
+                        continue
+
+                    try:
+                        # Convert blob_id to UUID if it's a string
+                        if isinstance(blob_id, str):
+                            blob_id = uuid.UUID(blob_id)
+
+                        # Try to get the blob
+                        blob = models.Blob.objects.get(id=blob_id)
+
+                        # Create an attachment for this blob if it doesn't exist
+                        attachment, created = models.Attachment.objects.get_or_create(
+                            blob=blob, mailbox=self.mailbox, defaults={"name": name}
+                        )
+
+                        if created:
+                            logger.info(
+                                f"Created new attachment {attachment.id} for blob {blob_id}"
+                            )
+
+                        new_attachment_ids.append(attachment.id)
+
+                    except (ValueError, models.Blob.DoesNotExist) as e:
+                        logger.warning(f"Invalid or missing blob {blob_id}: {str(e)}")
+
+                # Combine all valid attachment IDs
+                new_attachments = set(new_attachment_ids)
+
+                # Add new attachments and remove old ones
+                to_add = new_attachments - current_attachment_ids
+                to_remove = current_attachment_ids - new_attachments
+
+                # Remove attachments no longer in the list
+                if to_remove:
+                    message.attachments.remove(*to_remove)
+
+                # Add new attachments
+                if to_add:
+                    valid_attachments = models.Attachment.objects.filter(id__in=to_add)
+                    message.attachments.add(*valid_attachments)
+
+                    # Log if some attachments weren't found
+                    if len(valid_attachments) != len(to_add):
+                        logger.warning(
+                            "Some attachments were not found: %s",
+                            set(to_add) - {a.id for a in valid_attachments},
+                        )
 
         # Save message and thread if changes were made
         if updated_fields and message.pk:  # Only save if message exists

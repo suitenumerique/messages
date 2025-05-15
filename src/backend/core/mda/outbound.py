@@ -72,6 +72,28 @@ def prepare_outbound_message(
         "message_id": message.mime_id,
     }
 
+    # Add attachments if present
+    if message.attachments.exists():
+        attachments = []
+        for attachment in message.attachments.select_related("blob").all():
+            # Get the blob data
+            blob = attachment.blob
+
+            # Add the attachment to the MIME data
+            attachments.append(
+                {
+                    "content": blob.raw_content,  # Binary content
+                    "type": blob.type,  # MIME type
+                    "name": attachment.name,  # Original filename
+                    "disposition": "attachment",  # Default to attachment disposition
+                    "size": blob.size,  # Size in bytes
+                }
+            )
+
+        # Add attachments to the MIME data
+        if attachments:
+            mime_data["attachments"] = attachments
+
     # Assemble the raw mime message
     try:
         raw_mime = compose_email(
@@ -81,7 +103,7 @@ def prepare_outbound_message(
         )
     except Exception as e:  # noqa: BLE001
         logger.error("Failed to compose MIME for message %s: %s", message.id, e)
-        return False, mime_data
+        return False
 
     # Sign the message with DKIM
     dkim_signature_header: Optional[bytes] = sign_message_dkim(

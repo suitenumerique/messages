@@ -5,6 +5,7 @@ from django.urls import include, path
 
 from rest_framework.routers import DefaultRouter
 
+from core.api.viewsets.blob import BlobViewSet
 from core.api.viewsets.config import ConfigView
 from core.api.viewsets.draft import DraftMessageView
 from core.api.viewsets.flag import ChangeFlagViewSet
@@ -24,6 +25,7 @@ router.register("users", UserViewSet, basename="users")
 router.register("mailboxes", MailboxViewSet, basename="mailboxes")
 router.register("threads", ThreadViewSet, basename="threads")
 router.register("messages", MessageViewSet, basename="messages")
+router.register("blob", BlobViewSet, basename="blob")
 
 urlpatterns = [
     path(
