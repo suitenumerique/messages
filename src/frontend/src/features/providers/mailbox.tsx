@@ -23,9 +23,7 @@ type MailboxContextType = {
     threads: PaginatedThreadList | null;
     messages: PaginatedMessageList | null;
     selectedMailbox: Mailbox | null;
-    selectMailbox: (mailbox: Mailbox) => void;
     selectedThread: Thread | null;
-    selectThread: (thread: Thread | null) => void;
     unselectThread: () => void;
     loadNextThreads: () => Promise<unknown>;
     invalidateThreadMessages: () => void;
@@ -49,9 +47,7 @@ const MailboxContext = createContext<MailboxContextType>({
     threads: null,
     messages: null,
     selectedMailbox: null,
-    selectMailbox: () => {},
     selectedThread: null,
-    selectThread: () => {},
     loadNextThreads: async () => {},
     unselectThread: () => {},
     invalidateThreadMessages: () => {},
@@ -99,13 +95,15 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const hasSearchParamsChanged = useMemo(() => {
         return previousSearchParams?.toString() !== searchParams.toString();
     }, [previousSearchParams, searchParams]);
-    const [selectedMailbox, setSelectedMailbox] = useState<Mailbox | null>(null);
-    const [selectedThread, setSelectedThread] = useState<Thread | null>(null);
     const mailboxQuery = useMailboxesList({
         query: {
             refetchInterval: 30 * 1000, // 30 seconds
         },
     });
+    const selectedMailbox = useMemo(() => {
+        const mailboxId = router.query.mailboxId;
+        return mailboxQuery.data?.data.find((mailbox) => mailbox.id === mailboxId) ?? mailboxQuery.data?.data[0] ?? null;
+    }, [router.query.mailboxId, mailboxQuery.data])
 
     const previousUnreadMessagesCount = usePrevious(selectedMailbox?.count_unread_messages || 0);
     const threadQueryKey = useMemo(() => {
@@ -148,6 +146,11 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             }, {results: [], count: 0, next: null, previous: null} as PaginatedThreadList);
     }, [threadsQuery.data?.pages]);
 
+    const selectedThread = useMemo(() => {
+        const threadId = router.query.threadId;
+        return threadsQuery.data?.pages.flatMap((page) => page.data.results).find((thread) => thread.id === threadId) ?? null;
+    }, [router.query.threadId, flattenThreads])
+
     const messagesQuery = useMessagesList(undefined, {
         query: {
             enabled: !!selectedThread,
@@ -183,7 +186,6 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
      * Unselect the current thread and navigate to the mailbox page if needed
      */
     const unselectThread = () => {
-        setSelectedThread(null);
         if (selectedMailbox && router.query.threadId) {
             router.push(`/mailbox/${selectedMailbox!.id}?${searchParams}`);
         }
@@ -194,11 +196,9 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         threads: flattenThreads ?? null,
         messages: messagesQuery.data?.data ?? null,
         selectedMailbox,
-        selectMailbox: setSelectedMailbox,
         selectedThread,
         unselectThread,
         loadNextThreads: threadsQuery.fetchNextPage,
-        selectThread: setSelectedThread,
         invalidateThreadMessages,
         invalidateThreadsStats,
         refetchMailboxes: mailboxQuery.refetch,
@@ -239,18 +239,14 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     ]);
 
     useEffect(() => {
-        const mailboxes = mailboxQuery.data?.data;
-        if (mailboxes && mailboxes.length > 0) {
-            const mailboxId = router.query.mailboxId;
-            setSelectedMailbox(mailboxes.find((mailbox) => mailbox.id === mailboxId) ?? mailboxes[0]);
-        }
-    }, [mailboxQuery.data?.data]);
-
-    useEffect(() => {
         if (selectedMailbox) {
             if (router.pathname === '/' ||  (selectedMailbox.id !== router.query.mailboxId && !router.pathname.includes('new'))) {
                 const defaultFolder = DEFAULT_FOLDERS[0];
-                router.replace(`/mailbox/${selectedMailbox.id}?${new URLSearchParams(defaultFolder.filter).toString()}`);
+                if (router.query.threadId) {
+                    router.replace(`/mailbox/${selectedMailbox.id}/thread/${router.query.threadId}?${router.query.search}`);
+                } else {
+                    router.replace(`/mailbox/${selectedMailbox.id}?${new URLSearchParams(defaultFolder.filter).toString()}`);
+                }
                 invalidateThreadMessages();
             }
         }
@@ -261,28 +257,14 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             const threadId = router.query.threadId;
             const thread = flattenThreads?.results.find((thread) => thread.id === threadId);
             if (thread) {
-                setSelectedThread(thread);
                 router.replace(`/mailbox/${selectedMailbox.id}/thread/${thread.id}?${searchParams}`);
             }
         }
     }, [flattenThreads]);
 
-    useEffect(() => {
-        if (selectedThread) {
-            const threads = flattenThreads?.results;
-            const newSelectedThread = threads?.find((thread) => thread.id === selectedThread?.id);
-            if (newSelectedThread) {
-                if (newSelectedThread?.updated_at !== selectedThread?.updated_at) {
-                    setSelectedThread(newSelectedThread);
-                    messagesQuery.refetch();
-                }
-            }
-        }
-    }, [flattenThreads?.results, selectedThread]);
-
     // Invalidate the threads query to refresh the threads list when the unread messages count changes
     useEffect(() => {
-        if (previousUnreadMessagesCount !== selectedMailbox?.count_unread_messages) {
+        if ((previousUnreadMessagesCount ?? 0) > (selectedMailbox?.count_unread_messages ?? 0)) {
             queryClient.invalidateQueries({ queryKey: ['threads', selectedMailbox?.id] });
         }
     }, [selectedMailbox?.count_unread_messages]);
