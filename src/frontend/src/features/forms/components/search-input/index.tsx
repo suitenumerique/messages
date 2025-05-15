@@ -11,23 +11,21 @@ export const SearchInput = () => {
     const [value, setValue] = useState<string>(searchParams.get('search') || '');
     const [showFilters, setShowFilters] = useState<boolean>(false);
     const { t } = useTranslation();
-    const isUserTyping = useRef(false);
     const searchRef = useRef<HTMLDivElement>(null);
 
     const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         handleSearch(event.target.value);
     }
 
-    const handleFiltersChange = (query: string, closeFilters: boolean = true) => {
-        handleSearch(query);
-        if (closeFilters) setShowFilters(false);
+    const handleFiltersChange = (query: string, submit: boolean = true) => {
+        handleSearch(query, submit);
+        if (submit) setShowFilters(false);
     }
 
     /**
      * Each time the user types, we update the URL with the new search query.
      */
-    const handleSearch = (query: string) => {
-        isUserTyping.current = true;
+    const handleSearch = (query: string, submit: boolean = false) => {
         setValue(query);
         
         const url = new URL(router.asPath, 'http://localhost');
@@ -37,7 +35,9 @@ export const SearchInput = () => {
             url.searchParams.delete('search');
         }
 
-        router.replace(url.pathname + url.search, undefined, { shallow: true });
+        if (submit) {
+            router.replace(url.pathname + url.search, undefined, { shallow: true });
+        }
     }
 
     const handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -46,17 +46,17 @@ export const SearchInput = () => {
         else setShowFilters(true);
     }
 
+    const resetInput = () => {
+        handleFiltersChange('', true);
+    }
+
     /**
      * Each time the URL changes, we update the search query
      * except when the user is typing to prevent the cursor from jumping
      * to the end of the input.
      */
     useEffect(() => {
-        // Only update the value from searchParams if the user is not currently typing
-        if (!isUserTyping.current) {
-            setValue(searchParams.get('search') || '');
-        }
-        isUserTyping.current = false;
+        setValue(searchParams.get('search') || '');
     }, [searchParams]);
 
     // Add click outside handler
@@ -92,9 +92,23 @@ export const SearchInput = () => {
                         placeholder={t("search.placeholder")}
                     />
                 </div>
-                <Button color="tertiary-text" className="search__filters-toggle" onClick={() => setShowFilters(!showFilters)}>
+                { value && (
+                <Button
+                    color="tertiary-text"
+                    onClick={resetInput}
+                    title={t("search.filters.reset")}
+                >
+                    <span className="material-icons">close</span>
+                    <span className="c__offscreen">{t("search.filters.reset")}</span>
+                </Button>
+                )}
+                <Button
+                    color="tertiary-text"
+                    onClick={() => setShowFilters(!showFilters)}
+                    title={showFilters ? t("search.filters.close") : t("search.filters.open")}
+                >
                     <span className="material-icons">tune</span>
-                    <span className="c__offscreen">{t("search.filters")}</span>
+                    <span className="c__offscreen">{showFilters ? t("search.filters.close") : t("search.filters.open")}</span>
                 </Button>
             </div>
             {showFilters && <SearchFiltersForm query={value} onChange={handleFiltersChange} />}

@@ -6,21 +6,22 @@ import { useTranslation } from "react-i18next";
 
 type SearchFiltersFormProps = {
     query: string;
-    onChange: (query: string, closeFilters: boolean) => void;
+    onChange: (query: string, submit: boolean) => void;
 }
 
 export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) => {
     const { t, i18n } = useTranslation();
     const formRef = useRef<HTMLFormElement>(null);
 
-    const updateQuery = (closeFilters: boolean) => {
+    const updateQuery = (submit: boolean) => {
         const formData = new FormData(formRef.current as HTMLFormElement);
         const query = SearchHelper.serializeSearchFormData(formData, i18n.language);
-        onChange(query, closeFilters);
+        onChange(query, submit);
         formRef.current?.reset();
     }
 
     const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => updateQuery(event.type === 'submit');
+    const handleChange = () => updateQuery(false);
 
     const handleReset = () => {
         onChange('', false);
@@ -40,7 +41,7 @@ export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) =
     }
 
     return (
-        <form className="search__filters" ref={formRef} onSubmit={handleSubmit}>
+        <form className="search__filters" ref={formRef} onSubmit={handleSubmit} onChange={handleChange}>
             <Input
                 name="from"
                 label={t("search.filters.label.from")}
@@ -68,8 +69,9 @@ export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) =
             <Select
                 name="in"
                 label={t("search.filters.label.in")}
-                value={parsedQuery.in as string}
+                value={parsedQuery.in as string ?? 'all'}
                 showLabelWhenSelected={false}
+                onChange={handleChange}
                 options={[
                     {
                         label: t("search.filters.label.folder_all_messages"),
