@@ -176,6 +176,11 @@ class MessageSerializer(serializers.ModelSerializer):
         source="parent.id", allow_null=True, read_only=True
     )
 
+    # UUID of the thread
+    thread_id = serializers.UUIDField(
+        source="thread.id", allow_null=True, read_only=True
+    )
+
     @extend_schema_field(serializers.ListField(child=serializers.DictField()))
     def get_textBody(self, instance):  # pylint: disable=invalid-name
         """Return the list of text body parts (JMAP style)."""
@@ -259,6 +264,7 @@ class MessageSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "parent_id",
+            "thread_id",
             "subject",
             "created_at",
             "updated_at",

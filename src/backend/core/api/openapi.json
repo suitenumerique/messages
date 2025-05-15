@@ -6,6 +6,64 @@
         "description": "This is the messages API schema."
     },
     "paths": {
+        "/api/v1.0/blob/{id}/download/": {
+            "get": {
+                "operationId": "blob_download_retrieve",
+                "description": "Download binary data for the specified blob ID.\n\nThis endpoint returns the raw binary content of a blob. Access is controlled\nby checking if the user has access to any mailbox that owns this blob.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "blob"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/blob/upload/{mailbox_id}/": {
+            "post": {
+                "operationId": "blob_upload_create",
+                "description": "Upload binary data and create a Blob record.\n\nThis endpoint accepts multipart/form-data containing a file and returns a\nblob ID and other metadata. The blob is associated with the specified mailbox.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "blob"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
         "/api/v1.0/config/": {
             "get": {
                 "operationId": "config_retrieve",
@@ -29,7 +87,7 @@
         "/api/v1.0/draft/": {
             "post": {
                 "operationId": "draft_create",
-                "description": "\n    Create or update a draft message.\n    \n    This endpoint allows you to:\n    - Create a new draft message in a new thread\n    - Create a draft reply to an existing message in an existing thread\n    - Update an existing draft message\n    \n    For creating a new draft:\n    - Do not include messageId\n    - Include parentId if replying to an existing message\n    \n    For updating an existing draft:\n    - Include messageId of the draft to update\n    - Only the fields that are provided will be updated\n    \n    At least one of draftBody must be provided.\n    ",
+                "description": "\n    Create or update a draft message.\n    \n    This endpoint allows you to:\n    - Create a new draft message in a new thread\n    - Create a draft reply to an existing message in an existing thread\n    - Update an existing draft message\n    \n    For creating a new draft:\n    - Do not include messageId\n    - Include parentId if replying to an existing message\n    \n    For updating an existing draft:\n    - Include messageId of the draft to update\n    - Only the fields that are provided will be updated\n    \n    At least one of draftBody must be provided.\n    \n    To add attachments, upload them first using the /api/v1.0/blob/upload/{mailbox_id}/ endpoint\n    and include the returned blobIds in the attachmentIds field.\n    ",
                 "tags": [
                     "messages"
                 ],
@@ -67,16 +125,23 @@
                                     },
                                     "summary": "Draft Reply"
                                 },
-                                "UpdateDraft": {
+                                "UpdateDraftWithAttachments": {
                                     "value": {
                                         "messageId": "123e4567-e89b-12d3-a456-426614174000",
                                         "subject": "Updated subject",
                                         "draftBody": "{\"arbitrary\": \"new json content\"}",
                                         "to": [
                                             "new-recipient@example.com"
+                                        ],
+                                        "attachments": [
+                                            {
+                                                "partId": "att-1",
+                                                "blobId": "123e4567-e89b-12d3-a456-426614174001",
+                                                "name": "document.pdf"
+                                            }
                                         ]
                                     },
-                                    "summary": "Update Draft"
+                                    "summary": "Update Draft with Attachments"
                                 }
                             }
                         },
@@ -128,16 +193,23 @@
                                         },
                                         "summary": "Draft Reply"
                                     },
-                                    "UpdateDraft": {
+                                    "UpdateDraftWithAttachments": {
                                         "value": {
                                             "messageId": "123e4567-e89b-12d3-a456-426614174000",
                                             "subject": "Updated subject",
                                             "draftBody": "{\"arbitrary\": \"new json content\"}",
                                             "to": [
                                                 "new-recipient@example.com"
+                                            ],
+                                            "attachments": [
+                                                {
+                                                    "partId": "att-1",
+                                                    "blobId": "123e4567-e89b-12d3-a456-426614174001",
+                                                    "name": "document.pdf"
+                                                }
                                             ]
                                         },
-                                        "summary": "Update Draft"
+                                        "summary": "Update Draft with Attachments"
                                     }
                                 }
                             }
@@ -178,16 +250,23 @@
                                         },
                                         "summary": "Draft Reply"
                                     },
-                                    "UpdateDraft": {
+                                    "UpdateDraftWithAttachments": {
                                         "value": {
                                             "messageId": "123e4567-e89b-12d3-a456-426614174000",
                                             "subject": "Updated subject",
                                             "draftBody": "{\"arbitrary\": \"new json content\"}",
                                             "to": [
                                                 "new-recipient@example.com"
+                                            ],
+                                            "attachments": [
+                                                {
+                                                    "partId": "att-1",
+                                                    "blobId": "123e4567-e89b-12d3-a456-426614174001",
+                                                    "name": "document.pdf"
+                                                }
                                             ]
                                         },
-                                        "summary": "Update Draft"
+                                        "summary": "Update Draft with Attachments"
                                     }
                                 }
                             }
@@ -234,7 +313,7 @@
             },
             "put": {
                 "operationId": "draft_update",
-                "description": "\n    Create or update a draft message.\n    \n    This endpoint allows you to:\n    - Create a new draft message in a new thread\n    - Create a draft reply to an existing message in an existing thread\n    - Update an existing draft message\n    \n    For creating a new draft:\n    - Do not include messageId\n    - Include parentId if replying to an existing message\n    \n    For updating an existing draft:\n    - Include messageId of the draft to update\n    - Only the fields that are provided will be updated\n    \n    At least one of draftBody must be provided.\n    ",
+                "description": "\n    Create or update a draft message.\n    \n    This endpoint allows you to:\n    - Create a new draft message in a new thread\n    - Create a draft reply to an existing message in an existing thread\n    - Update an existing draft message\n    \n    For creating a new draft:\n    - Do not include messageId\n    - Include parentId if replying to an existing message\n    \n    For updating an existing draft:\n    - Include messageId of the draft to update\n    - Only the fields that are provided will be updated\n    \n    At least one of draftBody must be provided.\n    \n    To add attachments, upload them first using the /api/v1.0/blob/upload/{mailbox_id}/ endpoint\n    and include the returned blobIds in the attachmentIds field.\n    ",
                 "tags": [
                     "messages"
                 ],
@@ -272,16 +351,23 @@
                                     },
                                     "summary": "Draft Reply"
                                 },
-                                "UpdateDraft": {
+                                "UpdateDraftWithAttachments": {
                                     "value": {
                                         "messageId": "123e4567-e89b-12d3-a456-426614174000",
                                         "subject": "Updated subject",
                                         "draftBody": "{\"arbitrary\": \"new json content\"}",
                                         "to": [
                                             "new-recipient@example.com"
+                                        ],
+                                        "attachments": [
+                                            {
+                                                "partId": "att-1",
+                                                "blobId": "123e4567-e89b-12d3-a456-426614174001",
+                                                "name": "document.pdf"
+                                            }
                                         ]
                                     },
-                                    "summary": "Update Draft"
+                                    "summary": "Update Draft with Attachments"
                                 }
                             }
                         },
@@ -333,16 +419,23 @@
                                         },
                                         "summary": "Draft Reply"
                                     },
-                                    "UpdateDraft": {
+                                    "UpdateDraftWithAttachments": {
                                         "value": {
                                             "messageId": "123e4567-e89b-12d3-a456-426614174000",
                                             "subject": "Updated subject",
                                             "draftBody": "{\"arbitrary\": \"new json content\"}",
                                             "to": [
                                                 "new-recipient@example.com"
+                                            ],
+                                            "attachments": [
+                                                {
+                                                    "partId": "att-1",
+                                                    "blobId": "123e4567-e89b-12d3-a456-426614174001",
+                                                    "name": "document.pdf"
+                                                }
                                             ]
                                         },
-                                        "summary": "Update Draft"
+                                        "summary": "Update Draft with Attachments"
                                     }
                                 }
                             }
@@ -383,16 +476,23 @@
                                         },
                                         "summary": "Draft Reply"
                                     },
-                                    "UpdateDraft": {
+                                    "UpdateDraftWithAttachments": {
                                         "value": {
                                             "messageId": "123e4567-e89b-12d3-a456-426614174000",
                                             "subject": "Updated subject",
                                             "draftBody": "{\"arbitrary\": \"new json content\"}",
                                             "to": [
                                                 "new-recipient@example.com"
+                                            ],
+                                            "attachments": [
+                                                {
+                                                    "partId": "att-1",
+                                                    "blobId": "123e4567-e89b-12d3-a456-426614174001",
+                                                    "name": "document.pdf"
+                                                }
                                             ]
                                         },
-                                        "summary": "Update Draft"
+                                        "summary": "Update Draft with Attachments"
                                     }
                                 }
                             }
@@ -441,7 +541,7 @@
         "/api/v1.0/draft/{message_id}/": {
             "post": {
                 "operationId": "draft_create_2",
-                "description": "\n    Create or update a draft message.\n    \n    This endpoint allows you to:\n    - Create a new draft message in a new thread\n    - Create a draft reply to an existing message in an existing thread\n    - Update an existing draft message\n    \n    For creating a new draft:\n    - Do not include messageId\n    - Include parentId if replying to an existing message\n    \n    For updating an existing draft:\n    - Include messageId of the draft to update\n    - Only the fields that are provided will be updated\n    \n    At least one of draftBody must be provided.\n    ",
+                "description": "\n    Create or update a draft message.\n    \n    This endpoint allows you to:\n    - Create a new draft message in a new thread\n    - Create a draft reply to an existing message in an existing thread\n    - Update an existing draft message\n    \n    For creating a new draft:\n    - Do not include messageId\n    - Include parentId if replying to an existing message\n    \n    For updating an existing draft:\n    - Include messageId of the draft to update\n    - Only the fields that are provided will be updated\n    \n    At least one of draftBody must be provided.\n    \n    To add attachments, upload them first using the /api/v1.0/blob/upload/{mailbox_id}/ endpoint\n    and include the returned blobIds in the attachmentIds field.\n    ",
                 "parameters": [
                     {
                         "in": "path",
@@ -490,16 +590,23 @@
                                     },
                                     "summary": "Draft Reply"
                                 },
-                                "UpdateDraft": {
+                                "UpdateDraftWithAttachments": {
                                     "value": {
                                         "messageId": "123e4567-e89b-12d3-a456-426614174000",
                                         "subject": "Updated subject",
                                         "draftBody": "{\"arbitrary\": \"new json content\"}",
                                         "to": [
                                             "new-recipient@example.com"
+                                        ],
+                                        "attachments": [
+                                            {
+                                                "partId": "att-1",
+                                                "blobId": "123e4567-e89b-12d3-a456-426614174001",
+                                                "name": "document.pdf"
+                                            }
                                         ]
                                     },
-                                    "summary": "Update Draft"
+                                    "summary": "Update Draft with Attachments"
                                 }
                             }
                         },
@@ -551,16 +658,23 @@
                                         },
                                         "summary": "Draft Reply"
                                     },
-                                    "UpdateDraft": {
+                                    "UpdateDraftWithAttachments": {
                                         "value": {
                                             "messageId": "123e4567-e89b-12d3-a456-426614174000",
                                             "subject": "Updated subject",
                                             "draftBody": "{\"arbitrary\": \"new json content\"}",
                                             "to": [
                                                 "new-recipient@example.com"
+                                            ],
+                                            "attachments": [
+                                                {
+                                                    "partId": "att-1",
+                                                    "blobId": "123e4567-e89b-12d3-a456-426614174001",
+                                                    "name": "document.pdf"
+                                                }
                                             ]
                                         },
-                                        "summary": "Update Draft"
+                                        "summary": "Update Draft with Attachments"
                                     }
                                 }
                             }
@@ -601,16 +715,23 @@
                                         },
                                         "summary": "Draft Reply"
                                     },
-                                    "UpdateDraft": {
+                                    "UpdateDraftWithAttachments": {
                                         "value": {
                                             "messageId": "123e4567-e89b-12d3-a456-426614174000",
                                             "subject": "Updated subject",
                                             "draftBody": "{\"arbitrary\": \"new json content\"}",
                                             "to": [
                                                 "new-recipient@example.com"
+                                            ],
+                                            "attachments": [
+                                                {
+                                                    "partId": "att-1",
+                                                    "blobId": "123e4567-e89b-12d3-a456-426614174001",
+                                                    "name": "document.pdf"
+                                                }
                                             ]
                                         },
-                                        "summary": "Update Draft"
+                                        "summary": "Update Draft with Attachments"
                                     }
                                 }
                             }
@@ -657,7 +778,7 @@
             },
             "put": {
                 "operationId": "draft_update_2",
-                "description": "\n    Create or update a draft message.\n    \n    This endpoint allows you to:\n    - Create a new draft message in a new thread\n    - Create a draft reply to an existing message in an existing thread\n    - Update an existing draft message\n    \n    For creating a new draft:\n    - Do not include messageId\n    - Include parentId if replying to an existing message\n    \n    For updating an existing draft:\n    - Include messageId of the draft to update\n    - Only the fields that are provided will be updated\n    \n    At least one of draftBody must be provided.\n    ",
+                "description": "\n    Create or update a draft message.\n    \n    This endpoint allows you to:\n    - Create a new draft message in a new thread\n    - Create a draft reply to an existing message in an existing thread\n    - Update an existing draft message\n    \n    For creating a new draft:\n    - Do not include messageId\n    - Include parentId if replying to an existing message\n    \n    For updating an existing draft:\n    - Include messageId of the draft to update\n    - Only the fields that are provided will be updated\n    \n    At least one of draftBody must be provided.\n    \n    To add attachments, upload them first using the /api/v1.0/blob/upload/{mailbox_id}/ endpoint\n    and include the returned blobIds in the attachmentIds field.\n    ",
                 "parameters": [
                     {
                         "in": "path",
@@ -706,16 +827,23 @@
                                     },
                                     "summary": "Draft Reply"
                                 },
-                                "UpdateDraft": {
+                                "UpdateDraftWithAttachments": {
                                     "value": {
                                         "messageId": "123e4567-e89b-12d3-a456-426614174000",
                                         "subject": "Updated subject",
                                         "draftBody": "{\"arbitrary\": \"new json content\"}",
                                         "to": [
                                             "new-recipient@example.com"
+                                        ],
+                                        "attachments": [
+                                            {
+                                                "partId": "att-1",
+                                                "blobId": "123e4567-e89b-12d3-a456-426614174001",
+                                                "name": "document.pdf"
+                                            }
                                         ]
                                     },
-                                    "summary": "Update Draft"
+                                    "summary": "Update Draft with Attachments"
                                 }
                             }
                         },
@@ -767,16 +895,23 @@
                                         },
                                         "summary": "Draft Reply"
                                     },
-                                    "UpdateDraft": {
+                                    "UpdateDraftWithAttachments": {
                                         "value": {
                                             "messageId": "123e4567-e89b-12d3-a456-426614174000",
                                             "subject": "Updated subject",
                                             "draftBody": "{\"arbitrary\": \"new json content\"}",
                                             "to": [
                                                 "new-recipient@example.com"
+                                            ],
+                                            "attachments": [
+                                                {
+                                                    "partId": "att-1",
+                                                    "blobId": "123e4567-e89b-12d3-a456-426614174001",
+                                                    "name": "document.pdf"
+                                                }
                                             ]
                                         },
-                                        "summary": "Update Draft"
+                                        "summary": "Update Draft with Attachments"
                                     }
                                 }
                             }
@@ -817,16 +952,23 @@
                                         },
                                         "summary": "Draft Reply"
                                     },
-                                    "UpdateDraft": {
+                                    "UpdateDraftWithAttachments": {
                                         "value": {
                                             "messageId": "123e4567-e89b-12d3-a456-426614174000",
                                             "subject": "Updated subject",
                                             "draftBody": "{\"arbitrary\": \"new json content\"}",
                                             "to": [
                                                 "new-recipient@example.com"
+                                            ],
+                                            "attachments": [
+                                                {
+                                                    "partId": "att-1",
+                                                    "blobId": "123e4567-e89b-12d3-a456-426614174001",
+                                                    "name": "document.pdf"
+                                                }
                                             ]
                                         },
-                                        "summary": "Update Draft"
+                                        "summary": "Update Draft with Attachments"
                                     }
                                 }
                             }
@@ -1612,6 +1754,57 @@
     },
     "components": {
         "schemas": {
+            "Attachment": {
+                "type": "object",
+                "description": "Serialize attachments.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "blobId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "title": "File name",
+                        "description": "Original filename of the attachment"
+                    },
+                    "size": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "type": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "sha256": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    }
+                },
+                "required": [
+                    "blobId",
+                    "created_at",
+                    "id",
+                    "name",
+                    "sha256",
+                    "size",
+                    "type"
+                ]
+            },
             "ChangeFlagRequestRequest": {
                 "type": "object",
                 "properties": {
@@ -1724,6 +1917,14 @@
                             "minLength": 1
                         },
                         "description": "List of BCC recipient email addresses"
+                    },
+                    "attachments": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": {}
+                        },
+                        "description": "List of attachment objects with blobId, partId, and name"
                     }
                 },
                 "required": [
@@ -1791,6 +1992,12 @@
                         "readOnly": true,
                         "nullable": true
                     },
+                    "thread_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "nullable": true
+                    },
                     "subject": {
                         "type": "string",
                         "readOnly": true
@@ -1827,6 +2034,13 @@
                     },
                     "draftBody": {
                         "type": "string",
+                        "readOnly": true
+                    },
+                    "attachments": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Attachment"
+                        },
                         "readOnly": true
                     },
                     "sender": {
@@ -1892,6 +2106,7 @@
                     }
                 },
                 "required": [
+                    "attachments",
                     "bcc",
                     "cc",
                     "created_at",
@@ -1909,6 +2124,7 @@
                     "sent_at",
                     "subject",
                     "textBody",
+                    "thread_id",
                     "to",
                     "updated_at"
                 ]
@@ -2023,15 +2239,15 @@
             "StatusEnum": {
                 "enum": [
                     "STARTED",
-                    "RETRY",
-                    "RECEIVED",
                     "PENDING",
+                    "RECEIVED",
                     "SUCCESS",
                     "REVOKED",
-                    "FAILURE"
+                    "FAILURE",
+                    "RETRY"
                 ],
                 "type": "string",
-                "description": "* `STARTED` - STARTED\n* `RETRY` - RETRY\n* `RECEIVED` - RECEIVED\n* `PENDING` - PENDING\n* `SUCCESS` - SUCCESS\n* `REVOKED` - REVOKED\n* `FAILURE` - FAILURE"
+                "description": "* `STARTED` - STARTED\n* `PENDING` - PENDING\n* `RECEIVED` - RECEIVED\n* `SUCCESS` - SUCCESS\n* `REVOKED` - REVOKED\n* `FAILURE` - FAILURE\n* `RETRY` - RETRY"
             },
             "TaskStatusResponse": {
                 "type": "object",

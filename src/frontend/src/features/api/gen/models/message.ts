@@ -7,6 +7,7 @@
  */
 import type { MessageHtmlBodyItem } from "./message_html_body_item";
 import type { MessageTextBodyItem } from "./message_text_body_item";
+import type { Attachment } from "./attachment";
 import type { Contact } from "./contact";
 
 /**
@@ -18,6 +19,8 @@ export interface Message {
   readonly id: string;
   /** @nullable */
   readonly parent_id: string | null;
+  /** @nullable */
+  readonly thread_id: string | null;
   readonly subject: string;
   /** date and time at which a record was created */
   readonly created_at: string;
@@ -26,6 +29,7 @@ export interface Message {
   readonly htmlBody: readonly MessageHtmlBodyItem[];
   readonly textBody: readonly MessageTextBodyItem[];
   readonly draftBody: string;
+  readonly attachments: readonly Attachment[];
   readonly sender: Contact;
   readonly to: readonly Contact[];
   readonly cc: readonly Contact[];
