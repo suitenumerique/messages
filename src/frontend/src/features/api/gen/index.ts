@@ -1,3 +1,4 @@
+export * from "./blob/blob";
 export * from "./config/config";
 export * from "./messages/messages";
 export * from "./flags/flags";

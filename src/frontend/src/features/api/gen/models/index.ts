@@ -6,6 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
+export * from "./attachment";
 export * from "./change_flag_request_request";
 export * from "./contact";
 export * from "./draft_create2400";
@@ -15,6 +16,7 @@ export * from "./draft_create400";
 export * from "./draft_create403";
 export * from "./draft_create404";
 export * from "./draft_message_request_request";
+export * from "./draft_message_request_request_attachments_item";
 export * from "./draft_update2400";
 export * from "./draft_update2403";
 export * from "./draft_update2404";

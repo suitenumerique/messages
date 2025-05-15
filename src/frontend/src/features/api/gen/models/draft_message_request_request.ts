@@ -5,6 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { DraftMessageRequestRequestAttachmentsItem } from "./draft_message_request_request_attachments_item";
 
 export interface DraftMessageRequestRequest {
   /**
@@ -32,4 +33,6 @@ export interface DraftMessageRequestRequest {
   cc?: string[];
   /** List of BCC recipient email addresses */
   bcc?: string[];
+  /** List of attachment objects with blobId, partId, and name */
+  attachments?: DraftMessageRequestRequestAttachmentsItem[];
 }

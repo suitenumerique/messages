@@ -68,6 +68,9 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
     
     At least one of draftBody must be provided.
     
+    To add attachments, upload them first using the /api/v1.0/blob/upload/{mailbox_id}/ endpoint
+    and include the returned blobIds in the attachmentIds field.
+    
  */
 export type draftCreateResponse200 = {
   data: Message;
@@ -204,6 +207,9 @@ export const useDraftCreate = <
     - Only the fields that are provided will be updated
     
     At least one of draftBody must be provided.
+    
+    To add attachments, upload them first using the /api/v1.0/blob/upload/{mailbox_id}/ endpoint
+    and include the returned blobIds in the attachmentIds field.
     
  */
 export type draftUpdateResponse200 = {
@@ -342,6 +348,9 @@ export const useDraftUpdate = <
     
     At least one of draftBody must be provided.
     
+    To add attachments, upload them first using the /api/v1.0/blob/upload/{mailbox_id}/ endpoint
+    and include the returned blobIds in the attachmentIds field.
+    
  */
 export type draftCreate2Response200 = {
   data: Message;
@@ -479,6 +488,9 @@ export const useDraftCreate2 = <
     - Only the fields that are provided will be updated
     
     At least one of draftBody must be provided.
+    
+    To add attachments, upload them first using the /api/v1.0/blob/upload/{mailbox_id}/ endpoint
+    and include the returned blobIds in the attachmentIds field.
     
  */
 export type draftUpdate2Response200 = {
