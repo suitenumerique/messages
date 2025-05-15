@@ -21,19 +21,19 @@ class MailboxRoleChoices(models.TextChoices):
     ADMIN = "admin", _("Admin")
 
 
+class ThreadAccessRoleChoices(models.TextChoices):
+    """Defines the possible roles a mailbox can have to access to a thread."""
+
+    VIEWER = "viewer", _("Viewer")
+    EDITOR = "editor", _("Editor")
+
+
 class MessageRecipientTypeChoices(models.TextChoices):
     """Defines the possible types of message recipients."""
 
     TO = "to", _("To")
     CC = "cc", _("Cc")
     BCC = "bcc", _("Bcc")
-
-
-class ThreadAccessRoleChoices(models.TextChoices):
-    """Defines the possible roles a mailbox can have to access to a thread."""
-
-    VIEWER = "viewer", _("Viewer")
-    EDITOR = "editor", _("Editor")
 
 
 THREAD_STATS_FIELDS_MAP = {

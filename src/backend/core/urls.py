@@ -1,7 +1,7 @@
 """URL configuration for the core app."""
 
 from django.conf import settings
-from django.urls import include, path
+from django.urls import include, path, re_path
 
 from rest_framework.routers import DefaultRouter
 
@@ -15,6 +15,7 @@ from core.api.viewsets.mta import MTAViewSet
 from core.api.viewsets.send import SendMessageView
 from core.api.viewsets.task import TaskDetailView
 from core.api.viewsets.thread import ThreadViewSet
+from core.api.viewsets.thread_access import ThreadAccessViewSet
 from core.api.viewsets.user import UserViewSet
 from core.authentication.urls import urlpatterns as oidc_urls
 
@@ -23,14 +24,33 @@ router = DefaultRouter()
 router.register("mta", MTAViewSet, basename="mta")
 router.register("users", UserViewSet, basename="users")
 router.register("mailboxes", MailboxViewSet, basename="mailboxes")
-router.register("threads", ThreadViewSet, basename="threads")
 router.register("messages", MessageViewSet, basename="messages")
 router.register("blob", BlobViewSet, basename="blob")
+router.register("thread-access", ThreadAccessViewSet, basename="thread-access")
+
+# Add nested router for thread accesses
+thread_router = DefaultRouter()
+thread_router.register("threads", ThreadViewSet, basename="threads")
+
+thread_related_router = DefaultRouter()
+thread_related_router.register(
+    "accesses", ThreadAccessViewSet, basename="thread-access"
+)
 
 urlpatterns = [
     path(
         f"api/{settings.API_VERSION}/",
-        include([*router.urls, *oidc_urls]),
+        include(
+            [
+                *router.urls,
+                *thread_router.urls,
+                re_path(
+                    r"^threads/(?P<thread_id>[\w-]+)/",
+                    include(thread_related_router.urls),
+                ),
+                *oidc_urls,
+            ]
+        ),
     ),
     path(f"api/{settings.API_VERSION}/config/", ConfigView.as_view()),
     path(

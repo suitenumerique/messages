@@ -276,3 +276,70 @@ class IsAllowedToCreateMessage(IsAuthenticated):
 #            return True
 #
 #        return False
+
+
+class IsAllowedToManageThreadAccess(IsAuthenticated):
+    """Permission class for access to create, update, delete and list thread accesses."""
+
+    def has_permission(self, request, view):
+        # Get thread_id from URL kwargs instead of query params/data
+        thread_id = view.kwargs.get("thread_id")
+        if not thread_id:
+            return False
+
+        # if create action, check if user has admin/editor access to the mailbox and the thread access role is editor
+        if view.action == "create":
+            # authenticated user wants to create a thread access for a specific thread
+            # check if user has admin/editor access to the mailbox and the thread access role is editor already exists for them
+            return (
+                models.ThreadAccess.objects.select_related("mailbox")
+                .filter(
+                    thread_id=thread_id,
+                    mailbox__accesses__user=request.user,
+                    mailbox__accesses__role__in=[
+                        enums.MailboxRoleChoices.ADMIN,
+                        enums.MailboxRoleChoices.EDITOR,
+                    ],
+                    role=enums.ThreadAccessRoleChoices.EDITOR,
+                )
+                .exists()
+            )
+        elif view.action == "list":
+            # list is only allowed for a user with access to the thread
+            return (
+                models.ThreadAccess.objects.select_related("mailbox")
+                .filter(
+                    thread_id=thread_id,
+                    mailbox__accesses__user=request.user,
+                    mailbox__accesses__role__in=[
+                        enums.MailboxRoleChoices.ADMIN,
+                        enums.MailboxRoleChoices.EDITOR,
+                    ],
+                    role=enums.ThreadAccessRoleChoices.EDITOR,
+                )
+                .exists()
+            )
+        else:
+            return True  # to proceed to object-level checks
+
+    def has_object_permission(self, request, view, obj):
+        """Check if user has permission to access the specific object (ThreadAccess).
+        Manage retrieve, update, destroy actions here.
+        """
+        # Verify the thread access belongs to the thread in the URL
+        if str(obj.thread.id) != view.kwargs.get("thread_id"):
+            return False
+
+        return (
+            models.ThreadAccess.objects.select_related("mailbox")
+            .filter(
+                thread=obj.thread,
+                mailbox__accesses__user=request.user,
+                mailbox__accesses__role__in=[
+                    enums.MailboxRoleChoices.ADMIN,
+                    enums.MailboxRoleChoices.EDITOR,
+                ],
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+            )
+            .exists()
+        )

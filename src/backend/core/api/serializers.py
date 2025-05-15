@@ -279,3 +279,12 @@ class MessageSerializer(serializers.ModelSerializer):
             "is_trashed",
         ]
         read_only_fields = fields  # Mark all as read-only
+
+
+class ThreadAccessSerializer(serializers.ModelSerializer):
+    """Serialize thread access information."""
+
+    class Meta:
+        model = models.ThreadAccess
+        fields = ["id", "thread", "mailbox", "role", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]

@@ -187,7 +187,6 @@ class TestApiDraftAndSendMessage:
         assert sent_message.thread.sender_names == [sent_message.sender.name]
         assert sent_message.thread.messaged_at is not None
 
-
     @patch("core.mda.outbound.send_outbound_message")
     def test_draft_and_send_message_success_delegated_access(
         self, mock_send_outbound_message, mailbox, authenticated_user, send_url
