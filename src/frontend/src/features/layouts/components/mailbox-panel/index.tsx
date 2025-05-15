@@ -4,10 +4,14 @@ import { MailboxList } from "./components/mailbox-list"
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { Select } from "@openfun/cunningham-react";
 import { useTranslation } from "react-i18next";
+import { useRouter } from "next/router";
+import { useSearchParams } from "next/navigation";
 
 export const MailboxPanel = () => {
     const { t } = useTranslation();
-    const { selectedMailbox, mailboxes, selectMailbox, queryStates } = useMailboxContext();
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const { selectedMailbox, mailboxes, queryStates } = useMailboxContext();
 
     const getMailboxOptions = () => {
         if(!mailboxes) return [];
@@ -29,9 +33,11 @@ export const MailboxPanel = () => {
                     <Select
                         className="mailbox-panel__mailbox-title"
                         options={getMailboxOptions()}
-                        defaultValue={selectedMailbox.id}
+                        value={selectedMailbox.id}
                         label={t('mailbox')}
-                        onChange={(event) => selectMailbox(mailboxes!.find((mailbox) => mailbox.id === event.target.value)!)}
+                        onChange={(event) => {
+                            router.push(`/mailbox/${event.target.value}?${searchParams.toString()}`);
+                        }}
                         clearable={false}
                         compact
                         fullWidth

@@ -25,7 +25,7 @@ export const ThreadView = () => {
             }   
         })
     }, 300);
-    const { threads, selectedThread, selectThread, messages, queryStates } = useMailboxContext();
+    const { selectedThread, messages, queryStates } = useMailboxContext();
     const rootRef = useRef<HTMLDivElement>(null);
     const { markAsRead } = useRead();
     const filteredMessages = useMemo(() => {
@@ -58,15 +58,6 @@ export const ThreadView = () => {
     const unreadRefs = useRef<Record<string, HTMLElement | null>>({});
     // Find all unread message IDs
     const unreadMessageIds = messages?.results?.filter((m) => !m.read_at).map((m) => m.id) || [];
-
-    useEffect(() => {
-        if (selectedThread?.id !== params?.threadId) {
-            const thread = threads?.results.find(({ id }) => id === params.threadId);
-            if (thread) {
-                selectThread(thread);
-            }
-        }
-    }, [threads, params]);
 
     /**
      * Setup an intersection observer to mark messages as read when they are

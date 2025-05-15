@@ -6,11 +6,11 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 const Mailbox = () => {
     return (
         <PanelGroup autoSaveId="threads" direction="horizontal" className="threads__container">
-            <Panel className="thread-list-panel" defaultSize={50} minSize={25}>
+            <Panel className="thread-list-panel" defaultSize={25} minSize={20}>
                 <ThreadPanel />
             </Panel>
             <PanelResizeHandle className="thread__resize-handle" />
-            <Panel className="thread-view-panel" defaultSize={50} minSize={60}>
+            <Panel className="thread-view-panel" defaultSize={75} minSize={50}>
                 <ThreadView />
             </Panel>
         </PanelGroup>
