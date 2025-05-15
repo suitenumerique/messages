@@ -2,10 +2,13 @@ import { MainLayout } from "@/features/layouts/components/main";
 import { MessageForm } from "@/features/forms/components/message-form";
 import { useRouter } from "next/router";
 import { useTranslation } from "react-i18next";
+import { useMailboxContext } from "@/features/providers/mailbox";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
 
 const NewMessageFormPage = () => {
     const { t } = useTranslation();
     const router = useRouter();
+    const { queryStates } = useMailboxContext();
 
     /**
      * Go back to the previous page or to
@@ -17,6 +20,14 @@ const NewMessageFormPage = () => {
         } else {
             router.push('/');
         }
+    }
+
+    if (queryStates.mailboxes.isLoading) {
+        return (
+            <div className="thread-view thread-view--loading">
+                <Spinner />
+            </div>
+        )
     }
 
     return (

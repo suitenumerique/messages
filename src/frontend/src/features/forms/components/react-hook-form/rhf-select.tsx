@@ -17,10 +17,10 @@ export const RhfSelect = (props: SelectProps & { name: string }) => {
       render={({ field, fieldState }) => {
         return (
           <Select
+            {...field}
             {...props}
             aria-invalid={!!fieldState.error}
             state={fieldState.error ? "error" : "default"}
-            onBlur={field.onBlur}
             onChange={(e) => setValue(field.name, e.target.value, { shouldDirty: true })}
             value={field.value}
           />

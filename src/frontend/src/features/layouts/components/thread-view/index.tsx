@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react"
-import { useParams, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { ActionBar } from "./components/thread-action-bar"
 import { ThreadMessage } from "./components/thread-message"
 import { useMailboxContext } from "@/features/providers/mailbox"
@@ -13,7 +13,6 @@ type MessageWithDraftChild = Message & {
 }
 
 export const ThreadView = () => {
-    const params = useParams<{ mailboxId: string, threadId: string }>()
     const searchParams = useSearchParams();
     const toMarkAsReadQueue = useRef<string[]>([]);
     const debouncedMarkAsRead = useDebounceCallback(() => {
