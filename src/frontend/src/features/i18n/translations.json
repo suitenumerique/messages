@@ -84,7 +84,25 @@
         "start_typing": "Start typing..."
       },
       "search": {
-        "placeholder": "Search..."
+        "placeholder": "Search...",
+        "filters": {
+          "submit": "Search",
+          "reset": "Reset",
+          "label": {
+            "from": "From",
+            "to": "To",
+            "subject": "Subject",
+            "text": "Contains the words",
+            "in": "In",
+            "folder_all_messages": "All messages",
+            "folder_sent": "Sent",
+            "folder_drafts": "Drafts",
+            "folder_trash": "Trash",
+            "read": "Read",
+            "unread": "Unread",
+            "read_state": "Read state"
+          }
+        }
       }
     }
   },
@@ -175,7 +193,25 @@
         "start_typing": "Commencer à écrire..."
       },
       "search": {
-        "placeholder": "Rechercher..."
+        "placeholder": "Rechercher...",
+        "filters": {
+          "submit": "Rechercher",
+          "reset": "Réinitialiser",
+          "label": {
+            "from": "De",
+            "to": "À",
+            "subject": "Sujet",
+            "text": "Contient les mots",
+            "in": "Dans",
+            "folder_all_messages": "Toutes les messages",
+            "folder_sent": "Envoyés",
+            "folder_drafts": "Brouillons",
+            "folder_trash": "Corbeille",
+            "read": "Lu",
+            "unread": "Non lu",
+            "read_state": "État de lecture"
+          }
+        }
       }
     }
   }

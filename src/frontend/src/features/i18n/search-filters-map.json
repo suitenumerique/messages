@@ -1,0 +1,24 @@
+{
+    "en": {
+        "from": ["from"],
+        "to": ["to"],
+        "subject": ["subject"],
+        "text": ["text"],
+        "in_trash": ["in:trash"],
+        "in_sent": ["in:sent"],
+        "in_draft": ["in:draft"],
+        "is_read": ["is:read"],
+        "is_unread": ["is:unread"]
+    },
+    "fr": {
+        "from": ["de"],
+        "to": ["a"],
+        "subject": ["sujet"],
+        "text": ["text"],
+        "in_trash": ["dans:corbeille"],
+        "in_sent": ["dans:envoyes", "dans:envoyés"],
+        "in_draft": ["dans:brouillons"],
+        "is_read": ["est:lu"],
+        "is_unread": ["est:nonlu"]
+    }
+}
