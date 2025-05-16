@@ -20,6 +20,7 @@ def search_threads(
     filters: Optional[Dict[str, Any]] = None,
     from_offset: int = 0,
     size: int = 20,
+    profile: bool = False,
 ) -> Dict[str, Any]:
     """
     Search for threads matching the query.
@@ -30,6 +31,7 @@ def search_threads(
         filters: Additional filters to apply
         from_offset: Pagination offset
         size: Number of results to return
+        profile: Whether to profile the search in logs
 
     Returns:
         Dictionary with thread search results: {"threads": [...], "total": int, "from": int, "size": int}
@@ -182,13 +184,17 @@ def search_threads(
             for field, value in filters.items():
                 search_body["query"]["bool"]["filter"].append({"term": {field: value}})
 
-        search_body["profile"] = True
+        if profile:
+            search_body["profile"] = True
 
         # Execute search
         # pylint: disable=unexpected-keyword-arg
         results = es.search(index=MESSAGE_INDEX, **search_body)
-        logger.info("Search body: %s", json.dumps(search_body, indent=2))
-        logger.info("Results: %s", json.dumps(results, indent=2))
+
+        if profile:
+            logger.debug("Search body: %s", json.dumps(search_body, indent=2))
+            logger.debug("Results: %s", json.dumps(results, indent=2))
+
         # Process results - extract thread IDs
         thread_items = []
         total = 0
