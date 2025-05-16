@@ -91,10 +91,10 @@ def index_message(message: models.Message) -> bool:
         "created_at": message.created_at.isoformat() if message.created_at else None,
         "sent_at": message.sent_at.isoformat() if message.sent_at else None,
         "subject": message.subject,
-        "sender_name": message.sender.email + " " + message.sender.name,
+        "sender_name": message.sender.name,
         "sender_email": message.sender.email,
         "to_name": [
-            r.contact.email + " " + r.contact.name
+            r.contact.name
             for r in recipients
             if r.type == enums.MessageRecipientTypeChoices.TO
         ],
@@ -104,7 +104,7 @@ def index_message(message: models.Message) -> bool:
             if r.type == enums.MessageRecipientTypeChoices.TO
         ],
         "cc_name": [
-            r.contact.email + " " + r.contact.name
+            r.contact.name
             for r in recipients
             if r.type == enums.MessageRecipientTypeChoices.CC
         ],
@@ -114,7 +114,7 @@ def index_message(message: models.Message) -> bool:
             if r.type == enums.MessageRecipientTypeChoices.CC
         ],
         "bcc_name": [
-            r.contact.email + " " + r.contact.name
+            r.contact.name
             for r in recipients
             if r.type == enums.MessageRecipientTypeChoices.BCC
         ],

@@ -22,6 +22,11 @@ MESSAGE_MAPPING = {
         },
     },
     "mappings": {
+        "_source": {
+            "includes": [
+                "thread_id",
+            ]
+        },
         "properties": {
             # Join to allow parent-child relationship between Thread and Message
             "relation": {"type": "join", "relations": {"thread": "message"}},
@@ -36,27 +41,78 @@ MESSAGE_MAPPING = {
             # Subject with text analysis for searching
             "subject": {
                 "type": "text",
-                "analyzer": "email_analyzer",
                 "fields": {"keyword": {"type": "keyword", "ignore_above": 256}},
             },
             # Contacts
-            "sender_name": {"type": "text", "analyzer": "email_analyzer"},
-            "sender_email": {"type": "keyword"},
-            "to_name": {"type": "text", "analyzer": "email_analyzer"},
-            "to_email": {"type": "keyword"},
-            "cc_name": {"type": "text", "analyzer": "email_analyzer"},
-            "cc_email": {"type": "keyword"},
-            "bcc_name": {"type": "text", "analyzer": "email_analyzer"},
-            "bcc_email": {"type": "keyword"},
+            "sender_name": {
+                "type": "text",
+                "analyzer": "email_analyzer",
+                "search_analyzer": "standard",
+            },
+            "sender_email": {
+                "type": "keyword",
+                "fields": {
+                    "text": {
+                        "type": "text",
+                        "analyzer": "email_analyzer",
+                        "search_analyzer": "standard",
+                    }
+                },
+            },
+            "to_name": {
+                "type": "text",
+                "analyzer": "email_analyzer",
+                "search_analyzer": "standard",
+            },
+            "to_email": {
+                "type": "keyword",
+                "fields": {
+                    "text": {
+                        "type": "text",
+                        "analyzer": "email_analyzer",
+                        "search_analyzer": "standard",
+                    }
+                },
+            },
+            "cc_name": {
+                "type": "text",
+                "analyzer": "email_analyzer",
+                "search_analyzer": "standard",
+            },
+            "cc_email": {
+                "type": "keyword",
+                "fields": {
+                    "text": {
+                        "type": "text",
+                        "analyzer": "email_analyzer",
+                        "search_analyzer": "standard",
+                    }
+                },
+            },
+            "bcc_name": {
+                "type": "text",
+                "analyzer": "email_analyzer",
+                "search_analyzer": "standard",
+            },
+            "bcc_email": {
+                "type": "keyword",
+                "fields": {
+                    "text": {
+                        "type": "text",
+                        "analyzer": "email_analyzer",
+                        "search_analyzer": "standard",
+                    }
+                },
+            },
             # Content fields
-            "text_body": {"type": "text", "analyzer": "email_analyzer"},
-            "html_body": {"type": "text", "analyzer": "email_analyzer"},
+            "text_body": {"type": "text"},
+            "html_body": {"type": "text"},
             # Flags
             "is_draft": {"type": "boolean"},
             "is_trashed": {"type": "boolean"},
             "is_starred": {"type": "boolean"},
             "is_unread": {"type": "boolean"},
             "is_sender": {"type": "boolean"},
-        }
+        },
     },
 }

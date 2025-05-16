@@ -1,6 +1,8 @@
 """Search functionality for finding threads and messages."""
 
+import json
 import logging
+import re
 from typing import Any, Dict, Optional
 
 from django.conf import settings
@@ -51,48 +53,43 @@ def search_threads(
             "sort": [{"created_at": {"order": "desc"}}],
         }
 
+        exact_phrases = parsed_query.get("exact_phrases") or []
+
         # Add text search if query provided
         if parsed_query.get("text"):
+            # To avoid using cross_fields, which has limitations if all the fields don't use the
+            # same analyzer, we break down the search into tokens and then use best_fields on each.
+            # TODO: this tokenization is very simple and could probably be improved.
+            # Another alternative would be to use the _analyze ES endpoint to get the tokens.
+            tokens = re.split(r"\s+", parsed_query["text"])
+
+            # For now, to simplify, we consider these tokens as exact matches.
+            exact_phrases.extend(tokens)
+
+        # Add exact phrase matches
+        for phrase in exact_phrases:
             search_body["query"]["bool"]["must"].append(
                 {
                     "multi_match": {
-                        "query": parsed_query["text"],
+                        "query": phrase,
                         "fields": [
-                            "subject^3",  # Boost subject relevance
-                            "sender_name^2",
+                            "subject",
+                            "sender_name",
                             "to_name",
                             "cc_name",
                             "bcc_name",
+                            "sender_email.text",
+                            "to_email.text",
+                            "cc_email.text",
+                            "bcc_email.text",
                             "text_body",
                             "html_body",
                         ],
-                        "type": "best_fields",
+                        "type": "phrase",
                         "operator": "and",
-                        "fuzziness": "AUTO",
                     }
                 }
             )
-
-        # Add exact phrase matches
-        if "exact_phrases" in parsed_query:
-            for phrase in parsed_query["exact_phrases"]:
-                search_body["query"]["bool"]["must"].append(
-                    {
-                        "multi_match": {
-                            "query": phrase,
-                            "fields": [
-                                "subject",
-                                "sender_name",
-                                "to_name",
-                                "cc_name",
-                                "bcc_name",
-                                "text_body",
-                                "html_body",
-                            ],
-                            "type": "phrase",
-                        }
-                    }
-                )
 
         # Add sender filter
         if "from" in parsed_query:
@@ -133,7 +130,7 @@ def search_threads(
                         # Substring match on email and name
                         search_body["query"]["bool"]["should"].extend(
                             [
-                                {"wildcard": {email_field: f"*{recipient.lower()}*"}},
+                                {"match": {email_field + ".text": recipient.lower()}},
                                 {"wildcard": {name_field: f"*{recipient}*"}},
                             ]
                         )
@@ -185,10 +182,13 @@ def search_threads(
             for field, value in filters.items():
                 search_body["query"]["bool"]["filter"].append({"term": {field: value}})
 
+        search_body["profile"] = True
+
         # Execute search
         # pylint: disable=unexpected-keyword-arg
         results = es.search(index=MESSAGE_INDEX, **search_body)
-
+        logger.info("Search body: %s", json.dumps(search_body, indent=2))
+        logger.info("Results: %s", json.dumps(results, indent=2))
         # Process results - extract thread IDs
         thread_items = []
         total = 0
@@ -206,16 +206,17 @@ def search_threads(
                 # Handle older Elasticsearch versions
                 total = hits["total"]
 
+            thread_ids = set()
             if "hits" in hits and isinstance(hits["hits"], list):
                 for hit in hits["hits"]:
-                    if "_source" in hit and "thread_id" in hit["_source"]:
+                    if hit["_source"]["thread_id"] not in thread_ids:
                         thread_items.append(
                             {
                                 "id": hit["_source"]["thread_id"],
                                 "score": hit.get("_score", 0),
-                                "subject": hit["_source"].get("subject", ""),
                             }
                         )
+                        thread_ids.add(hit["_source"]["thread_id"])
 
         return {
             "threads": thread_items,

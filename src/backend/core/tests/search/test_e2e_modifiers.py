@@ -294,10 +294,26 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
             f"To: {contact3.email}\r\n"
             f"Subject: Sent Message\r\n"
             f"Content-Type: text/plain\r\n\r\n"
-            f"This is a message that was sent by the user."
+            f"This is a message that was sent by the user. threadnine msgnineone"
         ).encode("utf-8"),
     )
     MessageRecipientFactory(message=message9, contact=contact3, type="to")
+
+    # A second sent message in the same thread
+    message9_2 = MessageFactory(
+        thread=thread9,
+        subject="Sent Message 2",
+        sender=contact1,  # Same as the user's primary contact
+        is_sender=True,
+        raw_mime=(
+            f"From: {contact1.email}\r\n"
+            f"To: {contact3.email}\r\n"
+            f"Subject: Sent Message 2\r\n"
+            f"Content-Type: text/plain\r\n\r\n"
+            f"This is a message that was sent by the user. threadnine msgninetwo"
+        ).encode("utf-8"),
+    )
+    MessageRecipientFactory(message=message9_2, contact=contact3, type="to")
 
     # Wait for indexing to complete
     wait_for_indexing()
@@ -338,6 +354,19 @@ class TestSearchModifiersE2E:
         assert response.status_code == 200
         assert len(response.data["results"]) == 9
 
+        # Now find a single one
+        response = api_client.get(f"{test_url}?search=msgninetwo")
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 1
+
+        response = api_client.get(f"{test_url}?search=threadnine")
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 1
+
+        response = api_client.get(f"{test_url}?search=threadnine%20example")
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 1
+
         # Now find none
         response = api_client.get(f"{test_url}?search=aozeigsdpfgoidosfgi")
         assert response.status_code == 200
@@ -377,6 +406,7 @@ class TestSearchModifiersE2E:
         self, setup_elasticsearch, api_client, test_url, test_threads
     ):
         """Test searching with the 'to:' modifier."""
+
         # Test English version
         response = api_client.get(f"{test_url}?search=to:sarah@example.com")
 
@@ -394,6 +424,22 @@ class TestSearchModifiersE2E:
         assert response.status_code == 200
         thread_ids = [t["id"] for t in response.data["results"]]
         assert str(test_threads["thread1"].id) in thread_ids
+
+    def test_to_search_modifier_substring(
+        self, setup_elasticsearch, api_client, test_url, test_threads
+    ):
+        # Test substring search
+        response = api_client.get(f"{test_url}?search=to:@example.com")
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 9
+
+        response = api_client.get(f"{test_url}?search=to:example")
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 9
+
+        response = api_client.get(f"{test_url}?search=to:examples")
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 0
 
     def test_cc_search_modifier(
         self, setup_elasticsearch, api_client, test_url, test_threads
@@ -515,7 +561,7 @@ class TestSearchModifiersE2E:
 
         # Check if the correct threads are found
         thread_ids = [t["id"] for t in response.data["results"]]
-        assert str(test_threads["thread9"].id) in thread_ids
+        assert thread_ids == [str(test_threads["thread9"].id)]
 
         # Test French version with accent
         response = api_client.get(f"{test_url}?search=dans:envoyés")
