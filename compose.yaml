@@ -33,7 +33,7 @@ services:
       timeout: 5s
       retries: 60
 
-  elasticvue:
+  elasticsearch-ui:
     image: cars10/elasticvue:latest
     ports:
       - "8093:8080"
@@ -145,6 +145,28 @@ services:
       - ./data/static:/data/static
     depends_on:
       - backend-dev
+
+  celery-ui:
+    build:
+      context: src/backend
+      target: runtime-dev
+      args:
+        DOCKER_USER: ${DOCKER_USER:-1000}
+    user: ${DOCKER_USER:-1000}
+    depends_on:
+      - redis
+    environment:
+      - FLOWER_UNAUTHENTICATED_API=true
+      - DJANGO_CONFIGURATION=Development
+    env_file:
+      - env.d/development/common
+      - env.d/development/backend
+      - env.d/development/postgresql
+    volumes:
+      - ./src/backend:/app
+    ports:
+      - "5556:5556"
+    command: celery -A messages.celery_app flower --port=5556
 
   # app:
   #   build:

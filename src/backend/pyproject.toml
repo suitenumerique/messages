@@ -67,6 +67,7 @@ dependencies = [
 dev = [
     "django-extensions==3.2.3",
     "drf-spectacular-sidecar==2024.12.1",
+    "flower==2.0.1",
     "pylint-django==2.6.1",
     "pylint==3.3.4",
     "pytest-cov==6.0.0",

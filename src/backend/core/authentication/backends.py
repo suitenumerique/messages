@@ -226,11 +226,14 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
         )
 
         # Create an admin mailbox access for the user if needed
-        MailboxAccess.objects.get_or_create(
+        mailbox_access, _ = MailboxAccess.objects.get_or_create(
             mailbox=mailbox,
             user=user,
-            role=MailboxRoleChoices.ADMIN,
+            defaults={"role": MailboxRoleChoices.ADMIN},
         )
+        if mailbox_access.role != MailboxRoleChoices.ADMIN:
+            mailbox_access.role = MailboxRoleChoices.ADMIN
+            mailbox_access.save()
 
         Contact.objects.get_or_create(
             email=email,

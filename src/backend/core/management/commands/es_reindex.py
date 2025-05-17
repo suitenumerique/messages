@@ -1,12 +1,12 @@
 """Management command to reindex content in Elasticsearch."""
 
-import sys
 import uuid
 
 from django.core.management.base import BaseCommand, CommandError
 
 from core import models
-from core.search import create_index_if_not_exists, index_thread
+from core.search import create_index_if_not_exists
+from core.tasks import reindex_all, reindex_mailbox_task, reindex_thread_task
 
 
 class Command(BaseCommand):
@@ -34,6 +34,14 @@ class Command(BaseCommand):
             help="Reindex all threads and messages in a specific mailbox by ID",
         )
 
+        # Async option
+        parser.add_argument(
+            "--async",
+            action="store_true",
+            help="Run task asynchronously",
+            dest="async_mode",
+        )
+
         # Whether to recreate the index
         parser.add_argument(
             "--recreate-index",
@@ -45,62 +53,42 @@ class Command(BaseCommand):
         """Execute the command."""
         # Ensure index exists
         self.stdout.write("Ensuring Elasticsearch index exists...")
-
         create_index_if_not_exists()
 
         # Handle reindexing based on scope
         if options["all"]:
-            self._reindex_all()
+            self._reindex_all(options["async_mode"])
         elif options["thread"]:
-            self._reindex_thread(options["thread"])
+            self._reindex_thread(options["thread"], options["async_mode"])
         elif options["mailbox"]:
-            self._reindex_mailbox(options["mailbox"])
+            self._reindex_mailbox(options["mailbox"], options["async_mode"])
 
-    def _reindex_all(self):
+    def _reindex_all(self, async_mode):
         """Reindex all threads and messages."""
         self.stdout.write("Reindexing all threads and messages...")
 
-        threads = models.Thread.objects.all()
-        total = threads.count()
-
-        if total == 0:
-            self.stdout.write(self.style.WARNING("No threads found to reindex"))
-            return
-
-        self.stdout.write(f"Found {total} threads to reindex")
-        success_count = 0
-        failure_count = 0
-
-        for i, thread in enumerate(threads):
-            try:
-                if index_thread(thread):
-                    success_count += 1
-                else:
-                    failure_count += 1
-            # pylint: disable=broad-exception-caught
-            except Exception as e:  # noqa: BLE001
-                failure_count += 1
-                self.stdout.write(
-                    self.style.ERROR(f"Error indexing thread {thread.id}: {e}")
-                )
-
-            # Show progress
-            if (i + 1) % 50 == 0 or (i + 1) == total:
-                self.stdout.write(f"Processed {i + 1}/{total} threads")
-
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Reindexing completed: {success_count} succeeded, {failure_count} failed"
+        if async_mode:
+            task = reindex_all.delay()
+            self.stdout.write(
+                self.style.SUCCESS(f"Reindexing task scheduled (ID: {task.id})")
             )
-        )
-        if failure_count > 0:
-            sys.exit(1)
+        else:
+            result = reindex_all()
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Reindexing completed: {result.get('success_count', 0)} succeeded, "
+                    f"{result.get('failure_count', 0)} failed"
+                )
+            )
+            if result.get("failure_count", 0) > 0:
+                return 1
 
-    def _reindex_thread(self, thread_id):
+    def _reindex_thread(self, thread_id, async_mode):
         """Reindex a specific thread and its messages."""
         try:
             thread_uuid = uuid.UUID(thread_id)
-            thread = models.Thread.objects.get(id=thread_uuid)
+            # Verify thread exists
+            models.Thread.objects.get(id=thread_uuid)
         except ValueError as e:
             raise CommandError(f"Invalid thread ID: {thread_id}") from e
         except models.Thread.DoesNotExist as e:
@@ -108,15 +96,26 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Reindexing thread {thread_id}...")
 
-        if index_thread(thread):
+        if async_mode:
+            task = reindex_thread_task.delay(thread_id)
             self.stdout.write(
-                self.style.SUCCESS(f"Thread {thread_id} indexed successfully")
+                self.style.SUCCESS(f"Reindexing task scheduled (ID: {task.id})")
             )
         else:
-            self.stdout.write(self.style.ERROR(f"Failed to index thread {thread_id}"))
-            sys.exit(1)
+            result = reindex_thread_task(thread_id)
+            if result.get("success", False):
+                self.stdout.write(
+                    self.style.SUCCESS(f"Thread {thread_id} indexed successfully")
+                )
+            else:
+                self.stdout.write(
+                    self.style.ERROR(
+                        f"Failed to index thread {thread_id}: {result.get('error', '')}"
+                    )
+                )
+                return 1
 
-    def _reindex_mailbox(self, mailbox_id):
+    def _reindex_mailbox(self, mailbox_id, async_mode):
         """Reindex all threads and messages in a specific mailbox."""
         try:
             mailbox_uuid = uuid.UUID(mailbox_id)
@@ -128,40 +127,18 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Reindexing threads for mailbox {mailbox}...")
 
-        threads = mailbox.threads_viewer
-        total = threads.count()
-
-        if total == 0:
+        if async_mode:
+            task = reindex_mailbox_task.delay(mailbox_id)
             self.stdout.write(
-                self.style.WARNING(f"No threads found for mailbox {mailbox}")
+                self.style.SUCCESS(f"Reindexing task scheduled (ID: {task.id})")
             )
-            return
-
-        self.stdout.write(f"Found {total} threads to reindex for mailbox {mailbox}")
-        success_count = 0
-        failure_count = 0
-
-        for i, thread in enumerate(threads):
-            try:
-                if index_thread(thread):
-                    success_count += 1
-                else:
-                    failure_count += 1
-            # pylint: disable=broad-exception-caught
-            except Exception as e:  # noqa: BLE001
-                failure_count += 1
-                self.stdout.write(
-                    self.style.ERROR(f"Error indexing thread {thread.id}: {e}")
+        else:
+            result = reindex_mailbox_task(mailbox_id)
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Reindexing completed: {result.get('success_count', 0)} succeeded, "
+                    f"{result.get('failure_count', 0)} failed"
                 )
-
-            # Show progress
-            if (i + 1) % 20 == 0 or (i + 1) == total:
-                self.stdout.write(f"Processed {i + 1}/{total} threads")
-
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Reindexing completed: {success_count} succeeded, {failure_count} failed"
             )
-        )
-        if failure_count > 0:
-            sys.exit(1)
+            if result.get("failure_count", 0) > 0:
+                return 1
