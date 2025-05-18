@@ -108,6 +108,19 @@ class MailboxAccessFactory(factory.django.DjangoModelFactory):
     )
 
 
+class MailDomainAccessFactory(factory.django.DjangoModelFactory):
+    """A factory to random mail domain accesses for testing purposes."""
+
+    class Meta:
+        model = models.MailDomainAccess
+
+    maildomain = factory.SubFactory(MailDomainFactory)
+    user = factory.SubFactory(UserFactory)
+    role = factory.fuzzy.FuzzyChoice(
+        [role[0] for role in models.MailDomainAccessRoleChoices.choices]
+    )
+
+
 class ThreadFactory(factory.django.DjangoModelFactory):
     """A factory to random threads for testing purposes."""
 

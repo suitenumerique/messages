@@ -241,8 +241,8 @@ class TestDraftWithAttachments:
             thread=thread, sender=sender, is_draft=True, subject="Existing draft"
         )
 
-        text_body = "This is a test draft with an attachment %i" % random.randint(
-            0, 10000000
+        text_body = (
+            f"This is a test draft with an attachment {random.randint(0, 10000000)}"
         )
 
         # Update the draft to add the blob as attachment
@@ -281,7 +281,7 @@ class TestDraftWithAttachments:
             {
                 "messageId": draft.id,
                 "textBody": text_body,
-                "htmlBody": "<p>%s</p>" % text_body,
+                "htmlBody": f"<p>{text_body}</p>",
                 "senderId": user_mailbox.id,
             },
             format="json",

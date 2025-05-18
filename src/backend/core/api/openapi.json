@@ -1184,6 +1184,627 @@
                 }
             }
         },
+        "/api/v1.0/mailboxes/{mailbox_id}/accesses/": {
+            "get": {
+                "operationId": "mailboxes_accesses_list",
+                "description": "ViewSet for managing MailboxAccess records for a specific Mailbox.\nThe mailbox_id is expected as part of the URL.\nAccess is allowed if the user has MailboxAccess (ADMIN role)\nto the target Mailbox itself, or is a domain admin of the mailbox's domain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "mailbox-accesses"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedMailboxAccessReadList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "mailboxes_accesses_create",
+                "description": "ViewSet for managing MailboxAccess records for a specific Mailbox.\nThe mailbox_id is expected as part of the URL.\nAccess is allowed if the user has MailboxAccess (ADMIN role)\nto the target Mailbox itself, or is a domain admin of the mailbox's domain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailbox-accesses"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAccessRead"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/accesses/{id}/": {
+            "get": {
+                "operationId": "mailboxes_accesses_retrieve",
+                "description": "ViewSet for managing MailboxAccess records for a specific Mailbox.\nThe mailbox_id is expected as part of the URL.\nAccess is allowed if the user has MailboxAccess (ADMIN role)\nto the target Mailbox itself, or is a domain admin of the mailbox's domain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailbox-accesses"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAccessRead"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "mailboxes_accesses_update",
+                "description": "ViewSet for managing MailboxAccess records for a specific Mailbox.\nThe mailbox_id is expected as part of the URL.\nAccess is allowed if the user has MailboxAccess (ADMIN role)\nto the target Mailbox itself, or is a domain admin of the mailbox's domain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailbox-accesses"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAccessRead"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "mailboxes_accesses_partial_update",
+                "description": "ViewSet for managing MailboxAccess records for a specific Mailbox.\nThe mailbox_id is expected as part of the URL.\nAccess is allowed if the user has MailboxAccess (ADMIN role)\nto the target Mailbox itself, or is a domain admin of the mailbox's domain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailbox-accesses"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAccessRead"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "mailboxes_accesses_destroy",
+                "description": "ViewSet for managing MailboxAccess records for a specific Mailbox.\nThe mailbox_id is expected as part of the URL.\nAccess is allowed if the user has MailboxAccess (ADMIN role)\nto the target Mailbox itself, or is a domain admin of the mailbox's domain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailbox-accesses"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{id}/": {
+            "get": {
+                "operationId": "mailboxes_retrieve",
+                "description": "ViewSet for Mailbox model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Mailbox"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{id}/search/": {
+            "get": {
+                "operationId": "mailboxes_search_retrieve",
+                "description": "Search mailboxes by domain, local part and contact name.\n\nQuery parameters:\n- q: Optional search query for local part and contact name",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Search mailboxes by domain, local part and contact name."
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Mailbox"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/maildomains/": {
+            "get": {
+                "operationId": "maildomains_list",
+                "description": "ViewSet for listing MailDomains the user administers.\nProvides a top-level entry for mail domain administration.\nEndpoint: /maildomains/",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedMailDomainAdminList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/": {
+            "get": {
+                "operationId": "maildomains_mailboxes_list",
+                "description": "ViewSet for managing Mailboxes within a specific MailDomain.\nNested under /maildomains/{maildomain_pk}/mailboxes/\nPermissions are checked by IsMailDomainAdmin for the maildomain_pk.\n\nThis viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).\nThat other one is for listing the mailboxes a user has access to in regular app use.\nThis one is for managing mailboxes within a specific maildomain in the admin interface.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedMailboxAdminList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "maildomains_mailboxes_create",
+                "description": "ViewSet for managing Mailboxes within a specific MailDomain.\nNested under /maildomains/{maildomain_pk}/mailboxes/\nPermissions are checked by IsMailDomainAdmin for the maildomain_pk.\n\nThis viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).\nThat other one is for listing the mailboxes a user has access to in regular app use.\nThis one is for managing mailboxes within a specific maildomain in the admin interface.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAdmin"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/{id}/": {
+            "get": {
+                "operationId": "maildomains_mailboxes_retrieve",
+                "description": "ViewSet for managing Mailboxes within a specific MailDomain.\nNested under /maildomains/{maildomain_pk}/mailboxes/\nPermissions are checked by IsMailDomainAdmin for the maildomain_pk.\n\nThis viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).\nThat other one is for listing the mailboxes a user has access to in regular app use.\nThis one is for managing mailboxes within a specific maildomain in the admin interface.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAdmin"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "maildomains_mailboxes_update",
+                "description": "ViewSet for managing Mailboxes within a specific MailDomain.\nNested under /maildomains/{maildomain_pk}/mailboxes/\nPermissions are checked by IsMailDomainAdmin for the maildomain_pk.\n\nThis viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).\nThat other one is for listing the mailboxes a user has access to in regular app use.\nThis one is for managing mailboxes within a specific maildomain in the admin interface.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAdmin"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "maildomains_mailboxes_partial_update",
+                "description": "ViewSet for managing Mailboxes within a specific MailDomain.\nNested under /maildomains/{maildomain_pk}/mailboxes/\nPermissions are checked by IsMailDomainAdmin for the maildomain_pk.\n\nThis viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).\nThat other one is for listing the mailboxes a user has access to in regular app use.\nThis one is for managing mailboxes within a specific maildomain in the admin interface.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAdmin"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "maildomains_mailboxes_destroy",
+                "description": "ViewSet for managing Mailboxes within a specific MailDomain.\nNested under /maildomains/{maildomain_pk}/mailboxes/\nPermissions are checked by IsMailDomainAdmin for the maildomain_pk.\n\nThis viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).\nThat other one is for listing the mailboxes a user has access to in regular app use.\nThis one is for managing mailboxes within a specific maildomain in the admin interface.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
         "/api/v1.0/messages/": {
             "get": {
                 "operationId": "messages_list",
@@ -1586,6 +2207,306 @@
                 }
             }
         },
+        "/api/v1.0/threads/{thread_id}/accesses/": {
+            "get": {
+                "operationId": "threads_accesses_list",
+                "description": "ViewSet for ThreadAccess model.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter thread accesses by mailbox ID."
+                    },
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "thread-access"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedThreadAccessList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "threads_accesses_create",
+                "description": "Create a new thread access.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter thread accesses by mailbox ID."
+                    },
+                    {
+                        "in": "path",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "thread-access"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ThreadAccessRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ThreadAccessRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ThreadAccess"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/threads/{thread_id}/accesses/{id}/": {
+            "put": {
+                "operationId": "threads_accesses_update",
+                "description": "ViewSet for ThreadAccess model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter thread accesses by mailbox ID."
+                    },
+                    {
+                        "in": "path",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "thread-access"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ThreadAccessRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ThreadAccessRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ThreadAccess"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "threads_accesses_partial_update",
+                "description": "ViewSet for ThreadAccess model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter thread accesses by mailbox ID."
+                    },
+                    {
+                        "in": "path",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "thread-access"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedThreadAccessRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedThreadAccessRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ThreadAccess"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "threads_accesses_destroy",
+                "description": "ViewSet for ThreadAccess model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter thread accesses by mailbox ID."
+                    },
+                    {
+                        "in": "path",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "thread-access"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
         "/api/v1.0/threads/stats/": {
             "get": {
                 "operationId": "threads_stats_retrieve",
@@ -1941,6 +2862,42 @@
                 "type": "string",
                 "description": "* `unread` - unread\n* `starred` - starred\n* `trashed` - trashed"
             },
+            "MailDomainAdmin": {
+                "type": "object",
+                "description": "Serialize MailDomain basic information for admin listing.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "name",
+                    "updated_at"
+                ]
+            },
             "Mailbox": {
                 "type": "object",
                 "description": "Serialize mailboxes.",
@@ -1974,6 +2931,145 @@
                     "email",
                     "id",
                     "role"
+                ]
+            },
+            "MailboxAccessNestedUser": {
+                "type": "object",
+                "description": "Serialize MailboxAccess for nesting within MailboxAdminSerializer.\nShows user details and their role on the mailbox.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "user": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/User"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "role": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/Role2f7Enum"
+                            }
+                        ],
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "id",
+                    "role",
+                    "user"
+                ]
+            },
+            "MailboxAccessRead": {
+                "type": "object",
+                "description": "Serialize mailbox access information for read operations with nested user details.\nMailbox context is implied by the URL, so mailbox details are not included here.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "user_details": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/User"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "role": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/Role2f7Enum"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "role",
+                    "updated_at",
+                    "user_details"
+                ]
+            },
+            "MailboxAdmin": {
+                "type": "object",
+                "description": "Serialize Mailbox details for admin view, including users with access.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "local_part": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "domain_name": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "alias_of": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "accesses": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MailboxAccessNestedUser"
+                        },
+                        "readOnly": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "accesses",
+                    "alias_of",
+                    "created_at",
+                    "domain_name",
+                    "id",
+                    "local_part",
+                    "updated_at"
                 ]
             },
             "Message": {
@@ -2129,6 +3225,99 @@
                     "updated_at"
                 ]
             },
+            "PaginatedMailDomainAdminList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MailDomainAdmin"
+                        }
+                    }
+                }
+            },
+            "PaginatedMailboxAccessReadList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MailboxAccessRead"
+                        }
+                    }
+                }
+            },
+            "PaginatedMailboxAdminList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MailboxAdmin"
+                        }
+                    }
+                }
+            },
             "PaginatedMessageList": {
                 "type": "object",
                 "required": [
@@ -2156,6 +3345,37 @@
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/Message"
+                        }
+                    }
+                }
+            },
+            "PaginatedThreadAccessList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ThreadAccess"
                         }
                     }
                 }
@@ -2190,6 +3410,34 @@
                         }
                     }
                 }
+            },
+            "PatchedThreadAccessRequest": {
+                "type": "object",
+                "description": "Serialize thread access information.",
+                "properties": {
+                    "thread": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID"
+                    },
+                    "mailbox": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/ThreadAccessRoleEnum"
+                    }
+                }
+            },
+            "Role2f7Enum": {
+                "enum": [
+                    "viewer",
+                    "editor",
+                    "admin"
+                ],
+                "type": "string",
+                "description": "* `viewer` - Viewer\n* `editor` - Editor\n* `admin` - Admin"
             },
             "SendMessageRequestRequest": {
                 "type": "object",
@@ -2238,16 +3486,16 @@
             },
             "StatusEnum": {
                 "enum": [
-                    "STARTED",
                     "PENDING",
+                    "REVOKED",
+                    "RETRY",
                     "RECEIVED",
                     "SUCCESS",
-                    "REVOKED",
-                    "FAILURE",
-                    "RETRY"
+                    "STARTED",
+                    "FAILURE"
                 ],
                 "type": "string",
-                "description": "* `STARTED` - STARTED\n* `PENDING` - PENDING\n* `RECEIVED` - RECEIVED\n* `SUCCESS` - SUCCESS\n* `REVOKED` - REVOKED\n* `FAILURE` - FAILURE\n* `RETRY` - RETRY"
+                "description": "* `PENDING` - PENDING\n* `REVOKED` - REVOKED\n* `RETRY` - RETRY\n* `RECEIVED` - RECEIVED\n* `SUCCESS` - SUCCESS\n* `STARTED` - STARTED\n* `FAILURE` - FAILURE"
             },
             "TaskStatusResponse": {
                 "type": "object",
@@ -2338,9 +3586,14 @@
                     "user_role": {
                         "type": "string",
                         "readOnly": true
+                    },
+                    "accesses": {
+                        "type": "string",
+                        "readOnly": true
                     }
                 },
                 "required": [
+                    "accesses",
                     "count_draft",
                     "count_messages",
                     "count_sender",
@@ -2356,6 +3609,83 @@
                     "updated_at",
                     "user_role"
                 ]
+            },
+            "ThreadAccess": {
+                "type": "object",
+                "description": "Serialize thread access information.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "thread": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID"
+                    },
+                    "mailbox": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/ThreadAccessRoleEnum"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "mailbox",
+                    "thread",
+                    "updated_at"
+                ]
+            },
+            "ThreadAccessRequest": {
+                "type": "object",
+                "description": "Serialize thread access information.",
+                "properties": {
+                    "thread": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID"
+                    },
+                    "mailbox": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/ThreadAccessRoleEnum"
+                    }
+                },
+                "required": [
+                    "mailbox",
+                    "thread"
+                ]
+            },
+            "ThreadAccessRoleEnum": {
+                "enum": [
+                    "viewer",
+                    "editor"
+                ],
+                "type": "string",
+                "description": "* `viewer` - Viewer\n* `editor` - Editor"
             },
             "User": {
                 "type": "object",

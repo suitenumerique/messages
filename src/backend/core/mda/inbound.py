@@ -56,7 +56,7 @@ def _process_attachments(
                 # Link the attachment to the message
                 message.attachments.add(attachment)
         except Exception as e:
-            logger.exception(f"Error processing attachment: {str(e)}")
+            logger.exception("Error processing attachment: %s", e)
 
 
 def check_local_recipient(

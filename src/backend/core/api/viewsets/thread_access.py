@@ -62,7 +62,3 @@ class ThreadAccessViewSet(
         """Create a new thread access."""
         request.data["thread"] = self.kwargs.get("thread_id")
         return super().create(request, *args, **kwargs)
-
-    def list(self, request, *args, **kwargs):
-        """List thread accesses for the specified thread."""
-        return super().list(request, *args, **kwargs)

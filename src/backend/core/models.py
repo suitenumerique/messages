@@ -19,6 +19,7 @@ from timezone_field import TimeZoneField
 
 from core.enums import (
     MailboxRoleChoices,
+    MailDomainAccessRoleChoices,
     MessageDeliveryStatusChoices,
     MessageRecipientTypeChoices,
     ThreadAccessRoleChoices,
@@ -652,3 +653,29 @@ class Attachment(BaseModel):
     def sha256(self):
         """Return the SHA-256 hash of the associated blob."""
         return self.blob.sha256
+
+
+class MailDomainAccess(BaseModel):
+    """Mail domain access model to store mail domain access information for a user."""
+
+    maildomain = models.ForeignKey(
+        "MailDomain", on_delete=models.CASCADE, related_name="accesses"
+    )
+    user = models.ForeignKey(
+        "User", on_delete=models.CASCADE, related_name="maildomain_accesses"
+    )
+    role = models.CharField(
+        _("role"),
+        max_length=20,
+        choices=MailDomainAccessRoleChoices.choices,
+        default=MailDomainAccessRoleChoices.ADMIN,
+    )
+
+    class Meta:
+        db_table = "messages_maildomainaccess"
+        verbose_name = _("mail domain access")
+        verbose_name_plural = _("mail domain accesses")
+        unique_together = ("maildomain", "user")
+
+    def __str__(self):
+        return f"Access to {self.maildomain} for {self.user} with {self.role} role"

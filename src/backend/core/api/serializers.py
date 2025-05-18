@@ -332,3 +332,63 @@ class ThreadAccessSerializer(serializers.ModelSerializer):
         model = models.ThreadAccess
         fields = ["id", "thread", "mailbox", "role", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class MailboxAccessReadSerializer(serializers.ModelSerializer):
+    """Serialize mailbox access information for read operations with nested user details.
+    Mailbox context is implied by the URL, so mailbox details are not included here.
+    """
+
+    user_details = UserSerializer(source="user", read_only=True)
+
+    class Meta:
+        model = models.MailboxAccess
+        fields = ["id", "user_details", "role", "created_at", "updated_at"]
+        read_only_fields = fields  # All fields are effectively read-only from this serializer's perspective
+
+
+class MailDomainAdminSerializer(serializers.ModelSerializer):
+    """Serialize MailDomain basic information for admin listing."""
+
+    class Meta:
+        model = models.MailDomain
+        fields = ["id", "name", "created_at", "updated_at"]
+        read_only_fields = fields
+
+
+class MailboxAccessNestedUserSerializer(serializers.ModelSerializer):
+    """
+    Serialize MailboxAccess for nesting within MailboxAdminSerializer.
+    Shows user details and their role on the mailbox.
+    """
+
+    user = UserSerializer(read_only=True)
+
+    class Meta:
+        model = models.MailboxAccess
+        fields = ["id", "user", "role"]  # 'user' will be nested UserSerializer output
+        read_only_fields = fields
+
+
+class MailboxAdminSerializer(serializers.ModelSerializer):
+    """
+    Serialize Mailbox details for admin view, including users with access.
+    """
+
+    domain_name = serializers.CharField(source="domain.name", read_only=True)
+    accesses = MailboxAccessNestedUserSerializer(
+        many=True, read_only=True
+    )  # accesses is the related_name
+
+    class Meta:
+        model = models.Mailbox
+        fields = [
+            "id",
+            "local_part",
+            "domain_name",
+            "alias_of",  # show if it's an alias
+            "accesses",  # List of users and their roles
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
