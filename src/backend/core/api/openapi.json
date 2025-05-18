@@ -1525,7 +1525,7 @@
                                             },
                                             "depth": {
                                                 "type": "integer",
-                                                "description": "Depth in the hierarchy (0 for root labels,\n                                  1 for direct children, etc.)",
+                                                "description": "Depth in the hierarchy (0 for root labels, 1 for direct children, etc.)",
                                                 "minimum": 0
                                             },
                                             "children": {
@@ -1561,6 +1561,16 @@
                             }
                         },
                         "description": "Invalid input data"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "detail": "You need EDITOR or ADMIN role to manage labels"
+                                }
+                            }
+                        },
+                        "description": "Permission denied"
                     }
                 }
             }
@@ -1622,6 +1632,16 @@
                             }
                         },
                         "description": "Invalid input data"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "detail": "You need EDITOR or ADMIN role to manage labels"
+                                }
+                            }
+                        },
+                        "description": "Permission denied"
                     }
                 }
             },
@@ -1696,7 +1716,20 @@
                 ],
                 "responses": {
                     "204": {
-                        "description": "No response body"
+                        "description": "Label deleted successfully"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "detail": "You need EDITOR or ADMIN role to manage labels"
+                                }
+                            }
+                        },
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Label not found"
                     }
                 }
             }
@@ -1762,6 +1795,16 @@
                             }
                         },
                         "description": "Invalid input data"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "detail": "You need EDITOR or ADMIN role to manage labels"
+                                }
+                            }
+                        },
+                        "description": "Permission denied"
                     }
                 }
             }
@@ -1827,6 +1870,16 @@
                             }
                         },
                         "description": "Invalid input data"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "detail": "You need EDITOR or ADMIN role to manage labels"
+                                }
+                            }
+                        },
+                        "description": "Permission denied"
                     }
                 }
             }
