@@ -1,10 +1,17 @@
 """Admin classes and registrations for core app."""
 
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth import admin as auth_admin
+from django.shortcuts import redirect
+from django.template.response import TemplateResponse
+from django.urls import path
 from django.utils.translation import gettext_lazy as _
 
+from core.mda.inbound import deliver_inbound_message
+from core.mda.rfc5322 import parse_email_message
+
 from . import models
+from .forms import EmlImportForm
 
 
 @admin.register(models.User)
@@ -148,12 +155,75 @@ class MessageRecipientInline(admin.TabularInline):
     model = models.MessageRecipient
 
 
+@admin.register(models.Attachment)
+class AttachmentAdmin(admin.ModelAdmin):
+    """Admin class for the Attachment model"""
+
+    list_display = ("id", "name", "mailbox", "created_at")
+    search_fields = ("name", "mailbox__local_part", "mailbox__domain__name")
+
+
+class AttachmentInline(admin.TabularInline):
+    """Inline class for the Attachment model"""
+
+    model = models.Attachment.messages.through
+
+
 @admin.register(models.Message)
 class MessageAdmin(admin.ModelAdmin):
     """Admin class for the Message model"""
 
-    inlines = [MessageRecipientInline]
+    inlines = [MessageRecipientInline, AttachmentInline]
     list_display = ("id", "subject", "sender", "created_at")
+    change_list_template = "admin/core/message/change_list.html"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "import-eml/",
+                self.admin_site.admin_view(self.import_eml_view),
+                name="core_message_import_eml",
+            ),
+        ]
+        return custom_urls + urls
+
+    def import_eml_view(self, request):
+        """View for importing EML files."""
+        if request.method == "POST":
+            form = EmlImportForm(request.POST, request.FILES)
+            if form.is_valid():
+                eml_file = request.FILES["eml_file"]
+                recipient = form.cleaned_data["recipient"]
+                try:
+                    # Import the message from the EML file contents
+                    eml_content = eml_file.read()
+                    parsed_email = parse_email_message(eml_content)
+                    deliver_inbound_message(str(recipient), parsed_email, eml_content)
+                    # For now, just show a success message
+                    messages.success(
+                        request,
+                        f"Successfully processed EML file: {eml_file.name} for recipient {recipient}",
+                    )
+                    return redirect("..")
+                except Exception as e:  # noqa: BLE001 pylint: disable=broad-except
+                    messages.error(request, f"Error processing EML file: {str(e)}")
+        else:
+            form = EmlImportForm()
+
+        context = dict(
+            self.admin_site.each_context(request),
+            title=_("Import Messages from EML"),
+            form=form,
+            opts=self.model._meta,  # noqa: SLF001
+        )
+        return TemplateResponse(request, "admin/core/message/import_eml.html", context)
+
+    def changelist_view(self, request, extra_context=None):
+        """Add import permission to the changelist context."""
+        extra_context = extra_context or {}
+        extra_context["has_import_eml_permission"] = self.has_add_permission(request)
+        return super().changelist_view(request, extra_context=extra_context)
 
 
 @admin.register(models.Contact)
