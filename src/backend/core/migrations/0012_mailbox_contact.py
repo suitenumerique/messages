@@ -23,6 +23,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RunSQL('CREATE EXTENSION IF NOT EXISTS unaccent;', 'DROP EXTENSION IF EXISTS unaccent;'),
         migrations.AddField(
             model_name='mailbox',
             name='contact',

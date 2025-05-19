@@ -100,3 +100,192 @@ class TestMailboxViewSet:
         client = APIClient()
         response = client.get(reverse("mailboxes-list"))
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_search_mailboxes(self):
+        """Test searching mailboxes by domain and query."""
+        # Create authenticated user
+        authenticated_user = factories.UserFactory()
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        # Create mailboxes in the same domain
+        domain = factories.MailDomainFactory(name="mydomain.com")
+        context_contact = factories.ContactFactory(name="Context User")
+        context_mailbox = factories.MailboxFactory(
+            domain=domain, contact=context_contact, local_part="context"
+        )
+
+        # Create mailboxes with contacts
+        john_doe_contact = factories.ContactFactory(name="John Doe")
+        john_doe_mailbox = factories.MailboxFactory(
+            domain=domain, contact=john_doe_contact, local_part="john.doe"
+        )
+        jane_doe_contact = factories.ContactFactory(name="Jane Doe")
+        jane_doe_mailbox = factories.MailboxFactory(
+            domain=domain, contact=jane_doe_contact, local_part="jane.doe"
+        )
+        john_smith_contact = factories.ContactFactory(name="John Smith")
+        john_smith_mailbox = factories.MailboxFactory(
+            domain=domain, contact=john_smith_contact, local_part="john.smith"
+        )
+        other_contact = factories.ContactFactory(name="Other User")
+        factories.MailboxFactory(contact=other_contact, local_part="other")
+
+        # Give user access to source mailbox
+        factories.MailboxAccessFactory(
+            mailbox=context_mailbox,
+            user=authenticated_user,
+            role=models.MailboxRoleChoices.EDITOR,
+        )
+
+        # Test search by domain only (no query)
+        response = client.get(
+            reverse("mailboxes-search", kwargs={"pk": str(context_mailbox.id)}),
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 3  # All mailboxes in example.com domain except context mailbox
+        assert {mailbox["id"] for mailbox in response.data} == {
+            str(john_doe_mailbox.id),
+            str(jane_doe_mailbox.id),
+            str(john_smith_mailbox.id),
+        }
+        # TODO:exclude current mailbox ?
+
+        # Test search by local part
+        response = client.get(
+            reverse("mailboxes-search", kwargs={"pk": str(context_mailbox.id)}),
+            {"q": "john"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 2  # john.doe and john.smith
+        assert {mailbox["id"] for mailbox in response.data} == {
+            str(john_doe_mailbox.id),
+            str(john_smith_mailbox.id),
+        }
+
+        # Test search by contact name
+        response = client.get(
+            reverse("mailboxes-search", kwargs={"pk": str(context_mailbox.id)}),
+            {"q": "doe"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        assert len(response.data) == 2  # john.doe and jane.doe
+        assert {mailbox["id"] for mailbox in response.data} == {
+            str(john_doe_mailbox.id),
+            str(jane_doe_mailbox.id),
+        }
+
+        # Test search by both local part and contact name
+        response = client.get(
+            reverse("mailboxes-search", kwargs={"pk": str(context_mailbox.id)}),
+            {"q": "jane doe"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1  # only jane.doe
+        assert response.data[0]["id"] == str(jane_doe_mailbox.id)
+
+        # Test search with no matches
+        response = client.get(
+            reverse("mailboxes-search", kwargs={"pk": str(context_mailbox.id)}),
+            {"q": "nonexistent"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 0
+
+    def test_search_mailboxes_errors(self):
+        """Test error cases for mailbox search."""
+        authenticated_user = factories.UserFactory()
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        # Test invalid UUID format
+        response = client.get(
+            reverse("mailboxes-search", kwargs={"pk": "invalid-uuid"}),
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+        # Test non-existent mailbox
+        response = client.get(
+            reverse(
+                "mailboxes-search",
+                kwargs={"pk": "00000000-0000-0000-0000-000000000000"},
+            ),
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_search_mailboxes_unauthorized(self):
+        """Test that anonymous users cannot search mailboxes."""
+        client = APIClient()
+        response = client.get(
+            reverse(
+                "mailboxes-search",
+                kwargs={"pk": "00000000-0000-0000-0000-000000000000"},
+            ),
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_search_mailboxes_without_access(self):
+        """Test that users cannot search mailboxes they don't have access to."""
+        # Create two users
+        user1 = factories.UserFactory()
+        user2 = factories.UserFactory()
+
+        # Create a mailbox for user1
+        domain = factories.MailDomainFactory(name="example.com")
+        mailbox = factories.MailboxFactory(local_part="user1", domain=domain)
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user1,
+            role=models.MailboxRoleChoices.EDITOR,
+        )
+
+        # Try to search using user2's credentials
+        client = APIClient()
+        client.force_authenticate(user=user2)
+
+        response = client.get(
+            reverse("mailboxes-search", kwargs={"pk": str(mailbox.id)}),
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_search_mailboxes_case_insensitive(self):
+        """Test that search is case insensitive."""
+        authenticated_user = factories.UserFactory()
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        # Create mailboxes with mixed case
+        domain = factories.MailDomainFactory(name="example.com")
+        context_mailbox = factories.MailboxFactory(domain=domain)
+        pierre_bidule_contact = factories.ContactFactory(name="Pierre Bidule")
+        factories.MailboxFactory(
+            local_part="pierre.bidule", domain=domain, contact=pierre_bidule_contact
+        )
+        jane_bidule_contact = factories.ContactFactory(name="JANE BIDULE")
+        factories.MailboxFactory(
+            local_part="jane.bidule", domain=domain, contact=jane_bidule_contact
+        )
+
+        # Give user access to source mailbox
+        factories.MailboxAccessFactory(
+            mailbox=context_mailbox,
+            user=authenticated_user,
+            role=models.MailboxRoleChoices.EDITOR,
+        )
+
+        # Test case insensitive search for local part
+        response = client.get(
+            reverse("mailboxes-search", kwargs={"pk": str(context_mailbox.id)}),
+            {"q": "pierre"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+
+        # Test case insensitive search for contact name
+        response = client.get(
+            reverse("mailboxes-search", kwargs={"pk": str(context_mailbox.id)}),
+            {"q": "jane bidule"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1

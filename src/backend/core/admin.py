@@ -161,6 +161,7 @@ class ContactAdmin(admin.ModelAdmin):
     """Admin class for the Contact model"""
 
     list_display = ("id", "name", "email", "mailbox")
+    ordering = ("-created_at", "email")
 
 
 @admin.register(models.MessageRecipient)
