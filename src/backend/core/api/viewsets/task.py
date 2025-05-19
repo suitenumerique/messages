@@ -34,7 +34,9 @@ logger = logging.getLogger(__name__)
         200: inline_serializer(
             name="TaskStatusResponse",
             fields={
-                "status": drf_serializers.ChoiceField(choices=celery_states.ALL_STATES),
+                "status": drf_serializers.ChoiceField(
+                    choices=sorted(celery_states.ALL_STATES)
+                ),
                 "result": drf_serializers.JSONField(allow_null=True),
                 "error": drf_serializers.CharField(allow_null=True),
             },
