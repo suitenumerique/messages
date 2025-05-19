@@ -106,6 +106,21 @@ class ThreadSerializer(serializers.ModelSerializer):
     messages = serializers.SerializerMethodField(read_only=True)
     sender_names = serializers.ListField(child=serializers.CharField(), read_only=True)
     user_role = serializers.SerializerMethodField()
+    accesses = serializers.SerializerMethodField()
+
+    def get_accesses(self, instance):
+        """Return the accesses for the thread."""
+        return [
+            {
+                "id": access.id,
+                "mailbox": {
+                    "id": access.mailbox.id,
+                    "email": str(access.mailbox),
+                },
+                "role": access.role,
+            }
+            for access in instance.accesses.all()
+        ]
 
     def get_messages(self, instance):
         """Return the messages in the thread."""
@@ -148,6 +163,7 @@ class ThreadSerializer(serializers.ModelSerializer):
             "sender_names",
             "updated_at",
             "user_role",
+            "accesses",
         ]
         read_only_fields = fields  # Mark all as read-only for safety
 
