@@ -63,7 +63,6 @@ class MailboxFactory(factory.django.DjangoModelFactory):
         model = models.Mailbox
         skip_postgeneration_save = True
 
-    name = factory.Faker("name")
     domain = factory.SubFactory(MailDomainFactory)
     local_part = factory.Sequence(lambda n: f"john.doe{n!s}")
 

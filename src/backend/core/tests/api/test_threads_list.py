@@ -648,7 +648,6 @@ class TestThreadListAPI:
                 "mailbox": {
                     "id": access.mailbox.id,
                     "email": str(access.mailbox),
-                    "name": access.mailbox.name,
                 },
                 "role": access.role,
             }
