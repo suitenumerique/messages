@@ -116,6 +116,7 @@ class ThreadSerializer(serializers.ModelSerializer):
                 "mailbox": {
                     "id": access.mailbox.id,
                     "email": str(access.mailbox),
+                    "name": access.mailbox.name,
                 },
                 "role": access.role,
             }

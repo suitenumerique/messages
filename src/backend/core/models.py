@@ -233,6 +233,7 @@ class MailDomain(BaseModel):
 class Mailbox(BaseModel):
     """Mailbox model to store mailbox information."""
 
+    name = models.CharField(_("name"), max_length=255, null=True, blank=True)
     local_part = models.CharField(_("local part"), max_length=255)
     domain = models.ForeignKey("MailDomain", on_delete=models.CASCADE)
 
