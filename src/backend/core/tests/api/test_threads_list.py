@@ -8,8 +8,10 @@ from rest_framework import status
 
 from core import enums
 from core.factories import (
+    ContactFactory,
     MailboxAccessFactory,
     MailboxFactory,
+    MailDomainFactory,
     MessageFactory,
     ThreadAccessFactory,
     ThreadFactory,
@@ -569,12 +571,19 @@ class TestThreadListAPI:
         authenticated_user = UserFactory()
         api_client.force_authenticate(user=authenticated_user)
 
+        domain = MailDomainFactory(name="example.com")
         # Create first mailbox with authenticated user access
-        mailbox1 = MailboxFactory(users_read=[authenticated_user])
-        # Create first thread with an access for mailbox1
+        cantine_mailbox = MailboxFactory(
+            users_read=[authenticated_user], local_part="cantine", domain=domain
+        )
+        cantine_mailbox.contact = ContactFactory(
+            email=str(cantine_mailbox), mailbox=cantine_mailbox
+        )
+        cantine_mailbox.save()
+        # Create first thread with an access for cantine_mailbox
         thread1 = ThreadFactory()
         ThreadAccessFactory(
-            mailbox=mailbox1,
+            mailbox=cantine_mailbox,
             thread=thread1,
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
@@ -583,11 +592,18 @@ class TestThreadListAPI:
         MessageFactory(thread=thread1)
 
         # Create second mailbox with authenticated user access
-        mailbox2 = MailboxFactory(users_read=[authenticated_user])
+        tresorie_mailbox = MailboxFactory(
+            users_read=[authenticated_user], local_part="tresorie", domain=domain
+        )
+        tresorie_mailbox.contact = ContactFactory(
+            email=str(tresorie_mailbox), mailbox=tresorie_mailbox
+        )
+        tresorie_mailbox.save()
+
         # Create second thread with an access for mailbox2
         thread2 = ThreadFactory()
-        ThreadAccessFactory(
-            mailbox=mailbox2,
+        access2 = ThreadAccessFactory(
+            mailbox=tresorie_mailbox,
             thread=thread2,
             role=enums.ThreadAccessRoleChoices.VIEWER,
         )
@@ -599,7 +615,7 @@ class TestThreadListAPI:
         # Create other thread for mailbox2
         thread3 = ThreadFactory()
         ThreadAccessFactory(
-            mailbox=mailbox2,
+            mailbox=tresorie_mailbox,
             thread=thread3,
             role=enums.ThreadAccessRoleChoices.VIEWER,
         )
@@ -629,7 +645,8 @@ class TestThreadListAPI:
         assert response.data["results"][0]["user_role"] is None
 
         # Test filtering by mailbox
-        response = api_client.get(url, {"mailbox_id": str(mailbox2.id)})
+        # TODO: test with django_assert_num_queries
+        response = api_client.get(url, {"mailbox_id": str(tresorie_mailbox.id)})
         assert response.status_code == status.HTTP_200_OK
         assert response.data["count"] == 2
         thread_ids = [t["id"] for t in response.data["results"]]
@@ -644,14 +661,14 @@ class TestThreadListAPI:
         assert len(response.data["results"][0]["accesses"]) == 1
         assert response.data["results"][0]["accesses"] == [
             {
-                "id": access.id,
+                "id": access2.id,
                 "mailbox": {
-                    "id": access.mailbox.id,
-                    "email": str(access.mailbox),
+                    "id": access2.mailbox.id,
+                    "email": str(access2.mailbox),
+                    "name": access2.mailbox.contact.name,
                 },
-                "role": access.role,
+                "role": access2.role,
             }
-            for access in thread2.accesses.all()
         ]
 
     def test_list_threads_unauthorized(self, api_client, url):

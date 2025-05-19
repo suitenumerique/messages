@@ -116,10 +116,13 @@ class ThreadSerializer(serializers.ModelSerializer):
                 "mailbox": {
                     "id": access.mailbox.id,
                     "email": str(access.mailbox),
+                    "name": access.mailbox.contact.name
+                    if access.mailbox.contact
+                    else None,
                 },
                 "role": access.role,
             }
-            for access in instance.accesses.all()
+            for access in instance.accesses.select_related("mailbox", "mailbox__contact")
         ]
 
     def get_messages(self, instance):
@@ -138,10 +141,7 @@ class ThreadSerializer(serializers.ModelSerializer):
                 return None
             if request and hasattr(request, "user") and request.user.is_authenticated:
                 try:
-                    return models.ThreadAccess.objects.get(
-                        mailbox=mailbox,
-                        thread=instance,
-                    ).role
+                    return instance.accesses.get(mailbox=mailbox).role
                 except models.ThreadAccess.DoesNotExist:
                     return None
         return None

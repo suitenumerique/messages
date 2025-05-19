@@ -235,12 +235,13 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
             mailbox_access.role = MailboxRoleChoices.ADMIN
             mailbox_access.save()
 
-        Contact.objects.get_or_create(
+        contact, _ = Contact.objects.get_or_create(
             email=email,
             mailbox=mailbox,
             defaults={"name": user.full_name or email.split("@")[0]},
         )
-
+        mailbox.contact = contact
+        mailbox.save()
         # if not created and contact.mailbox != mailbox:
         #     contact.mailbox = mailbox
         #     contact.save()

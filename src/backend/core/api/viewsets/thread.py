@@ -315,6 +315,7 @@ class ThreadViewSet(
         # Fall back to regular DB query if no search query or Elasticsearch not available
         return super().list(request, *args, **kwargs)
 
+
     # @extend_schema(
     #     tags=["threads"],
     #     request=inline_serializer(

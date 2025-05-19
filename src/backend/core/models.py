@@ -235,6 +235,13 @@ class Mailbox(BaseModel):
 
     local_part = models.CharField(_("local part"), max_length=255)
     domain = models.ForeignKey("MailDomain", on_delete=models.CASCADE)
+    contact = models.ForeignKey(
+        "Contact",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="mailboxes",
+    )
 
     alias_of = models.ForeignKey(
         "self", on_delete=models.SET_NULL, null=True, blank=True
