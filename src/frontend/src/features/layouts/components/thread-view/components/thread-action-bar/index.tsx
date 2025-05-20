@@ -12,7 +12,7 @@ export const ActionBar = () => {
     const { t } = useTranslation();
     const { selectedThread, unselectThread } = useMailboxContext();
     const { markAsUnread } = useRead();
-    const { markAsTrashed } = useTrash();
+    const { markAsTrashed, markAsUntrashed } = useTrash();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
     return (
@@ -38,15 +38,29 @@ export const ActionBar = () => {
                         onClick={() => markAsUnread({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
                     />
                 </Tooltip>
-                <Tooltip content={t('actions.delete')}>
-                    <Button
-                        color="primary-text"
-                        aria-label={t('actions.delete')}
-                        size="small"
-                        icon={<span className="material-icons">delete</span>}
-                        onClick={() => markAsTrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
-                    />
-                </Tooltip>
+                {
+                    selectedThread!.count_trashed < selectedThread!.count_messages ? (
+                        <Tooltip content={t('actions.delete')}>
+                            <Button
+                                color="primary-text"
+                                aria-label={t('actions.delete')}
+                                size="small"
+                                icon={<span className="material-icons">delete</span>}
+                                onClick={() => markAsTrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                            />
+                        </Tooltip>
+                    ) : (
+                        <Tooltip content={t('actions.undelete')}>
+                            <Button
+                                color="primary-text"
+                                aria-label={t('actions.undelete')}
+                                size="small"
+                                icon={<span className="material-icons">restore</span>}
+                                onClick={() => markAsUntrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                            />
+                        </Tooltip>
+                    )
+                }
                 <DropdownMenu
                     isOpen={isDropdownOpen}
                     onOpenChange={setIsDropdownOpen}

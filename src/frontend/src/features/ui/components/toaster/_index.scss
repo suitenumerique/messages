@@ -22,6 +22,7 @@
       gap: 8px;
       align-items: center;
       flex-grow: 1;
+      justify-content: space-between;
     }
 
     &--info {
@@ -38,7 +39,4 @@
       --toastify-color-progress-light: var(--c--theme--colors--danger-800);
     }
   }
-}
-
-:root {
 }

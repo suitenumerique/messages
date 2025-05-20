@@ -8,6 +8,7 @@ import { DropdownMenu } from "@gouvfr-lasuite/ui-kit";
 import useRead from "@/features/message/use-read";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { Badge } from "@/features/ui/components/badge";
+import useTrash from "@/features/message/use-trash";
 type ThreadMessageProps = {
     message: Message,
     isLatest: boolean,
@@ -22,6 +23,8 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
             return null;
         })
         const { markAsUnread } = useRead()
+        const { markAsTrashed } = useTrash()
+
         const { unselectThread, selectedThread, messages, queryStates } = useMailboxContext()
         const isFetchingMessages = queryStates.messages.isFetching;
         const [isDropdownOpen, setIsDropdownOpen] = useState(false)
@@ -103,6 +106,11 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                             label: hasSiblingMessages ? t('actions.mark_as_unread_from_here') : t('actions.mark_as_unread'),
                                             icon: <span className="material-icons">mark_email_unread</span>,
                                             callback: () => markAsUnreadFrom(message.id)
+                                        },
+                                        {
+                                            label: t('actions.delete'),
+                                            icon: <span className="material-icons">delete</span>,
+                                            callback: () => markAsTrashed({messageIds: [message.id]})
                                         },
                                     ]}
                                 >
