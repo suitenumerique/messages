@@ -29,6 +29,8 @@
         "close_thread": "Close this thread",
         "cancel": "Cancel",
         "delete": "Delete",
+        "undelete": "Undelete",
+        "undo": "Undo",
         "send": "Send",
         "archive": "Archive",
         "refresh": "Refresh",
@@ -80,6 +82,10 @@
         "sent": "Message sent successfully",
         "error": "The message could not be sent.",
         "not_found": "No sending message found."
+      },
+      "trash": {
+        "message_deleted": "The message has been deleted",
+        "thread_deleted": "The conversation has been deleted"
       },
       "message_editor": {
         "start_typing": "Start typing..."
@@ -140,6 +146,8 @@
         "reply_all": "Répondre à tous",
         "cancel": "Annuler",
         "delete": "Supprimer",
+        "undelete": "Restaurer",
+        "undo": "Annuler",
         "send": "Envoyer",
         "archive": "Archiver",
         "forward": "Transférer",
@@ -155,7 +163,6 @@
         "has_attachments": "Cette email contient une pièce jointe",
         "more_options": "Plus d'options",
         "reply": "Répondre"
-        
       },
       "thread_message": {
         "from": "De : ",
@@ -192,6 +199,10 @@
         "error": "Le message n'a pas pu être envoyé.",
         "not_found": "Aucun message en cours d'envoi trouvé.",
         "sent_too_long": "Le message n'a pas pu être envoyé. Veuillez réessayer plus tard."
+      },
+      "trash": {
+        "message_deleted": "Le message a bien été supprimé",
+        "thread_deleted": "La conversation a bien été supprimée"
       },
       "message_editor": {
         "start_typing": "Commencer à écrire..."

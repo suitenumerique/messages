@@ -1,7 +1,10 @@
 import { useFlagCreate } from "@/features/api/gen"
 import { Thread, Message } from "@/features/api/gen/models"
-import { useQueryClient } from "@tanstack/react-query";
 import { useMailboxContext } from "../providers/mailbox";
+import { addToast, ToasterItem } from "../ui/components/toaster";
+import { Button } from "@openfun/cunningham-react";
+import { toast } from "react-toastify";
+import { useTranslation } from "react-i18next";
 
 type MarkAsOptions = {
     threadIds?: Thread["id"][],
@@ -9,18 +12,24 @@ type MarkAsOptions = {
     onSuccess?: () => void,
 }
 
+const TRASHED_TOAST_ID = "TRASHED_TOAST_ID";
+
 /**
  * Hook to mark messages or threads as trashed
  */
 const useTrash = () => {
-    const queryClient = useQueryClient();
-    const { invalidateThreadMessages } = useMailboxContext();
+    const { invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
 
     const { mutate, status } = useFlagCreate({
         mutation: {
-            onSuccess: () => {
+            onSuccess: (_, { data }) => {
                 invalidateThreadMessages();
-                queryClient.invalidateQueries({ queryKey: ["/api/v1.0/mailboxes/"] });
+                invalidateThreadsStats();
+                if (data.value === true) {
+                    addToast(<TrashSuccessToast threadIds={data.thread_ids} messageIds={data.message_ids} />, {
+                        toastId: TRASHED_TOAST_ID,
+                    })
+                }
             },
         }
     });
@@ -36,7 +45,7 @@ const useTrash = () => {
                     message_ids: messageIds,
                 },
             }, {
-                onSuccess,
+                onSuccess
             });
 
     return { 
@@ -44,6 +53,33 @@ const useTrash = () => {
         markAsUntrashed: markAsTrash(false),
         status
     };
+};
+
+const TrashSuccessToast = ({ threadIds = [], messageIds = [] }: { threadIds?: Thread['id'][], messageIds?: Message['id'][] }) => {
+    const { t } = useTranslation();
+    const { markAsUntrashed } = useTrash();
+
+    const undo = () => {
+        markAsUntrashed({
+            threadIds: threadIds,
+            messageIds: messageIds,
+            onSuccess: () => {
+                toast.dismiss(TRASHED_TOAST_ID);
+            }
+        });
+    }
+    return (
+        <ToasterItem type="info" closeButton={false}>
+            <span>{threadIds.length > 0 ? t('trash.thread_deleted') : t('trash.message_deleted')}</span>
+            <Button
+                color="tertiary"
+                size="small"
+                onClick={undo}
+            >
+                {t('actions.undo')}
+            </Button>
+        </ToasterItem>
+    )
 };
 
 export default useTrash;
