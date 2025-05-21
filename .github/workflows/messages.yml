@@ -72,3 +72,17 @@ jobs:
         run: make frontend-install-frozen
       - name: Build frontend
         run: make frontend-build
+
+  check-api-state:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Create env files
+        run: make create-env-files
+      - name: Run API update
+        run: make api-update
+      - name: Check for changes
+        run: |
+          git diff --quiet || \
+          (echo "API changes detected. Please run 'make api-update' then commit the changes." && exit 1)
