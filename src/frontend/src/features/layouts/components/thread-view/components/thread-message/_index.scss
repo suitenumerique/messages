@@ -15,11 +15,14 @@
     padding-bottom: var(--c--theme--spacings--base);
 }
 
+.thread-message__header-column--right {
+    gap: var(--c--theme--spacings--);
+}
+
 .thread-message__header-actions {
     display: flex;
     flex-direction: row;
     gap: 0;
-    margin-left: var(--c--theme--spacings--base);
 }
 
 .thread-message__header-rows {
@@ -32,7 +35,11 @@
     margin-block: 0;
 }
 
-.thread-message__date {
+.thread-message__metadata {
+    display: flex;
+    flex-direction: row;
+    gap: var(--c--theme--spacings--xs);
+    align-items: center;
     font-size: 0.875rem;
     color: var(--c--theme--colors--greyscale-500);
 }

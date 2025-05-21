@@ -9,6 +9,7 @@ import useRead from "@/features/message/use-read";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { Badge } from "@/features/ui/components/badge";
 import useTrash from "@/features/message/use-trash";
+import { AttachmentList } from "../thread-attachment-list";
 type ThreadMessageProps = {
     message: Message,
     isLatest: boolean,
@@ -58,21 +59,30 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                         <div className="thread-message__header-column thread-message__header-column--left">
                             <h2 className="thread-message__subject">{message.subject}</h2>
                         </div>
-                        <div className=" thread-message__header-column thread-message__header-column--right flex-row flex-align-center">
-                            {message.is_draft && (
-                                <Badge>
-                                    {t('thread_message.draft')}
-                                </Badge>
-                            )}
-                            {message.sent_at && (
-                                <p className="thread-message__date m-0">{new Date(message.sent_at).toLocaleString(i18n.language, {
-                                    minute: '2-digit',
-                                    hour: '2-digit',
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: 'numeric',
-                                })}</p>
-                            )}
+                        <div className="thread-message__header-column thread-message__header-column--right flex-row flex-align-center">
+                            <div className="thread-message__metadata">
+                                {
+                                    message.attachments.length > 0 && (
+                                        <span className="material-icons">attachment</span>
+                                    )
+                                }
+                                {message.sent_at && (
+                                    <p className="thread-message__date">{
+                                        new Date(message.sent_at).toLocaleString(i18n.language, {
+                                            minute: '2-digit',
+                                            hour: '2-digit',
+                                            day: '2-digit',
+                                            month: '2-digit',
+                                            year: 'numeric',
+                                        })
+                                    }</p>
+                                )}
+                            </div>
+                                {message.is_draft && (
+                                    <Badge>
+                                        {t('thread_message.draft')}
+                                    </Badge>
+                                )}
                             <div className="thread-message__header-actions">
                                 {hasSeveralRecipients && (
                                     <Tooltip content={t('actions.reply_all')}>
@@ -149,6 +159,9 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                     rawHtmlBody={message.htmlBody[0]?.content as string}
                 />
                 <footer className="thread-message__footer">
+                    {message.attachments.length > 0 && (
+                        <AttachmentList attachments={message.attachments} />
+                    )}
                     {
                         showReplyButton && (
                             <div className="thread-message__footer-actions">

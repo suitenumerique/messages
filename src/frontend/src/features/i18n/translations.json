@@ -55,7 +55,9 @@
         "bcc": "Blind copy: ",
         "subject": "Subject: ",
         "body": "Message: ",
-        "draft": "Draft"
+        "draft": "Draft",
+        "attachments_one": "{{count}} attachment",
+        "attachments_other": "{{count}} attachments"
       },
       "message_form": {
         "helper_text": {
@@ -157,7 +159,8 @@
         "mark_as_unread_from_here": "Marquer comme non lu à partir d'ici",
         "mark_all_as_read": "Tout marquer comme lu",
         "mark_all_as_unread": "Tout marquer comme non lu",
-        "delete_draft": "Supprimer le brouillon"
+        "delete_draft": "Supprimer le brouillon",
+        "download": "Télécharger"
       },
       "tooltips": {
         "has_attachments": "Cette email contient une pièce jointe",
@@ -171,7 +174,9 @@
         "bcc": "Copie cachée : ",
         "subject": "Sujet : ",
         "body": "Message : ",
-        "draft": "Brouillon"
+        "draft": "Brouillon",
+        "attachments_one": "{{count}} pièce jointe",
+        "attachments_other": "{{count}} pièces jointes"
       },
       "message_form": {
         "helper_text": {
