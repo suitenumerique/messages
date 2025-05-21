@@ -27,6 +27,7 @@ class MailboxAvailableSerializer(serializers.ModelSerializer):
         """Return the contact of the mailbox."""
         if instance.contact:
             return instance.contact.name
+        return None
 
     def get_email(self, instance):
         """Return the email of the mailbox."""
@@ -345,6 +346,29 @@ class MailboxAccessReadSerializer(serializers.ModelSerializer):
         model = models.MailboxAccess
         fields = ["id", "user_details", "role", "created_at", "updated_at"]
         read_only_fields = fields  # All fields are effectively read-only from this serializer's perspective
+
+
+class MailboxAccessWriteSerializer(serializers.ModelSerializer):
+    """Serializer for creating and updating mailbox access records.
+    Mailbox is set from the view based on URL parameters.
+    """
+
+    class Meta:
+        model = models.MailboxAccess
+        fields = ["id", "user", "role", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        """Additional validation that applies to the whole object."""
+        if self.instance and "user" in attrs and attrs["user"] != self.instance.user:
+            raise serializers.ValidationError(
+                {
+                    "user": [
+                        "Cannot change the user of an existing mailbox access record. Delete and create a new one."
+                    ]
+                }
+            )
+        return attrs
 
 
 class MailDomainAdminSerializer(serializers.ModelSerializer):

@@ -9,7 +9,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0011_remove_attachment_content_type_and_more'),
+        ('core', '0012_mailbox_contact'),
     ]
 
     operations = [

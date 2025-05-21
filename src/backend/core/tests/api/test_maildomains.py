@@ -245,20 +245,26 @@ class TestMailboxAdminViewSet:
         response = api_client.get(url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    @pytest.mark.parametrize("valid_local_part", ["valid", "valid-pa_rt09.xx"])
     def test_create_mailbox_success(
-        self, api_client, domain_admin_user, domain_admin_access1, mail_domain1
+        self,
+        valid_local_part,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
     ):
         """Test that domain admins can create mailboxes in domains they administer."""
         api_client.force_authenticate(user=domain_admin_user)
         url = TestMailDomainAdminViewSet().mailboxes_url(mail_domain1.pk)
-        data = {"local_part": "newbox"}
+        data = {"local_part": valid_local_part}
         response = api_client.post(url, data=data)
 
         assert response.status_code == status.HTTP_201_CREATED
-        assert response.data["local_part"] == "newbox"
+        assert response.data["local_part"] == valid_local_part
         new_mailbox = models.Mailbox.objects.get(id=response.data["id"])
         assert new_mailbox.domain == mail_domain1
-        assert new_mailbox.local_part == "newbox"
+        assert new_mailbox.local_part == valid_local_part
 
     def test_create_mailbox_duplicate_local_part(
         self,
@@ -276,13 +282,22 @@ class TestMailboxAdminViewSet:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         # Model unique_together should enforce this, serializer might catch it too.
 
+    @pytest.mark.parametrize(
+        "invalid_local_part",
+        ["invalid@example.com", "invalid part", "invalidé", "", " "],
+    )
     def test_create_mailbox_invalid_local_part(
-        self, api_client, domain_admin_user, domain_admin_access1, mail_domain1
+        self,
+        invalid_local_part,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
     ):
         """Test that creating a mailbox with an invalid local_part fails."""
         api_client.force_authenticate(user=domain_admin_user)
         url = TestMailDomainAdminViewSet().mailboxes_url(mail_domain1.pk)
-        data = {"local_part": "invalid@part"}
+        data = {"local_part": invalid_local_part}
         response = api_client.post(url, data=data)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "local_part" in response.data

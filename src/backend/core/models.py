@@ -234,7 +234,11 @@ class MailDomain(BaseModel):
 class Mailbox(BaseModel):
     """Mailbox model to store mailbox information."""
 
-    local_part = models.CharField(_("local part"), max_length=255)
+    local_part = models.CharField(
+        _("local part"),
+        max_length=255,
+        validators=[validators.RegexValidator(regex=r"^[a-zA-Z0-9_.-]+$")],
+    )
     domain = models.ForeignKey("MailDomain", on_delete=models.CASCADE)
     contact = models.ForeignKey(
         "Contact",

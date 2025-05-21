@@ -143,7 +143,9 @@ class TestMailboxViewSet:
             reverse("mailboxes-search", kwargs={"pk": str(context_mailbox.id)}),
         )
         assert response.status_code == status.HTTP_200_OK
-        assert len(response.data) == 3  # All mailboxes in example.com domain except context mailbox
+        assert (
+            len(response.data) == 3
+        )  # All mailboxes in example.com domain except context mailbox
         assert {mailbox["id"] for mailbox in response.data} == {
             str(john_doe_mailbox.id),
             str(jane_doe_mailbox.id),

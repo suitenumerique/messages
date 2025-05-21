@@ -1,0 +1,3 @@
+# Protect workflow files
+.github/workflows/ @suitenumerique/admins
+.github/CODEOWNERS @suitenumerique/admins

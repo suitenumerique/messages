@@ -57,10 +57,7 @@ class MailboxAdminViewSet(
         core_permissions.IsAuthenticated,
         core_permissions.IsMailDomainAdmin,
     ]
-
-    def get_serializer_class(self):
-        # MailboxAdminSerializer will be used for list, retrieve, update, and create (for response)
-        return core_serializers.MailboxAdminSerializer
+    serializer_class = core_serializers.MailboxAdminSerializer
 
     def get_queryset(self):
         maildomain_pk = self.kwargs.get("maildomain_pk")
@@ -79,11 +76,6 @@ class MailboxAdminViewSet(
         if not local_part:
             return Response(
                 {"local_part": [_("This field may not be blank.")]},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if "@" in local_part or " " in local_part:  # Basic format validation
-            return Response(
-                {"local_part": [_("Invalid local part format.")]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -124,6 +116,7 @@ class MailboxAdminViewSet(
                 )
 
         # --- Create Mailbox ---
+        # Will validate local_part format via the model's validator
         mailbox = models.Mailbox.objects.create(
             domain=domain, local_part=local_part, alias_of=alias_of
         )

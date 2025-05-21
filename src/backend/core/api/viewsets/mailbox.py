@@ -40,7 +40,7 @@ class MailboxViewSet(
         ],
     )
     @action(detail=True, methods=["get"])
-    def search(self, request, pk=None):
+    def search(self, request, **kwargs):
         """
         Search mailboxes by domain, local part and contact name.
 
