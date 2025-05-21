@@ -21,6 +21,27 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "email", "full_name", "short_name"]
 
 
+class MailboxAvailableSerializer(serializers.ModelSerializer):
+    """Serialize mailboxes."""
+
+    contact = serializers.SerializerMethodField(read_only=True)
+    email = serializers.SerializerMethodField(read_only=True)
+
+    def get_contact(self, instance):
+        """Return the contact of the mailbox."""
+        if instance.contact:
+            return instance.contact.name
+        return None
+
+    def get_email(self, instance):
+        """Return the email of the mailbox."""
+        return str(instance)
+
+    class Meta:
+        model = models.Mailbox
+        fields = ["id", "email", "contact"]
+
+
 class MailboxSerializer(serializers.ModelSerializer):
     """Serialize mailboxes."""
 
