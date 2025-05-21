@@ -15,12 +15,14 @@ pytestmark = pytest.mark.django_db
 def get_thread_access_url(thread_id, access_id=None):
     """Helper function to get the thread access URL."""
     if access_id:
-        return reverse("thread-access-detail", args=[thread_id, access_id])
-    return reverse("thread-access-list", args=[thread_id])
+        return reverse(
+            "thread-access-detail", kwargs={"thread_id": thread_id, "id": access_id}
+        )
+    return reverse("thread-access-list", kwargs={"thread_id": thread_id})
 
 
-@pytest.fixture
-def mailbox_with_access():
+@pytest.fixture(name="mailbox_with_access")
+def fixture_mailbox_with_access():
     """Create a mailbox with access for a user."""
     user = factories.UserFactory()
     mailbox = factories.MailboxFactory()
@@ -32,8 +34,8 @@ def mailbox_with_access():
     return user, mailbox
 
 
-@pytest.fixture
-def thread_with_editor_access(mailbox_with_access):
+@pytest.fixture(name="thread_with_editor_access")
+def fixture_thread_with_editor_access(mailbox_with_access):
     """Create a thread with access for a mailbox."""
     user, mailbox = mailbox_with_access
     thread = factories.ThreadFactory()
@@ -98,7 +100,7 @@ class TestThreadAccessList:
         self, api_client, thread_with_editor_access, django_assert_num_queries
     ):
         """Test listing thread accesses filtered by mailbox."""
-        user, mailbox, thread, thread_access = thread_with_editor_access
+        user, mailbox, thread, _ = thread_with_editor_access
         api_client.force_authenticate(user=user)
 
         # Create another thread access for a different mailbox

@@ -145,6 +145,7 @@ class BlobViewSet(ViewSet):
                 {"error": "You do not have permission to download this blob"},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        # pylint: disable=broad-exception-caught
         except Exception as e:
             logger.exception("Error downloading file: %s", str(e))
             return Response(

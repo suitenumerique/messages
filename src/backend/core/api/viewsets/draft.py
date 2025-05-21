@@ -273,7 +273,8 @@ class DraftMessageView(APIView):
 
                     if not blob_id:
                         logger.warning(
-                            f"Missing blobId in attachment data: {attachment_data}"
+                            "Missing blobId in attachment data: %s",
+                            attachment_data,
                         )
                         continue
 
@@ -292,13 +293,17 @@ class DraftMessageView(APIView):
 
                         if created:
                             logger.info(
-                                f"Created new attachment {attachment.id} for blob {blob_id}"
+                                "Created new attachment %s for blob %s",
+                                attachment.id,
+                                blob_id,
                             )
 
                         new_attachment_ids.append(attachment.id)
 
                     except (ValueError, models.Blob.DoesNotExist) as e:
-                        logger.warning(f"Invalid or missing blob {blob_id}: {str(e)}")
+                        logger.warning(
+                            "Invalid or missing blob %s: %s", blob_id, str(e)
+                        )
 
                 # Combine all valid attachment IDs
                 new_attachments = set(new_attachment_ids)

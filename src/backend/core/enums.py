@@ -53,3 +53,9 @@ class MessageDeliveryStatusChoices(models.TextChoices):
     SENT = "sent", _("Sent")
     FAILED = "failed", _("Failed")
     RETRY = "retry", _("Retry")
+
+
+class MailDomainAccessRoleChoices(models.TextChoices):
+    """Defines the unique roles a user can have to access a mail domain."""
+
+    ADMIN = "ADMIN", _("Admin")

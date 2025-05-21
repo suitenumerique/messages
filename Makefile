@@ -83,7 +83,7 @@ bootstrap: \
 	create-env-files \
 	build \
 	migrate \
-	back-i18n-compile \
+	# back-i18n-compile \
 	frontend-install-frozen
 .PHONY: bootstrap
 
@@ -174,7 +174,7 @@ lint-ruff-check: ## lint back-end python sources with ruff
 
 lint-back: ## lint back-end python sources with pylint
 	@echo 'lint:pylint started…'
-	@$(COMPOSE_RUN_APP_TOOLS) sh -c "pylint **/*.py"
+	@$(COMPOSE_RUN_APP_TOOLS) sh -c "pylint ."
 .PHONY: lint-back
 
 lint-mta-in: ## lint mta-in python sources with pylint

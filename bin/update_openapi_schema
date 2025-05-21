@@ -4,6 +4,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_config.sh"
 
 _dc_run \
     -e DJANGO_CONFIGURATION=Test \
+    --no-deps \
     backend-dev \
     python manage.py spectacular \
     --api-version 'v1.0' \

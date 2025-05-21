@@ -97,7 +97,6 @@ class IsAllowedToAccess(IsAuthenticated):
 
         # If it's a detail action (retrieve, update, destroy), object-level permission is checked
         # by has_object_permission. If it's a list action without filters, deny access.
-        # Check if view has 'action' attribute and if it's 'list'
         is_list_action = hasattr(view, "action") and view.action == "list"
 
         if not is_list_action:
@@ -236,48 +235,6 @@ class IsAllowedToCreateMessage(IsAuthenticated):
         return True
 
 
-# class IsAllowedToSendMessage(IsAuthenticated):
-#    """Permission class for access to send a message."""
-#
-#    def has_permission(self, request, view):
-#        """Check if user is allowed to send a message."""
-#        # a sender is required to create a message
-#
-#        if not IsAuthenticated.has_permission(self, request, view):
-#            return False
-#
-#        sender_id = request.data.get("senderId")
-#        if not sender_id:
-#            return False
-#        # get mailbox instance from sender id
-#        try:
-#            view.mailbox = models.Mailbox.objects.get(id=sender_id)
-#        except models.Mailbox.DoesNotExist:
-#            return False
-#        # required permissions to send a message
-#        permissions_required = [
-#            enums.MailboxPermissionChoices.SEND,
-#            enums.MailboxPermissionChoices.ADMIN,
-#        ]
-#        # check if user has access required to send a message with this mailbox
-#        if not view.mailbox.accesses.filter(
-#            user=request.user,
-#            permission__in=permissions_required,
-#        ).exists():
-#            # user does not have permission to send a message with this mailbox
-#            return False
-#
-#        # check if user has access to the thread
-#        if models.ThreadAccess.objects.filter(
-#            mailbox=view.mailbox,
-#            thread=view.thread,
-#            role=models.ThreadAccessRoleChoices.EDITOR,
-#        ).exists():
-#            return True
-#
-#        return False
-
-
 class IsAllowedToManageThreadAccess(IsAuthenticated):
     """Permission class for access to create, update, delete and list thread accesses."""
 
@@ -290,7 +247,8 @@ class IsAllowedToManageThreadAccess(IsAuthenticated):
         # if create action, check if user has admin/editor access to the mailbox and the thread access role is editor
         if view.action == "create":
             # authenticated user wants to create a thread access for a specific thread
-            # check if user has admin/editor access to the mailbox and the thread access role is editor already exists for them
+            # check if user has admin/editor access to the mailbox and the
+            # thread access role is editor already exists for them
             return (
                 models.ThreadAccess.objects.select_related("mailbox")
                 .filter(
@@ -304,7 +262,7 @@ class IsAllowedToManageThreadAccess(IsAuthenticated):
                 )
                 .exists()
             )
-        elif view.action == "list":
+        if view.action == "list":
             # list is only allowed for a user with access to the thread
             return (
                 models.ThreadAccess.objects.select_related("mailbox")
@@ -319,15 +277,15 @@ class IsAllowedToManageThreadAccess(IsAuthenticated):
                 )
                 .exists()
             )
-        else:
-            return True  # to proceed to object-level checks
+
+        return True  # to proceed to object-level checks
 
     def has_object_permission(self, request, view, obj):
         """Check if user has permission to access the specific object (ThreadAccess).
         Manage retrieve, update, destroy actions here.
         """
         # Verify the thread access belongs to the thread in the URL
-        if str(obj.thread.id) != view.kwargs.get("thread_id"):
+        if obj.thread.id != view.kwargs.get("thread_id"):
             return False
 
         return (
@@ -343,3 +301,109 @@ class IsAllowedToManageThreadAccess(IsAuthenticated):
             )
             .exists()
         )
+
+
+class IsMailDomainAdmin(permissions.BasePermission):
+    """
+    Allows access only to users who have ADMIN MailDomainAccess
+    to the maildomain specified by 'maildomain_pk' in the URL.
+    Used for viewsets nested under a maildomain.
+    """
+
+    message = "You do not have administrative rights for this mail domain."
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        maildomain_pk = view.kwargs.get("maildomain_pk")
+        if not maildomain_pk:
+            return False
+
+        return models.MailDomainAccess.objects.filter(
+            user=request.user,
+            maildomain_id=maildomain_pk,
+            role=models.MailDomainAccessRoleChoices.ADMIN,
+        ).exists()
+
+    # No has_object_permission, assumes objects are correctly scoped by view's get_queryset
+    # based on the maildomain_pk.
+
+
+class IsMailboxAdmin(permissions.BasePermission):
+    """
+    Allows access if the user has ADMIN MailboxAccess to the specific Mailbox
+    identified by `view.kwargs['mailbox_id']`, OR if the user has ADMIN
+    MailDomainAccess to the domain of that Mailbox.
+    """
+
+    message = "You do not have administrative rights for this mailbox or its domain."
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        user = request.user
+        mailbox_id_from_url = view.kwargs.get("mailbox_id")
+        if not mailbox_id_from_url:
+            return False  # Should not happen with correct URL configuration
+
+        try:
+            target_mailbox = models.Mailbox.objects.select_related("domain").get(
+                pk=mailbox_id_from_url
+            )
+        except (models.Mailbox.DoesNotExist, ValueError):  # ValueError for invalid UUID
+            return False
+
+        # Check 1: Is user an admin of the specific mailbox?
+        is_mailbox_admin = models.MailboxAccess.objects.filter(
+            user=user, mailbox=target_mailbox, role=models.MailboxRoleChoices.ADMIN
+        ).exists()
+
+        if is_mailbox_admin:
+            return True
+
+        # Check 2: Is user an admin of the mailbox's domain?
+        if target_mailbox.domain:
+            is_domain_admin = models.MailDomainAccess.objects.filter(
+                user=user,
+                maildomain=target_mailbox.domain,
+                role=models.MailDomainAccessRoleChoices.ADMIN,
+            ).exists()
+            if is_domain_admin:
+                return True
+
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        # obj is a MailboxAccess instance.
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        if not hasattr(obj, "mailbox") or not obj.mailbox or not obj.mailbox.domain:
+            return False  # MailboxAccess must be linked to a Mailbox with a Domain
+
+        # Ensure the object being acted upon belongs to the mailbox specified in the URL
+        mailbox_id_from_url = view.kwargs.get("mailbox_id")
+        if str(obj.mailbox.id) != str(mailbox_id_from_url):
+            return False  # Object's mailbox does not match URL mailbox
+
+        user = request.user
+        target_mailbox = obj.mailbox  # The mailbox related to the MailboxAccess object
+
+        # Check 1: Is user an admin of this specific mailbox?
+        is_mailbox_admin = models.MailboxAccess.objects.filter(
+            user=user, mailbox=target_mailbox, role=models.MailboxRoleChoices.ADMIN
+        ).exists()
+
+        if is_mailbox_admin:
+            return True
+
+        # Check 2: Is user an admin of the mailbox's domain?
+        is_domain_admin = models.MailDomainAccess.objects.filter(
+            user=user,
+            maildomain=target_mailbox.domain,
+            role=models.MailDomainAccessRoleChoices.ADMIN,
+        ).exists()
+
+        return is_domain_admin
