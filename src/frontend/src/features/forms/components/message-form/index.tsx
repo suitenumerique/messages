@@ -25,7 +25,6 @@ interface MessageFormProps {
     onClose?: () => void;
     // For new message mode
     showSubject?: boolean;
-    showMailboxes?: boolean;
     onSuccess?: () => void;
 }
 

@@ -36,7 +36,6 @@ const NewMessageFormPage = () => {
             <MessageForm
                 showSubject={true}
                 onSuccess={() => router.push('/')}
-                showMailboxes
                 onClose={handleClose}
             />
         </div>

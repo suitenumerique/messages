@@ -88,7 +88,9 @@ export const AttachmentUploader = ({
             blobId: attachment.blobId,
             name: attachment.name
         })), { shouldDirty: true });
-        debouncedOnChange();
+        if (form.formState.dirtyFields.attachments) {
+            debouncedOnChange();
+        }
     }, [attachments]);
 
     return (
