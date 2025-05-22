@@ -164,7 +164,10 @@ def find_thread_for_inbound_message(
 
 
 def deliver_inbound_message(
-    recipient_email: str, parsed_email: Dict[str, Any], raw_data: bytes
+    recipient_email: str,
+    parsed_email: Dict[str, Any],
+    raw_data: bytes,
+    is_import: bool = False,
 ) -> bool:  # Return True on success, False on failure
     """Deliver a parsed inbound email message to the correct mailbox and thread.
 
@@ -312,6 +315,11 @@ def deliver_inbound_message(
             is_trashed=False,
             is_unread=True,
         )
+        if is_import:
+            # We need to set the created_at field to the date of the message
+            # because the inbound message is not created at the same time as the message is received
+            message.created_at = parsed_email.get("date") or timezone.now()
+            message.save(update_fields=["created_at"])
     except (DjangoDbError, ValidationError) as e:
         logger.error("Failed to create message in thread %s: %s", thread.id, e)
         return False  # Indicate failure

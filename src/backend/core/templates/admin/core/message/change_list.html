@@ -2,10 +2,10 @@
 {% load i18n admin_urls %}
 
 {% block object-tools-items %}
-    {% if has_import_eml_permission %}
+    {% if has_import_permission %}
     <li>
-        <a href="{% url 'admin:core_message_import_eml' %}" class="addlink">
-            {% trans 'Import from EML' %}
+        <a href="{% url 'admin:core_message_import_messages' %}" class="importlink">
+            {% translate "Import Messages" %}
         </a>
     </li>
     {% endif %}
