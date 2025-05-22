@@ -11,7 +11,7 @@ export const AttachmentList = ({ attachments }: AttachmentListProps) => {
     return (
         <section className="thread-attachment-list">
             <header className="thread-attachment-list__header">
-                <p className="m-0"><strong>{t("thread_message.attachments", { count: attachments.length })}</strong></p>
+                <p className="m-0"><strong>{t("attachments.counter", { count: attachments.length })}</strong></p>
             </header>
             <div className="thread-attachment-list__body">
                 {attachments.map((attachment) => <AttachmentItem key={attachment.id} attachment={attachment} />)}

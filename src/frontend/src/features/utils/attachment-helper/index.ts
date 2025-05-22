@@ -10,7 +10,7 @@ export class AttachmentHelper {
     /**
      * Get the extension of an attachment from its name
      */
-    static getExtension(attachment: Attachment) {
+    static getExtension(attachment: Attachment | File) {
         if (!attachment.name) return undefined;
 
         return attachment.name
@@ -21,7 +21,7 @@ export class AttachmentHelper {
     /**
      * Get the mime category of an attachment
      */
-    static getMimeCategory(attachment: Attachment): MimeCategory {
+    static getMimeCategory(attachment: Attachment | File): MimeCategory {
         // Special case: some calc files have application/zip mimetype. For those we should check their extension too.
         // Otherwise they will be shown as zip files.
         const extension = AttachmentHelper.getExtension(attachment);
@@ -41,7 +41,7 @@ export class AttachmentHelper {
     /**
      * Get the icon of an attachment
      */
-    static getIcon(attachment: Attachment, mini: boolean = false) {
+    static getIcon(attachment: Attachment | File, mini: boolean = false) {
         const category = AttachmentHelper.getMimeCategory(attachment);
         return mini ? MIME_TO_ICON_MINI[category] : MIME_TO_ICON[category];
     }
@@ -49,7 +49,7 @@ export class AttachmentHelper {
     /**
      * Get the format translation key of an attachment
      */
-    static getFormatTranslationKey(attachment: Attachment) {
+    static getFormatTranslationKey(attachment: Attachment | File) {
         const category = AttachmentHelper.getMimeCategory(attachment);
         return MIME_TO_FORMAT_TRANSLATION_KEY[category];
     };
@@ -59,5 +59,21 @@ export class AttachmentHelper {
      */
     static getDownloadUrl(attachment: Attachment) {
         return getRequestUrl(getBlobDownloadRetrieveUrl(attachment.blobId));
+    }
+
+    static getFormattedSize(size: number, language: string = 'en') {
+        const formatter = Intl.NumberFormat(language, {
+            notation: "compact",
+            style: "unit",
+            unit: "byte",
+            unitDisplay: "narrow",
+          });
+
+          return formatter.format(size);
+    }
+
+    static getFormattedTotalSize(attachments: Array<Attachment | File>, language: string = 'en') {
+        const totalSize = attachments.reduce((acc, attachment) => acc + attachment.size, 0);
+        return AttachmentHelper.getFormattedSize(totalSize, language);
     }
 }

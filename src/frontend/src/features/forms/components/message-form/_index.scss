@@ -1,3 +1,6 @@
+@use "sass:map";
+@use "../../../../styles/cunningham-tokens" as *;
+
 .message-form {
     display: flex;
     flex-direction: column;
@@ -23,4 +26,67 @@
 
 .message-reply-form__error {
     width: 100%;
+}
+
+.attachment-uploader {
+    padding: var(--c--theme--spacings--base);
+    background-color: var(--c--components--forms-input--background-color);
+    border-radius: var(--c--components--forms-input--border-radius);
+    border-width: var(--c--components--forms-input--border-width);
+    border-color: var(--c--components--forms-input--border-color);
+    border-style: var(--c--components--forms-input--border-style);
+    background-color: var(--c--components--forms-input--background-color);
+    display: flex;
+    flex-direction: column;
+    transition: border var(--c--theme--transitions--duration) var(--c--theme--transitions--ease-out), border-radius var(--c--theme--transitions--duration) var(--c--theme--transitions--ease-out);
+    box-sizing: border-box;
+    position: relative;
+}
+
+.attachment-uploader__dropzone {
+    position: absolute;
+    inset: -1px;
+    backdrop-filter: blur(3px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background-color: rgba(map.get($themes, "default", "theme", "colors", "primary-300"), 0.9);
+    border-radius: var(--c--components--forms-input--border-radius);
+    border: 2px dashed var(--c--theme--colors--primary-text);
+    color: var(--c--theme--colors--primary-text);
+    transition: all 200ms ease-out;
+    z-index: 1;
+}
+
+.attachment-uploader__dropzone--hidden {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    visibility: hidden;
+}
+
+.attachment-uploader__dropzone .material-icons {
+    font-size: 2.25rem;
+}
+
+.attachment-uploader__input {
+    display: flex;
+    flex-direction: row;
+    gap: var(--c--theme--spacings--xs);
+    align-items: center;
+}
+
+.attachment-uploader__input__helper-text {
+    font-size: 0.875rem;
+    color: var(--c--theme--colors--greyscale-600);
+}
+
+.attachment-uploader__bucket {
+    margin-top: var(--c--theme--spacings--base);
+}
+
+.attachment-bucket__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 10px;
 }
