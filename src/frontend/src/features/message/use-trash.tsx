@@ -2,7 +2,6 @@ import { useFlagCreate } from "@/features/api/gen"
 import { Thread, Message } from "@/features/api/gen/models"
 import { useMailboxContext } from "../providers/mailbox";
 import { addToast, ToasterItem } from "../ui/components/toaster";
-import { Button } from "@openfun/cunningham-react";
 import { toast } from "react-toastify";
 import { useTranslation } from "react-i18next";
 
@@ -69,15 +68,11 @@ const TrashSuccessToast = ({ threadIds = [], messageIds = [] }: { threadIds?: Th
         });
     }
     return (
-        <ToasterItem type="info" closeButton={false}>
+        <ToasterItem
+            type="info"
+            actions={[{ label: t('actions.undo'), onClick: undo }]}
+        >
             <span>{threadIds.length > 0 ? t('trash.thread_deleted') : t('trash.message_deleted')}</span>
-            <Button
-                color="tertiary"
-                size="small"
-                onClick={undo}
-            >
-                {t('actions.undo')}
-            </Button>
         </ToasterItem>
     )
 };

@@ -6,17 +6,26 @@ export const Toaster = () => {
   return <ToastContainer />;
 };
 
+type ToastAction = {
+  label: string;
+  showLabel?: boolean;
+  icon?: string;
+  onClick: () => void;
+}
+
 export const ToasterItem = ({
   children,
   closeToast,
   closeButton = true,
   className,
+  actions = [],
   type = "info",
 }: {
   children: React.ReactNode;
   closeButton?: boolean;
   className?: string;
   type?: "error" | "info";
+  actions?: ToastAction[];
 } & Partial<ToastContentProps>) => {
   return (
     <div
@@ -27,14 +36,26 @@ export const ToasterItem = ({
       )}
     >
       <div className="suite__toaster__item__content">{children}</div>
-      {closeButton && (
-        <Button
-          onClick={closeToast}
-          color="primary-text"
-          size="small"
-          icon={<span className="material-icons">close</span>}
-        ></Button>
-      )}
+      <div className="suite__toaster__item__actions">
+        {actions.map((action) => (
+          <Button
+            key={action.label}
+            aria-label={!action.showLabel ? action.label : undefined}
+            onClick={action.onClick}
+            color="primary-text"
+            size="small"
+            icon={action.icon && <span className="material-icons">{action.icon}</span>}
+          >{action.showLabel || !action.icon && action.label}</Button>
+        ))}
+        {closeButton && (
+          <Button
+            onClick={closeToast}
+            color="primary-text"
+            size="small"
+            icon={<span className="material-icons">close</span>}
+          ></Button>
+        )}
+      </div>
     </div>
   );
 };
