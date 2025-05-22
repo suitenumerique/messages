@@ -154,7 +154,6 @@ export const MessageForm = ({
             onSuccess: async (response) => {
                 const taskId = (response as sendCreateResponse200).data.task_id;
                 addQueuedMessage(taskId);
-                invalidateThreadMessages();
                 onSuccess?.();
                 onClose?.();
             }
@@ -410,7 +409,7 @@ export const MessageForm = ({
                 <footer className="form-footer">
                     <Button
                         color="primary"
-                        disabled={pendingSubmit}
+                        disabled={!draft || pendingSubmit}
                         icon={pendingSubmit ? <Spinner size="sm" /> : undefined}
                         type="submit"
                     >
