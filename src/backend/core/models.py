@@ -322,6 +322,7 @@ class Thread(BaseModel):
         db_table = "messages_thread"
         verbose_name = _("thread")
         verbose_name_plural = _("threads")
+        ordering = ["-messaged_at", "-created_at"]
 
     def __str__(self):
         return self.subject
@@ -362,9 +363,14 @@ class Thread(BaseModel):
             self.count_messages = self.messages.filter(is_trashed=False).count()
         if "messaged_at" in fields:
             last = (
-                self.messages.filter(is_trashed=False).order_by("-created_at").first()
+                self.messages.filter(is_trashed=False)
+                .order_by("-sent_at", "-created_at")
+                .first()
             )
-            self.messaged_at = last.created_at if last else None
+            if last:
+                self.messaged_at = last.sent_at if last.sent_at else last.created_at
+            else:
+                self.messaged_at = None
         if "sender_names" in fields:
             # Store the first and last sender names as a list of strings
             if "messages" in fields and self.count_messages == 0:

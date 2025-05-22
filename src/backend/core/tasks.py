@@ -1,12 +1,17 @@
 """Core tasks."""
 
 # pylint: disable=unused-argument
+from typing import List, Tuple
+
 from django.conf import settings
 
 from celery.utils.log import get_task_logger
 
 from core import models
+from core.mda.inbound import deliver_inbound_message
 from core.mda.outbound import send_message
+from core.mda.rfc5322 import parse_email_message
+from core.models import Mailbox
 from core.search import (
     create_index_if_not_exists,
     delete_index,
@@ -268,3 +273,86 @@ def reset_elasticsearch_index(self):
 #         print(res)
 #         print(record)
 #     return {"success": True}
+
+
+@celery_app.task(bind=True)
+def process_mbox_file_task(
+    self, file_content: bytes, recipient_id: str
+) -> Tuple[int, int]:
+    """
+    Process a MBOX file asynchronously.
+
+    Args:
+        file_content: The content of the MBOX file
+        recipient_id: The UUID of the recipient mailbox
+
+    Returns:
+        Tuple of (success_count, failure_count)
+    """
+    success_count = 0
+    failure_count = 0
+
+    try:
+        recipient = Mailbox.objects.get(id=recipient_id)
+    except Mailbox.DoesNotExist:
+        logger.error("Recipient mailbox %s not found", recipient_id)
+        return success_count, failure_count
+
+    # Split the mbox file into individual messages
+    messages = split_mbox_file(file_content)
+
+    for message_content in messages:
+        try:
+            # Parse the email message
+            parsed_email = parse_email_message(message_content)
+            # Deliver the message
+            if deliver_inbound_message(str(recipient), parsed_email, message_content):
+                success_count += 1
+            else:
+                failure_count += 1
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.exception(
+                "Error processing message from mbox file for recipient %s: %s",
+                recipient_id,
+                e,
+            )
+            failure_count += 1
+
+    return success_count, failure_count
+
+
+def split_mbox_file(content: bytes) -> List[bytes]:
+    """
+    Split a MBOX file into individual email messages.
+
+    Args:
+        content: The content of the MBOX file
+
+    Returns:
+        List of individual email messages as bytes
+    """
+    messages = []
+    current_message = []
+    in_message = False
+
+    for line in content.splitlines(keepends=True):
+        # Check for mbox message separator
+        if line.startswith(b"From "):
+            if in_message:
+                # End of previous message
+                messages.append(b"".join(current_message))
+                current_message = []
+            in_message = True
+            # Skip the mbox From line
+            continue
+
+        if in_message:
+            current_message.append(line)
+
+    # Add the last message if there is one
+    if current_message:
+        messages.append(b"".join(current_message))
+
+    # Last message is the first one, so we need to reverse the list
+    # to treat messages replies correctly
+    return messages[::-1]

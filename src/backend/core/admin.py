@@ -9,9 +9,10 @@ from django.utils.translation import gettext_lazy as _
 
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import parse_email_message
+from core.tasks import process_mbox_file_task
 
 from . import models
-from .forms import EmlImportForm
+from .forms import MessageImportForm
 
 
 @admin.register(models.User)
@@ -146,7 +147,14 @@ class ThreadAdmin(admin.ModelAdmin):
     """Admin class for the Thread model"""
 
     inlines = [ThreadAccessInline]
-    list_display = ("id", "subject", "snippet", "created_at", "updated_at")
+    list_display = (
+        "id",
+        "subject",
+        "snippet",
+        "messaged_at",
+        "created_at",
+        "updated_at",
+    )
 
 
 class MessageRecipientInline(admin.TabularInline):
@@ -174,55 +182,74 @@ class MessageAdmin(admin.ModelAdmin):
     """Admin class for the Message model"""
 
     inlines = [MessageRecipientInline, AttachmentInline]
-    list_display = ("id", "subject", "sender", "created_at")
+    list_display = ("id", "subject", "sender", "created_at", "sent_at")
     change_list_template = "admin/core/message/change_list.html"
 
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
             path(
-                "import-eml/",
-                self.admin_site.admin_view(self.import_eml_view),
-                name="core_message_import_eml",
+                "import-messages/",
+                self.admin_site.admin_view(self.import_messages_view),
+                name="core_message_import_messages",
             ),
         ]
         return custom_urls + urls
 
-    def import_eml_view(self, request):
-        """View for importing EML files."""
+    def import_messages_view(self, request):
+        """View for importing EML or MBOX files."""
         if request.method == "POST":
-            form = EmlImportForm(request.POST, request.FILES)
+            form = MessageImportForm(request.POST, request.FILES)
             if form.is_valid():
-                eml_file = request.FILES["eml_file"]
+                import_file = request.FILES["import_file"]
                 recipient = form.cleaned_data["recipient"]
                 try:
-                    # Import the message from the EML file contents
-                    eml_content = eml_file.read()
-                    parsed_email = parse_email_message(eml_content)
-                    deliver_inbound_message(str(recipient), parsed_email, eml_content)
-                    # For now, just show a success message
-                    messages.success(
-                        request,
-                        f"Successfully processed EML file: {eml_file.name} for recipient {recipient}",
-                    )
+                    file_content = import_file.read()
+
+                    if import_file.name.endswith(".mbox"):
+                        # Process MBOX file asynchronously
+                        process_mbox_file_task.delay(file_content, str(recipient.id))
+                        messages.info(
+                            request,
+                            f"Started processing MBOX file: {import_file.name} for recipient {recipient}. "
+                            "This may take a while. You can check the status in the Celery task monitor.",
+                        )
+                    else:
+                        # Process EML file synchronously
+                        parsed_email = parse_email_message(file_content)
+                        if deliver_inbound_message(
+                            str(recipient), parsed_email, file_content
+                        ):
+                            messages.success(
+                                request,
+                                f"Successfully processed EML file: {import_file.name} for recipient {recipient}",
+                            )
+                        else:
+                            messages.error(
+                                request,
+                                f"Failed to process EML file: {import_file.name} for recipient {recipient}",
+                            )
+
                     return redirect("..")
                 except Exception as e:  # noqa: BLE001 pylint: disable=broad-except
-                    messages.error(request, f"Error processing EML file: {str(e)}")
+                    messages.error(request, f"Error processing file: {str(e)}")
         else:
-            form = EmlImportForm()
+            form = MessageImportForm()
 
         context = dict(
             self.admin_site.each_context(request),
-            title=_("Import Messages from EML"),
+            title=_("Import Messages"),
             form=form,
             opts=self.model._meta,  # noqa: SLF001
         )
-        return TemplateResponse(request, "admin/core/message/import_eml.html", context)
+        return TemplateResponse(
+            request, "admin/core/message/import_messages.html", context
+        )
 
     def changelist_view(self, request, extra_context=None):
         """Add import permission to the changelist context."""
         extra_context = extra_context or {}
-        extra_context["has_import_eml_permission"] = self.has_add_permission(request)
+        extra_context["has_import_permission"] = self.has_add_permission(request)
         return super().changelist_view(request, extra_context=extra_context)
 
 
