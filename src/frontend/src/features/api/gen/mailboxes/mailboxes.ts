@@ -18,7 +18,7 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { Mailbox } from ".././models";
+import type { Mailbox, MailboxesSearchRetrieveParams } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
 
@@ -158,6 +158,403 @@ export function useMailboxesList<
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
   const queryOptions = getMailboxesListQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * ViewSet for Mailbox model.
+ */
+export type mailboxesRetrieveResponse200 = {
+  data: Mailbox;
+  status: 200;
+};
+
+export type mailboxesRetrieveResponseComposite = mailboxesRetrieveResponse200;
+
+export type mailboxesRetrieveResponse = mailboxesRetrieveResponseComposite & {
+  headers: Headers;
+};
+
+export const getMailboxesRetrieveUrl = (id: string) => {
+  return `/api/v1.0/mailboxes/${id}/`;
+};
+
+export const mailboxesRetrieve = async (
+  id: string,
+  options?: RequestInit,
+): Promise<mailboxesRetrieveResponse> => {
+  return fetchAPI<mailboxesRetrieveResponse>(getMailboxesRetrieveUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getMailboxesRetrieveQueryKey = (id: string) => {
+  return [`/api/v1.0/mailboxes/${id}/`] as const;
+};
+
+export const getMailboxesRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof mailboxesRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getMailboxesRetrieveQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesRetrieve>>
+  > = ({ signal }) => mailboxesRetrieve(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesRetrieve>>
+>;
+export type MailboxesRetrieveQueryError = unknown;
+
+export function useMailboxesRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMailboxesRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMailboxesRetrieveQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Search mailboxes by domain, local part and contact name.
+
+Query parameters:
+- q: Optional search query for local part and contact name
+ */
+export type mailboxesSearchRetrieveResponse200 = {
+  data: Mailbox;
+  status: 200;
+};
+
+export type mailboxesSearchRetrieveResponseComposite =
+  mailboxesSearchRetrieveResponse200;
+
+export type mailboxesSearchRetrieveResponse =
+  mailboxesSearchRetrieveResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMailboxesSearchRetrieveUrl = (
+  id: string,
+  params?: MailboxesSearchRetrieveParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1.0/mailboxes/${id}/search/?${stringifiedParams}`
+    : `/api/v1.0/mailboxes/${id}/search/`;
+};
+
+export const mailboxesSearchRetrieve = async (
+  id: string,
+  params?: MailboxesSearchRetrieveParams,
+  options?: RequestInit,
+): Promise<mailboxesSearchRetrieveResponse> => {
+  return fetchAPI<mailboxesSearchRetrieveResponse>(
+    getMailboxesSearchRetrieveUrl(id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMailboxesSearchRetrieveQueryKey = (
+  id: string,
+  params?: MailboxesSearchRetrieveParams,
+) => {
+  return [
+    `/api/v1.0/mailboxes/${id}/search/`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getMailboxesSearchRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof mailboxesSearchRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: MailboxesSearchRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesSearchRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getMailboxesSearchRetrieveQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesSearchRetrieve>>
+  > = ({ signal }) =>
+    mailboxesSearchRetrieve(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesSearchRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesSearchRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesSearchRetrieve>>
+>;
+export type MailboxesSearchRetrieveQueryError = unknown;
+
+export function useMailboxesSearchRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesSearchRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | MailboxesSearchRetrieveParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesSearchRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesSearchRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesSearchRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesSearchRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesSearchRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: MailboxesSearchRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesSearchRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesSearchRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesSearchRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesSearchRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesSearchRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: MailboxesSearchRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesSearchRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMailboxesSearchRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesSearchRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: MailboxesSearchRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesSearchRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMailboxesSearchRetrieveQueryOptions(
+    id,
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<
     TData,

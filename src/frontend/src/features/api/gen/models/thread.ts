@@ -27,4 +27,5 @@ export interface Thread {
   /** date and time at which a record was last updated */
   readonly updated_at: string;
   readonly user_role: string;
+  readonly accesses: string;
 }

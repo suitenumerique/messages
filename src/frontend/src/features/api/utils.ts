@@ -47,11 +47,13 @@ export function getRequestUrl(pathname: string, params?: Record<string, string>)
   return requestUrl.toString();
 };
 
-export const getHeaders = (headers?: HeadersInit): HeadersInit => {
+export const getHeaders = (headers: HeadersInit = {}, isMultipartFormData: boolean = false): HeadersInit => {
   const csrfToken = getCSRFToken();
   return {
+    // If the request is a multipart/form-data, don't set the Content-Type header
+    // as the browser will set it automatically with correct boundary
+    ...(isMultipartFormData ? {} : { 'Content-Type': 'application/json' }),
     ...headers,
-    "Content-Type": "application/json",
     ...(csrfToken && { "X-CSRFToken": csrfToken }),
   };
 };
