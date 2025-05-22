@@ -15,6 +15,7 @@ import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { toast } from "react-toastify";
 import { useSentBox } from "@/features/providers/sent-box";
 import { useRouter } from "next/router";
+import { AttachmentUploader } from "./attachment-uploader";
 
 interface MessageFormProps {
     // For reply mode
@@ -54,6 +55,10 @@ const messageFormSchema = z.object({
     messageEditorHtml: z.string().optional().readonly(),
     messageEditorText: z.string().optional().readonly(),
     messageEditorDraft: z.string().optional().readonly(),
+    attachments: z.array(z.object({
+        blobId: z.string(),
+        name: z.string(),
+    })).optional(),
 });
 
 type MessageFormFields = z.infer<typeof messageFormSchema>;
@@ -128,6 +133,7 @@ export const MessageForm = ({
         messageEditorDraft: draft?.draftBody,
         messageEditorHtml: undefined,
         messageEditorText: undefined,
+        attachments: draft?.attachments.map(a => ({ blobId: a.blobId, name: a.name })),
     }), [draft, selectedMailbox])
 
     const form = useForm({
@@ -247,6 +253,7 @@ export const MessageForm = ({
             senderId: data.from,
             parentId: parentMessage?.id,
             draftBody: data.messageEditorDraft,
+            attachments: form.getValues('attachments'),
         }
         let response;
         
@@ -397,6 +404,8 @@ export const MessageForm = ({
                         text={form.formState.errors?.messageEditorDraft?.message}
                     />
                 </div>
+
+                <AttachmentUploader initialAttachments={draft?.attachments} onChange={form.handleSubmit(saveDraft)} />
 
                 <footer className="form-footer">
                     <Button
