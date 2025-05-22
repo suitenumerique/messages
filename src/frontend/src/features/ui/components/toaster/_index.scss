@@ -1,7 +1,10 @@
 .suite__toaster {
   &__wrapper {
-    width: auto;
+    // Remove toastify styles
+    box-shadow: none;
+    background-color: transparent;
     min-height: 0;
+    width: auto;
     padding: 0;
   }
 
@@ -9,6 +12,7 @@
     padding: 12px;
     border-radius: 4px;
     min-width: 400px;
+    max-width: 500px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -22,7 +26,13 @@
       gap: 8px;
       align-items: center;
       flex-grow: 1;
-      justify-content: space-between;
+    }
+
+    &__actions {
+      display: flex;
+      gap: var(--c--theme--spacings--3xs);
+      align-items: center;
+      flex-shrink: 0;
     }
 
     &--info {
