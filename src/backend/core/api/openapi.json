@@ -46,20 +46,80 @@
                         "schema": {
                             "type": "string"
                         },
+                        "description": "ID of the mailbox to associate the blob with",
                         "required": true
                     }
                 ],
                 "tags": [
                     "blob"
                 ],
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {
+                                        "type": "string",
+                                        "format": "binary",
+                                        "description": "The file to upload"
+                                    }
+                                },
+                                "required": [
+                                    "file"
+                                ]
+                            }
+                        }
+                    }
+                },
                 "security": [
                     {
                         "cookieAuth": []
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "No response body"
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "blobId": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "size": {
+                                            "type": "integer"
+                                        },
+                                        "sha256": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "blobId",
+                                        "type",
+                                        "size",
+                                        "sha256"
+                                    ]
+                                }
+                            }
+                        },
+                        "description": "Blob created successfully"
+                    },
+                    "400": {
+                        "description": "Bad request - No file provided"
+                    },
+                    "403": {
+                        "description": "Forbidden - User does not have permission to upload to this mailbox"
+                    },
+                    "404": {
+                        "description": "Mailbox not found"
+                    },
+                    "500": {
+                        "description": "Internal server error"
                     }
                 }
             }
@@ -1246,6 +1306,21 @@
                 "tags": [
                     "mailbox-accesses"
                 ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailboxAccessWriteRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailboxAccessWriteRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
                 "security": [
                     {
                         "cookieAuth": []
@@ -1256,7 +1331,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/MailboxAccessRead"
+                                    "$ref": "#/components/schemas/MailboxAccessWrite"
                                 }
                             }
                         },
@@ -1334,6 +1409,21 @@
                 "tags": [
                     "mailbox-accesses"
                 ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailboxAccessWriteRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailboxAccessWriteRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
                 "security": [
                     {
                         "cookieAuth": []
@@ -1344,7 +1434,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/MailboxAccessRead"
+                                    "$ref": "#/components/schemas/MailboxAccessWrite"
                                 }
                             }
                         },
@@ -1377,6 +1467,20 @@
                 "tags": [
                     "mailbox-accesses"
                 ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMailboxAccessWriteRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMailboxAccessWriteRequest"
+                            }
+                        }
+                    }
+                },
                 "security": [
                     {
                         "cookieAuth": []
@@ -1387,7 +1491,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/MailboxAccessRead"
+                                    "$ref": "#/components/schemas/MailboxAccessWrite"
                                 }
                             }
                         },
@@ -2697,7 +2801,8 @@
                         "description": "Original filename of the attachment"
                     },
                     "size": {
-                        "type": "string",
+                        "type": "integer",
+                        "description": "Return the size of the associated blob.",
                         "readOnly": true
                     },
                     "type": {
@@ -3013,6 +3118,63 @@
                     "role",
                     "updated_at",
                     "user_details"
+                ]
+            },
+            "MailboxAccessWrite": {
+                "type": "object",
+                "description": "Serializer for creating and updating mailbox access records.\nMailbox is set from the view based on URL parameters.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "user": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/Role2f7Enum"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "updated_at",
+                    "user"
+                ]
+            },
+            "MailboxAccessWriteRequest": {
+                "type": "object",
+                "description": "Serializer for creating and updating mailbox access records.\nMailbox is set from the view based on URL parameters.",
+                "properties": {
+                    "user": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/Role2f7Enum"
+                    }
+                },
+                "required": [
+                    "user"
                 ]
             },
             "MailboxAdmin": {
@@ -3411,6 +3573,20 @@
                     }
                 }
             },
+            "PatchedMailboxAccessWriteRequest": {
+                "type": "object",
+                "description": "Serializer for creating and updating mailbox access records.\nMailbox is set from the view based on URL parameters.",
+                "properties": {
+                    "user": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/Role2f7Enum"
+                    }
+                }
+            },
             "PatchedThreadAccessRequest": {
                 "type": "object",
                 "description": "Serialize thread access information.",
@@ -3486,16 +3662,16 @@
             },
             "StatusEnum": {
                 "enum": [
+                    "FAILURE",
                     "PENDING",
-                    "REVOKED",
-                    "RETRY",
                     "RECEIVED",
-                    "SUCCESS",
+                    "RETRY",
+                    "REVOKED",
                     "STARTED",
-                    "FAILURE"
+                    "SUCCESS"
                 ],
                 "type": "string",
-                "description": "* `PENDING` - PENDING\n* `REVOKED` - REVOKED\n* `RETRY` - RETRY\n* `RECEIVED` - RECEIVED\n* `SUCCESS` - SUCCESS\n* `STARTED` - STARTED\n* `FAILURE` - FAILURE"
+                "description": "* `FAILURE` - FAILURE\n* `PENDING` - PENDING\n* `RECEIVED` - RECEIVED\n* `RETRY` - RETRY\n* `REVOKED` - REVOKED\n* `STARTED` - STARTED\n* `SUCCESS` - SUCCESS"
             },
             "TaskStatusResponse": {
                 "type": "object",

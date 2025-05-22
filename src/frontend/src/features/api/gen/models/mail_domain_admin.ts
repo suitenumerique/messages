@@ -7,18 +7,14 @@
  */
 
 /**
- * Serialize attachments.
+ * Serialize MailDomain basic information for admin listing.
  */
-export interface Attachment {
+export interface MailDomainAdmin {
   /** primary key for the record as UUID */
   readonly id: string;
-  readonly blobId: string;
-  /** Original filename of the attachment */
   readonly name: string;
-  /** Return the size of the associated blob. */
-  readonly size: number;
-  readonly type: string;
-  readonly sha256: string;
   /** date and time at which a record was created */
   readonly created_at: string;
+  /** date and time at which a record was last updated */
+  readonly updated_at: string;
 }

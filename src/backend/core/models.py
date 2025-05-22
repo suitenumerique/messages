@@ -649,7 +649,7 @@ class Attachment(BaseModel):
         return self.blob.type
 
     @property
-    def size(self):
+    def size(self) -> int:
         """Return the size of the associated blob."""
         return self.blob.size
 

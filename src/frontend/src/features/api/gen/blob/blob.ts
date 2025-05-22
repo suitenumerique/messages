@@ -21,6 +21,8 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
+import type { BlobUploadCreate201, BlobUploadCreateBody } from ".././models";
+
 import { fetchAPI } from "../../fetch-api";
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
@@ -218,12 +220,19 @@ export function useBlobDownloadRetrieve<
 This endpoint accepts multipart/form-data containing a file and returns a
 blob ID and other metadata. The blob is associated with the specified mailbox.
  */
-export type blobUploadCreateResponse200 = {
-  data: void;
-  status: 200;
+export type blobUploadCreateResponse201 = {
+  data: BlobUploadCreate201;
+  status: 201;
 };
 
-export type blobUploadCreateResponseComposite = blobUploadCreateResponse200;
+export type blobUploadCreateResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type blobUploadCreateResponseComposite =
+  | blobUploadCreateResponse201
+  | blobUploadCreateResponse400;
 
 export type blobUploadCreateResponse = blobUploadCreateResponseComposite & {
   headers: Headers;
@@ -235,29 +244,34 @@ export const getBlobUploadCreateUrl = (mailboxId: string) => {
 
 export const blobUploadCreate = async (
   mailboxId: string,
+  blobUploadCreateBody: BlobUploadCreateBody,
   options?: RequestInit,
 ): Promise<blobUploadCreateResponse> => {
+  const formData = new FormData();
+  formData.append(`file`, blobUploadCreateBody.file);
+
   return fetchAPI<blobUploadCreateResponse>(getBlobUploadCreateUrl(mailboxId), {
     ...options,
     method: "POST",
+    body: formData,
   });
 };
 
 export const getBlobUploadCreateMutationOptions = <
-  TError = unknown,
+  TError = void,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof blobUploadCreate>>,
     TError,
-    { mailboxId: string },
+    { mailboxId: string; data: BlobUploadCreateBody },
     TContext
   >;
   request?: SecondParameter<typeof fetchAPI>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof blobUploadCreate>>,
   TError,
-  { mailboxId: string },
+  { mailboxId: string; data: BlobUploadCreateBody },
   TContext
 > => {
   const mutationKey = ["blobUploadCreate"];
@@ -271,11 +285,11 @@ export const getBlobUploadCreateMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof blobUploadCreate>>,
-    { mailboxId: string }
+    { mailboxId: string; data: BlobUploadCreateBody }
   > = (props) => {
-    const { mailboxId } = props ?? {};
+    const { mailboxId, data } = props ?? {};
 
-    return blobUploadCreate(mailboxId, requestOptions);
+    return blobUploadCreate(mailboxId, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -284,15 +298,15 @@ export const getBlobUploadCreateMutationOptions = <
 export type BlobUploadCreateMutationResult = NonNullable<
   Awaited<ReturnType<typeof blobUploadCreate>>
 >;
+export type BlobUploadCreateMutationBody = BlobUploadCreateBody;
+export type BlobUploadCreateMutationError = void;
 
-export type BlobUploadCreateMutationError = unknown;
-
-export const useBlobUploadCreate = <TError = unknown, TContext = unknown>(
+export const useBlobUploadCreate = <TError = void, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof blobUploadCreate>>,
       TError,
-      { mailboxId: string },
+      { mailboxId: string; data: BlobUploadCreateBody },
       TContext
     >;
     request?: SecondParameter<typeof fetchAPI>;
@@ -301,7 +315,7 @@ export const useBlobUploadCreate = <TError = unknown, TContext = unknown>(
 ): UseMutationResult<
   Awaited<ReturnType<typeof blobUploadCreate>>,
   TError,
-  { mailboxId: string },
+  { mailboxId: string; data: BlobUploadCreateBody },
   TContext
 > => {
   const mutationOptions = getBlobUploadCreateMutationOptions(options);
