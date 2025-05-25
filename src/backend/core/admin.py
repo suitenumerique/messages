@@ -9,10 +9,10 @@ from django.utils.translation import gettext_lazy as _
 
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import parse_email_message
-from core.tasks import process_mbox_file_task
+from core.tasks import import_imap_messages_task, process_mbox_file_task
 
 from . import models
-from .forms import MessageImportForm
+from .forms import IMAPImportForm, MessageImportForm
 
 
 @admin.register(models.User)
@@ -193,6 +193,11 @@ class MessageAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.import_messages_view),
                 name="core_message_import_messages",
             ),
+            path(
+                "import-imap/",
+                self.admin_site.admin_view(self.import_imap_view),
+                name="core_message_import_imap",
+            ),
         ]
         return custom_urls + urls
 
@@ -244,6 +249,46 @@ class MessageAdmin(admin.ModelAdmin):
         )
         return TemplateResponse(
             request, "admin/core/message/import_messages.html", context
+        )
+
+    def import_imap_view(self, request):
+        """View for importing messages from IMAP server."""
+        if request.method == "POST":
+            form = IMAPImportForm(request.POST)
+            if form.is_valid():
+                try:
+                    # Start the import task
+                    import_imap_messages_task.delay(
+                        imap_server=form.cleaned_data["imap_server"],
+                        imap_port=form.cleaned_data["imap_port"],
+                        username=form.cleaned_data["username"],
+                        password=form.cleaned_data["password"],
+                        use_ssl=form.cleaned_data["use_ssl"],
+                        folder=form.cleaned_data["folder"],
+                        max_messages=form.cleaned_data["max_messages"],
+                        recipient_id=str(form.cleaned_data["recipient"].id),
+                    )
+                    messages.info(
+                        request,
+                        f"Started importing messages from IMAP server for recipient {form.cleaned_data['recipient']}. "
+                        "This may take a while. You can check the status in the Celery task monitor.",
+                    )
+                    return redirect("..")
+                except Exception as e:  # noqa: BLE001 pylint: disable=broad-except
+                    messages.error(request, f"Error starting IMAP import: {str(e)}")
+        else:
+            form = IMAPImportForm()
+
+        context = dict(
+            self.admin_site.each_context(request),
+            title=_("Import Messages from IMAP"),
+            form=form,
+            opts=self.model._meta,  # noqa: SLF001
+        )
+        return TemplateResponse(
+            request,
+            "admin/core/message/import_imap.html",
+            context,
         )
 
     def changelist_view(self, request, extra_context=None):

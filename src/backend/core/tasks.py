@@ -1,6 +1,8 @@
 """Core tasks."""
-# pylint: disable=unused-argument
-from typing import List, Tuple
+
+# pylint: disable=unused-argument, broad-exception-raised
+import imaplib
+from typing import Any, Dict, List, Tuple
 
 from django.conf import settings
 
@@ -357,3 +359,118 @@ def split_mbox_file(content: bytes) -> List[bytes]:
     # Last message is the first one, so we need to reverse the list
     # to treat messages replies correctly
     return messages[::-1]
+
+
+@celery_app.task(bind=True)
+def import_imap_messages_task(
+    self,
+    imap_server: str,
+    imap_port: int,
+    username: str,
+    password: str,
+    use_ssl: bool,
+    folder: str,
+    max_messages: int,
+    recipient_id: str,
+) -> Dict[str, Any]:
+    """Import messages from an IMAP server.
+
+    Args:
+        imap_server: IMAP server hostname
+        imap_port: IMAP server port
+        username: Email address for login
+        password: Password for login
+        use_ssl: Whether to use SSL
+        folder: IMAP folder to import from
+        max_messages: Maximum number of messages to import (0 for all)
+        recipient_id: ID of the recipient mailbox
+
+    Returns:
+        Dictionary with import statistics
+    """
+    try:
+        # Connect to IMAP server
+        if use_ssl:
+            imap = imaplib.IMAP4_SSL(imap_server, imap_port)
+        else:
+            imap = imaplib.IMAP4(imap_server, imap_port)
+
+        # Login
+
+        imap.login(username, password)
+
+        # Select folder
+        status, messages = imap.select(folder)
+        if status != "OK":
+            raise Exception(f"Failed to select folder {folder}: {messages}")
+
+        # Search for all messages
+        status, message_numbers = imap.search(None, "ALL")
+        if status != "OK":
+            raise Exception(f"Failed to search messages: {message_numbers}")
+
+        # Get list of message numbers
+        message_list = message_numbers[0].split()
+
+        # Apply max_messages limit if specified
+        if max_messages > 0:
+            message_list = message_list[-max_messages:]  # Get most recent messages
+
+        total_messages = len(message_list)
+        success_count = 0
+        failure_count = 0
+
+        # Get recipient mailbox
+        recipient = Mailbox.objects.get(id=recipient_id)
+
+        # Process each message
+        for i, msg_num in enumerate(message_list, 1):
+            try:
+                # Update task state
+                self.update_state(
+                    state="PROGRESS",
+                    meta={
+                        "current": i,
+                        "total": total_messages,
+                        "status": f"Processing message {i} of {total_messages}",
+                    },
+                )
+
+                # Fetch message
+                status, msg_data = imap.fetch(msg_num, "(RFC822)")
+                if status != "OK":
+                    logger.error("Failed to fetch message %s: %s", msg_num, msg_data)
+                    failure_count += 1
+                    continue
+
+                # Parse message
+                raw_email = msg_data[0][1]
+                parsed_email = parse_email_message(raw_email)
+
+                # Deliver message
+                if deliver_inbound_message(
+                    str(recipient), parsed_email, raw_email, is_import=True
+                ):
+                    success_count += 1
+                else:
+                    failure_count += 1
+
+            except Exception as e:
+                logger.exception("Error processing message %s: %s", msg_num, e)
+                failure_count += 1
+
+        # Logout
+        imap.close()
+        imap.logout()
+
+        return {
+            "status": "completed",
+            "total_messages": total_messages,
+            "success_count": success_count,
+            "failure_count": failure_count,
+        }
+
+    except Exception as e:
+        logger.exception("Error in import_imap_messages_task: %s", e)
+        self.update_state(state="FAILURE", meta={"status": "failed", "error": str(e)})
+        raise
