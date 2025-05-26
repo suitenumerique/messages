@@ -6,7 +6,7 @@ import { DropdownMenu } from "@gouvfr-lasuite/ui-kit"
 import { Button, Tooltip } from "@openfun/cunningham-react"
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-
+import { ThreadAccessesWidget } from "../thread-accesses-widget";
 
 export const ActionBar = () => {
     const { t } = useTranslation();
@@ -29,6 +29,7 @@ export const ActionBar = () => {
                 </Tooltip>
             </div>
             <div className="thread-action-bar__right">
+                <ThreadAccessesWidget accesses={selectedThread!.accesses} />
                 <Tooltip content={t('actions.mark_as_unread')}>
                     <Button
                         color="primary-text"
