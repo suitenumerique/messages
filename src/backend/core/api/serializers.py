@@ -17,27 +17,6 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "email", "full_name", "short_name"]
 
 
-class MailboxAvailableSerializer(serializers.ModelSerializer):
-    """Serialize mailboxes."""
-
-    contact = serializers.SerializerMethodField(read_only=True)
-    email = serializers.SerializerMethodField(read_only=True)
-
-    def get_contact(self, instance):
-        """Return the contact of the mailbox."""
-        if instance.contact:
-            return instance.contact.name
-        return None
-
-    def get_email(self, instance):
-        """Return the email of the mailbox."""
-        return str(instance)
-
-    class Meta:
-        model = models.Mailbox
-        fields = ["id", "email", "contact"]
-
-
 class MailboxSerializer(serializers.ModelSerializer):
     """Serialize mailboxes."""
 
@@ -74,6 +53,28 @@ class MailboxSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.Mailbox
         fields = ["id", "email", "role", "count_unread_messages", "count_messages"]
+
+
+class MailboxLightSerializer(serializers.ModelSerializer):
+    """Serializer for mailbox details in thread access."""
+
+    email = serializers.SerializerMethodField(read_only=True)
+    name = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = models.Mailbox
+        fields = ["id", "email", "name"]
+        read_only_fields = fields
+
+    def get_email(self, instance):
+        """Return the email of the mailbox."""
+        return str(instance)
+
+    def get_name(self, instance):
+        """Return the contact of the mailbox."""
+        if instance.contact:
+            return instance.contact.name
+        return None
 
 
 class ContactSerializer(serializers.ModelSerializer):
@@ -121,6 +122,18 @@ class AttachmentSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class ThreadAccessDetailSerializer(serializers.ModelSerializer):
+    """Serializer for thread access details."""
+
+    mailbox = MailboxLightSerializer()
+    role = serializers.ChoiceField(choices=models.ThreadAccessRoleChoices.choices)
+
+    class Meta:
+        model = models.ThreadAccess
+        fields = ["id", "mailbox", "role"]
+        read_only_fields = fields
+
+
 class ThreadSerializer(serializers.ModelSerializer):
     """Serialize threads."""
 
@@ -129,24 +142,12 @@ class ThreadSerializer(serializers.ModelSerializer):
     user_role = serializers.SerializerMethodField()
     accesses = serializers.SerializerMethodField()
 
+    @extend_schema_field(ThreadAccessDetailSerializer(many=True))
     def get_accesses(self, instance):
         """Return the accesses for the thread."""
-        return [
-            {
-                "id": access.id,
-                "mailbox": {
-                    "id": access.mailbox.id,
-                    "email": str(access.mailbox),
-                    "name": access.mailbox.contact.name
-                    if access.mailbox.contact
-                    else None,
-                },
-                "role": access.role,
-            }
-            for access in instance.accesses.select_related(
-                "mailbox", "mailbox__contact"
-            )
-        ]
+        accesses = instance.accesses.select_related("mailbox", "mailbox__contact")
+
+        return ThreadAccessDetailSerializer(accesses, many=True).data
 
     def get_messages(self, instance):
         """Return the messages in the thread."""

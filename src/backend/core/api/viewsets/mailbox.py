@@ -38,6 +38,7 @@ class MailboxViewSet(
                 description="Search mailboxes by domain, local part and contact name.",
             ),
         ],
+        responses=serializers.MailboxLightSerializer(many=True),
     )
     @action(detail=True, methods=["get"])
     def search(self, request, **kwargs):
@@ -64,5 +65,5 @@ class MailboxViewSet(
         # Order by contact name if available, otherwise by email
         queryset = queryset.order_by("contact__name", "local_part", "domain")
 
-        serializer = serializers.MailboxAvailableSerializer(queryset, many=True)
+        serializer = serializers.MailboxLightSerializer(queryset, many=True)
         return Response(serializer.data)

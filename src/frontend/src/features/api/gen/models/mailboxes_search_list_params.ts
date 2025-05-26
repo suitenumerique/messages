@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export type MailboxesSearchRetrieveParams = {
+export type MailboxesSearchListParams = {
   /**
    * Search mailboxes by domain, local part and contact name.
    */

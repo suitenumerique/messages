@@ -5,6 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { ThreadAccessDetail } from "./thread_access_detail";
 
 /**
  * Serialize threads.
@@ -27,5 +28,5 @@ export interface Thread {
   /** date and time at which a record was last updated */
   readonly updated_at: string;
   readonly user_role: string;
-  readonly accesses: string;
+  readonly accesses: readonly ThreadAccessDetail[];
 }
