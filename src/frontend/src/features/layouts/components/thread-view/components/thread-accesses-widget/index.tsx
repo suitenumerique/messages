@@ -112,6 +112,9 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
             {accesses.length > 1 ? (
                 <Button color="tertiary-text" size="small" className="thread-accesses-widget" onClick={() => setIsShareModalOpen(true)}>
                     <ThreadAccessesList accesses={accesses} />
+                    <div className="thread-accesses-widget__item thread-accesses-widget__item--count">
+                        {accesses.length}
+                    </div>
                 </Button>
             ) : (
                 <Button color="tertiary-text" size="small" icon={<span className="material-icons">supervised_user_circle</span>} onClick={() => setIsShareModalOpen(true)}>
