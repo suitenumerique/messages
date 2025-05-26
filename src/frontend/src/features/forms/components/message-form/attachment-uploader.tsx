@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, MouseEventHandler } from 'react';
 import { Attachment } from "@/features/api/gen/models";
 import { useBlobUploadCreate } from "@/features/api/gen/blob/blob";
 import { useMailboxContext } from '@/features/providers/mailbox';
@@ -28,8 +28,7 @@ export const AttachmentUploader = ({
     const [failedQueue, setFailedQueue] = useState<File[]>([]);
     const { mutateAsync: uploadBlob } = useBlobUploadCreate();
     const debouncedOnChange = useDebounceCallback(onChange, 1000);
-    const { getRootProps, getInputProps, isDragActive, open: OpenFileDialog } = useDropzone({
-        noClick: true,
+    const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop: async (acceptedFiles) => {
             await Promise.all(acceptedFiles.map(uploadFile));
         }
@@ -80,6 +79,20 @@ export const AttachmentUploader = ({
     }
 
     /**
+     * Handle the click event on the attachment uploader
+     * If the click is within the bucket list, prevent the default behavior.
+     * In this way, if the user clicks, for example, on the button to download an attachment,
+     * the file dialog is not opened.
+     */
+    const handleClick:MouseEventHandler<HTMLElement> = (event) => {
+        const hasClickInBucketList = (event.target as HTMLElement).closest('.attachment-bucket__list');
+        if (!hasClickInBucketList) {
+            getRootProps().onClick?.(event);
+        }
+        
+    }
+
+    /**
      * Update the form value when the attachments change
      * Trigger the onChange callback to update the form each 1s
      */
@@ -94,13 +107,12 @@ export const AttachmentUploader = ({
     }, [attachments]);
 
     return (
-        <section className="attachment-uploader" {...getRootProps()}>
+        <section className="attachment-uploader" {...getRootProps()} onClick={handleClick}>
             <DropZone isHidden={!isDragActive} />
             <div className="attachment-uploader__input">
                 <Button
                     color="tertiary"
                     icon={<span className="material-icons">attach_file</span>}
-                    onClick={OpenFileDialog}
                 >
                     {t("message_form.attachments_uploader.input_label")}
                 </Button>

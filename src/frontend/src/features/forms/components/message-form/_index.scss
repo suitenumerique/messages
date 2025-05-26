@@ -41,6 +41,7 @@
     transition: border var(--c--theme--transitions--duration) var(--c--theme--transitions--ease-out), border-radius var(--c--theme--transitions--duration) var(--c--theme--transitions--ease-out);
     box-sizing: border-box;
     position: relative;
+    cursor: pointer;
 }
 
 .attachment-uploader__dropzone {
