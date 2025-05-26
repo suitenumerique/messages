@@ -7,6 +7,7 @@ from django.http import HttpResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
@@ -16,8 +17,6 @@ from rest_framework.viewsets import ViewSet
 
 from core import models
 from core.api import permissions
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
-from drf_spectacular.types import OpenApiTypes
 
 # Define logger
 logger = logging.getLogger(__name__)
@@ -44,42 +43,44 @@ class BlobViewSet(ViewSet):
                 type=str,
                 location=OpenApiParameter.PATH,
                 description="ID of the mailbox to associate the blob with",
-                required=True
+                required=True,
             )
         ],
         request={
-            'multipart/form-data': {
-                'type': 'object',
-                'properties': {
-                    'file': {
-                        'type': 'string',
-                        'format': 'binary',
-                        'description': 'The file to upload'
+            "multipart/form-data": {
+                "type": "object",
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "format": "binary",
+                        "description": "The file to upload",
                     }
                 },
-                'required': ['file']
+                "required": ["file"],
             }
         },
         responses={
             201: OpenApiResponse(
                 description="Blob created successfully",
                 response={
-                    'type': 'object',
-                    'properties': {
-                        'blobId': {'type': 'string', 'format': 'uuid'},
-                        'type': {'type': 'string'},
-                        'size': {'type': 'integer'},
-                        'sha256': {'type': 'string'}
+                    "type": "object",
+                    "properties": {
+                        "blobId": {"type": "string", "format": "uuid"},
+                        "type": {"type": "string"},
+                        "size": {"type": "integer"},
+                        "sha256": {"type": "string"},
                     },
-                    'required': ['blobId', 'type', 'size', 'sha256']
-                }
+                    "required": ["blobId", "type", "size", "sha256"],
+                },
             ),
             400: OpenApiResponse(description="Bad request - No file provided"),
-            403: OpenApiResponse(description="Forbidden - User does not have permission to upload to this mailbox"),
+            403: OpenApiResponse(
+                description="Forbidden - User does not have permission to upload to this mailbox"
+            ),
             404: OpenApiResponse(description="Mailbox not found"),
-            500: OpenApiResponse(description="Internal server error")
+            500: OpenApiResponse(description="Internal server error"),
         },
-        tags=["blob"]
+        tags=["blob"],
     )
     @method_decorator(csrf_exempt)
     @action(detail=False, methods=["post"], url_path="upload/(?P<mailbox_id>[^/.]+)")

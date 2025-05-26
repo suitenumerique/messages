@@ -11,10 +11,11 @@
  * `editor` - Editor
  * `admin` - Admin
  */
-export type Role2f7Enum = (typeof Role2f7Enum)[keyof typeof Role2f7Enum];
+export type MailboxAccessRoleEnum =
+  (typeof MailboxAccessRoleEnum)[keyof typeof MailboxAccessRoleEnum];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
-export const Role2f7Enum = {
+export const MailboxAccessRoleEnum = {
   viewer: "viewer",
   editor: "editor",
   admin: "admin",

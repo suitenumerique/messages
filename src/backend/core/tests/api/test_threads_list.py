@@ -661,9 +661,9 @@ class TestThreadListAPI:
         assert len(response.data["results"][0]["accesses"]) == 1
         assert response.data["results"][0]["accesses"] == [
             {
-                "id": access2.id,
+                "id": str(access2.id),
                 "mailbox": {
-                    "id": access2.mailbox.id,
+                    "id": str(access2.mailbox.id),
                     "email": str(access2.mailbox),
                     "name": access2.mailbox.contact.name,
                 },

@@ -1574,7 +1574,7 @@
         },
         "/api/v1.0/mailboxes/{id}/search/": {
             "get": {
-                "operationId": "mailboxes_search_retrieve",
+                "operationId": "mailboxes_search_list",
                 "description": "Search mailboxes by domain, local part and contact name.\n\nQuery parameters:\n- q: Optional search query for local part and contact name",
                 "parameters": [
                     {
@@ -1607,7 +1607,10 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/Mailbox"
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/MailboxLight"
+                                    }
                                 }
                             }
                         },
@@ -3059,7 +3062,7 @@
                     "role": {
                         "allOf": [
                             {
-                                "$ref": "#/components/schemas/Role2f7Enum"
+                                "$ref": "#/components/schemas/MailboxAccessRoleEnum"
                             }
                         ],
                         "readOnly": true
@@ -3092,7 +3095,7 @@
                     "role": {
                         "allOf": [
                             {
-                                "$ref": "#/components/schemas/Role2f7Enum"
+                                "$ref": "#/components/schemas/MailboxAccessRoleEnum"
                             }
                         ],
                         "readOnly": true
@@ -3120,6 +3123,15 @@
                     "user_details"
                 ]
             },
+            "MailboxAccessRoleEnum": {
+                "enum": [
+                    "viewer",
+                    "editor",
+                    "admin"
+                ],
+                "type": "string",
+                "description": "* `viewer` - Viewer\n* `editor` - Editor\n* `admin` - Admin"
+            },
             "MailboxAccessWrite": {
                 "type": "object",
                 "description": "Serializer for creating and updating mailbox access records.\nMailbox is set from the view based on URL parameters.",
@@ -3136,7 +3148,7 @@
                         "description": "primary key for the record as UUID"
                     },
                     "role": {
-                        "$ref": "#/components/schemas/Role2f7Enum"
+                        "$ref": "#/components/schemas/MailboxAccessRoleEnum"
                     },
                     "created_at": {
                         "type": "string",
@@ -3170,7 +3182,7 @@
                         "description": "primary key for the record as UUID"
                     },
                     "role": {
-                        "$ref": "#/components/schemas/Role2f7Enum"
+                        "$ref": "#/components/schemas/MailboxAccessRoleEnum"
                     }
                 },
                 "required": [
@@ -3232,6 +3244,31 @@
                     "id",
                     "local_part",
                     "updated_at"
+                ]
+            },
+            "MailboxLight": {
+                "type": "object",
+                "description": "Serializer for mailbox details in thread access.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "email": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "email",
+                    "id",
+                    "name"
                 ]
             },
             "Message": {
@@ -3583,7 +3620,7 @@
                         "description": "primary key for the record as UUID"
                     },
                     "role": {
-                        "$ref": "#/components/schemas/Role2f7Enum"
+                        "$ref": "#/components/schemas/MailboxAccessRoleEnum"
                     }
                 }
             },
@@ -3605,15 +3642,6 @@
                         "$ref": "#/components/schemas/ThreadAccessRoleEnum"
                     }
                 }
-            },
-            "Role2f7Enum": {
-                "enum": [
-                    "viewer",
-                    "editor",
-                    "admin"
-                ],
-                "type": "string",
-                "description": "* `viewer` - Viewer\n* `editor` - Editor\n* `admin` - Admin"
             },
             "SendMessageRequestRequest": {
                 "type": "object",
@@ -3764,7 +3792,10 @@
                         "readOnly": true
                     },
                     "accesses": {
-                        "type": "string",
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ThreadAccessDetail"
+                        },
                         "readOnly": true
                     }
                 },
@@ -3830,6 +3861,29 @@
                     "mailbox",
                     "thread",
                     "updated_at"
+                ]
+            },
+            "ThreadAccessDetail": {
+                "type": "object",
+                "description": "Serializer for thread access details.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "mailbox": {
+                        "$ref": "#/components/schemas/MailboxLight"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/ThreadAccessRoleEnum"
+                    }
+                },
+                "required": [
+                    "id",
+                    "mailbox",
+                    "role"
                 ]
             },
             "ThreadAccessRequest": {

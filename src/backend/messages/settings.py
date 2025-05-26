@@ -353,6 +353,10 @@ class Base(Configuration):
         "SWAGGER_UI_DIST": "SIDECAR",  # shorthand to use the sidecar instead
         "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
         "REDOC_DIST": "SIDECAR",
+        "ENUM_NAME_OVERRIDES": {  # Enforce enum to prevent weird naming in case of name conflict
+            "MailboxAccessRoleEnum": "core.enums.MailboxRoleChoices",
+            "ThreadAccessRoleEnum": "core.enums.ThreadAccessRoleChoices",
+        },
     }
 
     TRASHBIN_CUTOFF_DAYS = values.Value(

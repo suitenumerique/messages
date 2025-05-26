@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 import type { User } from "./user";
-import type { Role2f7Enum } from "./role2f7_enum";
+import type { MailboxAccessRoleEnum } from "./mailbox_access_role_enum";
 
 /**
  * Serialize MailboxAccess for nesting within MailboxAdminSerializer.
@@ -16,5 +16,5 @@ export interface MailboxAccessNestedUser {
   /** primary key for the record as UUID */
   readonly id: string;
   readonly user: User;
-  readonly role: Role2f7Enum;
+  readonly role: MailboxAccessRoleEnum;
 }

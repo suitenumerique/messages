@@ -5,7 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { Role2f7Enum } from "./role2f7_enum";
+import type { MailboxAccessRoleEnum } from "./mailbox_access_role_enum";
 
 /**
  * Serializer for creating and updating mailbox access records.
@@ -14,5 +14,5 @@ Mailbox is set from the view based on URL parameters.
 export interface MailboxAccessWriteRequest {
   /** primary key for the record as UUID */
   user: string;
-  role?: Role2f7Enum;
+  role?: MailboxAccessRoleEnum;
 }
