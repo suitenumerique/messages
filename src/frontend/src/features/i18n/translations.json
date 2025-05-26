@@ -132,6 +132,16 @@
           "Mb": "Mb",
           "Gb": "Gb"
         }
+      },
+      "roles": {
+        "viewer": "Viewer",
+        "editor": "Editor"
+      },
+      "thread_accesses_widget": {
+        "share_access": "Share access",
+        "see_members": "See members of this conversation",
+        "access_removed": "Thread access removed",
+        "last_editor_deletion_forbidden": "You cannot delete the last editor of this thread"
       }
     }
   },
@@ -271,6 +281,18 @@
           "Mb": "Mo",
           "Gb": "Go"
         }
+      },
+      "roles": {
+        "you": "Vous",
+        "viewer": "Lecteur",
+        "editor": "Éditeur"
+      },
+      "thread_accesses_widget": {
+        "share_access": "Partager l'accès",
+        "see_members": "Consulter les membres de cette conversation",
+        "access_removed": "Accès à la conversation supprimé",
+        "last_editor_deletion_forbidden": "Vous ne pouvez pas supprimer le dernier éditeur de cette conversation",
+        "last_editor_role_top_message": "Vous êtes le dernier éditeur de cette conversation, vous ne pouvez donc pas modifier votre accès."
       }
     }
   }
