@@ -312,7 +312,6 @@ export const MessageForm = ({
     const handleKeyDown = (event: React.KeyboardEvent) => {
         if (event.key === 'Enter') {
             event.preventDefault();
-            form.handleSubmit(saveDraft)();
         }
     }
 
@@ -343,7 +342,12 @@ export const MessageForm = ({
 
     return (
         <FormProvider {...form}>
-            <form className="message-form" onSubmit={form.handleSubmit(handleSubmit)} onKeyDown={handleKeyDown}>
+            <form
+                className="message-form"
+                onSubmit={form.handleSubmit(handleSubmit)}
+                onBlur={form.handleSubmit(saveDraft)}
+                onKeyDown={handleKeyDown}
+            >
                 <div className={clsx("form-field-row", {'form-field-row--hidden': hideFromField})}>
                     <RhfSelect
                         name="from"
