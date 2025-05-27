@@ -113,6 +113,7 @@ export const AttachmentUploader = ({
                 <Button
                     color="tertiary"
                     icon={<span className="material-icons">attach_file</span>}
+                    type="button"
                 >
                     {t("message_form.attachments_uploader.input_label")}
                 </Button>
