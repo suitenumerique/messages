@@ -1,5 +1,6 @@
 @use "sass:map";
 @use "../../../../styles/cunningham-tokens" as *;
+@use "../../../../styles/utils" as *;
 
 .message-form {
     display: flex;
@@ -77,6 +78,17 @@
     align-items: center;
 }
 
+.attachment-uploader__input > .c__button {
+    white-space: nowrap;
+}
+
+@media screen and (max-width: breakpoint(xs)) {
+    .attachment-uploader__input {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
 .attachment-uploader__input__helper-text {
     font-size: 0.875rem;
     color: var(--c--theme--colors--greyscale-600);
@@ -92,6 +104,6 @@
 
 .attachment-bucket__list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(350px, 100%), 1fr));
     gap: 10px;
 }

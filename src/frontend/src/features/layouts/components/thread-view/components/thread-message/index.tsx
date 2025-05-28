@@ -61,11 +61,6 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                         </div>
                         <div className="thread-message__header-column thread-message__header-column--right flex-row flex-align-center">
                             <div className="thread-message__metadata">
-                                {
-                                    message.attachments.length > 0 && (
-                                        <span className="material-icons">attachment</span>
-                                    )
-                                }
                                 {message.sent_at && (
                                     <p className="thread-message__date">{
                                         new Date(message.sent_at).toLocaleString(i18n.language, {
@@ -77,12 +72,17 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                         })
                                     }</p>
                                 )}
-                            </div>
                                 {message.is_draft && (
                                     <Badge>
                                         {t('thread_message.draft')}
                                     </Badge>
                                 )}
+                                {
+                                    message.attachments.length > 0 && (
+                                        <span className="material-icons">attachment</span>
+                                    )
+                                }
+                            </div>
                             <div className="thread-message__header-actions">
                                 {hasSeveralRecipients && (
                                     <Tooltip content={t('actions.reply_all')}>

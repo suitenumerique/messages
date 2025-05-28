@@ -1,3 +1,5 @@
+@use "../../../../../../styles/utils" as *;
+
 .thread-message {
     border-radius: 8px;
     background-color: white;
@@ -16,7 +18,7 @@
 }
 
 .thread-message__header-column--right {
-    gap: var(--c--theme--spacings--);
+    gap: var(--c--theme--spacings--xs);
 }
 
 .thread-message__header-actions {
@@ -29,6 +31,17 @@
     display: flex;
     flex-direction: row;
     justify-content: space-between;
+}
+
+@media screen and (max-width: breakpoint(tablet)) {
+    .thread-message__header-rows {
+        flex-direction: column-reverse;
+    }
+
+    .thread-message__header-column--right {
+        justify-content: space-between;
+    }
+
 }
 
 .thread-message__header-rows > div > * {
@@ -44,6 +57,10 @@
     color: var(--c--theme--colors--greyscale-500);
 }
 
+.thread-message__date {
+    text-align: right;
+}
+
 .thread-message__correspondents {
     display: grid;
     grid-template-columns: max-content 1fr;
@@ -57,13 +74,13 @@
 
 .thread-message__correspondents dd {
     margin: 0;
+    word-break: break-word;
 }
 
 .thread-message__body {
     width: 100%;
     height: auto;
     border: none;
-    overflow: auto;
 }
 
 .thread-message__footer {
