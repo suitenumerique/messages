@@ -20,19 +20,21 @@ const isAttachment = (attachment: Attachment | File): attachment is Attachment =
 }
 
 export const AttachmentItem = ({ attachment, isLoading = false, canDownload = true, variant = "default", errorMessage, errorAction, onDelete }: AttachmentItemProps) => {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const icon = AttachmentHelper.getIcon(attachment);
     const downloadUrl = isAttachment(attachment) ? AttachmentHelper.getDownloadUrl(attachment) : undefined;
 
     return (
-        <div className={clsx("attachment-item", { "attachment-item--loading": isLoading, "attachment-item--error": variant === "error" })}>
-            { variant === "error" ?
-                <span className="attachment-item-icon material-icons">error</span>
-            :
-                <img className="attachment-item-icon" src={icon} alt="" />
-            }
-            
-            <div className="attachment-item-info">
+        <div className={clsx("attachment-item", { "attachment-item--loading": isLoading, "attachment-item--error": variant === "error" })} title={attachment.name}>
+            <div className="attachment-item-metadata">
+                { variant === "error" ?
+                    <span className="attachment-item-icon material-icons">error</span>
+                :
+                    <img className="attachment-item-icon" src={icon} alt="" />
+                }
+                <p className="attachment-item-size">{AttachmentHelper.getFormattedSize(attachment.size, i18n.language)}</p>
+            </div>
+            <div className="attachment-item-content">
                 <p className="attachment-item-name">{attachment.name}</p>
                 {errorMessage && <p className="attachment-item-error-message">{errorMessage}</p>}
             </div>

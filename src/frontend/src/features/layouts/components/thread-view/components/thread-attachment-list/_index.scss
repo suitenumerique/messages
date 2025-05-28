@@ -44,6 +44,12 @@
     flex: 0 0 auto;
 }
 
+.attachment-item-metadata {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
 .attachment-item-icon {
     font-size: 24px;
     width: 32px;
@@ -51,8 +57,13 @@
     color: var(--c--theme--colors--danger-600);
 }
 
-.attachment-item-info {
-    font-size: 0.875rem;
+.attachment-item-size {
+    font-size: var(--c--theme--font--sizes--xs);
+    color: var(--c--theme--colors--greyscale-600);
+}
+
+.attachment-item-content {
+    font-size: var(--c--theme--font--sizes--sm);
     display: flex;
     flex-direction: column;
     flex: 1;

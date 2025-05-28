@@ -72,7 +72,7 @@ export class AttachmentHelper {
           return formatter.format(size);
     }
 
-    static getFormattedTotalSize(attachments: Array<Attachment | File>, language: string = 'en') {
+    static getFormattedTotalSize(attachments: readonly (Attachment | File)[], language: string = 'en') {
         const totalSize = attachments.reduce((acc, attachment) => acc + attachment.size, 0);
         return AttachmentHelper.getFormattedSize(totalSize, language);
     }
