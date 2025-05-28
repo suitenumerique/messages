@@ -11,13 +11,27 @@
   max-height: var(--header-height);
   padding: 0 1.125rem;
 
-  @media screen and (max-width: 1024px) {
+  &--anonymous {
+    border-color: transparent;
+  }
+
+  @media screen and (max-width: breakpoint(tablet)) {
     grid-template-columns: auto 1fr 1fr;
     grid-template-rows: 1fr 1fr;
     grid-template-areas: 
-      "toggle left right"
+      "toggle left left"
       "center center center";
-    padding: 0 1rem;
+    padding: 0 var(--c--theme--spacings--base);
+
+    &__left {
+      justify-content: center;
+    }
+
+    &__center {
+      padding-bottom: var(--c--theme--spacings--sm);
+    }
+
+
   }
 
   &__toggle-menu {

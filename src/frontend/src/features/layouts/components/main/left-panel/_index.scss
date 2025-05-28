@@ -1,0 +1,23 @@
+.c__left-panel__mobile {
+    height: calc(100% - var(--header-height));
+}
+
+.left-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.left-panel__content {
+    flex: 1;
+}
+
+.left-panel__footer {
+    flex: 0;
+    padding: 1rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--c--theme--colors--greyscale-200);
+}

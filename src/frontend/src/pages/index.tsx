@@ -4,7 +4,9 @@ import { useTranslation } from "react-i18next";
 import { Hero, HomeGutter, Footer, ProConnectButton } from "@gouvfr-lasuite/ui-kit";
 import { login, useAuth } from "@/features/auth";
 import { MainLayout } from "@/features/layouts/components/main";
-import { Header } from "@/features/layouts/components/header";
+import { LanguagePicker } from "@/features/layouts/components/main/language-picker";
+import { AppLayout } from "@/features/layouts/components/main/layout";
+import { LeftPanel } from "@/features/layouts/components/main/left-panel";
 
 export default function HomePage() {
 
@@ -18,7 +20,6 @@ export default function HomePage() {
 
   return (
     <div className="app__home">
-      <Header />
       <Head>
         <title>{t("app_title")}</title>
         <meta name="description" content={t("app_description")} />
@@ -27,7 +28,7 @@ export default function HomePage() {
       </Head>
       <HomeGutter>
         <Hero
-          logo={<img src="/images/app-icon.svg" alt="DocLogo" width={64} />}
+          logo={<img src="/images/app-icon.svg" alt="Messages Logo" width={64} />}
           title={t("home.title")}
           banner="/images/banner.png"
           subtitle={t("home.subtitle")}
@@ -41,6 +42,15 @@ export default function HomePage() {
 
 HomePage.getLayout = function getLayout(page: React.ReactElement) {
   return (
-      <GlobalLayout>{page}</GlobalLayout>
+      <GlobalLayout>
+        <AppLayout
+          hideLeftPanelOnDesktop
+          leftPanelContent={<LeftPanel />}
+          rightHeaderContent={<LanguagePicker />}
+          icon={<img src="/images/app-logo.svg" alt="logo" height={32} />}
+        >
+          {page}
+        </AppLayout>
+      </GlobalLayout>
   );
 };

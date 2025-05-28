@@ -6,12 +6,14 @@ import { Select } from "@openfun/cunningham-react";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/router";
 import { useSearchParams } from "next/navigation";
+import { useLayoutContext } from "../main";
 
 export const MailboxPanel = () => {
     const { t } = useTranslation();
     const router = useRouter();
     const searchParams = useSearchParams();
     const { selectedMailbox, mailboxes, queryStates } = useMailboxContext();
+    const { closeLeftPanel } = useLayoutContext();
 
     const getMailboxOptions = () => {
         if(!mailboxes) return [];
@@ -36,6 +38,7 @@ export const MailboxPanel = () => {
                         value={selectedMailbox.id}
                         label={t('mailbox')}
                         onChange={(event) => {
+                            closeLeftPanel();
                             router.push(`/mailbox/${event.target.value}?${searchParams.toString()}`);
                         }}
                         clearable={false}

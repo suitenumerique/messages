@@ -1,7 +1,6 @@
 .thread-attachment-list {
     border-top: 1px solid var(--c--theme--colors--greyscale-200);
     padding-top: var(--c--theme--spacings--base);
-    margin-bottom: var(--c--theme--spacings--4xl);
 }
 
 .thread-attachment-list__header {
@@ -20,7 +19,7 @@
     align-items: center;
     gap: var(--c--theme--spacings--base);
     background-color: var(--c--theme--colors--greyscale-050);
-    padding: var(--c--theme--spacings--base);
+    padding: var(--c--theme--spacings--xs) var(--c--theme--spacings--base);
     border-radius: var(--c--theme--spacings--3xs);
     border: 1px solid var(--c--theme--colors--greyscale-200);
     transition: opacity var(--c--theme--transitions--duration) var(--c--theme--transitions--ease-out);
