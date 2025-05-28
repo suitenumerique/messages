@@ -1,0 +1,18 @@
+@use "sass:map";
+@use "../cunningham-tokens" as *;
+
+/**
+    Returns the breakpoint value for the given breakpoint name.
+    @param {string} $breakpoint - The name of the breakpoint.
+    @return {px} The breakpoint value.
+*/
+@function breakpoint($breakpoint) {
+    $breakpoints-map: map.get($themes, "default", "theme", "breakpoints");
+    
+    @if not map.has-key($breakpoints-map, $breakpoint) {
+        $available-keys: map.keys($breakpoints-map);
+        @error "Invalid breakpoint '#{$breakpoint}'. Available breakpoints are: #{$available-keys}";
+    }
+    
+    @return map.get($breakpoints-map, $breakpoint);
+}

@@ -1,3 +1,5 @@
+@use "../../../../../styles/utils" as *;
+
 .c__main-layout {
   display: flex;
   flex-direction: column;
@@ -22,7 +24,7 @@
     height: calc(100dvh - var(--header-height));
     width: 300px;
     border-right: 1px solid var(--c--theme--colors--greyscale-200);
-    @media screen and (max-width: 1024px) {
+    @media screen and (max-width: breakpoint(tablet)) {
       width: 100dvw;
     }
   }

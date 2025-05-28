@@ -1,7 +1,4 @@
-@use "sass:map";
-@use "../styles/cunningham-tokens" as *;
-
-$tablet: map.get($themes, "default", "theme", "breakpoints", "tablet");
+@use "../styles/utils" as *;
 
 .app__home {
     .c__header {
@@ -28,7 +25,7 @@ $tablet: map.get($themes, "default", "theme", "breakpoints", "tablet");
         height: calc(100vh - var(--header-height));
     }
 
-    @media (max-width: $tablet) {
+    @media (max-width: breakpoint(tablet)) {
         .c__header {
         .drive__header__left {
             img:first-child {

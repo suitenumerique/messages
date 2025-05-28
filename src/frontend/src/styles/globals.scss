@@ -1,10 +1,12 @@
+@use "./utils" as *;
+
 :root {
   font-size: 14px;
   --header-height: 52px;
   --c--components--forms-checkbox--size: 24px;
 }
 
-@media screen and (max-width: 1024px) {
+@media screen and (max-width: breakpoint(tablet)) {
   :root {
     --header-height: 104px;
   }
