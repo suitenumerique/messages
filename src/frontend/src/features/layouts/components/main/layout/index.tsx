@@ -8,7 +8,6 @@ import {
   PanelResizeHandle,
 } from "react-resizable-panels";
 import { DropdownMenuOption,LeftPanel } from "@gouvfr-lasuite/ui-kit";
-import { RightPanel } from "../right-panel";
 import { useControllableState } from "../hooks/useControllableState";
 export type MainLayoutProps = {
   icon?: React.ReactNode;
@@ -35,9 +34,7 @@ export const AppLayout = ({
   children,
   hideLeftPanelOnDesktop = false,
   leftPanelContent,
-  rightPanelContent,
   enableResize = false,
-  rightPanelIsOpen = false,
   ...props
 }: PropsWithChildren<MainLayoutProps>) => {
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useControllableState(
@@ -125,16 +122,8 @@ export const AppLayout = ({
               )}
             </>
           )}
-          <Panel order={1}>
-            <div className="c__main-layout__content__center">
-              <div className="c__main-layout__content__center__children">
-                {children}
-              </div>
-
-              <RightPanel isOpen={rightPanelIsOpen}>
-                {rightPanelContent}
-              </RightPanel>
-            </div>
+          <Panel order={1} style={{ width: "100%" }}>
+              {children}
           </Panel>
         </PanelGroup>
       </div>

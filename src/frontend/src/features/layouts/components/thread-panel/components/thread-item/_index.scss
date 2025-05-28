@@ -71,6 +71,7 @@
     gap: var(--c--theme--spacings--2xs);
     line-height: 1;
     min-width: 0;
+    max-width: 100%;
 }
 
 .thread-item__senders,
@@ -80,6 +81,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 100%;
+    display: inline-block;
 }
 
 .thread-item__senders-container {

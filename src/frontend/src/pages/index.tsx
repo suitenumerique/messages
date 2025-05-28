@@ -1,5 +1,4 @@
 import { GlobalLayout } from "@/features/layouts/components/global/global-layout";
-import Head from "next/head";
 import { useTranslation } from "react-i18next";
 import { Hero, HomeGutter, Footer, ProConnectButton } from "@gouvfr-lasuite/ui-kit";
 import { login, useAuth } from "@/features/auth";
@@ -20,12 +19,6 @@ export default function HomePage() {
 
   return (
     <div className="app__home">
-      <Head>
-        <title>{t("app_title")}</title>
-        <meta name="description" content={t("app_description")} />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="icon" href="/favicon.png" />
-      </Head>
       <HomeGutter>
         <Hero
           logo={<img src="/images/app-icon.svg" alt="Messages Logo" width={64} />}

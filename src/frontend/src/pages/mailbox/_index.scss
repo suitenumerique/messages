@@ -6,7 +6,7 @@
 
 .thread-list-panel {
     flex: 1;
-    min-width: 280px;
+    min-width: min(280px, 100vw);
 }
 
 .thread__resize-handle {

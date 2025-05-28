@@ -50,14 +50,14 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
                 <meta http-equiv="Content-Security-Policy" content="${CSP}">
                 <base target="_blank">
                 <style>
-                body {
+                html, body {
                     margin: 0;
+                    padding: 0;
+                }
+                body {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
                     font-size: 14px;
-                    line-height: 1.5;
                     color: #24292e;
-                    overflow-y: hidden;
-                    padding-bottom: 1rem;
                 }
                 img { max-width: 100%; height: auto; }
                 a { color: #0366d6; text-decoration: none; }
@@ -89,7 +89,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
 
     const resizeIframe = useCallback(() => {
         if (iframeRef.current?.contentWindow) {
-          const height = iframeRef.current.contentWindow.document.body.getBoundingClientRect().height;
+          const height = iframeRef.current.contentWindow.document.documentElement.getBoundingClientRect().height;
           iframeRef.current.style.height = `${height}px`;
         }
       }, [iframeRef]);

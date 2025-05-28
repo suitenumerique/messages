@@ -64,7 +64,9 @@ export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
   return (
     <>
       <Head>
-      <title>{t("app_title")}</title>
+        <title>{t("app_title")}</title>
+        <meta name="description" content={t("app_description")} />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
         <link rel="icon" href="/images/favicon-light.svg" type="image/svg+xml" />
         <link
           rel="icon"
