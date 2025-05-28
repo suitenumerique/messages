@@ -1,3 +1,5 @@
+@use "../../../../styles/utils" as *;
+
 .thread-view {
     background-color: var(--c--theme--colors--greyscale-050);
     display: flex;
@@ -5,7 +7,7 @@
     max-height: 100%;
 }
 
-@media screen and (max-width: 1024px) {
+@media screen and (max-width: breakpoint(tablet)) {
     .thread-view {
         position: fixed;
         top: var(--header-height);

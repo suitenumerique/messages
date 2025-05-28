@@ -1,3 +1,5 @@
+@use "../../../../../styles/utils" as *;
+
 .c__header {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -22,7 +24,7 @@
     display: none;
     grid-area: toggle;
 
-    @media screen and (max-width: 1024px) {
+    @media screen and (max-width: breakpoint(tablet)) {
       display: block;
     }
 
@@ -50,7 +52,7 @@
     grid-area: right;
     justify-content: flex-end;
     &__language-picker {
-      @media screen and (max-width: 1024px) {
+      @media screen and (max-width: breakpoint(tablet)) {
         display: none;
       }
     }
