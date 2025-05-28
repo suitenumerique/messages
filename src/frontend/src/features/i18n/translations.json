@@ -39,7 +39,8 @@
         "mark_as_unread_from_here": "Mark as unread from here",
         "mark_all_as_read": "Mark all as read",
         "mark_all_as_unread": "Mark all as unread",
-        "delete_draft": "Delete draft"
+        "delete_draft": "Delete draft",
+        "download": "Download"
       },
       "tooltips": {
         "has_attachments": "This email has an attachment",
