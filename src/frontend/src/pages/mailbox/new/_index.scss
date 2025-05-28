@@ -6,3 +6,13 @@
     max-width: breakpoint("mobile");
     padding: var(--c--theme--spacings--base);
 }
+
+.new-message-form-container h1 {
+    margin-block: var(--c--theme--spacings--md) var(--c--theme--spacings--xl);
+}
+
+@media (max-width: breakpoint("tablet")) {
+    .new-message-form-container h1 {
+        margin-block: var(--c--theme--spacings--sm) var(--c--theme--spacings--md);
+    }
+}

@@ -5,6 +5,7 @@ import clsx from "clsx"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { useMemo } from "react"
+import { useLayoutContext } from "../../../main"
 
 // @TODO: replace with real data when folder will be ready
 type Folder = {
@@ -78,6 +79,7 @@ type FolderItemProps = {
 
 const FolderItem = ({ folder }: FolderItemProps) => {
     const { selectedMailbox } = useMailboxContext();
+    const { closeLeftPanel } = useLayoutContext();
     const searchParams = useSearchParams()
     const queryParams = useMemo(() => {
         const params = new URLSearchParams(Object.entries(folder.filter || {}));
@@ -111,6 +113,7 @@ const FolderItem = ({ folder }: FolderItemProps) => {
     return (
         <Link
             href={`/mailbox/${selectedMailbox?.id}?${queryParams}`}
+            onClick={closeLeftPanel}
             shallow={false}
             className={clsx("mailbox__item", {
                 "mailbox__item--active": isActive

@@ -4,9 +4,11 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import { Button } from "@openfun/cunningham-react";
 import { SearchFiltersForm } from "../search-filters-form";
+import { useLayoutContext } from "@/features/layouts/components/main";
 
 export const SearchInput = () => {
     const router = useRouter();
+    const { closeLeftPanel } = useLayoutContext();
     const searchParams = useSearchParams();
     const [value, setValue] = useState<string>(searchParams.get('search') || '');
     const [showFilters, setShowFilters] = useState<boolean>(false);
@@ -36,6 +38,7 @@ export const SearchInput = () => {
         }
 
         if (submit) {
+            closeLeftPanel();
             router.replace(url.pathname + url.search, undefined, { shallow: true });
         }
     }

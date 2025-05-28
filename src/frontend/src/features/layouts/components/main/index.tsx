@@ -1,13 +1,13 @@
 import { AppLayout } from "./layout";
-import { Header, HeaderRight } from "../header";
-import { MailboxPanel } from "@/features/layouts/components/mailbox-panel";
-import { PropsWithChildren } from "react";
+import { createContext, PropsWithChildren, useContext, useState } from "react";
 import { GlobalLayout } from "../global/global-layout";
 import AuthenticatedView from "./authenticated-view";
 import { MailboxProvider, useMailboxContext } from "@/features/providers/mailbox";
 import { NoMailbox } from "./no-mailbox";
+import { Header } from "./header";
 import { Toaster } from "@/features/ui/components/toaster";
 import { SentBoxProvider } from "@/features/providers/sent-box";
+import { LeftPanel } from "./left-panel";
 
 export const MainLayout = ({ children }: PropsWithChildren) => {
     return (
@@ -24,25 +24,47 @@ export const MainLayout = ({ children }: PropsWithChildren) => {
     )
 }
 
+const LayoutContext = createContext({
+    toggleLeftPanel: () => {},
+    closeLeftPanel: () => {},
+    openLeftPanel: () => {},
+})
+
 const MainLayoutContent = ({ children }: PropsWithChildren) => {
     const { mailboxes, queryStates } = useMailboxContext();
     const hasNoMailbox = queryStates.mailboxes.status === 'success' && mailboxes!.length === 0;
+    const [leftPanelOpen, setLeftPanelOpen] = useState(false);
 
-    return hasNoMailbox ? (
-        <>
-            <Header />
-            <NoMailbox />
-        </>
-    ) : (
-        <>
+    if (hasNoMailbox) {
+        return (
+            <>
+                <Header />
+                <NoMailbox />
+            </>
+        )
+    }
+
+    return (
+        <LayoutContext.Provider value={{
+            toggleLeftPanel: () => setLeftPanelOpen(!leftPanelOpen),
+            closeLeftPanel: () => setLeftPanelOpen(false),
+            openLeftPanel: () => setLeftPanelOpen(true),
+        }}>
             <AppLayout
                 enableResize
-                leftPanelContent={<MailboxPanel />}
+                isLeftPanelOpen={leftPanelOpen}
+                setIsLeftPanelOpen={setLeftPanelOpen}
+                leftPanelContent={<LeftPanel />}
                 icon={<img src="/images/app-logo.svg" alt="logo" height={32} />}
-                rightHeaderContent={<HeaderRight />}
             >
-            {children}
-        </AppLayout>
-        </>
+                {children}
+            </AppLayout>
+        </LayoutContext.Provider>
     )
+}
+
+export const useLayoutContext = () => {
+    const context = useContext(LayoutContext);
+    if (!context) throw new Error("useLayoutContext must be used within a LayoutContext.Provider");
+    return useContext(LayoutContext)
 }

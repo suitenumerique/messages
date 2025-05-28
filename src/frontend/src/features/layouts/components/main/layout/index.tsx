@@ -36,12 +36,8 @@ export const AppLayout = ({
   hideLeftPanelOnDesktop = false,
   leftPanelContent,
   rightPanelContent,
-  rightHeaderContent,
-
-  languages,
   enableResize = false,
   rightPanelIsOpen = false,
-
   ...props
 }: PropsWithChildren<MainLayoutProps>) => {
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useControllableState(
@@ -70,7 +66,8 @@ export const AppLayout = ({
       const max = Math.round(
         Math.min(calculateDefaultSize(450, isDesktop), 40)
       );
-      setMinPanelSize(isDesktop ? min : 0);
+
+      setMinPanelSize(isDesktop || min > max ? min : 0);
       if (enableResize) {
         setMaxPanelSize(max);
       } else {
@@ -102,9 +99,7 @@ export const AppLayout = ({
         <Header
           onTogglePanel={onTogglePanel}
           isPanelOpen={isLeftPanelOpen}
-          rightIcon={rightHeaderContent}
           leftIcon={icon}
-          languages={languages}
         />
       </div>
       <div className="c__main-layout__content">
@@ -114,8 +109,8 @@ export const AppLayout = ({
               <Panel
                 ref={ref}
                 order={0}
-                defaultSize={minPanelSize}
-                minSize={minPanelSize}
+                defaultSize={isDesktop ? minPanelSize : 0}
+                minSize={isDesktop ? minPanelSize : 0}
                 maxSize={maxPanelSize}
               >
                 <LeftPanel isOpen={showLeftPanel}>{leftPanelContent}</LeftPanel>

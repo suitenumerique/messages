@@ -1,6 +1,8 @@
 @use "../styles/utils" as *;
 
 .app__home {
+    background-color: var(--c--theme--colors--greyscale-000);
+
     .c__header {
         height: var(--header-height);
         min-height: var(--header-height);
