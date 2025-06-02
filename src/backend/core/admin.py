@@ -223,7 +223,7 @@ class MessageAdmin(admin.ModelAdmin):
                         # Process EML file synchronously
                         parsed_email = parse_email_message(file_content)
                         if deliver_inbound_message(
-                            str(recipient), parsed_email, file_content
+                            str(recipient), parsed_email, file_content, is_import=True,
                         ):
                             messages.success(
                                 request,
