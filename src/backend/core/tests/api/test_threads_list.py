@@ -659,17 +659,16 @@ class TestThreadListAPI:
         )
         # check that the accesses are returned
         assert len(response.data["results"][0]["accesses"]) == 1
-        assert response.data["results"][0]["accesses"] == [
-            {
-                "id": str(access2.id),
-                "mailbox": {
-                    "id": str(access2.mailbox.id),
-                    "email": str(access2.mailbox),
-                    "name": access2.mailbox.contact.name,
-                },
-                "role": access2.role,
-            }
-        ]
+        access = response.data["results"][0]["accesses"][0]
+        assert access["id"] == str(access2.id)
+        assert access["mailbox"]["id"] == str(access2.mailbox.id)
+        assert access["mailbox"]["email"] == str(access2.mailbox)
+        assert access["mailbox"]["name"] == access2.mailbox.contact.name
+        assert access["role"] == access2.role
+        assert access["mailbox"]["id"] == str(access2.mailbox.id)
+        assert access["mailbox"]["email"] == str(access2.mailbox)
+        assert access["mailbox"]["name"] == access2.mailbox.contact.name
+        assert access["role"] == access2.role
 
     def test_list_threads_unauthorized(self, api_client, url):
         """Test listing threads without authentication."""

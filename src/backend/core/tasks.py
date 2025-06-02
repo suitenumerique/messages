@@ -1,6 +1,6 @@
 """Core tasks."""
 
-# pylint: disable=unused-argument, broad-exception-raised
+# pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught
 import imaplib
 from typing import Any, Dict, List, Tuple
 

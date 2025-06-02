@@ -249,6 +249,10 @@ back-poetry-outdated: ## show outdated dependencies
 	@$(COMPOSE) run --rm --build backend-poetry poetry show --outdated
 .PHONY: back-poetry-outdated
 
+collectstatic: ## collect static files
+	@$(MANAGE) collectstatic --noinput
+.PHONY: collectstatic
+
 shell: ## connect to django shell
 	@$(MANAGE) shell #_plus
 .PHONY: dbshell

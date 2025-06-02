@@ -34,6 +34,8 @@ jobs:
         run: |
           mkdir -p data/media data/static
           chmod -R 777 data
+      - name: Collect static files
+        run: make collectstatic
       - name: Run backend tests
         run: make test-back
 

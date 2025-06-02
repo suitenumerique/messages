@@ -1,5 +1,5 @@
 """Tests for message import functionality in the admin interface."""
-# pylint: disable=redefined-outer-name, unused-argument
+# pylint: disable=redefined-outer-name, unused-argument, no-value-for-parameter
 
 import datetime
 

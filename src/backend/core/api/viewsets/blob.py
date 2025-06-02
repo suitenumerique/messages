@@ -36,7 +36,10 @@ class BlobViewSet(ViewSet):
     parser_classes = [MultiPartParser]
 
     @extend_schema(
-        description="Upload binary data and create a Blob record.\n\nThis endpoint accepts multipart/form-data containing a file and returns a\nblob ID and other metadata. The blob is associated with the specified mailbox.",
+        description="""Upload binary data and create a Blob record.
+        This endpoint accepts multipart/form-data containing a file and returns a
+        blob ID and other metadata. The blob is associated with the specified mailbox.
+        """,
         parameters=[
             OpenApiParameter(
                 name="mailbox_id",
