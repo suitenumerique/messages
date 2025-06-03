@@ -47,7 +47,9 @@
         "mark_as_important": "Mark as important",
         "more_options": "More options",
         "reply": "Reply",
-        "forward": "Forward"
+        "forward": "Forward",
+        "add_attachment_from_drive": "Add attachment from Drive",
+        "upload_to_drive": "Upload to Drive"
       },
       "thread_message": {
         "from": "From: ",
@@ -61,7 +63,8 @@
       "attachments": {
         "counter_zero": "No attachments",
         "counter_one": "{{count}} attachment",
-        "counter_other": "{{count}} attachments"
+        "counter_other": "{{count}} attachments",
+        "upload_to_drive_success": "Attachment uploaded to Drive"
       },
       "message_form": {
         "helper_text": {
@@ -194,7 +197,9 @@
       "tooltips": {
         "has_attachments": "Cette email contient une pièce jointe",
         "more_options": "Plus d'options",
-        "reply": "Répondre"
+        "reply": "Répondre",
+        "add_attachment_from_drive": "Ajouter un pièce jointe depuis Drive",
+        "upload_to_drive": "Sauvegarder dans Drive"
       },
       "thread_message": {
         "from": "De : ",
@@ -208,7 +213,8 @@
       "attachments": {
         "counter_zero": "Aucune pièce jointe",
         "counter_one": "{{count}} pièce jointe",
-        "counter_other": "{{count}} pièces jointes"
+        "counter_other": "{{count}} pièces jointes",
+        "upload_to_drive_success": "Pièce jointe sauvegardée dans votre Drive"
       },
       "message_form": {
         "helper_text": {
