@@ -107,3 +107,16 @@
     grid-template-columns: repeat(auto-fill, minmax(min(350px, 100%), 1fr));
     gap: 10px;
 }
+
+.alert.alert--warning {
+    padding: var(--c--theme--spacings--xs);
+    border-radius: var(--c--components--forms-input--border-radius);
+    border-width: var(--c--components--forms-input--border-width);
+    border-color: var(--c--components--forms-input--border-color);
+    border-style: var(--c--components--forms-input--border-style);
+    background-color: var(--c--theme--colors--warning-200);
+    color: var(--c--theme--colors--warning-600);
+    border: thin solid var(--c--theme--colors--warning-600);
+    width: 100%;
+}
+

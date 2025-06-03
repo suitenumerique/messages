@@ -66,6 +66,12 @@
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-musl": "4.40.2",
-    "@rollup/rollup-linux-x64-gnu": "4.40.2"
+    "@rollup/rollup-linux-x64-gnu": "4.40.2",
+    "@next/swc-linux-arm64-musl": "15.3.2",
+    "@next/swc-linux-x64-gnu": "15.3.2"
+  },
+  "resolutions": {
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
   }
 }

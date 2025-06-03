@@ -1,5 +1,5 @@
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button } from "@openfun/cunningham-react";
+import { Alert,Button, VariantType } from "@openfun/cunningham-react";
 import { clsx } from "clsx";
 import { useEffect, useMemo, useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
@@ -16,6 +16,7 @@ import { toast } from "react-toastify";
 import { useSentBox } from "@/features/providers/sent-box";
 import { useRouter } from "next/router";
 import { AttachmentUploader } from "./attachment-uploader";
+import { useAlbert } from "@/hooks/use-albert";
 
 interface MessageFormProps {
     // For reply mode
@@ -81,6 +82,8 @@ export const MessageForm = ({
 }: MessageFormProps) => {
     const { t } = useTranslation();
     const router = useRouter();
+    const { checkMissingAttachments } = useAlbert();
+    const [hasMissingAttachments, setHasMissingAttachments] = useState(false);
     const [draft, setDraft] = useState<Message | undefined>(draftMessage);
     const [showCCField, setShowCCField] = useState((draftMessage?.cc?.length ?? 0) > 0);
     const [showBCCField, setShowBCCField] = useState((draftMessage?.bcc?.length ?? 0) > 0);
@@ -314,6 +317,26 @@ export const MessageForm = ({
         });
     };
 
+    const checkAttachments = async () => {
+        const driveAttachments = form.getValues('driveAttachments') || [];
+        const attachments = form.getValues('attachments') || [];
+        const hasAttachments = [...driveAttachments, ...attachments].length > 0;
+        const content = form.getValues('messageEditorHtml');
+        if (!content || content === '<div data-id="react-email-markdown"></div>' || hasAttachments) {
+            setHasMissingAttachments(false);
+            return;
+        }
+
+        const containMissingAttachments = await checkMissingAttachments(content);
+
+        if (containMissingAttachments && !hasAttachments) {
+            setHasMissingAttachments(true);
+        }
+        else if (!containMissingAttachments || hasAttachments) {
+            setHasMissingAttachments(false);
+        }
+    }
+
     /**
      * Prevent the Enter key press to trigger onClick on input children (like file input)
      */
@@ -331,6 +354,7 @@ export const MessageForm = ({
     useEffect(() => {
         if (draft) {
             form.reset(undefined, { keepSubmitCount: true, keepDirty: false, keepValues: true, keepDefaultValues: false });
+            checkAttachments();
         }
     }, [draft]);
 
@@ -353,7 +377,7 @@ export const MessageForm = ({
             <form
                 className="message-form"
                 onSubmit={form.handleSubmit(handleSubmit)}
-                onBlur={form.handleSubmit(saveDraft, console.log)}
+                onBlur={form.handleSubmit(saveDraft)}
                 onKeyDown={handleKeyDown}
             >
                 <div className={clsx("form-field-row", {'form-field-row--hidden': hideFromField})}>
@@ -424,6 +448,16 @@ export const MessageForm = ({
                         text={form.formState.errors?.messageEditorDraft?.message}
                     />
                 </div>
+
+                {
+                    hasMissingAttachments === true && (
+                        <div className="form-field-row">
+                            <div className="alert alert--warning">
+                                <p>{t('message_form.error.missing_attachments')}</p>
+                            </div>
+                        </div>
+                    )
+                }
 
                 <AttachmentUploader initialAttachments={[...(draft?.attachments ?? []), ...(form.getValues('driveAttachments') ?? [])]} onChange={form.handleSubmit(saveDraft)} />
 
