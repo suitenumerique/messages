@@ -417,3 +417,66 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = fields
+
+
+class ImportBaseSerializer(serializers.Serializer):
+    """Base serializer for import actions that disables create and update."""
+
+    def create(self, validated_data):
+        """Do not allow creating instances from this serializer."""
+        raise RuntimeError(f"{self.__class__.__name__} does not support create method")
+
+    def update(self, instance, validated_data):
+        """Do not allow updating instances from this serializer."""
+        raise RuntimeError(f"{self.__class__.__name__} does not support update method")
+
+
+class ImportFileSerializer(ImportBaseSerializer):
+    """Serializer for importing EML or MBOX files via API."""
+
+    import_file = serializers.FileField(
+        help_text="Select an EML or MBOX file to import",
+        required=True,
+    )
+    recipient = serializers.UUIDField(
+        help_text="UUID of the recipient mailbox",
+        required=True,
+    )
+
+    def validate_import_file(self, file):
+        """Validate the import file."""
+        if not file.name.endswith((".eml", ".mbox")):
+            raise serializers.ValidationError(
+                "File must be either an EML (.eml) or MBOX (.mbox) file"
+            )
+        return file
+
+
+class ImportIMAPSerializer(ImportBaseSerializer):
+    """Serializer for importing messages from IMAP server via API."""
+
+    recipient = serializers.UUIDField(
+        help_text="UUID of the recipient mailbox", required=True
+    )
+    imap_server = serializers.CharField(help_text="IMAP server hostname", required=True)
+    imap_port = serializers.IntegerField(
+        help_text="IMAP server port", required=True, min_value=0
+    )
+    username = serializers.EmailField(
+        help_text="Email address for IMAP login", required=True
+    )
+    password = serializers.CharField(
+        help_text="IMAP password", required=True, write_only=True
+    )
+    use_ssl = serializers.BooleanField(
+        help_text="Use SSL for IMAP connection", required=False, default=True
+    )
+    folder = serializers.CharField(
+        help_text="IMAP folder to import from", required=False, default="INBOX"
+    )
+    max_messages = serializers.IntegerField(
+        help_text="Maximum number of messages to import (0 for all)",
+        required=False,
+        default=0,
+        min_value=0,
+    )

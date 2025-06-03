@@ -40,14 +40,14 @@ def mailbox(db, domain):
 @pytest.fixture
 def eml_file():
     """Get test eml file from test data."""
-    with open("core/tests/import/data/message.eml", "rb") as f:
+    with open("core/tests/resources/message.eml", "rb") as f:
         return f.read()
 
 
 @pytest.fixture
 def mbox_file():
     """Get test mbox file from test data."""
-    with open("core/tests/import/data/messages.mbox", "rb") as f:
+    with open("core/tests/resources/messages.mbox", "rb") as f:
         return f.read()
 
 
@@ -104,8 +104,8 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
     assert message.sender.email == "sender@example.com"
     assert message.recipients.get().contact.email == "recipient@example.com"
     assert message.sent_at == message.thread.messaged_at
-    assert message.sent_at == datetime.datetime(
-        2025, 5, 26, 20, 13, 44, tzinfo=datetime.timezone.utc,
+    assert message.sent_at == (
+        datetime.datetime(2025, 5, 26, 20, 13, 44, tzinfo=datetime.timezone.utc)
     )
 
 
@@ -132,9 +132,9 @@ def test_process_mbox_file_task(mailbox, mbox_file):
     # Check created_at dates match between messages and threads
     assert messages[0].sent_at == messages[0].thread.messaged_at
     assert messages[2].sent_at == messages[1].thread.messaged_at
-    assert messages[2].sent_at == datetime.datetime(
-        2025, 5, 26, 20, 18, 4, tzinfo=datetime.timezone.utc,
-        )
+    assert messages[2].sent_at == (
+        datetime.datetime(2025, 5, 26, 20, 18, 4, tzinfo=datetime.timezone.utc)
+    )
 
     # Check messages
     assert messages[0].subject == "Mon mail avec joli pj"

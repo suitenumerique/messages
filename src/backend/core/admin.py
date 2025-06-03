@@ -1,15 +1,13 @@
 """Admin classes and registrations for core app."""
 
-from django.contrib import admin, messages
+from django.contrib import admin
 from django.contrib.auth import admin as auth_admin
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.urls import path
 from django.utils.translation import gettext_lazy as _
 
-from core.mda.inbound import deliver_inbound_message
-from core.mda.rfc5322 import parse_email_message
-from core.tasks import import_imap_messages_task, process_mbox_file_task
+from core.services.import_service import ImportService
 
 from . import models
 from .forms import IMAPImportForm, MessageImportForm
@@ -208,36 +206,14 @@ class MessageAdmin(admin.ModelAdmin):
             if form.is_valid():
                 import_file = request.FILES["import_file"]
                 recipient = form.cleaned_data["recipient"]
-                try:
-                    file_content = import_file.read()
-
-                    if import_file.name.endswith(".mbox"):
-                        # Process MBOX file asynchronously
-                        process_mbox_file_task.delay(file_content, str(recipient.id))
-                        messages.info(
-                            request,
-                            f"Started processing MBOX file: {import_file.name} for recipient {recipient}. "
-                            "This may take a while. You can check the status in the Celery task monitor.",
-                        )
-                    else:
-                        # Process EML file synchronously
-                        parsed_email = parse_email_message(file_content)
-                        if deliver_inbound_message(
-                            str(recipient), parsed_email, file_content, is_import=True,
-                        ):
-                            messages.success(
-                                request,
-                                f"Successfully processed EML file: {import_file.name} for recipient {recipient}",
-                            )
-                        else:
-                            messages.error(
-                                request,
-                                f"Failed to process EML file: {import_file.name} for recipient {recipient}",
-                            )
-
+                success, _response_data = ImportService.import_file(
+                    file=import_file,
+                    recipient=recipient,
+                    user=request.user,
+                    request=request,
+                )
+                if success:
                     return redirect("..")
-                except Exception as e:  # noqa: BLE001 pylint: disable=broad-except
-                    messages.error(request, f"Error processing file: {str(e)}")
         else:
             form = MessageImportForm()
 
@@ -256,26 +232,20 @@ class MessageAdmin(admin.ModelAdmin):
         if request.method == "POST":
             form = IMAPImportForm(request.POST)
             if form.is_valid():
-                try:
-                    # Start the import task
-                    import_imap_messages_task.delay(
-                        imap_server=form.cleaned_data["imap_server"],
-                        imap_port=form.cleaned_data["imap_port"],
-                        username=form.cleaned_data["username"],
-                        password=form.cleaned_data["password"],
-                        use_ssl=form.cleaned_data["use_ssl"],
-                        folder=form.cleaned_data["folder"],
-                        max_messages=form.cleaned_data["max_messages"],
-                        recipient_id=str(form.cleaned_data["recipient"].id),
-                    )
-                    messages.info(
-                        request,
-                        f"Started importing messages from IMAP server for recipient {form.cleaned_data['recipient']}. "
-                        "This may take a while. You can check the status in the Celery task monitor.",
-                    )
+                success, _response_data = ImportService.import_imap(
+                    imap_server=form.cleaned_data["imap_server"],
+                    imap_port=form.cleaned_data["imap_port"],
+                    username=form.cleaned_data["username"],
+                    password=form.cleaned_data["password"],
+                    recipient=form.cleaned_data["recipient"],
+                    user=request.user,
+                    use_ssl=form.cleaned_data["use_ssl"],
+                    folder=form.cleaned_data["folder"],
+                    max_messages=form.cleaned_data["max_messages"],
+                    request=request,
+                )
+                if success:
                     return redirect("..")
-                except Exception as e:  # noqa: BLE001 pylint: disable=broad-except
-                    messages.error(request, f"Error starting IMAP import: {str(e)}")
         else:
             form = IMAPImportForm()
 

@@ -7,8 +7,8 @@ References: <CAO3HoF2_KueH7UoLUpYAFwqe+bVY-9NL+M8R4cVukVZmQeS6Qg@mail.gmail.com>
 In-Reply-To: <CAO3HoF2_KueH7UoLUpYAFwqe+bVY-9NL+M8R4cVukVZmQeS6Qg@mail.gmail.com>
 Message-ID: <CAKo5_uYQh508s7ixKd+0nMa-BQG6B3YPMSwjKXsHTFiZjnQ3Ag@mail.gmail.com>
 Subject: Re: Je t'envoie encore un message...
-From: Jean Testeur <jean.testeur2024@gmail.com>
-To: "julie.testeuse Julie Testeuse" <julietesteuse24@gmail.com>
+From: Jean Recipient <jean.recipient@example.com>
+To: "julie.sender Julie Sender" <julie.sender@example.com>
 Content-Type: multipart/alternative; boundary="0000000000003e487306360fa54e"
 
 --0000000000003e487306360fa54e
@@ -17,8 +17,8 @@ Content-Transfer-Encoding: quoted-printable
 
 Yes !
 
-On Mon, May 26, 2025 at 10:15=E2=80=AFPM julie.testeuse Julie Testeuse <
-julietesteuse24@gmail.com> wrote:
+On Mon, May 26, 2025 at 10:15=E2=80=AFPM julie.sender Julie Sender <
+julie.sender@example.com> wrote:
 
 > Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut hendrerit,
 > ante ac facilisis convallis, leo augue volutpat mi, ac suscipit velit nun=
@@ -55,8 +55,8 @@ Content-Transfer-Encoding: quoted-printable
 
 <div dir=3D"ltr">Yes !</div><br><div class=3D"gmail_quote gmail_quote_conta=
 iner"><div dir=3D"ltr" class=3D"gmail_attr">On Mon, May 26, 2025 at 10:15=
-=E2=80=AFPM julie.testeuse Julie Testeuse &lt;<a href=3D"mailto:julietesteu=
-se24@gmail.com">julietesteuse24@gmail.com</a>&gt; wrote:<br></div><blockquo=
+=E2=80=AFPM julie.sender Julie Sender &lt;<a href=3D"mailto:julietesteu=
+se24@gmail.com">julie.sender@example.com</a>&gt; wrote:<br></div><blockquo=
 te class=3D"gmail_quote" style=3D"margin:0px 0px 0px 0.8ex;border-left:1px =
 solid rgb(204,204,204);padding-left:1ex"><div dir=3D"ltr"><div dir=3D"ltr">=
 <p style=3D"margin:0px 0px 15px;padding:0px;text-align:justify;color:rgb(0,=
@@ -93,7 +93,7 @@ Duis interdum mi ac lectus faucibus, nec ullamcorper elit auctor.</p></div>=
 From 1833215463084471980@xxx Mon May 26 20:15:03 +0000 2025
 X-GM-THRID: 1833215463084471980
 X-Gmail-Labels: Inbox,Opened
-Delivered-To: jean.testeur2024@gmail.com
+Delivered-To: jean.recipient@example.com
 Received: by 2002:a05:6022:73a2:b0:70:dff8:2c7c with SMTP id bl34csp5498892lab;
         Mon, 26 May 2025 13:15:03 -0700 (PDT)
 X-Received: by 2002:a05:6122:4b08:b0:52b:789:cf93 with SMTP id 71dfb90a1353d-52f2c4eac37mr7993026e0c.5.1748290503283;
@@ -119,19 +119,19 @@ ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc
         dara=google.com
 ARC-Authentication-Results: i=1; mx.google.com;
        dkim=pass header.i=@gmail.com header.s=20230601 header.b="Eorro/th";
-       spf=pass (google.com: domain of julietesteuse24@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=julietesteuse24@gmail.com;
+       spf=pass (google.com: domain of julie.sender@example.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=julie.sender@example.com;
        dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com;
        dara=pass header.i=@gmail.com
-Return-Path: <julietesteuse24@gmail.com>
+Return-Path: <julie.sender@example.com>
 Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
         by mx.google.com with SMTPS id 71dfb90a1353d-52dba91b125sor2044419e0c.1.2025.05.26.13.15.03
-        for <jean.testeur2024@gmail.com>
+        for <jean.recipient@example.com>
         (Google Transport Security);
         Mon, 26 May 2025 13:15:03 -0700 (PDT)
-Received-SPF: pass (google.com: domain of julietesteuse24@gmail.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+Received-SPF: pass (google.com: domain of julie.sender@example.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
 Authentication-Results: mx.google.com;
        dkim=pass header.i=@gmail.com header.s=20230601 header.b="Eorro/th";
-       spf=pass (google.com: domain of julietesteuse24@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=julietesteuse24@gmail.com;
+       spf=pass (google.com: domain of julie.sender@example.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=julie.sender@example.com;
        dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com;
        dara=pass header.i=@gmail.com
 DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
@@ -167,12 +167,12 @@ X-Received: by 2002:a05:6122:6598:b0:525:aecb:6306 with SMTP id
  71dfb90a1353d-52f2c5b4127mr8111130e0c.11.1748290502704; Mon, 26 May 2025
  13:15:02 -0700 (PDT)
 MIME-Version: 1.0
-From: "julie.testeuse Julie Testeuse" <julietesteuse24@gmail.com>
+From: "julie.sender Julie Sender" <julie.sender@example.com>
 Date: Mon, 26 May 2025 22:14:50 +0200
 X-Gm-Features: AX0GCFvfcEjGMkMu2__KspyXeWt0-2S3k7PS7Z-0u35-bZQd9jigZxsTb8ZRuxs
 Message-ID: <CAO3HoF2_KueH7UoLUpYAFwqe+bVY-9NL+M8R4cVukVZmQeS6Qg@mail.gmail.com>
 Subject: Je t'envoie encore un message...
-To: "jean.testeur2024@gmail.com" <jean.testeur2024@gmail.com>
+To: "jean.recipient@example.com" <jean.recipient@example.com>
 Content-Type: multipart/alternative; boundary="00000000000060c70906360f9ac0"
 
 --00000000000060c70906360f9ac0
@@ -231,7 +231,7 @@ Duis interdum mi ac lectus faucibus, nec ullamcorper elit auctor.</p></div><br><
 From 1833215398752581980@xxx Mon May 26 20:14:02 +0000 2025
 X-GM-THRID: 1833215398752581980
 X-Gmail-Labels: Inbox,Opened
-Delivered-To: jean.testeur2024@gmail.com
+Delivered-To: jean.recipient@example.com
 Received: by 2002:a05:6022:73a2:b0:70:dff8:2c7c with SMTP id bl34csp5498424lab;
         Mon, 26 May 2025 13:14:02 -0700 (PDT)
 X-Received: by 2002:a05:6102:3f49:b0:4df:9635:210d with SMTP id ada2fe7eead31-4e42418db0cmr8521541137.23.1748290442137;
@@ -257,19 +257,19 @@ ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc
         dara=google.com
 ARC-Authentication-Results: i=1; mx.google.com;
        dkim=pass header.i=@gmail.com header.s=20230601 header.b=OcynD1f0;
-       spf=pass (google.com: domain of julietesteuse24@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=julietesteuse24@gmail.com;
+       spf=pass (google.com: domain of julie.sender@example.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=julie.sender@example.com;
        dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com;
        dara=pass header.i=@gmail.com
-Return-Path: <julietesteuse24@gmail.com>
+Return-Path: <julie.sender@example.com>
 Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
         by mx.google.com with SMTPS id ada2fe7eead31-4dfa667e91asor9431310137.4.2025.05.26.13.13.58
-        for <jean.testeur2024@gmail.com>
+        for <jean.recipient@example.com>
         (Google Transport Security);
         Mon, 26 May 2025 13:14:02 -0700 (PDT)
-Received-SPF: pass (google.com: domain of julietesteuse24@gmail.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+Received-SPF: pass (google.com: domain of julie.sender@example.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
 Authentication-Results: mx.google.com;
        dkim=pass header.i=@gmail.com header.s=20230601 header.b=OcynD1f0;
-       spf=pass (google.com: domain of julietesteuse24@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=julietesteuse24@gmail.com;
+       spf=pass (google.com: domain of julie.sender@example.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=julie.sender@example.com;
        dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com;
        dara=pass header.i=@gmail.com
 DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
@@ -305,12 +305,12 @@ X-Received: by 2002:a05:6102:3ca6:b0:4c1:9b88:5c30 with SMTP id
  ada2fe7eead31-4e424160a7fmr8652972137.19.1748290438134; Mon, 26 May 2025
  13:13:58 -0700 (PDT)
 MIME-Version: 1.0
-From: "julie.testeuse Julie Testeuse" <julietesteuse24@gmail.com>
+From: "julie.sender Julie Sender" <julie.sender@example.com>
 Date: Mon, 26 May 2025 22:13:44 +0200
 X-Gm-Features: AX0GCFseeK4dt2fcU9VJxBSK4EPTTA8B5yK7SxAhfTm5BVq1F8vrA_lzCBVUayU
 Message-ID: <CAO3HoF12fTOw3QP_XN-NU_Xs91cFuxbc0dh5Ki7oa0vCYP-ErQ@mail.gmail.com>
 Subject: Mon mail avec joli pj
-To: jean.testeur2024@gmail.com
+To: jean.recipient@example.com
 Content-Type: multipart/mixed; boundary="00000000000087a30506360f9669"
 
 --00000000000087a30506360f9669

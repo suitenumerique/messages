@@ -9,6 +9,7 @@ from core.api.viewsets.blob import BlobViewSet
 from core.api.viewsets.config import ConfigView
 from core.api.viewsets.draft import DraftMessageView
 from core.api.viewsets.flag import ChangeFlagViewSet
+from core.api.viewsets.import_message import ImportViewSet
 from core.api.viewsets.mailbox import MailboxViewSet
 from core.api.viewsets.mailbox_access import MailboxAccessViewSet
 
@@ -104,5 +105,15 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/tasks/<str:task_id>/",
         TaskDetailView.as_view(),
         name="task-detail",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/import/file/",
+        ImportViewSet.as_view({"post": "import_file"}),
+        name="import-file",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/import/imap/",
+        ImportViewSet.as_view({"post": "import_imap"}),
+        name="import-imap",
     ),
 ]
