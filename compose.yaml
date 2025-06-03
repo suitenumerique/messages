@@ -217,6 +217,7 @@ services:
     command: ["npm", "run", "dev"]
     volumes:
       - ./src/frontend/:/home/frontend/
+      - ../drive/src/frontend/packages/sdk:/home/drive/sdk
     ports:
       - "3000:3000"
 
@@ -243,7 +244,7 @@ services:
 
   # frontend:
   #   user: "${DOCKER_USER:-1000}"
-  #   build: 
+  #   build:
   #     context: .
   #     dockerfile: ./src/frontend/Dockerfile
   #     target: frontend-production
