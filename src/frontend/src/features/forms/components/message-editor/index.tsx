@@ -1,6 +1,8 @@
 "use client";
 import * as locales from '@blocknote/core/locales';
 import { BlockNoteView } from "@blocknote/mantine";
+import { en as aiEn, fr as aiFr } from "@blocknote/xl-ai/locales";
+import { AIMenuController, createAIExtension } from "@blocknote/xl-ai";
 import "@blocknote/mantine/style.css";
 import { useCreateBlockNote } from "@blocknote/react";
 import { useTranslation } from "react-i18next";
@@ -9,7 +11,9 @@ import MailHelper from '@/features/utils/mail-helper';
 import MessageEditorToolbar from './toolbar';
 import { Field, FieldProps } from '@openfun/cunningham-react';
 import { useFormContext } from 'react-hook-form';
+import { model } from './ai';
 import { useEffect } from 'react';
+
 
 type MessageEditorProps = FieldProps & {
     blockNoteOptions?: Partial<BlockNoteEditorOptions<BlockSchema, InlineContentSchema, StyleSchema>>
@@ -32,13 +36,17 @@ const MessageEditor = ({ blockNoteOptions, defaultValue, ...props }: MessageEdit
         tabBehavior: "prefer-navigate-ui",
         trailingBlock: false,
         initialContent: defaultValue ? JSON.parse(defaultValue) : undefined,
+        extensions: [
+            createAIExtension({ model }),
+        ],
         dictionary: {
             ...locales[i18n.language as keyof typeof locales],
             placeholders: {
                 ...locales[i18n.language as keyof typeof locales].placeholders,
                 emptyDocument: t('message_editor.start_typing'),
                 default: t('message_editor.start_typing'),
-            }
+            },
+            ai: i18n.language === 'fr' ? aiFr : aiEn,
         },
         ...blockNoteOptions,
     }, [i18n.resolvedLanguage]);
@@ -69,6 +77,7 @@ const MessageEditor = ({ blockNoteOptions, defaultValue, ...props }: MessageEdit
                 formattingToolbar={false}
                 onChange={handleChange}
             >
+                <AIMenuController />
                 <MessageEditorToolbar />
             </BlockNoteView>
             <input {...form.register("messageEditorHtml")} type="hidden" />
