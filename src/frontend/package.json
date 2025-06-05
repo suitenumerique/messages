@@ -19,11 +19,11 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@blocknote/core": "0.31.1",
-    "@blocknote/mantine": "0.31.1",
-    "@blocknote/react": "0.31.1",
-    "@gouvfr-lasuite/ui-kit": "0.7.0",
+    "@blocknote/core": "0.32.0-hackdays.0",
+    "@blocknote/mantine": "0.32.0-hackdays.0",
+    "@blocknote/react": "0.32.0-hackdays.0",
     "@gouvfr-lasuite/drive-sdk": "file:///home/drive/sdk",
+    "@gouvfr-lasuite/ui-kit": "0.7.0",
     "@hookform/resolvers": "5.0.1",
     "@openfun/cunningham-react": "3.0.0",
     "@react-email/components": "0.0.41",
@@ -37,8 +37,8 @@
     "i18next": "25.2.1",
     "next": "15.3.2",
     "pretty-bytes": "7.0.0",
-    "react": "19.0.0",
-    "react-dom": "19.0.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
     "react-dropzone": "14.3.8",
     "react-email": "4.0.15",
     "react-hook-form": "7.56.4",
@@ -49,6 +49,7 @@
     "zod": "3.25.28"
   },
   "devDependencies": {
+    "@blocknote/xl-ai": "^0.32.0-hackdays.0",
     "@eslint/eslintrc": "3.3.1",
     "@tanstack/eslint-plugin-query": "5.74.7",
     "@types/node": "22.15.21",
@@ -63,5 +64,9 @@
     "prettier": "3.5.3",
     "typescript": "5.8.3",
     "vitest": "3.1.4"
+  },
+  "resolutions": {
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
   }
 }
