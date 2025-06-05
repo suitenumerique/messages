@@ -8,17 +8,20 @@ import { Header } from "./header";
 import { Toaster } from "@/features/ui/components/toaster";
 import { SentBoxProvider } from "@/features/providers/sent-box";
 import { LeftPanel } from "./left-panel";
+import { ModalStoreProvider } from "@/features/providers/modal-store";
 
 export const MainLayout = ({ children }: PropsWithChildren) => {
     return (
         <GlobalLayout>
             <AuthenticatedView>
+                <ModalStoreProvider>
                 <MailboxProvider>
                     <SentBoxProvider>
                         <MainLayoutContent>{children}</MainLayoutContent>
                         <Toaster />
                     </SentBoxProvider>
-                </MailboxProvider>
+                    </MailboxProvider>
+                </ModalStoreProvider>
             </AuthenticatedView>
         </GlobalLayout>
     )
