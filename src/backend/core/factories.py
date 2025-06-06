@@ -180,3 +180,23 @@ class MessageRecipientFactory(factory.django.DjangoModelFactory):
     type = factory.fuzzy.FuzzyChoice(
         [type[0] for type in models.MessageRecipientTypeChoices.choices]
     )
+
+
+class LabelFactory(factory.django.DjangoModelFactory):
+    """Factory for creating test labels."""
+
+    name = factory.Sequence(lambda n: f"Label {n}")
+    mailbox = factory.SubFactory(MailboxFactory)
+
+    class Meta:
+        model = models.Label
+
+    @factory.post_generation
+    def threads(self, create, extracted, **kwargs):
+        """Add threads to the label if provided."""
+        if not create or not extracted:
+            return
+
+        if isinstance(extracted, (list, tuple)):
+            for thread in extracted:
+                self.threads.add(thread)

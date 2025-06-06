@@ -1,6 +1,6 @@
 """Client serializers for the messages core app."""
 
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, OuterRef, Q
 
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -141,6 +141,7 @@ class ThreadSerializer(serializers.ModelSerializer):
     sender_names = serializers.ListField(child=serializers.CharField(), read_only=True)
     user_role = serializers.SerializerMethodField()
     accesses = serializers.SerializerMethodField()
+    labels = serializers.SerializerMethodField()
 
     @extend_schema_field(ThreadAccessDetailSerializer(many=True))
     def get_accesses(self, instance):
@@ -170,6 +171,22 @@ class ThreadSerializer(serializers.ModelSerializer):
                     return None
         return None
 
+    def get_labels(self, instance):
+        """Get labels for the thread, filtered by user's mailbox access."""
+        request = self.context.get("request")
+        if not request or not hasattr(request, "user"):
+            return []
+
+        labels = instance.labels.filter(
+            Exists(
+                models.MailboxAccess.objects.filter(
+                    mailbox=OuterRef("mailbox"),
+                    user=request.user,
+                )
+            )
+        ).distinct()
+        return ThreadLabelSerializer(labels, many=True).data
+
     class Meta:
         model = models.Thread
         fields = [
@@ -188,6 +205,7 @@ class ThreadSerializer(serializers.ModelSerializer):
             "updated_at",
             "user_role",
             "accesses",
+            "labels",
         ]
         read_only_fields = fields  # Mark all as read-only for safety
 
@@ -480,3 +498,12 @@ class ImportIMAPSerializer(ImportBaseSerializer):
         default=0,
         min_value=0,
     )
+
+
+class ThreadLabelSerializer(serializers.ModelSerializer):
+    """Serializer to get labels details for a thread."""
+
+    class Meta:
+        model = models.Label
+        fields = ["id", "name", "slug", "color"]
+        read_only_fields = ["id", "slug"]
