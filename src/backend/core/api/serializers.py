@@ -480,3 +480,31 @@ class ImportIMAPSerializer(ImportBaseSerializer):
         default=0,
         min_value=0,
     )
+
+
+class LabelSerializer(serializers.ModelSerializer):
+    """Serializer for Label model."""
+
+    class Meta:
+        model = models.Label
+        fields = ["id", "name", "slug", "color", "mailbox", "threads"]
+        read_only_fields = ["id", "slug"]
+        extra_kwargs = {
+            "mailbox": {"required": True},
+            "name": {"required": True},
+            "color": {"required": False, "default": "#000000"},
+            "threads": {"required": False, "write_only": True},
+        }
+
+    def validate_name(self, value):
+        """Validate label name format."""
+        if not value:
+            raise serializers.ValidationError("Label name is required")
+        return value
+
+    def validate_mailbox(self, value):
+        """Validate that user has access to the mailbox."""
+        user = self.context["request"].user
+        if not value.accesses.filter(user=user).exists():
+            raise serializers.ValidationError("You don't have access to this mailbox")
+        return value
