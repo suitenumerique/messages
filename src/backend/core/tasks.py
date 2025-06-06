@@ -12,7 +12,7 @@ from core import models
 from core.mda.inbound import deliver_inbound_message
 from core.mda.outbound import send_message
 from core.mda.rfc5322 import parse_email_message
-from core.models import Mailbox
+from core.models import Mailbox, Thread, Label
 from core.search import (
     create_index_if_not_exists,
     delete_index,
@@ -306,10 +306,42 @@ def process_mbox_file_task(
         try:
             # Parse the email message
             parsed_email = parse_email_message(message_content)
+            
+            # Extract labels from X-Gmail-Labels header
+            labels = []
+            if 'X-Gmail-Labels' in parsed_email.get('headers', {}):
+                # Handle both plain and encoded labels
+                labels_str = parsed_email['headers']['X-Gmail-Labels']
+                if labels_str.startswith('=?'):
+                    # Decode quoted-printable encoded labels
+                    from email.header import decode_header
+                    decoded_labels = decode_header(labels_str)
+                    labels_str = ' '.join(
+                        label.decode(charset or 'utf-8') if isinstance(label, bytes) else label
+                        for label, charset in decoded_labels
+                    )
+                labels = [label.strip() for label in labels_str.split(',')]
+
             # Deliver the message
             if deliver_inbound_message(
                 str(recipient), parsed_email, message_content, is_import=True
             ):
+                # Create labels and associate with the thread
+                thread = Thread.objects.filter(
+                    messages__mime_id=parsed_email.get('headers', {}).get('Message-ID')
+                ).first()
+                
+                if thread:
+                    for label_name in labels:
+                        # Create or get label
+                        label, _ = Label.objects.get_or_create(
+                            name=label_name,
+                            mailbox=recipient,
+                            defaults={'color': '#000000'}  # Default color
+                        )
+                        # Add thread to label
+                        label.threads.add(thread)
+                
                 success_count += 1
             else:
                 failure_count += 1
