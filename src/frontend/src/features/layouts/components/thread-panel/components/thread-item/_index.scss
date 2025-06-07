@@ -134,3 +134,18 @@
     width: 76px;
     text-align: right;
 }
+
+.thread-item__metadata {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--c--theme--spacings--2xs);
+}
+
+.thread-item__labels {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--c--theme--spacings--2xs);
+    margin-top: var(--c--theme--spacings--2xs);
+}

@@ -1,0 +1,19 @@
+/* Override badge color with thread label color */
+.badge {
+  background-color: transparent !important;
+  padding: 0 !important;
+}
+
+.badge > span {
+  display: inline-block !important;
+  padding: 0.25rem 0.5rem !important;
+  border-radius: 4px !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+}
+
+/* For small badges */
+.badge--small > span {
+  padding: 0.125rem 0.375rem !important;
+  font-size: 0.75rem !important;
+} 

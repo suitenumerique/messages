@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation"
 import { Thread } from "@/features/api/gen/models"
 import { ThreadItemSenders } from "./thread-item-senders"
 import ThreadHelper from "@/features/utils/thread-helper"
+import { LabelBadge } from "@/features/layouts/components/label-badge"
 
 type ThreadItemProps = {
     thread: Thread
@@ -34,13 +35,13 @@ export const ThreadItem = ({ thread }: ThreadItemProps) => {
                             />
                         )}
                         <div className="thread-item__metadata">
-                            {/* {thread.has_attachments ? (
-                                <span className="thread-item__metadata-attachments">
-                                    <Tooltip placement="bottom" content={t('tooltips.has_attachments')}>
-                                        <span className="material-icons">attachment</span>
-                                    </Tooltip>
-                                </span>
-                            ) : null} */}
+                            {thread.labels && thread.labels.length > 0 && (
+                                <div className="thread-item__labels">
+                                    {thread.labels.map((label) => (
+                                        <LabelBadge key={label.id} label={label} size="small" />
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                     <p className="thread-item__subject">{thread.subject}</p>

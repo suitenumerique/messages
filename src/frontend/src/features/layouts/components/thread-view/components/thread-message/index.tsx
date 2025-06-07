@@ -10,6 +10,7 @@ import { useMailboxContext } from "@/features/providers/mailbox";
 import { Badge } from "@/features/ui/components/badge";
 import useTrash from "@/features/message/use-trash";
 import { AttachmentList } from "../thread-attachment-list";
+import { LabelBadge } from "@/features/layouts/components/label-badge";
 type ThreadMessageProps = {
     message: Message,
     isLatest: boolean,
@@ -61,6 +62,13 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                         </div>
                         <div className="thread-message__header-column thread-message__header-column--right flex-row flex-align-center">
                             <div className="thread-message__metadata">
+                                {selectedThread?.labels && selectedThread.labels.length > 0 && (
+                                    <div className="thread-message__labels">
+                                        {selectedThread.labels.map((label) => (
+                                            <LabelBadge key={label.id} label={label} size="small" />
+                                        ))}
+                                    </div>
+                                )}
                                 {message.sent_at && (
                                     <p className="thread-message__date">{
                                         new Date(message.sent_at).toLocaleString(i18n.language, {
