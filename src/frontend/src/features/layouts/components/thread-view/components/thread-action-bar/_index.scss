@@ -1,18 +1,29 @@
 .thread-action-bar {
+    display: flex;
+    flex-direction: row;
     justify-content: space-between;
+    align-items: center;
+    padding: var(--c--theme--spacings--xs);
+    border-bottom: 1px solid var(--c--theme--colors--greyscale-200);
 }
 
-.thread-action-bar > div {
+.thread-action-bar__left {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--c--theme--spacings--base);
+}
+
+.thread-action-bar__labels {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--c--theme--spacings--2xs);
+}
+
+.thread-action-bar__right {
     display: flex;
     flex-direction: row;
     align-items: center;
     gap: var(--c--theme--spacings--2xs);
-}
-
-.thread-action-bar__left {
-    justify-content: flex-start;
-}
-
-.thread-action-bar__right {
-    justify-content: flex-end;
 }

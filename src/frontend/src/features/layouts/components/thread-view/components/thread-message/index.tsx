@@ -10,6 +10,7 @@ import { useMailboxContext } from "@/features/providers/mailbox";
 import { Badge } from "@/features/ui/components/badge";
 import useTrash from "@/features/message/use-trash";
 import { AttachmentList } from "../thread-attachment-list";
+import { LabelBadge } from "@/features/layouts/components/label-badge";
 type ThreadMessageProps = {
     message: Message,
     isLatest: boolean,
