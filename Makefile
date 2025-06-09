@@ -118,7 +118,7 @@ logs: ## display backend-dev logs (follow mode)
 .PHONY: logs
 
 start: ## start the wsgi (production) and development server
-	@$(COMPOSE) up --force-recreate --build -d nginx
+	@$(COMPOSE) up --force-recreate --build -d frontend-dev backend-dev celery-dev mta-in
 .PHONY: start
 
 run-with-frontend: ## Start all the containers needed (backend to frontend)
@@ -127,7 +127,7 @@ run-with-frontend: ## Start all the containers needed (backend to frontend)
 .PHONY: run-with-frontend
 
 run-all-fg: ## Start backend containers and frontend in foreground
-	@$(COMPOSE) up --force-recreate --build nginx frontend-dev backend-dev celery-dev
+	@$(COMPOSE) up --force-recreate --build frontend-dev backend-dev celery-dev mta-in
 .PHONY: run-all-fg
 
 status: ## an alias for "docker compose ps"
@@ -230,8 +230,12 @@ back-i18n-generate: ## create the .pot files used for i18n
 .PHONY: back-i18n-generate
 
 back-shell: ## open a shell in the backend container
-	@$(COMPOSE) run --rm --build backend-dev /bin/sh
+	@$(COMPOSE) run --rm --build backend-dev /bin/bash
 .PHONY: back-shell
+
+back-exec: ## open a shell in the running backend-dev container
+	@$(COMPOSE) exec backend-dev /bin/bash
+.PHONY: back-exec
 
 back-poetry-lock: ## lock the dependencies
 	@$(COMPOSE) run --rm --build backend-poetry poetry lock
@@ -252,6 +256,10 @@ collectstatic: ## collect static files
 shell: ## connect to django shell
 	@$(MANAGE) shell #_plus
 .PHONY: dbshell
+
+keycloak-export: ## export all keycloak data to a JSON file
+	@$(COMPOSE) run -v `pwd`/src/keycloak:/tmp/keycloak-export --rm keycloak export --realm messages --file /tmp/keycloak-export/realm.json
+.PHONY: keycloak-export
 
 # -- Database
 

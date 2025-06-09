@@ -1,4 +1,4 @@
-#/bin/bash
+#!/bin/bash
 
 # Start the Django backend server
 gunicorn -b :8000 messages.wsgi:application --log-file - &

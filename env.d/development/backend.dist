@@ -29,10 +29,10 @@ AWS_S3_SECRET_ACCESS_KEY=password
 MEDIA_BASE_URL=http://localhost:8083
 
 # OIDC
-OIDC_OP_JWKS_ENDPOINT=http://nginx:8083/realms/messages/protocol/openid-connect/certs
+OIDC_OP_JWKS_ENDPOINT=http://keycloak:8083/realms/messages/protocol/openid-connect/certs
 OIDC_OP_AUTHORIZATION_ENDPOINT=http://localhost:8083/realms/messages/protocol/openid-connect/auth
-OIDC_OP_TOKEN_ENDPOINT=http://nginx:8083/realms/messages/protocol/openid-connect/token
-OIDC_OP_USER_ENDPOINT=http://nginx:8083/realms/messages/protocol/openid-connect/userinfo
+OIDC_OP_TOKEN_ENDPOINT=http://keycloak:8083/realms/messages/protocol/openid-connect/token
+OIDC_OP_USER_ENDPOINT=http://keycloak:8083/realms/messages/protocol/openid-connect/userinfo
 
 OIDC_RP_CLIENT_ID=messages
 OIDC_RP_CLIENT_SECRET=ThisIsAnExampleKeyForDevPurposeOnly

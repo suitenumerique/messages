@@ -1,18 +1,17 @@
 #!/bin/bash
 
-KEYCLOAK_VERSION="26.2.0"
-KEYCLOAK_DIST="https://github.com/keycloak/keycloak/releases/download/${KEYCLOAK_VERSION}/keycloak-${KEYCLOAK_VERSION}.zip"
+set -e
+
+KEYCLOAK_VERSION="26.2.1"
+KEYCLOAK_DIST="https://github.com/keycloak/keycloak/releases/download/${KEYCLOAK_VERSION}/keycloak-${KEYCLOAK_VERSION}.tar.gz"
 
 echo "-----> Downloading Keycloak $KEYCLOAK_VERSION"
-curl -L $KEYCLOAK_DIST -o keycloak.zip
+curl -L $KEYCLOAK_DIST -o keycloak.tgz
 
-echo "-----> Unzipping Keycloak"
-unzip -q keycloak.zip -d .
+tar -xvf keycloak.tgz
 mv keycloak-${KEYCLOAK_VERSION} keycloak
-rm keycloak.zip
+rm keycloak.tgz
 
 # echo "-----> Building Keycloak"
 # cd keycloak
 # ./bin/kc.sh build
-
-exit 0

@@ -8,10 +8,34 @@ from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
 from core import models
+from core.identity.keycloak import (
+    sync_mailbox_to_keycloak_user,
+    sync_maildomain_to_keycloak_group,
+)
 from core.search import MESSAGE_INDEX, get_es_client
 from core.tasks import index_message_task, reindex_thread_task
 
 logger = logging.getLogger(__name__)
+
+
+@receiver(post_save, sender=models.MailDomain)
+def sync_maildomain_to_keycloak(sender, instance, created, **kwargs):
+    """Sync MailDomain to Keycloak as a group when saved."""
+    if not instance.identity_sync:
+        return
+    sync_maildomain_to_keycloak_group(instance)
+
+
+@receiver(post_save, sender=models.Mailbox)
+def sync_mailbox_to_keycloak(sender, instance, created, **kwargs):
+    """Sync Mailbox to Keycloak as a user when saved."""
+    if not instance.domain.identity_sync:
+        return
+
+    # Ensure the maildomain group exists first
+    sync_maildomain_to_keycloak_group(instance.domain)
+    # Then sync the mailbox as a user
+    sync_mailbox_to_keycloak_user(instance)
 
 
 @receiver(post_save, sender=models.Message)
