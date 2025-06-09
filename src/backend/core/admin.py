@@ -7,11 +7,50 @@ from django.template.response import TemplateResponse
 from django.urls import path
 from django.utils.translation import gettext_lazy as _
 
+from core.identity.keycloak import reset_keycloak_user_password
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import parse_email_message
 
 from . import models
 from .forms import EmlImportForm
+
+
+def reset_keycloak_password_action(_, request, queryset):
+    """Admin action to reset Keycloak passwords for selected mailboxes."""
+    success_count = 0
+    error_count = 0
+
+    for mailbox in queryset:
+        if not mailbox.domain.identity_sync:
+            messages.warning(
+                request,
+                f"Skipped {mailbox} - identity sync not enabled for domain {mailbox.domain.name}",
+            )
+            continue
+
+        try:
+            username = str(mailbox)  # email format
+            new_password = reset_keycloak_user_password(username)
+            messages.success(
+                request,
+                f"Password reset for {mailbox}. New temporary password: {new_password}",
+            )
+            success_count += 1
+
+        # pylint: disable=broad-except
+        except Exception as e:  # noqa: BLE001
+            messages.error(request, f"Failed to reset password for {mailbox}: {str(e)}")
+            error_count += 1
+
+    if success_count > 0:
+        messages.info(request, f"Successfully reset {success_count} password(s)")
+    if error_count > 0:
+        messages.warning(request, f"Failed to reset {error_count} password(s)")
+
+
+reset_keycloak_password_action.short_description = (
+    "Reset Keycloak password for selected mailboxes"
+)
 
 
 @admin.register(models.User)
@@ -106,9 +145,11 @@ class MailDomainAdmin(admin.ModelAdmin):
 
     list_display = (
         "name",
+        "identity_sync",
         "created_at",
         "updated_at",
     )
+    list_filter = ("identity_sync",)
     search_fields = ("name",)
 
 
@@ -125,6 +166,7 @@ class MailboxAdmin(admin.ModelAdmin):
     inlines = [MailboxAccessInline]
     list_display = ("__str__", "domain", "updated_at")
     search_fields = ("local_part", "domain__name")
+    actions = [reset_keycloak_password_action]
 
 
 @admin.register(models.MailboxAccess)

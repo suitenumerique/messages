@@ -488,6 +488,25 @@ class Base(Configuration):
         default=True, environ_name="ALLOW_LOGOUT_GET_METHOD", environ_prefix=None
     )
 
+    IDENTITY_PROVIDER = values.Value(
+        "keycloak", environ_name="IDENTITY_PROVIDER", environ_prefix=None
+    )
+
+    KEYCLOAK_REALM = values.Value(
+        "messages", environ_name="KEYCLOAK_REALM", environ_prefix=None
+    )
+    KEYCLOAK_URL = values.Value(
+        "http://keycloak:8083", environ_name="KEYCLOAK_URL", environ_prefix=None
+    )
+    KEYCLOAK_CLIENT_ID = values.Value(
+        "rest-api", environ_name="KEYCLOAK_CLIENT_ID", environ_prefix=None
+    )
+    KEYCLOAK_CLIENT_SECRET = values.Value(
+        "ServiceAccountClientSecretForDev",
+        environ_name="KEYCLOAK_CLIENT_SECRET",
+        environ_prefix=None,
+    )
+
     # Logging
     # We want to make it easy to log to console but by default we log production
     # to Sentry and don't want to log to console.

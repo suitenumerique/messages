@@ -200,6 +200,23 @@ class MailDomain(BaseModel):
         help_text=_("Create mailboxes automatically based on OIDC emails."),
     )
 
+    identity_sync = models.BooleanField(
+        _("Identity sync"),
+        default=False,
+        help_text=_("Sync mailboxes to identity provider."),
+    )
+
+    # This contains French SIRETs
+    identity_group_metadata = models.JSONField(
+        _("Metadata to sync to the maildomain group in the identity provider"),
+        default=None,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Metadata to sync to the maildomain group in the identity provider."
+        ),
+    )
+
     class Meta:
         db_table = "messages_maildomain"
         verbose_name = _("mail domain")

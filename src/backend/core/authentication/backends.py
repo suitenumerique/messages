@@ -151,7 +151,8 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
         # Create the test domain if it doesn't exist
         if settings.MESSAGES_TESTDOMAIN:
             MailDomain.objects.get_or_create(
-                name=settings.MESSAGES_TESTDOMAIN, defaults={"oidc_autojoin": True}
+                name=settings.MESSAGES_TESTDOMAIN,
+                defaults={"oidc_autojoin": True, "identity_sync": True},
             )
 
     def should_create_user(self, email):

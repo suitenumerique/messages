@@ -110,6 +110,8 @@ services:
         condition: service_started
       elasticsearch:
         condition: service_healthy
+      keycloak:
+        condition: service_started
 
       # createbuckets:
       #  condition: service_started
@@ -191,17 +193,17 @@ services:
   #     #minio:
   #     #  condition: service_started
 
-  nginx:
-    image: nginx:1.25
-    ports:
-      - "8083:8083"
-    volumes:
-      - ./docker/files/development/etc/nginx/conf.d:/etc/nginx/conf.d:ro
-    depends_on:
-      - keycloak
-      - backend-dev
-      - mta-in
-      - mta-out
+  # nginx:
+  #   image: nginx:1.25
+  #   ports:
+  #     - "8083:8083"
+  #   volumes:
+  #     - ./docker/files/development/etc/nginx/conf.d:/etc/nginx/conf.d:ro
+  #   depends_on:
+  #     - keycloak
+  #     - backend-dev
+  #     - mta-in
+  #     - mta-out
 
   frontend-dev:
     user: "${DOCKER_USER:-1000}"
@@ -297,29 +299,33 @@ services:
       - env.d/development/kc_postgresql
 
   keycloak:
-    image: quay.io/keycloak/keycloak:20.0.1
+    image: quay.io/keycloak/keycloak:26.2.5
     volumes:
-      - ./docker/auth/realm.json:/opt/keycloak/data/import/realm.json
+      - ./src/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+      - ./src/keycloak/themes/dsfr-2.2.1.jar:/opt/keycloak/providers/keycloak-theme.jar:ro
     command:
       - start-dev
       - --features=preview
       - --import-realm
       - --proxy=edge
-      - --hostname-url=http://localhost:8083
-      - --hostname-admin-url=http://localhost:8083/
-      - --hostname-strict=false
-      - --hostname-strict-https=false
+      - --hostname=http://localhost:8083
+      - --hostname-admin=http://localhost:8083/
+      - --http-port=8083
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_DB: postgres
-      KC_DB_URL_HOST: kc_postgresql
-      KC_DB_URL_DATABASE: keycloak
+      KC_DB_URL_HOST: postgresql
+      KC_DB_URL_DATABASE: messages
       KC_DB_PASSWORD: pass
       KC_DB_USERNAME: user
       KC_DB_SCHEMA: public
+      KC_HOSTNAME_STRICT: false
+      KC_HOSTNAME_STRICT_HTTPS: false
+      KC_HTTP_ENABLED: true
+      KC_HEALTH_ENABLED: true
       PROXY_ADDRESS_FORWARDING: "true"
     ports:
-      - "8080:8080"
+      - "8083:8083"
     depends_on:
-      - kc_postgresql
+      - postgresql
