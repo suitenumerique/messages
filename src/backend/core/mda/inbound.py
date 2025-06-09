@@ -168,6 +168,7 @@ def deliver_inbound_message(
     parsed_email: Dict[str, Any],
     raw_data: bytes,
     is_import: bool = False,
+    label_name: str = "",
 ) -> bool:  # Return True on success, False on failure
     """Deliver a parsed inbound email message to the correct mailbox and thread.
 
@@ -207,6 +208,17 @@ def deliver_inbound_message(
                 snippet=snippet,
                 count_unread=1,
             )
+            if label_name:
+                # Create or get label for the thread
+                label, _ = models.Label.objects.get_or_create(
+                    name=label_name,
+                    mailbox=mailbox,
+                )
+                # Add thread to label
+                label.threads.add(thread)
+                logger.info(
+                    "Created and linked label %s to thread %s", label_name, thread.id
+                )
             # Create a thread access for the sender mailbox
             models.ThreadAccess.objects.create(
                 thread=thread,

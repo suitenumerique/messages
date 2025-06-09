@@ -3,6 +3,9 @@
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught
 import imaplib
 from typing import Any, Dict, List, Tuple
+import quopri
+from email.header import decode_header, make_header
+from urllib.parse import quote, unquote
 
 from django.conf import settings
 
@@ -393,6 +396,47 @@ def split_mbox_file(content: bytes) -> List[bytes]:
     return messages[::-1]
 
 
+def decode_imap_folder_name(folder_name: str) -> str:
+    """Decode IMAP folder name from quoted-printable or URL encoding."""
+    try:
+        # Handle Gmail's modified UTF-7 encoding
+        if '&' in folder_name and folder_name.endswith('-'):
+            # This is Gmail's modified UTF-7 encoding
+            # Convert & to + and - to /
+            modified = folder_name.replace('&', '+').replace('-', '/')
+            try:
+                decoded = modified.encode('utf-7').decode('utf-8')
+                return decoded
+            except Exception:
+                pass
+        
+        # Try URL decoding for other cases
+        if '%' in folder_name:
+            return unquote(folder_name)
+        
+        return folder_name
+    except Exception:
+        return folder_name
+
+
+def encode_imap_folder_name(folder_name: str) -> str:
+    """Encode folder name for IMAP commands."""
+    try:
+        # For Gmail-style folders, use proper IMAP encoding
+        if folder_name.startswith('[Gmail]'):
+            # Gmail folders need to be properly quoted
+            return f'"{folder_name}"'
+        
+        # For folders with spaces or special characters, use proper IMAP encoding
+        if ' ' in folder_name or any(char in folder_name for char in ['(', ')', '{', '}', '"', '\\']):
+            # Use IMAP's literal string format
+            return f'"{folder_name}"'
+        
+        return folder_name
+    except Exception:
+        return folder_name
+
+
 @celery_app.task(bind=True)
 def import_imap_messages_task(
     self,
@@ -413,8 +457,8 @@ def import_imap_messages_task(
         username: Email address for login
         password: Password for login
         use_ssl: Whether to use SSL
-        folder: IMAP folder to import from
-        max_messages: Maximum number of messages to import (0 for all)
+        folder: IMAP folder to import from. Use "ALL" or "*" to import from all folders
+        max_messages: Maximum number of messages to import per folder (0 for all)
         recipient_id: ID of the recipient mailbox
 
     Returns:
@@ -428,78 +472,203 @@ def import_imap_messages_task(
             imap = imaplib.IMAP4(imap_server, imap_port)
 
         # Login
-
         imap.login(username, password)
 
-        # Select folder
-        status, messages = imap.select(folder)
+        # List all folders
+        # TODO: check is working for other IMAP servers
+        status, folder_list = imap.list()
         if status != "OK":
-            raise Exception(f"Failed to select folder {folder}: {messages}")
+            raise Exception(f"Failed to list folders: {folder_list}")
 
-        # Search for all messages
-        status, message_numbers = imap.search(None, "ALL")
-        if status != "OK":
-            raise Exception(f"Failed to search messages: {message_numbers}")
+        # Get selectable folders
+        selectable_folders = []
+        for folder_info in folder_list:
+            folder_info = folder_info.decode()
+            if "\\Noselect" not in folder_info:
+                # Extract folder name - it's the last part in quotes
+                folder_name = folder_info.split('"')[-2]
+                selectable_folders.append(folder_name)
 
-        # Get list of message numbers
-        message_list = message_numbers[0].split()
+        logger.info("Available IMAP folders: %s", selectable_folders)
 
-        # Apply max_messages limit if specified
-        if max_messages > 0:
-            message_list = message_list[-max_messages:]  # Get most recent messages
-
-        total_messages = len(message_list)
-        success_count = 0
-        failure_count = 0
+        # Determine which folders to process
+        folders_to_process = []
+        if folder.upper() in ["ALL", "*"]:
+            folders_to_process = selectable_folders
+        else:
+            if folder not in selectable_folders:
+                raise Exception(f"Folder '{folder}' not found or not selectable")
+            folders_to_process = [folder]
 
         # Get recipient mailbox
         recipient = Mailbox.objects.get(id=recipient_id)
 
-        # Process each message
-        for i, msg_num in enumerate(message_list, 1):
+        total_messages = 0
+        total_success = 0
+        total_failure = 0
+        folder_stats = {}
+
+        # Process each folder
+        for current_folder in folders_to_process:
             try:
-                # Update task state
-                self.update_state(
-                    state="PROGRESS",
-                    meta={
-                        "current": i,
-                        "total": total_messages,
-                        "status": f"Processing message {i} of {total_messages}",
-                    },
+                logger.info("Processing folder: %s", current_folder)
+                
+                # Create or get label for this folder
+                folder_label, _ = Label.objects.get_or_create(
+                    name=current_folder,
+                    mailbox=recipient,
+                    defaults={'color': '#000000'}  # Default color
                 )
 
-                # Fetch message
-                status, msg_data = imap.fetch(msg_num, "(RFC822)")
+                # Encode folder name for IMAP command
+                encoded_folder = encode_imap_folder_name(current_folder)
+                
+                # Select folder
+                try:
+                    status, messages = imap.select(encoded_folder)
+                except imaplib.IMAP4.error as e:
+                    # If first attempt fails, try with the original folder name
+                    try:
+                        status, messages = imap.select(current_folder)
+                    except imaplib.IMAP4.error:
+                        # If both attempts fail, log and continue
+                        logger.error("Failed to select folder %s: %s", current_folder, str(e))
+                        folder_stats[current_folder] = {
+                            "status": "failed",
+                            "error": f"Failed to select folder: {str(e)}",
+                            "success_count": 0,
+                            "failure_count": 0
+                        }
+                        continue
+
                 if status != "OK":
-                    logger.error("Failed to fetch message %s: %s", msg_num, msg_data)
-                    failure_count += 1
+                    logger.error("Failed to select folder %s: %s", current_folder, messages)
+                    folder_stats[current_folder] = {
+                        "status": "failed",
+                        "error": f"Failed to select folder: {messages}",
+                        "success_count": 0,
+                        "failure_count": 0
+                    }
                     continue
 
-                # Parse message
-                raw_email = msg_data[0][1]
-                parsed_email = parse_email_message(raw_email)
+                # Search for all messages
+                status, message_numbers = imap.search(None, "ALL")
+                if status != "OK":
+                    logger.error("Failed to search messages in %s: %s", current_folder, message_numbers)
+                    folder_stats[current_folder] = {
+                        "status": "failed",
+                        "error": f"Failed to search messages: {message_numbers}",
+                        "success_count": 0,
+                        "failure_count": 0
+                    }
+                    continue
 
-                # Deliver message
-                if deliver_inbound_message(
-                    str(recipient), parsed_email, raw_email, is_import=True
-                ):
-                    success_count += 1
-                else:
-                    failure_count += 1
+                # Get list of message numbers
+                message_list = message_numbers[0].split()
+
+                # Apply max_messages limit if specified
+                if max_messages > 0:
+                    message_list = message_list[-max_messages:]  # Get most recent messages
+
+                folder_total = len(message_list)
+                total_messages += folder_total
+                folder_success = 0
+                folder_failure = 0
+
+                # Process each message
+                for i, msg_num in enumerate(message_list, 1):
+                    try:
+                        # Update task state
+                        self.update_state(
+                            state="PROGRESS",
+                            meta={
+                                "current_folder": current_folder,
+                                "current": i,
+                                "total": folder_total,
+                                "status": f"Processing message {i} of {folder_total} in {current_folder}",
+                            },
+                        )
+
+                        # Fetch message
+                        status, msg_data = imap.fetch(msg_num, "(RFC822)")
+                        if status != "OK":
+                            logger.error("Failed to fetch message %s: %s", msg_num, msg_data)
+                            folder_failure += 1
+                            continue
+
+                        # Parse message
+                        raw_email = msg_data[0][1]
+                        
+                        # Add debugging for raw email
+                        logger.debug("Raw email size: %d bytes", len(raw_email))
+                        
+                        try:
+                            parsed_email = parse_email_message(raw_email)
+                        except Exception as parse_error:
+                            logger.exception("Error parsing message %s in folder %s: %s", msg_num, current_folder, parse_error)
+                            folder_failure += 1
+                            continue
+
+                        # Add debugging information
+                        logger.debug("Processing message in folder %s: Subject=%s, From=%s", 
+                                   current_folder, 
+                                   parsed_email.get('headers', {}).get('Subject', 'No Subject'),
+                                   parsed_email.get('headers', {}).get('From', 'No From'))
+
+                        # Deliver message
+                        try:
+                            delivery_result = deliver_inbound_message(
+                                str(recipient), parsed_email, raw_email, is_import=True, label_name=current_folder
+                            )
+                            
+                            if delivery_result:
+                                folder_success += 1
+                                logger.debug("Successfully delivered message in folder %s", current_folder)
+                            else:
+                                folder_failure += 1
+                                logger.warning("Failed to deliver message in folder %s", current_folder)
+                                
+                        except Exception as delivery_error:
+                            folder_failure += 1
+                            logger.exception("Error delivering message in folder %s: %s", current_folder, delivery_error)
+
+                    except Exception as e:
+                        logger.exception("Error processing message %s in %s: %s", msg_num, current_folder, e)
+                        folder_failure += 1
+
+                # Update folder statistics
+                folder_stats[current_folder] = {
+                    "status": "completed",
+                    "total_messages": folder_total,
+                    "success_count": folder_success,
+                    "failure_count": folder_failure
+                }
+                total_success += folder_success
+                total_failure += folder_failure
 
             except Exception as e:
-                logger.exception("Error processing message %s: %s", msg_num, e)
-                failure_count += 1
+                logger.exception("Error processing folder %s: %s", current_folder, e)
+                folder_stats[current_folder] = {
+                    "status": "failed",
+                    "error": str(e),
+                    "success_count": 0,
+                    "failure_count": 0
+                }
+                total_failure += 1
 
-        # Logout
-        imap.close()
-        imap.logout()
+        # Logout - only call logout, not close
+        try:
+            imap.logout()
+        except Exception as e:
+            logger.warning("Error during logout: %s", e)
 
         return {
             "status": "completed",
+            "total_folders": len(folders_to_process),
             "total_messages": total_messages,
-            "success_count": success_count,
-            "failure_count": failure_count,
+            "total_success": total_success,
+            "total_failure": total_failure,
+            "folder_stats": folder_stats
         }
 
     except Exception as e:
