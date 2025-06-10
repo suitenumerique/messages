@@ -340,7 +340,6 @@ def process_mbox_file_task(
                         label, _ = Label.objects.get_or_create(
                             name=label_name,
                             mailbox=recipient,
-                            defaults={'color': '#000000'}  # Default color
                         )
                         # Add thread to label
                         label.threads.add(thread)
@@ -517,7 +516,6 @@ def import_imap_messages_task(
                 folder_label, _ = Label.objects.get_or_create(
                     name=current_folder,
                     mailbox=recipient,
-                    defaults={'color': '#000000'}  # Default color
                 )
 
                 # Encode folder name for IMAP command

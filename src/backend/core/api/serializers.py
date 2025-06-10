@@ -510,7 +510,7 @@ class LabelSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             "mailbox": {"required": True},
             "name": {"required": True},
-            "color": {"required": False, "default": "#000000"},
+            "color": {"required": False, "default": "#E3E3FD"},
             "threads": {"required": False, "write_only": True},
         }
 
