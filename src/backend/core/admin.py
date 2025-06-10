@@ -5,6 +5,8 @@ from django.contrib.auth import admin as auth_admin
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.urls import path
+from django.utils.safestring import mark_safe
+from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
 from core.services.import_service import ImportService
@@ -149,10 +151,72 @@ class ThreadAdmin(admin.ModelAdmin):
         "id",
         "subject",
         "snippet",
+        "get_labels",
         "messaged_at",
         "created_at",
         "updated_at",
     )
+    search_fields = ("subject", "snippet", "labels__name")
+    list_filter = ("labels",)
+    fieldsets = (
+        (None, {"fields": ("subject", "snippet", "display_labels")}),
+        (
+            _("Statistics"),
+            {
+                "fields": (
+                    "count_unread",
+                    "count_trashed",
+                    "count_draft",
+                    "count_starred",
+                    "count_sender",
+                    "count_messages",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            _("Metadata"),
+            {
+                "fields": ("sender_names", "created_at", "updated_at", "messaged_at"),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+    readonly_fields = (
+        "display_labels",
+        "count_unread",
+        "count_trashed",
+        "count_draft",
+        "count_starred",
+        "count_sender",
+        "count_messages",
+        "messaged_at",
+        "sender_names",
+        "created_at",
+        "updated_at",
+    )
+
+    def get_labels(self, obj):
+        """Return a comma-separated list of labels for the thread."""
+        return ", ".join(label.name for label in obj.labels.all())
+
+    get_labels.short_description = _("Labels")
+    get_labels.admin_order_field = "labels__name"
+
+    def display_labels(self, obj):
+        """Display labels with their colors in the detail view."""
+        if not obj.labels.exists():
+            return _("No labels")
+
+        labels_html = []
+        for label in obj.labels.all():
+            # Create a colored label display
+            label_html = f'<span style="display: inline-block; padding: 2px 8px; margin: 2px; border-radius: 3px; background-color: {label.color}; color: white;">{label.name}</span>'
+            labels_html.append(label_html)
+
+        return mark_safe(" ".join(labels_html))
+
+    display_labels.short_description = _("Labels")
 
 
 class MessageRecipientInline(admin.TabularInline):
@@ -282,3 +346,20 @@ class MessageRecipientAdmin(admin.ModelAdmin):
 
     list_display = ("id", "message", "contact", "type")
     search_fields = ("message__subject", "contact__name", "contact__email")
+
+
+@admin.register(models.Label)
+class LabelAdmin(admin.ModelAdmin):
+    """Admin class for the Label model"""
+
+    list_display = ("id", "name", "slug", "mailbox", "color")
+    search_fields = ("name", "mailbox__local_part", "mailbox__domain__name")
+    filter_horizontal = ("threads",)
+    list_filter = ("mailbox",)
+    readonly_fields = ("slug",)
+
+    def save_model(self, request, obj, form, change):
+        """Generate slug from name before saving."""
+        if not obj.slug or (change and "name" in form.changed_data):
+            obj.slug = slugify(obj.name.replace("/", "-"))
+        super().save_model(request, obj, form, change)

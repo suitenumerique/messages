@@ -19,7 +19,10 @@ from .. import permissions, serializers
 
 
 class ThreadViewSet(
-    viewsets.GenericViewSet, mixins.ListModelMixin, mixins.DestroyModelMixin
+    viewsets.GenericViewSet,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.DestroyModelMixin,
 ):
     """ViewSet for Thread model."""
 

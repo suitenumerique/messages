@@ -329,6 +329,12 @@ def test_import_imap_messages_by_superuser(admin_user, mailbox, mock_request):
     # Mock IMAP connection and responses
     with patch("imaplib.IMAP4_SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
+        mock_imap_instance.login.return_value = ("OK", [b"Logged in"])
+        mock_imap_instance.list.return_value = ("OK", [
+            b'(\\HasNoChildren) "/" "INBOX"',
+            b'(\\HasNoChildren) "/" "[Gmail]/Sent Mail"',
+            b'(\\HasNoChildren) "/" "[Gmail]/Drafts"'
+        ])
         mock_imap_instance.select.return_value = ("OK", [b"1"])
         mock_imap_instance.search.return_value = ("OK", [b"1 2"])
 
@@ -394,6 +400,12 @@ def test_import_imap_messages_user_with_access(user, mailbox, mock_request):
     # Mock IMAP connection and responses
     with patch("imaplib.IMAP4_SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
+        mock_imap_instance.login.return_value = ("OK", [b"Logged in"])
+        mock_imap_instance.list.return_value = ("OK", [
+            b'(\\HasNoChildren) "/" "INBOX"',
+            b'(\\HasNoChildren) "/" "[Gmail]/Sent Mail"',
+            b'(\\HasNoChildren) "/" "[Gmail]/Drafts"'
+        ])
         mock_imap_instance.select.return_value = ("OK", [b"1"])
         mock_imap_instance.search.return_value = ("OK", [b"1 2"])
 

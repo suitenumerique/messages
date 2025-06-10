@@ -57,6 +57,13 @@
     color: var(--c--theme--colors--greyscale-500);
 }
 
+.thread-message__labels {
+    display: flex;
+    flex-direction: row;
+    gap: var(--c--theme--spacings--2xs);
+    flex-wrap: wrap;
+}
+
 .thread-message__date {
     text-align: right;
 }

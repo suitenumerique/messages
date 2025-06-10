@@ -209,6 +209,12 @@ def test_import_imap(api_client, user, mailbox):
     # Mock IMAP connection and responses
     with patch("imaplib.IMAP4_SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
+        # Mock list() to return some folders
+        mock_imap_instance.list.return_value = ("OK", [
+            b'(\\HasNoChildren) "/" "INBOX"',
+            b'(\\HasNoChildren) "/" "[Gmail]/Sent Mail"',
+            b'(\\HasNoChildren) "/" "[Gmail]/Drafts"'
+        ])
         mock_imap_instance.select.return_value = ("OK", [b"1"])
         mock_imap_instance.search.return_value = ("OK", [b"1 2"])
 
@@ -262,6 +268,14 @@ Test message body 2"""
         assert message2.sent_at == datetime.datetime(
             2025, 5, 26, 10, 0, 0, tzinfo=datetime.timezone.utc
         )
+
+        # Verify IMAP calls
+        mock_imap_instance.login.assert_called_once_with("test@example.com", "password123")
+        mock_imap_instance.list.assert_called_once()
+        mock_imap_instance.select.assert_called_once_with('INBOX')
+        mock_imap_instance.search.assert_called_once_with(None, "ALL")
+        assert mock_imap_instance.fetch.call_count == 2
+        mock_imap_instance.logout.assert_called_once()
 
 
 def test_import_imap_no_access(api_client, domain):

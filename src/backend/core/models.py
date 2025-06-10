@@ -13,6 +13,7 @@ from django.contrib.auth import models as auth_models
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.core import validators
 from django.db import models
+from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
 from timezone_field import TimeZoneField
@@ -391,6 +392,94 @@ class Thread(BaseModel):
                 for x in fields
             ]
         )
+
+
+class Label(BaseModel):
+    """Label model to organize threads into folders using slash-based naming."""
+
+    name = models.CharField(
+        _("name"),
+        max_length=255,
+        help_text=_(
+            "Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/Projects')"
+        ),
+    )
+    slug = models.SlugField(
+        _("slug"),
+        max_length=255,
+        help_text=_("URL-friendly version of the name"),
+    )
+    color = models.CharField(
+        _("color"),
+        max_length=7,
+        default="#E3E3FD",
+        help_text=_("Color of the label in hex format (e.g. #FF0000)"),
+    )
+    mailbox = models.ForeignKey(
+        "Mailbox",
+        on_delete=models.CASCADE,
+        related_name="labels",
+        help_text=_("Mailbox that owns this label"),
+    )
+    threads = models.ManyToManyField(
+        "Thread",
+        related_name="labels",
+        help_text=_("Threads that have this label"),
+        blank=True,
+    )
+
+    class Meta:
+        db_table = "messages_label"
+        verbose_name = _("label")
+        verbose_name_plural = _("labels")
+        unique_together = ("slug", "mailbox")
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.mailbox})"
+
+    def save(self, *args, **kwargs):
+        """Generate slug from name before saving."""
+        if not self.slug:
+            self.slug = slugify(self.name.replace("/", "-"))
+        super().save(*args, **kwargs)
+
+    @property
+    def parent_name(self):
+        """Get the parent label name if this is a subfolder."""
+        if "/" not in self.name:
+            return None
+        return self.name.rsplit("/", 1)[0]
+
+    @property
+    def basename(self):
+        """Get the base name of the label without parent path."""
+        return self.name.split("/")[-1]
+
+    @property
+    def depth(self):
+        """Get the depth of the label in the hierarchy."""
+        return self.name.count("/")
+
+    @classmethod
+    def get_children(cls, mailbox, parent_name):
+        """Get all direct children of a parent label."""
+        if parent_name:
+            prefix = f"{parent_name}/"
+            # Get all labels that start with the parent prefix
+            labels = cls.objects.filter(
+                mailbox=mailbox,
+                name__startswith=prefix,
+            )
+            # Filter to only get direct children (one level deeper)
+            return [
+                label for label in labels if label.depth == parent_name.count("/") + 1
+            ]
+
+        # Get root level labels (no slashes)
+        return cls.objects.filter(
+            mailbox=mailbox,
+        ).exclude(name__contains="/")
 
 
 class ThreadAccess(BaseModel):

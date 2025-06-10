@@ -69,6 +69,11 @@ def mock_imap_connection(sample_email):
     # Mock successful login and folder selection
     mock_imap.login.return_value = ("OK", [b"Logged in"])
     mock_imap.select.return_value = ("OK", [b"1"])
+    mock_imap.list.return_value = ("OK", [
+        b'(\\HasNoChildren) "/" "INBOX"',
+        b'(\\HasNoChildren) "/" "[Gmail]/Sent Mail"',
+        b'(\\HasNoChildren) "/" "[Gmail]/Drafts"'
+    ])
 
     # Mock message search
     mock_imap.search.return_value = ("OK", [b"1 2 3"])  # Three messages
@@ -153,6 +158,7 @@ def test_imap_import_task_success(
     mock_store_result, mock_imap4_ssl, mailbox, mock_imap_connection, sample_email
 ):
     """Test successful IMAP import task execution."""
+    
     mock_imap4_ssl.return_value = mock_imap_connection
     mock_store_result.return_value = None
 
@@ -171,8 +177,8 @@ def test_imap_import_task_success(
     # Verify results
     assert result["status"] == "completed"
     assert result["total_messages"] == 3
-    assert result["success_count"] == 3
-    assert result["failure_count"] == 0
+    assert result["total_success"] == 3
+    assert result["total_failure"] == 0
 
     # Verify messages were created
     assert Message.objects.count() == 3
@@ -221,12 +227,20 @@ def test_imap_import_task_login_failure(mock_imap4_ssl, mailbox):
 
 
 @patch("imaplib.IMAP4_SSL")
-def test_imap_import_task_folder_not_found(mock_imap4_ssl, mailbox):
+@patch.object(celery_app.backend, "store_result")
+def test_imap_import_task_folder_not_found(mock_store_result, mock_imap4_ssl, mailbox):
     """Test IMAP import task with non-existent folder."""
+    # Configure mock IMAP connection
     mock_imap = MagicMock()
     mock_imap.login.return_value = ("OK", [b"Logged in"])
+    mock_imap.list.return_value = ("OK", [
+        b'(\\HasNoChildren) "/" "INBOX"',
+        b'(\\HasNoChildren) "/" "[Gmail]/Sent Mail"',
+        b'(\\HasNoChildren) "/" "[Gmail]/Drafts"'
+    ])
     mock_imap.select.return_value = ("NO", [b"Folder not found"])
     mock_imap4_ssl.return_value = mock_imap
+    mock_store_result.return_value = None
 
     # Run the task and expect exception
     with pytest.raises(Exception) as exc_info:
@@ -241,7 +255,7 @@ def test_imap_import_task_folder_not_found(mock_imap4_ssl, mailbox):
             recipient_id=str(mailbox.id),
         )
 
-    assert "Failed to select folder" in str(exc_info.value)
+    assert "Folder 'NONEXISTENT' not found or not selectable" in str(exc_info.value)
 
 
 @patch("imaplib.IMAP4_SSL")
@@ -250,8 +264,14 @@ def test_imap_import_task_max_messages(
     mock_store_result, mock_imap4_ssl, mailbox, mock_imap_connection
 ):
     """Test IMAP import task with max_messages limit."""
-    mock_store_result.return_value = None
+    # Configure the mock IMAP connection
     mock_imap4_ssl.return_value = mock_imap_connection
+    mock_imap_connection.list.return_value = ("OK", [
+        b'(\\HasNoChildren) "/" "INBOX"',
+        b'(\\HasNoChildren) "/" "[Gmail]/Sent Mail"',
+        b'(\\HasNoChildren) "/" "[Gmail]/Drafts"'
+    ])
+    mock_store_result.return_value = None
 
     # Run the task with max_messages=2
     result = import_imap_messages_task(
@@ -267,7 +287,7 @@ def test_imap_import_task_max_messages(
 
     # Verify only 2 messages were processed
     assert result["total_messages"] == 2
-    assert result["success_count"] == 2
+    assert result["total_success"] == 2
 
 
 @patch("imaplib.IMAP4_SSL")
@@ -280,6 +300,11 @@ def test_imap_import_task_message_fetch_failure(
     mock_imap = MagicMock()
     mock_imap.login.return_value = ("OK", [b"Logged in"])
     mock_imap.select.return_value = ("OK", [b"1"])
+    mock_imap.list.return_value = ("OK", [
+        b'(\\HasNoChildren) "/" "INBOX"',
+        b'(\\HasNoChildren) "/" "[Gmail]/Sent Mail"',
+        b'(\\HasNoChildren) "/" "[Gmail]/Drafts"'
+    ])
     mock_imap.search.return_value = ("OK", [b"1 2 3"])
     mock_imap.fetch.return_value = ("NO", [b"Message not found"])
     mock_imap4_ssl.return_value = mock_imap
@@ -299,5 +324,5 @@ def test_imap_import_task_message_fetch_failure(
     # Verify all messages failed
     assert result["status"] == "completed"
     assert result["total_messages"] == 3
-    assert result["success_count"] == 0
-    assert result["failure_count"] == 3
+    assert result["total_success"] == 0
+    assert result["total_failure"] == 3

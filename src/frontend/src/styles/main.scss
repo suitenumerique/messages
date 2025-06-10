@@ -5,6 +5,7 @@
 // Global app styles and tokens
 @use "./cunningham-tokens.css";
 @use "./globals.scss";
+@use "./custom.css";
 
 // UI Kit components fork
 @use "./../features/layouts/components/main/right-panel";
