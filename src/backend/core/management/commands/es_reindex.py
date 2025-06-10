@@ -6,7 +6,12 @@ from django.core.management.base import BaseCommand, CommandError
 
 from core import models
 from core.search import create_index_if_not_exists
-from core.tasks import reindex_all, reindex_mailbox_task, reindex_thread_task
+from core.tasks import (
+    _reindex_all_base,
+    reindex_all,
+    reindex_mailbox_task,
+    reindex_thread_task,
+)
 
 
 class Command(BaseCommand):
@@ -73,7 +78,15 @@ class Command(BaseCommand):
                 self.style.SUCCESS(f"Reindexing task scheduled (ID: {task.id})")
             )
         else:
-            result = reindex_all()
+            # For synchronous execution, use the base function directly
+            def update_progress(current, total, success_count, failure_count):
+                """Update progress in the console."""
+                self.stdout.write(
+                    f"Progress: {current}/{total} threads processed "
+                    f"({success_count} succeeded, {failure_count} failed)"
+                )
+
+            result = _reindex_all_base(update_progress)
             self.stdout.write(
                 self.style.SUCCESS(
                     f"Reindexing completed: {result.get('success_count', 0)} succeeded, "

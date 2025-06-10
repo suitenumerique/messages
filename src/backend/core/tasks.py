@@ -70,9 +70,12 @@ def send_message_task(self, message_id, force_mta_out=False):
         raise
 
 
-@celery_app.task(bind=True)
-def reindex_all(self):
-    """Reindex all threads and messages."""
+def _reindex_all_base(update_progress=None):
+    """Base function for reindexing all threads and messages.
+
+    Args:
+        update_progress: Optional callback function to update progress
+    """
     if not settings.ELASTICSEARCH_INDEX_THREADS:
         logger.info("Elasticsearch thread indexing is disabled.")
         return {"success": False, "reason": "disabled"}
@@ -98,17 +101,9 @@ def reindex_all(self):
                 failure_count += 1
                 logger.exception("Error indexing thread %s: %s", thread.id, e)
 
-            # Update progress every 100 threads
-            if i % 100 == 0:
-                self.update_state(
-                    state="PROGRESS",
-                    meta={
-                        "current": i,
-                        "total": total,
-                        "success_count": success_count,
-                        "failure_count": failure_count,
-                    },
-                )
+            # Update progress if callback provided
+            if update_progress and i % 100 == 0:
+                update_progress(i, total, success_count, failure_count)
 
         return {
             "success": True,
@@ -120,6 +115,25 @@ def reindex_all(self):
     except Exception as e:
         logger.exception("Error in reindex_all task: %s", e)
         raise
+
+
+@celery_app.task(bind=True)
+def reindex_all(self):
+    """Celery task wrapper for reindexing all threads and messages."""
+
+    def update_progress(current, total, success_count, failure_count):
+        """Update task progress."""
+        self.update_state(
+            state="PROGRESS",
+            meta={
+                "current": current,
+                "total": total,
+                "success_count": success_count,
+                "failure_count": failure_count,
+            },
+        )
+
+    return _reindex_all_base(update_progress)
 
 
 @celery_app.task(bind=True)
