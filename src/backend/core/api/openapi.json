@@ -38,7 +38,7 @@
         "/api/v1.0/blob/upload/{mailbox_id}/": {
             "post": {
                 "operationId": "blob_upload_create",
-                "description": "Upload binary data and create a Blob record.\n\nThis endpoint accepts multipart/form-data containing a file and returns a\nblob ID and other metadata. The blob is associated with the specified mailbox.",
+                "description": "Upload binary data and create a Blob record.\n        This endpoint accepts multipart/form-data containing a file and returns a\n        blob ID and other metadata. The blob is associated with the specified mailbox.\n        ",
                 "parameters": [
                     {
                         "in": "path",
@@ -1215,6 +1215,253 @@
                 }
             }
         },
+        "/api/v1.0/import/file/": {
+            "post": {
+                "operationId": "import_file_create",
+                "description": "\n        Import messages by uploading an EML or MBOX file.\n        \n        - For EML files: Import is processed synchronously and returns immediately\n        - For MBOX files: Import is processed asynchronously and returns a task ID\n        \n        The file must be a valid EML or MBOX format. The recipient mailbox must exist\n        and the user must have access to it.\n        ",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "recipient",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "ID of the mailbox to import messages into",
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ImportFileRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ImportFileRequest"
+                            }
+                        },
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ImportFileRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string",
+                                            "description": "Type of import (eml)"
+                                        },
+                                        "status": {
+                                            "type": "string",
+                                            "description": "Status of the import"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Success message"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "EML file import completed successfully"
+                    },
+                    "202": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "task_id": {
+                                            "type": "string",
+                                            "description": "Celery task ID for tracking import progress"
+                                        },
+                                        "type": {
+                                            "type": "string",
+                                            "description": "Type of import (mbox)"
+                                        },
+                                        "status": {
+                                            "type": "string",
+                                            "description": "Initial status of the import task"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "MBOX file import started. Returns Celery task ID for tracking."
+                    },
+                    "400": {
+                        "description": "Invalid input data or file format"
+                    },
+                    "403": {
+                        "description": "User does not have access to the specified mailbox"
+                    },
+                    "404": {
+                        "description": "Specified mailbox not found"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/import/imap/": {
+            "post": {
+                "operationId": "import_imap_create",
+                "description": "\n        Import messages from an IMAP server.\n        \n        This endpoint initiates an asynchronous import process from an IMAP server.\n        The import is processed in the background and returns a task ID for tracking.\n        \n        Required parameters:\n        - imap_server: Hostname of the IMAP server\n        - imap_port: Port number for the IMAP server\n        - username: IMAP account username\n        - password: IMAP account password\n        - recipient: ID of the mailbox to import messages into\n        \n        Optional parameters:\n        - use_ssl: Whether to use SSL for the connection (default: true)\n        - folder: IMAP folder to import from (default: \"INBOX\")\n        - max_messages: Maximum number of messages to import (default: 0, meaning all messages)\n        ",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "folder",
+                        "schema": {
+                            "type": "string",
+                            "default": "INBOX"
+                        },
+                        "description": "IMAP folder to import from"
+                    },
+                    {
+                        "in": "query",
+                        "name": "imap_port",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Port number for the IMAP server",
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "imap_server",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Hostname of the IMAP server",
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "max_messages",
+                        "schema": {
+                            "type": "integer",
+                            "default": 0
+                        },
+                        "description": "Maximum number of messages to import (0 for all messages)"
+                    },
+                    {
+                        "in": "query",
+                        "name": "password",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "IMAP account password",
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "recipient",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "ID of the mailbox to import messages into",
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "use_ssl",
+                        "schema": {
+                            "type": "boolean",
+                            "default": true
+                        },
+                        "description": "Whether to use SSL for the connection"
+                    },
+                    {
+                        "in": "query",
+                        "name": "username",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "IMAP account username",
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ImportIMAPRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ImportIMAPRequest"
+                            }
+                        },
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ImportIMAPRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "task_id": {
+                                            "type": "string",
+                                            "description": "Celery task ID for tracking import progress"
+                                        },
+                                        "type": {
+                                            "type": "string",
+                                            "description": "Type of import (imap)"
+                                        },
+                                        "status": {
+                                            "type": "string",
+                                            "description": "Initial status of the import task"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "IMAP import started. Returns Celery task ID for tracking the import progress."
+                    },
+                    "400": {
+                        "description": "Invalid input data or IMAP connection parameters"
+                    },
+                    "403": {
+                        "description": "User does not have access to the specified mailbox or IMAP credentials are invalid"
+                    },
+                    "404": {
+                        "description": "Specified mailbox not found"
+                    }
+                }
+            }
+        },
         "/api/v1.0/mailboxes/": {
             "get": {
                 "operationId": "mailboxes_list",
@@ -2286,6 +2533,40 @@
             }
         },
         "/api/v1.0/threads/{id}/": {
+            "get": {
+                "operationId": "threads_retrieve",
+                "description": "ViewSet for Thread model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "threads"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Thread"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
             "delete": {
                 "operationId": "threads_destroy",
                 "description": "ViewSet for Thread model.",
@@ -2969,6 +3250,83 @@
                 ],
                 "type": "string",
                 "description": "* `unread` - unread\n* `starred` - starred\n* `trashed` - trashed"
+            },
+            "ImportFileRequest": {
+                "type": "object",
+                "description": "Serializer for importing EML or MBOX files via API.",
+                "properties": {
+                    "import_file": {
+                        "type": "string",
+                        "format": "binary",
+                        "description": "Select an EML or MBOX file to import"
+                    },
+                    "recipient": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "UUID of the recipient mailbox"
+                    }
+                },
+                "required": [
+                    "import_file",
+                    "recipient"
+                ]
+            },
+            "ImportIMAPRequest": {
+                "type": "object",
+                "description": "Serializer for importing messages from IMAP server via API.",
+                "properties": {
+                    "recipient": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "UUID of the recipient mailbox"
+                    },
+                    "imap_server": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "IMAP server hostname"
+                    },
+                    "imap_port": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "IMAP server port"
+                    },
+                    "username": {
+                        "type": "string",
+                        "format": "email",
+                        "minLength": 1,
+                        "description": "Email address for IMAP login"
+                    },
+                    "password": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "minLength": 1,
+                        "description": "IMAP password"
+                    },
+                    "use_ssl": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Use SSL for IMAP connection"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "minLength": 1,
+                        "default": "INBOX",
+                        "description": "IMAP folder to import from"
+                    },
+                    "max_messages": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 0,
+                        "description": "Maximum number of messages to import (0 for all)"
+                    }
+                },
+                "required": [
+                    "imap_port",
+                    "imap_server",
+                    "password",
+                    "recipient",
+                    "username"
+                ]
             },
             "MailDomainAdmin": {
                 "type": "object",
@@ -3797,6 +4155,10 @@
                             "$ref": "#/components/schemas/ThreadAccessDetail"
                         },
                         "readOnly": true
+                    },
+                    "labels": {
+                        "type": "string",
+                        "readOnly": true
                     }
                 },
                 "required": [
@@ -3808,6 +4170,7 @@
                     "count_trashed",
                     "count_unread",
                     "id",
+                    "labels",
                     "messaged_at",
                     "messages",
                     "sender_names",
