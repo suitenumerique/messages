@@ -303,3 +303,166 @@ class TestLabelViewSet:
         assert "Label with this Slug and Mailbox already exists." in str(
             response.data["__all__"]
         )
+
+    def test_list_labels_hierarchical_structure(self, api_client, mailbox, user):
+        """Test that labels are returned in a proper hierarchical structure."""
+        # Create a hierarchical structure of labels
+        LabelFactory(mailbox=mailbox, name="Root1", color="#FF0000")
+        LabelFactory(mailbox=mailbox, name="Root1/Child1", color="#00FF00")
+        LabelFactory(mailbox=mailbox, name="Root1/Child2", color="#0000FF")
+        LabelFactory(mailbox=mailbox, name="Root2", color="#FFFF00")
+        
+        # Create labels in another mailbox
+        other_mailbox = MailboxFactory()
+        other_mailbox.accesses.create(user=user, role=models.MailboxRoleChoices.ADMIN)
+        LabelFactory(mailbox=other_mailbox, name="Root3", color="#FF00FF")
+        LabelFactory(
+            mailbox=other_mailbox, name="Root3/Child1", color="#00FFFF"
+        )
+
+        url = reverse("labels-list")
+        response = api_client.get(url)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+
+        # Should only get labels from mailboxes user has access to
+        assert len(data) == 3  # Root1, Root2, Root3
+
+        # Find Root1 and verify its structure
+        root1_data = next(label for label in data if label["name"] == "Root1")
+        assert len(root1_data["children"]) == 2
+        assert root1_data["color"] == "#FF0000"
+        assert root1_data["display_name"] == "Root1"
+
+        # Verify children are sorted alphabetically
+        assert root1_data["children"][0]["name"] == "Root1/Child1"
+        assert root1_data["children"][1]["name"] == "Root1/Child2"
+
+        # Verify Root2 has no children
+        root2_data = next(label for label in data if label["name"] == "Root2")
+        assert len(root2_data["children"]) == 0
+
+        # Verify Root3 and its child
+        root3_data = next(label for label in data if label["name"] == "Root3")
+        assert len(root3_data["children"]) == 1
+        assert root3_data["children"][0]["name"] == "Root3/Child1"
+
+    def test_list_labels_hierarchical_filter_by_mailbox(
+        self, api_client, mailbox, user
+    ):
+        """Test filtering hierarchical labels by mailbox_id."""
+        # Create labels in mailbox1
+        LabelFactory(mailbox=mailbox, name="Root1", color="#FF0000")
+        LabelFactory(mailbox=mailbox, name="Root1/Child1", color="#00FF00")
+        LabelFactory(mailbox=mailbox, name="Root2", color="#FFFF00")
+        
+        # Create labels in another mailbox
+        other_mailbox = MailboxFactory()
+        other_mailbox.accesses.create(user=user, role=models.MailboxRoleChoices.ADMIN)
+        LabelFactory(mailbox=other_mailbox, name="Root3", color="#FF00FF")
+
+        url = reverse("labels-list")
+
+        # Test filtering by mailbox1
+        response = api_client.get(f"{url}?mailbox_id={mailbox.id}")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+
+        # Should only get labels from mailbox1
+        assert len(data) == 2  # Root1, Root2
+        assert all(label["name"] in ["Root1", "Root2"] for label in data)
+
+        # Test filtering by other_mailbox
+        response = api_client.get(f"{url}?mailbox_id={other_mailbox.id}")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+
+        # Should only get labels from other_mailbox
+        assert len(data) == 1  # Root3
+        assert data[0]["name"] == "Root3"
+
+    def test_list_labels_hierarchical_inaccessible_mailbox(
+        self, api_client, mailbox, user
+    ):
+        """Test that labels from inaccessible mailboxes are not returned in hierarchical view."""
+        # Create a label in an inaccessible mailbox
+        inaccessible_mailbox = MailboxFactory()
+        LabelFactory(
+            mailbox=inaccessible_mailbox, name="Inaccessible", color="#000000"
+        )
+
+        url = reverse("labels-list")
+        response = api_client.get(url)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+
+        # Verify inaccessible label is not in the response
+        assert not any(label["name"] == "Inaccessible" for label in data)
+
+        # Try to filter by inaccessible mailbox
+        response = api_client.get(f"{url}?mailbox_id={inaccessible_mailbox.id}")
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.json()) == 0
+
+    def test_list_labels_hierarchical_unauthorized(self, api_client):
+        """Test that unauthorized users cannot access hierarchical labels."""
+        api_client.force_authenticate(user=None)
+        url = reverse("labels-list")
+        response = api_client.get(url)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_list_labels_hierarchical_deep_nesting(self, api_client, mailbox):
+        """Test handling of deeply nested labels."""
+        # Create a deeply nested label structure
+        LabelFactory(mailbox=mailbox, name="Level1", color="#FF0000")
+        LabelFactory(mailbox=mailbox, name="Level1/Level2", color="#00FF00")
+        LabelFactory(mailbox=mailbox, name="Level1/Level2/Level3", color="#0000FF")
+        LabelFactory(
+            mailbox=mailbox, name="Level1/Level2/Level3/Level4", color="#FFFF00"
+        )
+
+        url = reverse("labels-list")
+        response = api_client.get(url)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+
+        # Verify the hierarchy is maintained
+        level1 = next(label for label in data if label["name"] == "Level1")
+        assert len(level1["children"]) == 1
+
+        level2 = level1["children"][0]
+        assert level2["name"] == "Level1/Level2"
+        assert len(level2["children"]) == 1
+
+        level3 = level2["children"][0]
+        assert level3["name"] == "Level1/Level2/Level3"
+        assert len(level3["children"]) == 1
+
+        level4 = level3["children"][0]
+        assert level4["name"] == "Level1/Level2/Level3/Level4"
+        assert len(level4["children"]) == 0
+
+    def test_list_labels_hierarchical_special_characters(self, api_client, mailbox):
+        """Test handling of labels with special characters in names."""
+        LabelFactory(mailbox=mailbox, name="Root/With/Slashes", color="#FF0000")
+        LabelFactory(mailbox=mailbox, name="Root/With/Special@Chars", color="#00FF00")
+        LabelFactory(mailbox=mailbox, name="Root/With/Spaces And More", color="#0000FF")
+
+        url = reverse("labels-list")
+        response = api_client.get(url)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+
+        # Verify the hierarchy is maintained with special characters
+        root = next(label for label in data if label["name"] == "Root/With/Slashes")
+        assert root["display_name"] == "Slashes"
+
+        special = next(
+            label for label in data if label["name"] == "Root/With/Special@Chars"
+        )
+        assert special["display_name"] == "Special@Chars"
+
+        spaces = next(
+            label for label in data if label["name"] == "Root/With/Spaces And More"
+        )
+        assert spaces["display_name"] == "Spaces And More"

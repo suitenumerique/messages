@@ -5,7 +5,6 @@ from django.shortcuts import get_object_or_404
 from django.utils.text import slugify
 
 import rest_framework as drf
-from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
     OpenApiResponse,
@@ -13,6 +12,7 @@ from drf_spectacular.utils import (
 )
 from rest_framework import mixins, status, viewsets
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.response import Response
 
 from core import models
 
@@ -71,6 +71,118 @@ class LabelViewSet(
 
         return queryset.distinct()
 
+    @extend_schema(
+        description="""
+        List all labels accessible to the user in a hierarchical structure.
+        
+        The response returns labels in a tree structure where:
+        - Labels are ordered alphabetically by name
+        - Each label includes its children (sub-labels)
+        - The hierarchy is determined by the label's name (e.g., "Inbox/Important" is a child of "Inbox")
+        
+        You can filter labels by mailbox using the mailbox_id query parameter.
+        """,
+        parameters=[
+            OpenApiParameter(
+                name="mailbox_id",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description="Filter labels by mailbox ID. If not provided, returns labels from all accessible mailboxes.",
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response={
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "format": "uuid"},
+                            "name": {
+                                "type": "string",
+                                "description": "Full name of the label (e.g., 'Inbox/Important')",
+                            },
+                            "slug": {
+                                "type": "string",
+                                "description": "URL-friendly version of the name",
+                            },
+                            "color": {
+                                "type": "string",
+                                "description": "Color code for the label",
+                            },
+                            "display_name": {
+                                "type": "string",
+                                "description": "Base name of the label (last part of the path)",
+                            },
+                            "children": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/Label"},
+                                "description": "Child labels, ordered alphabetically by name",
+                            },
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "slug",
+                            "color",
+                            "display_name",
+                            "children",
+                        ],
+                    },
+                },
+                description="List of labels in hierarchical structure",
+            ),
+            400: OpenApiResponse(description="Invalid mailbox_id parameter"),
+            403: OpenApiResponse(
+                description="User does not have access to the specified mailbox"
+            ),
+        },
+    )
+    def list(self, request, *args, **kwargs):
+        """List labels in a hierarchical structure, ordered alphabetically by name."""
+        queryset = self.get_queryset().order_by("name")
+
+        # Get all labels and build the tree structure
+        labels = list(queryset)
+        label_dict = {}
+        root_labels = []
+
+        # First pass: create dictionary of all labels
+        for label in labels:
+            label_dict[label.id] = {
+                "id": str(label.id),
+                "name": label.name,
+                "slug": label.slug,
+                "color": label.color,
+                "display_name": label.name.split("/")[-1],
+                "children": [],
+            }
+
+        # Second pass: build the tree structure
+        for label in labels:
+            label_data = label_dict[label.id]
+            parts = label.name.split("/")
+
+            if len(parts) == 1:
+                # This is a root label
+                root_labels.append(label_data)
+            else:
+                # This is a child label
+                parent_name = "/".join(parts[:-1])
+                # Find parent label
+                for potential_parent in labels:
+                    if potential_parent.name == parent_name:
+                        label_dict[potential_parent.id]["children"].append(label_data)
+                        break
+
+        # Sort children alphabetically by name
+        for label_data in label_dict.values():
+            label_data["children"].sort(key=lambda x: x["name"])
+
+        # Sort root labels alphabetically
+        root_labels.sort(key=lambda x: x["name"])
+
+        return Response(root_labels)
 
     @extend_schema(
         request=serializers.LabelSerializer,

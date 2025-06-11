@@ -510,7 +510,6 @@ class ThreadLabelSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "slug"]
 
 
-
 class LabelSerializer(serializers.ModelSerializer):
     """Serializer for Label model."""
 
