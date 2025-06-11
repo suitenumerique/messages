@@ -2,6 +2,7 @@
 # pylint: disable=redefined-outer-name, unused-argument, no-value-for-parameter
 
 import datetime
+from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
@@ -10,7 +11,7 @@ import pytest
 
 from core import factories
 from core.models import Mailbox, MailDomain, Message, Thread
-from core.tasks import process_mbox_file_task
+from core.tasks import process_eml_file_task, process_mbox_file_task
 
 
 @pytest.fixture
@@ -82,42 +83,62 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
     """Test submitting the import form with a valid EML file."""
     url = reverse("admin:core_message_import_messages")
 
-    # Create a test EML file
-    eml_file = SimpleUploadedFile("test.eml", eml_file, content_type="message/rfc822")
-
-    # Submit the form
-    response = admin_client.post(
-        url, {"import_file": eml_file, "recipient": mailbox.id}, follow=True
+    # Create a SimpleUploadedFile from the bytes content
+    test_file = SimpleUploadedFile(
+        "test.eml",
+        eml_file,  # eml_file is already bytes
+        content_type="message/rfc822",
     )
 
-    # Check response
-    assert response.status_code == 200
-    assert (
-        f"Successfully processed EML file: test.eml for recipient {mailbox}"
-        in response.content.decode()
-    )
-    # check that the message was created
-    assert Message.objects.count() == 1
-    message = Message.objects.first()
-    assert message.subject == "Mon mail avec joli pj"
-    assert message.attachments.count() == 1
-    assert message.sender.email == "sender@example.com"
-    assert message.recipients.get().contact.email == "recipient@example.com"
-    assert message.sent_at == message.thread.messaged_at
-    assert message.sent_at == (
-        datetime.datetime(2025, 5, 26, 20, 13, 44, tzinfo=datetime.timezone.utc)
-    )
+    with patch("core.tasks.process_eml_file_task.delay") as mock_task:
+        mock_task.return_value.id = "fake-task-id"
+        # Submit the form
+        response = admin_client.post(
+            url, {"import_file": test_file, "recipient": mailbox.id}, follow=True
+        )
+
+        # Check response
+        assert response.status_code == 200
+        assert (
+            f"Started processing EML file: test.eml for recipient {mailbox}"
+            in response.content.decode()
+        )
+        mock_task.assert_called_once()
+
+        # Run the task synchronously for testing
+        result = process_eml_file_task(
+            file_content=eml_file, recipient_id=str(mailbox.id)
+        )
+        assert result["status"] == "completed"
+        assert result["type"] == "eml"
+        assert result["total_messages"] == 1
+        assert result["success_count"] == 1
+        assert result["failure_count"] == 0
+        # check that the message was created
+        assert Message.objects.count() == 1
+        message = Message.objects.first()
+        assert message.subject == "Mon mail avec joli pj"
+        assert message.attachments.count() == 1
+        assert message.sender.email == "sender@example.com"
+        assert message.recipients.get().contact.email == "recipient@example.com"
+        assert message.sent_at == message.thread.messaged_at
+        assert message.sent_at == (
+            datetime.datetime(2025, 5, 26, 20, 13, 44, tzinfo=datetime.timezone.utc)
+        )
 
 
 @pytest.mark.django_db
 def test_process_mbox_file_task(mailbox, mbox_file):
     """Test the Celery task that processes MBOX files."""
     # Run the task synchronously for testing
-    success_count, failure_count = process_mbox_file_task(
+    result = process_mbox_file_task(
         file_content=mbox_file, recipient_id=str(mailbox.id)
     )
-    assert success_count == 3  # Three messages in the test MBOX file
-    assert failure_count == 0
+    assert result["status"] == "completed"
+    assert result["type"] == "mbox"
+    assert result["total_messages"] == 3  # Three messages in the test MBOX file
+    assert result["success_count"] == 3
+    assert result["failure_count"] == 0
 
     # Verify messages were created
     assert Message.objects.count() == 3

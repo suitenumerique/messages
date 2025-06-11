@@ -69,8 +69,7 @@ def test_import_eml_file(api_client, user, mailbox, eml_file_path):
             {"import_file": f, "recipient": str(mailbox.id)},
             format="multipart",
         )
-    assert response.status_code == 200
-    assert response.data["success"] is True
+    assert response.status_code == 202
     assert response.data["type"] == "eml"
     assert Message.objects.count() == 1
     message = Message.objects.first()

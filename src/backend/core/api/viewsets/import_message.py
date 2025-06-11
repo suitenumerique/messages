@@ -33,23 +33,19 @@ class ImportViewSet(viewsets.ViewSet):
     @extend_schema(
         request=ImportFileSerializer,
         responses={
-            200: OpenApiResponse(
-                description="EML file import completed successfully",
-                response={
-                    "type": "object",
-                    "properties": {
-                        "task_id": {"type": "string", "description": "Task ID for tracking the import"},
-                        "type": {"type": "string", "description": "Type of import (eml)"},
-                    },
-                },
-            ),
             202: OpenApiResponse(
-                description="MBOX file import started. Returns Celery task ID for tracking.",
+                description="Import started. Returns Celery task ID for tracking.",
                 response={
                     "type": "object",
                     "properties": {
-                        "task_id": {"type": "string", "description": "Task ID for tracking the import"},
-                        "type": {"type": "string", "description": "Type of import (mbox)"},
+                        "task_id": {
+                            "type": "string",
+                            "description": "Task ID for tracking the import",
+                        },
+                        "type": {
+                            "type": "string",
+                            "description": "Type of import (eml or mbox)",
+                        },
                     },
                 },
             ),
@@ -62,9 +58,7 @@ class ImportViewSet(viewsets.ViewSet):
         description="""
         Import messages by uploading an EML or MBOX file.
         
-        - For EML files: Import is processed synchronously and returns immediately
-        - For MBOX files: Import is processed asynchronously and returns a task ID
-        
+        The import is processed asynchronously and returns a task ID for tracking.
         The file must be a valid EML or MBOX format. The recipient mailbox must exist
         and the user must have access to it.
         """,
@@ -103,12 +97,7 @@ class ImportViewSet(viewsets.ViewSet):
         if not success:
             return Response(response_data, status=status.HTTP_403_FORBIDDEN)
 
-        return Response(
-            response_data,
-            status=status.HTTP_202_ACCEPTED
-            if response_data["type"] == "mbox"
-            else status.HTTP_200_OK,
-        )
+        return Response(response_data, status=status.HTTP_202_ACCEPTED)
 
     @extend_schema(
         request=ImportIMAPSerializer,
@@ -118,8 +107,14 @@ class ImportViewSet(viewsets.ViewSet):
                 response={
                     "type": "object",
                     "properties": {
-                        "task_id": {"type": "string", "description": "Task ID for tracking the import"},
-                        "type": {"type": "string", "description": "Type of import (imap)"},
+                        "task_id": {
+                            "type": "string",
+                            "description": "Task ID for tracking the import",
+                        },
+                        "type": {
+                            "type": "string",
+                            "description": "Type of import (imap)",
+                        },
                     },
                 },
             ),

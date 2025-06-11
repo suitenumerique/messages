@@ -1218,7 +1218,7 @@
         "/api/v1.0/import/file/": {
             "post": {
                 "operationId": "import_file_create",
-                "description": "\n        Import messages by uploading an EML or MBOX file.\n        \n        - For EML files: Import is processed synchronously and returns immediately\n        - For MBOX files: Import is processed asynchronously and returns a task ID\n        \n        The file must be a valid EML or MBOX format. The recipient mailbox must exist\n        and the user must have access to it.\n        ",
+                "description": "\n        Import messages by uploading an EML or MBOX file.\n        \n        The import is processed asynchronously and returns a task ID for tracking.\n        The file must be a valid EML or MBOX format. The recipient mailbox must exist\n        and the user must have access to it.\n        ",
                 "parameters": [
                     {
                         "in": "query",
@@ -1259,30 +1259,6 @@
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "type": {
-                                            "type": "string",
-                                            "description": "Type of import (eml)"
-                                        },
-                                        "status": {
-                                            "type": "string",
-                                            "description": "Status of the import"
-                                        },
-                                        "message": {
-                                            "type": "string",
-                                            "description": "Success message"
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        "description": "EML file import completed successfully"
-                    },
                     "202": {
                         "content": {
                             "application/json": {
@@ -1291,21 +1267,17 @@
                                     "properties": {
                                         "task_id": {
                                             "type": "string",
-                                            "description": "Celery task ID for tracking import progress"
+                                            "description": "Task ID for tracking the import"
                                         },
                                         "type": {
                                             "type": "string",
-                                            "description": "Type of import (mbox)"
-                                        },
-                                        "status": {
-                                            "type": "string",
-                                            "description": "Initial status of the import task"
+                                            "description": "Type of import (eml or mbox)"
                                         }
                                     }
                                 }
                             }
                         },
-                        "description": "MBOX file import started. Returns Celery task ID for tracking."
+                        "description": "Import started. Returns Celery task ID for tracking."
                     },
                     "400": {
                         "description": "Invalid input data or file format"
@@ -1434,15 +1406,11 @@
                                     "properties": {
                                         "task_id": {
                                             "type": "string",
-                                            "description": "Celery task ID for tracking import progress"
+                                            "description": "Task ID for tracking the import"
                                         },
                                         "type": {
                                             "type": "string",
                                             "description": "Type of import (imap)"
-                                        },
-                                        "status": {
-                                            "type": "string",
-                                            "description": "Initial status of the import task"
                                         }
                                     }
                                 }

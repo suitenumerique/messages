@@ -7,10 +7,12 @@ from django.contrib import messages
 from django.core.files.uploadedfile import UploadedFile
 from django.http import HttpRequest
 
-from core.mda.inbound import deliver_inbound_message
-from core.mda.rfc5322 import parse_email_message
 from core.models import Mailbox
-from core.tasks import import_imap_messages_task, process_mbox_file_task
+from core.tasks import (
+    import_imap_messages_task,
+    process_eml_file_task,
+    process_mbox_file_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,26 +56,21 @@ class ImportService:
                         "This may take a while. You can check the status in the Celery task monitor.",
                     )
                 return True, response_data
-            else:
-                # Process EML file synchronously
-                parsed_email = parse_email_message(file_content)
-                success = deliver_inbound_message(
-                    str(recipient), parsed_email, file_content, is_import=True
-                )
-                response_data = {"success": success, "type": "eml"}
+            elif file.name.endswith(".eml"):
+                # Process EML file asynchronously
+                task = process_eml_file_task.delay(file_content, str(recipient.id))
+                response_data = {"task_id": task.id, "type": "eml"}
                 if request:
-                    if success:
-                        messages.success(
-                            request,
-                            f"Successfully processed EML file: {file.name} for recipient {recipient}",
-                        )
-                    else:
-                        messages.error(
-                            request,
-                            f"Failed to process EML file: {file.name} for recipient {recipient}",
-                        )
-                return success, response_data
-
+                    messages.info(
+                        request,
+                        f"Started processing EML file: {file.name} for recipient {recipient}. "
+                        "This may take a while. You can check the status in the Celery task monitor.",
+                    )
+                return True, response_data
+            else:
+                return False, {
+                    "detail": "Invalid file format. Only EML and MBOX files are supported."
+                }
         except Exception as e:
             logger.exception("Error processing file: %s", e)
             if request:

@@ -1,8 +1,9 @@
 """Tests for the ImportService class."""
 
 import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
+from django.contrib.messages.storage.fallback import FallbackStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import HttpRequest
 
@@ -45,6 +46,18 @@ def mailbox(domain):
 
 
 @pytest.fixture
+def mock_request():
+    """Create a mock request object with messages framework support."""
+    request = HttpRequest()
+    request.user = None
+    # Set up messages framework
+    request.session = "session"
+    messages = FallbackStorage(request)
+    request._messages = messages
+    return request
+
+
+@pytest.fixture
 def eml_file():
     """Get test eml file from test data."""
     with open("core/tests/resources/message.eml", "rb") as f:
@@ -60,27 +73,37 @@ def mbox_file():
         )
 
 
-@pytest.fixture
-def mock_request():
-    """Create a mock request object."""
-    request = MagicMock(spec=HttpRequest)
-    request._messages = MagicMock()
-    return request
-
-
 @pytest.mark.django_db
 def test_import_file_eml_by_superuser(admin_user, mailbox, eml_file, mock_request):
     """Test successful EML file import for superuser."""
-    success, response_data = ImportService.import_file(
-        file=eml_file,
-        recipient=mailbox,
-        user=admin_user,
-        request=mock_request,
-    )
+    with patch("core.tasks.process_eml_file_task.delay") as mock_task:
+        mock_task.return_value.id = "fake-task-id"
+        success, response_data = ImportService.import_file(
+            file=eml_file,
+            recipient=mailbox,
+            user=admin_user,
+            request=mock_request,
+        )
 
-    assert success is True
-    assert response_data["type"] == "eml"
-    assert response_data["success"] is True
+        assert success is True
+        assert response_data["type"] == "eml"
+        assert response_data["task_id"] == "fake-task-id"
+        mock_task.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_import_file_eml_by_superuser_sync(admin_user, mailbox, eml_file):
+    # Run the task synchronously for testing
+    from core.tasks import process_eml_file_task
+
+    result = process_eml_file_task(
+        file_content=eml_file.read(), recipient_id=str(mailbox.id)
+    )
+    assert result["status"] == "completed"
+    assert result["type"] == "eml"
+    assert result["total_messages"] == 1
+    assert result["success_count"] == 1
+    assert result["failure_count"] == 0
     assert Message.objects.count() == 1
 
     message = Message.objects.first()
@@ -95,21 +118,41 @@ def test_import_file_eml_by_superuser(admin_user, mailbox, eml_file, mock_reques
 
 
 @pytest.mark.django_db
-def test_import_file_eml_by_user_with_access(user, mailbox, eml_file, mock_request):
+def test_import_file_eml_by_user_with_access_task(
+    user, mailbox, eml_file, mock_request
+):
     """Test successful EML file import by user with access on mailbox."""
     # Add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
-    success, response_data = ImportService.import_file(
-        file=eml_file,
-        recipient=mailbox,
-        user=user,
-        request=mock_request,
-    )
+    with patch("core.tasks.process_eml_file_task.delay") as mock_task:
+        mock_task.return_value.id = "fake-task-id"
+        success, response_data = ImportService.import_file(
+            file=eml_file,
+            recipient=mailbox,
+            user=user,
+            request=mock_request,
+        )
 
-    assert success is True
-    assert response_data["type"] == "eml"
-    assert response_data["success"] is True
+        assert success is True
+        assert response_data["type"] == "eml"
+        assert response_data["task_id"] == "fake-task-id"
+        mock_task.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_import_file_eml_by_user_with_access_sync(user, mailbox, eml_file):
+    # Run the task synchronously for testing
+    from core.tasks import process_eml_file_task
+
+    result = process_eml_file_task(
+        file_content=eml_file.read(), recipient_id=str(mailbox.id)
+    )
+    assert result["status"] == "completed"
+    assert result["type"] == "eml"
+    assert result["total_messages"] == 1
+    assert result["success_count"] == 1
+    assert result["failure_count"] == 0
     assert Message.objects.count() == 1
 
     message = Message.objects.first()
@@ -210,21 +253,32 @@ def test_import_file_no_access(user, domain, eml_file, mock_request):
     assert Message.objects.count() == 0
 
 
+@pytest.mark.django_db
 def test_import_file_invalid_file(admin_user, mailbox, mock_request):
-    """Test import with invalid file type."""
+    """Test import with an invalid file."""
+    # Create an invalid file (not EML or MBOX)
     invalid_file = SimpleUploadedFile(
-        "test.txt", b"Not an email file", content_type="text/plain"
+        "test.txt", b"Invalid file content", content_type="text/plain"
     )
 
-    success, response_data = ImportService.import_file(
-        file=invalid_file,
-        recipient=mailbox,
-        user=admin_user,
-        request=mock_request,
-    )
+    with patch("core.tasks.process_eml_file_task.delay") as mock_task:
+        # The task should not be called for invalid files
+        mock_task.assert_not_called()
 
-    assert success is False
-    assert Message.objects.count() == 0
+        success, response_data = ImportService.import_file(
+            file=invalid_file,
+            recipient=mailbox,
+            user=admin_user,
+            request=mock_request,
+        )
+
+        assert success is False
+        assert "detail" in response_data
+        assert (
+            "Invalid file format. Only EML and MBOX files are supported."
+            in response_data["detail"]
+        )
+        assert Message.objects.count() == 0
 
 
 def test_import_imap_by_superuser(admin_user, mailbox, mock_request):
@@ -250,10 +304,11 @@ def test_import_imap_by_superuser(admin_user, mailbox, mock_request):
         mock_task.assert_called_once()
 
 
-def test_import_imap_by_user_with_access(user, mailbox, mock_request):
+@pytest.mark.parametrize("role", [MailboxRoleChoices.ADMIN, MailboxRoleChoices.EDITOR])
+def test_import_imap_by_user_with_access(user, mailbox, mock_request, role):
     """Test successful IMAP import by user with access on mailbox."""
     # Add access to mailbox
-    mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
+    mailbox.accesses.create(user=user, role=role)
 
     with patch("core.tasks.import_imap_messages_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id"

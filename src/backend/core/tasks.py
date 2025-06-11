@@ -335,7 +335,13 @@ def process_mbox_file_task(
             )
             failure_count += 1
 
-    return success_count, failure_count
+    return {
+        "status": "completed",
+        "total_messages": len(messages),
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "type": "mbox",
+    }
 
 
 def split_mbox_file(content: bytes) -> List[bytes]:
@@ -482,9 +488,78 @@ def import_imap_messages_task(
             "total_messages": total_messages,
             "success_count": success_count,
             "failure_count": failure_count,
+            "type": "imap",
         }
 
     except Exception as e:
         logger.exception("Error in import_imap_messages_task: %s", e)
         self.update_state(state="FAILURE", meta={"status": "failed", "error": str(e)})
         raise
+
+
+@celery_app.task(bind=True)
+def process_eml_file_task(
+    self, file_content: bytes, recipient_id: str
+) -> Dict[str, Any]:
+    """
+    Process an EML file asynchronously.
+
+    Args:
+        file_content: The content of the EML file
+        recipient_id: The UUID of the recipient mailbox
+
+    Returns:
+        Dictionary with import statistics
+    """
+    try:
+        recipient = Mailbox.objects.get(id=recipient_id)
+    except Mailbox.DoesNotExist:
+        logger.error("Recipient mailbox %s not found", recipient_id)
+        return {
+            "status": "failed",
+            "total_messages": 0,
+            "success_count": 0,
+            "failure_count": 0,
+            "type": "eml",
+            "error": "Recipient mailbox not found",
+        }
+
+    try:
+        # Parse the email message
+        parsed_email = parse_email_message(file_content)
+        # Deliver the message
+        success = deliver_inbound_message(
+            str(recipient), parsed_email, file_content, is_import=True
+        )
+
+        if success:
+            return {
+                "status": "completed",
+                "total_messages": 1,
+                "success_count": 1,
+                "failure_count": 0,
+                "type": "eml",
+            }
+        return {
+            "status": "failed",
+            "total_messages": 1,
+            "success_count": 0,
+            "failure_count": 1,
+            "type": "eml",
+            "error": "Failed to deliver message",
+        }
+    except Exception as e:
+        logger.exception(
+            "Error processing EML file for recipient %s: %s",
+            recipient_id,
+            e,
+        )
+        self.update_state(state="FAILURE", meta={"status": "failed", "error": str(e)})
+        return {
+            "status": "failed",
+            "total_messages": 1,
+            "success_count": 0,
+            "failure_count": 1,
+            "type": "eml",
+            "error": str(e),
+        }
