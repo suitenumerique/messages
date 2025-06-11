@@ -87,7 +87,9 @@ class LabelViewSet(
                 name="mailbox_id",
                 type=int,
                 location=OpenApiParameter.QUERY,
-                description="Filter labels by mailbox ID. If not provided, returns labels from all accessible mailboxes.",
+                description="""
+                Filter labels by mailbox ID. If not provided, returns labels from all accessible mailboxes.
+                """,
             )
         ],
         responses={
@@ -316,3 +318,60 @@ class LabelViewSet(
         label.threads.remove(*accessible_threads)
         serializer = self.get_serializer(label)
         return drf.response.Response(serializer.data)
+
+    @extend_schema(
+        request=serializers.LabelSerializer,
+        responses={
+            201: OpenApiResponse(
+                response=serializers.LabelSerializer,
+                description="Label created successfully",
+            ),
+            400: OpenApiResponse(
+                response={"detail": "Validation error"},
+                description="Invalid input data",
+            ),
+        },
+    )
+    def create(self, request, *args, **kwargs):
+        """Create a label, ensuring parent labels exist in the hierarchy."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Get the validated data
+        name = serializer.validated_data["name"]
+        mailbox = serializer.validated_data["mailbox"]
+        color = serializer.validated_data.get(
+            "color", models.Label._meta.get_field("color").default
+        )
+
+        # Split the name into parts to handle hierarchy
+        parts = name.split("/")
+
+        # Create parent labels if they don't exist
+        current_path = []
+        for part in parts[:-1]:  # Exclude the last part (the actual label)
+            current_path.append(part)
+            parent_name = "/".join(current_path)
+
+            # Check if parent label exists
+            parent_label = models.Label.objects.filter(
+                name=parent_name, mailbox=mailbox
+            ).first()
+
+            if not parent_label:
+                # Create parent label with color if provided, otherwise use model default
+                parent_label = models.Label.objects.create(
+                    name=parent_name,
+                    mailbox=mailbox,
+                    color=color,
+                )
+
+        # Create the actual label with color if provided, otherwise use model default
+        label = models.Label.objects.create(
+            name=name,
+            mailbox=mailbox,
+            color=color,
+        )
+
+        serializer = self.get_serializer(label)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)

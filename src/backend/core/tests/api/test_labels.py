@@ -1,6 +1,6 @@
 """Tests for the label API endpoints."""
 
-# pylint: disable=redefined-outer-name
+# pylint: disable=redefined-outer-name, unused-argument
 from django.urls import reverse
 
 import pytest
@@ -58,20 +58,79 @@ class TestLabelSerializer:
         mailbox.accesses.create(user=user, role=role)
         url = reverse("labels-list")
         data = {
-            "name": "Work/Projects",
+            "name": "Work/Projects/Urgent",
             "mailbox": str(mailbox.id),
             "color": "#FF0000",
         }
 
         response = api_client.post(url, data, format="json")
         assert response.status_code == status.HTTP_201_CREATED
-        assert models.Label.objects.count() == 1
 
-        label = models.Label.objects.first()
-        assert label.name == "Work/Projects"
-        assert label.slug == "work-projects"
+        # todo: return list of created labels???? now only one is returned!
+
+        # there should be 3 labels created: Work, Work/Projects, Work/Projects/Urgent
+        assert models.Label.objects.count() == 3
+
+        label = models.Label.objects.get(name="Work/Projects/Urgent")
+        assert label.name == "Work/Projects/Urgent"
+        assert label.slug == "work-projects-urgent"
         assert label.color == "#FF0000"
         assert label.mailbox == mailbox
+
+        assert label.parent_name == "Work/Projects"
+        parent = models.Label.objects.get(name="Work/Projects")
+        assert parent.parent_name == "Work"
+        assert parent.color == "#FF0000"
+        assert parent.mailbox == mailbox
+
+        grandparent = models.Label.objects.get(name="Work")
+        assert grandparent.parent_name is None
+        assert grandparent.color == "#FF0000"
+        assert grandparent.mailbox == mailbox
+
+    @pytest.mark.parametrize(
+        "role", [models.MailboxRoleChoices.ADMIN, models.MailboxRoleChoices.EDITOR]
+    )
+    def test_create_label_valid_data_similar_to_existing_parent(
+        self, api_client, role, user
+    ):
+        """Test creating a label with valid data."""
+        mailbox = MailboxFactory()
+
+        # create a label with the same name as a parent
+        LabelFactory(name="Work", mailbox=mailbox, color="#000000")
+        assert models.Label.objects.count() == 1
+
+        mailbox.accesses.create(user=user, role=role)
+        url = reverse("labels-list")
+        data = {
+            "name": "Work/Projects/Urgent",
+            "mailbox": str(mailbox.id),
+            "color": "#FF0000",
+        }
+
+        response = api_client.post(url, data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # there should be 2 more labels created: Work/Projects, Work/Projects/Urgent
+        assert models.Label.objects.count() == 3
+
+        label = models.Label.objects.get(name="Work/Projects/Urgent")
+        assert label.name == "Work/Projects/Urgent"
+        assert label.slug == "work-projects-urgent"
+        assert label.color == "#FF0000"
+        assert label.mailbox == mailbox
+
+        assert label.parent_name == "Work/Projects"
+        parent = models.Label.objects.get(name="Work/Projects")
+        assert parent.parent_name == "Work"
+        assert parent.color == "#FF0000"
+        assert parent.mailbox == mailbox
+
+        grandparent = models.Label.objects.get(name="Work")
+        assert grandparent.parent_name is None
+        assert grandparent.color == "#000000"
+        assert grandparent.mailbox == mailbox
 
     @pytest.mark.parametrize("role", [models.MailboxRoleChoices.VIEWER])
     def test_create_label_invalid_mailbox_access(self, api_client, role, user):
@@ -129,6 +188,136 @@ class TestLabelSerializer:
             response.data["__all__"]
         )
 
+    def test_create_label_with_parents(self, api_client, mailbox):
+        """Test that creating a label with slashes automatically creates parent labels."""
+        url = reverse("labels-list")
+        data = {
+            "name": "Work/Projects/Urgent",
+            "mailbox": str(mailbox.id),
+            "color": "#FF0000",
+        }
+
+        response = api_client.post(url, data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Verify all labels were created
+        assert models.Label.objects.filter(name="Work").exists()
+        assert models.Label.objects.filter(name="Work/Projects").exists()
+        assert models.Label.objects.filter(name="Work/Projects/Urgent").exists()
+
+        # Verify colors
+        work_label = models.Label.objects.get(name="Work")
+        projects_label = models.Label.objects.get(name="Work/Projects")
+        urgent_label = models.Label.objects.get(name="Work/Projects/Urgent")
+
+        assert work_label.color == "#FF0000"
+        assert projects_label.color == "#FF0000"
+        assert urgent_label.color == "#FF0000"
+
+    def test_create_label_with_existing_parents(self, api_client, mailbox):
+        """Test creating a label when some parent labels already exist."""
+        # Create some existing parent labels
+        LabelFactory(mailbox=mailbox, name="Work", color="#0000FF")
+        LabelFactory(mailbox=mailbox, name="Work/Projects", color="#00FF00")
+
+        url = reverse("labels-list")
+        data = {
+            "name": "Work/Projects/New",
+            "mailbox": str(mailbox.id),
+            "color": "#FF0000",
+        }
+
+        response = api_client.post(url, data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Verify existing labels weren't modified
+        work_label = models.Label.objects.get(name="Work")
+        projects_label = models.Label.objects.get(name="Work/Projects")
+        assert work_label.color == "#0000FF"
+        assert projects_label.color == "#00FF00"
+
+        # Verify new label was created
+        new_label = models.Label.objects.get(name="Work/Projects/New")
+        assert new_label.color == "#FF0000"
+
+    def test_create_label_with_same_name_as_parent(self, api_client, mailbox):
+        """Test creating a label that has the same name as a potential parent."""
+        # First create a parent label
+        LabelFactory(mailbox=mailbox, name="Work/Projects", color="#0000FF")
+
+        # Try to create a label with the same name
+        url = reverse("labels-list")
+        data = {
+            "name": "Work/Projects",  # Same name as existing label
+            "mailbox": str(mailbox.id),
+            "color": "#FF0000",
+        }
+
+        response = api_client.post(url, data, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Label with this Slug and Mailbox already exists" in str(response.data)
+
+    def test_create_label_with_special_characters(self, api_client, mailbox):
+        """Test creating labels with special characters in the hierarchy."""
+        url = reverse("labels-list")
+        data = {
+            "name": "Root/With/Special@Chars/And Spaces",
+            "mailbox": str(mailbox.id),
+            "color": "#FF0000",
+        }
+
+        response = api_client.post(url, data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Verify all labels were created with proper names
+        assert models.Label.objects.filter(name="Root").exists()
+        assert models.Label.objects.filter(name="Root/With").exists()
+        assert models.Label.objects.filter(name="Root/With/Special@Chars").exists()
+        assert models.Label.objects.filter(
+            name="Root/With/Special@Chars/And Spaces"
+        ).exists()
+
+        # Verify slugs were generated correctly
+        root_label = models.Label.objects.get(name="Root")
+        special_label = models.Label.objects.get(name="Root/With/Special@Chars")
+        spaces_label = models.Label.objects.get(
+            name="Root/With/Special@Chars/And Spaces"
+        )
+
+        assert root_label.slug == "root"
+        assert special_label.slug == "root-with-specialchars"
+        assert spaces_label.slug == "root-with-specialchars-and-spaces"
+
+    def test_create_label_in_different_mailbox(self, api_client, mailbox, user):
+        """Test creating labels with hierarchy across different mailboxes."""
+        # Create another mailbox
+        other_mailbox = MailboxFactory()
+        other_mailbox.accesses.create(user=user, role=models.MailboxRoleChoices.ADMIN)
+
+        # Create a label in the first mailbox
+        LabelFactory(mailbox=mailbox, name="Work", color="#0000FF")
+
+        # Try to create a label in the second mailbox with same hierarchy
+        url = reverse("labels-list")
+        data = {
+            "name": "Work/Projects",
+            "mailbox": str(other_mailbox.id),
+            "color": "#FF0000",
+        }
+
+        response = api_client.post(url, data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Verify labels were created in correct mailboxes
+        assert models.Label.objects.filter(name="Work", mailbox=mailbox).exists()
+        assert models.Label.objects.filter(name="Work", mailbox=other_mailbox).exists()
+        assert models.Label.objects.filter(
+            name="Work/Projects", mailbox=other_mailbox
+        ).exists()
+        assert not models.Label.objects.filter(
+            name="Work/Projects", mailbox=mailbox
+        ).exists()
+
 
 @pytest.mark.django_db
 class TestLabelViewSet:
@@ -141,7 +330,8 @@ class TestLabelViewSet:
         url = reverse("labels-list")
         response = api_client.get(url)
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 3
+        data = response.json()
+        assert len(data) == 3  # The response is a list of labels
 
     def test_list_labels_filter_by_mailbox(self, api_client, mailbox, user):
         """Test listing labels filtered by mailbox."""
@@ -154,7 +344,8 @@ class TestLabelViewSet:
         url = reverse("labels-list")
         response = api_client.get(url, {"mailbox_id": str(mailbox.id)})
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 1
+        data = response.json()
+        assert len(data) == 1  # Should only get the label from the target mailbox
 
     def test_update_label(self, api_client, mailbox, label):
         """Test updating a label."""
@@ -311,14 +502,12 @@ class TestLabelViewSet:
         LabelFactory(mailbox=mailbox, name="Root1/Child1", color="#00FF00")
         LabelFactory(mailbox=mailbox, name="Root1/Child2", color="#0000FF")
         LabelFactory(mailbox=mailbox, name="Root2", color="#FFFF00")
-        
+
         # Create labels in another mailbox
         other_mailbox = MailboxFactory()
         other_mailbox.accesses.create(user=user, role=models.MailboxRoleChoices.ADMIN)
         LabelFactory(mailbox=other_mailbox, name="Root3", color="#FF00FF")
-        LabelFactory(
-            mailbox=other_mailbox, name="Root3/Child1", color="#00FFFF"
-        )
+        LabelFactory(mailbox=other_mailbox, name="Root3/Child1", color="#00FFFF")
 
         url = reverse("labels-list")
         response = api_client.get(url)
@@ -355,7 +544,7 @@ class TestLabelViewSet:
         LabelFactory(mailbox=mailbox, name="Root1", color="#FF0000")
         LabelFactory(mailbox=mailbox, name="Root1/Child1", color="#00FF00")
         LabelFactory(mailbox=mailbox, name="Root2", color="#FFFF00")
-        
+
         # Create labels in another mailbox
         other_mailbox = MailboxFactory()
         other_mailbox.accesses.create(user=user, role=models.MailboxRoleChoices.ADMIN)
@@ -387,9 +576,7 @@ class TestLabelViewSet:
         """Test that labels from inaccessible mailboxes are not returned in hierarchical view."""
         # Create a label in an inaccessible mailbox
         inaccessible_mailbox = MailboxFactory()
-        LabelFactory(
-            mailbox=inaccessible_mailbox, name="Inaccessible", color="#000000"
-        )
+        LabelFactory(mailbox=inaccessible_mailbox, name="Inaccessible", color="#000000")
 
         url = reverse("labels-list")
         response = api_client.get(url)
@@ -444,25 +631,52 @@ class TestLabelViewSet:
 
     def test_list_labels_hierarchical_special_characters(self, api_client, mailbox):
         """Test handling of labels with special characters in names."""
+        # Create the complete label hierarchy
+        LabelFactory(mailbox=mailbox, name="Root", color="#000000")
+        LabelFactory(
+            mailbox=mailbox, name="Root/With", color="#CCCCCC"
+        )  # Create intermediate label
         LabelFactory(mailbox=mailbox, name="Root/With/Slashes", color="#FF0000")
         LabelFactory(mailbox=mailbox, name="Root/With/Special@Chars", color="#00FF00")
         LabelFactory(mailbox=mailbox, name="Root/With/Spaces And More", color="#0000FF")
+
+        # Verify labels were created in the database
+        assert models.Label.objects.filter(name="Root").exists()
+        assert models.Label.objects.filter(name="Root/With").exists()
+        assert models.Label.objects.filter(name="Root/With/Slashes").exists()
+        assert models.Label.objects.filter(name="Root/With/Special@Chars").exists()
+        assert models.Label.objects.filter(name="Root/With/Spaces And More").exists()
 
         url = reverse("labels-list")
         response = api_client.get(url)
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
 
-        # Verify the hierarchy is maintained with special characters
-        root = next(label for label in data if label["name"] == "Root/With/Slashes")
-        assert root["display_name"] == "Slashes"
+        # Find the root label that should contain our special character labels
+        root_label = next((label for label in data if label["name"] == "Root"), None)
+        assert root_label is not None, "Root label not found in response"
 
-        special = next(
-            label for label in data if label["name"] == "Root/With/Special@Chars"
-        )
-        assert special["display_name"] == "Special@Chars"
+        # Verify the hierarchy
+        assert len(root_label["children"]) == 1, "Root should have one child (With)"
+        with_label = root_label["children"][0]
+        assert with_label["name"] == "Root/With"
+        assert len(with_label["children"]) == 3, "With label should have three children"
 
-        spaces = next(
-            label for label in data if label["name"] == "Root/With/Spaces And More"
+        # Convert children to dict for easier lookup
+        children_by_name = {child["name"]: child for child in with_label["children"]}
+
+        # Verify each special character label exists and has correct display name
+        assert "Root/With/Slashes" in children_by_name
+        assert children_by_name["Root/With/Slashes"]["display_name"] == "Slashes"
+
+        assert "Root/With/Special@Chars" in children_by_name
+        assert (
+            children_by_name["Root/With/Special@Chars"]["display_name"]
+            == "Special@Chars"
         )
-        assert spaces["display_name"] == "Spaces And More"
+
+        assert "Root/With/Spaces And More" in children_by_name
+        assert (
+            children_by_name["Root/With/Spaces And More"]["display_name"]
+            == "Spaces And More"
+        )
