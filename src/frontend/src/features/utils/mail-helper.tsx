@@ -1,6 +1,19 @@
 import { renderToString } from "react-dom/server";
 import { Markdown } from "@react-email/components";
 import React from "react";
+import { z } from "zod";
+
+type ImapConfig = {
+    host: string;
+    port: number;
+    use_ssl: boolean;
+}
+
+export const SUPPORTED_IMAP_DOMAINS = new Map<string, ImapConfig>([
+    ["orange.fr", { host: "imap.orange.fr", port: 993, use_ssl: true }],
+    ["wanadoo.fr", { host: "imap.orange.fr", port: 993, use_ssl: true }],
+    ["gmail.com", { host: "imap.gmail.com", port: 993, use_ssl: true }]
+]);
 
 /** An helper which aims to gather all utils related write and send a message */
 class MailHelper {
@@ -45,9 +58,26 @@ class MailHelper {
      * Test if an email address is valid.
      */
     static #isValidEmail(email: string): boolean {
-        // Trim whitespace and validate format: something@something.something
-        const emailRegex = /^((?!\.)[\w\-_.]*[^.])(@[a-zA-Z0-9\-]+)(\.[a-zA-Z0-9\-]+(\.[a-zA-Z0-9\-]+)*[^.\W])$/;
-        return emailRegex.test(email);
+        return z.string().email().safeParse(email).success;
+    }
+
+    /**
+     * Get the domain from an email address.
+     */
+    static getDomainFromEmail(email: string) {
+        if (!this.#isValidEmail(email)) return undefined;
+        return email.split('@')[1];
+    }
+
+    /**
+     * Get the IMAP config for a given email address
+     * if the domain is a supported one (see SUPPORTED_IMAP_DOMAINS)
+     */
+    static getImapConfigFromEmail(email: string): ImapConfig | undefined {
+        const domain = this.getDomainFromEmail(email);
+        if (!domain) return undefined;
+
+        return SUPPORTED_IMAP_DOMAINS.get(domain)!;
     }
 }
 

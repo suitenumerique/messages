@@ -1,4 +1,4 @@
-import MailHelper from './mail-helper';
+import MailHelper, { SUPPORTED_IMAP_DOMAINS } from './mail-helper';
 
 describe('MailHelper', () => {
   describe('markdownToHtml', () => {
@@ -112,5 +112,59 @@ describe('MailHelper', () => {
         const result = MailHelper.areRecipientsValid([email]);
         expect(result).toBe(true);
       });
+  });
+
+  describe('getDomainFromEmail', () => {
+    it('should extract domain from valid email', () => {
+      const email = 'test@example.com';
+      const result = MailHelper.getDomainFromEmail(email);
+      expect(result).toBe('example.com');
+    });
+
+    it('should return undefined for invalid email', () => {
+      const email = 'invalid-email';
+      const result = MailHelper.getDomainFromEmail(email);
+      expect(result).toBeUndefined();
+    });
+
+    it('should handle email with subdomain', () => {
+      const email = 'test@sub.example.com';
+      const result = MailHelper.getDomainFromEmail(email);
+      expect(result).toBe('sub.example.com');
+    });
+  });
+
+  describe('getImapConfigFromEmail', () => {
+    it('should support orange, wanadoo and gmail domains', () => {
+      expect(Array.from(SUPPORTED_IMAP_DOMAINS.keys())).toMatchInlineSnapshot(`
+        [
+          "orange.fr",
+          "wanadoo.fr",
+          "gmail.com",
+        ]
+      `);
+    });
+
+    it.each(Array.from(SUPPORTED_IMAP_DOMAINS.keys()))('should return config for supported domain (%s)', (domain) => {
+      const email = `test@${domain}`;
+      const result = MailHelper.getImapConfigFromEmail(email);
+      expect(result).toMatchObject({
+        host: SUPPORTED_IMAP_DOMAINS.get(domain)?.host,
+        port: SUPPORTED_IMAP_DOMAINS.get(domain)?.port,
+        use_ssl: SUPPORTED_IMAP_DOMAINS.get(domain)?.use_ssl
+      });
+    });
+
+    it('should return undefined for unsupported domain', () => {
+      const email = 'test@example.com';
+      const result = MailHelper.getImapConfigFromEmail(email);
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined for invalid email', () => {
+      const email = 'invalid-email';
+      const result = MailHelper.getImapConfigFromEmail(email);
+      expect(result).toBeUndefined();
+    });
   });
 }); 
