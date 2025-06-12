@@ -315,9 +315,20 @@ def process_mbox_file_task(
 
     # Split the mbox file into individual messages
     messages = split_mbox_file(file_content)
+    total_messages = len(messages)
 
-    for message_content in messages:
+    for i, message_content in enumerate(messages, 1):
         try:
+            # Update task state with progress
+            self.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": i,
+                    "total": total_messages,
+                    "status": f"Processing message {i} of {total_messages}",
+                },
+            )
+
             # Parse the email message
             parsed_email = parse_email_message(message_content)
             # Deliver the message
@@ -337,7 +348,7 @@ def process_mbox_file_task(
 
     return {
         "status": "completed",
-        "total_messages": len(messages),
+        "total_messages": total_messages,
         "success_count": success_count,
         "failure_count": failure_count,
         "type": "mbox",

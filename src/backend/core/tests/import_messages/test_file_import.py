@@ -2,7 +2,7 @@
 # pylint: disable=redefined-outer-name, unused-argument, no-value-for-parameter
 
 import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
@@ -130,45 +130,63 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
 @pytest.mark.django_db
 def test_process_mbox_file_task(mailbox, mbox_file):
     """Test the Celery task that processes MBOX files."""
-    # Run the task synchronously for testing
-    result = process_mbox_file_task(
-        file_content=mbox_file, recipient_id=str(mailbox.id)
-    )
-    assert result["status"] == "completed"
-    assert result["type"] == "mbox"
-    assert result["total_messages"] == 3  # Three messages in the test MBOX file
-    assert result["success_count"] == 3
-    assert result["failure_count"] == 0
+    # Create a mock task instance
+    mock_task = MagicMock()
+    mock_task.update_state = MagicMock()
 
-    # Verify messages were created
-    assert Message.objects.count() == 3
-    messages = Message.objects.order_by("created_at")
+    # Mock the task's update_state method to avoid database operations
+    with patch.object(process_mbox_file_task, "update_state", mock_task.update_state):
+        # Run the task synchronously for testing
+        result = process_mbox_file_task(
+            file_content=mbox_file, recipient_id=str(mailbox.id)
+        )
+        assert result["status"] == "completed"
+        assert result["type"] == "mbox"
+        assert result["total_messages"] == 3  # Three messages in the test MBOX file
+        assert result["success_count"] == 3
+        assert result["failure_count"] == 0
 
-    # Check thread for each message
-    assert messages[0].thread is not None
-    assert messages[1].thread is not None
-    assert messages[2].thread is not None
-    assert messages[2].thread.messages.count() == 2
-    assert messages[1].thread == messages[2].thread
-    # Check created_at dates match between messages and threads
-    assert messages[0].sent_at == messages[0].thread.messaged_at
-    assert messages[2].sent_at == messages[1].thread.messaged_at
-    assert messages[2].sent_at == (
-        datetime.datetime(2025, 5, 26, 20, 18, 4, tzinfo=datetime.timezone.utc)
-    )
+        # Verify progress updates were called correctly
+        assert mock_task.update_state.call_count == 3
+        for i in range(1, 4):
+            mock_task.update_state.assert_any_call(
+                state="PROGRESS",
+                meta={
+                    "current": i,
+                    "total": 3,
+                    "status": f"Processing message {i} of 3",
+                },
+            )
 
-    # Check messages
-    assert messages[0].subject == "Mon mail avec joli pj"
-    assert messages[0].attachments.count() == 1
+        # Verify messages were created
+        assert Message.objects.count() == 3
+        messages = Message.objects.order_by("created_at")
 
-    assert messages[1].subject == "Je t'envoie encore un message..."
-    body1 = messages[1].get_parsed_field("textBody")[0]["content"]
-    assert "Lorem ipsum dolor sit amet" in body1
+        # Check thread for each message
+        assert messages[0].thread is not None
+        assert messages[1].thread is not None
+        assert messages[2].thread is not None
+        assert messages[2].thread.messages.count() == 2
+        assert messages[1].thread == messages[2].thread
+        # Check created_at dates match between messages and threads
+        assert messages[0].sent_at == messages[0].thread.messaged_at
+        assert messages[2].sent_at == messages[1].thread.messaged_at
+        assert messages[2].sent_at == (
+            datetime.datetime(2025, 5, 26, 20, 18, 4, tzinfo=datetime.timezone.utc)
+        )
 
-    assert messages[2].subject == "Re: Je t'envoie encore un message..."
-    body2 = messages[2].get_parsed_field("textBody")[0]["content"]
-    assert "Yes !" in body2
-    assert "Lorem ipsum dolor sit amet" in body2
+        # Check messages
+        assert messages[0].subject == "Mon mail avec joli pj"
+        assert messages[0].attachments.count() == 1
+
+        assert messages[1].subject == "Je t'envoie encore un message..."
+        body1 = messages[1].get_parsed_field("textBody")[0]["content"]
+        assert "Lorem ipsum dolor sit amet" in body1
+
+        assert messages[2].subject == "Re: Je t'envoie encore un message..."
+        body2 = messages[2].get_parsed_field("textBody")[0]["content"]
+        assert "Yes !" in body2
+        assert "Lorem ipsum dolor sit amet" in body2
 
 
 def test_upload_mbox_file(admin_client, mailbox, mbox_file):
