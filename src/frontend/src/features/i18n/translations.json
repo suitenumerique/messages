@@ -12,6 +12,14 @@
       "new_message_form": {
         "title": "New message"
       },
+      "aria": {
+        "labels": {
+          "banner": {
+            "info": "Information message",
+            "error": "Error message"
+          }
+        }
+      },
       "api": {
         "error": {
           "unexpected": "An unexpected error occurred."
@@ -158,6 +166,14 @@
       "mailbox": "Boîte aux lettres",
       "new_message_form": {
         "title": "Nouveau message"
+      },
+      "aria": {
+        "labels": {
+          "banner": {
+            "info": "Message d'information",
+            "error": "Message d'erreur"
+          }
+        }
       },
       "api": {
         "error": {
