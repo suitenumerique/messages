@@ -1219,17 +1219,6 @@
             "post": {
                 "operationId": "import_file_create",
                 "description": "\n        Import messages by uploading an EML or MBOX file.\n        \n        The import is processed asynchronously and returns a task ID for tracking.\n        The file must be a valid EML or MBOX format. The recipient mailbox must exist\n        and the user must have access to it.\n        ",
-                "parameters": [
-                    {
-                        "in": "query",
-                        "name": "recipient",
-                        "schema": {
-                            "type": "integer"
-                        },
-                        "description": "ID of the mailbox to import messages into",
-                        "required": true
-                    }
-                ],
                 "tags": [
                     "import"
                 ],
@@ -1295,80 +1284,6 @@
             "post": {
                 "operationId": "import_imap_create",
                 "description": "\n        Import messages from an IMAP server.\n        \n        This endpoint initiates an asynchronous import process from an IMAP server.\n        The import is processed in the background and returns a task ID for tracking.\n        \n        Required parameters:\n        - imap_server: Hostname of the IMAP server\n        - imap_port: Port number for the IMAP server\n        - username: IMAP account username\n        - password: IMAP account password\n        - recipient: ID of the mailbox to import messages into\n        \n        Optional parameters:\n        - use_ssl: Whether to use SSL for the connection (default: true)\n        - folder: IMAP folder to import from (default: \"INBOX\")\n        - max_messages: Maximum number of messages to import (default: 0, meaning all messages)\n        ",
-                "parameters": [
-                    {
-                        "in": "query",
-                        "name": "folder",
-                        "schema": {
-                            "type": "string",
-                            "default": "INBOX"
-                        },
-                        "description": "IMAP folder to import from"
-                    },
-                    {
-                        "in": "query",
-                        "name": "imap_port",
-                        "schema": {
-                            "type": "integer"
-                        },
-                        "description": "Port number for the IMAP server",
-                        "required": true
-                    },
-                    {
-                        "in": "query",
-                        "name": "imap_server",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "description": "Hostname of the IMAP server",
-                        "required": true
-                    },
-                    {
-                        "in": "query",
-                        "name": "max_messages",
-                        "schema": {
-                            "type": "integer",
-                            "default": 0
-                        },
-                        "description": "Maximum number of messages to import (0 for all messages)"
-                    },
-                    {
-                        "in": "query",
-                        "name": "password",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "description": "IMAP account password",
-                        "required": true
-                    },
-                    {
-                        "in": "query",
-                        "name": "recipient",
-                        "schema": {
-                            "type": "integer"
-                        },
-                        "description": "ID of the mailbox to import messages into",
-                        "required": true
-                    },
-                    {
-                        "in": "query",
-                        "name": "use_ssl",
-                        "schema": {
-                            "type": "boolean",
-                            "default": true
-                        },
-                        "description": "Whether to use SSL for the connection"
-                    },
-                    {
-                        "in": "query",
-                        "name": "username",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "description": "IMAP account username",
-                        "required": true
-                    }
-                ],
                 "tags": [
                     "import"
                 ],
