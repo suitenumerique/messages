@@ -242,10 +242,11 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         if (selectedMailbox) {
             if (router.pathname === '/' ||  (selectedMailbox.id !== router.query.mailboxId && !router.pathname.includes('new'))) {
                 const defaultFolder = DEFAULT_FOLDERS[0];
+                const hash = window.location.hash;
                 if (router.query.threadId) {
-                    router.replace(`/mailbox/${selectedMailbox.id}/thread/${router.query.threadId}?${router.query.search}`);
+                    router.replace(`/mailbox/${selectedMailbox.id}/thread/${router.query.threadId}?${router.query.search}${hash}`);
                 } else {
-                    router.replace(`/mailbox/${selectedMailbox.id}?${new URLSearchParams(defaultFolder.filter).toString()}`);
+                    router.replace(`/mailbox/${selectedMailbox.id}?${new URLSearchParams(defaultFolder.filter).toString()}${hash}`);
                 }
                 invalidateThreadMessages();
             }

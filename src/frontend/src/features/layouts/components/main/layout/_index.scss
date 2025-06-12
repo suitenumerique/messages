@@ -19,6 +19,7 @@
   height: 100%;
   display: flex;
   margin-top: var(--header-height);
+  overflow: hidden;
 
   &__left-panel {
     height: calc(100dvh - var(--header-height));

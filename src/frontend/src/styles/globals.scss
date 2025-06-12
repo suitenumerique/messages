@@ -34,6 +34,17 @@ body {
   font-size: 1.25em;
 }
 
+// Cunningham tweaks
+// As we reduce the global font size, we need to increase the font size of of some components
+.c__modal__content {
+  font-size: var(--c--theme--font--sizes--md);
+}
+
+.c__file-uploader__inner__text,
+.c__file-uploader__inner__actions {
+  font-size: var(--c--theme--font--sizes--m);
+}
+
 // Related to @viselect/react
 .selection-area {
   background: rgba(46, 115, 252, 0.11);

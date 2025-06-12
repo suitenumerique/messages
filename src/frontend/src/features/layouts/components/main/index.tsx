@@ -1,27 +1,27 @@
+"use client";
 import { AppLayout } from "./layout";
 import { createContext, PropsWithChildren, useContext, useState } from "react";
 import { GlobalLayout } from "../global/global-layout";
 import AuthenticatedView from "./authenticated-view";
 import { MailboxProvider, useMailboxContext } from "@/features/providers/mailbox";
 import { NoMailbox } from "./no-mailbox";
-import { Header } from "./header";
 import { Toaster } from "@/features/ui/components/toaster";
 import { SentBoxProvider } from "@/features/providers/sent-box";
 import { LeftPanel } from "./left-panel";
 import { ModalStoreProvider } from "@/features/providers/modal-store";
 
-export const MainLayout = ({ children }: PropsWithChildren) => {
+export const MainLayout = ({ children, simple = false }: PropsWithChildren<{ simple?: boolean }>) => {
     return (
         <GlobalLayout>
             <AuthenticatedView>
-                <ModalStoreProvider>
-                <MailboxProvider>
-                    <SentBoxProvider>
-                        <MainLayoutContent>{children}</MainLayoutContent>
-                        <Toaster />
-                    </SentBoxProvider>
+                    <MailboxProvider>
+                        <SentBoxProvider>
+                            <ModalStoreProvider>
+                                <MainLayoutContent simple={simple}>{children}</MainLayoutContent>
+                                <Toaster />
+                            </ModalStoreProvider>
+                        </SentBoxProvider>
                     </MailboxProvider>
-                </ModalStoreProvider>
             </AuthenticatedView>
         </GlobalLayout>
     )
@@ -33,19 +33,10 @@ const LayoutContext = createContext({
     openLeftPanel: () => {},
 })
 
-const MainLayoutContent = ({ children }: PropsWithChildren) => {
+const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>) => {
     const { mailboxes, queryStates } = useMailboxContext();
     const hasNoMailbox = queryStates.mailboxes.status === 'success' && mailboxes!.length === 0;
     const [leftPanelOpen, setLeftPanelOpen] = useState(false);
-
-    if (hasNoMailbox) {
-        return (
-            <>
-                <Header />
-                <NoMailbox />
-            </>
-        )
-    }
 
     return (
         <LayoutContext.Provider value={{
@@ -57,10 +48,14 @@ const MainLayoutContent = ({ children }: PropsWithChildren) => {
                 enableResize
                 isLeftPanelOpen={leftPanelOpen}
                 setIsLeftPanelOpen={setLeftPanelOpen}
-                leftPanelContent={<LeftPanel />}
+                leftPanelContent={<LeftPanel hasNoMailbox={hasNoMailbox} />}
                 icon={<img src="/images/app-logo.svg" alt="logo" height={32} />}
             >
-                {children}
+                {hasNoMailbox ? (
+                    <NoMailbox />
+                ) : (
+                    children
+                )}
             </AppLayout>
         </LayoutContext.Provider>
     )

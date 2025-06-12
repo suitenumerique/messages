@@ -93,3 +93,6 @@ export const useModalStore = () => {
 // Forward other useful stuff
 export { ControlledModal } from "./controlled-modal";
 export { registerModal } from "./global-store";
+
+// Imperatively register all controlled modals
+import "@/features/controlled-modals";
