@@ -48,7 +48,9 @@
         "mark_all_as_read": "Mark all as read",
         "mark_all_as_unread": "Mark all as unread",
         "delete_draft": "Delete draft",
-        "download": "Download"
+        "download": "Download",
+        "close": "Close",
+        "import": "Import"
       },
       "tooltips": {
         "has_attachments": "This email has an attachment",
@@ -151,6 +153,44 @@
         "see_members": "See members of this conversation",
         "access_removed": "Thread access removed",
         "last_editor_deletion_forbidden": "You cannot delete the last editor of this thread"
+      },
+      "message_importer_modal": {
+        "title": "Import your old messages",
+        "progression_default": "Importing...",
+        "progress_details": "You can close this window and continue using the app.",
+        "progression_one": "{{count}} message imported on {{total}}",
+        "progression_other": "{{count}} messages imported on {{total}}",
+        "api_errors": {
+          "authentication_failed": "Authentication failed. Please check your credentials and ensure you have enabled IMAP connections in your account.",
+          "default": "An error occurred while importing messages."
+        },
+        "form": {
+          "title": "First, we need some information about your old mailbox",
+          "imap_import_description": "Indicate your old email address and your password.",
+          "imap_import_need_imap_config": "Unfortunately, we were unable to guess the IMAP configuration of your old mailbox. Please indicate it via the fields below.",
+          "upload_archive_file": "Upload an archive",
+          "imap_doc": "{{name}} configuration",
+          "or": "Or",
+          "imap_banner": {
+            "helper": "To be able to import emails from an IMAP server, you may need to allow IMAP access on your account.",
+            "link_label": "How to allow IMAP connections from your account {{name}}?"
+          },
+          "labels": {
+            "email_address": "Email address",
+            "password": "Password",
+            "imap_server": "IMAP server",
+            "imap_port": "IMAP port",
+            "use_ssl": "Use SSL",
+            "archive_file_helper": "EML or MBOX",
+            "archive_file_description": "Drag and drop an archive here"
+          },
+          "errors": {
+            "username_invalid": "The email address is invalid.",
+            "password_required": "The password is required.",
+            "imap_server_required": "The IMAP server is required.",
+            "imap_port_required": "The IMAP port is required."
+          }
+        }
       }
     }
   },
@@ -205,7 +245,9 @@
         "mark_all_as_read": "Tout marquer comme lu",
         "mark_all_as_unread": "Tout marquer comme non lu",
         "delete_draft": "Supprimer le brouillon",
-        "download": "Télécharger"
+        "download": "Télécharger",
+        "close": "Fermer",
+        "import": "Importer"
       },
       "tooltips": {
         "has_attachments": "Cette email contient une pièce jointe",
@@ -310,6 +352,45 @@
         "access_removed": "Accès à la conversation supprimé",
         "last_editor_deletion_forbidden": "Vous ne pouvez pas supprimer le dernier éditeur de cette conversation",
         "last_editor_role_top_message": "Vous êtes le dernier éditeur de cette conversation, vous ne pouvez donc pas modifier votre accès."
+      },
+      "message_importer_modal": {
+        "title": "Importer vos anciens messages",
+        "progression_default": "Importation en cours...",
+        "progression_details": "Vous pouvez fermer cette fenêtre et continuer à utiliser l'application.",
+        "progression_one": "{{count}} message importé sur {{total}}",
+        "progression_other": "{{count}} messages importés sur {{total}}",
+        "import_completed": "Vos messages ont été importés avec succès!",
+        "api_errors": {
+          "authentication_failed": "L'authentification a échoué. Veuillez vérifier vos identifiants et assurez-vous d'avoir autoriser les connexions IMAP dans votre compte.",
+          "default": "Une erreur est survenue lors de l'importation des messages."
+        },
+        "form": {
+          "title": "Tout d'abord, nous avons besoin de quelques informations sur votre ancienne boîte aux lettres",
+          "imap_import_description": "Indiquez votre ancienne adresse mail et votre mot de passe.",
+          "imap_import_need_imap_config": "Malheureusement, nous n'avons pas pu deviner la configuration IMAP de votre ancienne boîte aux lettres. Merci de nous l'indiquer via les champs ci-dessous.",
+          "upload_archive_file": "Téléversez une archive",
+          "or": "Ou",
+          "imap_banner": {
+            "helper": "Pour pouvoir importer des emails depuis un serveur IMAP, il se peut que vous deviez autoriser l'accès IMAP sur votre compte.",
+            "link_label": "Comment autoriser les connexions IMAP depuis votre compte {{name}} ?"
+          },
+          "labels": {
+            "email_address": "Adresse mail",
+            "password": "Mot de passe",
+            "imap_server": "Serveur IMAP",
+            "imap_port": "Port IMAP",
+            "use_ssl": "Utiliser SSL",
+            "archive_file_helper": "EML ou MBOX",
+            "archive_file_description": "Glissez déposez une archive ici"
+          },
+          "errors": {
+            "username_required": "L'adresse mail est requise.",
+            "username_invalid": "L'adresse mail est invalide.",
+            "password_required": "Le mot de passe est requis.",
+            "imap_server_required": "Le serveur IMAP est requis.",
+            "imap_port_required": "Le port IMAP est requis."
+          }
+        }
       }
     }
   }

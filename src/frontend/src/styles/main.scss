@@ -36,6 +36,7 @@
 @use "./../features/forms/components/message-editor";
 @use "./../features/forms/components/search-input";
 @use "./../features/forms/components/search-filters-form";
+@use "./../features/controlled-modals/message-importer";
 // Application views
 @use "./../pages";
 @use "./../pages/mailbox";
