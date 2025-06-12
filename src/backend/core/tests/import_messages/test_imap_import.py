@@ -2,7 +2,6 @@
 
 # pylint: disable=redefined-outer-name, unused-argument, no-value-for-parameter
 import datetime
-import imaplib
 from email.message import EmailMessage
 from unittest.mock import MagicMock, patch
 
@@ -156,57 +155,102 @@ def test_imap_import_task_success(
     mock_imap4_ssl.return_value = mock_imap_connection
     mock_store_result.return_value = None
 
-    # Run the task
-    result = import_imap_messages_task(
-        imap_server="imap.example.com",
-        imap_port=993,
-        username="test@example.com",
-        password="password123",
-        use_ssl=True,
-        folder="INBOX",
-        max_messages=0,
-        recipient_id=str(mailbox.id),
-    )
+    # Create a mock task instance
+    mock_task = MagicMock()
+    mock_task.update_state = MagicMock()
 
-    # Verify results
-    assert result["status"] == "completed"
-    assert result["total_messages"] == 3
-    assert result["success_count"] == 3
-    assert result["failure_count"] == 0
+    with patch.object(
+        import_imap_messages_task, "update_state", mock_task.update_state
+    ):
+        # Run the task
+        task = import_imap_messages_task(
+            imap_server="imap.example.com",
+            imap_port=993,
+            username="test@example.com",
+            password="password123",
+            use_ssl=True,
+            folder="INBOX",
+            max_messages=0,
+            recipient_id=str(mailbox.id),
+        )
 
-    # Verify messages were created
-    assert Message.objects.count() == 3
-    assert Thread.objects.count() == 3
+        # Verify results
+        assert task["status"] == "SUCCESS"
+        assert task["result"]["message_status"] == "Completed processing messages"
+        assert task["result"]["type"] == "imap"
+        assert task["result"]["total_messages"] == 3
+        assert task["result"]["success_count"] == 3
+        assert task["result"]["failure_count"] == 0
+        assert task["result"]["current_message"] == 3
 
-    # check one of the messages
-    message = Message.objects.last()
-    assert message.subject == "Test Subject"
-    assert message.sender.email == "sender@example.com"
-    assert message.recipients.count() == 1
-    assert message.recipients.first().contact.email == "recipient@example.com"
-    assert (
-        message.get_parsed_field("textBody")[0]["content"]
-        == "This is a test message body.\n"
-    )
-    assert message.attachments.count() == 0
-    assert message.thread.messages.count() == 1
-    assert message.thread.messages.first() == message
-    assert message.created_at == message.thread.messaged_at
-    assert message.created_at == datetime.datetime(
-        2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc
-    )
+        # Verify progress updates were called correctly
+        assert mock_task.update_state.call_count == 4  # 3 PROGRESS + 1 SUCCESS
+
+        # Verify progress updates
+        for i in range(1, 4):
+            mock_task.update_state.assert_any_call(
+                state="PROGRESS",
+                meta={
+                    "status": "PROGRESS",
+                    "result": {
+                        "message_status": f"Processing message {i} of 3",
+                        "total_messages": 3,
+                        "success_count": i - 1,  # Previous messages were successful
+                        "failure_count": 0,
+                        "type": "imap",
+                        "current_message": i,
+                    },
+                    "error": None,
+                },
+            )
+
+        # Verify success update
+        mock_task.update_state.assert_any_call(
+            state="SUCCESS",
+            meta=task,
+        )
+
+        # Verify messages were created
+        assert Message.objects.count() == 3
+        assert Thread.objects.count() == 3
+
+        # check one of the messages
+        message = Message.objects.last()
+        assert message.subject == "Test Subject"
+        assert message.sender.email == "sender@example.com"
+        assert message.recipients.count() == 1
+        assert message.recipients.first().contact.email == "recipient@example.com"
+        assert (
+            message.get_parsed_field("textBody")[0]["content"]
+            == "This is a test message body.\n"
+        )
+        assert message.attachments.count() == 0
+        assert message.thread.messages.count() == 1
+        assert message.thread.messages.first() == message
+        assert message.created_at == message.thread.messaged_at
+        assert message.created_at == datetime.datetime(
+            2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc
+        )
 
 
-@patch("imaplib.IMAP4_SSL")
-def test_imap_import_task_login_failure(mock_imap4_ssl, mailbox):
+@pytest.mark.django_db
+def test_imap_import_task_login_failure(mailbox):
     """Test IMAP import task with login failure."""
-    mock_imap = MagicMock()
-    mock_imap.login.side_effect = imaplib.IMAP4.error("Login failed")
-    mock_imap4_ssl.return_value = mock_imap
+    # Create a mock task instance
+    mock_task = MagicMock()
+    mock_task.update_state = MagicMock()
 
-    # Run the task and expect exception
-    with pytest.raises(Exception) as exc_info:
-        import_imap_messages_task(
+    # Mock IMAP connection to raise an error on login
+    with (
+        patch.object(import_imap_messages_task, "update_state", mock_task.update_state),
+        patch("core.tasks.imaplib.IMAP4_SSL") as mock_imap,
+    ):
+        mock_imap_instance = MagicMock()
+        mock_imap.return_value = mock_imap_instance
+        mock_imap_instance.login.side_effect = Exception("Login failed")
+
+        # Run the task
+        task_result = import_imap_messages_task(
             imap_server="imap.example.com",
             imap_port=993,
             username="test@example.com",
@@ -217,20 +261,46 @@ def test_imap_import_task_login_failure(mock_imap4_ssl, mailbox):
             recipient_id=str(mailbox.id),
         )
 
-    assert "Login failed" in str(exc_info.value)
+        # Verify task result
+        assert task_result["status"] == "FAILURE"
+        assert task_result["result"]["message_status"] == "Failed to process messages"
+        assert task_result["result"]["type"] == "imap"
+        assert task_result["result"]["total_messages"] == 0
+        assert task_result["result"]["success_count"] == 0
+        assert task_result["result"]["failure_count"] == 0
+        assert task_result["result"]["current_message"] == 0
+        assert "Login failed" in task_result["error"]
+
+        # Verify only failure update was called
+        assert mock_task.update_state.call_count == 1
+        mock_task.update_state.assert_called_once_with(
+            state="FAILURE",
+            meta=task_result,
+        )
+
+        # Verify no messages were created
+        assert Message.objects.count() == 0
 
 
-@patch("imaplib.IMAP4_SSL")
-def test_imap_import_task_folder_not_found(mock_imap4_ssl, mailbox):
+@pytest.mark.django_db
+def test_imap_import_task_folder_not_found(mailbox):
     """Test IMAP import task with non-existent folder."""
-    mock_imap = MagicMock()
-    mock_imap.login.return_value = ("OK", [b"Logged in"])
-    mock_imap.select.return_value = ("NO", [b"Folder not found"])
-    mock_imap4_ssl.return_value = mock_imap
+    # Create a mock task instance
+    mock_task = MagicMock()
+    mock_task.update_state = MagicMock()
 
-    # Run the task and expect exception
-    with pytest.raises(Exception) as exc_info:
-        import_imap_messages_task(
+    # Mock IMAP connection to raise an error on folder selection
+    with (
+        patch.object(import_imap_messages_task, "update_state", mock_task.update_state),
+        patch("core.tasks.imaplib.IMAP4_SSL") as mock_imap,
+    ):
+        mock_imap_instance = MagicMock()
+        mock_imap.return_value = mock_imap_instance
+        mock_imap_instance.login.return_value = ("OK", [b"Logged in"])
+        mock_imap_instance.select.side_effect = Exception("Folder not found")
+
+        # Run the task
+        task_result = import_imap_messages_task(
             imap_server="imap.example.com",
             imap_port=993,
             username="test@example.com",
@@ -241,7 +311,25 @@ def test_imap_import_task_folder_not_found(mock_imap4_ssl, mailbox):
             recipient_id=str(mailbox.id),
         )
 
-    assert "Failed to select folder" in str(exc_info.value)
+        # Verify task result
+        assert task_result["status"] == "FAILURE"
+        assert task_result["result"]["message_status"] == "Failed to process messages"
+        assert task_result["result"]["type"] == "imap"
+        assert task_result["result"]["total_messages"] == 0
+        assert task_result["result"]["success_count"] == 0
+        assert task_result["result"]["failure_count"] == 0
+        assert task_result["result"]["current_message"] == 0
+        assert "Folder not found" in task_result["error"]
+
+        # Verify only failure update was called
+        assert mock_task.update_state.call_count == 1
+        mock_task.update_state.assert_called_once_with(
+            state="FAILURE",
+            meta=task_result,
+        )
+
+        # Verify no messages were created
+        assert Message.objects.count() == 0
 
 
 @patch("imaplib.IMAP4_SSL")
@@ -253,21 +341,60 @@ def test_imap_import_task_max_messages(
     mock_store_result.return_value = None
     mock_imap4_ssl.return_value = mock_imap_connection
 
-    # Run the task with max_messages=2
-    result = import_imap_messages_task(
-        imap_server="imap.example.com",
-        imap_port=993,
-        username="test@example.com",
-        password="password123",
-        use_ssl=True,
-        folder="INBOX",
-        max_messages=2,
-        recipient_id=str(mailbox.id),
-    )
+    # Create a mock task instance
+    mock_task = MagicMock()
+    mock_task.update_state = MagicMock()
 
-    # Verify only 2 messages were processed
-    assert result["total_messages"] == 2
-    assert result["success_count"] == 2
+    with patch.object(
+        import_imap_messages_task, "update_state", mock_task.update_state
+    ):
+        # Run the task with max_messages=2
+        task = import_imap_messages_task(
+            imap_server="imap.example.com",
+            imap_port=993,
+            username="test@example.com",
+            password="password123",
+            use_ssl=True,
+            folder="INBOX",
+            max_messages=2,
+            recipient_id=str(mailbox.id),
+        )
+
+        # Verify only 2 messages were processed
+        assert task["status"] == "SUCCESS"
+        assert task["result"]["message_status"] == "Completed processing messages"
+        assert task["result"]["type"] == "imap"
+        assert task["result"]["total_messages"] == 2
+        assert task["result"]["success_count"] == 2
+        assert task["result"]["failure_count"] == 0
+        assert task["result"]["current_message"] == 2
+
+        # Verify progress updates were called correctly
+        assert mock_task.update_state.call_count == 3  # 2 PROGRESS + 1 SUCCESS
+
+        # Verify progress updates
+        for i in range(1, 3):
+            mock_task.update_state.assert_any_call(
+                state="PROGRESS",
+                meta={
+                    "status": "PROGRESS",
+                    "result": {
+                        "message_status": f"Processing message {i} of 2",
+                        "total_messages": 2,
+                        "success_count": i - 1,  # Previous messages were successful
+                        "failure_count": 0,
+                        "type": "imap",
+                        "current_message": i,
+                    },
+                    "error": None,
+                },
+            )
+
+        # Verify success update
+        mock_task.update_state.assert_any_call(
+            state="SUCCESS",
+            meta=task,
+        )
 
 
 @patch("imaplib.IMAP4_SSL")
@@ -284,20 +411,57 @@ def test_imap_import_task_message_fetch_failure(
     mock_imap.fetch.return_value = ("NO", [b"Message not found"])
     mock_imap4_ssl.return_value = mock_imap
 
-    # Run the task
-    result = import_imap_messages_task(
-        imap_server="imap.example.com",
-        imap_port=993,
-        username="test@example.com",
-        password="password123",
-        use_ssl=True,
-        folder="INBOX",
-        max_messages=0,
-        recipient_id=str(mailbox.id),
-    )
+    # Create a mock task instance
+    mock_task = MagicMock()
+    mock_task.update_state = MagicMock()
 
-    # Verify all messages failed
-    assert result["status"] == "completed"
-    assert result["total_messages"] == 3
-    assert result["success_count"] == 0
-    assert result["failure_count"] == 3
+    with patch.object(
+        import_imap_messages_task, "update_state", mock_task.update_state
+    ):
+        # Run the task
+        task = import_imap_messages_task(
+            imap_server="imap.example.com",
+            imap_port=993,
+            username="test@example.com",
+            password="password123",
+            use_ssl=True,
+            folder="INBOX",
+            max_messages=0,
+            recipient_id=str(mailbox.id),
+        )
+
+        # Verify all messages failed
+        assert task["status"] == "SUCCESS"
+        assert task["result"]["message_status"] == "Completed processing messages"
+        assert task["result"]["type"] == "imap"
+        assert task["result"]["total_messages"] == 3
+        assert task["result"]["success_count"] == 0
+        assert task["result"]["failure_count"] == 3
+        assert task["result"]["current_message"] == 3
+
+        # Verify progress updates were called correctly
+        assert mock_task.update_state.call_count == 4  # 3 PROGRESS + 1 SUCCESS
+
+        # Verify progress updates
+        for i in range(1, 4):
+            mock_task.update_state.assert_any_call(
+                state="PROGRESS",
+                meta={
+                    "status": "PROGRESS",
+                    "result": {
+                        "message_status": f"Processing message {i} of 3",
+                        "total_messages": 3,
+                        "success_count": 0,
+                        "failure_count": i - 1,  # Previous messages failed
+                        "type": "imap",
+                        "current_message": i,
+                    },
+                    "error": None,
+                },
+            )
+
+        # Verify success update
+        mock_task.update_state.assert_any_call(
+            state="SUCCESS",
+            meta=task,
+        )
