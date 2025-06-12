@@ -216,9 +216,9 @@ export function useBlobDownloadRetrieve<
 
 /**
  * Upload binary data and create a Blob record.
-
-This endpoint accepts multipart/form-data containing a file and returns a
-blob ID and other metadata. The blob is associated with the specified mailbox.
+        This endpoint accepts multipart/form-data containing a file and returns a
+        blob ID and other metadata. The blob is associated with the specified mailbox.
+        
  */
 export type blobUploadCreateResponse201 = {
   data: BlobUploadCreate201;
