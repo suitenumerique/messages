@@ -79,5 +79,9 @@ db.sqlite3
 *.iml
 .devcontainer
 
+# AI tooling
+.claude
+CLAUDE.md
+
 # Various
 .turbo
