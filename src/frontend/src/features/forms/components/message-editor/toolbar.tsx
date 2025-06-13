@@ -1,4 +1,5 @@
 import { BasicTextStyleButton, BlockTypeSelect, CreateLinkButton, FormattingToolbar } from "@blocknote/react";
+import { AIToolbarButton } from "@blocknote/xl-ai";
 
 const MessageEditorToolbar = () => {
     return (
@@ -25,6 +26,7 @@ const MessageEditorToolbar = () => {
                 basicTextStyle={"code"}
             />
             <CreateLinkButton key={"createLinkButton"} />
+            <AIToolbarButton />
         </FormattingToolbar>
     )
 }

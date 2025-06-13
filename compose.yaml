@@ -202,6 +202,10 @@ services:
       - backend-dev
       - mta-in
       - mta-out
+    networks:
+      default:
+        aliases:
+          - nginx
 
   frontend-dev:
     user: "${DOCKER_USER:-1000}"
@@ -215,6 +219,7 @@ services:
     command: ["npm", "run", "dev"]
     volumes:
       - ./src/frontend/:/home/frontend/
+      - ../drive/src/frontend/packages/sdk:/home/drive/sdk
     ports:
       - "3000:3000"
 

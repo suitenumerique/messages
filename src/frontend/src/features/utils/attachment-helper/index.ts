@@ -2,6 +2,7 @@ import { Attachment } from "@/features/api/gen/models";
 import { CALC_EXTENSIONS, MIME_TO_CATEGORY, MIME_TO_FORMAT_TRANSLATION_KEY, MIME_TO_ICON, MIME_TO_ICON_MINI, MimeCategory } from "./constants";
 import { getBlobDownloadRetrieveUrl } from "@/features/api/gen/blob/blob";
 import { getRequestUrl } from "@/features/api/utils";
+import { DriveFile } from "@/pages/drive-selection";
 
 /**
  * An helper class to handle attachments (Extract mime category, get icon, etc.)
@@ -10,7 +11,7 @@ export class AttachmentHelper {
     /**
      * Get the extension of an attachment from its name
      */
-    static getExtension(attachment: Attachment | File) {
+    static getExtension(attachment: DriveFile | Attachment | File) {
         if (!attachment.name) return undefined;
 
         return attachment.name
@@ -21,7 +22,7 @@ export class AttachmentHelper {
     /**
      * Get the mime category of an attachment
      */
-    static getMimeCategory(attachment: Attachment | File): MimeCategory {
+    static getMimeCategory(attachment: DriveFile | Attachment | File): MimeCategory {
         // Special case: some calc files have application/zip mimetype. For those we should check their extension too.
         // Otherwise they will be shown as zip files.
         const extension = AttachmentHelper.getExtension(attachment);
@@ -41,7 +42,7 @@ export class AttachmentHelper {
     /**
      * Get the icon of an attachment
      */
-    static getIcon(attachment: Attachment | File, mini: boolean = false) {
+    static getIcon(attachment: DriveFile | Attachment | File, mini: boolean = false) {
         const category = AttachmentHelper.getMimeCategory(attachment);
         return mini ? MIME_TO_ICON_MINI[category] : MIME_TO_ICON[category];
     }
@@ -49,7 +50,7 @@ export class AttachmentHelper {
     /**
      * Get the format translation key of an attachment
      */
-    static getFormatTranslationKey(attachment: Attachment | File) {
+    static getFormatTranslationKey(attachment: DriveFile | Attachment | File) {
         const category = AttachmentHelper.getMimeCategory(attachment);
         return MIME_TO_FORMAT_TRANSLATION_KEY[category];
     };
@@ -57,8 +58,11 @@ export class AttachmentHelper {
     /**
      * Build the download url of an attachment blob
      */
-    static getDownloadUrl(attachment: Attachment) {
-        return getRequestUrl(getBlobDownloadRetrieveUrl(attachment.blobId));
+    static getDownloadUrl(attachment: DriveFile | Attachment) {
+        if ('blobId' in attachment) {
+            return getRequestUrl(getBlobDownloadRetrieveUrl(attachment.blobId));
+        }
+        return attachment.url;
     }
 
     static getFormattedSize(size: number, language: string = 'en') {
@@ -72,7 +76,7 @@ export class AttachmentHelper {
           return formatter.format(size);
     }
 
-    static getFormattedTotalSize(attachments: readonly (Attachment | File)[], language: string = 'en') {
+    static getFormattedTotalSize(attachments: readonly (DriveFile | Attachment | File)[], language: string = 'en') {
         const totalSize = attachments.reduce((acc, attachment) => acc + attachment.size, 0);
         return AttachmentHelper.getFormattedSize(totalSize, language);
     }
