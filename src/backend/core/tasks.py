@@ -2,7 +2,7 @@
 
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught
 import imaplib
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 from django.conf import settings
 
@@ -293,7 +293,7 @@ def reset_elasticsearch_index(self):
 @celery_app.task(bind=True)
 def process_mbox_file_task(
     self, file_content: bytes, recipient_id: str
-) -> Tuple[int, int]:
+) -> Dict[str, Any]:
     """
     Process a MBOX file asynchronously.
 
@@ -302,30 +302,66 @@ def process_mbox_file_task(
         recipient_id: The UUID of the recipient mailbox
 
     Returns:
-        Tuple of (success_count, failure_count)
+        Dict with task status and result
     """
     success_count = 0
     failure_count = 0
+    total_messages = 0
+    current_message = 0
 
     try:
         recipient = Mailbox.objects.get(id=recipient_id)
     except Mailbox.DoesNotExist:
-        logger.error("Recipient mailbox %s not found", recipient_id)
-        return success_count, failure_count
+        error_msg = f"Recipient mailbox {recipient_id} not found"
+        self.update_state(
+            state="FAILURE",
+            meta={
+                "status": "FAILURE",
+                "result": {
+                    "message_status": "Failed to process messages",
+                    "total_messages": 0,
+                    "success_count": 0,
+                    "failure_count": 0,
+                    "type": "mbox",
+                    "current_message": 0,
+                },
+                "error": error_msg,
+            },
+        )
+        return {
+            "status": "FAILURE",
+            "result": {
+                "message_status": "Failed to process messages",
+                "total_messages": 0,
+                "success_count": 0,
+                "failure_count": 0,
+                "type": "mbox",
+                "current_message": 0,
+            },
+            "error": error_msg,
+        }
 
     # Split the mbox file into individual messages
     messages = split_mbox_file(file_content)
     total_messages = len(messages)
 
     for i, message_content in enumerate(messages, 1):
+        current_message = i
         try:
             # Update task state with progress
             self.update_state(
                 state="PROGRESS",
                 meta={
-                    "current": i,
-                    "total": total_messages,
-                    "status": f"Processing message {i} of {total_messages}",
+                    "status": "PROGRESS",
+                    "result": {
+                        "message_status": f"Processing message {i} of {total_messages}",
+                        "total_messages": total_messages,
+                        "success_count": success_count,
+                        "failure_count": failure_count,
+                        "type": "mbox",
+                        "current_message": i,
+                    },
+                    "error": None,
                 },
             )
 
@@ -346,12 +382,28 @@ def process_mbox_file_task(
             )
             failure_count += 1
 
-    return {
-        "status": "completed",
+    result = {
+        "message_status": "Completed processing messages",
         "total_messages": total_messages,
         "success_count": success_count,
         "failure_count": failure_count,
         "type": "mbox",
+        "current_message": current_message,
+    }
+
+    self.update_state(
+        state="SUCCESS",
+        meta={
+            "status": "SUCCESS",
+            "result": result,
+            "error": None,
+        },
+    )
+
+    return {
+        "status": "SUCCESS",
+        "result": result,
+        "error": None,
     }
 
 
@@ -417,8 +469,13 @@ def import_imap_messages_task(
         recipient_id: ID of the recipient mailbox
 
     Returns:
-        Dictionary with import statistics
+        Dict with task status and result
     """
+    success_count = 0
+    failure_count = 0
+    total_messages = 0
+    current_message = 0
+
     try:
         # Connect to IMAP server
         if use_ssl:
@@ -427,18 +484,71 @@ def import_imap_messages_task(
             imap = imaplib.IMAP4(imap_server, imap_port)
 
         # Login
-
         imap.login(username, password)
 
         # Select folder
         status, messages = imap.select(folder)
         if status != "OK":
-            raise Exception(f"Failed to select folder {folder}: {messages}")
+            error_msg = f"Failed to select folder {folder}: {messages}"
+            self.update_state(
+                state="FAILURE",
+                meta={
+                    "status": "FAILURE",
+                    "result": {
+                        "message_status": "Failed to process messages",
+                        "total_messages": 0,
+                        "success_count": 0,
+                        "failure_count": 0,
+                        "type": "imap",
+                        "current_message": 0,
+                    },
+                    "error": error_msg,
+                },
+            )
+            return {
+                "status": "FAILURE",
+                "result": {
+                    "message_status": "Failed to process messages",
+                    "total_messages": 0,
+                    "success_count": 0,
+                    "failure_count": 0,
+                    "type": "imap",
+                    "current_message": 0,
+                },
+                "error": error_msg,
+            }
 
         # Search for all messages
         status, message_numbers = imap.search(None, "ALL")
         if status != "OK":
-            raise Exception(f"Failed to search messages: {message_numbers}")
+            error_msg = f"Failed to search messages: {message_numbers}"
+            self.update_state(
+                state="FAILURE",
+                meta={
+                    "status": "FAILURE",
+                    "result": {
+                        "message_status": "Failed to process messages",
+                        "total_messages": 0,
+                        "success_count": 0,
+                        "failure_count": 0,
+                        "type": "imap",
+                        "current_message": 0,
+                    },
+                    "error": error_msg,
+                },
+            )
+            return {
+                "status": "FAILURE",
+                "result": {
+                    "message_status": "Failed to process messages",
+                    "total_messages": 0,
+                    "success_count": 0,
+                    "failure_count": 0,
+                    "type": "imap",
+                    "current_message": 0,
+                },
+                "error": error_msg,
+            }
 
         # Get list of message numbers
         message_list = message_numbers[0].split()
@@ -448,22 +558,28 @@ def import_imap_messages_task(
             message_list = message_list[-max_messages:]  # Get most recent messages
 
         total_messages = len(message_list)
-        success_count = 0
-        failure_count = 0
 
         # Get recipient mailbox
         recipient = Mailbox.objects.get(id=recipient_id)
 
         # Process each message
         for i, msg_num in enumerate(message_list, 1):
+            current_message = i
             try:
                 # Update task state
                 self.update_state(
                     state="PROGRESS",
                     meta={
-                        "current": i,
-                        "total": total_messages,
-                        "status": f"Processing message {i} of {total_messages}",
+                        "status": "PROGRESS",
+                        "result": {
+                            "message_status": f"Processing message {i} of {total_messages}",
+                            "total_messages": total_messages,
+                            "success_count": success_count,
+                            "failure_count": failure_count,
+                            "type": "imap",
+                            "current_message": i,
+                        },
+                        "error": None,
                     },
                 )
 
@@ -494,18 +610,54 @@ def import_imap_messages_task(
         imap.close()
         imap.logout()
 
-        return {
-            "status": "completed",
+        result = {
+            "message_status": "Completed processing messages",
             "total_messages": total_messages,
             "success_count": success_count,
             "failure_count": failure_count,
             "type": "imap",
+            "current_message": current_message,
+        }
+
+        self.update_state(
+            state="SUCCESS",
+            meta={
+                "status": "SUCCESS",
+                "result": result,
+                "error": None,
+            },
+        )
+
+        return {
+            "status": "SUCCESS",
+            "result": result,
+            "error": None,
         }
 
     except Exception as e:
         logger.exception("Error in import_imap_messages_task: %s", e)
-        self.update_state(state="FAILURE", meta={"status": "failed", "error": str(e)})
-        raise
+        error_msg = str(e)
+        result = {
+            "message_status": "Failed to process messages",
+            "total_messages": total_messages,
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "type": "imap",
+            "current_message": current_message,
+        }
+        self.update_state(
+            state="FAILURE",
+            meta={
+                "status": "FAILURE",
+                "result": result,
+                "error": error_msg,
+            },
+        )
+        return {
+            "status": "FAILURE",
+            "result": result,
+            "error": error_msg,
+        }
 
 
 @celery_app.task(bind=True)
@@ -520,22 +672,58 @@ def process_eml_file_task(
         recipient_id: The UUID of the recipient mailbox
 
     Returns:
-        Dictionary with import statistics
+        Dict with task status and result
     """
     try:
         recipient = Mailbox.objects.get(id=recipient_id)
     except Mailbox.DoesNotExist:
-        logger.error("Recipient mailbox %s not found", recipient_id)
+        error_msg = f"Recipient mailbox {recipient_id} not found"
+        self.update_state(
+            state="FAILURE",
+            meta={
+                "status": "FAILURE",
+                "result": {
+                    "message_status": "Failed to process message",
+                    "total_messages": 1,
+                    "success_count": 0,
+                    "failure_count": 0,
+                    "type": "eml",
+                    "current_message": 0,
+                },
+                "error": error_msg,
+            },
+        )
         return {
-            "status": "failed",
-            "total_messages": 0,
-            "success_count": 0,
-            "failure_count": 0,
-            "type": "eml",
-            "error": "Recipient mailbox not found",
+            "status": "FAILURE",
+            "result": {
+                "message_status": "Failed to process message",
+                "total_messages": 1,
+                "success_count": 0,
+                "failure_count": 0,
+                "type": "eml",
+                "current_message": 0,
+            },
+            "error": error_msg,
         }
 
     try:
+        # Update progress state
+        self.update_state(
+            state="PROGRESS",
+            meta={
+                "status": "PROGRESS",
+                "result": {
+                    "message_status": "Processing message 1 of 1",
+                    "total_messages": 1,
+                    "success_count": 0,
+                    "failure_count": 0,
+                    "type": "eml",
+                    "current_message": 1,
+                },
+                "error": None,
+            },
+        )
+
         # Parse the email message
         parsed_email = parse_email_message(file_content)
         # Deliver the message
@@ -543,34 +731,70 @@ def process_eml_file_task(
             str(recipient), parsed_email, file_content, is_import=True
         )
 
-        if success:
-            return {
-                "status": "completed",
-                "total_messages": 1,
-                "success_count": 1,
-                "failure_count": 0,
-                "type": "eml",
-            }
-        return {
-            "status": "failed",
+        result = {
+            "message_status": "Completed processing message",
             "total_messages": 1,
-            "success_count": 0,
-            "failure_count": 1,
+            "success_count": 1 if success else 0,
+            "failure_count": 0 if success else 1,
             "type": "eml",
-            "error": "Failed to deliver message",
+            "current_message": 1,
         }
+
+        if success:
+            self.update_state(
+                state="SUCCESS",
+                meta={
+                    "status": "SUCCESS",
+                    "result": result,
+                    "error": None,
+                },
+            )
+            return {
+                "status": "SUCCESS",
+                "result": result,
+                "error": None,
+            }
+
+        error_msg = "Failed to deliver message"
+        self.update_state(
+            state="FAILURE",
+            meta={
+                "status": "FAILURE",
+                "result": result,
+                "error": error_msg,
+            },
+        )
+        return {
+            "status": "FAILURE",
+            "result": result,
+            "error": error_msg,
+        }
+
     except Exception as e:
         logger.exception(
             "Error processing EML file for recipient %s: %s",
             recipient_id,
             e,
         )
-        self.update_state(state="FAILURE", meta={"status": "failed", "error": str(e)})
-        return {
-            "status": "failed",
+        error_msg = str(e)
+        result = {
+            "message_status": "Failed to process message",
             "total_messages": 1,
             "success_count": 0,
             "failure_count": 1,
             "type": "eml",
-            "error": str(e),
+            "current_message": 1,
+        }
+        self.update_state(
+            state="FAILURE",
+            meta={
+                "status": "FAILURE",
+                "result": result,
+                "error": error_msg,
+            },
+        )
+        return {
+            "status": "FAILURE",
+            "result": result,
+            "error": error_msg,
         }
