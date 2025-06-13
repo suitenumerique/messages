@@ -19,7 +19,8 @@
       },
       "home": {
         "title": "Messaging",
-        "subtitle": "Manage your professional messages securely."
+        "subtitle": "Manage your professional messages securely.",
+        "loginMessage": "Start sending mails"
       },
       "actions": {
         "new_message": "New message",
@@ -166,7 +167,8 @@
       },
       "home": {
         "title": "Messages",
-        "subtitle": "Gérer vos messages professionnels en toute sécurité."
+        "subtitle": "Gérer vos messages professionnels en toute sécurité.",
+        "loginMessage": "Commencer a envoier des emails"
       },
       "actions": {
         "new_message": "Nouveau message",
