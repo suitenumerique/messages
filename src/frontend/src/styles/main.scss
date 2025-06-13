@@ -20,6 +20,7 @@
 @use "./../features/ui/components/badge";
 @use "./../features/ui/components/info-row";
 @use "./../features/ui/components/bar";
+@use "./../features/ui/components/banner";
 @use "./../features/layouts/components/mailbox-panel";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-actions";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-list";
@@ -35,6 +36,7 @@
 @use "./../features/forms/components/message-editor";
 @use "./../features/forms/components/search-input";
 @use "./../features/forms/components/search-filters-form";
+@use "./../features/controlled-modals/message-importer";
 // Application views
 @use "./../pages";
 @use "./../pages/mailbox";

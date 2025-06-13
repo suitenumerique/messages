@@ -37,9 +37,24 @@ const CSP = [
 const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
 
+    DomPurify.addHook(
+        'afterSanitizeAttributes',
+        function (node) {
+            // Allow anchor tags to be opened in the parent window if the href is an anchor
+            // Other links are opened in a new tab and safe rel attributes is set
+            if(node.tagName === 'A') {
+                if (node.getAttribute('href')?.startsWith('#')) {
+                    node.setAttribute('target', '_blank');
+                }
+                node.setAttribute('rel', 'noopener noreferrer');
+            }
+        }
+    );
+
     const sanitizedHtmlBody = useMemo(() => {
         return DomPurify.sanitize(rawHtmlBody || rawTextBody, {
             FORBID_TAGS: ['script', 'object', 'iframe', 'embed', 'audio', 'video'],
+            ADD_ATTR: ['target', 'rel'],
         });
     }, []);
 
@@ -92,7 +107,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
           const height = iframeRef.current.contentWindow.document.documentElement.getBoundingClientRect().height;
           iframeRef.current.style.height = `${height}px`;
         }
-      }, [iframeRef]);
+    }, [iframeRef]);
 
     useEffect(() => {
         window.addEventListener('resize', resizeIframe);
@@ -104,7 +119,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
             ref={iframeRef}
             className="thread-message__body"
             srcDoc={wrappedHtml}
-            sandbox="allow-same-origin allow-popups"
+            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
             onLoad={resizeIframe}
         />
     )

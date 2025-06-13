@@ -27,6 +27,7 @@ import type {
 
 import type {
   PaginatedThreadList,
+  Thread,
   ThreadsListParams,
   ThreadsStatsRetrieve200,
   ThreadsStatsRetrieve400,
@@ -375,6 +376,184 @@ export function useThreadsList<
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
   const queryOptions = getThreadsListQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * ViewSet for Thread model.
+ */
+export type threadsRetrieveResponse200 = {
+  data: Thread;
+  status: 200;
+};
+
+export type threadsRetrieveResponseComposite = threadsRetrieveResponse200;
+
+export type threadsRetrieveResponse = threadsRetrieveResponseComposite & {
+  headers: Headers;
+};
+
+export const getThreadsRetrieveUrl = (id: string) => {
+  return `/api/v1.0/threads/${id}/`;
+};
+
+export const threadsRetrieve = async (
+  id: string,
+  options?: RequestInit,
+): Promise<threadsRetrieveResponse> => {
+  return fetchAPI<threadsRetrieveResponse>(getThreadsRetrieveUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getThreadsRetrieveQueryKey = (id: string) => {
+  return [`/api/v1.0/threads/${id}/`] as const;
+};
+
+export const getThreadsRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof threadsRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof threadsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getThreadsRetrieveQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof threadsRetrieve>>> = ({
+    signal,
+  }) => threadsRetrieve(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof threadsRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ThreadsRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof threadsRetrieve>>
+>;
+export type ThreadsRetrieveQueryError = unknown;
+
+export function useThreadsRetrieve<
+  TData = Awaited<ReturnType<typeof threadsRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof threadsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof threadsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof threadsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useThreadsRetrieve<
+  TData = Awaited<ReturnType<typeof threadsRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof threadsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof threadsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof threadsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useThreadsRetrieve<
+  TData = Awaited<ReturnType<typeof threadsRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof threadsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useThreadsRetrieve<
+  TData = Awaited<ReturnType<typeof threadsRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof threadsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getThreadsRetrieveQueryOptions(id, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<
     TData,

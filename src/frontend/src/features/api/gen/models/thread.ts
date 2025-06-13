@@ -29,4 +29,5 @@ export interface Thread {
   readonly updated_at: string;
   readonly user_role: string;
   readonly accesses: readonly ThreadAccessDetail[];
+  readonly labels: string;
 }

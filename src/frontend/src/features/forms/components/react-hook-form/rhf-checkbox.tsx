@@ -1,13 +1,13 @@
 import { Controller, useFormContext } from "react-hook-form";
-import { Input, InputProps } from "@openfun/cunningham-react";
+import { Checkbox, InputProps } from "@openfun/cunningham-react";
 
 /**
- * A wrapper component for the Input component that integrates with react-hook-form.
+ * A wrapper component for the Checkbox component that integrates with react-hook-form.
  * 
- * This component allows you to use the Input component as a controlled component
+ * This component allows you to use the Checkbox component as a controlled component
  * with react-hook-form's form state management.
  */
-export const RhfInput = (props: InputProps & { name: string }) => {
+export const RhfCheckbox = (props: InputProps & { name: string }) => {
   const { control, setValue } = useFormContext();
   return (
     <Controller
@@ -15,7 +15,7 @@ export const RhfInput = (props: InputProps & { name: string }) => {
       name={props.name}
       render={({ field, fieldState }) => {
         return (
-          <Input
+          <Checkbox
             {...props}
             aria-invalid={!!fieldState.error}
             state={fieldState.error ? "error" : "default"}
@@ -23,8 +23,8 @@ export const RhfInput = (props: InputProps & { name: string }) => {
               field.onBlur();
               props.onBlur?.(event);
             }}
-            onChange={(e) => setValue(field.name, e.target.value, { shouldDirty: true })}
-            value={field.value}
+            onChange={(e) => setValue(field.name, e.target.checked, { shouldDirty: true })}
+            checked={field.value}
           />
         );
       }}
