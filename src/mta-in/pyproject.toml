@@ -25,10 +25,10 @@ license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "pytest==8.3.5",
+    "pytest==8.4.0",
     "fastapi==0.115.12",
-    "uvicorn==0.34.1",
-    "requests==2.32.3",
+    "uvicorn==0.34.3",
+    "requests==2.32.4",
     "PyJWT==2.10.1"
 ]
 
@@ -40,9 +40,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "ruff==0.9.3",
-    "pylint==3.3.4",
-    "types-requests==2.32.0.20241016",
+    "ruff==0.11.13",
+    "pylint==3.3.7",
+    "types-requests==2.32.4.20250611",
 ]
 
 [tool.setuptools]
