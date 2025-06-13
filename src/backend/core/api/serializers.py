@@ -4,6 +4,7 @@ from django.db.models import Count, Exists, OuterRef, Q
 
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from core import models
 
@@ -507,3 +508,25 @@ class ThreadLabelSerializer(serializers.ModelSerializer):
         model = models.Label
         fields = ["id", "name", "slug", "color"]
         read_only_fields = ["id", "slug"]
+
+
+class LabelSerializer(serializers.ModelSerializer):
+    """Serializer for Label model."""
+
+    class Meta:
+        model = models.Label
+        fields = ["id", "name", "slug", "color", "mailbox", "threads"]
+        read_only_fields = ["id", "slug"]
+
+    def validate_mailbox(self, value):
+        """Validate that user has access to the mailbox."""
+        user = self.context["request"].user
+        if not value.accesses.filter(
+            user=user,
+            role__in=[
+                models.MailboxRoleChoices.ADMIN,
+                models.MailboxRoleChoices.EDITOR,
+            ],
+        ).exists():
+            raise PermissionDenied("You don't have access to this mailbox")
+        return value

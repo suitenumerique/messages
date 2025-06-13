@@ -10,6 +10,7 @@ from core.api.viewsets.config import ConfigView
 from core.api.viewsets.draft import DraftMessageView
 from core.api.viewsets.flag import ChangeFlagViewSet
 from core.api.viewsets.import_message import ImportViewSet
+from core.api.viewsets.label import LabelViewSet
 from core.api.viewsets.mailbox import MailboxViewSet
 from core.api.viewsets.mailbox_access import MailboxAccessViewSet
 
@@ -31,6 +32,7 @@ router.register("users", UserViewSet, basename="users")
 router.register("messages", MessageViewSet, basename="messages")
 router.register("blob", BlobViewSet, basename="blob")
 router.register("threads", ThreadViewSet, basename="threads")
+router.register("labels", LabelViewSet, basename="labels")
 router.register("mailboxes", MailboxViewSet, basename="mailboxes")
 router.register("maildomains", MailDomainAdminViewSet, basename="maildomains")
 
