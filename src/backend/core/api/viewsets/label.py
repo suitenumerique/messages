@@ -219,8 +219,57 @@ class LabelViewSet(
         request=serializers.LabelSerializer,
         responses={
             201: OpenApiResponse(
-                response=serializers.LabelSerializer,
-                description="Label created successfully",
+                response={
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "format": "uuid"},
+                            "name": {
+                                "type": "string",
+                                "description": "Full name of the label (e.g., 'Inbox/Important')",
+                            },
+                            "slug": {
+                                "type": "string",
+                                "description": "URL-friendly version of the name",
+                            },
+                            "color": {
+                                "type": "string",
+                                "description": "Color code for the label",
+                            },
+                            "display_name": {
+                                "type": "string",
+                                "description": "Base name of the label (last part of the path)",
+                            },
+                            "parent_name": {
+                                "type": "string",
+                                "description": "Name of the parent label, or null for root labels",
+                                "nullable": True,
+                            },
+                            "depth": {
+                                "type": "integer",
+                                "description": "Depth in the hierarchy (0 for root labels, 1 for direct children, etc.)",
+                                "minimum": 0,
+                            },
+                            "children": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/Label"},
+                                "description": "Child labels, ordered alphabetically by name",
+                            },
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "slug",
+                            "color",
+                            "display_name",
+                            "parent_name",
+                            "depth",
+                            "children",
+                        ],
+                    },
+                },
+                description="Created labels in hierarchical structure",
             ),
             400: OpenApiResponse(
                 response={"detail": "Validation error"},
@@ -246,6 +295,7 @@ class LabelViewSet(
 
         # Create parent labels if they don't exist
         current_path = []
+        created_labels = []  # Track all labels created (including parents)
         for part in parts[:-1]:  # Exclude the last part (the actual label)
             current_path.append(part)
             parent_name = "/".join(current_path)
@@ -262,6 +312,7 @@ class LabelViewSet(
                     mailbox=mailbox,
                     color=color,
                 )
+                created_labels.append(parent_label)
 
         # Create the actual label with color if provided, otherwise use model default
         label = models.Label.objects.create(
@@ -269,9 +320,46 @@ class LabelViewSet(
             mailbox=mailbox,
             color=color,
         )
+        created_labels.append(label)
 
-        serializer = self.get_serializer(label)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Get all labels for the mailbox to build the tree structure
+        all_labels = models.Label.objects.filter(mailbox=mailbox).order_by("name")
+        label_dict = {}
+        root_labels = []
+
+        # Build the tree structure
+        for label in all_labels:
+            label_data = {
+                "id": str(label.id),
+                "name": label.name,
+                "slug": label.slug,
+                "color": label.color,
+                "display_name": label.basename,
+                "parent_name": label.parent_name,
+                "depth": label.depth,
+                "children": [],
+            }
+            label_dict[label.id] = label_data
+
+            # Add to root labels or parent's children
+            if label.parent_name is None:
+                root_labels.append(label_data)
+            else:
+                # Find parent label by name
+                parent_label = next(
+                    (l for l in all_labels if l.name == label.parent_name), None
+                )
+                if parent_label:
+                    label_dict[parent_label.id]["children"].append(label_data)
+
+        # Sort children alphabetically by name
+        for label_data in label_dict.values():
+            label_data["children"].sort(key=lambda x: x["name"])
+
+        # Sort root labels alphabetically
+        root_labels.sort(key=lambda x: x["name"])
+
+        return Response(root_labels, status=status.HTTP_201_CREATED)
 
     @extend_schema(
         request={

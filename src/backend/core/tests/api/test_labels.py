@@ -318,6 +318,124 @@ class TestLabelSerializer:
             name="Work/Projects", mailbox=mailbox
         ).exists()
 
+    def test_create_label_returns_tree_structure(self, api_client, mailbox):
+        """Test that creating a label returns the complete tree structure."""
+        # Create some existing labels first
+        LabelFactory(mailbox=mailbox, name="Existing", color="#000000")
+        LabelFactory(mailbox=mailbox, name="Existing/Child", color="#111111")
+
+        url = reverse("labels-list")
+        data = {
+            "name": "New/Root/Child",
+            "mailbox": str(mailbox.id),
+            "color": "#FF0000",
+        }
+
+        response = api_client.post(url, data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+
+        # Response should be a list of root labels
+        assert isinstance(data, list)
+
+        # Should have two root labels: "Existing" and "New"
+        assert len(data) == 2
+
+        # Find the "Existing" label and verify its structure
+        existing_label = next(label for label in data if label["name"] == "Existing")
+        assert existing_label["color"] == "#000000"
+        assert existing_label["display_name"] == "Existing"
+        assert existing_label["parent_name"] is None
+        assert existing_label["depth"] == 0
+        assert len(existing_label["children"]) == 1
+
+        # Verify "Existing/Child"
+        existing_child = existing_label["children"][0]
+        assert existing_child["name"] == "Existing/Child"
+        assert existing_child["color"] == "#111111"
+        assert existing_child["display_name"] == "Child"
+        assert existing_child["parent_name"] == "Existing"
+        assert existing_child["depth"] == 1
+        assert len(existing_child["children"]) == 0
+
+        # Find the "New" label and verify its structure
+        new_label = next(label for label in data if label["name"] == "New")
+        assert new_label["color"] == "#FF0000"
+        assert new_label["display_name"] == "New"
+        assert new_label["parent_name"] is None
+        assert new_label["depth"] == 0
+        assert len(new_label["children"]) == 1
+
+        # Verify "New/Root"
+        new_root = new_label["children"][0]
+        assert new_root["name"] == "New/Root"
+        assert new_root["color"] == "#FF0000"
+        assert new_root["display_name"] == "Root"
+        assert new_root["parent_name"] == "New"
+        assert new_root["depth"] == 1
+        assert len(new_root["children"]) == 1
+
+        # Verify "New/Root/Child"
+        new_child = new_root["children"][0]
+        assert new_child["name"] == "New/Root/Child"
+        assert new_child["color"] == "#FF0000"
+        assert new_child["display_name"] == "Child"
+        assert new_child["parent_name"] == "New/Root"
+        assert new_child["depth"] == 2
+        assert len(new_child["children"]) == 0
+
+    def test_create_label_returns_tree_structure_with_existing_parents(
+        self, api_client, mailbox
+    ):
+        """Test that creating a label returns the tree structure when some parents already exist."""
+        # Create some existing labels first
+        LabelFactory(mailbox=mailbox, name="Work", color="#000000")
+        LabelFactory(mailbox=mailbox, name="Work/Projects", color="#111111")
+
+        url = reverse("labels-list")
+        data = {
+            "name": "Work/Projects/New",
+            "mailbox": str(mailbox.id),
+            "color": "#FF0000",
+        }
+
+        response = api_client.post(url, data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+
+        # Response should be a list of root labels
+        assert isinstance(data, list)
+
+        # Should have one root label: "Work"
+        assert len(data) == 1
+
+        # Find the "Work" label and verify its structure
+        work_label = data[0]
+        assert work_label["name"] == "Work"
+        assert work_label["color"] == "#000000"
+        assert work_label["display_name"] == "Work"
+        assert work_label["parent_name"] is None
+        assert work_label["depth"] == 0
+        assert len(work_label["children"]) == 1
+
+        # Verify "Work/Projects"
+        projects_label = work_label["children"][0]
+        assert projects_label["name"] == "Work/Projects"
+        assert projects_label["color"] == "#111111"
+        assert projects_label["display_name"] == "Projects"
+        assert projects_label["parent_name"] == "Work"
+        assert projects_label["depth"] == 1
+        assert len(projects_label["children"]) == 1
+
+        # Verify "Work/Projects/New"
+        new_label = projects_label["children"][0]
+        assert new_label["name"] == "Work/Projects/New"
+        assert new_label["color"] == "#FF0000"
+        assert new_label["display_name"] == "New"
+        assert new_label["parent_name"] == "Work/Projects"
+        assert new_label["depth"] == 2
+        assert len(new_label["children"]) == 0
+
 
 @pytest.mark.django_db
 class TestLabelViewSet:
