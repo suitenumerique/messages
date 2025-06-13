@@ -117,13 +117,9 @@ logs: ## display backend-dev logs (follow mode)
 	@$(COMPOSE) logs -f backend-dev
 .PHONY: logs
 
-build-run: ## start the wsgi (production) and development server, rebuilding the containers
+start: ## start the wsgi (production) and development server
 	@$(COMPOSE) up --force-recreate --build -d nginx
-.PHONY: run-rebuild
-
-run: ## start the wsgi (production) and development server
-	@$(COMPOSE) up --force-recreate --build -d nginx
-.PHONY: run
+.PHONY: start
 
 run-with-frontend: ## Start all the containers needed (backend to frontend)
 	@$(MAKE) run
