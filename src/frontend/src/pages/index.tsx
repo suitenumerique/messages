@@ -6,11 +6,17 @@ import { MainLayout } from "@/features/layouts/components/main";
 import { LanguagePicker } from "@/features/layouts/components/main/language-picker";
 import { AppLayout } from "@/features/layouts/components/main/layout";
 import { LeftPanel } from "@/features/layouts/components/main/left-panel";
+import {Button} from "@openfun/cunningham-react";
+import { useCunninghamTheme } from '@/styles';
 
 export default function HomePage() {
 
   const { t } = useTranslation();
   const { user } = useAuth();
+    const { componentTokens } =
+        useCunninghamTheme();
+    const withProConnect = componentTokens['home-proconnect'];
+    const withFooter = componentTokens['footer'];
 
   if (user) {
     return <MainLayout />;
@@ -25,10 +31,10 @@ export default function HomePage() {
           title={t("home.title")}
           banner="/images/banner.png"
           subtitle={t("home.subtitle")}
-          mainButton={<ProConnectButton onClick={login} />}
+          mainButton={withProConnect ? <ProConnectButton onClick={login} /> : <Button onClick={login}>{t("home.loginMessage")}</Button>}
         />
       </HomeGutter>
-      <Footer />
+      {withFooter && <Footer />}
     </div>
   );
 }
