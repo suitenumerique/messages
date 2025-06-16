@@ -268,6 +268,43 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
                 snippet=snippet,
                 count_unread=1,
             )
+            if is_import:
+                # get labels from parsed_email
+                labels = parsed_email.get("gmail_labels", [])
+                for label in labels:
+
+                    # TODO: mutualize this with the label creation in the api
+                    # Split the name into parts to handle hierarchy
+                    parts = label.split("/")
+
+                    # Create parent labels if they don't exist
+                    current_path = []
+                    created_labels = []  # Track all labels created (including parents)
+                    for part in parts[:-1]:  # Exclude the last part (the actual label)
+                        current_path.append(part)
+                        parent_name = "/".join(current_path)
+
+                        # Check if parent label exists
+                        parent_label = models.Label.objects.filter(
+                            name=parent_name, mailbox=mailbox
+                        ).first()
+
+                        if not parent_label:
+                            # Create parent label with color if provided, otherwise use model default
+                            parent_label = models.Label.objects.create(
+                                name=parent_name,
+                                mailbox=mailbox,
+                            )
+                            created_labels.append(parent_label)
+
+
+
+
+
+                    label_obj, _ = models.Label.objects.get_or_create(
+                        name=label, mailbox=mailbox
+                    )
+                    thread.labels.add(label_obj)
             # Create a thread access for the sender mailbox
             models.ThreadAccess.objects.create(
                 thread=thread,

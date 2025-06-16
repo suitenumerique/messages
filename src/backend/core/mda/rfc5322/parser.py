@@ -413,6 +413,15 @@ def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
                     headers[key_lower] = [current_value, decoded_value]
             else:
                 headers[key_lower] = decoded_value
+
+        # Extract Gmail labels
+        gmail_labels = []
+        if "x-gmail-labels" in headers.keys():
+            labels_str = headers["x-gmail-labels"]
+            if isinstance(labels_str, list):
+                labels_str = labels_str[0]  # Take first value if multiple
+            gmail_labels = [label.strip() for label in labels_str.split(",")]
+
         subject = headers.get("subject", "")
         from_header_decoded = headers.get("from", "")
         from_name, from_addr = parse_email_address(from_header_decoded)
@@ -450,6 +459,7 @@ def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
             "message_id": message_id,
             "references": references,
             "in_reply_to": in_reply_to,
+            "gmail_labels": gmail_labels,  # Add Gmail labels to parsed data
         }
 
     except Exception as e:
