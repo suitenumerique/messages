@@ -6,7 +6,7 @@ Declare and configure the models for the messages core application
 import base64
 import uuid
 from logging import getLogger
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from django.conf import settings
 from django.contrib.auth import models as auth_models
@@ -327,12 +327,14 @@ class Thread(BaseModel):
 
     subject = models.CharField(_("subject"), max_length=255)
     snippet = models.TextField(_("snippet"), blank=True)
-    count_unread = models.IntegerField(_("count unread"), default=0)
-    count_trashed = models.IntegerField(_("count trashed"), default=0)
-    count_draft = models.IntegerField(_("count draft"), default=0)
-    count_starred = models.IntegerField(_("count starred"), default=0)
-    count_sender = models.IntegerField(_("count sender"), default=0)
-    count_messages = models.IntegerField(_("count messages"), default=1)
+    has_unread = models.BooleanField(_("has unread"), default=False)
+    has_trashed = models.BooleanField(_("has trashed"), default=False)
+    has_draft = models.BooleanField(_("has draft"), default=False)
+    has_starred = models.BooleanField(_("has starred"), default=False)
+    has_sender = models.BooleanField(_("has sender"), default=False)
+    has_messages = models.BooleanField(_("has messages"), default=True)
+    is_spam = models.BooleanField(_("is spam"), default=False)
+    has_active = models.BooleanField(_("has active"), default=False)
     messaged_at = models.DateTimeField(_("messaged at"), null=True, blank=True)
     sender_names = models.JSONField(_("sender names"), null=True, blank=True)
 
@@ -344,69 +346,110 @@ class Thread(BaseModel):
     def __str__(self):
         return self.subject
 
-    def update_stats(
-        self,
-        fields: Tuple[str] = (
-            "unread",
-            "trashed",
-            "draft",
-            "starred",
-            "sender",
-            "messages",
-            "messaged_at",
-            "sender_names",
-        ),
-    ):
+    def update_stats(self):
         """Update the denormalized stats of the thread."""
-        if "unread" in fields:
-            self.count_unread = self.messages.filter(
-                is_unread=True, is_trashed=False
-            ).count()
-        if "trashed" in fields:
-            self.count_trashed = self.messages.filter(is_trashed=True).count()
-        if "draft" in fields:
-            self.count_draft = self.messages.filter(
-                is_draft=True, is_trashed=False
-            ).count()
-        if "starred" in fields:
-            self.count_starred = self.messages.filter(
-                is_starred=True, is_trashed=False
-            ).count()
-        if "sender" in fields:
-            self.count_sender = self.messages.filter(
-                is_sender=True, is_trashed=False
-            ).count()
-        if "messages" in fields:
-            self.count_messages = self.messages.filter(is_trashed=False).count()
-        if "messaged_at" in fields:
-            last = (
-                self.messages.filter(is_trashed=False).order_by("-created_at").first()
+        # Fetch all message metadata in a single query to avoid multiple DB hits
+        message_data = list(
+            self.messages.select_related("sender").values(
+                "is_unread",
+                "is_trashed",
+                "is_draft",
+                "is_starred",
+                "is_sender",
+                "is_spam",
+                "is_archived",
+                "created_at",
+                "sender__name",
+            ).order_by("created_at")
+        )
+
+        if not message_data:
+            # No messages in thread
+            self.has_unread = False
+            self.has_trashed = False
+            self.has_draft = False
+            self.has_starred = False
+            self.has_sender = False
+            self.has_messages = False
+            self.is_spam = False
+            self.has_active = False
+            self.messaged_at = None
+            self.sender_names = None
+        else:
+            # Compute stats in Python
+            self.has_unread = any(
+                msg["is_unread"] and not msg["is_trashed"] for msg in message_data
             )
-            self.messaged_at = last.created_at if last else None
-        if "sender_names" in fields:
-            # Store the first and last sender names as a list of strings
-            if "messages" in fields and self.count_messages == 0:
-                self.sender_names = None
-            elif "messages" in fields and self.count_messages == 1:
-                self.sender_names = [
-                    self.messages.filter(is_trashed=False)
-                    .values_list("sender__name", flat=True)
-                    .first(),
-                ]
+            self.has_trashed = any(msg["is_trashed"] for msg in message_data)
+            self.has_draft = any(
+                msg["is_draft"] and not msg["is_trashed"] for msg in message_data
+            )
+            self.has_starred = any(
+                msg["is_starred"] and not msg["is_trashed"] for msg in message_data
+            )
+            self.has_sender = any(
+                msg["is_sender"] and not msg["is_trashed"] and not msg["is_draft"] for msg in message_data
+            )
+
+            # Check if we have any non-trashed, non-spam messages
+            active_messages = [
+                msg for msg in message_data
+                if not msg["is_trashed"] and not msg["is_spam"]
+            ]
+            self.has_messages = len(active_messages) > 0
+
+            # Set is_spam based on first message
+            self.is_spam = message_data[0]["is_spam"]
+
+            # Check if thread has active messages (!is_sender && !is_spam && !is_archived && !is_trashed && !is_draft)
+            self.has_active = any(
+                not msg["is_sender"] and
+                not msg["is_spam"] and
+                not msg["is_archived"] and
+                not msg["is_trashed"] and
+                not msg["is_draft"]
+                for msg in message_data
+            )
+
+            # Set messaged_at to the creation time of the most recent non-trashed message
+            non_trashed_messages = [
+                msg for msg in message_data if not msg["is_trashed"]
+            ]
+            if non_trashed_messages:
+                self.messaged_at = max(msg["created_at"] for msg in non_trashed_messages)
+            elif len(message_data) > 0:
+                self.messaged_at = max(msg["created_at"] for msg in message_data)
             else:
-                self.sender_names = [
-                    self.messages.filter(is_trashed=False)
-                    .values_list("sender__name", flat=True)
-                    .last(),
-                    self.messages.filter(is_trashed=False)
-                    .values_list("sender__name", flat=True)
-                    .first(),
-                ]
+                self.messaged_at = None
+
+            # Set sender names (first and last sender names)
+            sender_names = None
+            if len(active_messages) > 0:
+                sender_names = [active_messages[0]["sender__name"], active_messages[-1]["sender__name"]]
+            elif len(message_data) > 0:
+                sender_names = [message_data[0]["sender__name"], message_data[-1]["sender__name"]]
+
+            if sender_names:
+                # Get unique sender names from first and last messages
+                first_sender = sender_names[0]
+                last_sender = sender_names[-1]
+                if last_sender is not None and first_sender != last_sender:
+                    self.sender_names = [first_sender, last_sender]
+                else:
+                    self.sender_names = [first_sender]
 
         self.save(
             update_fields=[
-                x if x in {"messaged_at", "sender_names"} else "count_" + x
-                for x in fields
+                "has_unread",
+                "has_trashed",
+                "has_draft",
+                "has_starred",
+                "has_sender",
+                "has_messages",
+                "is_spam",
+                "has_active",
+                "messaged_at",
+                "sender_names",
             ]
         )
 
@@ -628,10 +671,13 @@ class Message(BaseModel):
     is_starred = models.BooleanField(_("is starred"), default=False)
     is_trashed = models.BooleanField(_("is trashed"), default=False)
     is_unread = models.BooleanField(_("is unread"), default=False)
+    is_spam = models.BooleanField(_("is spam"), default=False)
+    is_archived = models.BooleanField(_("is archived"), default=False)
 
     trashed_at = models.DateTimeField(_("trashed at"), null=True, blank=True)
     sent_at = models.DateTimeField(_("sent at"), null=True, blank=True)
     read_at = models.DateTimeField(_("read at"), null=True, blank=True)
+    archived_at = models.DateTimeField(_("archived at"), null=True, blank=True)
 
     mime_id = models.CharField(_("mime id"), max_length=998, null=True, blank=True)
 

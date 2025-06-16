@@ -1,7 +1,7 @@
 """API ViewSet for Thread model."""
 
 from django.conf import settings
-from django.db.models import Exists, OuterRef, Sum
+from django.db.models import Exists, OuterRef, Count, Q
 
 import rest_framework as drf
 from drf_spectacular.types import OpenApiTypes
@@ -12,7 +12,7 @@ from drf_spectacular.utils import (
 )
 from rest_framework import mixins, viewsets
 
-from core import enums, models
+from core import models, enums
 from core.search import search_threads
 
 from .. import permissions, serializers
@@ -70,24 +70,25 @@ class ThreadViewSet(
                     "You do not have access to this label."
                 ) from e
 
-        # Apply boolean filters (has_unread, etc.)
-        # These filters operate on the Thread model's aggregated fields
+        # Apply boolean filters
+        # These filters operate on the Thread model's boolean fields
         filter_mapping = {
-            "has_unread": "count_unread__gt",
-            "has_trashed": "count_trashed__gt",
-            "has_draft": "count_draft__gt",
-            "has_starred": "count_starred__gt",
-            "has_sender": "count_sender__gt",  # Assuming count_sender relates to messages from the user
+            "has_trashed": "has_trashed",
+            "has_draft": "has_draft",
+            "has_starred": "has_starred",
+            "has_sender": "has_sender",
+            "has_active": "has_active",
+            "has_messages": "has_messages",
+            "is_spam": "is_spam",
         }
 
-        for param, filter_lookup in filter_mapping.items():
+        for param, filter_field in filter_mapping.items():
             value = self.request.GET.get(param)
             if value is not None:
                 if value == "1":
-                    queryset = queryset.filter(**{filter_lookup: 0})
+                    queryset = queryset.filter(**{filter_field: True})
                 else:
-                    # Allow filtering for threads with zero count
-                    queryset = queryset.filter(**{filter_lookup.replace("__gt", ""): 0})
+                    queryset = queryset.filter(**{filter_field: False})
 
         queryset = queryset.order_by("-messaged_at", "-created_at")
         return queryset
@@ -113,12 +114,7 @@ class ThreadViewSet(
                 location=OpenApiParameter.QUERY,
                 description="Search threads by content (subject, sender, recipients, message body).",
             ),
-            OpenApiParameter(
-                name="has_unread",
-                type=OpenApiTypes.INT,
-                location=OpenApiParameter.QUERY,
-                description="Filter threads with unread messages (1=true, 0=false).",
-            ),
+
             OpenApiParameter(
                 name="has_trashed",
                 type=OpenApiTypes.INT,
@@ -148,10 +144,12 @@ class ThreadViewSet(
                 type=OpenApiTypes.STR,
                 location=OpenApiParameter.QUERY,
                 required=True,
-                description=(
-                    f"Comma-separated list of fields to aggregate. "
-                    f"Allowed values: {', '.join(enums.THREAD_STATS_FIELDS_MAP.keys())}"
-                ),
+                description=
+                """Comma-separated list of fields to aggregate.
+                Special values: 'all' (count all threads), 'all_unread' (count all unread threads).
+                Boolean fields: has_trashed, has_draft, has_starred, has_sender, has_active, is_spam, has_messages.
+                Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.
+                Examples: 'all,all_unread', 'has_starred,has_starred_unread', 'is_spam,is_spam_unread'""",
                 enum=list(enums.THREAD_STATS_FIELDS_MAP.keys()),
                 style="form",
                 explode=False,
@@ -161,16 +159,12 @@ class ThreadViewSet(
             200: OpenApiResponse(
                 response={
                     "type": "object",
-                    "properties": {
-                        key: {"type": "integer"}
-                        for key in enums.THREAD_STATS_FIELDS_MAP
-                    },
+                    "additionalProperties": {"type": "integer"},
                 },
                 description=(
                     "A dictionary containing the aggregated counts. "
                     "Keys correspond to the fields requested via the `stats_fields` query parameter. "
-                    "All possible keys (derived from THREAD_STATS_FIELDS_MAP) are defined in the schema, "
-                    "each mapping to an integer count. Keys not requested will not be present in the response."
+                    "Each value is an integer count. Keys not requested will not be present in the response."
                 ),
             ),
             400: OpenApiResponse(
@@ -179,8 +173,7 @@ class ThreadViewSet(
                     "properties": {"detail": {"type": "string"}},
                 },
                 description=(
-                    f"Returned if `stats_fields` parameter is missing or contains invalid fields. "
-                    f"Allowed fields: {', '.join(enums.THREAD_STATS_FIELDS_MAP.keys())}"
+                    "Returned if `stats_fields` parameter is missing or contains invalid fields."
                 ),
             ),
         },
@@ -206,18 +199,57 @@ class ThreadViewSet(
 
         requested_fields = [field.strip() for field in stats_fields_param.split(",")]
 
-        aggregations = {}
+        # Define valid base fields that can be counted
+        valid_base_fields = {
+            "has_trashed", "has_draft", "has_starred",
+            "has_sender", "has_active", "is_spam", "has_messages"
+        }
+
+        # Special fields
+        special_fields = {"all", "all_unread"}
+
+        # Validate requested fields
         for field in requested_fields:
-            model_field = enums.THREAD_STATS_FIELDS_MAP.get(field)
-            if model_field:
-                aggregations[field] = Sum(model_field)
+            if field in special_fields:
+                continue
+            if field.endswith("_unread"):
+                # Extract base field name and validate
+                base_field = field[:-7]  # Remove "_unread" suffix
+                if base_field not in valid_base_fields:
+                    return drf.response.Response(
+                        {"detail": f"Invalid base field in '{field}': {base_field}"},
+                        status=drf.status.HTTP_400_BAD_REQUEST,
+                    )
+            elif field in valid_base_fields:
+                continue
             else:
                 return drf.response.Response(
                     {"detail": f"Invalid field requested in stats_fields: {field}"},
                     status=drf.status.HTTP_400_BAD_REQUEST,
                 )
+
+        aggregations = {}
+        for field in requested_fields:
+            # Use a unique key for the aggregation to avoid naming conflicts
+            agg_key = f"count_{field}"
+
+            if field == "all":
+                # Count all threads matching the filter
+                aggregations[agg_key] = Count('pk')
+            elif field == "all_unread":
+                # Count all unread threads matching the filter
+                aggregations[agg_key] = Count('pk', filter=Q(has_unread=True))
+            elif field.endswith("_unread"):
+                # Count threads that match the condition AND are unread
+                base_field = field[:-7]  # Remove "_unread" suffix
+                base_condition = Q(**{base_field: True})
+                unread_condition = Q(has_unread=True)
+                aggregations[agg_key] = Count('pk', filter=base_condition & unread_condition)
+            else:
+                # Count threads where the boolean field is True
+                aggregations[agg_key] = Count('pk', filter=Q(**{field: True}))
+
         if not aggregations:
-            # Should not happen if stats_fields_param is validated earlier, but good practice
             return drf.response.Response(
                 {"detail": "No valid fields provided in stats_fields."},
                 status=drf.status.HTTP_400_BAD_REQUEST,
@@ -225,11 +257,14 @@ class ThreadViewSet(
 
         aggregated_data = queryset.aggregate(**aggregations)
 
-        # Replace None with 0 for sums where no matching threads exist
-        for key, value in aggregated_data.items():
-            if value is None:
-                aggregated_data[key] = 0
-        return drf.response.Response(aggregated_data)
+        # Map back to the original field names and replace None with 0
+        result = {}
+        for field in requested_fields:
+            agg_key = f"count_{field}"
+            value = aggregated_data.get(agg_key, 0)
+            result[field] = value if value is not None else 0
+
+        return drf.response.Response(result)
 
     @extend_schema(
         tags=["threads"],
@@ -252,12 +287,7 @@ class ThreadViewSet(
                 location=OpenApiParameter.QUERY,
                 description="Search threads by content (subject, sender, recipients, message body).",
             ),
-            OpenApiParameter(
-                name="has_unread",
-                type=OpenApiTypes.INT,
-                location=OpenApiParameter.QUERY,
-                description="Filter threads with unread messages (1=true, 0=false).",
-            ),
+
             OpenApiParameter(
                 name="has_trashed",
                 type=OpenApiTypes.INT,
@@ -282,6 +312,24 @@ class ThreadViewSet(
                 location=OpenApiParameter.QUERY,
                 description="Filter threads with messages sent by the user (1=true, 0=false).",
             ),
+            OpenApiParameter(
+                name="has_active",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads that have active messages (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_messages",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads that have messages (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="is_spam",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads that are spam (1=true, 0=false).",
+            ),
         ],
     )
     def list(self, request, *args, **kwargs):
@@ -296,12 +344,11 @@ class ThreadViewSet(
             # Build filters from query parameters
             es_filters = {}
             for param, value in request.query_params.items():
-                if param.startswith("has_") and value in ["0", "1"]:
-                    field_name = param[4:]  # Remove 'has_' prefix
-                    if value == "1":
-                        es_filters[f"is_{field_name}"] = True
-                    else:
-                        es_filters[f"is_{field_name}"] = False
+                if param.startswith("has_") and value in {"0", "1"}:
+                    # Remove 'has_' prefix
+                    es_filters[f"is_{param[4:]}"] = value == "1"
+                elif param.startswith("is_") and value in {"0", "1"}:
+                    es_filters[param] = value == "1"
 
             # Get page parameters
             page = int(self.paginator.get_page_number(request, self))

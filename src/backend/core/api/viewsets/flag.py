@@ -238,11 +238,8 @@ class ChangeFlagViewSet(APIView):
                 pk__in=[t.pk for t in updated_threads]
             )
             for thread in threads_to_update_stats:
-                # update_stats likely recalculates based on current message states
-                thread.update_stats(
-                    # Pass specific fields if update_stats optimizes, otherwise it recalculates all
-                    fields=[flag] if flag in ("unread", "starred", "trashed") else None
-                )
+                # update_stats recalculates all stats based on current message states
+                thread.update_stats()
 
         return drf.response.Response(
             {

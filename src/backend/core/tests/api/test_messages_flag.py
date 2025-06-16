@@ -44,11 +44,10 @@ def test_mark_messages_unread_success(api_client):
         thread=thread, is_unread=True, read_at=None, is_trashed=False
     )  # Already unread
 
-    # Check initial thread counter
+    # Check initial thread state
     thread.update_stats()
     thread.refresh_from_db()
-    initial_unread_count = thread.count_unread
-    assert initial_unread_count == 1
+    assert thread.has_unread == True
 
     message_ids = [str(msg1.id), str(msg2.id)]
     data = {"flag": "unread", "value": True, "message_ids": message_ids}
@@ -67,9 +66,9 @@ def test_mark_messages_unread_success(api_client):
     assert msg2.read_at is None
     assert msg3.is_unread is True  # Remained unread
 
-    # Verify thread unread counter updated
+    # Verify thread unread flag updated
     thread.refresh_from_db()
-    assert thread.count_unread == 3
+    assert thread.has_unread == True
 
 
 def test_mark_messages_read_success(api_client):
@@ -88,11 +87,10 @@ def test_mark_messages_read_success(api_client):
         thread=thread, is_unread=False, read_at=timezone.now(), is_trashed=False
     )  # Already read
 
-    # Check initial thread counter
+    # Check initial thread state
     thread.update_stats()
     thread.refresh_from_db()
-    initial_unread_count = thread.count_unread
-    assert initial_unread_count == 2
+    assert thread.has_unread == True
 
     message_ids = [str(msg1.id), str(msg2.id)]
     data = {"flag": "unread", "value": False, "message_ids": message_ids}
@@ -111,9 +109,9 @@ def test_mark_messages_read_success(api_client):
     assert msg2.read_at is not None
     assert msg3.is_unread is False  # Remained read
 
-    # Verify thread unread counter updated
+    # Verify thread unread flag updated
     thread.refresh_from_db()
-    assert thread.count_unread == 0
+    assert thread.has_unread == False
 
 
 def test_mark_thread_messages_unread_success(api_client):
@@ -131,7 +129,7 @@ def test_mark_thread_messages_unread_success(api_client):
 
     thread.refresh_from_db()
     thread.update_stats()
-    assert thread.count_unread == 0
+    assert thread.has_unread == False
 
     data = {"flag": "unread", "value": True, "thread_ids": [str(thread.id)]}
     response = api_client.post(API_URL, data=data, format="json")
@@ -147,7 +145,7 @@ def test_mark_thread_messages_unread_success(api_client):
     assert msg2.read_at is None
 
     thread.refresh_from_db()
-    assert thread.count_unread == thread.messages.count()
+    assert thread.has_unread == True
 
 
 def test_mark_thread_messages_read_success(api_client):
@@ -165,7 +163,7 @@ def test_mark_thread_messages_read_success(api_client):
 
     thread.refresh_from_db()
     thread.update_stats()
-    assert thread.count_unread == 2
+    assert thread.has_unread == True
 
     data = {"flag": "unread", "value": False, "thread_ids": [str(thread.id)]}
     response = api_client.post(API_URL, data=data, format="json")
@@ -181,7 +179,7 @@ def test_mark_thread_messages_read_success(api_client):
     assert msg2.read_at is not None
 
     thread.refresh_from_db()
-    assert thread.count_unread == 0
+    assert thread.has_unread == False
 
 
 def test_mark_multiple_threads_read_success(api_client):
@@ -214,9 +212,9 @@ def test_mark_multiple_threads_read_success(api_client):
     thread2.update_stats()
     thread3.refresh_from_db()
     thread3.update_stats()
-    assert thread1.count_unread == 1
-    assert thread2.count_unread == 1
-    assert thread3.count_unread == 0
+    assert thread1.has_unread == True
+    assert thread2.has_unread == True
+    assert thread3.has_unread == False
 
     thread_ids = [str(thread1.id), str(thread2.id)]
     data = {"flag": "unread", "value": False, "thread_ids": thread_ids}
@@ -228,9 +226,9 @@ def test_mark_multiple_threads_read_success(api_client):
     thread1.refresh_from_db()
     thread2.refresh_from_db()
     thread3.refresh_from_db()  # Should remain unchanged
-    assert thread1.count_unread == 0
-    assert thread2.count_unread == 0
-    assert thread3.count_unread == 0
+    assert thread1.has_unread == False
+    assert thread2.has_unread == False
+    assert thread3.has_unread == False
 
 
 def test_mark_messages_unauthorized(api_client):
@@ -329,8 +327,7 @@ def test_mark_messages_starred_success(api_client):
 
     thread.refresh_from_db()
     thread.update_stats()
-    initial_starred_count = thread.count_starred
-    assert initial_starred_count == 1
+    assert thread.has_starred == True
 
     message_ids = [str(msg1.id)]
     data = {"flag": "starred", "value": True, "message_ids": message_ids}
@@ -345,7 +342,7 @@ def test_mark_messages_starred_success(api_client):
     assert msg2.is_starred is True
 
     thread.refresh_from_db()
-    assert thread.count_starred == 2
+    assert thread.has_starred == True
 
 
 def test_mark_messages_unstarred_success(api_client):
@@ -362,8 +359,7 @@ def test_mark_messages_unstarred_success(api_client):
 
     thread.refresh_from_db()
     thread.update_stats()
-    initial_starred_count = thread.count_starred
-    assert initial_starred_count == 1
+    assert thread.has_starred == True
 
     message_ids = [str(msg1.id)]
     data = {"flag": "starred", "value": False, "message_ids": message_ids}
@@ -378,7 +374,7 @@ def test_mark_messages_unstarred_success(api_client):
     assert msg2.is_starred is False
 
     thread.refresh_from_db()
-    assert thread.count_starred == 0
+    assert thread.has_starred == False
 
 
 # --- Tests for Trashed Flag ---
@@ -398,8 +394,7 @@ def test_mark_messages_trashed_success(api_client):
 
     thread.refresh_from_db()
     thread.update_stats()
-    initial_trashed_count = thread.count_trashed
-    assert initial_trashed_count == 1
+    assert thread.has_trashed == True
 
     message_ids = [str(msg1.id)]
     data = {"flag": "trashed", "value": True, "message_ids": message_ids}
@@ -415,7 +410,7 @@ def test_mark_messages_trashed_success(api_client):
     assert msg2.is_trashed is True
 
     thread.refresh_from_db()
-    assert thread.count_trashed == 2
+    assert thread.has_trashed == True
 
 
 def test_mark_messages_untrashed_success(api_client):
@@ -432,8 +427,7 @@ def test_mark_messages_untrashed_success(api_client):
 
     thread.refresh_from_db()
     thread.update_stats()
-    initial_trashed_count = thread.count_trashed
-    assert initial_trashed_count == 1
+    assert thread.has_trashed == True
 
     message_ids = [str(msg1.id)]
     data = {"flag": "trashed", "value": False, "message_ids": message_ids}
@@ -449,4 +443,4 @@ def test_mark_messages_untrashed_success(api_client):
     assert msg2.is_trashed is False
 
     thread.refresh_from_db()
-    assert thread.count_trashed == 0
+    assert thread.has_trashed == False

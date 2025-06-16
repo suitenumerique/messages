@@ -175,7 +175,7 @@ class TestMessagesDelete:
         # check thread stats before delete
         thread.refresh_from_db()
         thread.update_stats()
-        assert thread.count_messages == 2
+        assert thread.has_messages == True
 
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
@@ -186,7 +186,7 @@ class TestMessagesDelete:
         assert models.Thread.objects.filter(id=message.thread.id).exists()
         # check thread stats was updated after message was deleted
         thread.refresh_from_db()
-        assert thread.count_messages == 1
+        assert thread.has_messages == True
 
     @pytest.mark.parametrize(
         "mailbox_role",

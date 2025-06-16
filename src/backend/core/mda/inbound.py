@@ -266,7 +266,6 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
             thread = models.Thread.objects.create(
                 subject=parsed_email.get("subject", "(no subject)"),
                 snippet=snippet,
-                count_unread=1,
             )
             # Create a thread access for the sender mailbox
             models.ThreadAccess.objects.create(

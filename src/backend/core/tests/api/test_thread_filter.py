@@ -170,42 +170,42 @@ class TestThreadFilterLabel:
         data = setup_threads_with_labels
 
         # Add some messages to make threads unread/starred
-        factories.MessageFactory(thread=data["thread1"], is_unread=True)
-        factories.MessageFactory(thread=data["thread2"], is_starred=True)
+        factories.MessageFactory(thread=data["thread1"])
+        factories.MessageFactory(thread=data["thread2"], is_trashed=True)
         data["thread1"].update_stats()
         data["thread2"].update_stats()
 
-        # Test filtering by label1 and has_unread
+        # Test filtering by label1 and has_active
         response = api_client.get(
             url,
             {
-                "label_slug": str(data["label1"].slug),
-                "has_unread": "1",
+                "label_slug": data["label1"].slug,
+                "has_active": "1",
             },
         )
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 1  # only thread1 has label1 and is unread
+        assert response.data["count"] == 1  # only thread1 has label1 and is not trashed
         assert response.data["results"][0]["id"] == str(data["thread1"].id)
 
-        # Test filtering by label1 and has_starred
+        # Test filtering by label1 and has no active
         response = api_client.get(
             url,
             {
                 "label_slug": str(data["label1"].slug),
-                "has_starred": "1",
+                "has_active": "0",
             },
         )
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 1  # only thread2 has label1 and is starred
+        assert response.data["count"] == 1  # only thread2 has label1 and is not active
         assert response.data["results"][0]["id"] == str(data["thread2"].id)
 
-        # Test filtering by label1, mailbox, and has_unread
+        # Test filtering by label1, mailbox, and has_active
         response = api_client.get(
             url,
             {
                 "label_slug": str(data["label1"].slug),
                 "mailbox_id": str(data["mailbox1"].id),
-                "has_unread": "1",
+                "has_active": "1",
             },
         )
         assert response.status_code == status.HTTP_200_OK

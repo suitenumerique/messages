@@ -38,7 +38,7 @@ def test_trash_single_thread_success(api_client):
 
     thread.refresh_from_db()
     thread.update_stats()
-    assert thread.count_trashed == 0
+    assert thread.has_trashed == False
     assert msg1.is_trashed is False
     assert msg2.is_trashed is False
 
@@ -49,9 +49,9 @@ def test_trash_single_thread_success(api_client):
     # Check that the response indicates update for messages within the thread
     assert response.data["updated_threads"] == 1
 
-    # Verify thread trash counter is updated
+    # Verify thread trash flag is updated
     thread.refresh_from_db()
-    assert thread.count_trashed == 2
+    assert thread.has_trashed == True
 
     # Verify all messages in the thread are marked as trashed
     msg1.refresh_from_db()
@@ -83,7 +83,7 @@ def test_untrash_single_thread_success(api_client):
 
     thread.refresh_from_db()
     thread.update_stats()
-    assert thread.count_trashed == 2
+    assert thread.has_trashed == True
     assert msg1.is_trashed is True
     assert msg2.is_trashed is True
 
@@ -93,9 +93,9 @@ def test_untrash_single_thread_success(api_client):
     assert response.status_code == status.HTTP_200_OK
     assert response.data["updated_threads"] == 1
 
-    # Verify thread trash counter is updated
+    # Verify thread trash flag is updated
     thread.refresh_from_db()
-    assert thread.count_trashed == 0
+    assert thread.has_trashed == False
 
     # Verify all messages in the thread are marked as untrashed
     msg1.refresh_from_db()
@@ -144,9 +144,9 @@ def test_trash_multiple_threads_success(api_client):
     thread2.update_stats()
     thread3.refresh_from_db()
     thread3.update_stats()
-    assert thread1.count_trashed == 0
-    assert thread2.count_trashed == 0
-    assert thread3.count_trashed == 1
+    assert thread1.has_trashed == False
+    assert thread2.has_trashed == False
+    assert thread3.has_trashed == True
 
     thread_ids = [str(thread1.id), str(thread2.id), str(thread3.id)]
     data = {"flag": "trashed", "value": True, "thread_ids": thread_ids}
@@ -155,13 +155,13 @@ def test_trash_multiple_threads_success(api_client):
     assert response.status_code == status.HTTP_200_OK
     assert response.data["updated_threads"] == 3  # All 3 threads were targeted
 
-    # Verify counters
+    # Verify flags
     thread1.refresh_from_db()
     thread2.refresh_from_db()
     thread3.refresh_from_db()
-    assert thread1.count_trashed == 1
-    assert thread2.count_trashed == 1
-    assert thread3.count_trashed == 1  # Remains 1
+    assert thread1.has_trashed == True
+    assert thread2.has_trashed == True
+    assert thread3.has_trashed == True  # Remains True
 
     # Verify messages
     assert thread1.messages.first().is_trashed is True
@@ -202,7 +202,7 @@ def test_trash_thread_no_permission(api_client):
 
     # Verify thread and its messages are not marked as trashed
     thread.refresh_from_db()
-    assert thread.count_trashed == 0
+    assert thread.has_trashed == False
     assert thread.messages.first().is_trashed is False
     assert (
         models.Thread.objects.count() == initial_count

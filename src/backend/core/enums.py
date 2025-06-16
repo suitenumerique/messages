@@ -36,15 +36,6 @@ class MessageRecipientTypeChoices(models.TextChoices):
     BCC = "bcc", _("Bcc")
 
 
-THREAD_STATS_FIELDS_MAP = {
-    "unread": "count_unread",
-    "trashed": "count_trashed",
-    "draft": "count_draft",
-    "starred": "count_starred",
-    "sender": "count_sender",
-    "messages": "count_messages",
-}
-
 
 class MessageDeliveryStatusChoices(models.TextChoices):
     """Defines the possible statuses of a message delivery."""
@@ -59,3 +50,8 @@ class MailDomainAccessRoleChoices(models.TextChoices):
     """Defines the unique roles a user can have to access a mail domain."""
 
     ADMIN = "ADMIN", _("Admin")
+
+THREAD_STATS_FIELDS_MAP = {
+    "all": "all",
+    "all_unread": "all_unread",
+}

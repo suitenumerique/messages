@@ -67,7 +67,7 @@ def test_list_threads_success(api_client):
         (t for t in response.data["results"] if t["id"] == str(thread1.id)), None
     )
     assert thread_data is not None
-    assert thread_data["count_unread"] == 1
+    assert thread_data["has_unread"] is True
 
     # Test filtering by mailbox
     response = api_client.get(API_URL, {"mailbox_id": str(mailbox1.id)})
@@ -109,56 +109,7 @@ def test_list_threads_no_access(api_client):
 # --- Tests for counter-based filters ---
 
 
-def test_list_threads_filter_has_unread(api_client):
-    """Test filtering threads by has_unread=1."""
-    user = UserFactory()
-    api_client.force_authenticate(user=user)
-    mailbox = MailboxFactory(users_read=[user])
-    # Thread 1: Has unread messages
-    thread1 = ThreadFactory()
-    ThreadAccessFactory(
-        mailbox=mailbox,
-        thread=thread1,
-        role=enums.ThreadAccessRoleChoices.EDITOR,
-    )
-    message1 = MessageFactory(thread=thread1, is_unread=True)
-    MessageFactory(thread=thread1, is_unread=False, read_at=timezone.now())
-    message3 = MessageFactory(thread=thread1, is_unread=False, read_at=timezone.now())
-    # Thread 2: No unread messages
-    thread2 = ThreadFactory()
-    ThreadAccessFactory(
-        mailbox=mailbox,
-        thread=thread2,
-        role=enums.ThreadAccessRoleChoices.EDITOR,
-    )
-    MessageFactory(thread=thread2, is_unread=False, read_at=timezone.now())
-
-    thread1.update_stats()
-    thread2.update_stats()
-
-    response = api_client.get(API_URL, {"has_unread": "1"})
-    assert response.status_code == status.HTTP_200_OK
-    assert response.data["count"] == 1
-    assert response.data["results"][0]["id"] == str(thread1.id)
-    assert response.data["results"][0]["sender_names"] == [
-        message1.sender.name,
-        message3.sender.name,
-    ]
-
-    response = api_client.get(API_URL, {"has_unread": "true"})
-    assert response.status_code == status.HTTP_200_OK
-    assert response.data["count"] == 1
-
-    response = api_client.get(
-        API_URL, {"has_unread": "0"}
-    )  # Filter for threads with 0 unread
-    assert response.status_code == status.HTTP_200_OK
-    assert response.data["count"] == 1
-    assert response.data["results"][0]["id"] == str(thread2.id)
-
-    response = api_client.get(API_URL, {"has_unread": "false"})
-    assert response.status_code == status.HTTP_200_OK
-    assert response.data["count"] == 1
+# has_unread filter has been removed - use all_unread in stats instead
 
 
 def test_list_threads_filter_has_trashed(api_client):
@@ -238,63 +189,66 @@ def test_list_threads_filter_combined(api_client):
     user = UserFactory()
     api_client.force_authenticate(user=user)
     mailbox = MailboxFactory(users_read=[user])
-    # Thread 1: Unread, not starred
+    # Thread 1: Not starred, not trashed
     thread1 = ThreadFactory()
     ThreadAccessFactory(
         mailbox=mailbox,
         thread=thread1,
         role=enums.ThreadAccessRoleChoices.EDITOR,
     )
-    MessageFactory(thread=thread1, is_unread=True, is_starred=False)
-    # Thread 2: Unread and starred
+    MessageFactory(thread=thread1, is_starred=False, is_trashed=False)
+    # Thread 2: Has trashed message (starred message is trashed, so has_starred=False)
     thread2 = ThreadFactory()
     ThreadAccessFactory(
         mailbox=mailbox,
         thread=thread2,
         role=enums.ThreadAccessRoleChoices.EDITOR,
     )
-    MessageFactory(thread=thread2, is_unread=True, is_starred=True)
-    # Thread 3: Read, starred
+    MessageFactory(thread=thread2, is_starred=True, is_trashed=True)
+    # Thread 3: Starred, not trashed
     thread3 = ThreadFactory()
     ThreadAccessFactory(
         mailbox=mailbox,
         thread=thread3,
         role=enums.ThreadAccessRoleChoices.EDITOR,
     )
-    MessageFactory(
-        thread=thread3, is_unread=False, read_at=timezone.now(), is_starred=True
-    )
-    # Thread 4: Read, not starred
+    MessageFactory(thread=thread3, is_starred=True, is_trashed=False)
+    # Thread 4: Has both starred (not trashed) and trashed messages
     thread4 = ThreadFactory()
     ThreadAccessFactory(
         mailbox=mailbox,
         thread=thread4,
         role=enums.ThreadAccessRoleChoices.EDITOR,
     )
-    MessageFactory(
-        thread=thread4, is_unread=False, read_at=timezone.now(), is_starred=False
-    )
+    MessageFactory(thread=thread4, is_starred=True, is_trashed=False)  # Starred, not trashed
+    MessageFactory(thread=thread4, is_starred=False, is_trashed=True)  # Not starred, trashed
 
     for t in [thread1, thread2, thread3, thread4]:
         t.update_stats()
 
-    # Filter: has_unread=1 AND has_starred=1
-    response = api_client.get(API_URL, {"has_unread": "1", "has_starred": "1"})
+    # Filter: has_starred=1 AND has_trashed=1 (thread has both starred non-trashed AND trashed messages)
+    response = api_client.get(API_URL, {"has_starred": "1", "has_trashed": "1"})
     assert response.status_code == status.HTTP_200_OK
     assert response.data["count"] == 1
-    assert response.data["results"][0]["id"] == str(thread2.id)
+    assert response.data["results"][0]["id"] == str(thread4.id)
 
-    # Filter: has_unread=1 AND has_starred=0
-    response = api_client.get(API_URL, {"has_unread": "1", "has_starred": "0"})
+    # Filter: has_starred=1 AND has_trashed=0 (thread has starred non-trashed messages, no trashed messages)
+    response = api_client.get(API_URL, {"has_starred": "1", "has_trashed": "0"})
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["count"] == 1
+    assert response.data["results"][0]["id"] == str(thread3.id)
+
+    # Filter: has_starred=0 AND has_trashed=0 (thread has no starred non-trashed messages, no trashed messages)
+    response = api_client.get(API_URL, {"has_starred": "0", "has_trashed": "0"})
     assert response.status_code == status.HTTP_200_OK
     assert response.data["count"] == 1
     assert response.data["results"][0]["id"] == str(thread1.id)
 
-    # Filter: has_unread=0 AND has_starred=1
-    response = api_client.get(API_URL, {"has_unread": "0", "has_starred": "1"})
+    # Filter: has_starred=0 AND has_trashed=1 (thread has no starred non-trashed messages, but has trashed messages)
+    response = api_client.get(API_URL, {"has_starred": "0", "has_trashed": "1"})
     assert response.status_code == status.HTTP_200_OK
     assert response.data["count"] == 1
-    assert response.data["results"][0]["id"] == str(thread3.id)
+    assert response.data["results"][0]["id"] == str(thread2.id)
 
 
 @pytest.mark.django_db
@@ -312,14 +266,14 @@ class TestThreadStatsAPI:
         api_client.force_authenticate(user=user)
         mailbox = MailboxFactory(users_read=[user])
 
-        # Create some threads with varying counts
+        # Create some threads with varying boolean flags
         thread1 = ThreadFactory(
-            count_unread=2,
-            count_messages=5,
-            count_trashed=0,
-            count_draft=1,
-            count_starred=1,
-            count_sender=3,
+            has_unread=True,
+            has_messages=True,
+            has_trashed=False,
+            has_draft=True,
+            has_starred=True,
+            has_sender=True,
         )
         ThreadAccessFactory(
             mailbox=mailbox,
@@ -328,12 +282,12 @@ class TestThreadStatsAPI:
         )
 
         thread2 = ThreadFactory(
-            count_unread=1,
-            count_messages=3,
-            count_trashed=1,
-            count_draft=0,
-            count_starred=0,
-            count_sender=1,
+            has_unread=True,
+            has_messages=True,
+            has_trashed=True,
+            has_draft=False,
+            has_starred=False,
+            has_sender=True,
         )
         ThreadAccessFactory(
             mailbox=mailbox,
@@ -343,7 +297,7 @@ class TestThreadStatsAPI:
 
         # Thread in another mailbox (should be excluded)
         other_mailbox = MailboxFactory()
-        other_thread = ThreadFactory(count_unread=10)
+        other_thread = ThreadFactory(has_unread=True)
         ThreadAccessFactory(
             mailbox=other_mailbox,
             thread=other_thread,
@@ -351,17 +305,16 @@ class TestThreadStatsAPI:
         )
 
         response = api_client.get(
-            url, {"stats_fields": "unread,messages,trashed,draft,starred,sender"}
+            url, {"stats_fields": "has_messages,has_trashed,has_draft,has_starred,has_sender"}
         )
 
         assert response.status_code == 200
         assert response.data == {
-            "unread": 3,  # 2 + 1
-            "messages": 8,  # 5 + 3
-            "trashed": 1,  # 0 + 1
-            "draft": 1,  # 1 + 0
-            "starred": 1,  # 1 + 0
-            "sender": 4,  # 3 + 1
+            "has_messages": 2,  # Both threads have has_messages=True
+            "has_trashed": 1,  # Only thread2 has has_trashed=True
+            "has_draft": 1,  # Only thread1 has has_draft=True
+            "has_starred": 1,  # Only thread1 has has_starred=True
+            "has_sender": 2,  # Both threads have has_sender=True
         }
 
     def test_stats_with_mailbox_filter(self, api_client, url):
@@ -373,24 +326,24 @@ class TestThreadStatsAPI:
         mailbox2 = MailboxFactory()
         MailboxAccessFactory(user=user, mailbox=mailbox2)
 
-        thread1 = ThreadFactory(count_unread=5, count_messages=10)
+        thread1 = ThreadFactory(has_unread=True, has_messages=True)
         ThreadAccessFactory(
             mailbox=mailbox,
             thread=thread1,
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
-        thread2 = ThreadFactory(count_unread=3, count_messages=6)
+        thread2 = ThreadFactory(has_unread=True, has_messages=True)
         ThreadAccessFactory(
             mailbox=mailbox2,
             thread=thread2,
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
         response = api_client.get(
-            url, {"mailbox_id": str(mailbox.id), "stats_fields": "unread,messages"}
+            url, {"mailbox_id": str(mailbox.id), "stats_fields": "has_messages"}
         )
 
         assert response.status_code == 200
-        assert response.data == {"unread": 5, "messages": 10}
+        assert response.data == {"has_messages": 1}
 
     def test_stats_with_flag_filter(self, api_client, url):
         """Test retrieving stats filtered by flags (e.g., has_starred=1)."""
@@ -400,14 +353,14 @@ class TestThreadStatsAPI:
         mailbox = MailboxFactory(users_read=[user])
 
         # Starred thread
-        thread1 = ThreadFactory(count_starred=1, count_unread=2, count_messages=5)
+        thread1 = ThreadFactory(has_starred=True, has_unread=True, has_messages=True)
         ThreadAccessFactory(
             mailbox=mailbox,
             thread=thread1,
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
         # Not starred thread
-        thread2 = ThreadFactory(count_starred=0, count_unread=3, count_messages=7)
+        thread2 = ThreadFactory(has_starred=False, has_unread=True, has_messages=True)
         ThreadAccessFactory(
             mailbox=mailbox,
             thread=thread2,
@@ -415,12 +368,12 @@ class TestThreadStatsAPI:
         )
 
         response = api_client.get(
-            url, {"has_starred": "1", "stats_fields": "unread,messages"}
+            url, {"has_starred": "1", "stats_fields": "has_messages"}
         )
 
         assert response.status_code == 200
-        # Should only sum counts from the starred thread
-        assert response.data == {"unread": 2, "messages": 5}
+        # Should only count the starred thread
+        assert response.data == {"has_messages": 1}
 
     def test_stats_with_zero_flag_filter(self, api_client, url):
         """Test retrieving stats filtered by flags with zero count (e.g., has_trashed=0)."""
@@ -430,14 +383,14 @@ class TestThreadStatsAPI:
         mailbox = MailboxFactory(users_read=[user])
 
         # Not trashed thread
-        thread1 = ThreadFactory(count_trashed=0, count_unread=4, count_messages=8)
+        thread1 = ThreadFactory(has_trashed=False, has_unread=True, has_messages=True)
         ThreadAccessFactory(
             mailbox=mailbox,
             thread=thread1,
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
         # Trashed thread
-        thread2 = ThreadFactory(count_trashed=1, count_unread=1, count_messages=2)
+        thread2 = ThreadFactory(has_trashed=True, has_unread=True, has_messages=True)
         ThreadAccessFactory(
             mailbox=mailbox,
             thread=thread2,
@@ -445,18 +398,18 @@ class TestThreadStatsAPI:
         )
 
         response = api_client.get(
-            url, {"has_trashed": "0", "stats_fields": "unread,messages"}
+            url, {"has_trashed": "0", "stats_fields": "has_messages"}
         )
 
         assert response.status_code == 200
-        # Should only sum counts from the non-trashed thread
-        assert response.data == {"unread": 4, "messages": 8}
+        # Should only count the non-trashed thread
+        assert response.data == {"has_messages": 1}
 
-        response = api_client.get(url, {"stats_fields": "unread,messages"})
+        response = api_client.get(url, {"stats_fields": "has_messages"})
 
         assert response.status_code == 200
-        # Get all counts
-        assert response.data == {"unread": 5, "messages": 10}
+        # Get all threads
+        assert response.data == {"has_messages": 2}
 
     def test_stats_specific_fields(self, api_client, url):
         """Test retrieving stats for specific fields."""
@@ -465,18 +418,18 @@ class TestThreadStatsAPI:
         api_client.force_authenticate(user=user)
         mailbox = MailboxFactory(users_read=[user])
 
-        thread = ThreadFactory(count_unread=5, count_messages=10, count_draft=2)
+        thread = ThreadFactory(has_unread=True, has_messages=True, has_draft=True)
         ThreadAccessFactory(
             mailbox=mailbox,
             thread=thread,
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
 
-        response = api_client.get(url, {"stats_fields": "unread,draft"})
+        response = api_client.get(url, {"stats_fields": "has_draft"})
 
         assert response.status_code == 200
-        assert response.data == {"unread": 5, "draft": 2}
-        assert "messages" not in response.data
+        assert response.data == {"has_draft": 1}
+        assert "has_messages" not in response.data
 
     def test_stats_no_matching_threads(self, api_client, url):
         """Test retrieving stats when no threads match the filters."""
@@ -485,7 +438,7 @@ class TestThreadStatsAPI:
         api_client.force_authenticate(user=user)
         mailbox = MailboxFactory(users_read=[user])
 
-        thread = ThreadFactory(count_trashed=1)  # Trashed
+        thread = ThreadFactory(has_trashed=True)  # Trashed
         ThreadAccessFactory(
             mailbox=mailbox,
             thread=thread,
@@ -496,12 +449,121 @@ class TestThreadStatsAPI:
             url,
             {
                 "has_trashed": "0",
-                "stats_fields": "unread,messages",
+                "stats_fields": "has_messages",
             },  # Filter for non-trashed
         )
 
         assert response.status_code == 200
-        assert response.data == {"unread": 0, "messages": 0}
+        assert response.data == {"has_messages": 0}
+
+    def test_stats_all_and_all_unread(self, api_client, url):
+        """Test the special 'all' and 'all_unread' stats fields."""
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+        mailbox = MailboxFactory(users_read=[user])
+
+        # Create threads with different unread states
+        thread1 = ThreadFactory(has_unread=True, has_messages=True)
+        thread2 = ThreadFactory(has_unread=False, has_messages=True)
+        thread3 = ThreadFactory(has_unread=True, has_starred=True)
+
+        for thread in [thread1, thread2, thread3]:
+            ThreadAccessFactory(
+                mailbox=mailbox,
+                thread=thread,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+            )
+
+        response = api_client.get(url, {"stats_fields": "all,all_unread"})
+
+        assert response.status_code == 200
+        assert response.data == {
+            "all": 3,  # All 3 threads
+            "all_unread": 2,  # thread1 and thread3 are unread
+        }
+
+    def test_stats_unread_variants(self, api_client, url):
+        """Test the '_unread' variants of stats fields."""
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+        mailbox = MailboxFactory(users_read=[user])
+
+        # Create threads with different combinations of flags and unread status
+        thread1 = ThreadFactory(
+            has_unread=True, has_starred=True, has_sender=True, is_spam=False, has_active=True
+        )
+        thread2 = ThreadFactory(
+            has_unread=False, has_starred=True, has_sender=True, is_spam=False, has_active=True
+        )
+        thread3 = ThreadFactory(
+            has_unread=True, has_starred=False, has_sender=False, is_spam=True, has_active=False
+        )
+
+        for thread in [thread1, thread2, thread3]:
+            ThreadAccessFactory(
+                mailbox=mailbox,
+                thread=thread,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+            )
+
+        response = api_client.get(
+            url,
+            {
+                "stats_fields": (
+                    "has_starred,"
+                    "has_starred_unread,"
+                    "has_sender,"
+                    "has_sender_unread,"
+                    "is_spam,"
+                    "is_spam_unread,"
+                    "has_active,"
+                    "has_active_unread"
+                )
+            }
+        )
+
+        assert response.status_code == 200
+        assert response.data == {
+            "has_starred": 2,  # thread1 and thread2 have has_starred=True
+            "has_starred_unread": 1,  # Only thread1 is starred AND unread
+            "has_sender": 2,  # thread1 and thread2 have has_sender=True
+            "has_sender_unread": 1,  # Only thread1 is sender AND unread
+            "is_spam": 1,  # Only thread3 is spam
+            "is_spam_unread": 1,  # thread3 is spam AND unread
+            "has_active": 2,  # thread1 and thread2 have has_active=True
+            "has_active_unread": 1,  # Only thread1 is active AND unread
+        }
+
+    def test_stats_with_filters_and_unread_variants(self, api_client, url):
+        """Test stats with query filters combined with unread variants."""
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+        mailbox = MailboxFactory(users_read=[user])
+
+        # Create threads with different combinations
+        thread1 = ThreadFactory(has_unread=True, has_starred=True, has_sender=True)
+        thread2 = ThreadFactory(has_unread=False, has_starred=True, has_sender=True)
+        thread3 = ThreadFactory(has_unread=True, has_starred=False, has_sender=True)
+
+        for thread in [thread1, thread2, thread3]:
+            ThreadAccessFactory(
+                mailbox=mailbox,
+                thread=thread,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+            )
+
+        # Filter for only starred threads and get unread counts
+        response = api_client.get(
+            url,
+            {"has_starred": "1", "stats_fields": "all,all_unread,has_sender_unread"}
+        )
+
+        assert response.status_code == 200
+        assert response.data == {
+            "all": 2,  # thread1 and thread2 are starred
+            "all_unread": 1,  # Only thread1 is starred AND unread
+            "has_sender_unread": 1,  # Only thread1 is starred, sender, AND unread
+        }
 
     def test_stats_missing_stats_fields(self, api_client, url):
         """Test request without the required 'stats_fields' parameter."""
@@ -521,7 +583,7 @@ class TestThreadStatsAPI:
         api_client.force_authenticate(user=user)
         MailboxFactory(users_read=[user])
 
-        response = api_client.get(url, {"stats_fields": "unread,invalid_field"})
+        response = api_client.get(url, {"stats_fields": "has_messages,invalid_field"})
         assert response.status_code == 400
         assert (
             "Invalid field requested in stats_fields: invalid_field"
@@ -545,7 +607,7 @@ class TestThreadStatsAPI:
         user = UserFactory()
         mailbox = MailboxFactory(users_read=[user])
 
-        thread = ThreadFactory(count_trashed=1)  # Trashed
+        thread = ThreadFactory(has_trashed=True)  # Trashed
         ThreadAccessFactory(
             mailbox=mailbox,
             thread=thread,

@@ -219,12 +219,14 @@ class ThreadSerializer(serializers.ModelSerializer):
             "subject",
             "snippet",
             "messages",
-            "count_unread",
-            "count_trashed",
-            "count_draft",
-            "count_starred",
-            "count_sender",
-            "count_messages",
+            "has_unread",
+            "has_trashed",
+            "has_draft",
+            "has_starred",
+            "has_sender",
+            "has_messages",
+            "is_spam",
+            "has_active",
             "messaged_at",
             "sender_names",
             "updated_at",
@@ -552,11 +554,16 @@ class ImportIMAPSerializer(ImportBaseSerializer):
 class ThreadLabelSerializer(serializers.ModelSerializer):
     """Serializer to get labels details for a thread."""
 
+    display_name = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = models.Label
-        fields = ["id", "name", "slug", "color"]
-        read_only_fields = ["id", "slug"]
+        fields = ["id", "name", "slug", "color", "display_name"]
+        read_only_fields = ["id", "slug", "display_name"]
 
+    def get_display_name(self, instance):
+        """Return the display name of the label."""
+        return instance.name.split("/")[-1]
 
 class LabelSerializer(serializers.ModelSerializer):
     """Serializer for Label model."""

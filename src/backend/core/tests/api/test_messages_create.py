@@ -111,12 +111,12 @@ class TestApiDraftAndSendMessage:
             for recipient in draft_message.recipients.all()
         )
 
-        assert draft_message.thread.count_messages == 1
-        assert draft_message.thread.count_sender == 1
-        assert draft_message.thread.count_unread == 0
-        assert draft_message.thread.count_trashed == 0
-        assert draft_message.thread.count_starred == 0
-        assert draft_message.thread.count_draft == 1
+        assert draft_message.thread.has_messages == True
+        assert draft_message.thread.has_sender == False
+        assert draft_message.thread.has_unread == False
+        assert draft_message.thread.has_trashed == False
+        assert draft_message.thread.has_starred == False
+        assert draft_message.thread.has_draft == True
         assert draft_message.thread.sender_names == [draft_message.sender.name]
 
         # check thread access was created
@@ -178,12 +178,12 @@ class TestApiDraftAndSendMessage:
         assert sent_message.sent_at is not None
 
         # Assert the thread is updated
-        assert sent_message.thread.count_messages == 1
-        assert sent_message.thread.count_sender == 1
-        assert sent_message.thread.count_unread == 0
-        assert sent_message.thread.count_trashed == 0
-        assert sent_message.thread.count_starred == 0
-        assert sent_message.thread.count_draft == 0
+        assert sent_message.thread.has_messages == True
+        assert sent_message.thread.has_sender == True
+        assert sent_message.thread.has_unread == False
+        assert sent_message.thread.has_trashed == False
+        assert sent_message.thread.has_starred == False
+        assert sent_message.thread.has_draft == False
         assert sent_message.thread.sender_names == [sent_message.sender.name]
         assert sent_message.thread.messaged_at is not None
 
@@ -266,12 +266,12 @@ class TestApiDraftAndSendMessage:
         assert draft_message.is_starred is False
         assert draft_message.draft_body == draft_content
 
-        assert draft_message.thread.count_messages == 2
-        assert draft_message.thread.count_sender == 1  # fixme 2?
-        assert draft_message.thread.count_unread == 0
-        assert draft_message.thread.count_trashed == 0
-        assert draft_message.thread.count_starred == 0
-        assert draft_message.thread.count_draft == 1
+        assert draft_message.thread.has_messages == True
+        assert draft_message.thread.has_sender == False
+        assert draft_message.thread.has_unread == False
+        assert draft_message.thread.has_trashed == False
+        assert draft_message.thread.has_starred == False
+        assert draft_message.thread.has_draft == True
         assert draft_message.thread.sender_names == [
             message.sender.name,
             draft_message.sender.name,
@@ -310,12 +310,12 @@ class TestApiDraftAndSendMessage:
         assert sent_message.sent_at is not None
 
         # Assert the thread is updated
-        assert sent_message.thread.count_messages == 2
-        assert sent_message.thread.count_sender == 1
-        assert sent_message.thread.count_unread == 0
-        assert sent_message.thread.count_trashed == 0
-        assert sent_message.thread.count_starred == 0
-        assert sent_message.thread.count_draft == 0
+        assert sent_message.thread.has_messages == True
+        assert sent_message.thread.has_sender == True
+        assert sent_message.thread.has_unread == False
+        assert sent_message.thread.has_trashed == False
+        assert sent_message.thread.has_starred == False
+        assert sent_message.thread.has_draft == False
         assert sent_message.thread.sender_names == [
             message.sender.name,
             sent_message.sender.name,
