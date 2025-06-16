@@ -61,7 +61,7 @@ class ImportViewSet(viewsets.ViewSet):
         The import is processed asynchronously and returns a task ID for tracking.
         The file must be a valid EML or MBOX format. The recipient mailbox must exist
         and the user must have access to it.
-        """
+        """,
     )
     @action(detail=False, methods=["post"], url_path="file")
     def import_file(self, request):
@@ -127,7 +127,7 @@ class ImportViewSet(viewsets.ViewSet):
         - use_ssl: Whether to use SSL for the connection (default: true)
         - folder: IMAP folder to import from (default: "INBOX")
         - max_messages: Maximum number of messages to import (default: 0, meaning all messages)
-        """
+        """,
     )
     @action(detail=False, methods=["post"], url_path="imap")
     def import_imap(self, request):
