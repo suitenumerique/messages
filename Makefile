@@ -83,6 +83,7 @@ bootstrap: \
 	create-env-files \
 	build \
 	migrate \
+	collectstatic \
 	# back-i18n-compile \
 	frontend-install-frozen
 .PHONY: bootstrap

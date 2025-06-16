@@ -684,6 +684,8 @@ class Test(Base):
     ]
     USE_SWAGGER = True
 
+    IDENTITY_PROVIDER = None
+
     CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
 
     def __init__(self):

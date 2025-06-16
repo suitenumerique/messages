@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 @receiver(post_save, sender=models.MailDomain)
 def sync_maildomain_to_keycloak(sender, instance, created, **kwargs):
     """Sync MailDomain to Keycloak as a group when saved."""
-    if not instance.identity_sync:
+    if not instance.identity_sync or settings.IDENTITY_PROVIDER != "keycloak":
         return
     sync_maildomain_to_keycloak_group(instance)
 
@@ -29,7 +29,7 @@ def sync_maildomain_to_keycloak(sender, instance, created, **kwargs):
 @receiver(post_save, sender=models.Mailbox)
 def sync_mailbox_to_keycloak(sender, instance, created, **kwargs):
     """Sync Mailbox to Keycloak as a user when saved."""
-    if not instance.domain.identity_sync:
+    if not instance.domain.identity_sync or settings.IDENTITY_PROVIDER != "keycloak":
         return
 
     # Ensure the maildomain group exists first

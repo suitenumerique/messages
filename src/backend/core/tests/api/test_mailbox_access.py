@@ -236,35 +236,18 @@ class TestMailboxAccessViewSet:
         assert response.status_code == status.HTTP_201_CREATED
         # Serializer might return mailbox PK if not read_only=True, or nested details.
         # For now, check what's guaranteed by create.
-<<<<<<< HEAD
-<<<<<<< HEAD
         assert response.data["user"] == user_beta.pk
-=======
-        assert response.data["user_details"]["id"] == str(user_beta.pk)
->>>>>>> 4c74ee9 (✨(admin) add maildomainacess model, api route and backend tests)
-=======
-        assert response.data["user"] == user_beta.pk
->>>>>>> 3b663a3 (♻️(drf) simplify API code)
         assert response.data["role"] == MailboxRoleChoices.EDITOR.value
         assert models.MailboxAccess.objects.filter(
             mailbox=mailbox1_domain1, user=user_beta, role=MailboxRoleChoices.EDITOR
         ).exists()
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 3b663a3 (♻️(drf) simplify API code)
         # Try creating the same access again
         response = api_client.post(
             self.list_create_url(mailbox_id=mailbox1_domain1.pk), data
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-<<<<<<< HEAD
-=======
->>>>>>> 4c74ee9 (✨(admin) add maildomainacess model, api route and backend tests)
-=======
->>>>>>> 3b663a3 (♻️(drf) simplify API code)
     def test_create_access_by_mailbox_admin_for_unmanaged_mailbox_forbidden(
         self, api_client, mailbox1_admin_user, mailbox1_domain2, user_beta
     ):
@@ -329,16 +312,9 @@ class TestMailboxAccessViewSet:
     @pytest.mark.parametrize("admin_type", ["domain_admin", "mailbox_admin"])
     def test_update_access_role_success(
         self,
-        api_client,
         admin_type,
-<<<<<<< HEAD
-<<<<<<< HEAD
+        api_client,
         user_beta,
-=======
->>>>>>> 4c74ee9 (✨(admin) add maildomainacess model, api route and backend tests)
-=======
-        user_beta,
->>>>>>> 3b663a3 (♻️(drf) simplify API code)
         domain_admin_user,
         mailbox1_admin_user,
         mailbox1_domain1,
@@ -358,10 +334,6 @@ class TestMailboxAccessViewSet:
         access_m1d1_alpha.refresh_from_db()
         assert access_m1d1_alpha.role == MailboxRoleChoices.ADMIN
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 3b663a3 (♻️(drf) simplify API code)
         data = {"role": "invalid"}
         response = api_client.patch(
             self.detail_url(mailbox_id=mailbox1_domain1.pk, pk=access_m1d1_alpha.pk),
@@ -376,11 +348,6 @@ class TestMailboxAccessViewSet:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-<<<<<<< HEAD
-=======
->>>>>>> 4c74ee9 (✨(admin) add maildomainacess model, api route and backend tests)
-=======
->>>>>>> 3b663a3 (♻️(drf) simplify API code)
     # --- DELETE Tests ---
     @pytest.mark.parametrize("admin_type", ["domain_admin", "mailbox_admin"])
     def test_delete_access_success(
