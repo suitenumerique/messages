@@ -50,7 +50,8 @@
         "delete_draft": "Delete draft",
         "download": "Download",
         "close": "Close",
-        "import": "Import"
+        "import": "Import",
+        "import_messages": "Import messages"
       },
       "tooltips": {
         "has_attachments": "This email has an attachment",
@@ -247,7 +248,8 @@
         "delete_draft": "Supprimer le brouillon",
         "download": "Télécharger",
         "close": "Fermer",
-        "import": "Importer"
+        "import": "Importer",
+        "import_messages": "Importer des messages"
       },
       "tooltips": {
         "has_attachments": "Cette email contient une pièce jointe",

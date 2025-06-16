@@ -63,6 +63,7 @@ export const ThreadPanel = () => {
                 <div>
                     <span className="material-icons">mail</span>
                     <p>{t('no_threads')}</p>
+                    <Button href="#modal-message-importer">{t('actions.import_messages')}</Button>
                 </div>
             </div>
         );
