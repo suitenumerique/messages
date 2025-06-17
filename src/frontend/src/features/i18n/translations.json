@@ -39,6 +39,7 @@
       },
       "actions": {
         "new_message": "New message",
+        "edit": "Edit",
         "reply": "Reply",
         "reply_all": "Reply all",
         "print": "Print",
@@ -208,6 +209,20 @@
             "imap_port_required": "The IMAP port is required."
           }
         }
+      },
+      "labels": {
+        "title": "Labels",
+        "create": "Create a Label",
+        "update": "Update a Label",
+        "form": {
+          "fields": {
+            "name": "Label name",
+            "color": "Label color",
+            "parent_label": "Select a parent label"
+          },
+          "submit_create": "Create",
+          "submit_update": "Update"
+        }
       }
     }
   },
@@ -251,6 +266,7 @@
       "actions": {
         "new_message": "Nouveau message",
         "mark_as_important": "Marquer comme important",
+        "edit": "Modifier",
         "reply": "Répondre",
         "print": "Imprimer",
         "close_thread": "Fermer cette conversation",
@@ -418,6 +434,23 @@
             "password_required": "Le mot de passe est requis.",
             "imap_server_required": "Le serveur IMAP est requis.",
             "imap_port_required": "Le port IMAP est requis."
+          }
+        }
+      },
+      "labels": {
+        "title": "Libellés",
+        "create": "Créer un libellé",
+        "update": "Modifier un libellé",
+        "form": {
+          "fields": {
+            "name": "Nom du libellé",
+            "color": "Couleur du libellé",
+            "parent_label": "Sélectionnez un libellé parent"
+          },
+          "submit_create": "Créer",
+          "submit_update": "Mettre à jour",
+          "errors": {
+            "name_required": "Un nom est requis."
           }
         }
       }

@@ -22,7 +22,7 @@
     "@blocknote/core": "0.31.1",
     "@blocknote/mantine": "0.31.1",
     "@blocknote/react": "0.31.1",
-    "@gouvfr-lasuite/ui-kit": "0.7.0",
+    "@gouvfr-lasuite/ui-kit": "0.8.0",
     "@hookform/resolvers": "5.0.1",
     "@openfun/cunningham-react": "3.0.0",
     "@react-email/components": "0.0.41",

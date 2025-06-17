@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { useRouter } from "next/router";
 import { useSearchParams } from "next/navigation";
 import { useLayoutContext } from "../main";
+import { MailboxLabels } from "./components/mailbox-labels";
 
 export const MailboxPanel = () => {
     const { t } = useTranslation();
@@ -47,6 +48,7 @@ export const MailboxPanel = () => {
                         showLabelWhenSelected={false}
                     />
                     <MailboxList />
+                    <MailboxLabels mailboxId={selectedMailbox.id} />
                 </>
             )}
         </div>

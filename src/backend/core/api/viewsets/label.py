@@ -1,6 +1,8 @@
 """API ViewSet for Label model."""
 # pylint: disable=line-too-long
 
+import uuid
+
 from django.db.models import Exists, OuterRef
 from django.shortcuts import get_object_or_404
 from django.utils.text import slugify
@@ -32,6 +34,7 @@ class LabelViewSet(
 
     serializer_class = serializers.LabelSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class=None
     lookup_field = "pk"
     lookup_url_kwarg = "pk"
 
@@ -77,18 +80,18 @@ class LabelViewSet(
     @extend_schema(
         description="""
         List all labels accessible to the user in a hierarchical structure.
-        
+
         The response returns labels in a tree structure where:
         - Labels are ordered alphabetically by name
         - Each label includes its children (sub-labels)
         - The hierarchy is determined by the label's name (e.g., "Inbox/Important" is a child of "Inbox")
-        
+
         You can filter labels by mailbox using the mailbox_id query parameter.
         """,
         parameters=[
             OpenApiParameter(
                 name="mailbox_id",
-                type=int,
+                type=uuid.UUID,
                 location=OpenApiParameter.QUERY,
                 description="""
                 Filter labels by mailbox ID. If not provided, returns labels from all accessible mailboxes.
@@ -97,49 +100,8 @@ class LabelViewSet(
         ],
         responses={
             200: OpenApiResponse(
-                response={
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string", "format": "uuid"},
-                            "name": {
-                                "type": "string",
-                                "description": "Full name of the label (e.g., 'Inbox/Important')",
-                            },
-                            "slug": {
-                                "type": "string",
-                                "description": "URL-friendly version of the name",
-                            },
-                            "color": {
-                                "type": "string",
-                                "description": "Color code for the label",
-                            },
-                            "display_name": {
-                                "type": "string",
-                                "description": "Base name of the label (last part of the path)",
-                            },
-                            "children": {
-                                "type": "array",
-                                "items": {"$ref": "#/components/schemas/Label"},
-                                "description": "Child labels, ordered alphabetically by name",
-                            },
-                        },
-                        "required": [
-                            "id",
-                            "name",
-                            "slug",
-                            "color",
-                            "display_name",
-                            "children",
-                        ],
-                    },
-                },
+                response=serializers.TreeLabelSerializer(many=True),
                 description="List of labels in hierarchical structure",
-            ),
-            400: OpenApiResponse(description="Invalid mailbox_id parameter"),
-            403: OpenApiResponse(
-                description="User does not have access to the specified mailbox"
             ),
         },
     )
@@ -227,56 +189,7 @@ class LabelViewSet(
         request=serializers.LabelSerializer,
         responses={
             201: OpenApiResponse(
-                response={
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string", "format": "uuid"},
-                            "name": {
-                                "type": "string",
-                                "description": "Full name of the label (e.g., 'Inbox/Important')",
-                            },
-                            "slug": {
-                                "type": "string",
-                                "description": "URL-friendly version of the name",
-                            },
-                            "color": {
-                                "type": "string",
-                                "description": "Color code for the label",
-                            },
-                            "display_name": {
-                                "type": "string",
-                                "description": "Base name of the label (last part of the path)",
-                            },
-                            "parent_name": {
-                                "type": "string",
-                                "description": "Name of the parent label, or null for root labels",
-                                "nullable": True,
-                            },
-                            "depth": {
-                                "type": "integer",
-                                "description": "Depth in the hierarchy (0 for root labels, 1 for direct children, etc.)",
-                                "minimum": 0,
-                            },
-                            "children": {
-                                "type": "array",
-                                "items": {"$ref": "#/components/schemas/Label"},
-                                "description": "Child labels, ordered alphabetically by name",
-                            },
-                        },
-                        "required": [
-                            "id",
-                            "name",
-                            "slug",
-                            "color",
-                            "display_name",
-                            "parent_name",
-                            "depth",
-                            "children",
-                        ],
-                    },
-                },
+                response=serializers.TreeLabelSerializer(many=True),
                 description="Created labels in hierarchical structure",
             ),
             400: OpenApiResponse(

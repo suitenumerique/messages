@@ -1,0 +1,104 @@
+.label-item {
+    display: flex;
+    align-items: center;
+    gap: var(--c--theme--spacings--base);
+    padding-inline: var(--c--theme--spacings--xs);
+    padding-block: var(--c--theme--spacings--3xs);
+    color: inherit;
+    text-decoration: none;
+    border-radius: 4px;
+    justify-content: space-between;
+    position: relative;
+    width: 100%;
+}
+
+.label-item__column {
+    display: flex;
+    gap: var(--c--theme--spacings--3xs);
+    position: relative;
+    align-items: center;
+    min-width: 0;
+}
+
+.label-item__column:first-child {
+    flex: 1;
+    min-width: 0;
+}
+
+.label-item__column:last-child {
+    justify-content: flex-end;
+    flex-shrink: 0;
+}
+
+.label-item:not(.label-item--active):hover,
+.label-item:not(.label-item--active):focus-within,
+.label-item:not(.label-item--active)[data-focus-within="true"]  {
+    background-color: var(--c--theme--colors--greyscale-100);
+}
+
+.label-item:hover .label-item__toggle,
+.label-item:focus-within .label-item__toggle,
+.label-item.label-item--active {
+    box-shadow: 0 0 0 4px #FFF;
+}
+
+.label-item--active {
+    background-color: var(--c--theme--colors--primary-100);
+    color: var(--c--theme--colors--primary-600);
+}
+
+.label-item__toggle {
+    background-color: transparent;
+    border: thin solid transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    padding: 0;
+    margin: 0;
+    font-size: 1rem;
+    padding: 0.1rem;
+    color: var(--c--theme--colors--greyscale-400);
+}
+
+.label-item__toggle:disabled {
+    visibility: hidden;
+}
+
+.label-item__name {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    border-radius: 4px;
+    flex: 1;
+    min-width: 0;
+
+    .label-name {
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+    }
+}
+
+.label-item__toggle:hover {
+    background-color: var(--c--theme--colors--greyscale-300);
+    color: var(--c--theme--colors--greyscale-500);
+}
+
+.label-item:hover .label-item__dropdown-actions,
+.label-item[data-focus-within="true"] .label-item__dropdown-actions {
+    display: block;
+}
+
+.label-item__dropdown-actions {
+    position: absolute;
+    display: none;
+    background-color: var(--c--theme--colors--greyscale-200);
+    box-shadow: 0 0 0 4px #FFF;
+    border-radius: 3px;
+    right: -4px;
+}

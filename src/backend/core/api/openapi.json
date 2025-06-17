@@ -1348,24 +1348,16 @@
         "/api/v1.0/labels/": {
             "get": {
                 "operationId": "labels_list",
-                "description": "\n        List all labels accessible to the user in a hierarchical structure.\n        \n        The response returns labels in a tree structure where:\n        - Labels are ordered alphabetically by name\n        - Each label includes its children (sub-labels)\n        - The hierarchy is determined by the label's name (e.g., \"Inbox/Important\" is a child of \"Inbox\")\n        \n        You can filter labels by mailbox using the mailbox_id query parameter.\n        ",
+                "description": "\n        List all labels accessible to the user in a hierarchical structure.\n\n        The response returns labels in a tree structure where:\n        - Labels are ordered alphabetically by name\n        - Each label includes its children (sub-labels)\n        - The hierarchy is determined by the label's name (e.g., \"Inbox/Important\" is a child of \"Inbox\")\n\n        You can filter labels by mailbox using the mailbox_id query parameter.\n        ",
                 "parameters": [
                     {
                         "in": "query",
                         "name": "mailbox_id",
                         "schema": {
-                            "type": "integer"
+                            "type": "string",
+                            "format": "uuid"
                         },
                         "description": "\n                Filter labels by mailbox ID. If not provided, returns labels from all accessible mailboxes.\n                "
-                    },
-                    {
-                        "name": "page",
-                        "required": false,
-                        "in": "query",
-                        "description": "A page number within the paginated result set.",
-                        "schema": {
-                            "type": "integer"
-                        }
                     }
                 ],
                 "tags": [
@@ -1381,85 +1373,14 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "required": [
-                                        "count",
-                                        "results"
-                                    ],
-                                    "properties": {
-                                        "count": {
-                                            "type": "integer",
-                                            "example": 123
-                                        },
-                                        "next": {
-                                            "type": "string",
-                                            "nullable": true,
-                                            "format": "uri",
-                                            "example": "http://api.example.org/accounts/?page=4"
-                                        },
-                                        "previous": {
-                                            "type": "string",
-                                            "nullable": true,
-                                            "format": "uri",
-                                            "example": "http://api.example.org/accounts/?page=2"
-                                        },
-                                        "results": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "array",
-                                                "items": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "id": {
-                                                            "type": "string",
-                                                            "format": "uuid"
-                                                        },
-                                                        "name": {
-                                                            "type": "string",
-                                                            "description": "Full name of the label (e.g., 'Inbox/Important')"
-                                                        },
-                                                        "slug": {
-                                                            "type": "string",
-                                                            "description": "URL-friendly version of the name"
-                                                        },
-                                                        "color": {
-                                                            "type": "string",
-                                                            "description": "Color code for the label"
-                                                        },
-                                                        "display_name": {
-                                                            "type": "string",
-                                                            "description": "Base name of the label (last part of the path)"
-                                                        },
-                                                        "children": {
-                                                            "type": "array",
-                                                            "items": {
-                                                                "$ref": "#/components/schemas/Label"
-                                                            },
-                                                            "description": "Child labels, ordered alphabetically by name"
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "id",
-                                                        "name",
-                                                        "slug",
-                                                        "color",
-                                                        "display_name",
-                                                        "children"
-                                                    ]
-                                                }
-                                            }
-                                        }
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/TreeLabel"
                                     }
                                 }
                             }
                         },
                         "description": "List of labels in hierarchical structure"
-                    },
-                    "400": {
-                        "description": "Invalid mailbox_id parameter"
-                    },
-                    "403": {
-                        "description": "User does not have access to the specified mailbox"
                     }
                 }
             },
@@ -1496,56 +1417,7 @@
                                 "schema": {
                                     "type": "array",
                                     "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "id": {
-                                                "type": "string",
-                                                "format": "uuid"
-                                            },
-                                            "name": {
-                                                "type": "string",
-                                                "description": "Full name of the label (e.g., 'Inbox/Important')"
-                                            },
-                                            "slug": {
-                                                "type": "string",
-                                                "description": "URL-friendly version of the name"
-                                            },
-                                            "color": {
-                                                "type": "string",
-                                                "description": "Color code for the label"
-                                            },
-                                            "display_name": {
-                                                "type": "string",
-                                                "description": "Base name of the label (last part of the path)"
-                                            },
-                                            "parent_name": {
-                                                "type": "string",
-                                                "description": "Name of the parent label, or null for root labels",
-                                                "nullable": true
-                                            },
-                                            "depth": {
-                                                "type": "integer",
-                                                "description": "Depth in the hierarchy (0 for root labels, 1 for direct children, etc.)",
-                                                "minimum": 0
-                                            },
-                                            "children": {
-                                                "type": "array",
-                                                "items": {
-                                                    "$ref": "#/components/schemas/Label"
-                                                },
-                                                "description": "Child labels, ordered alphabetically by name"
-                                            }
-                                        },
-                                        "required": [
-                                            "id",
-                                            "name",
-                                            "slug",
-                                            "color",
-                                            "display_name",
-                                            "parent_name",
-                                            "depth",
-                                            "children"
-                                        ]
+                                        "$ref": "#/components/schemas/TreeLabel"
                                     }
                                 }
                             }
@@ -4863,6 +4735,48 @@
                     }
                 },
                 "required": [
+                    "display_name",
+                    "id",
+                    "name",
+                    "slug"
+                ]
+            },
+            "TreeLabel": {
+                "type": "object",
+                "description": "Serializer for tree label response structure (OpenAPI purpose only...).",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "slug": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "color": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "display_name": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "children": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/TreeLabel"
+                        },
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "children",
+                    "color",
                     "display_name",
                     "id",
                     "name",

@@ -1,0 +1,35 @@
+.mailbox-labels {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+}
+
+.mailbox-labels__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    padding-left: var(--c--theme--spacings--sm);
+    padding-right: var(--c--theme--spacings--base);
+    margin-bottom: var(--c--theme--spacings--3xs);
+    position: sticky;
+    top: 0;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.8) 50%, rgba(255, 255, 255, 0) 100%);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 5;
+    flex-shrink: 0;
+    padding-top: var(--c--theme--spacings--xs);
+    padding-bottom: var(--c--theme--spacings--xs);
+}
+
+.label-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--theme--spacings--4xs);
+    margin-inline: var(--c--theme--spacings--xs);
+    flex: 1;
+    min-height: 0;
+    padding-bottom: var(--c--theme--spacings--sm);
+}

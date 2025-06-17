@@ -12,9 +12,5 @@ export type LabelsListParams = {
                 Filter labels by mailbox ID. If not provided, returns labels from all accessible mailboxes.
                 
  */
-  mailbox_id?: number;
-  /**
-   * A page number within the paginated result set.
-   */
-  page?: number;
+  mailbox_id?: string;
 };

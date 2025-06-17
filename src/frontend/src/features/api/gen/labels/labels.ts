@@ -25,11 +25,10 @@ import type {
   Label,
   LabelRequest,
   LabelsAddThreadsCreateBody,
-  LabelsCreate201Item,
-  LabelsList200,
   LabelsListParams,
   LabelsRemoveThreadsCreateBody,
   PatchedLabelRequest,
+  TreeLabel,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -39,28 +38,21 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 /**
  * 
         List all labels accessible to the user in a hierarchical structure.
-        
+
         The response returns labels in a tree structure where:
         - Labels are ordered alphabetically by name
         - Each label includes its children (sub-labels)
         - The hierarchy is determined by the label's name (e.g., "Inbox/Important" is a child of "Inbox")
-        
+
         You can filter labels by mailbox using the mailbox_id query parameter.
         
  */
 export type labelsListResponse200 = {
-  data: LabelsList200;
+  data: TreeLabel[];
   status: 200;
 };
 
-export type labelsListResponse400 = {
-  data: void;
-  status: 400;
-};
-
-export type labelsListResponseComposite =
-  | labelsListResponse200
-  | labelsListResponse400;
+export type labelsListResponseComposite = labelsListResponse200;
 
 export type labelsListResponse = labelsListResponseComposite & {
   headers: Headers;
@@ -98,7 +90,7 @@ export const getLabelsListQueryKey = (params?: LabelsListParams) => {
 
 export const getLabelsListQueryOptions = <
   TData = Awaited<ReturnType<typeof labelsList>>,
-  TError = void,
+  TError = unknown,
 >(
   params?: LabelsListParams,
   options?: {
@@ -126,11 +118,11 @@ export const getLabelsListQueryOptions = <
 export type LabelsListQueryResult = NonNullable<
   Awaited<ReturnType<typeof labelsList>>
 >;
-export type LabelsListQueryError = void;
+export type LabelsListQueryError = unknown;
 
 export function useLabelsList<
   TData = Awaited<ReturnType<typeof labelsList>>,
-  TError = void,
+  TError = unknown,
 >(
   params: undefined | LabelsListParams,
   options: {
@@ -153,7 +145,7 @@ export function useLabelsList<
 };
 export function useLabelsList<
   TData = Awaited<ReturnType<typeof labelsList>>,
-  TError = void,
+  TError = unknown,
 >(
   params?: LabelsListParams,
   options?: {
@@ -176,7 +168,7 @@ export function useLabelsList<
 };
 export function useLabelsList<
   TData = Awaited<ReturnType<typeof labelsList>>,
-  TError = void,
+  TError = unknown,
 >(
   params?: LabelsListParams,
   options?: {
@@ -192,7 +184,7 @@ export function useLabelsList<
 
 export function useLabelsList<
   TData = Awaited<ReturnType<typeof labelsList>>,
-  TError = void,
+  TError = unknown,
 >(
   params?: LabelsListParams,
   options?: {
@@ -221,7 +213,7 @@ export function useLabelsList<
  * View and manage labels
  */
 export type labelsCreateResponse201 = {
-  data: LabelsCreate201Item[];
+  data: TreeLabel[];
   status: 201;
 };
 

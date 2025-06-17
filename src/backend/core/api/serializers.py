@@ -159,6 +159,32 @@ class ThreadLabelSerializer(serializers.ModelSerializer):
         return instance.name.split("/")[-1]
 
 
+class TreeLabelSerializer(serializers.ModelSerializer):
+    """Serializer for tree label response structure (OpenAPI purpose only...)."""
+
+    id = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    slug = serializers.CharField(read_only=True)
+    color = serializers.CharField(read_only=True)
+    display_name = serializers.CharField(read_only=True)
+    children = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = models.Label
+        fields = ["id", "name", "slug", "color", "display_name", "children"]
+        read_only_fields = fields
+
+    @extend_schema_field({
+        "type": "array",
+        "items": {"$ref": "#/components/schemas/TreeLabel"}
+    })
+    def get_children(self, instance):
+        """
+        Fake method just to make the OpenAPI schema valid and work well with
+        the recursive nature of the tree label structure.
+        """
+
+
 class LabelSerializer(serializers.ModelSerializer):
     """Serializer for Label model."""
 

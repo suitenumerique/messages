@@ -1,7 +1,17 @@
+.mailbox-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+}
+
 .mailbox-panel__header {
     position: sticky;
     top: 0;
     background-color: #FFF;
+    z-index: 10;
+    flex-shrink: 0;
 }
 
 .mailbox-panel__mailbox-title {
@@ -9,8 +19,19 @@
     padding-inline: var(--c--theme--spacings--sm);
     padding-top: var(--c--theme--spacings--sm);
     margin-bottom: var(--c--theme--spacings--sm);
+    flex-shrink: 0;
 
     & .c__select__inner__value {
         font-weight: 600;
     }
+}
+
+.mailbox-panel .mailbox-list {
+    flex-shrink: 0;
+    margin-bottom: var(--c--theme--spacings--sm);
+}
+
+.mailbox-panel .mailbox-labels {
+    margin-top: var(--c--theme--spacings--xxxl);
+    flex: 1;
 }

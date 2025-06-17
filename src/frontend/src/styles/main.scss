@@ -11,7 +11,7 @@
 @use "./../features/layouts/components/main/header";
 @use "./../features/layouts/components/main/layout";
 @use "./../features/layouts/components/main/left-panel";
-// Application Components 
+// Application Components
 @use "./../features/layouts/components/global/global-layout.scss";
 @use "./../features/layouts/components/main";
 @use "./../features/ui/components/users";
@@ -24,6 +24,9 @@
 @use "./../features/layouts/components/mailbox-panel";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-actions";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-list";
+@use "./../features/layouts/components/mailbox-panel/components/mailbox-labels";
+@use "./../features/layouts/components/mailbox-panel/components/mailbox-labels/components/label-form-modal";
+@use "./../features/layouts/components/mailbox-panel/components/mailbox-labels/components/label-item";
 @use "./../features/layouts/components/thread-panel";
 @use "./../features/layouts/components/thread-panel/components/thread-item";
 @use "./../features/layouts/components/thread-view";
