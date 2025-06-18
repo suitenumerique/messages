@@ -2,7 +2,7 @@
     display: flex;
     flex-direction: row;
     justify-content: space-between;
-    gap: var(--c--theme--font--sizes--base);  
+    gap: var(--c--theme--font--sizes--base);
     padding-inline: var(--c--theme--spacings--base) var(--c--theme--spacings--xs);
     padding-block: var(--c--theme--spacings--base);
     border-radius: 4px;
@@ -23,13 +23,16 @@
 .banner__content {
     display: flex;
     flex-direction: row;
-    gap: var(--c--theme--font--sizes--xs);  
+    gap: var(--c--theme--font--sizes--xs);
+    width: 100%;
 }
 
 .banner__content__icon {
     font-size: 1.15rem;
+    height: 20px;
 }
 
 .banner__content__text {
     text-align: left;
+    flex: 1;
 }

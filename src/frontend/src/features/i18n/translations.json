@@ -29,6 +29,14 @@
         "title": "Messaging",
         "subtitle": "Manage your professional messages securely."
       },
+      "folders": {
+        "inbox": "Inbox",
+        "all_messages": "All messages",
+        "drafts": "Drafts",
+        "sent": "Sent",
+        "trash": "Trash",
+        "archive": "Archives"
+      },
       "actions": {
         "new_message": "New message",
         "reply": "Reply",
@@ -51,7 +59,8 @@
         "download": "Download",
         "close": "Close",
         "import": "Import",
-        "import_messages": "Import messages"
+        "import_messages": "Import messages",
+        "show": "Show"
       },
       "tooltips": {
         "has_attachments": "This email has an attachment",
@@ -59,6 +68,13 @@
         "more_options": "More options",
         "reply": "Reply",
         "forward": "Forward"
+      },
+      "thread-view": {
+        "trashed-banner": {
+          "message_one": "{{count}} message of this thread has been deleted.",
+          "message_other": "{{count}} messages of this thread have been deleted.",
+          "message_trashed": "This message has been deleted."
+        }
       },
       "thread_message": {
         "from": "From: ",
@@ -114,7 +130,7 @@
         "start_typing": "Start typing..."
       },
       "search": {
-        "placeholder": "Search...",
+        "placeholder": "Search in messages...",
         "filters": {
           "submit": "Search",
           "reset": "Reset",
@@ -225,6 +241,13 @@
         "title": "Messages",
         "subtitle": "Gérer vos messages professionnels en toute sécurité."
       },
+      "folders": {
+        "inbox": "Boîte de réception",
+        "all_messages": "Toutes les messages",
+        "drafts": "Brouillons",
+        "sent": "Envoyés",
+        "trash": "Corbeille"
+      },
       "actions": {
         "new_message": "Nouveau message",
         "mark_as_important": "Marquer comme important",
@@ -249,12 +272,20 @@
         "download": "Télécharger",
         "close": "Fermer",
         "import": "Importer",
-        "import_messages": "Importer des messages"
+        "import_messages": "Importer des messages",
+        "show": "Afficher"
       },
       "tooltips": {
         "has_attachments": "Cette email contient une pièce jointe",
         "more_options": "Plus d'options",
         "reply": "Répondre"
+      },
+      "thread-view": {
+        "trashed-banner": {
+          "message_one": "{{count}} message de cette conversation a été supprimé.",
+          "message_other": "{{count}} messages de cette conversation ont été supprimés.",
+          "message_trashed": "Ce message a été supprimé."
+        }
       },
       "thread_message": {
         "from": "De : ",
@@ -305,14 +336,14 @@
         "sent_too_long": "Le message n'a pas pu être envoyé. Veuillez réessayer plus tard."
       },
       "trash": {
-        "message_deleted": "Le message a bien été supprimé",
-        "thread_deleted": "La conversation a bien été supprimée"
+        "message_deleted": "Le message a bien été supprimé.",
+        "thread_deleted": "La conversation a bien été supprimée."
       },
       "message_editor": {
         "start_typing": "Commencer à écrire..."
       },
       "search": {
-        "placeholder": "Rechercher...",
+        "placeholder": "Rechercher dans les messages...",
         "filters": {
           "submit": "Rechercher",
           "reset": "Réinitialiser",
@@ -324,10 +355,6 @@
             "subject": "Sujet",
             "text": "Contient les mots",
             "in": "Dans",
-            "folder_all_messages": "Toutes les messages",
-            "folder_sent": "Envoyés",
-            "folder_drafts": "Brouillons",
-            "folder_trash": "Corbeille",
             "read": "Lu",
             "unread": "Non lu",
             "read_state": "État de lecture"

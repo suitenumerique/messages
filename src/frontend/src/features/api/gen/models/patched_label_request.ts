@@ -9,26 +9,21 @@
 /**
  * Serializer for Label model.
  */
-export interface Label {
-  /** primary key for the record as UUID */
-  readonly id: string;
+export interface PatchedLabelRequest {
   /**
    * Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/Projects')
+   * @minLength 1
    * @maxLength 255
    */
-  name: string;
-  /**
-   * URL-friendly version of the name
-   * @pattern ^[-a-zA-Z0-9_]+$
-   */
-  readonly slug: string;
+  name?: string;
   /**
    * Color of the label in hex format (e.g. #FF0000)
+   * @minLength 1
    * @maxLength 7
    */
   color?: string;
   /** Mailbox that owns this label */
-  mailbox: string;
+  mailbox?: string;
   /** Threads that have this label */
   threads?: string[];
 }

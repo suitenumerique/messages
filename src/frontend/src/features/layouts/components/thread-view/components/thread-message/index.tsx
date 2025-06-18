@@ -1,15 +1,17 @@
 import { useMemo, useState, useCallback, forwardRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Message } from "@/features/api/gen/models";
-import MessageBody from "./message-body"
-import MessageReplyForm from "../message-reply-form";
 import { Button, Tooltip } from "@openfun/cunningham-react";
 import { DropdownMenu } from "@gouvfr-lasuite/ui-kit";
+import { Message } from "@/features/api/gen/models";
 import useRead from "@/features/message/use-read";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { Badge } from "@/features/ui/components/badge";
 import useTrash from "@/features/message/use-trash";
+import MessageBody from "./message-body"
+import MessageReplyForm from "../message-reply-form";
 import { AttachmentList } from "../thread-attachment-list";
+import { Banner } from "@/features/ui/components/banner";
+
 type ThreadMessageProps = {
     message: Message,
     isLatest: boolean,
@@ -24,8 +26,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
             return null;
         })
         const { markAsUnread } = useRead()
-        const { markAsTrashed } = useTrash()
-
+        const { markAsTrashed, markAsUntrashed } = useTrash()
         const { unselectThread, selectedThread, messages, queryStates } = useMailboxContext()
         const isFetchingMessages = queryStates.messages.isFetching;
         const [isDropdownOpen, setIsDropdownOpen] = useState(false)
@@ -53,8 +54,26 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         }, [message, draftMessage])
 
         return (
-            <section ref={ref} className="thread-message" data-unread={message.is_unread} {...props}>
+            <section ref={ref} className="thread-message" data-unread={message.is_unread} data-trashed={message.is_trashed} {...props}>
                 <header className="thread-message__header">
+                    {
+                        message.is_trashed && (
+                            <Banner type="info" icon={<span className="material-icons">info</span>}>
+                                <div className="thread-view__trashed-banner__content">
+                                    <p>{t('thread-view.trashed-banner.message_trashed')}</p>
+                                    <div className="thread-view__trashed-banner__actions">
+                                        <Button
+                                            onClick={() => markAsUntrashed({messageIds: [message.id]})}
+                                            color="primary-text"
+                                            size="small"
+                                            icon={<span className="material-icons">restore_from_trash</span>}
+                                        >
+                                            {t('actions.undelete')}
+                                        </Button>
+                                    </div>
+                                </div>
+                        </Banner>
+                    )}
                     <div className="thread-message__header-rows">
                         <div className="thread-message__header-column thread-message__header-column--left">
                             <h2 className="thread-message__subject">{message.subject}</h2>
@@ -117,11 +136,11 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                             icon: <span className="material-icons">mark_email_unread</span>,
                                             callback: () => markAsUnreadFrom(message.id)
                                         },
-                                        {
+                                        ...(message.is_trashed ? [] : [{
                                             label: t('actions.delete'),
                                             icon: <span className="material-icons">delete</span>,
                                             callback: () => markAsTrashed({messageIds: [message.id]})
-                                        },
+                                         }]),
                                     ]}
                                 >
                                     <Tooltip content={t('tooltips.more_options')}>

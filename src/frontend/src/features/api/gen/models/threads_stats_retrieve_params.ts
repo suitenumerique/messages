@@ -25,9 +25,9 @@ export type ThreadsStatsRetrieveParams = {
    */
   has_trashed?: number;
   /**
-   * Filter threads with unread messages (1=true, 0=false).
+   * Filter threads by label slug.
    */
-  has_unread?: number;
+  label_slug?: string;
   /**
    * Filter threads by mailbox ID.
    */
@@ -37,7 +37,11 @@ export type ThreadsStatsRetrieveParams = {
    */
   search?: string;
   /**
-   * Comma-separated list of fields to aggregate. Allowed values: unread, trashed, draft, starred, sender, messages
-   */
+ * Comma-separated list of fields to aggregate.
+                Special values: 'all' (count all threads), 'all_unread' (count all unread threads).
+                Boolean fields: has_trashed, has_draft, has_starred, has_sender, has_active, is_spam, has_messages.
+                Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.
+                Examples: 'all,all_unread', 'has_starred,has_starred_unread', 'is_spam,is_spam_unread'
+ */
   stats_fields: ThreadsStatsRetrieveStatsFields;
 };

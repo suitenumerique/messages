@@ -4,7 +4,6 @@ import Link from "next/link"
 import { useParams, useSearchParams } from "next/navigation"
 import { Thread } from "@/features/api/gen/models"
 import { ThreadItemSenders } from "./thread-item-senders"
-import ThreadHelper from "@/features/utils/thread-helper"
 import { Badge } from "@/features/ui/components/badge"
 import { LabelBadge } from "@/features/ui/components/label-badge"
 
@@ -13,16 +12,15 @@ type ThreadItemProps = {
 }
 
 export const ThreadItem = ({ thread }: ThreadItemProps) => {
-    const { i18n } = useTranslation();
+    const { t, i18n } = useTranslation();
     const params = useParams<{mailboxId: string, threadId: string}>()
-    const isUnread = ThreadHelper.isUnread(thread, true)
     const searchParams = useSearchParams()
-    
+
     return (
         <Link
             href={`/mailbox/${params?.mailboxId}/thread/${thread.id}?${searchParams}`}
             className={`thread-item ${thread.id === params?.threadId && "thread-item--active"} `}
-            data-unread={isUnread}
+            data-unread={thread.has_unread}
         >
             <div className="thread-item__left">
                 <div className="thread-item__read-indicator" />
@@ -31,12 +29,12 @@ export const ThreadItem = ({ thread }: ThreadItemProps) => {
                         {thread.sender_names && thread.sender_names.length > 0 && (
                             <ThreadItemSenders
                                 senders={thread.sender_names}
-                                isUnread={ThreadHelper.isUnread(thread, false)}
-                                messagesCount={thread.count_messages ?? 0}
+                                isUnread={thread.has_unread}
+                                messagesCount={thread.messages.length}
                             />
                         )}
-                        <div className="thread-item__metadata">
-                            {/* {thread.has_attachments ? (
+                    <div className="thread-item__metadata">
+                        {/* {thread.has_attachments ? (
                                 <span className="thread-item__metadata-attachments">
                                     <Tooltip placement="bottom" content={t('tooltips.has_attachments')}>
                                         <span className="material-icons">attachment</span>
@@ -44,25 +42,25 @@ export const ThreadItem = ({ thread }: ThreadItemProps) => {
                                 </span>
                             ) : null} */}
                     </div>
-                    </div>
-                    <div className="thread-item__content">
-                        <div className="thread-item__labels">
-                            {thread.has_draft && (
-                                <Badge>
-                                    {t('thread_message.draft')}
-                                </Badge>
-                            )}
-                            {thread.labels && thread.labels.length > 0 && (
-                                <div className="thread-item__labels">
-                                    {thread.labels.map((label) => (
-                                        <LabelBadge label={label} />
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                        <p className="thread-item__subject">{thread.subject}</p>
-                    </div>
                 </div>
+                <div className="thread-item__content">
+                    <div className="thread-item__labels">
+                        {thread.has_draft && (
+                            <Badge>
+                                {t('thread_message.draft')}
+                            </Badge>
+                        )}
+                        {thread.labels && thread.labels.length > 0 && (
+                            <div className="thread-item__labels">
+                                {thread.labels.map((label) => (
+                                    <LabelBadge key={label.id} label={label} />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <p className="thread-item__subject">{thread.subject}</p>
+                </div>
+            </div>
             </div>
             <div className="thread-item__right">
                 {/* <div className="thread-item__actions">

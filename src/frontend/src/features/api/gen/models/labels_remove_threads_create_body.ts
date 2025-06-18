@@ -6,4 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export type ThreadsStatsRetrieve200 = { [key: string]: number };
+export type LabelsRemoveThreadsCreateBody = {
+  /** List of thread IDs to remove from this label */
+  thread_ids?: string[];
+};

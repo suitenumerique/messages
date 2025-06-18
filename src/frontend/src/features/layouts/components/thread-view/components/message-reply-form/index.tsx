@@ -1,6 +1,6 @@
 import { Message } from "@/features/api/gen";
 import { MessageForm } from "@/features/forms/components/message-form";
-import { DEFAULT_FOLDERS } from "../../../mailbox-panel/components/mailbox-list";
+import { MAILBOX_FOLDERS } from "../../../mailbox-panel/components/mailbox-list";
 import { usePathname, useRouter } from "next/navigation";
 
 type MessageReplyFormProps = {
@@ -13,7 +13,7 @@ const MessageReplyForm = ({ handleClose, message, replyAll }: MessageReplyFormPr
     const router = useRouter()
     const pathname = usePathname();
     const goToDefaultFolder = () => {
-        const defaultFolder = DEFAULT_FOLDERS[0];
+        const defaultFolder = MAILBOX_FOLDERS[0];
         router.push(pathname + `?${new URLSearchParams(defaultFolder.filter).toString()}`);
     }
 

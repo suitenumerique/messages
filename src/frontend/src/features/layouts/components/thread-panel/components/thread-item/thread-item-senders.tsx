@@ -1,8 +1,6 @@
-import { ThreadUnreadState } from "@/features/utils/thread-helper";
-
 type ThreadItemSendersProps = {
     senders: readonly string[],
-    isUnread: ThreadUnreadState
+    isUnread: boolean
     messagesCount: number
 }
 
@@ -13,7 +11,7 @@ export const ThreadItemSenders = ({ senders, messagesCount, isUnread }: ThreadIt
         <div className="thread-item__senders-container">
             <ul className="thread-item__senders">
                 <li className="thread-item__sender">
-                    {isUnread === 'full' ? <strong>{initialSender}</strong> : initialSender}
+                    {!isUnread || lastSender ? initialSender : <strong>{initialSender}</strong>}
                 </li>
                 {lastSender && (
                     <li className="thread-item__sender">

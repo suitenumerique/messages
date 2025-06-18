@@ -8,9 +8,17 @@
 
 export type ThreadsListParams = {
   /**
+   * Filter threads that have active messages (1=true, 0=false).
+   */
+  has_active?: number;
+  /**
    * Filter threads with draft messages (1=true, 0=false).
    */
   has_draft?: number;
+  /**
+   * Filter threads that have messages (1=true, 0=false).
+   */
+  has_messages?: number;
   /**
    * Filter threads with messages sent by the user (1=true, 0=false).
    */
@@ -24,9 +32,13 @@ export type ThreadsListParams = {
    */
   has_trashed?: number;
   /**
-   * Filter threads with unread messages (1=true, 0=false).
+   * Filter threads that are spam (1=true, 0=false).
    */
-  has_unread?: number;
+  is_spam?: number;
+  /**
+   * Filter threads by label slug.
+   */
+  label_slug?: string;
   /**
    * Filter threads by mailbox ID.
    */

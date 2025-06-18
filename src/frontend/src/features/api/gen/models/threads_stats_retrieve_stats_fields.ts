@@ -11,10 +11,6 @@ export type ThreadsStatsRetrieveStatsFields =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const ThreadsStatsRetrieveStatsFields = {
-  draft: "draft",
-  messages: "messages",
-  sender: "sender",
-  starred: "starred",
-  trashed: "trashed",
-  unread: "unread",
+  all: "all",
+  all_unread: "all_unread",
 } as const;

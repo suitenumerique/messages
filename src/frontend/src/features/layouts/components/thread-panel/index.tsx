@@ -6,7 +6,6 @@ import Bar from "@/features/ui/components/bar";
 import { Button, Tooltip } from "@openfun/cunningham-react";
 import useRead from "@/features/message/use-read";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
 
 export const ThreadPanel = () => {
     const { threads, queryStates, refetchMailboxes, unselectThread, loadNextThreads, selectedThread } = useMailboxContext();
@@ -14,13 +13,6 @@ export const ThreadPanel = () => {
     const { t } = useTranslation();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const loaderRef = useRef<HTMLDivElement>(null);
-    const searchParams = useSearchParams();
-    const hideDrafts = !(searchParams.get('has_draft') === '1') || searchParams.get('has_trashed') === '1';
-    const hideSend = hideDrafts && !(searchParams.get('has_sender') === '1');
-    const filteredThreads = threads?.results.filter((thread) =>
-        !(hideDrafts && thread.count_messages === 1 && thread.count_draft === 1)
-        && !(hideSend && thread.count_messages === 1 && thread.count_sender === 1)
-    ) ?? [];
 
     const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
         const target = entries[0];
@@ -44,10 +36,10 @@ export const ThreadPanel = () => {
     }, [handleObserver]);
 
     useEffect(() => {
-        if (selectedThread && !filteredThreads.find((thread) => thread.id === selectedThread.id)) {
+        if (selectedThread && !threads?.results.find((thread) => thread.id === selectedThread.id)) {
             unselectThread();
         }
-    }, [filteredThreads, selectedThread, unselectThread]);
+    }, [threads?.results, selectedThread, unselectThread]);
 
     if (queryStates.threads.isLoading) {
         return (
@@ -57,7 +49,7 @@ export const ThreadPanel = () => {
         );
     }
 
-    if (!filteredThreads.length) {
+    if (!threads?.results.length) {
         return (
             <div className="thread-panel thread-panel--empty">
                 <div>
@@ -83,7 +75,7 @@ export const ThreadPanel = () => {
                 </Tooltip>
                 <Tooltip content={t('actions.mark_all_as_read')}>
                     <Button
-                        onClick={() => markAsRead({ threadIds: filteredThreads.map((thread) => thread.id) })}
+                        onClick={() => markAsRead({ threadIds: threads?.results.map((thread) => thread.id) })}
                         icon={<span className="material-icons">mark_email_read</span>}
                         color="tertiary-text"
                         size="small"
@@ -99,7 +91,7 @@ export const ThreadPanel = () => {
                             icon: <span className="material-icons">mark_email_unread</span>,
                             callback: () => {
                                 markAsUnread({
-                                    threadIds: filteredThreads.map((thread) => thread.id),
+                                    threadIds: threads?.results.map((thread) => thread.id),
                                     onSuccess: unselectThread
                                 })
                             },
@@ -118,7 +110,7 @@ export const ThreadPanel = () => {
                 </DropdownMenu>
             </Bar>
             <div className="thread-panel__threads_list">
-                {filteredThreads.map((thread) => <ThreadItem key={thread.id} thread={thread} />)}
+                {threads?.results.map((thread) => <ThreadItem key={thread.id} thread={thread} />)}
                 {threads!.next && (
                     <div className="thread-panel__page-loader" ref={loaderRef}>
                         {queryStates.threads.isFetchingNextPage && (

@@ -74,23 +74,23 @@ export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) =
                 onChange={handleChange}
                 options={[
                     {
-                        label: t("search.filters.label.folder_all_messages"),
-                        render: () => <FolderOption label={t("search.filters.label.folder_all_messages")} icon="folder" />,
+                        label: t("folders.all_messages"),
+                        render: () => <FolderOption label={t("folders.all_messages")} icon="folder" />,
                         value: 'all'
                     },
                     {
-                        label: t("search.filters.label.folder_drafts"),
-                        render: () => <FolderOption label={t("search.filters.label.folder_drafts")} icon="drafts" />,
+                        label: t("folders.drafts"),
+                        render: () => <FolderOption label={t("folders.drafts")} icon="drafts" />,
                         value: "draft"
                     },
                     {
-                        label: t("search.filters.label.folder_sent"),
-                        render: () => <FolderOption label={t("search.filters.label.folder_sent")} icon="outbox" />,
+                        label: t("folders.sent"),
+                        render: () => <FolderOption label={t("folders.sent")} icon="outbox" />,
                         value: "sent"
                     },
                     {
-                        label: t("search.filters.label.folder_trash"),
-                        render: () => <FolderOption label={t("search.filters.label.folder_trash")} icon="delete" />,
+                        label: t("folders.trash"),
+                        render: () => <FolderOption label={t("folders.trash")} icon="delete" />,
                         value: "trash" },
                 ]}
                 clearable={false}

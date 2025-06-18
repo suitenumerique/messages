@@ -4,7 +4,7 @@ import { FetchStatus, QueryStatus, useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "next/router";
 import usePrevious from "@/hooks/use-previous";
 import { useSearchParams } from "next/navigation";
-import { DEFAULT_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
+import { MAILBOX_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
 import { useDebounceCallback } from "@/hooks/use-debounce-callback";
 
 type QueryState = {
@@ -241,7 +241,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     useEffect(() => {
         if (selectedMailbox) {
             if (router.pathname === '/' ||  (selectedMailbox.id !== router.query.mailboxId && !router.pathname.includes('new'))) {
-                const defaultFolder = DEFAULT_FOLDERS[0];
+                const defaultFolder = MAILBOX_FOLDERS[0];
                 const hash = window.location.hash;
                 if (router.query.threadId) {
                     router.replace(`/mailbox/${selectedMailbox.id}/thread/${router.query.threadId}?${router.query.search}${hash}`);

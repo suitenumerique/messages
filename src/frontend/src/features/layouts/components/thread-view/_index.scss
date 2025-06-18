@@ -28,8 +28,21 @@
 .thread-view__messages-list {
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    padding: 16px;
+    gap: var(--c--theme--spacings--base);
+    padding: var(--c--theme--spacings--base);;
     overflow-y: auto;
     max-height: 100%;
+}
+
+.thread-view__trashed-banner__content {
+    display: flex;
+    flex-direction: row;
+    gap: var(--c--theme--spacings--base);
+    justify-content: space-between;
+    width: 100%;
+}
+
+.thread-view__trashed-banner__actions {
+    display: flex;
+    gap: var(--c--theme--spacings--sm);
 }

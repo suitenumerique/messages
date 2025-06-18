@@ -342,6 +342,7 @@ class ThreadViewSet(
             mailbox_id = request.query_params.get("mailbox_id")
 
             # Build filters from query parameters
+            # TODO: refactor as thread filters are not the same as message filters (has_messages, has_active)
             es_filters = {}
             for param, value in request.query_params.items():
                 if param.startswith("has_") and value in {"0", "1"}:

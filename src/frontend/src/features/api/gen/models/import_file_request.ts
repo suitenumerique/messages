@@ -7,10 +7,10 @@
  */
 
 /**
- * Serializer for importing EML or MBOX files via API.
+ * Serializer for importing email files.
  */
 export interface ImportFileRequest {
-  /** Select an EML or MBOX file to import */
+  /** Email file to import (EML or MBOX format). Files without extensions (like 'mbox') are supported. */
   import_file: Blob;
   /** UUID of the recipient mailbox */
   recipient: string;

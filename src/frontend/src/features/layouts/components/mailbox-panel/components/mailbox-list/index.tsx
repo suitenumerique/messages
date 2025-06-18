@@ -6,64 +6,79 @@ import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { useMemo } from "react"
 import { useLayoutContext } from "../../../main"
+import { useTranslation } from "react-i18next"
 
 // @TODO: replace with real data when folder will be ready
 type Folder = {
+    id: string;
     name: string;
     icon: string;
     filter?: Record<string, string>;
 }
 
-export const DEFAULT_FOLDERS: Folder[] = [
+export const MAILBOX_FOLDERS: Folder[] = [
     {
-        name: "Tous les messages",
-        icon: "folder",
+        id: "inbox",
+        name: "folders.inbox",
+        icon: "inbox",
         filter: {
-            has_trashed: "0"
+            has_active: "1"
         },
     },
-    // {
-    //     name: "Boîte de réception",
-    //     icon: "inbox",
-    //     filter: {
-    //         has_unread: "1",
-    //     },
-    // },
     {
-        name: "Brouillons",
+        id: "all_messages",
+        name: "folders.all_messages",
+        icon: "folder",
+        filter: {
+            has_messages: "1"
+        },
+    },
+    {
+        id: "drafts",
+        name: "folders.drafts",
         icon: "drafts",
         filter: {
             has_draft: "1",
         },
     },
     {
-        name: "Envoyés",
+        id: "sent",
+        name: "folders.sent",
         icon: "outbox",
         filter: {
-            has_sender: "1",
+            has_sender: "1"
         },
     },
     {
-        name: "Corbeille",
+        id: "trash",
+        name: "folders.trash",
         icon: "delete",
         filter: {
             has_trashed: "1",
         },
-    }
+    },
     // {
-    //     name: "Pourriels",
+    //     id: "spam",
+    //     name: "folders.spam",
     //     icon: "report",
+    //     filter: {
+    //         is_spam: "1",
+    //     },
     // },
     // {
-    //     name: "Archives",
+    //     id: "archive",
+    //     name: "folders.archive",
     //     icon: "inventory_2",
+    //     filter: {
+    //         has_archived: "1",
+    //     },
     // },
 ]
 
 export const MailboxList = () => {
     return (
         <div className="mailbox-list">
-            {DEFAULT_FOLDERS.map((folder) => (
+            {MAILBOX_FOLDERS.map((folder) => (
                 <FolderItem
                     key={folder.icon}
                     folder={folder}
@@ -78,6 +93,7 @@ type FolderItemProps = {
 }
 
 const FolderItem = ({ folder }: FolderItemProps) => {
+    const { t } = useTranslation();
     const { selectedMailbox } = useMailboxContext();
     const { closeLeftPanel } = useLayoutContext();
     const searchParams = useSearchParams()
@@ -86,8 +102,8 @@ const FolderItem = ({ folder }: FolderItemProps) => {
         return params.toString();
     }, [folder.filter]);
     const stats_fields = useMemo(() => {
-        if (folder.filter?.has_draft === "1") return ThreadsStatsRetrieveStatsFields.messages;
-        return ThreadsStatsRetrieveStatsFields.unread;
+        if (folder.filter?.has_draft === "1") return ThreadsStatsRetrieveStatsFields.all;
+        return ThreadsStatsRetrieveStatsFields.all_unread;
     }, []);
     const { data } = useThreadsStatsRetrieve({
         mailbox_id: selectedMailbox?.id,
@@ -121,7 +137,7 @@ const FolderItem = ({ folder }: FolderItemProps) => {
         >
             <p className="mailbox__item-label">
                 <span className="material-icons" aria-hidden="true">{folder.icon}</span>
-                {folder.name}
+                {t(folder.name)}
             </p>
             {(folderStats?.[stats_fields] ?? 0) > 0 && <Badge>{folderStats[stats_fields]}</Badge>}
         </Link>

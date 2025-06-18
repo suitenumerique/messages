@@ -1,13 +1,15 @@
 import { useRouter } from "next/router";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import { Button } from "@openfun/cunningham-react";
 import { SearchFiltersForm } from "../search-filters-form";
 import { useLayoutContext } from "@/features/layouts/components/main";
+import { MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
 
 export const SearchInput = () => {
     const router = useRouter();
+    const pathname = usePathname();
     const { closeLeftPanel } = useLayoutContext();
     const searchParams = useSearchParams();
     const [value, setValue] = useState<string>(searchParams.get('search') || '');
@@ -29,17 +31,14 @@ export const SearchInput = () => {
      */
     const handleSearch = (query: string, submit: boolean = false) => {
         setValue(query);
-        
-        const url = new URL(router.asPath, 'http://localhost');
-        if (query) {
-            url.searchParams.set('search', query);
-        } else {
-            url.searchParams.delete('search');
-        }
+
+        let newSearchParams: URLSearchParams;
+        if (query) newSearchParams = new URLSearchParams({'search': query});
+        else newSearchParams = new URLSearchParams(MAILBOX_FOLDERS[0].filter);
 
         if (submit) {
             closeLeftPanel();
-            router.replace(url.pathname + url.search, undefined, { shallow: true });
+            router.replace(pathname + '?' + newSearchParams.toString(), undefined, { shallow: true });
         }
     }
 

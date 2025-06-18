@@ -8,7 +8,11 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ThreadAccessesWidget } from "../thread-accesses-widget";
 
-export const ActionBar = () => {
+type ActionBarProps = {
+    canUndelete: boolean;
+}
+
+export const ActionBar = ({ canUndelete }: ActionBarProps) => {
     const { t } = useTranslation();
     const { selectedThread, unselectThread } = useMailboxContext();
     const { markAsUnread } = useRead();
@@ -40,7 +44,19 @@ export const ActionBar = () => {
                     />
                 </Tooltip>
                 {
-                    selectedThread!.count_trashed < selectedThread!.count_messages ? (
+                    selectedThread!.has_trashed ? (
+                        canUndelete && (
+                            <Tooltip content={t('actions.undelete')}>
+                                <Button
+                                    color="primary-text"
+                                    aria-label={t('actions.undelete')}
+                                    size="small"
+                                    icon={<span className="material-icons">restore_from_trash</span>}
+                                    onClick={() => markAsUntrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                                />
+                            </Tooltip>
+                        )
+                    ) : (
                         <Tooltip content={t('actions.delete')}>
                             <Button
                                 color="primary-text"
@@ -48,16 +64,6 @@ export const ActionBar = () => {
                                 size="small"
                                 icon={<span className="material-icons">delete</span>}
                                 onClick={() => markAsTrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
-                            />
-                        </Tooltip>
-                    ) : (
-                        <Tooltip content={t('actions.undelete')}>
-                            <Button
-                                color="primary-text"
-                                aria-label={t('actions.undelete')}
-                                size="small"
-                                icon={<span className="material-icons">restore</span>}
-                                onClick={() => markAsUntrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
                             />
                         </Tooltip>
                     )
