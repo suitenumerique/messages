@@ -38,7 +38,7 @@ def test_trash_single_thread_success(api_client):
 
     thread.refresh_from_db()
     thread.update_stats()
-    assert thread.has_trashed == False
+    assert thread.has_trashed is False
     assert msg1.is_trashed is False
     assert msg2.is_trashed is False
 
@@ -51,7 +51,7 @@ def test_trash_single_thread_success(api_client):
 
     # Verify thread trash flag is updated
     thread.refresh_from_db()
-    assert thread.has_trashed == True
+    assert thread.has_trashed is True
 
     # Verify all messages in the thread are marked as trashed
     msg1.refresh_from_db()
@@ -83,7 +83,7 @@ def test_untrash_single_thread_success(api_client):
 
     thread.refresh_from_db()
     thread.update_stats()
-    assert thread.has_trashed == True
+    assert thread.has_trashed is True
     assert msg1.is_trashed is True
     assert msg2.is_trashed is True
 
@@ -95,7 +95,7 @@ def test_untrash_single_thread_success(api_client):
 
     # Verify thread trash flag is updated
     thread.refresh_from_db()
-    assert thread.has_trashed == False
+    assert thread.has_trashed is False
 
     # Verify all messages in the thread are marked as untrashed
     msg1.refresh_from_db()
@@ -144,9 +144,9 @@ def test_trash_multiple_threads_success(api_client):
     thread2.update_stats()
     thread3.refresh_from_db()
     thread3.update_stats()
-    assert thread1.has_trashed == False
-    assert thread2.has_trashed == False
-    assert thread3.has_trashed == True
+    assert thread1.has_trashed is False
+    assert thread2.has_trashed is False
+    assert thread3.has_trashed is True
 
     thread_ids = [str(thread1.id), str(thread2.id), str(thread3.id)]
     data = {"flag": "trashed", "value": True, "thread_ids": thread_ids}
@@ -159,9 +159,9 @@ def test_trash_multiple_threads_success(api_client):
     thread1.refresh_from_db()
     thread2.refresh_from_db()
     thread3.refresh_from_db()
-    assert thread1.has_trashed == True
-    assert thread2.has_trashed == True
-    assert thread3.has_trashed == True  # Remains True
+    assert thread1.has_trashed is True
+    assert thread2.has_trashed is True
+    assert thread3.has_trashed is True  # Remains True
 
     # Verify messages
     assert thread1.messages.first().is_trashed is True
@@ -202,7 +202,7 @@ def test_trash_thread_no_permission(api_client):
 
     # Verify thread and its messages are not marked as trashed
     thread.refresh_from_db()
-    assert thread.has_trashed == False
+    assert thread.has_trashed is False
     assert thread.messages.first().is_trashed is False
     assert (
         models.Thread.objects.count() == initial_count
