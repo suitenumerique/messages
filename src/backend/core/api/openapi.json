@@ -4710,7 +4710,10 @@
                         "readOnly": true
                     },
                     "labels": {
-                        "type": "string",
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ThreadLabel"
+                        },
                         "readOnly": true
                     }
                 },
@@ -4832,6 +4835,44 @@
                 ],
                 "type": "string",
                 "description": "* `viewer` - Viewer\n* `editor` - Editor"
+            },
+            "ThreadLabel": {
+                "type": "object",
+                "description": "Serializer to get labels details for a thread.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/Projects')",
+                        "maxLength": 255
+                    },
+                    "slug": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "URL-friendly version of the name",
+                        "pattern": "^[-a-zA-Z0-9_]+$"
+                    },
+                    "color": {
+                        "type": "string",
+                        "description": "Color of the label in hex format (e.g. #FF0000)",
+                        "maxLength": 7
+                    },
+                    "display_name": {
+                        "type": "string",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "display_name",
+                    "id",
+                    "name",
+                    "slug"
+                ]
             },
             "User": {
                 "type": "object",

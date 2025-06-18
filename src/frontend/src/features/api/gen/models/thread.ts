@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 import type { ThreadAccessDetail } from "./thread_access_detail";
-import type { Label } from "./label";
+import type { ThreadLabel } from "./thread_label";
 
 /**
  * Serialize threads.
@@ -30,6 +30,5 @@ export interface Thread {
   readonly updated_at: string;
   readonly user_role: string;
   readonly accesses: readonly ThreadAccessDetail[];
-
-  readonly labels: readonly Label[];
+  readonly labels: readonly ThreadLabel[];
 }

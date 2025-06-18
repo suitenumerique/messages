@@ -1,9 +1,12 @@
-import { PropsWithChildren } from "react"
+import clsx from "clsx"
+import { HTMLAttributes, PropsWithChildren } from "react"
+
+type BadgeProps = PropsWithChildren<HTMLAttributes<HTMLDivElement>>
 
 
-export const Badge = ({ children }: PropsWithChildren) => {
+export const Badge = ({ children, className, ...props }: BadgeProps) => {
     return (
-        <div className="badge">
+        <div className={clsx("badge", className) } {...props}>
             {children}
         </div>
     )

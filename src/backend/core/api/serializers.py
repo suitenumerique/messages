@@ -146,6 +146,51 @@ class AttachmentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+class ThreadLabelSerializer(serializers.ModelSerializer):
+    """Serializer to get labels details for a thread."""
+
+    display_name = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = models.Label
+        fields = ["id", "name", "slug", "color", "display_name"]
+        read_only_fields = ["id", "slug", "display_name"]
+
+    def get_display_name(self, instance):
+        """Return the display name of the label."""
+        return instance.name.split("/")[-1]
+
+class LabelSerializer(serializers.ModelSerializer):
+    """Serializer for Label model."""
+
+    class Meta:
+        model = models.Label
+        fields = ["id", "name", "slug", "color", "mailbox", "threads"]
+        read_only_fields = ["id", "slug"]
+
+    def validate(self, attrs):
+        """Validate that the label name is unique within the mailbox."""
+        if models.Label.objects.filter(
+            name=attrs.get("name"), mailbox=attrs.get("mailbox")
+        ).exists():
+            raise serializers.ValidationError(
+                {"name": "A label with this name already exists in this mailbox."}
+            )
+        return attrs
+
+    def validate_mailbox(self, value):
+        """Validate that user has access to the mailbox."""
+        user = self.context["request"].user
+        if not value.accesses.filter(
+            user=user,
+            role__in=[
+                models.MailboxRoleChoices.ADMIN,
+                models.MailboxRoleChoices.EDITOR,
+            ],
+        ).exists():
+            raise PermissionDenied("You don't have access to this mailbox")
+        return value
+
 
 class ThreadAccessDetailSerializer(serializers.ModelSerializer):
     """Serializer for thread access details."""
@@ -196,6 +241,7 @@ class ThreadSerializer(serializers.ModelSerializer):
                     return None
         return None
 
+    @extend_schema_field(ThreadLabelSerializer(many=True))
     def get_labels(self, instance):
         """Get labels for the thread, filtered by user's mailbox access."""
         request = self.context.get("request")
@@ -549,49 +595,3 @@ class ImportIMAPSerializer(ImportBaseSerializer):
         default=0,
         min_value=0,
     )
-
-
-class ThreadLabelSerializer(serializers.ModelSerializer):
-    """Serializer to get labels details for a thread."""
-
-    display_name = serializers.SerializerMethodField(read_only=True)
-
-    class Meta:
-        model = models.Label
-        fields = ["id", "name", "slug", "color", "display_name"]
-        read_only_fields = ["id", "slug", "display_name"]
-
-    def get_display_name(self, instance):
-        """Return the display name of the label."""
-        return instance.name.split("/")[-1]
-
-class LabelSerializer(serializers.ModelSerializer):
-    """Serializer for Label model."""
-
-    class Meta:
-        model = models.Label
-        fields = ["id", "name", "slug", "color", "mailbox", "threads"]
-        read_only_fields = ["id", "slug"]
-
-    def validate(self, attrs):
-        """Validate that the label name is unique within the mailbox."""
-        if models.Label.objects.filter(
-            name=attrs.get("name"), mailbox=attrs.get("mailbox")
-        ).exists():
-            raise serializers.ValidationError(
-                {"name": "A label with this name already exists in this mailbox."}
-            )
-        return attrs
-
-    def validate_mailbox(self, value):
-        """Validate that user has access to the mailbox."""
-        user = self.context["request"].user
-        if not value.accesses.filter(
-            user=user,
-            role__in=[
-                models.MailboxRoleChoices.ADMIN,
-                models.MailboxRoleChoices.EDITOR,
-            ],
-        ).exists():
-            raise PermissionDenied("You don't have access to this mailbox")
-        return value

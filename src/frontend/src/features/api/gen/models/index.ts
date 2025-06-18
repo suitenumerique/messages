@@ -71,6 +71,7 @@ export * from "./thread_access";
 export * from "./thread_access_detail";
 export * from "./thread_access_request";
 export * from "./thread_access_role_enum";
+export * from "./thread_label";
 export * from "./threads_accesses_create_params";
 export * from "./threads_accesses_destroy_params";
 export * from "./threads_accesses_list_params";
