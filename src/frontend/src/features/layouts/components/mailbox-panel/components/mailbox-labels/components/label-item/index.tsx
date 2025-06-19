@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/features/ui/components/badge";
 import { LabelModal } from "../label-form-modal";
+import { useLayoutContext } from "@/features/layouts/components/main";
 
 type LabelItemProps = TreeLabel & {
     level?: number;
@@ -34,6 +35,7 @@ export  const LabelItem = ({ level = 0, ...label }: LabelItemProps) => {
     });
     const unreadCount = (stats?.data as ThreadsStatsRetrieve200)?.all_unread ?? 0;
     const [isExpanded, setIsExpanded] = useState(false);
+    const { closeLeftPanel } = useLayoutContext();
     const searchParams = useSearchParams();
     const { t } = useTranslation();
     const isActive = searchParams.get('label_slug') === label.slug;
@@ -50,6 +52,7 @@ export  const LabelItem = ({ level = 0, ...label }: LabelItemProps) => {
       <>
         <Link
           href={`/mailbox/${selectedMailbox?.id}?${queryParams}`}
+          onClick={closeLeftPanel}
           className={clsx("label-item", isActive && "label-item--active")}
           style={{ paddingLeft: `${level * 1}rem` }}
           data-focus-within={isDropdownOpen}
