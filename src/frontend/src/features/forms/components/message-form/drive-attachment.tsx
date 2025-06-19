@@ -1,8 +1,9 @@
-import { SVGProps, useCallback } from "react"
+import { SVGProps, useCallback, useState } from "react"
 import { DriveFile } from "@/pages/drive-selection";
 import { Button, Tooltip } from "@openfun/cunningham-react"
 import { openPicker, type Item } from "@gouvfr-lasuite/drive-sdk";
 import { useTranslation } from "react-i18next";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
 
 type DriveAttachmentProps = {
     onChange: (attachments: DriveFile[]) => void;
@@ -10,28 +11,36 @@ type DriveAttachmentProps = {
 
 export const DriveAttachment = ({ onChange }: DriveAttachmentProps) => {
     const { t } = useTranslation();
+    const [isLoading, setIsLoading] = useState(false);
 
     const pick = useCallback(async () => {
-        const { items } = await openPicker({
-            url: "http://localhost:3001/sdk",
+        setIsLoading(true);
+        const result = await openPicker({
+            url: "https://fichiers.sardinepq.fr/sdk",
+            apiUrl: "https://fichiers.sardinepq.fr/api/v1.0",
         });
+        setIsLoading(false);
 
-        onChange(items.map((item: Item) => ({
-            id: item.id,
-            name: item.title,
-            url: item.url,
-            type: item.mimetype,
-            size: item.size,
-            created_at: new Date().toISOString(),
-        })));
+        if (result.type === "picked") {
+            onChange(result.items.map((item: Item) => ({
+                id: item.id,
+                name: item.title,
+                url: item.url,
+                type: item.mimetype,
+                size: item.size,
+                created_at: new Date().toISOString(),
+            })));
+        }
     }, []);
-    
+
     return (
         <Tooltip content={t('tooltips.add_attachment_from_drive')}>
         <Button
             color="tertiary"
-            icon={<DriveIcon />}
+            icon={isLoading ? <Spinner size="sm" /> : <DriveIcon />}
             type="button"
+            disabled={isLoading}
+            aria-busy={isLoading}
             onClick={pick}
             />
         </Tooltip>

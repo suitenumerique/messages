@@ -69,8 +69,8 @@
         "more_options": "More options",
         "reply": "Reply",
         "forward": "Forward",
-        "add_attachment_from_drive": "Add attachment from Drive",
-        "upload_to_drive": "Upload to Drive"
+        "add_attachment_from_drive": "Add attachment from Fichiers",
+        "upload_to_drive": "Upload to Fichiers"
       },
       "thread-view": {
         "trashed-banner": {
@@ -92,7 +92,7 @@
         "counter_zero": "No attachments",
         "counter_one": "{{count}} attachment",
         "counter_other": "{{count}} attachments",
-        "upload_to_drive_success": "Attachment uploaded to Drive"
+        "upload_to_drive_success": "Attachment uploaded to Fichiers"
       },
       "message_form": {
         "helper_text": {
@@ -298,8 +298,8 @@
         "has_attachments": "Cette email contient une pièce jointe",
         "more_options": "Plus d'options",
         "reply": "Répondre",
-        "add_attachment_from_drive": "Ajouter un pièce jointe depuis Drive",
-        "upload_to_drive": "Sauvegarder dans Drive"
+        "add_attachment_from_drive": "Ajouter un pièce jointe depuis Fichiers",
+        "upload_to_drive": "Sauvegarder dans Fichiers"
       },
       "thread-view": {
         "trashed-banner": {
@@ -321,7 +321,7 @@
         "counter_zero": "Aucune pièce jointe",
         "counter_one": "{{count}} pièce jointe",
         "counter_other": "{{count}} pièces jointes",
-        "upload_to_drive_success": "Pièce jointe sauvegardée dans votre Drive"
+        "upload_to_drive_success": "Pièce jointe sauvegardée dans Fichiers"
       },
       "message_form": {
         "helper_text": {

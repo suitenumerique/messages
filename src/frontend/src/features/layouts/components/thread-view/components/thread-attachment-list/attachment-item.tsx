@@ -111,20 +111,20 @@ type DriveUploadButtonProps = {
 const DriveUploadButton = ({ attachment }: DriveUploadButtonProps) => {
     const [state, setState] = useState<'idle' | 'busy' | 'success'>('idle');
     const { t } = useTranslation();
-    
+
     const handleUpload = useCallback(async () => {
         setState('busy');
         const file = await fetch(AttachmentHelper.getDownloadUrl(attachment), {
             credentials: "include",
         }).then(res => res.blob());
-        await openSaver({
-            files: [{
-                title: attachment.name,
-                object: file
-            }]
-        }, {
-            url: "http://localhost:3001/sdk",
-        })
+        // await openSaver({
+        //     files: [{
+        //         title: attachment.name,
+        //         object: file
+        //     }]
+        // }, {
+        //     url: "http://localhost:3001/sdk",
+        // })
         setTimeout(() => {
             setState('success');
             setTimeout(() => {
