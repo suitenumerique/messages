@@ -1,7 +1,8 @@
 """Tests for mbox import with labels and flags via API."""
-# pylint: disable=redefined-outer-name
+# pylint: disable=redefined-outer-name,R0801
+# TODO: fix R0801 by refactoring the tests and merge into one filetest_messages_import_labels.py
 
-from django.core.files.uploadedfile import SimpleUploadedFile
+import hashlib
 
 import pytest
 from rest_framework import status
@@ -9,6 +10,7 @@ from rest_framework.test import APIClient
 
 from core import models
 from core.factories import MailboxFactory, UserFactory
+from core.models import Blob
 
 IMPORT_FILE_URL = "/api/v1.0/import/file/"
 
@@ -51,15 +53,17 @@ def upload_mbox_file(client, mbox_file_path, mailbox):
     with open(mbox_file_path, "rb") as f:
         mbox_content = f.read()
 
-    mbox_file = SimpleUploadedFile(
-        "test.mbox",
-        mbox_content,
-        content_type="application/mbox",
+    blob = Blob.objects.create(
+        raw_content=mbox_content,
+        type="application/mbox",
+        size=len(mbox_content),
+        mailbox=mailbox,
+        sha256=hashlib.sha256(mbox_content).hexdigest(),
     )
 
     response = client.post(
         IMPORT_FILE_URL,
-        {"import_file": mbox_file, "recipient": str(mailbox.id)},
+        {"blob": blob.id, "recipient": str(mailbox.id)},
         format="multipart",
     )
     return response
@@ -246,15 +250,17 @@ def test_api_authentication_required(api_client, mbox_file_path, mailbox):
     with open(mbox_file_path, "rb") as f:
         mbox_content = f.read()
 
-    mbox_file = SimpleUploadedFile(
-        "test.mbox",
-        mbox_content,
-        content_type="application/mbox",
+    blob = Blob.objects.create(
+        raw_content=mbox_content,
+        type="application/mbox",
+        size=len(mbox_content),
+        mailbox=mailbox,
+        sha256=hashlib.sha256(mbox_content).hexdigest(),
     )
 
     response = api_client.post(
         IMPORT_FILE_URL,
-        {"import_file": mbox_file, "recipient": str(mailbox.id)},
+        {"blob": blob.id, "recipient": str(mailbox.id)},
         format="multipart",
     )
 
@@ -271,15 +277,17 @@ def test_mailbox_access_required(api_client, mbox_file_path, mailbox):
     with open(mbox_file_path, "rb") as f:
         mbox_content = f.read()
 
-    mbox_file = SimpleUploadedFile(
-        "test.mbox",
-        mbox_content,
-        content_type="application/mbox",
+    blob = Blob.objects.create(
+        raw_content=mbox_content,
+        type="application/mbox",
+        size=len(mbox_content),
+        mailbox=mailbox,
+        sha256=hashlib.sha256(mbox_content).hexdigest(),
     )
 
     response = api_client.post(
         IMPORT_FILE_URL,
-        {"import_file": mbox_file, "recipient": str(mailbox.id)},
+        {"blob": blob.id, "recipient": str(mailbox.id)},
         format="multipart",
     )
 

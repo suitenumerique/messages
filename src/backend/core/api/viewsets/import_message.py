@@ -8,7 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
-from core.models import Mailbox
+from core.models import Blob, Mailbox
 from core.services.import_service import ImportService
 
 from .. import permissions
@@ -69,14 +69,18 @@ class ImportViewSet(viewsets.ViewSet):
         serializer = ImportFileSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         recipient_id = serializer.validated_data["recipient"]
-        import_file = serializer.validated_data["import_file"]
         mailbox = get_object_or_404(Mailbox, id=recipient_id)
 
+        blob_id = serializer.validated_data["blob"]
+        blob = get_object_or_404(Blob, id=blob_id)
+
         success, response_data = ImportService.import_file(
-            file=import_file,
+            file=blob,
             recipient=mailbox,
             user=request.user,
         )
+        # clean up the blob
+        blob.delete()
 
         if not success:
             return Response(response_data, status=status.HTTP_403_FORBIDDEN)

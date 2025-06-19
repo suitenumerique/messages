@@ -2,6 +2,7 @@
 # pylint: disable=redefined-outer-name, unused-argument, no-value-for-parameter
 
 import datetime
+import hashlib
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -11,7 +12,7 @@ from rest_framework.test import APIClient
 
 from core import factories
 from core.enums import MailboxRoleChoices
-from core.models import Mailbox, MailDomain, Message, Thread
+from core.models import Blob, Mailbox, MailDomain, Message, Thread
 from core.tasks import process_eml_file_task, process_mbox_file_task
 
 pytestmark = pytest.mark.django_db
@@ -58,18 +59,63 @@ def mbox_file_path():
     return "core/tests/resources/messages.mbox"
 
 
-def test_import_eml_file(api_client, user, mailbox, eml_file_path):
+@pytest.fixture
+def eml_file():
+    """Get test eml file from test data."""
+    with open("core/tests/resources/message.eml", "rb") as f:
+        return SimpleUploadedFile("test.eml", f.read(), content_type="message/rfc822")
+
+
+@pytest.fixture
+def mbox_file(mbox_file_path):
+    """Get test mbox file from test data."""
+    with open(mbox_file_path, "rb") as f:
+        return SimpleUploadedFile(
+            "test.mbox", f.read(), content_type="application/mbox"
+        )
+
+
+@pytest.fixture
+def blob_mbox(mbox_file, mailbox):
+    """Create a blob from a file."""
+    # Read the file content once
+    file_content = mbox_file.read()
+    expected_hash = hashlib.sha256(file_content).hexdigest()
+    return Blob.objects.create(
+        raw_content=file_content,
+        type=mbox_file.content_type,
+        size=mbox_file.size,
+        mailbox=mailbox,
+        sha256=expected_hash,
+    )
+
+
+@pytest.fixture
+def blob_eml(eml_file, mailbox):
+    """Create a blob from a file."""
+    # Read the file content once
+    file_content = eml_file.read()
+    expected_hash = hashlib.sha256(file_content).hexdigest()
+    return Blob.objects.create(
+        raw_content=file_content,
+        type=eml_file.content_type,
+        size=eml_file.size,
+        mailbox=mailbox,
+        sha256=expected_hash,
+    )
+
+
+def test_import_eml_file(api_client, user, mailbox, blob_eml):
     """Test import of EML file."""
     # add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
     # Create a test EML file
-    with open(eml_file_path, "rb") as f:
-        response = api_client.post(
-            IMPORT_FILE_URL,
-            {"import_file": f, "recipient": str(mailbox.id)},
-            format="multipart",
-        )
+    response = api_client.post(
+        IMPORT_FILE_URL,
+        {"blob": blob_eml.id, "recipient": str(mailbox.id)},
+        format="multipart",
+    )
     assert response.status_code == 202
     assert response.data["type"] == "eml"
     assert Message.objects.count() == 1
@@ -84,17 +130,16 @@ def test_import_eml_file(api_client, user, mailbox, eml_file_path):
     )
 
 
-def test_import_mbox_file(api_client, user, mailbox, mbox_file_path):
+def test_import_mbox_file(api_client, user, mailbox, blob_mbox):
     """Test import of MBOX file."""
     # add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
-    with open(mbox_file_path, "rb") as f:
-        response = api_client.post(
-            IMPORT_FILE_URL,
-            {"import_file": f, "recipient": str(mailbox.id)},
-            format="multipart",
-        )
+    response = api_client.post(
+        IMPORT_FILE_URL,
+        {"blob": blob_mbox.id, "recipient": str(mailbox.id)},
+        format="multipart",
+    )
     assert response.status_code == 202
     assert response.data["type"] == "mbox"
     # Verify messages were created
@@ -128,106 +173,51 @@ def test_import_mbox_file(api_client, user, mailbox, mbox_file_path):
     assert "Lorem ipsum dolor sit amet" in body2
 
 
-def test_import_mbox_async(api_client, user, mailbox, mbox_file_path):
+def test_import_mbox_async(api_client, user, mailbox, blob_mbox):
     """Test import of MBOX file asynchronously."""
     # add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         mock_task.return_value.status = "PENDING"
-        with open(mbox_file_path, "rb") as f:
-            response = api_client.post(
-                IMPORT_FILE_URL,
-                {"import_file": f, "recipient": str(mailbox.id)},
-                format="multipart",
-            )
-            assert response.status_code == 202
-            assert response.data["type"] == "mbox"
-            assert mock_task.call_count == 1
-            assert mock_task.call_args[0][1] == str(mailbox.id)
+        response = api_client.post(
+            IMPORT_FILE_URL,
+            {"blob": blob_mbox.id, "recipient": str(mailbox.id)},
+            format="multipart",
+        )
+        assert response.status_code == 202
+        assert response.data["type"] == "mbox"
+        assert mock_task.call_count == 1
+        assert mock_task.call_args[0][1] == str(mailbox.id)
 
 
-def test_import_file_no_access(api_client, domain, eml_file_path):
+def test_blob_no_access(api_client, domain, blob_eml):
     """Test import of EML file without access to mailbox."""
     # Create a mailbox the user does NOT have access to
     mailbox = Mailbox.objects.create(local_part="noaccess", domain=domain)
-    with open(eml_file_path, "rb") as f:
-        response = api_client.post(
-            IMPORT_FILE_URL,
-            {"import_file": f, "recipient": str(mailbox.id)},
-            format="multipart",
-        )
+    response = api_client.post(
+        IMPORT_FILE_URL,
+        {"blob": blob_eml.id, "recipient": str(mailbox.id)},
+        format="multipart",
+    )
     assert response.status_code == 403
     assert "access" in response.data["detail"]
 
 
-def test_import_wrong_file_format(api_client, user, mailbox):
-    """Test import of wrong file format."""
-    # add access to mailbox
-    mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
-
-    # Create an invalid file (not EML or MBOX)
-    wrong_file = SimpleUploadedFile(
-        "test.pdf", b"Invalid file content", content_type="application/pdf"
-    )
-    response = api_client.post(
-        IMPORT_FILE_URL,
-        {"import_file": wrong_file, "recipient": str(mailbox.id)},
-        format="multipart",
-    )
-    assert response.status_code == 400
-    response_data = response.json()
-    assert "import_file" in response_data
-    assert len(response_data["import_file"]) == 1
-    assert "Invalid file type" in response_data["import_file"][0]
-
-
-def test_import_text_plain_wrong_extension(api_client, user, mailbox, mbox_file_path):
-    """Test import of file with text/plain MIME type but wrong extension."""
-    # add access to mailbox
-    mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
-
-    # Read the mbox file content
-    with open(mbox_file_path, "rb") as f:
-        mbox_content = f.read()
-
-    # Create a file with text/plain MIME type but wrong extension
-    wrong_file = SimpleUploadedFile(
-        "test.txt",  # Wrong extension
-        mbox_content,
-        content_type="text/plain",
-    )
-    response = api_client.post(
-        IMPORT_FILE_URL,
-        {"import_file": wrong_file, "recipient": str(mailbox.id)},
-        format="multipart",
-    )
-    assert response.status_code == 403
-    response_data = response.json()
-    assert "Invalid file" in response_data["detail"]
-
-
-def test_import_text_plain_mime_type(api_client, user, mailbox, mbox_file_path):
+def test_import_text_plain_mime_type(api_client, user, mailbox, blob_mbox):
     """Test import of MBOX file with text/plain MIME type."""
     # add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
-    # Read the mbox file content
-    with open(mbox_file_path, "rb") as f:
-        mbox_content = f.read()
-
     # Create a file with text/plain MIME type
-    mbox_file = SimpleUploadedFile(
-        "test.mbox",
-        mbox_content,
-        content_type="text/plain",
-    )
+    blob_mbox.type = "text/plain"
+    blob_mbox.save()
 
     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         response = api_client.post(
             IMPORT_FILE_URL,
-            {"import_file": mbox_file, "recipient": str(mailbox.id)},
+            {"blob": blob_mbox.id, "recipient": str(mailbox.id)},
             format="multipart",
         )
 
@@ -338,63 +328,22 @@ def test_import_imap_no_access(api_client, domain):
     assert "access" in response.data["detail"]
 
 
-def test_import_mbox_file_no_extension(api_client, user, mailbox, mbox_file_path):
-    """Test import of MBOX file without extension."""
-    # add access to mailbox
-    mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
-
-    # Read the mbox file content
-    with open(mbox_file_path, "rb") as f:
-        mbox_content = f.read()
-
-    # Create a file named "mbox" without extension
-    mbox_file = SimpleUploadedFile(
-        "mbox",  # filename without extension
-        mbox_content,
-        content_type="text/plain",
-    )
-
-    response = api_client.post(
-        IMPORT_FILE_URL,
-        {"import_file": mbox_file, "recipient": str(mailbox.id)},
-        format="multipart",
-    )
-
-    assert response.status_code == 202
-    assert response.data["type"] == "mbox"
-    # Verify messages were created
-    assert Message.objects.count() == 3
-    messages = Message.objects.order_by("created_at")
-
-    # Check thread for each message
-    assert messages[0].thread is not None
-    assert messages[1].thread is not None
-    assert messages[2].thread is not None
-    assert messages[2].thread.messages.count() == 2
-    assert messages[1].thread == messages[2].thread
-
-    # Check messages
-    assert messages[0].subject == "Mon mail avec joli pj"
-    assert messages[0].attachments.count() == 1
-
-    assert messages[1].subject == "Je t'envoie encore un message..."
-    body1 = messages[1].get_parsed_field("textBody")[0]["content"]
-    assert "Lorem ipsum dolor sit amet" in body1
-
-    assert messages[2].subject == "Re: Je t'envoie encore un message..."
-    body2 = messages[2].get_parsed_field("textBody")[0]["content"]
-    assert "Yes !" in body2
-    assert "Lorem ipsum dolor sit amet" in body2
-
-
-def test_import_duplicate_eml_file(api_client, user, mailbox, eml_file_path):
+def test_import_duplicate_eml_file(api_client, user, mailbox, blob_eml):
     """Test that importing the same EML file twice only creates one message."""
     # Add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
-    # Read file content once
-    with open(eml_file_path, "rb") as f:
-        file_content = f.read()
+    # create a copy of the blob because the blob is deleted after the import
+    blob_eml2 = Blob.objects.create(
+        raw_content=blob_eml.raw_content,
+        type=blob_eml.type,
+        size=blob_eml.size,
+        mailbox=blob_eml.mailbox,
+        sha256=blob_eml.sha256,
+    )
+
+    # Get file content from blob
+    file_content = blob_eml.raw_content
 
     assert Message.objects.count() == 0
     assert Thread.objects.count() == 0
@@ -402,12 +351,11 @@ def test_import_duplicate_eml_file(api_client, user, mailbox, eml_file_path):
     # First import
     with patch("core.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id-1"
-        with open(eml_file_path, "rb") as eml_file:
-            response = api_client.post(
-                IMPORT_FILE_URL,
-                {"import_file": eml_file, "recipient": str(mailbox.id)},
-                format="multipart",
-            )
+        response = api_client.post(
+            IMPORT_FILE_URL,
+            {"blob": blob_eml.id, "recipient": str(mailbox.id)},
+            format="multipart",
+        )
         assert response.status_code == 202
         assert response.data["type"] == "eml"
         mock_task.assert_called_once()
@@ -427,12 +375,11 @@ def test_import_duplicate_eml_file(api_client, user, mailbox, eml_file_path):
     # Second import of the same file
     with patch("core.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id-2"
-        with open(eml_file_path, "rb") as eml_file:
-            response = api_client.post(
-                IMPORT_FILE_URL,
-                {"import_file": eml_file, "recipient": str(mailbox.id)},
-                format="multipart",
-            )
+        response = api_client.post(
+            IMPORT_FILE_URL,
+            {"blob": blob_eml2.id, "recipient": str(mailbox.id)},
+            format="multipart",
+        )
         assert response.status_code == 202
         assert response.data["type"] == "eml"
         mock_task.assert_called_once()
@@ -451,14 +398,22 @@ def test_import_duplicate_eml_file(api_client, user, mailbox, eml_file_path):
         assert Thread.objects.count() == 1
 
 
-def test_import_duplicate_mbox_file(api_client, user, mailbox, mbox_file_path):
+def test_import_duplicate_mbox_file(api_client, user, mailbox, blob_mbox):
     """Test that importing the same MBOX file twice only creates each message once."""
     # Add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
-    # Read file content once
-    with open(mbox_file_path, "rb") as f:
-        file_content = f.read()
+    # create a copy of the blob because the blob is deleted after the import
+    blob_mbox2 = Blob.objects.create(
+        raw_content=blob_mbox.raw_content,
+        type=blob_mbox.type,
+        size=blob_mbox.size,
+        mailbox=blob_mbox.mailbox,
+        sha256=blob_mbox.sha256,
+    )
+
+    # Get file content from blob
+    file_content = blob_mbox.raw_content
 
     assert Message.objects.count() == 0
     assert Thread.objects.count() == 0
@@ -466,58 +421,54 @@ def test_import_duplicate_mbox_file(api_client, user, mailbox, mbox_file_path):
     # First import
     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id-1"
-        with open(mbox_file_path, "rb") as f:
-            response = api_client.post(
-                IMPORT_FILE_URL,
-                {"import_file": f, "recipient": str(mailbox.id)},
-                format="multipart",
-            )
-            assert response.status_code == 202
-            assert response.data["type"] == "mbox"
-            mock_task.assert_called_once()
+        response = api_client.post(
+            IMPORT_FILE_URL,
+            {"blob": blob_mbox.id, "recipient": str(mailbox.id)},
+            format="multipart",
+        )
+        assert response.status_code == 202
+        assert response.data["type"] == "mbox"
+        mock_task.assert_called_once()
 
-            # Run the task synchronously for testing with a task_id
-            task_result = process_mbox_file_task.apply(
-                kwargs={"file_content": file_content, "recipient_id": str(mailbox.id)},
-                task_id="fake-task-id-1",
-            ).get()
-            assert task_result["status"] == "SUCCESS"
-            assert (
-                task_result["result"]["success_count"] == 3
-            )  # Three messages in test file
-            assert task_result["result"]["failure_count"] == 0
+        # Run the task synchronously for testing with a task_id
+        task_result = process_mbox_file_task.apply(
+            kwargs={"file_content": file_content, "recipient_id": str(mailbox.id)},
+            task_id="fake-task-id-1",
+        ).get()
+        assert task_result["status"] == "SUCCESS"
+        assert (
+            task_result["result"]["success_count"] == 3
+        )  # Three messages in test file
+        assert task_result["result"]["failure_count"] == 0
 
-            # Verify messages were created
-            assert Message.objects.count() == 3
-            assert Thread.objects.count() == 2
+        # Verify messages were created
+        assert Message.objects.count() == 3
+        assert Thread.objects.count() == 2
 
     # Second import of the same file
     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id-2"
-        with open(mbox_file_path, "rb") as f:
-            response = api_client.post(
-                IMPORT_FILE_URL,
-                {"import_file": f, "recipient": str(mailbox.id)},
-                format="multipart",
-            )
-            assert response.status_code == 202
-            assert response.data["type"] == "mbox"
-            mock_task.assert_called_once()
+        response = api_client.post(
+            IMPORT_FILE_URL,
+            {"blob": blob_mbox2.id, "recipient": str(mailbox.id)},
+            format="multipart",
+        )
+        assert response.status_code == 202
+        assert response.data["type"] == "mbox"
+        mock_task.assert_called_once()
 
-            # Run the task synchronously for testing with a task_id
-            task_result = process_mbox_file_task.apply(
-                kwargs={"file_content": file_content, "recipient_id": str(mailbox.id)},
-                task_id="fake-task-id-2",
-            ).get()
-            assert task_result["status"] == "SUCCESS"
-            assert (
-                task_result["result"]["success_count"] == 3
-            )  # Still counts as success
-            assert task_result["result"]["failure_count"] == 0
+        # Run the task synchronously for testing with a task_id
+        task_result = process_mbox_file_task.apply(
+            kwargs={"file_content": file_content, "recipient_id": str(mailbox.id)},
+            task_id="fake-task-id-2",
+        ).get()
+        assert task_result["status"] == "SUCCESS"
+        assert task_result["result"]["success_count"] == 3  # Still counts as success
+        assert task_result["result"]["failure_count"] == 0
 
-            # Verify no new messages were created
-            assert Message.objects.count() == 3
-            assert Thread.objects.count() == 2
+        # Verify no new messages were created
+        assert Message.objects.count() == 3
+        assert Thread.objects.count() == 2
 
 
 def test_import_eml_same_message_different_mailboxes(api_client, user, eml_file_path):
@@ -534,65 +485,79 @@ def test_import_eml_same_message_different_mailboxes(api_client, user, eml_file_
     with open(eml_file_path, "rb") as f:
         file_content = f.read()
 
+    # Create blobs for each mailbox
+    blob1 = Blob.objects.create(
+        raw_content=file_content,
+        type="message/rfc822",
+        size=len(file_content),
+        mailbox=mailbox1,
+        sha256=hashlib.sha256(file_content).hexdigest(),
+    )
+    blob2 = Blob.objects.create(
+        raw_content=file_content,
+        type="message/rfc822",
+        size=len(file_content),
+        mailbox=mailbox2,
+        sha256=hashlib.sha256(file_content).hexdigest(),
+    )
+
     assert Message.objects.count() == 0
 
     # Import to first mailbox
     with patch("core.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id-1"
-        with open(eml_file_path, "rb") as eml_file:
-            response = api_client.post(
-                IMPORT_FILE_URL,
-                {"import_file": eml_file, "recipient": str(mailbox1.id)},
-                format="multipart",
-            )
-            assert response.status_code == 202
-            assert response.data["type"] == "eml"
-            mock_task.assert_called_once()
+        response = api_client.post(
+            IMPORT_FILE_URL,
+            {"blob": blob1.id, "recipient": str(mailbox1.id)},
+            format="multipart",
+        )
+        assert response.status_code == 202
+        assert response.data["type"] == "eml"
+        mock_task.assert_called_once()
 
-            # Run the task synchronously for testing with a task_id
-            task_result = process_eml_file_task.apply(
-                kwargs={"file_content": file_content, "recipient_id": str(mailbox1.id)},
-                task_id="fake-task-id-1",
-            ).get()
-            assert task_result["status"] == "SUCCESS"
-            assert task_result["result"]["success_count"] == 1
-            assert task_result["result"]["failure_count"] == 0
+        # Run the task synchronously for testing with a task_id
+        task_result = process_eml_file_task.apply(
+            kwargs={"file_content": file_content, "recipient_id": str(mailbox1.id)},
+            task_id="fake-task-id-1",
+        ).get()
+        assert task_result["status"] == "SUCCESS"
+        assert task_result["result"]["success_count"] == 1
+        assert task_result["result"]["failure_count"] == 0
 
-            # Verify a new message was created
-            assert Message.objects.count() == 1
+        # Verify a new message was created
+        assert Message.objects.count() == 1
 
     # Import to second mailbox
     with patch("core.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id-2"
-        with open(eml_file_path, "rb") as eml_file:
-            response = api_client.post(
-                IMPORT_FILE_URL,
-                {"import_file": eml_file, "recipient": str(mailbox2.id)},
-                format="multipart",
-            )
-            assert response.status_code == 202
-            assert response.data["type"] == "eml"
-            mock_task.assert_called_once()
+        response = api_client.post(
+            IMPORT_FILE_URL,
+            {"blob": blob2.id, "recipient": str(mailbox2.id)},
+            format="multipart",
+        )
+        assert response.status_code == 202
+        assert response.data["type"] == "eml"
+        mock_task.assert_called_once()
 
-            # Run the task synchronously for testing with a task_id
-            task_result = process_eml_file_task.apply(
-                kwargs={"file_content": file_content, "recipient_id": str(mailbox2.id)},
-                task_id="fake-task-id-2",
-            ).get()
-            assert task_result["status"] == "SUCCESS"
-            assert task_result["result"]["success_count"] == 1
-            assert task_result["result"]["failure_count"] == 0
+        # Run the task synchronously for testing with a task_id
+        task_result = process_eml_file_task.apply(
+            kwargs={"file_content": file_content, "recipient_id": str(mailbox2.id)},
+            task_id="fake-task-id-2",
+        ).get()
+        assert task_result["status"] == "SUCCESS"
+        assert task_result["result"]["success_count"] == 1
+        assert task_result["result"]["failure_count"] == 0
 
-            # Verify only one new message was created
-            assert Message.objects.count() == 2
+        # Verify only one new message was created
+        assert Message.objects.count() == 2
 
-            # Verify both mailboxes have the message
-            assert (
-                Message.objects.filter(thread__accesses__mailbox=mailbox1).count() == 1
-            ), "Message not found in first mailbox"
-            assert (
-                Message.objects.filter(thread__accesses__mailbox=mailbox2).count() == 1
-            ), "Message not found in second mailbox"
+        # Verify both mailboxes have the message
+        assert (
+            Message.objects.filter(thread__accesses__mailbox=mailbox1).count() == 1
+        ), "Message not found in first mailbox"
+        assert (
+            Message.objects.filter(thread__accesses__mailbox=mailbox2).count() == 1
+        ), "Message not found in second mailbox"
 
 
 def test_import_mbox_same_message_different_mailboxes(api_client, user, mbox_file_path):
@@ -609,65 +574,79 @@ def test_import_mbox_same_message_different_mailboxes(api_client, user, mbox_fil
     with open(mbox_file_path, "rb") as f:
         file_content = f.read()
 
+    # Create blobs for each mailbox
+    blob1 = Blob.objects.create(
+        raw_content=file_content,
+        type="application/mbox",
+        size=len(file_content),
+        mailbox=mailbox1,
+        sha256=hashlib.sha256(file_content).hexdigest(),
+    )
+    blob2 = Blob.objects.create(
+        raw_content=file_content,
+        type="application/mbox",
+        size=len(file_content),
+        mailbox=mailbox2,
+        sha256=hashlib.sha256(file_content).hexdigest(),
+    )
+
     assert Message.objects.count() == 0
 
     # Import to first mailbox
     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id-1"
-        with open(mbox_file_path, "rb") as f:
-            response = api_client.post(
-                IMPORT_FILE_URL,
-                {"import_file": f, "recipient": str(mailbox1.id)},
-                format="multipart",
-            )
-            assert response.status_code == 202
-            assert response.data["type"] == "mbox"
-            mock_task.assert_called_once()
+        response = api_client.post(
+            IMPORT_FILE_URL,
+            {"blob": blob1.id, "recipient": str(mailbox1.id)},
+            format="multipart",
+        )
+        assert response.status_code == 202
+        assert response.data["type"] == "mbox"
+        mock_task.assert_called_once()
 
-            # Run the task synchronously for testing with a task_id
-            task_result = process_mbox_file_task.apply(
-                kwargs={"file_content": file_content, "recipient_id": str(mailbox1.id)},
-                task_id="fake-task-id-1",
-            ).get()
-            assert task_result["status"] == "SUCCESS"
-            assert task_result["result"]["success_count"] == 3
-            assert task_result["result"]["failure_count"] == 0
+        # Run the task synchronously for testing with a task_id
+        task_result = process_mbox_file_task.apply(
+            kwargs={"file_content": file_content, "recipient_id": str(mailbox1.id)},
+            task_id="fake-task-id-1",
+        ).get()
+        assert task_result["status"] == "SUCCESS"
+        assert task_result["result"]["success_count"] == 3
+        assert task_result["result"]["failure_count"] == 0
 
-            # Verify messages were created
-            assert Message.objects.count() == 3
+        # Verify messages were created
+        assert Message.objects.count() == 3
 
     # Import to second mailbox
     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id-2"
-        with open(mbox_file_path, "rb") as f:
-            response = api_client.post(
-                IMPORT_FILE_URL,
-                {"import_file": f, "recipient": str(mailbox2.id)},
-                format="multipart",
-            )
-            assert response.status_code == 202
-            assert response.data["type"] == "mbox"
-            mock_task.assert_called_once()
+        response = api_client.post(
+            IMPORT_FILE_URL,
+            {"blob": blob2.id, "recipient": str(mailbox2.id)},
+            format="multipart",
+        )
+        assert response.status_code == 202
+        assert response.data["type"] == "mbox"
+        mock_task.assert_called_once()
 
-            # Run the task synchronously for testing with a task_id
-            task_result = process_mbox_file_task.apply(
-                kwargs={"file_content": file_content, "recipient_id": str(mailbox2.id)},
-                task_id="fake-task-id-2",
-            ).get()
-            assert task_result["status"] == "SUCCESS"
-            assert task_result["result"]["success_count"] == 3
-            assert task_result["result"]["failure_count"] == 0
+        # Run the task synchronously for testing with a task_id
+        task_result = process_mbox_file_task.apply(
+            kwargs={"file_content": file_content, "recipient_id": str(mailbox2.id)},
+            task_id="fake-task-id-2",
+        ).get()
+        assert task_result["status"] == "SUCCESS"
+        assert task_result["result"]["success_count"] == 3
+        assert task_result["result"]["failure_count"] == 0
 
-            # Verify no new messages were created
-            assert Message.objects.count() == 6
+        # Verify no new messages were created
+        assert Message.objects.count() == 6
 
-            # Verify both mailboxes have the message
-            assert (
-                Message.objects.filter(thread__accesses__mailbox=mailbox1).count() == 3
-            ), "Message not found in first mailbox"
-            assert (
-                Message.objects.filter(thread__accesses__mailbox=mailbox2).count() == 3
-            ), "Message not found in second mailbox"
+        # Verify both mailboxes have the message
+        assert (
+            Message.objects.filter(thread__accesses__mailbox=mailbox1).count() == 3
+        ), "Message not found in first mailbox"
+        assert (
+            Message.objects.filter(thread__accesses__mailbox=mailbox2).count() == 3
+        ), "Message not found in second mailbox"
 
 
 def test_import_duplicate_imap_messages(api_client, user, mailbox):
@@ -812,7 +791,7 @@ Test message body"""
 #         with open(mbox_file_path, "rb") as f:
 #             response = api_client.post(
 #                 IMPORT_FILE_URL,
-#                 {"import_file": f, "recipient": str(mailbox.id)},
+#                 {"blob": f, "recipient": str(mailbox.id)},
 #                 format="multipart",
 #             )
 #             assert response.status_code == 202
@@ -859,7 +838,7 @@ Test message body"""
 #         with open(mbox_file_path, "rb") as f:
 #             response = api_client.post(
 #                 IMPORT_FILE_URL,
-#                 {"import_file": f, "recipient": str(mailbox.id)},
+#                 {"blob": f, "recipient": str(mailbox.id)},
 #                 format="multipart",
 #             )
 #             assert response.status_code == 202
@@ -924,7 +903,7 @@ Test message body"""
 #         )
 #         response = api_client.post(
 #             IMPORT_FILE_URL,
-#             {"import_file": new_mbox_file, "recipient": str(mailbox.id)},
+#             {"blob": new_mbox_file, "recipient": str(mailbox.id)},
 #             format="multipart",
 #         )
 #         assert response.status_code == 202

@@ -1,5 +1,7 @@
 """Admin classes and registrations for core app."""
 
+import hashlib
+
 from django.contrib import admin, messages
 from django.contrib.auth import admin as auth_admin
 from django.shortcuts import redirect
@@ -323,8 +325,19 @@ class MessageAdmin(admin.ModelAdmin):
             if form.is_valid():
                 import_file = request.FILES["import_file"]
                 recipient = form.cleaned_data["recipient"]
+
+                # Create a Blob from the uploaded file
+                file_content = import_file.read()
+                blob = models.Blob.objects.create(
+                    raw_content=file_content,
+                    type=import_file.content_type,
+                    size=import_file.size,
+                    mailbox=recipient,
+                    sha256=hashlib.sha256(file_content).hexdigest(),
+                )
+
                 success, _response_data = ImportService.import_file(
-                    file=import_file,
+                    file=blob,
                     recipient=recipient,
                     user=request.user,
                     request=request,
@@ -439,3 +452,12 @@ class LabelAdmin(admin.ModelAdmin):
         if not obj.slug or (change and "name" in form.changed_data):
             obj.slug = slugify(obj.name.replace("/", "-"))
         super().save_model(request, obj, form, change)
+
+
+@admin.register(models.Blob)
+class BlobAdmin(admin.ModelAdmin):
+    """Admin class for the Blob model"""
+
+    list_display = ("id", "mailbox", "type", "size", "created_at")
+    search_fields = ("mailbox__local_part", "mailbox__domain__name")
+    list_filter = ("mailbox", "type")

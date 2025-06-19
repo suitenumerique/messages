@@ -107,7 +107,7 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
         # Check response
         assert response.status_code == 200
         assert (
-            f"Started processing EML file: test.eml for recipient {mailbox}"
+            f"Started processing EML file for recipient {mailbox}"
             in response.content.decode()
         )
         mock_delay.assert_called_once()
@@ -263,7 +263,7 @@ def test_upload_mbox_file(admin_client, mailbox, mbox_file):
     # Check response
     assert response.status_code == 200
     assert (
-        f"Started processing MBOX file: test.mbox for recipient {mailbox}"
+        f"Started processing MBOX file for recipient {mailbox}"
         in response.content.decode()
     )
     assert Message.objects.count() == 3

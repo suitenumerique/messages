@@ -1,8 +1,5 @@
 """Client serializers for the messages core app."""
 
-import mimetypes
-
-from django.core.exceptions import ValidationError
 from django.db.models import Count, Exists, OuterRef, Q
 
 from drf_spectacular.utils import extend_schema_field
@@ -527,46 +524,15 @@ class ImportBaseSerializer(serializers.Serializer):
 class ImportFileSerializer(ImportBaseSerializer):
     """Serializer for importing email files."""
 
-    import_file = serializers.FileField(
-        help_text="Email file to import (EML or MBOX format). Files without extensions (like 'mbox') are supported.",
+    blob = serializers.UUIDField(
+        help_text="UUID of the blob",
+        required=True,
     )
 
     recipient = serializers.UUIDField(
         help_text="UUID of the recipient mailbox",
         required=True,
     )
-
-    def validate_import_file(self, value):
-        """Validate the import file."""
-        # Register MIME types for email formats
-        mimetypes.add_type("message/rfc822", ".eml")
-        mimetypes.add_type("application/mbox", ".mbox")
-        mimetypes.add_type("text/plain", "mbox")  # For files without extension
-
-        content_type = value.content_type
-        if content_type not in [
-            "message/rfc822",
-            "application/mbox",
-            "text/plain",
-            "application/octet-stream",
-        ]:
-            raise ValidationError(
-                "Invalid file type. File must be an EML (message/rfc822) or MBOX "
-                "(application/mbox) file, or have a .eml or .mbox extension, or be named 'mbox'"
-            )
-
-        if content_type == "application/octet-stream":
-            if not (
-                value.name.endswith(".mbox")
-                or value.name.endswith(".eml")
-                or value.name == "mbox"
-            ):
-                raise ValidationError(
-                    "Invalid file type. File must be an EML (message/rfc822) or MBOX "
-                    "(application/mbox) file, or have a .eml or .mbox extension, or be named 'mbox' (text/plain)"
-                )
-
-        return value
 
 
 class ImportIMAPSerializer(ImportBaseSerializer):

@@ -1,6 +1,7 @@
 """Tests for the ImportService class."""
 
 import datetime
+import hashlib
 from unittest.mock import MagicMock, patch
 
 from django.contrib.messages.storage.fallback import FallbackStorage
@@ -11,7 +12,7 @@ import pytest
 
 from core import factories
 from core.enums import MailboxRoleChoices
-from core.models import Mailbox, MailDomain, Message
+from core.models import Blob, Mailbox, MailDomain, Message
 from core.services.import_service import ImportService
 from core.tasks import deliver_inbound_message, process_eml_file_task
 
@@ -80,13 +81,43 @@ def mbox_file(mbox_file_path):
         )
 
 
+@pytest.fixture
+def blob_mbox(mbox_file, mailbox):
+    """Create a blob from a file."""
+    # Read the file content once
+    file_content = mbox_file.read()
+    expected_hash = hashlib.sha256(file_content).hexdigest()
+    return Blob.objects.create(
+        raw_content=file_content,
+        type=mbox_file.content_type,
+        size=mbox_file.size,
+        mailbox=mailbox,
+        sha256=expected_hash,
+    )
+
+
+@pytest.fixture
+def blob_eml(eml_file, mailbox):
+    """Create a blob from a file."""
+    # Read the file content once
+    file_content = eml_file.read()
+    expected_hash = hashlib.sha256(file_content).hexdigest()
+    return Blob.objects.create(
+        raw_content=file_content,
+        type=eml_file.content_type,
+        size=eml_file.size,
+        mailbox=mailbox,
+        sha256=expected_hash,
+    )
+
+
 @pytest.mark.django_db
-def test_import_file_eml_by_superuser(admin_user, mailbox, eml_file, mock_request):
+def test_import_file_eml_by_superuser(admin_user, mailbox, blob_eml, mock_request):
     """Test successful EML file import for superuser."""
     with patch("core.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
-            file=eml_file,
+            file=blob_eml,
             recipient=mailbox,
             user=admin_user,
             request=mock_request,
@@ -99,7 +130,7 @@ def test_import_file_eml_by_superuser(admin_user, mailbox, eml_file, mock_reques
 
 
 @pytest.mark.django_db
-def test_import_file_eml_by_superuser_sync(admin_user, mailbox, eml_file):
+def test_import_file_eml_by_superuser_sync(admin_user, mailbox, blob_eml):
     """Test importing an EML file by a superuser synchronously."""
     # Mock deliver_inbound_message to always succeed
     original_deliver = deliver_inbound_message
@@ -119,7 +150,7 @@ def test_import_file_eml_by_superuser_sync(admin_user, mailbox, eml_file):
         ):
             # Run the import
             task_result = process_eml_file_task(
-                file_content=eml_file.read(),
+                file_content=blob_eml.raw_content,
                 recipient_id=str(mailbox.id),
             )
 
@@ -179,7 +210,7 @@ def test_import_file_eml_by_superuser_sync(admin_user, mailbox, eml_file):
 
 @pytest.mark.django_db
 def test_import_file_eml_by_user_with_access_task(
-    user, mailbox, eml_file, mock_request
+    user, mailbox, blob_eml, mock_request
 ):
     """Test successful EML file import by user with access on mailbox."""
     # Add access to mailbox
@@ -188,7 +219,7 @@ def test_import_file_eml_by_user_with_access_task(
     with patch("core.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
-            file=eml_file,
+            file=blob_eml,
             recipient=mailbox,
             user=user,
             request=mock_request,
@@ -202,7 +233,7 @@ def test_import_file_eml_by_user_with_access_task(
 
 @pytest.mark.django_db
 def test_import_file_eml_by_user_with_access_sync(
-    user, mailbox, eml_file, mock_request
+    user, mailbox, blob_eml, mock_request
 ):
     """Test importing an EML file by a user with access synchronously."""
     # Add access to mailbox
@@ -226,7 +257,7 @@ def test_import_file_eml_by_user_with_access_sync(
         ):
             # Run the import
             task_result = process_eml_file_task(
-                file_content=eml_file.read(),
+                file_content=blob_eml.raw_content,
                 recipient_id=str(mailbox.id),
             )
 
@@ -286,14 +317,14 @@ def test_import_file_eml_by_user_with_access_sync(
 
 @pytest.mark.django_db
 def test_import_file_mbox_by_superuser_task(
-    admin_user, mailbox, mbox_file, mock_request
+    admin_user, mailbox, blob_mbox, mock_request
 ):
     """Test successful MBOX file import by superuser."""
 
     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
-            file=mbox_file,
+            file=blob_mbox,
             recipient=mailbox,
             user=admin_user,
             request=mock_request,
@@ -307,7 +338,7 @@ def test_import_file_mbox_by_superuser_task(
 
 @pytest.mark.django_db
 def test_import_file_mbox_by_user_with_access_task(
-    user, mailbox, mbox_file, mock_request
+    user, mailbox, blob_mbox, mock_request
 ):
     """Test successful MBOX file import by user with access on mailbox."""
     # Add access to mailbox
@@ -316,7 +347,7 @@ def test_import_file_mbox_by_user_with_access_task(
     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
-            file=mbox_file,
+            file=blob_mbox,
             recipient=mailbox,
             user=user,
             request=mock_request,
@@ -330,11 +361,11 @@ def test_import_file_mbox_by_user_with_access_task(
 
 @pytest.mark.django_db
 def test_import_file_mbox_by_superuser_db_creation(
-    admin_user, mailbox, mbox_file, mock_request
+    admin_user, mailbox, blob_mbox, mock_request
 ):
     """Test file import for a superuser"""
     success, response_data = ImportService.import_file(
-        file=mbox_file,
+        file=blob_mbox,
         recipient=mailbox,
         user=admin_user,
         request=mock_request,
@@ -354,13 +385,13 @@ def test_import_file_mbox_by_superuser_db_creation(
     )
 
 
-def test_import_file_no_access(user, domain, eml_file, mock_request):
+def test_import_file_no_access(user, domain, blob_eml, mock_request):
     """Test file import without mailbox access."""
     # Create a mailbox the user does NOT have access to
     mailbox = Mailbox.objects.create(local_part="noaccess", domain=domain)
 
     success, response_data = ImportService.import_file(
-        file=eml_file,
+        file=blob_eml,
         recipient=mailbox,
         user=user,
         request=mock_request,
@@ -375,8 +406,14 @@ def test_import_file_no_access(user, domain, eml_file, mock_request):
 def test_import_file_invalid_file(admin_user, mailbox, mock_request):
     """Test import with an invalid file."""
     # Create an invalid file (not EML or MBOX)
-    invalid_file = SimpleUploadedFile(
-        "test.txt", b"Invalid file content", content_type="text/plain"
+    invalid_content = b"Invalid file content"
+    expected_hash = hashlib.sha256(invalid_content).hexdigest()
+    invalid_file = Blob.objects.create(
+        raw_content=invalid_content,
+        type="application/pdf",  # Invalid MIME type for email import
+        size=len(invalid_content),
+        mailbox=mailbox,
+        sha256=expected_hash,
     )
 
     with patch("core.tasks.process_eml_file_task.delay") as mock_task:
@@ -392,11 +429,7 @@ def test_import_file_invalid_file(admin_user, mailbox, mock_request):
 
         assert success is False
         assert "detail" in response_data
-        assert (
-            "Invalid file format. Only EML (message/rfc822) and MBOX "
-            "(application/mbox or text/plain) files are supported."
-            in response_data["detail"]
-        )
+        assert "Invalid file format" in response_data["detail"]
         assert Message.objects.count() == 0
 
 
@@ -410,16 +443,20 @@ def test_import_file_text_plain_mime_type(
         mbox_content = f.read()
 
     # Create a file with text/plain MIME type
-    mbox_file = SimpleUploadedFile(
-        "test.mbox",
-        mbox_content,
-        content_type="text/plain",
+    expected_hash = hashlib.sha256(mbox_content).hexdigest()
+    blob_mbox = Blob.objects.create(
+        raw_content=mbox_content,
+        type="text/plain",
+        size=len(mbox_content),
+        mailbox=mailbox,
+        sha256=expected_hash,
     )
 
     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
+        # The task should be called for text/plain files (they are now accepted as MBOX)
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
-            file=mbox_file,
+            file=blob_mbox,
             recipient=mailbox,
             user=admin_user,
             request=mock_request,
@@ -429,43 +466,6 @@ def test_import_file_text_plain_mime_type(
         assert response_data["type"] == "mbox"
         assert response_data["task_id"] == "fake-task-id"
         mock_task.assert_called_once()
-
-
-@pytest.mark.django_db
-def test_import_file_text_plain_wrong_extension(
-    admin_user, mailbox, mock_request, mbox_file_path
-):
-    """Test import of file with text/plain MIME type but wrong extension."""
-    # Read the mbox file content
-    with open(mbox_file_path, "rb") as f:
-        mbox_content = f.read()
-
-    # Create a file with text/plain MIME type but wrong extension
-    invalid_file = SimpleUploadedFile(
-        "test.txt",  # Wrong extension
-        mbox_content,
-        content_type="text/plain",
-    )
-
-    with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
-        # The task should not be called for invalid files
-        mock_task.assert_not_called()
-
-        success, response_data = ImportService.import_file(
-            file=invalid_file,
-            recipient=mailbox,
-            user=admin_user,
-            request=mock_request,
-        )
-
-        assert success is False
-        assert "detail" in response_data
-        assert (
-            "Invalid file format. Only EML (message/rfc822) and MBOX "
-            "(application/mbox or text/plain) files are supported."
-            in response_data["detail"]
-        )
-        assert Message.objects.count() == 0
 
 
 def test_import_imap_by_superuser(admin_user, mailbox, mock_request):
