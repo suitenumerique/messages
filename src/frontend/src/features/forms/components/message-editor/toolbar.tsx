@@ -1,7 +1,10 @@
 import { BasicTextStyleButton, BlockTypeSelect, CreateLinkButton, FormattingToolbar } from "@blocknote/react";
-import { AIToolbarButton } from "@blocknote/xl-ai";
+import { Button } from "@openfun/cunningham-react";
+import { DropdownMenu } from "@gouvfr-lasuite/ui-kit";
+import { useState } from "react";
 
 const MessageEditorToolbar = () => {
+    const [reformulateDropdownIsOpen, setReformulateDropdownIsOpen] = useState(false);
     return (
         <FormattingToolbar>
             <BlockTypeSelect key={"blockTypeSelect"} />
@@ -26,7 +29,15 @@ const MessageEditorToolbar = () => {
                 basicTextStyle={"code"}
             />
             <CreateLinkButton key={"createLinkButton"} />
-            <AIToolbarButton />
+            <DropdownMenu
+            isOpen={reformulateDropdownIsOpen}
+            onOpenChange={setReformulateDropdownIsOpen}
+            options={[{
+                label: "Reformuler poliment",
+                value: "reformulate-politely",
+            }]}>
+                <Button icon={<span className="material-icons">auto_awesome</span>} size="small" color="tertiary-text" onClick={(event) => event.preventDefault()} />
+            </DropdownMenu>
         </FormattingToolbar>
     )
 }
