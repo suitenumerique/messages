@@ -60,7 +60,7 @@ export const importFileCreate = async (
   options?: RequestInit,
 ): Promise<importFileCreateResponse> => {
   const formData = new FormData();
-  formData.append(`import_file`, importFileRequest.import_file);
+  formData.append(`blob`, importFileRequest.blob);
   formData.append(`recipient`, importFileRequest.recipient);
 
   return fetchAPI<importFileCreateResponse>(getImportFileCreateUrl(), {

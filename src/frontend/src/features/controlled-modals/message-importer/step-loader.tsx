@@ -61,7 +61,7 @@ export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => 
                     }
                 </strong>
             </p>
-            {progress && <p>{t('message_importer_modal.progression_details')}</p>}
+            {!!progress && <p>{t('message_importer_modal.progression_details')}</p>}
         </div>
     );
 }

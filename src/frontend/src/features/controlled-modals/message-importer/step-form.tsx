@@ -6,7 +6,7 @@ import { Button } from "@openfun/cunningham-react";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/router";
-import { importFileCreateResponse202, importImapCreateResponse202, useImportFileCreate, useImportImapCreate } from "@/features/api/gen";
+import { BlobUploadCreate201, importFileCreateResponse202, importImapCreateResponse202, useBlobUploadCreate, useImportFileCreate, useImportImapCreate } from "@/features/api/gen";
 import MailHelper from "@/features/utils/mail-helper";
 import { RhfInput } from "../../forms/components/react-hook-form";
 import { RhfFileUploader } from "../../forms/components/react-hook-form/rhf-file-uploader";
@@ -60,6 +60,14 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
             onSuccess: (data) => onSuccess((data as importImapCreateResponse202).data.task_id!)
         }
     });
+    const blobMutation = useBlobUploadCreate({
+        mutation: {
+            meta: { noGlobalError: true },
+            onError: () => {
+                onError('message_importer_modal.api_errors.default');
+            },
+        }
+    });
     const archiveMutation = useImportFileCreate({
         mutation: {
             meta: { noGlobalError: true },
@@ -69,7 +77,7 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
             onSuccess: (data) => onSuccess((data as importFileCreateResponse202).data.task_id!)
         }
     });
-    const isPending = imapMutation.isPending || archiveMutation.isPending;
+    const isPending = imapMutation.isPending || archiveMutation.isPending || blobMutation.isPending;
 
     const defaultValues = {
         imap_server: '',
@@ -100,7 +108,7 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
     const discoverImapServer:FocusEventHandler<HTMLInputElement> = async () => {
         const email = form.getValues("username")!;
         const result = usernameSchema.safeParse(email);
-        
+
         if (!email || !result.success) return;
         const imapConfig = MailHelper.getImapConfigFromEmail(email);
         const emailDomain = MailHelper.getDomainFromEmail(email);
@@ -139,8 +147,12 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
      * Exec the mutation to import emails from an Archive file.
      */
     const importFromArchive = async (file: File) => {
+        const blob = await blobMutation.mutateAsync(
+            { data: { file },
+            mailboxId: router.query.mailboxId as string
+        });
         const payload = {
-            import_file: file,
+            blob: (blob.data as BlobUploadCreate201).blobId,
             recipient: router.query.mailboxId as string,
         }
         return archiveMutation.mutateAsync({ data: payload });

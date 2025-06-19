@@ -10,8 +10,8 @@
  * Serializer for importing email files.
  */
 export interface ImportFileRequest {
-  /** Email file to import (EML or MBOX format). Files without extensions (like 'mbox') are supported. */
-  import_file: Blob;
+  /** UUID of the blob */
+  blob: string;
   /** UUID of the recipient mailbox */
   recipient: string;
 }

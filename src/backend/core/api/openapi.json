@@ -3680,10 +3680,10 @@
                 "type": "object",
                 "description": "Serializer for importing email files.",
                 "properties": {
-                    "import_file": {
+                    "blob": {
                         "type": "string",
-                        "format": "binary",
-                        "description": "Email file to import (EML or MBOX format). Files without extensions (like 'mbox') are supported."
+                        "format": "uuid",
+                        "description": "UUID of the blob"
                     },
                     "recipient": {
                         "type": "string",
@@ -3692,7 +3692,7 @@
                     }
                 },
                 "required": [
-                    "import_file",
+                    "blob",
                     "recipient"
                 ]
             },
