@@ -109,8 +109,7 @@
           "subject_required": "Subject is required.",
           "mailbox_required": "Mailbox is required.",
           "invalid_recipient": "The email {{email}} is invalid.",
-          "messageEditorHtml": "You must write a message.",
-          "missing_attachments": "It seems you are talking about some attachments in your message but you didn't add them to the message."
+          "messageEditorHtml": "You must write a message."
         },
         "success": {
           "saved": "Draft saved",
@@ -340,8 +339,7 @@
           "subject_required": "Vous devez saisir un sujet.",
           "mailbox_required": "Vous devez choisir une boîte d'envoi.",
           "invalid_recipient": "Le courriel {{email}} est invalide.",
-          "messageEditorHtml": "Vous devez écrire un message.",
-          "missing_attachments": "Il semble que vous parliez de pièces jointes dans votre message mais vous n'en avez pas ajouté aucune dans votre message."
+          "messageEditorHtml": "Vous devez écrire un message."
         },
         "success": {
           "saved": "Brouillon sauvegardé.",
