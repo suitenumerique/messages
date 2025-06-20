@@ -7,7 +7,7 @@ import { Icon } from "@gouvfr-lasuite/ui-kit";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Modal, ModalSize } from "@openfun/cunningham-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
@@ -48,8 +48,9 @@ export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
     const createMutation = useLabelsCreate();
     const updateMutation = useLabelsUpdate();
     const { selectedMailbox } = useMailboxContext();
-    const searchParams = useSearchParams();
     const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
     const queryClient = useQueryClient();
     const labelsQuery = useLabelsList({ mailbox_id: selectedMailbox!.id })
     const flattenLabels = useMemo(() => {
@@ -70,10 +71,11 @@ export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
         )).flat();
       }
 
-      return flatten((labelsQuery.data.data)).filter((option) => !option.value.startsWith(label?.name ?? ''));
+      return flatten((labelsQuery.data.data)).filter(
+        // Do not display current label and its children as options to nest the current label
+        (option) => !label || !option.value.startsWith(label.name)
+      );
     }, [labelsQuery.data]);
-
-
 
     const handleClose = () => {
       form.reset();
@@ -97,7 +99,7 @@ export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
           if (searchParams.get('label_slug') === label?.slug) {
             const newSearchParams = new URLSearchParams(searchParams.toString());
             newSearchParams.set('label_slug', (data.data as Label).slug);
-            router.push(`/mailbox/${selectedMailbox?.id}?${newSearchParams.toString()}`);
+            router.push(`${pathname}?${newSearchParams.toString()}`);
           }
           handleClose();
         }

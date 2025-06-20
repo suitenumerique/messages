@@ -4,13 +4,15 @@ import { DropdownMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import { Button, useModal } from "@openfun/cunningham-react";
 import clsx from "clsx";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/features/ui/components/badge";
 import { LabelModal } from "../label-form-modal";
 import { useLayoutContext } from "@/features/layouts/components/main";
+import router from "next/router";
+import { MAILBOX_FOLDERS } from "../../../mailbox-list";
 
 type LabelItemProps = TreeLabel & {
     level?: number;
@@ -34,12 +36,33 @@ export  const LabelItem = ({ level = 0, ...label }: LabelItemProps) => {
       }
     });
     const unreadCount = (stats?.data as ThreadsStatsRetrieve200)?.all_unread ?? 0;
-    const [isExpanded, setIsExpanded] = useState(false);
     const { closeLeftPanel } = useLayoutContext();
+    const pathname = usePathname();
     const searchParams = useSearchParams();
     const { t } = useTranslation();
     const isActive = searchParams.get('label_slug') === label.slug;
-    const deleteMutation = useLabelsDestroy();
+    const hasActiveChild = searchParams.get('label_slug')?.startsWith(`${label.slug}-`);
+    const [isExpanded, setIsExpanded] = useState(hasActiveChild);
+    const goToDefaultFolder = () => {
+      const defaultFolder = MAILBOX_FOLDERS[0];
+      router.push(pathname + `?${new URLSearchParams(defaultFolder.filter).toString()}`);
+  }
+    const deleteMutation = useLabelsDestroy({
+      mutation: {
+        onSuccess: () => {
+          if (searchParams.get('label_slug') === label.slug ||
+              searchParams.get('label_slug')?.startsWith(`${label.slug}-`)) {
+            const newSearchParams = new URLSearchParams(searchParams.toString());
+            newSearchParams.delete('label_slug');
+            if (newSearchParams.toString()) {
+              router.push(`${pathname}?${newSearchParams.toString()}`);
+            } else {
+              goToDefaultFolder();
+            }
+          }
+        },
+      },
+    });
     const queryClient = useQueryClient();
     const labelsQuery = useLabelsList({ mailbox_id: selectedMailbox!.id })
     const hasChildren = label.children && label.children.length > 0;
@@ -51,7 +74,7 @@ export  const LabelItem = ({ level = 0, ...label }: LabelItemProps) => {
     return (
       <>
         <Link
-          href={`/mailbox/${selectedMailbox?.id}?${queryParams}`}
+          href={`${pathname}?${queryParams}`}
           onClick={closeLeftPanel}
           className={clsx("label-item", isActive && "label-item--active")}
           style={{ paddingLeft: `${level * 1}rem` }}
