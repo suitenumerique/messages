@@ -23,7 +23,7 @@ type IMPORT_STEP = 'idle' | 'importing' | 'completed';
  * - completed : Importing completed once the task is SUCCESS
  */
 export const ModalMessageImporter = () => {
-    const { invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
+    const { invalidateThreadMessages, invalidateThreadsStats, invalidateLabels } = useMailboxContext();
     const { t } = useTranslation();
     const [step, setStep] = useState<IMPORT_STEP>('idle');
     const [error, setError] = useState<string | null>(null);
@@ -44,6 +44,7 @@ export const ModalMessageImporter = () => {
         await Promise.all([
             invalidateThreadMessages(),
             invalidateThreadsStats(),
+            invalidateLabels(),
         ]);
     }
 

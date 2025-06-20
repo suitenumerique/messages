@@ -1,5 +1,5 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo } from "react";
-import { Mailbox, PaginatedMessageList, PaginatedThreadList, Thread, useMailboxesList, useMessagesList, useThreadsListInfinite } from "../api/gen";
+import { Mailbox, PaginatedMessageList, PaginatedThreadList, Thread, useLabelsList, useMailboxesList, useMessagesList, useThreadsListInfinite } from "../api/gen";
 import { FetchStatus, QueryStatus, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import usePrevious from "@/hooks/use-previous";
@@ -28,6 +28,7 @@ type MailboxContextType = {
     loadNextThreads: () => Promise<unknown>;
     invalidateThreadMessages: () => void;
     invalidateThreadsStats: () => void;
+    invalidateLabels: () => void;
     refetchMailboxes: () => void;
     isPending: boolean;
     queryStates: {
@@ -52,6 +53,7 @@ const MailboxContext = createContext<MailboxContextType>({
     unselectThread: () => {},
     invalidateThreadMessages: () => {},
     invalidateThreadsStats: () => {},
+    invalidateLabels: () => {},
     refetchMailboxes: () => {},
     isPending: false,
     queryStates: {
@@ -163,6 +165,12 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         }
     });
 
+    const labelsQuery = useLabelsList({ mailbox_id: selectedMailbox?.id ?? '' }, {
+        query: {
+            enabled: !!selectedMailbox,
+        },
+    });
+
     /**
      * Invalidate the threads and messages queries to refresh the data
      */
@@ -180,6 +188,10 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
 
     const invalidateThreadsStats = async () => {
         await queryClient.invalidateQueries({ queryKey: ['threads', 'stats', selectedMailbox?.id] });
+    }
+
+    const invalidateLabels = async () => {
+        await queryClient.invalidateQueries({ queryKey: labelsQuery.queryKey });
     }
 
     /**
@@ -201,6 +213,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         loadNextThreads: threadsQuery.fetchNextPage,
         invalidateThreadMessages,
         invalidateThreadsStats,
+        invalidateLabels,
         refetchMailboxes: mailboxQuery.refetch,
         isPending: mailboxQuery.isPending || threadsQuery.isPending || messagesQuery.isPending,
         queryStates: {
@@ -216,7 +229,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
                 isFetching: threadsQuery.isFetching,
                 isFetchingNextPage: threadsQuery.isFetchingNextPage,
                 isLoading: threadsQuery.isLoading,
-                
+
             },
             messages: {
                 status: messagesQuery.status,
