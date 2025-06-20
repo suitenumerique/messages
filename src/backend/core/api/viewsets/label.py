@@ -34,7 +34,7 @@ class LabelViewSet(
 
     serializer_class = serializers.LabelSerializer
     permission_classes = [permissions.IsAuthenticated]
-    pagination_class=None
+    pagination_class = None
     lookup_field = "pk"
     lookup_url_kwarg = "pk"
 

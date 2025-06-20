@@ -174,10 +174,9 @@ class TreeLabelSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "slug", "color", "display_name", "children"]
         read_only_fields = fields
 
-    @extend_schema_field({
-        "type": "array",
-        "items": {"$ref": "#/components/schemas/TreeLabel"}
-    })
+    @extend_schema_field(
+        {"type": "array", "items": {"$ref": "#/components/schemas/TreeLabel"}}
+    )
     def get_children(self, instance):
         """
         Fake method just to make the OpenAPI schema valid and work well with
