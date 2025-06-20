@@ -26,8 +26,8 @@
         }
       },
       "home": {
-        "title": "Messaging",
-        "subtitle": "Manage your professional messages securely."
+        "title": "Simple and intuitive messaging",
+        "subtitle": "Send and receive your messages in an instant."
       },
       "folders": {
         "inbox": "Inbox",
@@ -253,8 +253,8 @@
         }
       },
       "home": {
-        "title": "Messages",
-        "subtitle": "Gérer vos messages professionnels en toute sécurité."
+        "title": "Une messagerie simple et intuitive",
+        "subtitle": "Envoyez et recevez vos messages en un instant."
       },
       "folders": {
         "inbox": "Boîte de réception",
