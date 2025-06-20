@@ -5,14 +5,23 @@ import { useTranslation } from "react-i18next";
 import Bar from "@/features/ui/components/bar";
 import { Button, Tooltip } from "@openfun/cunningham-react";
 import useRead from "@/features/message/use-read";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
+import { MAILBOX_FOLDERS } from "../mailbox-panel/components/mailbox-list";
 
 export const ThreadPanel = () => {
     const { threads, queryStates, refetchMailboxes, unselectThread, loadNextThreads, selectedThread } = useMailboxContext();
     const { markAsRead, markAsUnread } = useRead();
+    const searchParams = useSearchParams();
     const { t } = useTranslation();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const loaderRef = useRef<HTMLDivElement>(null);
+    const showImportButton = useMemo(() => {
+        // Only show import button if there are no threads in inbox or all messages folders
+        if (threads?.results.length) return false;
+        const importableMessageFolders = MAILBOX_FOLDERS.filter((folder) => ['inbox', 'all_messages'].includes(folder.id));
+        return importableMessageFolders.some((folder) => searchParams.toString() === new URLSearchParams(folder.filter).toString());
+    }, [threads?.results, searchParams]);
 
     const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
         const target = entries[0];
@@ -55,7 +64,9 @@ export const ThreadPanel = () => {
                 <div>
                     <span className="material-icons">mail</span>
                     <p>{t('no_threads')}</p>
-                    <Button href="#modal-message-importer">{t('actions.import_messages')}</Button>
+                    {showImportButton && (
+                        <Button href="#modal-message-importer">{t('actions.import_messages')}</Button>
+                    )}
                 </div>
             </div>
         );
