@@ -151,10 +151,10 @@ export const MessageForm = ({
                 toast.dismiss(DRAFT_TOAST_ID);
             },
             onSuccess: async (response) => {
-                const taskId = (response as sendCreateResponse200).data.task_id;
+                const data = (response as sendCreateResponse200).data
+                const taskId = data.task_id;
                 addQueuedMessage(taskId);
                 onSuccess?.();
-                onClose?.();
             }
         }
     });
@@ -195,7 +195,6 @@ export const MessageForm = ({
                     unselectThread();
                     addToast(
                         <ToasterItem type="info">
-                            
                             <span>{t("message_form.success.draft_deleted")}</span>
                         </ToasterItem>
                     );
@@ -239,7 +238,7 @@ export const MessageForm = ({
     const saveDraft = async (data: MessageFormFields) => {
         if (Object.keys(form.formState.dirtyFields).length === 0) return draft;
 
-        const subject = parentMessage 
+        const subject = parentMessage
             ? MailHelper.prefixSubjectIfNeeded(parentMessage.subject)
             : data.subject;
 
@@ -254,7 +253,7 @@ export const MessageForm = ({
             attachments: form.getValues('attachments'),
         }
         let response;
-        
+
         if (!draft) {
             response = await draftCreateMutation.mutateAsync({
                 data: payload,
@@ -268,7 +267,7 @@ export const MessageForm = ({
                 data: payload,
             });
         }
-        
+
         const newDraft = response.data as Message;
         setDraft(newDraft);
         return newDraft;
@@ -291,7 +290,7 @@ export const MessageForm = ({
 
         const draft = await saveDraft(data);
 
-        if (!draft) { 
+        if (!draft) {
             setPendingSubmit(false);
             return;
         }
@@ -361,9 +360,9 @@ export const MessageForm = ({
                     />
                 </div>
                 <div className="form-field-row">
-                    <RhfInput 
+                    <RhfInput
                         name="to"
-                        label={t("thread_message.to")} 
+                        label={t("thread_message.to")}
                         icon={<span className="material-icons">group</span>}
                         fullWidth
                         text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? t(form.formState.errors.to.message as string) : t("message_form.helper_text.recipients")}
@@ -375,9 +374,9 @@ export const MessageForm = ({
 
                 {showCCField && (
                     <div className="form-field-row">
-                        <RhfInput 
+                        <RhfInput
                             name="cc"
-                            label={t("thread_message.cc")} 
+                            label={t("thread_message.cc")}
                             icon={<span className="material-icons">group</span>}
                             text={form.formState.errors.cc && !Array.isArray(form.formState.errors.cc) ? t(form.formState.errors.cc.message as string) : t("message_form.helper_text.recipients")}
                             textItems={Array.isArray(form.formState.errors.cc) ? form.formState.errors.cc?.map((error, index) => t(error!.message as string, { email: form.getValues('cc')?.split(',')[index] })) : []}
@@ -390,11 +389,11 @@ export const MessageForm = ({
                     <div className="form-field-row">
                         <RhfInput
                             name="bcc"
-                            label={t("thread_message.bcc")} 
+                            label={t("thread_message.bcc")}
                             icon={<span className="material-icons">visibility_off</span>}
                             text={form.formState.errors.bcc && !Array.isArray(form.formState.errors.bcc) ? t(form.formState.errors.bcc.message as string) : t("message_form.helper_text.recipients")}
                             textItems={Array.isArray(form.formState.errors.bcc) ? form.formState.errors.bcc?.map((error, index) => t(error!.message as string, { email: form.getValues('bcc')?.split(',')[index] })) : []}
-                            fullWidth 
+                            fullWidth
                         />
                     </div>
                 )}
@@ -429,9 +428,9 @@ export const MessageForm = ({
                         {t("actions.send")}
                     </Button>
                     {!draft && onClose && (
-                        <Button 
-                            type="button" 
-                            color="secondary" 
+                        <Button
+                            type="button"
+                            color="secondary"
                             onClick={onClose}
                     >
                             {t("actions.cancel")}
@@ -439,9 +438,9 @@ export const MessageForm = ({
                     )}
                     {
                         draft && (
-                            <Button 
-                                type="button" 
-                                color="secondary" 
+                            <Button
+                                type="button"
+                                color="secondary"
                                 onClick={() => handleDeleteMessage(draft.id)}
                             >
                                 {t("actions.delete_draft")}
@@ -452,4 +451,4 @@ export const MessageForm = ({
             </form>
         </FormProvider>
     );
-}; 
+};

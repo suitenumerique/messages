@@ -4,21 +4,25 @@ import { useRouter } from "next/router";
 import { useTranslation } from "react-i18next";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
 
 const NewMessageFormPage = () => {
     const { t } = useTranslation();
     const router = useRouter();
-    const { queryStates } = useMailboxContext();
+    const { queryStates, selectedMailbox } = useMailboxContext();
 
     /**
      * Go back to the previous page or to
      * the mailbox list if there is no previous page in the history
-     */ 
+     */
     const handleClose = () => {
         if (window.history.length > 1) {
             router.back();
-        } else {
+        } else if (!selectedMailbox) {
             router.push('/');
+        } else {
+            const defaultFolder = MAILBOX_FOLDERS[0];
+            router.push(`/mailbox/${selectedMailbox.id}` + `?${new URLSearchParams(defaultFolder.filter).toString()}`);
         }
     }
 
@@ -35,7 +39,7 @@ const NewMessageFormPage = () => {
             <h1>{t("new_message_form.title")}</h1>
             <MessageForm
                 showSubject={true}
-                onSuccess={() => router.push('/')}
+                onSuccess={handleClose}
                 onClose={handleClose}
             />
         </div>
