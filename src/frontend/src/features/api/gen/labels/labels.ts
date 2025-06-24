@@ -36,7 +36,7 @@ import { fetchAPI } from "../../fetch-api";
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
- * 
+ *
         List all labels accessible to the user in a hierarchical structure.
 
         The response returns labels in a tree structure where:
@@ -45,7 +45,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
         - The hierarchy is determined by the label's name (e.g., "Inbox/Important" is a child of "Inbox")
 
         You can filter labels by mailbox using the mailbox_id query parameter.
-        
+
  */
 export type labelsListResponse200 = {
   data: TreeLabel[];

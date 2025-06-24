@@ -10,6 +10,7 @@ import { useSearchParams } from "next/navigation"
 import { Banner } from "@/features/ui/components/banner"
 import { Button } from "@openfun/cunningham-react"
 import { useTranslation } from "react-i18next"
+import { ThreadViewLabelsList } from "./components/thread-view-labels-list"
 
 type MessageWithDraftChild = Message & {
     draft_message?: Message;
@@ -120,6 +121,11 @@ export const ThreadView = () => {
         <div className="thread-view" ref={rootRef}>
             <ActionBar canUndelete={isThreadTrashed} />
             <div className="thread-view__messages-list">
+                {
+                    selectedThread!.labels.length > 0 && (
+                        <ThreadViewLabelsList labels={selectedThread!.labels} />
+                    )
+                }
                 {filteredMessages!.map((message) => {
                     const isLatest = latestMessage?.id === message.id;
                     const isUnread = message.is_unread;

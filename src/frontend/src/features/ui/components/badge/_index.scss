@@ -1,6 +1,6 @@
 .badge {
     font-size: var(--c--theme--font--sizes--xs);
-    line-height: 1rem;
+    line-height: 1;
     display: flex;
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
@@ -8,4 +8,8 @@
     color: var(--c--theme--colors--primary-400);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+    align-items: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }

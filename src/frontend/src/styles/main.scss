@@ -18,6 +18,7 @@
 @use "./../features/ui/components/breadcrumbs";
 @use "./../features/ui/components/toaster";
 @use "./../features/ui/components/badge";
+@use "./../features/ui/components/label-badge";
 @use "./../features/ui/components/info-row";
 @use "./../features/ui/components/bar";
 @use "./../features/ui/components/banner";
@@ -35,6 +36,7 @@
 @use "./../features/layouts/components/thread-view/components/message-reply-form";
 @use "./../features/layouts/components/thread-view/components/thread-attachment-list";
 @use "./../features/layouts/components/thread-view/components/thread-accesses-widget";
+@use "./../features/layouts/components/thread-view/components/thread-labels-widget";
 @use "./../features/forms/components/message-form";
 @use "./../features/forms/components/message-editor";
 @use "./../features/forms/components/search-input";

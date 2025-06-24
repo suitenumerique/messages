@@ -61,7 +61,8 @@
         "close": "Close",
         "import": "Import",
         "import_messages": "Import messages",
-        "show": "Show"
+        "show": "Show",
+        "add_label": "Add label"
       },
       "tooltips": {
         "has_attachments": "This email has an attachment",
@@ -75,6 +76,15 @@
           "message_one": "{{count}} message of this thread has been deleted.",
           "message_other": "{{count}} messages of this thread have been deleted.",
           "message_trashed": "This message has been deleted."
+        },
+        "action-bar": {
+          "loading-labels": "Loading labels..."
+        }
+      },
+      "thread-labels-widget": {
+        "popup": {
+          "title": "Add labels",
+          "search_placeholder": "Search a label"
         }
       },
       "thread_message": {
@@ -292,7 +302,8 @@
         "close": "Fermer",
         "import": "Importer",
         "import_messages": "Importer des messages",
-        "show": "Afficher"
+        "show": "Afficher",
+        "add_label": "Ajouter un libellé"
       },
       "tooltips": {
         "has_attachments": "Cette email contient une pièce jointe",
@@ -304,6 +315,15 @@
           "message_one": "{{count}} message de cette conversation a été supprimé.",
           "message_other": "{{count}} messages de cette conversation ont été supprimés.",
           "message_trashed": "Ce message a été supprimé."
+        },
+        "action-bar": {
+          "loading-labels": "Chargement des libellés..."
+        }
+      },
+      "thread-labels-widget": {
+        "popup": {
+          "title": "Ajouter des libellés",
+          "search_placeholder": "Rechercher un libellé"
         }
       },
       "thread_message": {

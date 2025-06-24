@@ -20,7 +20,7 @@ type ThreadAccessesWidgetProps = {
  * - Prevent deletion if there is only one editor
  * - Ask user confirmation before downgrading its access that remove its write right
  * - In the ShareModal, identify the authenticated user (suffix the name with (You))
- * 
+ *
  * To achieve those developments, the `ui-kit` ShareModel must be improved.
  */
 export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) => {
@@ -117,8 +117,8 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
                     </div>
                 </Button>
             ) : (
-                <Button color="tertiary-text" size="small" icon={<span className="material-icons">supervised_user_circle</span>} onClick={() => setIsShareModalOpen(true)}>
-                    <p>{t('thread_accesses_widget.share_access')}</p>
+                <Button className="thread-accesses-widget__create-cta" color="tertiary-text" size="small" icon={<span className="material-icons">supervised_user_circle</span>} onClick={() => setIsShareModalOpen(true)}>
+                    {t('thread_accesses_widget.share_access')}
                     </Button>
                 )}
             </Tooltip>

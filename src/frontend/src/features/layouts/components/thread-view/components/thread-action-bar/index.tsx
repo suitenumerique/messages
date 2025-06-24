@@ -7,6 +7,7 @@ import { Button, Tooltip } from "@openfun/cunningham-react"
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ThreadAccessesWidget } from "../thread-accesses-widget";
+import { ThreadLabelsWidget } from "../thread-labels-widget";
 
 type ActionBarProps = {
     canUndelete: boolean;
@@ -22,18 +23,19 @@ export const ActionBar = ({ canUndelete }: ActionBarProps) => {
     return (
         <Bar className="thread-action-bar">
             <div className="thread-action-bar__left">
-            <Tooltip content={t('actions.close_thread')}>
-                <Button
-                    onClick={unselectThread}
-                    color="tertiary-text"
-                    aria-label={t('tooltips.close_thread')}
-                    size="small"
-                    icon={<span className="material-icons">close</span>}
-                />
+                <Tooltip content={t('actions.close_thread')}>
+                    <Button
+                        onClick={unselectThread}
+                        color="tertiary-text"
+                        aria-label={t('tooltips.close_thread')}
+                        size="small"
+                        icon={<span className="material-icons">close</span>}
+                    />
                 </Tooltip>
             </div>
             <div className="thread-action-bar__right">
                 <ThreadAccessesWidget accesses={selectedThread!.accesses} />
+                <ThreadLabelsWidget threadId={selectedThread!.id} selectedLabels={selectedThread!.labels} />
                 <Tooltip content={t('actions.mark_as_unread')}>
                     <Button
                         color="primary-text"
