@@ -125,7 +125,11 @@
           "upload_failed": "{{filename}} could not be uploaded.",
           "error_message": "The upload failed. Please try again.",
           "drop_attachments_here": "Drop your attachments here",
-          "or_drag_and_drop": "or drag and drop some files"
+          "or_drag_and_drop": "or drag and drop some files",
+          "helper_text": "Attachments must be less than {{size}}.",
+          "errors": {
+            "file_too_large": "The file is too large. It must be less than {{size}}."
+          }
         },
         "error": {
           "min_recipient": "At least one recipient is required.",
@@ -558,7 +562,11 @@
           "upload_failed": "{{filename}} n'a pas pu être téléversée.",
           "error_message": "Le téléversement a échoué. Veuillez réessayer.",
           "drop_attachments_here": "Déposez vos pièces jointes ici",
-          "or_drag_and_drop": "ou glissez-déposez des fichiers"
+          "or_drag_and_drop": "ou glissez-déposez des fichiers",
+          "helper_text": "Les pièces jointes ne peuvent pas excèder {{size}}.",
+          "errors": {
+            "file_too_large": "Le fichier est trop volumineux. Il doit être inférieur à {{size}}."
+          }
         },
         "error": {
           "min_recipient": "Au moins un destinataire est requis.",

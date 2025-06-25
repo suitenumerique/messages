@@ -38,6 +38,10 @@
     width: 100%;
 }
 
+.c__field--error > .attachment-uploader {
+    border-color: var(--c--theme--colors--danger-600);
+}
+
 .attachment-uploader {
     padding: var(--c--theme--spacings--base);
     background-color: var(--c--components--forms-input--background-color);

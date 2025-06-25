@@ -3,7 +3,7 @@ import { Attachment } from "@/features/api/gen/models";
 import { useBlobUploadCreate } from "@/features/api/gen/blob/blob";
 import { useMailboxContext } from '@/features/providers/mailbox';
 import { useFormContext } from 'react-hook-form';
-import { Button } from '@openfun/cunningham-react';
+import { Button, Field } from '@openfun/cunningham-react';
 import { AttachmentItem } from '@/features/layouts/components/thread-view/components/thread-attachment-list/attachment-item';
 import { useTranslation } from 'react-i18next';
 import { useDropzone } from 'react-dropzone';
@@ -15,6 +15,8 @@ interface AttachmentUploaderProps {
     initialAttachments?: readonly Attachment[];
     onChange: () => void;
 }
+
+const MAX_ATTACHMENT_SIZE = 24 * 1024 * 1024; // 25MB
 
 export const AttachmentUploader = ({
     initialAttachments = [],
@@ -28,11 +30,14 @@ export const AttachmentUploader = ({
     const [failedQueue, setFailedQueue] = useState<File[]>([]);
     const { mutateAsync: uploadBlob } = useBlobUploadCreate();
     const debouncedOnChange = useDebounceCallback(onChange, 1000);
-    const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    const { getRootProps, getInputProps, isDragActive, fileRejections } = useDropzone({
         onDrop: async (acceptedFiles) => {
             await Promise.all(acceptedFiles.map(uploadFile));
-        }
+        },
+        maxSize: MAX_ATTACHMENT_SIZE,
     });
+
+    const isFileTooLarge = fileRejections.some(rejection => rejection.errors[0].code === 'file-too-large');
 
     const addToUploadingQueue = (attachments: File[]) => setUploadingQueue(queue => [...queue, ...attachments]);
     const addToFailedQueue = (attachments: File[]) => setFailedQueue(queue => [...queue, ...attachments]);
@@ -107,6 +112,11 @@ export const AttachmentUploader = ({
     }, [attachments]);
 
     return (
+        <Field
+            text={isFileTooLarge ? t("message_form.attachments_uploader.errors.file_too_large", { size: AttachmentHelper.getFormattedSize(MAX_ATTACHMENT_SIZE, i18n.language) }) : t("message_form.attachments_uploader.helper_text", { size: AttachmentHelper.getFormattedSize(MAX_ATTACHMENT_SIZE, i18n.language) })}
+            state={isFileTooLarge ? 'error' : 'default'}
+            fullWidth
+        >
         <section className="attachment-uploader" {...getRootProps()} onClick={handleClick}>
             <DropZone isHidden={!isDragActive} />
             <div className="attachment-uploader__input">
@@ -148,7 +158,8 @@ export const AttachmentUploader = ({
                         ))}
                     </div>
                 </div>
-            )}
-        </section>
+                )}
+            </section>
+        </Field>
     );
 };
