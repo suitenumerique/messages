@@ -32,7 +32,8 @@
 
 Messages is the all-in-one collaborative inbox for [La Suite territoriale](https://suiteterritoriale.anct.gouv.fr/).
 
-<img src="/docs/assets/readme-screenshot.png" alt="Messages screenshot" width="100%" align="center"/>
+<img src="/docs/assets/readme-home.webp" alt="Messages home" width="100%" align="center"/>
+<img src="/docs/assets/readme-app.webp" alt="Messages labels" width="100%" align="center"/>
 
 ## Why use Messages ❓
 
@@ -141,7 +142,7 @@ You can then login with email `admin@admin.local` and password `admin`.
 ### OpenAPI client
 
 The frontend API client is generated with
-[Orval](https://orval.dev/). It consumes the OpenAPI schema generated from the backend through 
+[Orval](https://orval.dev/). It consumes the OpenAPI schema generated from the backend through
 [drf-spectacular](https://drf-spectacular.readthedocs.io/en/latest/).
 
 The JSON OpenAPI schema is located in
@@ -196,7 +197,7 @@ We'd love to hear your thoughts, and hear about your experiments, so come and sa
 
 This work is released under the MIT License (see [LICENSE](https://github.com/suitenumerique/messages/blob/main/LICENSE)).
 
-While Messages is a public-driven initiative, our license choice is an invitation for private sector actors to use, sell and contribute to the project. 
+While Messages is a public-driven initiative, our license choice is an invitation for private sector actors to use, sell and contribute to the project.
 
 
 ## Contributing 🙌
