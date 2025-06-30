@@ -34,11 +34,11 @@
         "all_messages": "All messages",
         "drafts": "Drafts",
         "sent": "Sent",
-        "trash": "Trash",
-        "archive": "Archives"
+        "trash": "Trash"
       },
       "actions": {
         "new_message": "New message",
+        "mark_as_important": "Mark as important",
         "edit": "Edit",
         "reply": "Reply",
         "reply_all": "Reply all",
@@ -62,7 +62,8 @@
         "import": "Import",
         "import_messages": "Import messages",
         "show": "Show",
-        "add_label": "Add label"
+        "add_label": "Add label",
+        "forward": "Forward"
       },
       "tooltips": {
         "has_attachments": "This email has an attachment",
@@ -108,6 +109,7 @@
         "attachments_uploader": {
           "input_label": "Add attachments",
           "upload_failed": "{{filename}} could not be uploaded.",
+          "error_message": "The upload failed. Please try again.",
           "drop_attachments_here": "Drop your attachments here",
           "or_drag_and_drop": "or drag and drop some files"
         },
@@ -131,7 +133,8 @@
         "sending": "Sending message...",
         "sent": "Message sent successfully",
         "error": "The message could not be sent.",
-        "not_found": "No sending message found."
+        "not_found": "No sending message found.",
+        "sent_too_long": "The message could not be sent. Please try again later."
       },
       "trash": {
         "message_deleted": "The message has been deleted",
@@ -153,10 +156,6 @@
             "subject": "Subject",
             "text": "Contains the words",
             "in": "In",
-            "folder_all_messages": "All messages",
-            "folder_sent": "Sent",
-            "folder_drafts": "Drafts",
-            "folder_trash": "Trash",
             "read": "Read",
             "unread": "Unread",
             "read_state": "Read state"
@@ -180,7 +179,8 @@
         "share_access": "Share access",
         "see_members": "See members of this conversation",
         "access_removed": "Thread access removed",
-        "last_editor_deletion_forbidden": "You cannot delete the last editor of this thread"
+        "last_editor_deletion_forbidden": "You cannot delete the last editor of this thread",
+        "last_editor_role_top_message": "You are the last editor of this thread, you cannot therefore modify your access."
       },
       "message_importer_modal": {
         "title": "Import your old messages",
@@ -188,6 +188,7 @@
         "progress_details": "You can close this window and continue using the app.",
         "progression_one": "{{count}} message imported on {{total}}",
         "progression_other": "{{count}} messages imported on {{total}}",
+        "import_completed": "Your messages have been imported successfully!",
         "api_errors": {
           "authentication_failed": "Authentication failed. Please check your credentials and ensure you have enabled IMAP connections in your account.",
           "default": "An error occurred while importing messages."
@@ -197,7 +198,6 @@
           "imap_import_description": "Indicate your old email address and your password.",
           "imap_import_need_imap_config": "Unfortunately, we were unable to guess the IMAP configuration of your old mailbox. Please indicate it via the fields below.",
           "upload_archive_file": "Upload an archive",
-          "imap_doc": "{{name}} configuration",
           "or": "Or",
           "imap_banner": {
             "helper": "To be able to import emails from an IMAP server, you may need to allow IMAP access on your account.",
@@ -213,6 +213,7 @@
             "archive_file_description": "Drag and drop an archive here"
           },
           "errors": {
+            "username_required": "The email address is required.",
             "username_invalid": "The email address is invalid.",
             "password_required": "The password is required.",
             "imap_server_required": "The IMAP server is required.",
@@ -235,7 +236,10 @@
             "parent_label": "Select a parent label"
           },
           "submit_create": "Create",
-          "submit_update": "Update"
+          "submit_update": "Update",
+          "errors": {
+            "name_required": "A name is required."
+          }
         }
       }
     }
@@ -309,7 +313,9 @@
       "tooltips": {
         "has_attachments": "Cette email contient une pièce jointe",
         "more_options": "Plus d'options",
-        "reply": "Répondre"
+        "mark_as_important": "Marquer comme important",
+        "reply": "Répondre",
+        "forward": "Transférer"
       },
       "thread-view": {
         "trashed-banner": {
@@ -411,7 +417,6 @@
         }
       },
       "roles": {
-        "you": "Vous",
         "viewer": "Lecteur",
         "editor": "Éditeur"
       },
