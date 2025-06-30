@@ -16,7 +16,8 @@
     "api:update": "orval --config ./orval.config.ts",
     "test": "vitest run",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "ts:check": "tsc --noEmit"
   },
   "dependencies": {
     "@blocknote/core": "0.32.0",

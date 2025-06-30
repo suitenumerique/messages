@@ -375,6 +375,10 @@ frontend-build: ## build the frontend locally
 	@$(COMPOSE) run --rm frontend-tools npm run build
 .PHONY: frontend-build
 
+frontend-ts-check: ## build the frontend locally
+	@$(COMPOSE) run --rm frontend-tools npm run ts:check
+.PHONY: frontend-ts-check
+
 frontend-lint: ## run the frontend linter
 	@$(COMPOSE) run --rm frontend-tools npm run lint
 .PHONY: frontend-lint
