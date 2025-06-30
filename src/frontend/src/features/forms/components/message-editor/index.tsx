@@ -19,7 +19,7 @@ type MessageEditorProps = FieldProps & {
 /**
  * A component that allows the user to edit a message in a BlockNote editor.
  * !!! This component must be used within a FormProvider (from react-hook-form)
- * 
+ *
  * Two hidden inputs (`htmlBody` and `textBody`) are rendered to store
  * the HTML and text content of the message. Their values are updated
  * when the editor is blurred. Those inputs must be used in the parent form
@@ -44,9 +44,9 @@ const MessageEditor = ({ blockNoteOptions, defaultValue, ...props }: MessageEdit
     }, [i18n.resolvedLanguage]);
 
     const handleChange = async () => {
-        form.setValue("messageEditorDraft", JSON.stringify(editor.document), { shouldDirty: true });
         const markdown = await editor.blocksToMarkdownLossy(editor.document);
         const html = await MailHelper.markdownToHtml(markdown);
+        form.setValue("messageEditorDraft", JSON.stringify(editor.document), { shouldDirty: true });
         form.setValue("messageEditorText", markdown);
         form.setValue("messageEditorHtml", html);
     }
