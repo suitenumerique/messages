@@ -32,7 +32,9 @@ export const ThreadItem = ({ thread }: ThreadItemProps) => {
         }))
         e.dataTransfer.effectAllowed = 'link'
         // Set the drag image
-        e.dataTransfer.setDragImage(dragPreviewContainer.current!, 40, 40)
+        if (dragPreviewContainer.current) {
+            e.dataTransfer.setDragImage(dragPreviewContainer.current, 40, 40)
+        }
     }
     const handleDragEnd = () => setIsDragging(false);
 
