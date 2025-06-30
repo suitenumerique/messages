@@ -1,4 +1,4 @@
-import { TreeLabel, ThreadsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useThreadsStatsRetrieve, ThreadsStatsRetrieve200 } from "@/features/api/gen";
+import { TreeLabel, ThreadsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useThreadsStatsRetrieve, ThreadsStatsRetrieve200, useLabelsAddThreadsCreate, useLabelsRemoveThreadsCreate } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { DropdownMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import { Button, useModal } from "@openfun/cunningham-react";
@@ -13,15 +13,18 @@ import { LabelModal } from "../label-form-modal";
 import { useLayoutContext } from "@/features/layouts/components/main";
 import router from "next/router";
 import { MAILBOX_FOLDERS } from "../../../mailbox-list";
+import { addToast, ToasterItem } from "@/features/ui/components/toaster";
+import { toast } from "react-toastify";
 
 type LabelItemProps = TreeLabel & {
     level?: number;
   }
 
 export  const LabelItem = ({ level = 0, ...label }: LabelItemProps) => {
-    const { selectedMailbox } = useMailboxContext();
+    const { selectedMailbox, invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const { isOpen, onClose, open } = useModal();
+    const [isDragOver, setIsDragOver] = useState(false);
     const queryParams = useMemo(() => {
       const params = new URLSearchParams({ label_slug: label.slug });
       return params.toString();
@@ -71,15 +74,82 @@ export  const LabelItem = ({ level = 0, ...label }: LabelItemProps) => {
       setIsExpanded(!isExpanded);
     }
 
+    const deleteThreadMutation = useLabelsRemoveThreadsCreate({
+      mutation: {
+        onSuccess: ( _, variables) => {
+          invalidateThreadMessages();
+          toast.dismiss(JSON.stringify(variables));
+        },
+      },
+    });
+
+    const addThreadMutation = useLabelsAddThreadsCreate({
+      mutation: {
+        onSuccess: ( _, variables) => {
+          // Invalidate relevant queries to refresh the UI
+          invalidateThreadMessages();
+          invalidateThreadsStats();
+
+          // Show success toast
+          addToast(
+            <ToasterItem
+              type="info"
+              actions={[{
+                label: t('actions.undo'), onClick: () => deleteThreadMutation.mutate(variables)
+              }]}
+            >
+              <span className="material-icons">label</span>
+              <span>{t('labels.thread_assigned', { label: label.name })}</span>
+            </ToasterItem>, {
+              toastId: JSON.stringify(variables),
+            }
+          );
+        },
+      },
+    });
+
+    const handleDragOver = (e: React.DragEvent<HTMLAnchorElement>) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'link';
+      setIsDragOver(true);
+    };
+
+    const handleDragLeave = () => {
+      setIsDragOver(false);
+    };
+
+    const handleDrop = (e: React.DragEvent<HTMLAnchorElement>) => {
+      e.preventDefault();
+      setIsDragOver(false);
+
+      try {
+        const data = JSON.parse(e.dataTransfer.getData('application/json'));
+        const canBeAssigned = !data.labels.includes(label.id);
+        if (data.type === 'thread' && data.threadId && canBeAssigned) {
+          addThreadMutation.mutate({
+            id: label.id,
+            data: {
+              thread_ids: [data.threadId],
+            },
+          });
+        }
+      } catch (error) {
+        console.error('Error parsing drag data:', error);
+      }
+    };
+
     return (
       <>
         <Link
           href={`${pathname}?${queryParams}`}
           onClick={closeLeftPanel}
-          className={clsx("label-item", isActive && "label-item--active")}
+          className={clsx("label-item", isActive && "label-item--active", isDragOver && "label-item--drag-over")}
           style={{ paddingLeft: `${level * 1}rem` }}
           data-focus-within={isDropdownOpen}
           title={label.display_name}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
         >
           <div className="label-item__column">
             <button

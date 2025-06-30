@@ -71,6 +71,7 @@ export default function Document() {
       <body>
         <Main />
         <NextScript />
+        <div id="portal-drag-preview" />
       </body>
     </Html>
   );

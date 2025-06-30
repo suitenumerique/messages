@@ -19,10 +19,17 @@
     border-color: var(--c--theme--colors--greyscale-300);
 }
 
-.thread-item--active {
+.thread-item.thread-item--active {
     background-color: var(--c--theme--colors--primary-100);
     color: var(--c--theme--colors--primary-600);
     border-color: var(--c--theme--colors--primary-300);
+}
+
+.thread-item.thread-item--dragging {
+    background-color: var(--c--theme--colors--primary-100) !important;
+    color: var(--c--theme--colors--primary-600);
+    border-color: var(--c--theme--colors--primary-300) !important;
+    border-style: dashed;
 }
 
 .thread-item__left,
@@ -162,4 +169,35 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+// Drag preview styles
+.thread-drag-preview {
+    background: white;
+    border: 2px solid var(--c--theme--colors--primary-500);
+    border-radius: 8px;
+    padding: var(--c--theme--spacings--xs);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    max-width: min(450px, 70vw);
+    min-width: 300px;
+    cursor: grabbing;
+
+    &__content {
+        display: flex;
+        flex-direction: column;
+    }
+
+    &__subject {
+        color: var(--c--theme--colors--greyscale-800);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    &__labels {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 4px;
+    }
 }

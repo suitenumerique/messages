@@ -30,6 +30,7 @@
     flex-shrink: 0;
 }
 
+.label-item--drag-over,
 .label-item:not(.label-item--active):hover,
 .label-item:not(.label-item--active):focus-within,
 .label-item:not(.label-item--active)[data-focus-within="true"]  {
