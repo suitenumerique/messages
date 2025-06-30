@@ -1,0 +1,34 @@
+.label-badge {
+    padding: 0.25rem 0.5rem;
+
+    &:has(a) {
+        padding: 0;
+    }
+
+    & > a {
+        text-decoration: none;
+        color: inherit;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+    }
+
+    &:has(.label-badge__remove-cta) {
+        padding-right: 0;
+        padding-block: 0
+    }
+
+    &__remove-cta {
+        color: currentColor;
+        background-color: transparent;
+        appearance: none;
+        border: none;
+        cursor: pointer;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+    }
+
+    & > a:hover,
+    &__remove-cta:hover {
+        background-color: rgba(0, 0, 0, 0.25);
+    }
+}

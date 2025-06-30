@@ -214,6 +214,9 @@
         "title": "Labels",
         "create": "Create a Label",
         "update": "Update a Label",
+        "thread_unassigned": "Label \"{{label}}\" removed from this conversation.",
+        "expand": "Expand",
+        "collapse": "Collapse",
         "form": {
           "fields": {
             "name": "Label name",
@@ -441,6 +444,9 @@
         "title": "Libellés",
         "create": "Créer un libellé",
         "update": "Modifier un libellé",
+        "thread_unassigned": "Libellé \"{{label}}\" retiré de cette conversation.",
+        "expand": "Développer",
+        "collapse": "Réduire",
         "form": {
           "fields": {
             "name": "Nom du libellé",

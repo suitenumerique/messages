@@ -86,6 +86,8 @@ export  const LabelItem = ({ level = 0, ...label }: LabelItemProps) => {
               onClick={handleClick}
               className='label-item__toggle'
               disabled={!hasChildren}
+              aria-expanded={isExpanded}
+              title={isExpanded ? t('labels.collapse') : t('labels.expand')}
             >
               <Icon type={IconType.OUTLINED} icon={isExpanded ? "expand_more" : "chevron_right"} name={isExpanded ? "expand_more" : "chevron_right"} />
               <span className="c__offscreen">{isExpanded ? t('labels.collapse') : t('labels.expand')}</span>
