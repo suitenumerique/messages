@@ -25,7 +25,7 @@ export type MainLayoutProps = {
 
 /**
  * This component is a copy of the MainLayout component from our ui-kit.
- * 
+ *
  * @TODO: Remove this and update the ui-kit to be able to render panels without header or
  * add props to fully override the header.
  */

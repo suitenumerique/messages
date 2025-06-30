@@ -20,6 +20,7 @@ import {
 import { errorToString } from "@/features/api/api-error";
 import Head from "next/head";
 import { useTranslation } from "react-i18next";
+import { Auth } from "@/features/auth";
 
 export type NextPageWithLayout<P = object, IP = P> = NextPage<P, IP> & {
   getLayout?: (page: ReactElement) => ReactNode;
@@ -84,7 +85,9 @@ export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
       <QueryClientProvider client={queryClient}>
         <ReactQueryDevtools initialIsOpen={false} />
         <CunninghamProvider>
-          {getLayout(<Component {...pageProps} />)}
+          <Auth>
+            {getLayout(<Component {...pageProps} />)}
+          </Auth>
         </CunninghamProvider>
       </QueryClientProvider>
     </>

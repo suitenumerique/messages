@@ -1,7 +1,5 @@
-"use client";
 import { AppLayout } from "./layout";
 import { createContext, PropsWithChildren, useContext, useState } from "react";
-import { GlobalLayout } from "../global/global-layout";
 import AuthenticatedView from "./authenticated-view";
 import { MailboxProvider, useMailboxContext } from "@/features/providers/mailbox";
 import { NoMailbox } from "./no-mailbox";
@@ -10,20 +8,18 @@ import { SentBoxProvider } from "@/features/providers/sent-box";
 import { LeftPanel } from "./left-panel";
 import { ModalStoreProvider } from "@/features/providers/modal-store";
 
-export const MainLayout = ({ children, simple = false }: PropsWithChildren<{ simple?: boolean }>) => {
+export const MainLayout = ({ children }: PropsWithChildren) => {
     return (
-        <GlobalLayout>
-            <AuthenticatedView>
-                    <MailboxProvider>
-                        <SentBoxProvider>
-                            <ModalStoreProvider>
-                                <MainLayoutContent simple={simple}>{children}</MainLayoutContent>
-                                <Toaster />
-                            </ModalStoreProvider>
-                        </SentBoxProvider>
-                    </MailboxProvider>
-            </AuthenticatedView>
-        </GlobalLayout>
+        <AuthenticatedView>
+            <MailboxProvider>
+                <SentBoxProvider>
+                    <ModalStoreProvider>
+                        <MainLayoutContent>{children}</MainLayoutContent>
+                        <Toaster />
+                    </ModalStoreProvider>
+                </SentBoxProvider>
+            </MailboxProvider>
+        </AuthenticatedView>
     )
 }
 
