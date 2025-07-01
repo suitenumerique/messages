@@ -13,7 +13,8 @@ type ThreadLabelsWidgetProps = {
 
 export const ThreadLabelsWidget = ({ threadId, selectedLabels = [] }: ThreadLabelsWidgetProps) => {
     const { t } = useTranslation();
-    const {data: labelsList, isLoading: isLoadingLabelsList } = useLabelsList();
+    const { selectedMailbox } = useMailboxContext();
+    const {data: labelsList, isLoading: isLoadingLabelsList } = useLabelsList({ mailbox_id: selectedMailbox!.id });
     const [isPopupOpen, setIsPopupOpen] = useState(false);
 
     if (isLoadingLabelsList) {
