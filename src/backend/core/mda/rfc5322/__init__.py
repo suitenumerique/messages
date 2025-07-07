@@ -9,6 +9,7 @@ from .composer import (
     EmailComposeError,
     compose_email,
     create_reply_message,
+    create_forward_message,
     format_address,
     format_address_list,
 )
@@ -34,5 +35,6 @@ __all__ = [
     "format_address_list",
     "compose_email",
     "create_reply_message",
+    "create_forward_message",
     "EmailComposeError",
 ]

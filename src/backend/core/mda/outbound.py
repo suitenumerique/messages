@@ -12,7 +12,7 @@ from django.utils import timezone
 from core import models
 from core.enums import MessageDeliveryStatusChoices
 from core.mda.inbound import check_local_recipient, deliver_inbound_message
-from core.mda.rfc5322 import compose_email, parse_email_message
+from core.mda.rfc5322 import compose_email, parse_email_message, create_reply_message, create_forward_message
 from core.mda.signing import sign_message_dkim
 
 logger = logging.getLogger(__name__)
@@ -54,6 +54,39 @@ def prepare_outbound_message(
 
     # Generate a MIME id
     message.mime_id = message.generate_mime_id()
+
+    # Handle reply and forward message embedding
+    if message.parent:
+        # Check if this is a forward (subject starts with Fwd:)
+        is_forward = message.subject.lower().startswith("fwd:")
+        nested_data = None
+
+        if is_forward:
+            # Handle forward message embedding
+            parent_parsed = message.parent.get_parsed_data()
+
+            nested_data = create_forward_message(
+                original_message=parent_parsed,
+                forward_text=text_body,
+                forward_html=html_body,
+                include_original=True
+            )
+        else:
+            # Handle reply message embedding
+            parent_parsed = message.parent.get_parsed_data()
+
+            nested_data = create_reply_message(
+                original_message=parent_parsed,
+                reply_text=text_body,
+                reply_html=html_body,
+                include_quote=True
+            )
+
+        # Update the bodies with properly formatted reply content
+        if nested_data.get("textBody"):
+            text_body = nested_data["textBody"][0]["content"]
+        if nested_data.get("htmlBody"):
+            html_body = nested_data["htmlBody"][0]["content"]
 
     # Generate the MIME data dictionary
     mime_data = {

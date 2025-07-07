@@ -19,6 +19,7 @@ from core.mda.rfc5322.composer import (
     create_reply_message,
     format_address,
     format_address_list,
+    create_forward_message,
 )
 
 
@@ -597,9 +598,9 @@ class TestEmailComposition:
             "subject": "Réunion d'équipe à 15h",
             "textBody": [
                 """Bonjour Amélie,
-                J'espère que vous allez bien. 
+                J'espère que vous allez bien.
                 Pouvons-nous discuter du projet demain?
-                
+
                 Cordialement,
                 François"""
             ],
@@ -821,7 +822,8 @@ class TestReplyGeneration:
             "This is the original <b>HTML</b> content"
             in reply["htmlBody"][0]["content"]
         )
-        assert "border-left: 1px solid #ccc" in reply["htmlBody"][0]["content"]
+        assert "<hr data-type=\"quote-separator\" />" in reply["htmlBody"][0]["content"]
+        assert "---------- In reply to ----------" in reply["htmlBody"][0]["content"]
 
     def test_reply_with_long_original(self):
         """Test replying to a long email, ensuring proper quoting."""
@@ -938,6 +940,158 @@ class TestReplyGeneration:
 
         # Check quote header contains fallback text
         assert "On an unknown date, someone wrote:" in reply["textBody"][0]["content"]
+
+
+class TestForwardGeneration:
+    """Tests for creating forward messages."""
+
+    def test_forward_basic_structure(self):
+        """Test basic forward message creation."""
+        original_message = {
+            "subject": "Original Subject",
+            "from": {"name": "Original Sender", "email": "original@example.com"},
+            "to": [{"name": "Recipient", "email": "recipient@example.com"}],
+            "cc": [{"name": "CC Recipient", "email": "cc@example.com"}],
+            "messageId": "<original-message-id-12345@example.com>",
+            "textBody": [
+                {
+                    "partId": "text-1",
+                    "type": "text/plain",
+                    "content": "Original message content.",
+                }
+            ],
+            "date": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
+        }
+
+        forward_text = "This is a forward message."
+
+        forward = create_forward_message(original_message, forward_text)
+
+        # Check subject
+        assert forward["subject"] == "Fwd: Original Subject"
+
+        # Check text body contains forward header and original content
+        text_content = forward["textBody"][0]["content"]
+        assert "This is a forward message." in text_content
+        assert "---------- Forwarded message ----------" in text_content
+        assert "From: Original Sender <original@example.com>" in text_content
+        assert "To: Recipient <recipient@example.com>" in text_content
+        assert "Cc: CC Recipient <cc@example.com>" in text_content
+        assert "Subject: Original Subject" in text_content
+        assert "Original message content." in text_content
+
+    def test_forward_with_html(self):
+        """Test forward message creation with HTML content."""
+        original_message = {
+            "subject": "HTML Original",
+            "from": {"name": "HTML Sender", "email": "html@example.com"},
+            "to": [{"name": "HTML Recipient", "email": "htmlrecip@example.com"}],
+            "messageId": "<html-original@example.com>",
+            "htmlBody": [
+                {
+                    "partId": "html-1",
+                    "type": "text/html",
+                    "content": "<p>Original <strong>HTML</strong> content.</p>",
+                }
+            ],
+            "date": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
+        }
+
+        forward_html = "<p>Forward HTML content.</p>"
+
+        forward = create_forward_message(original_message, "Forward text", forward_html)
+
+        # Check HTML body
+        html_content = forward["htmlBody"][0]["content"]
+        assert "<p>Forward HTML content.</p>" in html_content
+        assert "<hr data-type=\"quote-separator\" />" in html_content
+        assert "---------- Forwarded message ----------" in html_content
+        assert "<strong>From:</strong> HTML Sender &lt;html@example.com&gt;<br/>" in html_content
+        assert "<p>Original <strong>HTML</strong> content.</p>" in html_content
+
+    def test_forward_without_original(self):
+        """Test forward message creation without including original content."""
+        original_message = {
+            "subject": "Original Subject",
+            "from": {"name": "Original Sender", "email": "original@example.com"},
+            "to": [{"name": "Recipient", "email": "recipient@example.com"}],
+            "textBody": [
+                {
+                    "partId": "text-1",
+                    "type": "text/plain",
+                    "content": "Original message content.",
+                }
+            ],
+            "date": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
+        }
+
+        forward_text = "This is a forward message."
+
+        forward = create_forward_message(original_message, forward_text, include_original=False)
+
+        # Check subject
+        assert forward["subject"] == "Fwd: Original Subject"
+
+        # Check text body contains only forward text, no original content
+        text_content = forward["textBody"][0]["content"]
+        assert text_content == "This is a forward message."
+        assert "---------- Forwarded message ----------" not in text_content
+        assert "Original message content." not in text_content
+
+    def test_forward_already_fwd_subject(self):
+        """Test forward message with subject that already starts with Fwd:."""
+        original_message = {
+            "subject": "Fwd: Already Forwarded",
+            "from": {"name": "Original Sender", "email": "original@example.com"},
+            "to": [{"name": "Recipient", "email": "recipient@example.com"}],
+            "textBody": [
+                {
+                    "partId": "text-1",
+                    "type": "text/plain",
+                    "content": "Original message content.",
+                }
+            ],
+            "date": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
+        }
+
+        forward_text = "This is a forward message."
+
+        forward = create_forward_message(original_message, forward_text)
+
+        # Check subject doesn't get double Fwd: prefix
+        assert forward["subject"] == "Fwd: Already Forwarded"
+
+    def test_forward_empty_recipients(self):
+        """Test forward message creation with empty recipient lists."""
+        original_message = {
+            "subject": "Empty Recipients",
+            "from": {"name": "Original Sender", "email": "original@example.com"},
+            "to": [],
+            "cc": [],
+            "messageId": "<empty-recipients@example.com>",
+            "textBody": [
+                {
+                    "partId": "text-1",
+                    "type": "text/plain",
+                    "content": "Original message content.",
+                }
+            ],
+            "date": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
+        }
+
+        forward_text = "This is a forward message."
+
+        forward = create_forward_message(original_message, forward_text)
+
+        # Check text body doesn't crash with empty recipients
+        text_content = forward["textBody"][0]["content"]
+        assert "This is a forward message." in text_content
+        assert "---------- Forwarded message ----------" in text_content
+        assert "From: Original Sender <original@example.com>" in text_content
+        assert "Subject: Empty Recipients" in text_content
+        # Should not have To: or Cc: lines since they're empty
+        assert "To:" not in text_content
+        assert "Cc:" not in text_content
 
 
 class TestErrorHandling:

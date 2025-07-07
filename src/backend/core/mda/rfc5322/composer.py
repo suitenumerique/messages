@@ -537,10 +537,177 @@ def compose_email(
         logger.exception("Unexpected error during email composition: %s", str(e))
         raise EmailComposeError(f"Failed to compose email: {str(e)}") from e
 
+def _embed_original_message(
+    original_message: Dict[str, Any],
+    new_text: str = "",
+    new_html: Optional[str] = None,
+    include_original: bool = True,
+    is_forward: bool = False,
+) -> tuple[str, str]:
+    """
+    Embed original message content into new text and HTML.
+
+    Args:
+        original_message: The JMAP structure of the original message
+        new_text: The new text content
+        new_html: Optional HTML version of the new content
+        include_original: Whether to include the original message content
+        is_forward: Whether this is a forward (affects header format)
+
+    Returns:
+        Tuple of (text_body, html_body)
+    """
+    if new_text is None:
+        new_text = ""
+
+    if not include_original:
+        # Return simple versions without embedding
+        html_body = new_html or f"<p>{html.escape(new_text)}</p>"
+        if html_body:
+            html_body = html_body.replace("&rsquo;", "'")
+        return new_text, html_body
+
+    # Get information from the original message
+    orig_subject = original_message.get("subject", "")
+    orig_from = original_message.get("from", {})
+    orig_to = original_message.get("to", [])
+    orig_cc = original_message.get("cc", [])
+    orig_date = original_message.get("date", "")
+
+    # Format date as string for quoting
+    date_str = ""
+    if isinstance(orig_date, datetime.datetime):
+        if orig_date.tzinfo is None or orig_date.tzinfo.utcoffset(orig_date) is None:
+            orig_date = (
+                timezone.make_aware(orig_date, datetime.timezone.utc)
+                if hasattr(timezone, "make_aware")
+                else orig_date.replace(tzinfo=datetime.timezone.utc)
+            )
+
+        # Format according to RFC 5322 preferred date format (e.g., "15 May 2023 14:30:00 +0000")
+        date_str = format_datetime(orig_date)
+    elif isinstance(orig_date, str) and orig_date:
+        # Try parsing the string date to reformat it consistently
+        parsed_dt = parsedate_to_datetime(orig_date)
+        if parsed_dt:
+            date_str = format_datetime(parsed_dt)
+        else:
+            date_str = orig_date  # Use original string if parsing fails
+    else:
+        date_str = "an unknown date"  # Fallback if date is missing or invalid type
+
+    # Prepare header for text
+    header_text = ""
+    if is_forward:
+        from_display = format_address(
+            orig_from.get("name", ""), orig_from.get("email", "")
+        )
+        to_display = format_address_list(orig_to)
+        cc_display = format_address_list(orig_cc) if orig_cc else ""
+
+        header_text = "\n\n---------- Forwarded message ----------\n"
+        if from_display:
+            header_text += f"From: {from_display}\n"
+        if to_display:
+            header_text += f"To: {to_display}\n"
+        if cc_display:
+            header_text += f"Cc: {cc_display}\n"
+        header_text += f"Subject: {orig_subject}\n"
+        header_text += f"Date: {date_str}\n\n"
+    else:
+        # Reply format
+        from_display = format_address(
+            orig_from.get("name", ""), orig_from.get("email", "")
+        )
+        if from_display:
+            header_text = f"\n\nOn {date_str}, {from_display} wrote:\n"
+        else:
+            header_text = f"\n\nOn {date_str}, someone wrote:\n"
+
+    # Create the text body with original message
+    text_body = f"{new_text}{header_text}"
+
+    # Add original text content
+    if original_message.get("textBody"):
+        text_body_list = original_message["textBody"]
+        if not isinstance(text_body_list, list):
+            text_body_list = [text_body_list]
+
+        first_text = text_body_list[0] if text_body_list else None
+        orig_text = ""
+
+        if isinstance(first_text, str):
+            orig_text = first_text
+        elif isinstance(first_text, dict):
+            orig_text = first_text.get("content", "")
+
+        if orig_text:
+            if is_forward:
+                text_body += orig_text
+            else:
+                # For replies, quote each line
+                quoted_text = "\n".join([f"> {line}" for line in orig_text.split("\n")])
+                text_body += quoted_text
+
+    # Create HTML content
+    html_content = new_html or f"<p>{html.escape(new_text)}</p>"
+    if html_content:
+        html_content = html_content.replace("&rsquo;", "'")
+
+    html_body = html_content
+    if new_html or original_message.get("htmlBody"):
+        # Forward HTML format
+        from_display_html = html.escape(
+            format_address(orig_from.get("name", ""), orig_from.get("email", ""))
+        )
+        to_display_html = html.escape(format_address_list(orig_to))
+        cc_display_html = html.escape(format_address_list(orig_cc)) if orig_cc else ""
+
+        if is_forward:
+            header_html = "<p>---------- Forwarded message ----------<br/>"
+        else:
+            header_html = "<p>---------- In reply to ----------<br/>"
+
+        if from_display_html:
+            header_html += f'<strong>From:</strong> {from_display_html}<br/>'
+        if to_display_html:
+            header_html += f'<strong>To:</strong> {to_display_html}<br/>'
+        if cc_display_html:
+            header_html += f'<strong>Cc:</strong> {cc_display_html}<br/>'
+        header_html += f'<strong>Subject:</strong> {html.escape(orig_subject)}<br/>'
+        header_html += f'<strong>Date:</strong> {html.escape(date_str)}<br/>'
+        header_html += "</p>"
+
+        # Get original HTML content
+        orig_html = ""
+        if original_message.get("htmlBody"):
+            html_body_list = original_message["htmlBody"]
+            if not isinstance(html_body_list, list):
+                html_body_list = [html_body_list]
+
+            first_html = html_body_list[0] if html_body_list else None
+
+            if isinstance(first_html, str):
+                orig_html = first_html
+            elif isinstance(first_html, dict):
+                orig_html = first_html.get("content", "")
+
+
+        nested_html = f"""
+        <hr data-type="quote-separator" />
+        <blockquote>
+            {header_html}
+            {orig_html}
+        </blockquote>
+        """
+        html_body = f"{html_content}{nested_html}"
+
+    return text_body, html_body
+
 
 def create_reply_message(
     original_message: Dict[str, Any],
-    reply_text: str,
+    reply_text: str = "",
     reply_html: Optional[str] = None,
     include_quote: bool = True,
 ) -> Dict[str, Any]:
@@ -562,35 +729,10 @@ def create_reply_message(
     orig_message_id = original_message.get(
         "messageId", original_message.get("message_id", "")
     )
-    orig_date = original_message.get("date", "")
-    orig_references = original_message.get(
-        "references", ""
-    )  # Get original references if any
+    orig_references = original_message.get("references", "")
 
-    # Format date as string for quoting
-    date_str = ""
-    if isinstance(orig_date, datetime.datetime):
-        # Ensure date is timezone-aware before formatting
-        if orig_date.tzinfo is None or orig_date.tzinfo.utcoffset(orig_date) is None:
-            # If naive, assume UTC (or use a default timezone)
-            orig_date = (
-                timezone.make_aware(orig_date, datetime.timezone.utc)
-                if hasattr(timezone, "make_aware")
-                else orig_date.replace(tzinfo=datetime.timezone.utc)
-            )
-
-        # Format according to RFC 5322 preferred date format (e.g., "15 May 2023 14:30:00 +0000")
-        date_str = format_datetime(orig_date)
-
-    elif isinstance(orig_date, str) and orig_date:
-        # Try parsing the string date to reformat it consistently
-        parsed_dt = parsedate_to_datetime(orig_date)
-        if parsed_dt:
-            date_str = format_datetime(parsed_dt)
-        else:
-            date_str = orig_date  # Use original string if parsing fails
-    else:
-        date_str = "an unknown date"  # Fallback if date is missing or invalid type
+    if reply_text is None:
+        reply_text = ""
 
     # Create reply subject (add Re: if needed)
     if orig_subject.lower().startswith("re:"):
@@ -598,78 +740,10 @@ def create_reply_message(
     else:
         reply_subject = f"Re: {orig_subject}"
 
-    # Prepare quote header (used for both text and potentially HTML)
-    quote_header_text = ""
-    if include_quote:
-        from_display = format_address(
-            orig_from.get("name", ""), orig_from.get("email", "")
-        )
-        if from_display:
-            quote_header_text = f"\n\nOn {date_str}, {from_display} wrote:\n"
-        else:
-            quote_header_text = f"\n\nOn {date_str}, someone wrote:\n"
-
-    # Create the text body with quote if needed
-    text_body = reply_text
-    if include_quote:
-        # Always add the header if quoting
-        text_body = f"{reply_text}{quote_header_text}"
-
-        # Add quoted text content if original text exists
-        if original_message.get("textBody"):
-            text_body_list = original_message["textBody"]
-            if not isinstance(text_body_list, list):
-                text_body_list = [text_body_list]
-
-            first_text = text_body_list[0] if text_body_list else None
-            orig_text = ""
-
-            if isinstance(first_text, str):
-                orig_text = first_text
-            elif isinstance(first_text, dict):
-                orig_text = first_text.get("content", "")
-
-            if orig_text:  # Only add quoted text if we have some
-                quoted_text = "\n".join([f"> {line}" for line in orig_text.split("\n")])
-                text_body += quoted_text  # Append quoted text after the header
-
-    # Create HTML quote if needed
-    # Initialize with reply_html or a simple paragraph version of reply_text
-    reply_html_content = (
-        reply_html or f"<p>{html.escape(reply_text)}</p>"
-    )  # Use html.escape for safety
-
-    # Replace &rsquo; with apostrophe in HTML content for French text
-    if reply_html_content:
-        reply_html_content = reply_html_content.replace("&rsquo;", "'")
-
-    html_body = reply_html_content
-    if include_quote and (reply_html or original_message.get("htmlBody")):
-        # Prepare HTML quote header
-        from_display_html = html.escape(
-            format_address(orig_from.get("name", ""), orig_from.get("email", ""))
-        )
-        quote_header_html = f"""
-        <p>On {html.escape(date_str)}, {from_display_html} wrote:</p>
-        <blockquote type="cite" style="margin-top: 10px; margin-left: 5px; padding-left: 10px; border-left: 1px solid #ccc;">
-        """  # Using blockquote is more semantic
-
-        # Get original HTML content
-        orig_html = ""
-        if original_message.get("htmlBody"):
-            html_body_list = original_message["htmlBody"]
-            if not isinstance(html_body_list, list):
-                html_body_list = [html_body_list]
-
-            first_html = html_body_list[0] if html_body_list else None
-
-            if isinstance(first_html, str):
-                orig_html = first_html
-            elif isinstance(first_html, dict):
-                orig_html = first_html.get("content", "")
-
-        # Construct the full HTML body
-        html_body = f"{reply_html_content}<br><br>{quote_header_html}{orig_html}</blockquote>"  # Close blockquote
+    # Use the shared embedding logic
+    text_body, html_body = _embed_original_message(
+        original_message, reply_text, reply_html, include_quote, is_forward=False
+    )
 
     # Construct the reply JMAP structure
     reply_headers = {}
@@ -714,9 +788,7 @@ def create_reply_message(
     }
 
     # Add HTML part if it was generated
-    if (
-        html_body != reply_html_content or reply_html
-    ):  # Check if quote was added or reply_html was provided
+    if html_body != (reply_html or f"<p>{html.escape(reply_text)}</p>"):
         reply["htmlBody"] = [
             {
                 "partId": "html-part",  # Consider unique ID
@@ -726,3 +798,70 @@ def create_reply_message(
         ]
 
     return reply
+
+
+def create_forward_message(
+    original_message: Dict[str, Any],
+    forward_text: str,
+    forward_html: Optional[str] = None,
+    include_original: bool = True,
+) -> Dict[str, Any]:
+    """
+    Create a JMAP forward message from an existing email.
+
+    Args:
+        original_message: The JMAP structure of the original message
+        forward_text: The forward text content
+        forward_html: Optional HTML version of the forward
+        include_original: Whether to include the original message content
+
+    Returns:
+        A JMAP-style message structure for the forward
+    """
+    # Get information from the original message
+    orig_subject = original_message.get("subject", "")
+
+    # Create forward subject (add Fwd: if needed)
+    if orig_subject.lower().startswith("fwd:"):
+        forward_subject = orig_subject
+    else:
+        forward_subject = f"Fwd: {orig_subject}"
+
+    if forward_text is None:
+        forward_text = ""
+
+    # Use the shared embedding logic
+    text_body, html_body = _embed_original_message(
+        original_message, forward_text, forward_html, include_original, is_forward=True
+    )
+
+    # For forwards, we typically don't set In-Reply-To or References headers
+    # as forwards are not replies to the original message
+    forward_headers = {}
+
+    forward = {
+        "subject": forward_subject,
+        "textBody": [
+            {
+                "partId": "text-part",
+                "type": "text/plain",
+                "content": text_body,
+            }
+        ],
+        "from": {},  # To be filled by the caller
+        "to": [],  # To be filled by the caller
+        "cc": [],
+        "headers": forward_headers,
+    }
+
+    # Add HTML part if it was generated
+    if html_body != (forward_html or f"<p>{html.escape(forward_text)}</p>"):
+        forward["htmlBody"] = [
+            {
+                "partId": "html-part",
+                "type": "text/html",
+                "content": html_body,
+            }
+        ]
+
+    return forward
