@@ -219,6 +219,14 @@
             "imap_server_required": "The IMAP server is required.",
             "imap_port_required": "The IMAP port is required."
           }
+        },
+        "quoted-message-block": {
+          "replied-message": "In reply to",
+          "forwarded-message": "Forwarded message",
+          "from": "From",
+          "subject": "Subject",
+          "date": "Date",
+          "to": "To"
         }
       },
       "labels": {
@@ -241,6 +249,15 @@
             "name_required": "A name is required."
           }
         }
+      },
+      "quoted_message_block": {
+        "replied-message": "In reply to",
+        "forwarded-message": "Forwarded message",
+        "from": "From",
+        "subject": "Subject",
+        "date": "Date",
+        "to": "To"
+      },
       }
     }
   },
@@ -486,6 +503,14 @@
             "name_required": "Un nom est requis."
           }
         }
+      },
+      "quoted_message_block": {
+        "replied-message": "En réponse à",
+        "forwarded-message": "Message transféré",
+        "from": "De",
+        "subject": "Sujet",
+        "date": "Date",
+        "to": "À"
       }
     }
   }

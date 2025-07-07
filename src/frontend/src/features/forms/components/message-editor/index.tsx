@@ -4,16 +4,26 @@ import { BlockNoteView } from "@blocknote/mantine";
 import "@blocknote/mantine/style.css";
 import { useCreateBlockNote } from "@blocknote/react";
 import { useTranslation } from "react-i18next";
-import { BlockNoteEditorOptions, BlockSchema, InlineContentSchema, StyleSchema } from '@blocknote/core';
+import { BlockNoteSchema, defaultBlockSpecs } from '@blocknote/core';
 import MailHelper from '@/features/utils/mail-helper';
 import MessageEditorToolbar from './toolbar';
 import { Field, FieldProps } from '@openfun/cunningham-react';
 import { useFormContext } from 'react-hook-form';
 import { useEffect } from 'react';
+import { QuotedMessageBlock } from '@/features/blocknote/quoted-message-block';
+import { Message } from '@/features/api/gen/models/message';
+
+const BLOCKNOTE_SCHEMA = BlockNoteSchema.create({
+    blockSpecs: {
+        ...defaultBlockSpecs,
+        'quoted-message': QuotedMessageBlock
+    }
+});
 
 type MessageEditorProps = FieldProps & {
-    blockNoteOptions?: Partial<BlockNoteEditorOptions<BlockSchema, InlineContentSchema, StyleSchema>>
+    blockNoteOptions?: Partial<typeof BLOCKNOTE_SCHEMA>
     defaultValue?: string;
+    quotedMessage?: Message;
 }
 
 /**
@@ -25,13 +35,39 @@ type MessageEditorProps = FieldProps & {
  * when the editor is blurred. Those inputs must be used in the parent form
  * to retrieve text and html content.
  */
-const MessageEditor = ({ blockNoteOptions, defaultValue, ...props }: MessageEditorProps) => {
+const MessageEditor = ({ blockNoteOptions, defaultValue, quotedMessage, ...props }: MessageEditorProps) => {
     const form = useFormContext();
     const { t, i18n } = useTranslation();
+
+    /**
+     * Prepare initial content of the editor
+     * If the user is replying or forwarding a message, a quoted-message block is append
+     * to display a preview of the quoted message.
+     */
+    const getInitialContent = () => {
+        const initialContent = defaultValue ? JSON.parse(defaultValue) : [{ type: "paragraph", content: "" }];
+
+        if (!quotedMessage) return initialContent;
+
+        return initialContent.concat([{
+            type: "quoted-message",
+            content: undefined,
+            props: {
+                mode: "forward",
+                messageId: quotedMessage.id,
+                subject: quotedMessage.subject,
+                recipients: quotedMessage.to.map((to) => to.email).join(", "),
+                sender: quotedMessage.sender.email,
+                received_at: quotedMessage.created_at
+            }
+        }]);
+    };
+
     const editor = useCreateBlockNote({
+        schema: BLOCKNOTE_SCHEMA,
         tabBehavior: "prefer-navigate-ui",
         trailingBlock: false,
-        initialContent: defaultValue ? JSON.parse(defaultValue) : undefined,
+        initialContent: getInitialContent(),
         dictionary: {
             ...locales[i18n.language as keyof typeof locales],
             placeholders: {

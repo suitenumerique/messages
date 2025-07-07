@@ -6,7 +6,7 @@ import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { DraftMessageRequestRequest, Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
+import { Attachment, DraftMessageRequestRequest, Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
 import MessageEditor from "@/features/forms/components/message-editor";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import MailHelper from "@/features/utils/mail-helper";
@@ -17,11 +17,13 @@ import { useSentBox } from "@/features/providers/sent-box";
 import { useRouter } from "next/router";
 import { AttachmentUploader } from "./attachment-uploader";
 
+export type MessageFormMode = "new" |"reply" | "reply_all" | "forward";
+
 interface MessageFormProps {
     // For reply mode
     draftMessage?: Message;
     parentMessage?: Message;
-    replyAll?: boolean;
+    mode?: MessageFormMode;
     onClose?: () => void;
     // For new message mode
     showSubject?: boolean;
@@ -66,7 +68,7 @@ const DRAFT_TOAST_ID = "MESSAGE_FORM_DRAFT_TOAST";
 
 export const MessageForm = ({
     parentMessage,
-    replyAll,
+    mode = "new",
     onClose,
     draftMessage,
     onSuccess
@@ -96,8 +98,9 @@ export const MessageForm = ({
 
     const recipients = useMemo(() => {
         if (draft) return draft.to.map(contact => contact.email);
-        if (!parentMessage) return [];
-        if (replyAll) {
+        if (!mode.startsWith("reply") || !parentMessage) return [];
+
+        if (mode === "reply_all") {
             return [...new Set([
                 {email: parentMessage.sender.email},
                 ...parentMessage.to,
@@ -108,7 +111,7 @@ export const MessageForm = ({
             )]
         }
         // If the sender is replying to himself, we can consider that it prefers
-        // to reply to the message recipient from onw of its message.
+        // to reply to the message recipient.
         if (parentMessage.sender.email === selectedMailbox?.email) {
             if (parentMessage.to.length > 0) {
                 return parentMessage.to.map(contact => contact.email);
@@ -121,18 +124,35 @@ export const MessageForm = ({
             }
         }
         return [parentMessage.sender.email];
-    }, [parentMessage, replyAll, selectedMailbox]);
+    }, [parentMessage, mode, selectedMailbox]);
+
+    const getDefaultSubject = () => {
+        if (draft?.subject) return draft.subject
+        if (parentMessage) {
+            if (mode === "forward") return MailHelper.prefixSubjectIfNeeded(parentMessage.subject, "Fwd:");
+            if (mode.startsWith("reply")) return MailHelper.prefixSubjectIfNeeded(parentMessage.subject, "Re:");
+        }
+
+        return '';
+    }
+
+    const getDefaultAttachments = () => {
+        let attachments: readonly Attachment[]= [];
+        if (draft?.attachments) attachments = draft.attachments;
+        if (mode === "forward" && parentMessage?.attachments) attachments = parentMessage.attachments;
+        return attachments;
+    }
 
     const formDefaultValues = useMemo(() => ({
         from: defaultSenderId ?? '',
         to: (draft?.to?.map(contact => contact.email) ?? recipients).join(', '),
         cc: (draft?.cc?.map(contact => contact.email) ?? []).join(', '),
         bcc: (draft?.bcc?.map(contact => contact.email) ?? []).join(', '),
-        subject: parentMessage ? 'RE' : (draft?.subject ?? ''),
+        subject: getDefaultSubject(),
         messageEditorDraft: draft?.draftBody,
         messageEditorHtml: undefined,
         messageEditorText: undefined,
-        attachments: draft?.attachments.map(a => ({ blobId: a.blobId, name: a.name })),
+        attachments: [],
     }), [draft, selectedMailbox])
 
     const form = useForm({
@@ -238,15 +258,11 @@ export const MessageForm = ({
     const saveDraft = async (data: MessageFormFields) => {
         if (Object.keys(form.formState.dirtyFields).length === 0) return draft;
 
-        const subject = parentMessage
-            ? MailHelper.prefixSubjectIfNeeded(parentMessage.subject)
-            : data.subject;
-
         const payload = {
             to: data.to,
             cc: data.cc || [],
             bcc: data.bcc || [],
-            subject: subject,
+            subject: data.subject,
             senderId: data.from,
             parentId: parentMessage?.id,
             draftBody: data.messageEditorDraft,
@@ -413,10 +429,11 @@ export const MessageForm = ({
                         fullWidth
                         state={form.formState.errors?.messageEditorDraft ? "error" : "default"}
                         text={form.formState.errors?.messageEditorDraft?.message}
+                        quotedMessage={mode !== "new" ? parentMessage : undefined}
                     />
                 </div>
 
-                <AttachmentUploader initialAttachments={draft?.attachments} onChange={form.handleSubmit(saveDraft)} />
+                <AttachmentUploader initialAttachments={getDefaultAttachments()} onChange={form.handleSubmit(saveDraft)} />
 
                 <footer className="form-footer">
                     <Button

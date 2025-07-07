@@ -11,6 +11,7 @@ import MessageBody from "./message-body"
 import MessageReplyForm from "../message-reply-form";
 import { AttachmentList } from "../thread-attachment-list";
 import { Banner } from "@/features/ui/components/banner";
+import { MessageFormMode } from "@/features/forms/components/message-form";
 
 type ThreadMessageProps = {
     message: Message,
@@ -21,10 +22,11 @@ type ThreadMessageProps = {
 export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
     ({ message, isLatest, draftMessage, ...props }, ref) => {
         const { t, i18n } = useTranslation()
-        const [showReplyForm, setShowReplyForm] = useState<'all' | 'to' | null>(() => {
-            if (!message.is_trashed && (message.is_draft || draftMessage?.is_draft)) return 'to';
+        const [replyFormMode, setReplyFormMode] = useState<MessageFormMode | null>(() => {
+            if (!message.is_trashed && (message.is_draft || draftMessage?.is_draft)) return 'reply';
             return null;
         })
+        const showReplyForm = replyFormMode !== null;
         const { markAsUnread } = useRead()
         const { markAsTrashed, markAsUntrashed } = useTrash()
         const { unselectThread, selectedThread, messages, queryStates } = useMailboxContext()
@@ -40,7 +42,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         const showReplyButton = isLatest && !showReplyForm && !message.is_draft && !message.is_trashed && !draftMessage
 
         const handleCloseReplyForm = () => {
-            setShowReplyForm(null);
+            setReplyFormMode(null);
         }
 
         const markAsUnreadFrom = useCallback((messageId: Message['id']) => {
@@ -50,7 +52,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         }, [messages, unselectThread, markAsUnread])
 
         useEffect(() => {
-            setShowReplyForm(!message.is_trashed && (message.is_draft || draftMessage?.is_draft) ? 'to' : null);
+            setReplyFormMode(!message.is_trashed && (message.is_draft || draftMessage?.is_draft) ? 'reply' : null);
         }, [message, draftMessage])
 
         return (
@@ -110,7 +112,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                             size="small"
                                             icon={<span className="material-icons">reply_all</span>}
                                             aria-label={t('actions.reply_all')}
-                                            onClick={() => setShowReplyForm('all')}
+                                            onClick={() => setReplyFormMode('reply_all')}
                                         />
                                     </Tooltip>
                                 )}
@@ -120,17 +122,22 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                         size="small"
                                         icon={<span className="material-icons">reply</span>}
                                         aria-label={t('actions.reply')}
-                                        onClick={() => setShowReplyForm('to')}
+                                        onClick={() => setReplyFormMode('reply')}
+                                    />
+                                </Tooltip>
+                                <Tooltip content={t('actions.forward')}>
+                                    <Button
+                                        color="tertiary-text"
+                                        size="small"
+                                        icon={<span className="material-icons">forward</span>}
+                                        aria-label={t('actions.forward')}
+                                        onClick={() => setReplyFormMode('forward')}
                                     />
                                 </Tooltip>
                                 <DropdownMenu
                                     isOpen={isDropdownOpen}
                                     onOpenChange={setIsDropdownOpen}
                                     options={[
-                                        {
-                                            label: t('actions.forward'),
-                                            icon: <span className="material-icons">forward</span>,
-                                        },
                                         {
                                             label: hasSiblingMessages ? t('actions.mark_as_unread_from_here') : t('actions.mark_as_unread'),
                                             icon: <span className="material-icons">mark_email_unread</span>,
@@ -189,7 +196,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                         color="primary"
                                         icon={<span className="material-icons">reply_all</span>}
                                         aria-label={t('actions.reply_all')}
-                                        onClick={() => setShowReplyForm('all')}
+                                        onClick={() => setReplyFormMode('reply_all')}
                                     >
                                         {t('actions.reply_all')}
                                     </Button>
@@ -198,15 +205,22 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                     color={hasSeveralRecipients ? 'secondary' : 'primary'}
                                     icon={<span className="material-icons">reply</span>}
                                     aria-label={t('actions.reply')}
-                                    onClick={() => setShowReplyForm('to')}
+                                    onClick={() => setReplyFormMode('reply')}
                                 >
                                     {t('actions.reply')}
+                                </Button>
+                                <Button
+                                    color='secondary'
+                                    icon={<span className="material-icons">forward</span>}
+                                    onClick={() => setReplyFormMode('forward')}
+                                >
+                                    {t('actions.forward')}
                                 </Button>
                             </div>
                         )
                     }
                     { !isFetchingMessages && showReplyForm && <MessageReplyForm
-                        replyAll={showReplyForm === 'all'}
+                        mode={replyFormMode}
                         handleClose={handleCloseReplyForm}
                         message={draftMessage || message}
                     />}
