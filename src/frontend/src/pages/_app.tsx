@@ -59,7 +59,7 @@ const queryClient = new QueryClient({
 
 export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
   // Use the layout defined at the page level, if available
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const getLayout = Component.getLayout ?? ((page) => page);
 
   return (
@@ -84,7 +84,7 @@ export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
       </Head>
       <QueryClientProvider client={queryClient}>
         <ReactQueryDevtools initialIsOpen={false} />
-        <CunninghamProvider>
+        <CunninghamProvider currentLocale={i18n.language}>
           <Auth>
             {getLayout(<Component {...pageProps} />)}
           </Auth>

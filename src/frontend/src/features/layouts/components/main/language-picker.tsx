@@ -12,8 +12,8 @@ export const LanguagePicker = () => {
     const { i18n } = useTranslation();
     const [selectedValues, setSelectedValues] = useState([i18n.language]);
     const languages = [
-        { label: "Français", value: "fr" },
-        { label: "English", value: "en" },
+        { label: "Français", value: "fr-FR" },
+        { label: "English", value: "en-US" },
     ];
 
     return (
@@ -48,4 +48,3 @@ export const LanguagePicker = () => {
       </DropdownMenu>
     );
 }
-  
