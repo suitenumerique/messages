@@ -11,10 +11,5 @@ qmgr      fifo  n       -       n       300     1     qmgr
 bounce    unix  -       -       n       -       0     bounce
 defer     unix  -       -       n       -       0     bounce
 
-# Recipient check service
-recipient_check unix  -       n       n       -       -       spawn
-  user=nobody argv=/venv/bin/python3 /app/scripts/recipient_check_service.py
-
-# Local delivery command (will send to our REST API)
-local_cmd unix - n n - - pipe
-  flags=FR user=nobody argv=/venv/bin/python3 /app/scripts/mailbox_command.py ${client_address} ${client_helo} ${client_hostname} ${client_port} ${client_protocol} ${queue_id} ${sender} ${size} ${original_recipient}
+# Discard transport for milter-delivered messages
+discard   unix  -       -       n       -       -     discard

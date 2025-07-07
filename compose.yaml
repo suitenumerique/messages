@@ -272,7 +272,6 @@ services:
   #     - ".:/app"
 
   mta-in:
-    image: mta-in:latest
     build:
       context: src/mta-in/postfix
       dockerfile: Dockerfile

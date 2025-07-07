@@ -10,7 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   python3-venv \
   curl \
   procps \
+  net-tools \
   mailutils \
+  libmilter-dev \
+  python3-dev \
+  build-essential \
   && rm -rf /var/lib/apt/lists/*
 
 # Create and activate virtual environment

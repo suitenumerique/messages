@@ -51,15 +51,19 @@ class MockAPIServer:
                     options={"verify_exp": True, "verify_signature": True},
                 )
             except jwt.ExpiredSignatureError:
-                raise JSONResponse(status_code=401, content={"detail": "Token expired"})
+                return JSONResponse(
+                    status_code=401, content={"detail": "Token expired"}
+                )
             except jwt.InvalidTokenError:
-                raise JSONResponse(status_code=401, content={"detail": "Invalid token"})
+                return JSONResponse(
+                    status_code=401, content={"detail": "Invalid token"}
+                )
 
             raw_data = await request.body()
 
             h = hashlib.sha256(raw_data).hexdigest()
             if h != payload["body_hash"]:
-                raise JSONResponse(
+                return JSONResponse(
                     status_code=401, content={"detail": "Invalid body hash"}
                 )
 
@@ -79,6 +83,22 @@ class MockAPIServer:
                     request.state.raw_body, headersonly=False
                 ),
             }
+
+            if (
+                "inbound-email-error@example.com"
+                in request.state.payload["original_recipients"]
+            ):
+                return JSONResponse(
+                    status_code=500,
+                    content={"status": "error", "detail": "Inbound email error"},
+                )
+            if (
+                "inbound-email-timeout@example.com"
+                in request.state.payload["original_recipients"]
+            ):
+                time.sleep(3)
+                return
+
             logger.info(
                 f"Raw email received: {len(request.state.raw_body)} bytes for {request.state.payload['original_recipients'][0:4]}"
             )
@@ -91,6 +111,13 @@ class MockAPIServer:
             logger.info("Recipient check received")
             data = await request.json()
             addresses = data.get("addresses")
+
+            if "check-recipients-error@example.com" in addresses:
+                return JSONResponse(status_code=500, content={})
+            if "check-recipients-timeout@example.com" in addresses:
+                time.sleep(3)
+                return
+
             exists = {address: address in self.mailboxes for address in addresses}
             logger.info(f"Mailbox check for {addresses}: {exists}")
             return exists
@@ -113,7 +140,12 @@ class MockAPIServer:
     def start(self):
         self.server = uvicorn.Server(
             uvicorn.Config(
-                self.app, host="0.0.0.0", port=8000, log_level="info", loop="asyncio"
+                self.app,
+                host="0.0.0.0",
+                port=8000,
+                log_level="info",
+                loop="asyncio",
+                reload=False,
             )
         )
         # Configure the server to listen on all interfaces
@@ -123,7 +155,7 @@ class MockAPIServer:
 
     def stop(self):
         self.server.should_exit = True
-        self.thread.join(timeout=1)
+        self.thread.join(timeout=10)
 
 
 @pytest.fixture(scope="function")

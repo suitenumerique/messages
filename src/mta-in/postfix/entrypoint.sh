@@ -16,6 +16,7 @@ fi
 mkdir -p /etc/st-messages/env/
 echo -n "$MDA_API_BASE_URL" > /etc/st-messages/env/MDA_API_BASE_URL
 echo -n "$MDA_API_SECRET" > /etc/st-messages/env/MDA_API_SECRET
+echo -n "$MDA_API_TIMEOUT" > /etc/st-messages/env/MDA_API_TIMEOUT
 
 echo "Verifying Postfix configuration..."
 #postconf -M  # Print active services
@@ -24,5 +25,58 @@ echo "Verifying Postfix configuration..."
 # Initialize postfix
 postfix check -v || exit 1
 
+echo "Starting delivery milter in background..."
+
+# Create milter socket directory with proper permissions
+mkdir -p /var/spool/postfix/milter
+chown postfix:postfix /var/spool/postfix/milter
+chmod 755 /var/spool/postfix/milter
+
+/venv/bin/python3 /app/scripts/delivery_milter.py &
+MILTER_PID=$!
+
+# Wait a moment for milter to start and create socket
+sleep 3
+
+# Ensure socket has proper permissions
+if [ -S /var/spool/postfix/milter/delivery.sock ]; then
+    chown postfix:postfix /var/spool/postfix/milter/delivery.sock
+    chmod 660 /var/spool/postfix/milter/delivery.sock
+    echo "Milter socket ready"
+else
+    echo "Warning: Milter socket not found"
+fi
+
 echo "Starting Postfix..."
-exec /usr/lib/postfix/sbin/master -c /etc/postfix -d
+/usr/lib/postfix/sbin/master -c /etc/postfix -d &
+POSTFIX_PID=$!
+
+# Function to cleanup and exit
+cleanup() {
+    echo "Shutting down..."
+    kill $MILTER_PID 2>/dev/null || true
+    kill $POSTFIX_PID 2>/dev/null || true
+    exit 0
+}
+
+# Trap signals to cleanup properly
+trap cleanup SIGTERM SIGINT
+
+# Monitor both processes
+while true; do
+    # Check if milter process is still running
+    if ! kill -0 $MILTER_PID 2>/dev/null; then
+        echo "ERROR: Milter process died, exiting container"
+        kill $POSTFIX_PID 2>/dev/null || true
+        exit 1
+    fi
+    
+    # Check if Postfix process is still running
+    if ! kill -0 $POSTFIX_PID 2>/dev/null; then
+        echo "ERROR: Postfix process died, exiting container"
+        kill $MILTER_PID 2>/dev/null || true
+        exit 1
+    fi
+    
+    sleep 5
+done
