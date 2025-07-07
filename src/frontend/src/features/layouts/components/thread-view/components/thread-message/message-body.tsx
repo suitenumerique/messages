@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import DomPurify from "dompurify";
+import { useTranslation } from "react-i18next";
 
 type MessageBodyProps = {
     rawHtmlBody: string;
@@ -36,6 +37,7 @@ const CSP = [
 
 const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
+    const { t } = useTranslation();
 
     DomPurify.addHook(
         'afterSanitizeAttributes',
@@ -93,6 +95,10 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
                     font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
                     font-size: 85%;
                 }
+                details > summary {
+                    cursor: pointer;
+                    user-select: none;
+                }
                 </style>
             </head>
             <body onload="window.parent.postMessage(document.body.scrollHeight, '*')">
@@ -110,9 +116,47 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
     }, [iframeRef]);
 
     useEffect(() => {
+        const handleMessage = (event: MessageEvent) => {
+            if (event.data === 'iframe-loaded') {
+                // Send a message to the iframe to add event listeners
+                iframeRef.current?.contentWindow?.postMessage('add-toggle-listeners', '*');
+            } else if (event.data === 'resize') {
+                resizeIframe();
+            }
+        };
+
+        window.addEventListener('message', handleMessage);
         window.addEventListener('resize', resizeIframe);
-        return () => window.removeEventListener('resize', resizeIframe);
-    }, []);
+
+        return () => {
+            window.removeEventListener('message', handleMessage);
+            window.removeEventListener('resize', resizeIframe);
+        };
+    }, [resizeIframe]);
+
+    const handleIframeLoad = useCallback(() => {
+        if (iframeRef.current?.contentWindow?.document) {
+            const doc = iframeRef.current.contentWindow.document;
+
+            // Replace all <hr /><blockquote>...</blockquote> by
+            // a details element to automatically fold embedded messages
+            // TODO : Try to detect replies and forward messages coming form external sources
+            doc.querySelectorAll('hr').forEach(node => {
+                const blockquote = node.nextElementSibling as HTMLQuoteElement | null;
+                if(blockquote) {
+                    const details = doc.createElement('details');
+                    details.addEventListener('toggle', resizeIframe);
+
+                    const summary = doc.createElement('summary');
+                    summary.textContent = t('message_body.show_embedded_message');
+                    details.appendChild(summary);
+                    details.appendChild(blockquote);
+                    node.replaceWith(details);
+                }
+            });
+        }
+        resizeIframe();
+    }, [resizeIframe]);
 
     return (
         <iframe
@@ -120,7 +164,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
             className="thread-message__body"
             srcDoc={wrappedHtml}
             sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
-            onLoad={resizeIframe}
+            onLoad={handleIframeLoad}
         />
     )
 }

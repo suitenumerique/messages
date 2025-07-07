@@ -258,6 +258,8 @@
         "date": "Date",
         "to": "To"
       },
+      "message_body": {
+        "show_embedded_message": "Show embedded message"
       }
     }
   },
@@ -511,6 +513,9 @@
         "subject": "Sujet",
         "date": "Date",
         "to": "À"
+      },
+      "message_body": {
+        "show_embedded_message": "Afficher le message inclus"
       }
     }
   }
