@@ -258,6 +258,30 @@ class MailDomain(BaseModel):
         ]
         return records
 
+    def get_abilities(self, user):
+        """
+        Compute and return abilities for a given user on the mail domain.
+        """
+        role = None
+
+        if user.is_authenticated:
+            try:
+                role = self.accesses.filter(user=user).values("role")[0]["role"]
+            except (MailDomainAccess.DoesNotExist, IndexError):
+                role = None
+
+        is_admin = role == MailDomainAccessRoleChoices.ADMIN
+
+        return {
+            "get": bool(role),
+            "patch": is_admin,
+            "put": is_admin,
+            "post": is_admin,
+            "delete": is_admin,
+            "manage_accesses": is_admin,
+            "manage_mailboxes": is_admin,
+        }
+
 
 class Mailbox(BaseModel):
     """Mailbox model to store mailbox information."""
@@ -900,3 +924,27 @@ class MailDomainAccess(BaseModel):
 
     def __str__(self):
         return f"Access to {self.maildomain} for {self.user} with {self.role} role"
+
+    def get_abilities(self, user):
+        """
+        Compute and return abilities for a given user on the mail domain access.
+        """
+        role = None
+
+        if user.is_authenticated:
+            try:
+                role = self.maildomain.accesses.filter(user=user).values("role")[0][
+                    "role"
+                ]
+            except (MailDomainAccess.DoesNotExist, IndexError):
+                role = None
+
+        is_admin = role == MailDomainAccessRoleChoices.ADMIN
+
+        return {
+            "get": bool(role),
+            "patch": is_admin,
+            "put": is_admin,
+            "post": is_admin,
+            "delete": is_admin,
+        }

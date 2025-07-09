@@ -500,12 +500,23 @@ class MailboxAccessWriteSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class MailDomainAdminSerializer(serializers.ModelSerializer):
-    """Serialize MailDomain basic information for admin listing."""
+class MailDomainAdminSerializer(AbilitiesModelSerializer):
+    """Serialize mail domains for admin view."""
 
     class Meta:
         model = models.MailDomain
         fields = ["id", "name", "created_at", "updated_at"]
+        read_only_fields = fields
+
+
+class MailDomainAccessSerializer(AbilitiesModelSerializer):
+    """Serialize mail domain access information."""
+
+    user_details = UserSerializer(source="user", read_only=True)
+
+    class Meta:
+        model = models.MailDomainAccess
+        fields = ["id", "user_details", "role", "created_at", "updated_at"]
         read_only_fields = fields
 
 

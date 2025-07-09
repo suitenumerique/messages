@@ -12,6 +12,44 @@ ACTION_FOR_METHOD_TO_PERMISSION = {
 }
 
 
+class AbilitiesPermission(permissions.BasePermission):
+    """
+    Base permission class that uses get_abilities method on models.
+
+    This class checks permissions based on the get_abilities method
+    that should be implemented on the model being accessed.
+    """
+
+    def has_permission(self, request, view):
+        """Check if user has permission for the action."""
+        # For list actions, we need to check if user has access to any objects
+        if view.action == "list":
+            return True  # Let the queryset filtering handle access control
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        """Check if user has permission for the specific object."""
+        if not hasattr(obj, "get_abilities"):
+            return False
+
+        abilities = obj.get_abilities(request.user)
+
+        # Map HTTP methods to ability keys
+        method_to_ability = {
+            "GET": "get",
+            "POST": "post",
+            "PUT": "put",
+            "PATCH": "patch",
+            "DELETE": "delete",
+        }
+
+        ability_key = method_to_ability.get(request.method)
+        if ability_key is None:
+            return False
+
+        return abilities.get(ability_key, False)
+
+
 class IsAuthenticated(permissions.BasePermission):
     """
     Allows access only to authenticated users. Alternative method checking the presence
@@ -407,3 +445,49 @@ class IsMailboxAdmin(permissions.BasePermission):
         ).exists()
 
         return is_domain_admin
+
+
+class MailboxAbilitiesPermission(AbilitiesPermission):
+    """
+    Permission class for mailbox-related objects.
+
+    This class extends AbilitiesPermission to handle mailbox-specific permissions
+    and provides additional context for mailbox operations.
+    """
+
+    def has_permission(self, request, view):
+        """Check if user has access to any mailbox."""
+        # Check if user is authenticated first
+        if not request.user.is_authenticated or not super().has_permission(
+            request, view
+        ):
+            return False
+
+        # For list actions, allow access - the ViewSet will filter results
+        if view.action == "list":
+            return True
+
+        return True
+
+
+class MailDomainAbilitiesPermission(AbilitiesPermission):
+    """
+    Permission class for mail domain-related objects.
+
+    This class extends AbilitiesPermission to handle mail domain-specific permissions
+    and provides additional context for mail domain operations.
+    """
+
+    def has_permission(self, request, view):
+        """Check if user has access to any mail domain."""
+        # Check if user is authenticated first
+        if not request.user.is_authenticated or not super().has_permission(
+            request, view
+        ):
+            return False
+
+        # For list actions, allow access - the ViewSet will filter results
+        if view.action == "list":
+            return True
+
+        return True

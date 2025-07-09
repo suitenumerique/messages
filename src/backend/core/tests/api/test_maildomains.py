@@ -1,5 +1,5 @@
 """Tests for the MailDomain Admin API endpoints."""
-# pylint: disable=unused-argument
+# pylint: disable=redefined-outer-name,unused-argument
 
 from django.urls import reverse
 
@@ -7,6 +7,7 @@ import pytest
 from rest_framework import status
 
 from core import factories, models
+from core.api.serializers import MailDomainAccessSerializer
 from core.enums import MailboxRoleChoices, MailDomainAccessRoleChoices
 
 pytestmark = pytest.mark.django_db
@@ -517,3 +518,110 @@ class TestMailboxAdminViewSet:
         assert "user" in access_data
         user_data = access_data["user"]
         assert "abilities" not in user_data
+
+
+@pytest.fixture
+def user():
+    """Create a test user."""
+    return factories.UserFactory()
+
+
+@pytest.fixture
+def maildomain():
+    """Create a test mail domain."""
+    return factories.MailDomainFactory()
+
+
+class TestMailDomainAbilitiesAPI:
+    """Test the abilities field in MailDomain API responses."""
+
+    def test_maildomain_abilities_in_response(self, api_client, user, maildomain):
+        """Test that abilities are included in mail domain API response."""
+        models.MailDomainAccess.objects.create(
+            maildomain=maildomain,
+            user=user,
+            role=models.MailDomainAccessRoleChoices.ADMIN,
+        )
+
+        api_client.force_authenticate(user=user)
+        url = reverse("maildomains-detail", args=[maildomain.id])
+        response = api_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "abilities" in response.data
+        abilities = response.data["abilities"]
+        assert abilities["get"] is True
+        assert abilities["patch"] is True
+        assert abilities["put"] is True
+        assert abilities["post"] is True
+        assert abilities["delete"] is True
+        assert abilities["manage_accesses"] is True
+        assert abilities["manage_mailboxes"] is True
+
+    def test_maildomain_access_abilities_in_response(self, user, maildomain):
+        """Test that abilities are included in mail domain access API response."""
+        access = models.MailDomainAccess.objects.create(
+            maildomain=maildomain,
+            user=user,
+            role=models.MailDomainAccessRoleChoices.ADMIN,
+        )
+
+        # Note: This would require a specific endpoint for mail domain access
+        # For now, we just test that the serializer includes abilities
+        serializer = MailDomainAccessSerializer(
+            access, context={"request": type("Request", (), {"user": user})()}
+        )
+        data = serializer.data
+
+        assert "abilities" in data
+        abilities = data["abilities"]
+        assert abilities["get"] is True
+        assert abilities["patch"] is True
+        assert abilities["put"] is True
+        assert abilities["post"] is True
+        assert abilities["delete"] is True
+
+    def test_maildomain_list_with_abilities(self, api_client, user, maildomain):
+        """Test that mail domain list includes abilities for each domain."""
+        models.MailDomainAccess.objects.create(
+            maildomain=maildomain,
+            user=user,
+            role=models.MailDomainAccessRoleChoices.ADMIN,
+        )
+
+        api_client.force_authenticate(user=user)
+        url = reverse("maildomains-list")
+        response = api_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data["results"]) == 1
+
+        domain_data = response.data["results"][0]
+        assert "abilities" in domain_data
+        abilities = domain_data["abilities"]
+        assert abilities["get"] is True
+        assert abilities["patch"] is True
+        assert abilities["put"] is True
+        assert abilities["post"] is True
+        assert abilities["delete"] is True
+        assert abilities["manage_accesses"] is True
+        assert abilities["manage_mailboxes"] is True
+
+    def test_maildomain_detail_no_access_abilities(self, api_client, user, maildomain):
+        """Test that abilities are correctly set when user has no access to detail."""
+        api_client.force_authenticate(user=user)
+        url = reverse("maildomains-detail", args=[maildomain.id])
+        response = api_client.get(url)
+
+        # Should return 404 since user has no access to this domain
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_maildomain_list_no_access_abilities(self, api_client, user, maildomain):
+        """Test that abilities are correctly set when user has no access."""
+        api_client.force_authenticate(user=user)
+        url = reverse("maildomains-list")
+        response = api_client.get(url)
+
+        # User has no access, so should get empty list
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data["results"]) == 0

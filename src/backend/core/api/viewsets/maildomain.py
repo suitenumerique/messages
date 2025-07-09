@@ -11,7 +11,9 @@ from core.api import permissions as core_permissions
 from core.api import serializers as core_serializers
 
 
-class MailDomainAdminViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+class MailDomainAdminViewSet(
+    mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
+):
     """
     ViewSet for listing MailDomains the user administers.
     Provides a top-level entry for mail domain administration.
@@ -19,7 +21,7 @@ class MailDomainAdminViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     """
 
     serializer_class = core_serializers.MailDomainAdminSerializer
-    permission_classes = [core_permissions.IsAuthenticated]
+    permission_classes = [core_permissions.MailDomainAbilitiesPermission]
 
     def get_queryset(self):
         user = self.request.user
