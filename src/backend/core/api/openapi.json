@@ -144,6 +144,90 @@
                 }
             }
         },
+        "/api/v1.0/contacts/": {
+            "get": {
+                "operationId": "contacts_list",
+                "description": "List contacts with optional filtering by mailbox and search query.\n\nQuery parameters:\n- mailbox_id: Optional UUID to filter contacts by mailbox\n- q: Optional search query for name or email (case insensitive)",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter contacts by mailbox ID."
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Search contacts by name or email (case insensitive)."
+                    }
+                ],
+                "tags": [
+                    "contacts"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Contact"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/contacts/{id}/": {
+            "get": {
+                "operationId": "contacts_retrieve",
+                "description": "ViewSet for Contact model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "contacts"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Contact"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/draft/": {
             "post": {
                 "operationId": "draft_create",
@@ -2244,7 +2328,7 @@
             },
             "post": {
                 "operationId": "maildomains_mailboxes_create",
-                "description": "ViewSet for managing Mailboxes within a specific MailDomain.\nNested under /maildomains/{maildomain_pk}/mailboxes/\nPermissions are checked by IsMailDomainAdmin for the maildomain_pk.\n\nThis viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).\nThat other one is for listing the mailboxes a user has access to in regular app use.\nThis one is for managing mailboxes within a specific maildomain in the admin interface.",
+                "description": "Create new mailbox in a specific maildomain.",
                 "parameters": [
                     {
                         "in": "path",
@@ -2259,21 +2343,36 @@
                 "tags": [
                     "maildomains"
                 ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailboxAdminCreatePayloadRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailboxAdminCreatePayloadRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
                 "security": [
                     {
                         "cookieAuth": []
                     }
                 ],
                 "responses": {
-                    "201": {
+                    "200": {
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/MailboxAdmin"
+                                    "$ref": "#/components/schemas/MailboxAdminCreate"
                                 }
                             }
                         },
-                        "description": ""
+                        "description": "The new mailbox with one extra field `one_time_password` if identity provider is keycloak."
                     }
                 }
             }
@@ -2449,6 +2548,54 @@
                 "responses": {
                     "204": {
                         "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/maildomains/{maildomain_pk}/users/": {
+            "get": {
+                "operationId": "maildomains_users_list",
+                "description": "Search users by email, first name and last name.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Search maildomains user by full name, short name or email."
+                    }
+                ],
+                "tags": [
+                    "admin-maildomain-user"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/User"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
                     }
                 }
             }
@@ -3983,6 +4130,107 @@
                     "updated_at"
                 ]
             },
+            "MailboxAdminCreate": {
+                "type": "object",
+                "description": "Serialize Mailbox details for create admin endpoint, including users with access and\nmetadata.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "local_part": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "domain_name": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "alias_of": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "accesses": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MailboxAccessNestedUser"
+                        },
+                        "readOnly": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    },
+                    "one_time_password": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Fake method just to make the OpenAPI schema valid.",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "accesses",
+                    "alias_of",
+                    "created_at",
+                    "domain_name",
+                    "id",
+                    "local_part",
+                    "one_time_password",
+                    "updated_at"
+                ]
+            },
+            "MailboxAdminCreateMetadataRequest": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "$ref": "#/components/schemas/TypeEnum"
+                    },
+                    "first_name": {
+                        "type": "string"
+                    },
+                    "last_name": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "type"
+                ]
+            },
+            "MailboxAdminCreatePayloadRequest": {
+                "type": "object",
+                "properties": {
+                    "local_part": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "alias_of": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "metadata": {
+                        "$ref": "#/components/schemas/MailboxAdminCreateMetadataRequest"
+                    }
+                },
+                "required": [
+                    "local_part",
+                    "metadata"
+                ]
+            },
             "MailboxLight": {
                 "type": "object",
                 "description": "Serializer for mailbox details in thread access.",
@@ -4032,7 +4280,8 @@
                     },
                     "subject": {
                         "type": "string",
-                        "readOnly": true
+                        "readOnly": true,
+                        "nullable": true
                     },
                     "created_at": {
                         "type": "string",
@@ -4501,7 +4750,8 @@
                     },
                     "subject": {
                         "type": "string",
-                        "readOnly": true
+                        "readOnly": true,
+                        "nullable": true
                     },
                     "snippet": {
                         "type": "string",
@@ -4783,6 +5033,15 @@
                     "slug"
                 ]
             },
+            "TypeEnum": {
+                "enum": [
+                    "personal",
+                    "shared",
+                    "redirect"
+                ],
+                "type": "string",
+                "description": "* `personal` - personal\n* `shared` - shared\n* `redirect` - redirect"
+            },
             "User": {
                 "type": "object",
                 "description": "Serialize users.",
@@ -4809,9 +5068,16 @@
                         "type": "string",
                         "readOnly": true,
                         "nullable": true
+                    },
+                    "abilities": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "description": "Return abilities of the logged-in user on the mail domain.",
+                        "readOnly": true
                     }
                 },
                 "required": [
+                    "abilities",
                     "email",
                     "full_name",
                     "id",

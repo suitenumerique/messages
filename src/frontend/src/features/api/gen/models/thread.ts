@@ -14,7 +14,8 @@ import type { ThreadLabel } from "./thread_label";
 export interface Thread {
   /** primary key for the record as UUID */
   readonly id: string;
-  readonly subject: string;
+  /** @nullable */
+  readonly subject: string | null;
   readonly snippet: string;
   readonly messages: string;
   readonly has_unread: boolean;

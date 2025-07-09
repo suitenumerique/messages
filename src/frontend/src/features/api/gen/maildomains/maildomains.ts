@@ -23,6 +23,8 @@ import type {
 
 import type {
   MailboxAdmin,
+  MailboxAdminCreate,
+  MailboxAdminCreatePayloadRequest,
   MaildomainsListParams,
   MaildomainsMailboxesListParams,
   PaginatedMailDomainAdminList,
@@ -447,21 +449,15 @@ export function useMaildomainsMailboxesList<
 }
 
 /**
- * ViewSet for managing Mailboxes within a specific MailDomain.
-Nested under /maildomains/{maildomain_pk}/mailboxes/
-Permissions are checked by IsMailDomainAdmin for the maildomain_pk.
-
-This viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).
-That other one is for listing the mailboxes a user has access to in regular app use.
-This one is for managing mailboxes within a specific maildomain in the admin interface.
+ * Create new mailbox in a specific maildomain.
  */
-export type maildomainsMailboxesCreateResponse201 = {
-  data: MailboxAdmin;
-  status: 201;
+export type maildomainsMailboxesCreateResponse200 = {
+  data: MailboxAdminCreate;
+  status: 200;
 };
 
 export type maildomainsMailboxesCreateResponseComposite =
-  maildomainsMailboxesCreateResponse201;
+  maildomainsMailboxesCreateResponse200;
 
 export type maildomainsMailboxesCreateResponse =
   maildomainsMailboxesCreateResponseComposite & {
@@ -474,6 +470,7 @@ export const getMaildomainsMailboxesCreateUrl = (maildomainPk: string) => {
 
 export const maildomainsMailboxesCreate = async (
   maildomainPk: string,
+  mailboxAdminCreatePayloadRequest: MailboxAdminCreatePayloadRequest,
   options?: RequestInit,
 ): Promise<maildomainsMailboxesCreateResponse> => {
   return fetchAPI<maildomainsMailboxesCreateResponse>(
@@ -481,6 +478,8 @@ export const maildomainsMailboxesCreate = async (
     {
       ...options,
       method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(mailboxAdminCreatePayloadRequest),
     },
   );
 };
@@ -492,14 +491,14 @@ export const getMaildomainsMailboxesCreateMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof maildomainsMailboxesCreate>>,
     TError,
-    { maildomainPk: string },
+    { maildomainPk: string; data: MailboxAdminCreatePayloadRequest },
     TContext
   >;
   request?: SecondParameter<typeof fetchAPI>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof maildomainsMailboxesCreate>>,
   TError,
-  { maildomainPk: string },
+  { maildomainPk: string; data: MailboxAdminCreatePayloadRequest },
   TContext
 > => {
   const mutationKey = ["maildomainsMailboxesCreate"];
@@ -513,11 +512,11 @@ export const getMaildomainsMailboxesCreateMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof maildomainsMailboxesCreate>>,
-    { maildomainPk: string }
+    { maildomainPk: string; data: MailboxAdminCreatePayloadRequest }
   > = (props) => {
-    const { maildomainPk } = props ?? {};
+    const { maildomainPk, data } = props ?? {};
 
-    return maildomainsMailboxesCreate(maildomainPk, requestOptions);
+    return maildomainsMailboxesCreate(maildomainPk, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -526,7 +525,8 @@ export const getMaildomainsMailboxesCreateMutationOptions = <
 export type MaildomainsMailboxesCreateMutationResult = NonNullable<
   Awaited<ReturnType<typeof maildomainsMailboxesCreate>>
 >;
-
+export type MaildomainsMailboxesCreateMutationBody =
+  MailboxAdminCreatePayloadRequest;
 export type MaildomainsMailboxesCreateMutationError = unknown;
 
 export const useMaildomainsMailboxesCreate = <
@@ -537,7 +537,7 @@ export const useMaildomainsMailboxesCreate = <
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof maildomainsMailboxesCreate>>,
       TError,
-      { maildomainPk: string },
+      { maildomainPk: string; data: MailboxAdminCreatePayloadRequest },
       TContext
     >;
     request?: SecondParameter<typeof fetchAPI>;
@@ -546,7 +546,7 @@ export const useMaildomainsMailboxesCreate = <
 ): UseMutationResult<
   Awaited<ReturnType<typeof maildomainsMailboxesCreate>>,
   TError,
-  { maildomainPk: string },
+  { maildomainPk: string; data: MailboxAdminCreatePayloadRequest },
   TContext
 > => {
   const mutationOptions = getMaildomainsMailboxesCreateMutationOptions(options);

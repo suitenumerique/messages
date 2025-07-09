@@ -21,7 +21,8 @@ export interface Message {
   readonly parent_id: string | null;
   /** @nullable */
   readonly thread_id: string | null;
-  readonly subject: string;
+  /** @nullable */
+  readonly subject: string | null;
   /** date and time at which a record was created */
   readonly created_at: string;
   /** date and time at which a record was last updated */
