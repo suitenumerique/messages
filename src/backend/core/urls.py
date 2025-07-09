@@ -16,7 +16,11 @@ from core.api.viewsets.mailbox import MailboxViewSet
 from core.api.viewsets.mailbox_access import MailboxAccessViewSet
 
 # Import the viewsets from the correctly named file
-from core.api.viewsets.maildomain import MailboxAdminViewSet, MailDomainAdminViewSet
+from core.api.viewsets.maildomain import (
+    AdminMailDomainMailboxViewSet,
+    AdminMailDomainUserViewSet,
+    AdminMailDomainViewSet,
+)
 from core.api.viewsets.message import MessageViewSet
 from core.api.viewsets.mta import MTAViewSet
 from core.api.viewsets.send import SendMessageView
@@ -36,7 +40,7 @@ router.register("contacts", ContactViewSet, basename="contacts")
 router.register("threads", ThreadViewSet, basename="threads")
 router.register("labels", LabelViewSet, basename="labels")
 router.register("mailboxes", MailboxViewSet, basename="mailboxes")
-router.register("maildomains", MailDomainAdminViewSet, basename="maildomains")
+router.register("maildomains", AdminMailDomainViewSet, basename="admin-maildomains")
 
 # Router for /threads/{thread_id}/accesses/
 thread_access_nested_router = DefaultRouter()
@@ -53,7 +57,14 @@ mailbox_access_nested_router.register(
 # Router for /maildomains/{maildomain_id}/mailboxes/
 mailbox_management_nested_router = DefaultRouter()
 mailbox_management_nested_router.register(
-    r"mailboxes", MailboxAdminViewSet, basename="domainmailbox"
+    r"mailboxes",
+    AdminMailDomainMailboxViewSet,
+    basename="admin-maildomains-mailbox",
+)
+mailbox_management_nested_router.register(
+    r"users",
+    AdminMailDomainUserViewSet,
+    basename="admin-maildomains-user",
 )
 
 urlpatterns = [
@@ -78,7 +89,7 @@ urlpatterns = [
                     "maildomains/<uuid:maildomain_pk>/",
                     include(
                         mailbox_management_nested_router.urls
-                    ),  # Includes /maildomains/{id}/mailboxes/
+                    ),  # Includes /maildomains/{id}/mailboxes/, # Includes /maildomains/{id}/users/
                 ),
                 *oidc_urls,
             ]

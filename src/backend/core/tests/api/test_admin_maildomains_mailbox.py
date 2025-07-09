@@ -1,6 +1,9 @@
-"""Tests for the MailDomain Admin API endpoints."""
+"""Test suite of AdminMailDomainMailboxViewSet."""
 # pylint: disable=unused-argument
 
+from unittest.mock import patch
+
+from django.test import override_settings
 from django.urls import reverse
 
 import pytest
@@ -108,142 +111,25 @@ def fixture_access_mailbox1_user2(mailbox1_domain1, user_for_access2):
     )
 
 
-class TestMailDomainAdminViewSet:
-    """Tests for the MailDomainAdminViewSet."""
+class TestAdminMailDomainMailboxViewSet:
+    """Tests for the AdminMailDomainMailboxViewSet."""
 
-    LIST_DOMAINS_URL = reverse("maildomains-list")
-
+    # Fixtures are inherited or can be passed directly to test methods
     def mailboxes_url(self, maildomain_pk):
         """Generate URL for listing mailboxes in a specific domain."""
-        return reverse("domainmailbox-list", kwargs={"maildomain_pk": maildomain_pk})
+        return reverse(
+            "admin-maildomains-mailbox-list", kwargs={"maildomain_pk": maildomain_pk}
+        )
 
     def mailbox_detail_url(self, maildomain_pk, mailbox_pk):
         """Generate URL for mailbox detail in a specific domain."""
         return reverse(
-            "domainmailbox-detail",
+            "admin-maildomains-mailbox-detail",
             kwargs={"maildomain_pk": maildomain_pk, "pk": mailbox_pk},
         )
 
-    def test_list_administered_maildomains_success(
-        self,
-        api_client,
-        domain_admin_user,
-        domain_admin_access1,
-        domain_admin_access2,
-        mail_domain1,
-        mail_domain2,
-        unmanaged_domain,
-    ):
-        """Test that a domain admin can list domains they have admin access to."""
-        api_client.force_authenticate(user=domain_admin_user)
-        response = api_client.get(self.LIST_DOMAINS_URL)
-
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 2
-        domain_ids = [item["id"] for item in response.data["results"]]
-        assert str(mail_domain1.id) in domain_ids
-        assert str(mail_domain2.id) in domain_ids
-        assert str(unmanaged_domain.id) not in domain_ids
-
-    def test_list_administered_maildomains_no_admin_access(
-        self, api_client, other_user, mail_domain1
-    ):
-        """Test that users without domain admin access get an empty list."""
-        # other_user has no MailDomainAccess records
-        api_client.force_authenticate(user=other_user)
-        response = api_client.get(self.LIST_DOMAINS_URL)
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 0
-
-    def test_list_administered_maildomains_unauthenticated(self, api_client):
-        """Test that unauthenticated requests to list domains are rejected."""
-        response = api_client.get(self.LIST_DOMAINS_URL)
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
-    def test_list_administered_maildomains_superuser_staff(
-        self,
-        api_client,
-        mail_domain1,
-        mail_domain2,
-        unmanaged_domain,
-    ):
-        """Test that superuser with staff status can list all domains."""
-        superuser_staff = factories.UserFactory(is_superuser=True, is_staff=True)
-        api_client.force_authenticate(user=superuser_staff)
-        response = api_client.get(self.LIST_DOMAINS_URL)
-
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 3
-        domain_ids = [item["id"] for item in response.data["results"]]
-        assert str(mail_domain1.id) in domain_ids
-        assert str(mail_domain2.id) in domain_ids
-        assert str(unmanaged_domain.id) in domain_ids
-
-    def test_list_administered_maildomains_superuser_not_staff(
-        self,
-        api_client,
-        mail_domain1,
-        mail_domain2,
-        unmanaged_domain,
-    ):
-        """Test that superuser without staff status cannot list all domains."""
-        superuser_not_staff = factories.UserFactory(is_superuser=True, is_staff=False)
-        api_client.force_authenticate(user=superuser_not_staff)
-        response = api_client.get(self.LIST_DOMAINS_URL)
-
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 0
-
-    def test_list_administered_maildomains_staff_not_superuser(
-        self,
-        api_client,
-        mail_domain1,
-        mail_domain2,
-        unmanaged_domain,
-    ):
-        """Test that staff without superuser status cannot list all domains."""
-        staff_not_superuser = factories.UserFactory(is_superuser=False, is_staff=True)
-        api_client.force_authenticate(user=staff_not_superuser)
-        response = api_client.get(self.LIST_DOMAINS_URL)
-
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 0
-
-    def test_list_administered_maildomains_staff_not_superuser_with_access(
-        self,
-        api_client,
-        mail_domain1,
-        mail_domain2,
-        unmanaged_domain,
-    ):
-        """Test that staff without superuser status can only see domains they have access to."""
-        staff_not_superuser = factories.UserFactory(is_superuser=False, is_staff=True)
-
-        # Give access to only one domain
-        models.MailDomainAccess.objects.create(
-            maildomain=mail_domain1,
-            user=staff_not_superuser,
-            role=models.MailDomainAccessRoleChoices.ADMIN,
-        )
-
-        api_client.force_authenticate(user=staff_not_superuser)
-        response = api_client.get(self.LIST_DOMAINS_URL)
-
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 1
-        domain_ids = [item["id"] for item in response.data["results"]]
-        assert str(mail_domain1.id) in domain_ids
-        assert str(mail_domain2.id) not in domain_ids
-        assert str(unmanaged_domain.id) not in domain_ids
-
-
-class TestMailboxAdminViewSet:
-    """Tests for the MailboxAdminViewSet."""
-
-    # Fixtures are inherited or can be passed directly to test methods
-
     # pylint: disable=too-many-arguments
-    def test_list_mailboxes_for_domain_success(
+    def test_admin_maildomains_mailbox_list_for_domain_success(
         self,
         api_client,
         domain_admin_user,
@@ -258,7 +144,7 @@ class TestMailboxAdminViewSet:
     ):
         """Test that a domain admin can list mailboxes in a domain they administer."""
         api_client.force_authenticate(user=domain_admin_user)
-        url = TestMailDomainAdminViewSet().mailboxes_url(mail_domain1.pk)
+        url = self.mailboxes_url(mail_domain1.pk)
         response = api_client.get(url)
 
         assert response.status_code == status.HTTP_200_OK
@@ -306,23 +192,25 @@ class TestMailboxAdminViewSet:
             len(mb2_data["accesses"]) == 0
         )  # No accesses created for mailbox2 in this test
 
-    def test_list_mailboxes_for_domain_forbidden_not_admin(
+    def test_admin_maildomains_mailbox_list_for_domain_forbidden_not_admin(
         self, api_client, other_user, mail_domain1
     ):
         """Test that users without domain admin access cannot list mailboxes."""
         api_client.force_authenticate(user=other_user)
-        url = TestMailDomainAdminViewSet().mailboxes_url(mail_domain1.pk)
+        url = self.mailboxes_url(mail_domain1.pk)
         response = api_client.get(url)
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_list_mailboxes_for_domain_unauthenticated(self, api_client, mail_domain1):
+    def test_admin_maildomains_mailbox_list_for_domain_unauthenticated(
+        self, api_client, mail_domain1
+    ):
         """Test that unauthenticated requests to list mailboxes are rejected."""
-        url = TestMailDomainAdminViewSet().mailboxes_url(mail_domain1.pk)
+        url = self.mailboxes_url(mail_domain1.pk)
         response = api_client.get(url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     @pytest.mark.parametrize("valid_local_part", ["valid", "valid-pa_rt09.xx"])
-    def test_create_mailbox_success(
+    def test_admin_maildomains_mailbox_create_success(
         self,
         valid_local_part,
         api_client,
@@ -332,7 +220,7 @@ class TestMailboxAdminViewSet:
     ):
         """Test that domain admins can create mailboxes in domains they administer."""
         api_client.force_authenticate(user=domain_admin_user)
-        url = TestMailDomainAdminViewSet().mailboxes_url(mail_domain1.pk)
+        url = self.mailboxes_url(mail_domain1.pk)
         data = {"local_part": valid_local_part}
         response = api_client.post(url, data=data)
 
@@ -342,7 +230,7 @@ class TestMailboxAdminViewSet:
         assert new_mailbox.domain == mail_domain1
         assert new_mailbox.local_part == valid_local_part
 
-    def test_create_mailbox_duplicate_local_part(
+    def test_admin_maildomains_mailbox_create_duplicate_local_part(
         self,
         api_client,
         domain_admin_user,
@@ -352,7 +240,7 @@ class TestMailboxAdminViewSet:
     ):
         """Test that creating a mailbox with a duplicate local_part fails."""
         api_client.force_authenticate(user=domain_admin_user)
-        url = TestMailDomainAdminViewSet().mailboxes_url(mail_domain1.pk)
+        url = self.mailboxes_url(mail_domain1.pk)
         data = {"local_part": mailbox1_domain1.local_part}  # Duplicate
         response = api_client.post(url, data=data)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -362,7 +250,7 @@ class TestMailboxAdminViewSet:
         "invalid_local_part",
         ["invalid@example.com", "invalid part", "invalidé", "", " "],
     )
-    def test_create_mailbox_invalid_local_part(
+    def test_admin_maildomains_mailbox_create_invalid_local_part(
         self,
         invalid_local_part,
         api_client,
@@ -372,14 +260,169 @@ class TestMailboxAdminViewSet:
     ):
         """Test that creating a mailbox with an invalid local_part fails."""
         api_client.force_authenticate(user=domain_admin_user)
-        url = TestMailDomainAdminViewSet().mailboxes_url(mail_domain1.pk)
+        url = self.mailboxes_url(mail_domain1.pk)
         data = {"local_part": invalid_local_part}
         response = api_client.post(url, data=data)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "local_part" in response.data
 
+    @patch("core.api.viewsets.maildomain.reset_keycloak_user_password")
+    @override_settings(IDENTITY_PROVIDER="keycloak")
+    def test_admin_maildomains_mailbox_create_personal_with_keycloak_password_reset(
+        self,
+        mock_reset_password,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Test that personal mailbox creation triggers Keycloak password reset when IDENTITY_PROVIDER is keycloak."""
+        mock_reset_password.return_value = "temporary-password-123"
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+
+        data = {
+            "local_part": "testuser",
+            "metadata": {"type": "personal", "first_name": "Test", "last_name": "User"},
+        }
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["local_part"] == "testuser"
+        assert response.data["one_time_password"] == "temporary-password-123"
+
+        # Verify Keycloak password reset was called with correct email
+        mock_reset_password.assert_called_once_with("testuser@admin-domain1.com")
+
+    @patch("core.api.viewsets.maildomain.reset_keycloak_user_password")
+    @override_settings(IDENTITY_PROVIDER="other_provider")
+    def test_admin_maildomains_mailbox_create_personal_without_keycloak_identity_provider(
+        self,
+        mock_reset_password,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Test that personal mailbox creation doesn't trigger password reset when IDENTITY_PROVIDER is not keycloak."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+
+        data = {
+            "local_part": "testuser",
+            "metadata": {"type": "personal", "first_name": "Test", "last_name": "User"},
+        }
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["local_part"] == "testuser"
+        assert "one_time_password" not in response.data
+
+        # Verify Keycloak password reset was not called
+        mock_reset_password.assert_not_called()
+
+    @override_settings(IDENTITY_PROVIDER="keycloak")
+    def test_admin_maildomains_mailbox_create_non_personal_no_keycloak_integration(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Test that non-personal mailbox creation doesn't involve Keycloak."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+
+        data = {"local_part": "sharedmailbox", "metadata": {"type": "shared"}}
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["local_part"] == "sharedmailbox"
+        assert "one_time_password" not in response.data
+
+    @patch("core.api.viewsets.maildomain.reset_keycloak_user_password")
+    @override_settings(IDENTITY_PROVIDER="keycloak")
+    def test_admin_maildomains_mailbox_create_personal_user_creation_and_access(
+        self,
+        mock_reset_password,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Test that personal mailbox creation creates user and mailbox access correctly."""
+        mock_reset_password.return_value = "temporary-password-123"
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+
+        data = {
+            "local_part": "newuser",
+            "metadata": {"type": "personal", "first_name": "John", "last_name": "Doe"},
+        }
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Verify user was created with correct details
+        user = models.User.objects.get(email="newuser@admin-domain1.com")
+        assert user.full_name == "John Doe"
+        assert user.short_name == "John"
+        assert user.password == "?"
+
+        # Verify mailbox access was created
+        mailbox = models.Mailbox.objects.get(local_part="newuser", domain=mail_domain1)
+        mailbox_access = models.MailboxAccess.objects.get(mailbox=mailbox, user=user)
+        assert mailbox_access.role == MailboxRoleChoices.ADMIN
+
+    def test_admin_maildomains_mailbox_create_personal_user_already_exists_no_update(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Test that personal mailbox creation doesn't update existing user details."""
+        # Create user first with different details
+        factories.UserFactory(
+            email="existinguser@admin-domain1.com",
+            full_name="Existing User",
+            short_name="Existing",
+            password="existing-password",
+        )
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+
+        data = {
+            "local_part": "existinguser",
+            "metadata": {"type": "personal", "first_name": "New", "last_name": "Name"},
+        }
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Verify user details were not updated
+        user = models.User.objects.get(email="existinguser@admin-domain1.com")
+        assert user.full_name == "Existing User"  # Should not be updated
+        assert user.short_name == "Existing"  # Should not be updated
+        assert user.password == "existing-password"  # Should not be updated
+
+        # Verify mailbox access was created
+        mailbox = models.Mailbox.objects.get(
+            local_part="existinguser", domain=mail_domain1
+        )
+        mailbox_access = models.MailboxAccess.objects.get(mailbox=mailbox, user=user)
+        assert mailbox_access.role == MailboxRoleChoices.ADMIN
+
     # --- EXCLUDE ABILITIES Tests ---
-    def test_mailbox_admin_list_excludes_abilities_from_nested_users(
+    def test_admin_maildomains_mailbox_list_excludes_abilities_from_nested_users(
         self,
         api_client,
         domain_admin_user,
@@ -394,7 +437,7 @@ class TestMailboxAdminViewSet:
     ):
         """Test that mailbox admin list endpoint excludes abilities from nested users."""
         api_client.force_authenticate(user=domain_admin_user)
-        url = TestMailDomainAdminViewSet().mailboxes_url(mail_domain1.pk)
+        url = self.mailboxes_url(mail_domain1.pk)
         response = api_client.get(url)
 
         assert response.status_code == status.HTTP_200_OK
@@ -437,7 +480,7 @@ class TestMailboxAdminViewSet:
         assert "accesses" in mb2_data
         assert len(mb2_data["accesses"]) == 0
 
-    def test_mailbox_admin_retrieve_excludes_abilities_from_nested_users(
+    def test_admin_maildomains_mailbox_retrieve_excludes_abilities_from_nested_users(
         self,
         api_client,
         domain_admin_user,
@@ -451,9 +494,7 @@ class TestMailboxAdminViewSet:
     ):
         """Test that mailbox admin retrieve endpoint excludes abilities from nested users."""
         api_client.force_authenticate(user=domain_admin_user)
-        url = TestMailDomainAdminViewSet().mailbox_detail_url(
-            mail_domain1.pk, mailbox1_domain1.pk
-        )
+        url = self.mailbox_detail_url(mail_domain1.pk, mailbox1_domain1.pk)
         response = api_client.get(url)
 
         assert response.status_code == status.HTTP_200_OK
@@ -470,7 +511,7 @@ class TestMailboxAdminViewSet:
             assert "full_name" in user_data
             assert "short_name" in user_data
 
-    def test_mailbox_admin_excludes_abilities_with_superuser(
+    def test_admin_maildomains_mailbox_excludes_abilities_with_superuser(
         self,
         api_client,
         mail_domain1,
@@ -492,7 +533,7 @@ class TestMailboxAdminViewSet:
 
         api_client.force_authenticate(user=superuser)
 
-        url = TestMailDomainAdminViewSet().mailboxes_url(mail_domain1.pk)
+        url = self.mailboxes_url(mail_domain1.pk)
         response = api_client.get(url)
 
         assert response.status_code == status.HTTP_200_OK

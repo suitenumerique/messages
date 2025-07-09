@@ -547,6 +547,27 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class MailboxAdminCreateSerializer(MailboxAdminSerializer):
+    """
+    Serialize Mailbox details for create admin endpoint, including users with access and
+    metadata.
+    """
+
+    one_time_password = serializers.SerializerMethodField(
+        read_only=True, required=False
+    )
+
+    def get_one_time_password(self, instance) -> str | None:
+        """
+        Fake method just to make the OpenAPI schema valid.
+        """
+
+    class Meta:
+        model = models.Mailbox
+        fields = MailboxAdminSerializer.Meta.fields + ["one_time_password"]
+        read_only_fields = fields
+
+
 class ImportBaseSerializer(serializers.Serializer):
     """Base serializer for import actions that disables create and update."""
 
