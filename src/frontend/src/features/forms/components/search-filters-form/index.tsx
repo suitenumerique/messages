@@ -15,7 +15,7 @@ export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) =
 
     const updateQuery = (submit: boolean) => {
         const formData = new FormData(formRef.current as HTMLFormElement);
-        const query = SearchHelper.serializeSearchFormData(formData, i18n.language);
+        const query = SearchHelper.serializeSearchFormData(formData, i18n.resolvedLanguage);
         onChange(query, submit);
         formRef.current?.reset();
     }

@@ -9,12 +9,12 @@ export class DateHelper {
    * - Today: displays time (HH:mm)
    * - Less than 1 month: displays short date (e.g., "3 mars")
    * - Otherwise: displays full date (DD/MM/YYYY)
-   * 
+   *
    * @param dateString - The date string to format
    * @param locale - The locale code (e.g., 'fr', 'en')
    * @returns Formatted date string
    */
-  public static formatDate(dateString: string, locale: string): string {
+  public static formatDate(dateString: string, locale: string = 'en'): string {
     const date = new Date(dateString);
     const daysDifference = differenceInDays(new Date(), date);
     const dateLocale = locales[locale as keyof typeof locales];

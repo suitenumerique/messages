@@ -28,7 +28,7 @@ export const QuotedMessageBlock = createReactBlockSpec(
                         <p>{props.mode === "reply" ? t('quoted_message_block.replied-message') : t('quoted_message_block.forwarded-message')}</p>
                         <p><strong>{t('quoted_message_block.from')}:</strong> {props.sender}</p>
                         <p><strong>{t('quoted_message_block.subject')}:</strong> {props.subject}</p>
-                        <p><strong>{t('quoted_message_block.date')}:</strong> {DateHelper.formatDate(props.received_at, i18n.language)}</p>
+                        <p><strong>{t('quoted_message_block.date')}:</strong> {DateHelper.formatDate(props.received_at, i18n.resolvedLanguage)}</p>
                         <p><strong>{t('quoted_message_block.to')}:</strong> {props.recipients}</p>
                     </blockquote>
                 </div>

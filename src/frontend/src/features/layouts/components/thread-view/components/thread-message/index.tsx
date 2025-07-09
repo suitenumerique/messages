@@ -84,7 +84,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                             <div className="thread-message__metadata">
                                 {message.sent_at && (
                                     <p className="thread-message__date">{
-                                        new Date(message.sent_at).toLocaleString(i18n.language, {
+                                        new Date(message.sent_at).toLocaleString(i18n.resolvedLanguage, {
                                             minute: '2-digit',
                                             hour: '2-digit',
                                             day: '2-digit',

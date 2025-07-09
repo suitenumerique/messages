@@ -104,7 +104,7 @@ export const ThreadItem = ({ thread }: ThreadItemProps) => {
                 </div> */}
                     {thread.messaged_at && (
                         <span className="thread-item__date">
-                            {DateHelper.formatDate(thread.messaged_at, i18n.language)}
+                            {DateHelper.formatDate(thread.messaged_at, i18n.resolvedLanguage)}
                         </span>
                     )}
                 </div>

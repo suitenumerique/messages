@@ -8,14 +8,14 @@ type AttachmentListProps = {
 
 export const AttachmentList = ({ attachments }: AttachmentListProps) => {
     const { t, i18n } = useTranslation();
-    
+
     return (
         <section className="thread-attachment-list">
             <header className="thread-attachment-list__header">
                 <p>
                     <strong>{t("attachments.counter", { count: attachments.length })}</strong>
                     {' '}
-                    ({AttachmentHelper.getFormattedTotalSize(attachments, i18n.language)})
+                    ({AttachmentHelper.getFormattedTotalSize(attachments, i18n.resolvedLanguage)})
                 </p>
             </header>
             <div className="thread-attachment-list__body">

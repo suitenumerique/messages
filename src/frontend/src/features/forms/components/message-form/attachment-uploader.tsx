@@ -89,7 +89,7 @@ export const AttachmentUploader = ({
         if (!hasClickInBucketList) {
             getRootProps().onClick?.(event);
         }
-        
+
     }
 
     /**
@@ -126,7 +126,7 @@ export const AttachmentUploader = ({
                 <div className="attachment-uploader__bucket">
                     <p className="attachment-bucket__counter">
                         <strong>{t("attachments.counter", { count: attachments.length })}</strong>{' '}
-                        ({AttachmentHelper.getFormattedTotalSize(attachments, i18n.language)})
+                        ({AttachmentHelper.getFormattedTotalSize(attachments, i18n.resolvedLanguage)})
                     </p>
                     <div className="attachment-bucket__list">
                         {failedQueue.map((entry) => (
@@ -151,4 +151,4 @@ export const AttachmentUploader = ({
             )}
         </section>
     );
-}; 
+};

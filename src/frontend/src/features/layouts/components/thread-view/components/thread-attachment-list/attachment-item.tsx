@@ -32,7 +32,7 @@ export const AttachmentItem = ({ attachment, isLoading = false, canDownload = tr
                 :
                     <img className="attachment-item-icon" src={icon} alt="" />
                 }
-                <p className="attachment-item-size">{AttachmentHelper.getFormattedSize(attachment.size, i18n.language)}</p>
+                <p className="attachment-item-size">{AttachmentHelper.getFormattedSize(attachment.size, i18n.resolvedLanguage)}</p>
             </div>
             <div className="attachment-item-content">
                 <p className="attachment-item-name">{attachment.name}</p>

@@ -45,7 +45,7 @@ export class AttachmentHelper {
         const category = AttachmentHelper.getMimeCategory(attachment);
         return mini ? MIME_TO_ICON_MINI[category] : MIME_TO_ICON[category];
     }
-      
+
     /**
      * Get the format translation key of an attachment
      */

@@ -69,9 +69,9 @@ const MessageEditor = ({ blockNoteOptions, defaultValue, quotedMessage, ...props
         trailingBlock: false,
         initialContent: getInitialContent(),
         dictionary: {
-            ...locales[i18n.language as keyof typeof locales],
+            ...(locales[(i18n.resolvedLanguage) as keyof typeof locales] || locales.en),
             placeholders: {
-                ...locales[i18n.language as keyof typeof locales].placeholders,
+                ...(locales[(i18n.resolvedLanguage) as keyof typeof locales] || locales.en).placeholders,
                 emptyDocument: t('message_editor.start_typing'),
                 default: t('message_editor.start_typing'),
             }
