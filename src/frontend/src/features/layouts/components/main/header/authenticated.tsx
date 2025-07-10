@@ -6,11 +6,16 @@ import { useAuth } from "@/features/auth";
 import UserMenu from "./user-menu";
 
 
+type AuthenticatedHeaderProps = HeaderProps & {
+  hideSearch?: boolean;
+}
+
 export const AuthenticatedHeader = ({
   leftIcon,
   onTogglePanel,
   isPanelOpen,
-}: HeaderProps) => {
+  hideSearch = false,
+}: AuthenticatedHeaderProps) => {
   const { t } = useCunningham();
   const { isDesktop } = useResponsive();
 
@@ -31,7 +36,7 @@ export const AuthenticatedHeader = ({
       </div>
       <div className="c__header__left">{leftIcon}</div>
       <div className="c__header__center">
-        <SearchInput />
+        {!hideSearch && <SearchInput />}
       </div>
       {isDesktop && (
         <div className="c__header__right">
@@ -44,7 +49,7 @@ export const AuthenticatedHeader = ({
 
 export const HeaderRight = () => {
   const { user } = useAuth();
-  
+
   return (
     <>
       {user && <UserMenu />}

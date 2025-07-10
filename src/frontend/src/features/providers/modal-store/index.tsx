@@ -31,6 +31,10 @@ export const ModalStoreProvider = ({ children }: PropsWithChildren) => {
         if (window.location.hash.includes(`#${modalId}`)) {
             await router.push(router.asPath.split('#')[0])
         }
+        // Remove the modal hash from the localStorage if needed
+        if (localStorage.getItem('openControlledModal') === modalId) {
+            localStorage.removeItem('openControlledModal');
+        }
         setOpenModals((prev) => {
             const next = new Set([...prev]);
             next.delete(modalId);
@@ -54,7 +58,7 @@ export const ModalStoreProvider = ({ children }: PropsWithChildren) => {
      */
     useEffect(() => {
         const handleHashChange = () => {
-            const modalId = window.location.hash.replace('#', '');
+            const modalId = window.location.hash.replace('#', '') || localStorage.getItem('openControlledModal');
             if (modalId && modalStore.has(modalId) && !isModalOpen(modalId)) {
                 openModal(modalId);
             }

@@ -21,6 +21,7 @@ export type MainLayoutProps = {
   hideLeftPanelOnDesktop?: boolean;
   isLeftPanelOpen?: boolean;
   setIsLeftPanelOpen?: (isLeftPanelOpen: boolean) => void;
+  hideSearch?: boolean;
 };
 
 /**
@@ -35,6 +36,7 @@ export const AppLayout = ({
   hideLeftPanelOnDesktop = false,
   leftPanelContent,
   enableResize = false,
+  hideSearch = false,
   ...props
 }: PropsWithChildren<MainLayoutProps>) => {
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useControllableState(
@@ -97,6 +99,7 @@ export const AppLayout = ({
           onTogglePanel={onTogglePanel}
           isPanelOpen={isLeftPanelOpen}
           leftIcon={icon}
+          hideSearch={hideSearch}
         />
       </div>
       <div className="c__main-layout__content">

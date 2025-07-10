@@ -20,6 +20,12 @@
     color: var(--c--theme--colors--danger-600);
 }
 
+.banner--warning {
+    background-color: var(--c--theme--colors--warning-050);
+    border: 1px solid var(--c--theme--colors--warning-400);
+    color: var(--c--theme--colors--warning-600);
+}
+
 .banner__content {
     display: flex;
     flex-direction: row;

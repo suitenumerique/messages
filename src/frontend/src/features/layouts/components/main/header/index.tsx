@@ -3,7 +3,11 @@ import { useAuth } from "@/features/auth";
 import { AuthenticatedHeader } from "./authenticated";
 import { AnonymousHeader } from "./anonymous";
 
-export const Header = (props: HeaderProps) => {
+type ProxyHeaderProps = HeaderProps & {
+  hideSearch?: boolean;
+}
+
+export const Header = (props: ProxyHeaderProps) => {
   const { user } = useAuth();
 
   if (user) {

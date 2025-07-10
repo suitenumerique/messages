@@ -12,7 +12,7 @@ const UserMenu = () => {
         <DropdownMenu
           options={[
             {
-              label: t("logout"),
+              label: t("user_menu.logout"),
               icon: <span className="material-icons">logout</span>,
               callback: logout,
             },

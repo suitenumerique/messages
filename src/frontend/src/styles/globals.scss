@@ -45,6 +45,10 @@ body {
   font-size: var(--c--theme--font--sizes--m);
 }
 
+.c__datagrid__table__container > table th, .c__datagrid__table__container > table td {
+  font-size: var(--c--theme--font--sizes--ml);
+}
+
 // Related to @viselect/react
 .selection-area {
   background: rgba(46, 115, 252, 0.11);

@@ -129,8 +129,8 @@ export const MessageForm = ({
     const getDefaultSubject = () => {
         if (draft?.subject) return draft.subject
         if (parentMessage) {
-            if (mode === "forward") return MailHelper.prefixSubjectIfNeeded(parentMessage.subject, "Fwd:");
-            if (mode.startsWith("reply")) return MailHelper.prefixSubjectIfNeeded(parentMessage.subject, "Re:");
+            if (mode === "forward") return MailHelper.prefixSubjectIfNeeded(parentMessage.subject ?? "", "Fwd:");
+            if (mode.startsWith("reply")) return MailHelper.prefixSubjectIfNeeded(parentMessage.subject ?? "", "Re:");
         }
 
         return '';

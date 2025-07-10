@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 type BannerProps = {
     children: React.ReactNode;
-    type: "info" | "error";
+    type: "info" | "error" | "warning";
     icon?: React.ReactNode;
 }
 
@@ -15,14 +15,14 @@ export const Banner = ({ children, type = 'info', icon }: BannerProps) => {
     const { t } = useTranslation();
 
     return (
-        <div 
+        <div
             className={clsx("banner", `banner--${type}`)}
             role="alert"
             aria-live="polite"
             aria-label={t(`aria.labels.banner.${type}`)}
         >
             <div className="banner__content">
-                <div 
+                <div
                     className="banner__content__icon"
                     aria-hidden="true"
                 >
