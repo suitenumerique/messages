@@ -120,8 +120,8 @@ def prepare_outbound_message(
             # Add the attachment to the MIME data
             attachments.append(
                 {
-                    "content": blob.raw_content,  # Binary content
-                    "type": blob.type,  # MIME type
+                    "content": blob.get_content(),  # Decompressed binary content
+                    "type": blob.content_type,  # MIME type
                     "name": attachment.name,  # Original filename
                     "disposition": "attachment",  # Default to attachment disposition
                     "size": blob.size,  # Size in bytes
@@ -143,9 +143,12 @@ def prepare_outbound_message(
         logger.error("Failed to compose MIME for message %s: %s", message.id, e)
         return False
 
+    # Find the mailbox for this message (get the first one from thread accesses)
+    mailbox = message.thread.accesses.first().mailbox
+
     # Sign the message with DKIM
     dkim_signature_header: Optional[bytes] = sign_message_dkim(
-        raw_mime_message=raw_mime, sender_email=message.sender.email
+        raw_mime_message=raw_mime, sender_email=message.sender.email, mailbox=mailbox
     )
 
     raw_mime_signed = raw_mime
@@ -153,7 +156,13 @@ def prepare_outbound_message(
         # Prepend the signature header
         raw_mime_signed = dkim_signature_header + b"\r\n" + raw_mime
 
-    message.raw_mime = raw_mime_signed
+    # Create a blob to store the raw MIME content
+    blob = mailbox.create_blob(
+        content=raw_mime_signed,
+        content_type="message/rfc822",
+    )
+
+    message.blob = blob
     message.is_draft = False
     message.draft_body = None
     message.created_at = timezone.now()
@@ -161,7 +170,7 @@ def prepare_outbound_message(
     message.save(
         update_fields=[
             "updated_at",
-            "raw_mime",
+            "blob",
             "mime_id",
             "is_draft",
             "draft_body",
@@ -182,7 +191,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
     message.sent_at = timezone.now()
     message.save(update_fields=["sent_at"])
 
-    mime_data = parse_email_message(message.raw_mime)
+    mime_data = parse_email_message(message.blob.get_content())
 
     # Include all recipients in the envelope that have not been delivered yet, including BCC
     envelope_to = {
@@ -249,7 +258,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
         ):
             try:
                 delivered = deliver_inbound_message(
-                    recipient_email, mime_data, message.raw_mime
+                    recipient_email, mime_data, message.blob.get_content()
                 )
                 _mark_delivered(recipient_email, delivered, True)
             except Exception as e:  # noqa: BLE001
@@ -316,7 +325,7 @@ def send_outbound_message(
                 )
 
             smtp_response = client.sendmail(
-                envelope_from, recipient_emails, message.raw_mime
+                envelope_from, recipient_emails, message.blob.get_content()
             )
             logger.info(
                 "Sent message %s via SMTP. Response: %s",

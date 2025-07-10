@@ -822,7 +822,10 @@ class TestReplyGeneration:
             "This is the original <b>HTML</b> content"
             in reply["htmlBody"][0]["content"]
         )
-        assert '<blockquote data-type="quote-separator">' in reply["htmlBody"][0]["content"]
+        assert (
+            '<blockquote data-type="quote-separator">'
+            in reply["htmlBody"][0]["content"]
+        )
         assert "---------- In reply to ----------" in reply["htmlBody"][0]["content"]
 
     def test_reply_with_long_original(self):

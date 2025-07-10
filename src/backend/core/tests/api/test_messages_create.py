@@ -167,8 +167,8 @@ class TestApiDraftAndSendMessage:
         mock_send_outbound_message.assert_called()
 
         sent_message = models.Message.objects.get(id=draft_message_id)
-        assert sent_message.raw_mime
-        assert subject in sent_message.raw_mime.decode("utf-8")
+        assert sent_message.blob
+        assert subject in sent_message.blob.get_content().decode("utf-8")
 
         assert sent_message.is_draft is False
         assert sent_message.is_sender is True
@@ -299,8 +299,8 @@ class TestApiDraftAndSendMessage:
         mock_send_outbound_message.assert_called()
 
         sent_message = models.Message.objects.get(id=draft_message_id)
-        assert sent_message.raw_mime
-        assert subject in sent_message.raw_mime.decode("utf-8")
+        assert sent_message.blob
+        assert subject in sent_message.blob.get_content().decode("utf-8")
 
         assert sent_message.is_draft is False
         assert sent_message.is_sender is True
@@ -788,7 +788,7 @@ class TestApiDraftAndSendReply:
 
         assert (
             b"In-Reply-To: <" + message.mime_id.encode("utf-8") + b">\r\n"
-            in sent_message.raw_mime
+            in sent_message.blob.get_content()
         )
 
     @pytest.mark.parametrize(

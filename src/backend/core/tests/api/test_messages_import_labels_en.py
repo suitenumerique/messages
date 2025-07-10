@@ -2,8 +2,6 @@
 # pylint: disable=redefined-outer-name,R0801
 # TODO: fix R0801 by refactoring the tests and merge into one filetest_messages_import_labels.py
 
-import hashlib
-
 import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -53,12 +51,9 @@ def upload_mbox_file(client, mbox_file_path, mailbox):
     with open(mbox_file_path, "rb") as f:
         mbox_content = f.read()
 
-    blob = Blob.objects.create(
-        raw_content=mbox_content,
-        type="application/mbox",
-        size=len(mbox_content),
-        mailbox=mailbox,
-        sha256=hashlib.sha256(mbox_content).hexdigest(),
+    blob = mailbox.create_blob(
+        content=mbox_content,
+        content_type="application/mbox",
     )
 
     response = client.post(
@@ -250,12 +245,9 @@ def test_api_authentication_required(api_client, mbox_file_path, mailbox):
     with open(mbox_file_path, "rb") as f:
         mbox_content = f.read()
 
-    blob = Blob.objects.create(
-        raw_content=mbox_content,
-        type="application/mbox",
-        size=len(mbox_content),
-        mailbox=mailbox,
-        sha256=hashlib.sha256(mbox_content).hexdigest(),
+    blob = mailbox.create_blob(
+        content=mbox_content,
+        content_type="application/mbox",
     )
 
     response = api_client.post(
@@ -277,12 +269,9 @@ def test_mailbox_access_required(api_client, mbox_file_path, mailbox):
     with open(mbox_file_path, "rb") as f:
         mbox_content = f.read()
 
-    blob = Blob.objects.create(
-        raw_content=mbox_content,
-        type="application/mbox",
-        size=len(mbox_content),
-        mailbox=mailbox,
-        sha256=hashlib.sha256(mbox_content).hexdigest(),
+    blob = mailbox.create_blob(
+        content=mbox_content,
+        content_type="application/mbox",
     )
 
     response = api_client.post(

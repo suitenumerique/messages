@@ -39,7 +39,6 @@ def test_api_users_retrieve_me_authenticated():
         "id": str(user.id),
         "email": user.email,
         "full_name": user.full_name,
-        "short_name": user.short_name,
         "abilities": {
             "create_maildomains": False,
             "view_maildomains": False,
@@ -175,4 +174,3 @@ def test_users_me_endpoint_includes_abilities_by_default():
     assert "id" in data
     assert "email" in data
     assert "full_name" in data
-    assert "short_name" in data

@@ -395,7 +395,6 @@ class TestMailboxAccessViewSet:
             assert "id" in user_details
             assert "email" in user_details
             assert "full_name" in user_details
-            assert "short_name" in user_details
 
     def test_retrieve_mailbox_access_excludes_abilities_from_nested_user(
         self,
@@ -419,7 +418,6 @@ class TestMailboxAccessViewSet:
         assert "id" in user_details
         assert "email" in user_details
         assert "full_name" in user_details
-        assert "short_name" in user_details
 
     def test_mailbox_access_excludes_abilities_with_superuser(
         self,

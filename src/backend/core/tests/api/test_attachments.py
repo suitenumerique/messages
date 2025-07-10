@@ -86,7 +86,7 @@ class TestBlobAPI:
         # Verify the blob was created in the database
         blob_id = uuid.UUID(response.data["blobId"])
         blob = models.Blob.objects.get(id=blob_id)
-        assert blob.type == "text/plain"
+        assert blob.content_type == "text/plain"
         assert blob.sha256 == expected_hash
         assert blob.size == len(file_content)
         assert blob.mailbox == user_mailbox
@@ -160,12 +160,9 @@ class TestDraftWithAttachments:
     def blob(self, user_mailbox):
         """Create a test blob."""
         test_content = b"Test attachment content %i" % random.randint(0, 10000000)
-        return models.Blob.objects.create(
-            sha256=hashlib.sha256(test_content).hexdigest(),
-            size=len(test_content),
-            type="text/plain",
-            raw_content=test_content,
-            mailbox=user_mailbox,
+        return user_mailbox.create_blob(
+            content=test_content,
+            content_type="text/plain",
         )
 
     @pytest.fixture
@@ -295,7 +292,7 @@ class TestDraftWithAttachments:
         assert draft.attachments.count() == 1
         assert draft.attachments.first().blob == blob
         assert draft.attachments.first().mailbox == user_mailbox
-        parsed_email = email.message_from_bytes(draft.raw_mime)
+        parsed_email = email.message_from_bytes(draft.blob.get_content())
 
         # Check that the email is multipart
         assert parsed_email.is_multipart()
@@ -313,6 +310,6 @@ class TestDraftWithAttachments:
             "text/plain",
         ]
 
-        assert parts[4].get_payload(decode=True).decode() == blob.raw_content.decode()
+        assert parts[4].get_payload(decode=True).decode() == blob.get_content().decode()
         assert parts[4].get_content_disposition() == "attachment"
         assert parts[4].get_filename() == "test_attachment.txt"

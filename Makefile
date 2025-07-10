@@ -230,12 +230,17 @@ back-shell: ## open a shell in the backend container
 	@$(COMPOSE) run --rm --build backend-dev /bin/bash
 .PHONY: back-shell
 
+back-shell-no-deps: ## open a shell in the backend container without dependencies
+	@$(COMPOSE) run --rm --no-deps --build backend-dev /bin/bash
+.PHONY: back-shell
+
 back-exec: ## open a shell in the running backend-dev container
 	@$(COMPOSE) exec backend-dev /bin/bash
 .PHONY: back-exec
 
 back-poetry-lock: ## lock the dependencies
 	@$(COMPOSE) run --rm --build backend-poetry poetry lock
+	make pip-audit
 .PHONY: back-poetry-lock
 
 back-poetry-check: ## check the dependencies
@@ -245,6 +250,10 @@ back-poetry-check: ## check the dependencies
 back-poetry-outdated: ## show outdated dependencies
 	@$(COMPOSE) run --rm --build backend-poetry poetry show --outdated
 .PHONY: back-poetry-outdated
+
+pip-audit: ## check the dependencies
+	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp --build backend-dev pip-audit
+.PHONY: pip-audit
 
 collectstatic: ## collect static files
 	@$(MANAGE) collectstatic --noinput

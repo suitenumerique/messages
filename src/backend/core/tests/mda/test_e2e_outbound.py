@@ -1,7 +1,6 @@
 """End-to-End tests for message sending and receiving flow."""
 # pylint: disable=too-many-positional-arguments
 
-import base64
 import json
 import random
 import time
@@ -11,13 +10,12 @@ from django.urls import reverse
 
 import pytest
 import requests
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
 from dkim import verify as dkim_verify
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from core import enums, factories, models
+from core.mda.signing import generate_dkim_key
 
 # --- Fixtures (copied/adapted from test_messages_create.py) --- #
 
@@ -67,17 +65,8 @@ def fixture_sender_contact(mailbox, authenticated_user):
     return contact
 
 
-# Test private key for DKIM
-private_key_for_tests = rsa.generate_private_key(public_exponent=65537, key_size=1024)
-public_key_der = private_key_for_tests.public_key().public_bytes(
-    encoding=serialization.Encoding.DER,
-    format=serialization.PublicFormat.SubjectPublicKeyInfo,
-)
-private_key_pem = private_key_for_tests.private_bytes(
-    encoding=serialization.Encoding.PEM,
-    format=serialization.PrivateFormat.PKCS8,
-    encryption_algorithm=serialization.NoEncryption(),
-)
+# Test private key for DKIM - using centralized generation
+test_private_key, test_public_key = generate_dkim_key(key_size=1024)
 
 # --- E2E Test Class --- #
 
@@ -87,11 +76,6 @@ class TestE2EMessageOutboundFlow:
     """Test the outbound flow: API -> MDA -> Mailcatcher -> Verification."""
 
     @override_settings(
-        # Ensure DKIM settings are configured for the test domain
-        MESSAGES_DKIM_DOMAINS=["example.com"],  # Match the mailbox domain
-        MESSAGES_DKIM_SELECTOR="testselector",
-        MESSAGES_DKIM_PRIVATE_KEY_B64=base64.b64encode(private_key_pem).decode("utf-8"),
-        MESSAGES_DKIM_PRIVATE_KEY_FILE=None,
         # Ensure MTA-OUT is configured to point to Mailcatcher
         MTA_OUT_HOST="mailcatcher:1025",
         MTA_OUT_SMTP_USERNAME=None,
@@ -103,6 +87,16 @@ class TestE2EMessageOutboundFlow:
     ):
         """Test creating a draft, sending it, receiving via mailcatcher, and verifying content/DKIM."""
         # --- Setup --- #
+        # Create and configure DKIM key for the domain
+        dkim_key = models.DKIMKey.objects.create(
+            selector="testselector",
+            private_key=test_private_key,
+            public_key=test_public_key,
+            key_size=1024,
+            is_active=True,
+            domain=mailbox.domain,
+        )
+
         # Grant necessary permissions
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -181,7 +175,7 @@ class TestE2EMessageOutboundFlow:
         sent_message = models.Message.objects.get(id=draft_message_id)
         assert not sent_message.is_draft
         assert sent_message.sent_at is not None
-        assert len(sent_message.raw_mime) > 0  # Ensure raw_mime was generated
+        assert sent_message.blob  # Ensure blob was generated
 
         # --- Step 3: Wait for and Fetch from Mailcatcher --- #
         # Increased wait time for E2E test involving network/docker
@@ -240,8 +234,8 @@ class TestE2EMessageOutboundFlow:
         def get_dns_txt(fqdn, **kwargs):
             # Mock DNS lookup for the public key
             if fqdn == b"testselector._domainkey.example.com.":
-                # Format according to RFC 6376 TXT record format
-                return b"v=DKIM1; k=rsa; p=" + base64.b64encode(public_key_der)
+                # Use the public key stored in the DKIM key model
+                return f"v=DKIM1; k=rsa; p={dkim_key.public_key}".encode()
             return None
 
         # Ensure the DKIM-Signature header is present
@@ -263,7 +257,7 @@ class TestE2EMessageOutboundFlow:
         assert local_mailbox_messages.count() == 1
         local_message = local_mailbox_messages.first()
         assert local_message.subject == subject
-        assert local_message.raw_mime == sent_message.raw_mime
+        assert local_message.blob.get_content() == sent_message.blob.get_content()
         assert local_message.sender.email == sender_contact.email
         assert local_message.parent is None
         assert local_message.is_draft is False

@@ -2,7 +2,6 @@
 # pylint: disable=redefined-outer-name, unused-argument, no-value-for-parameter
 
 import datetime
-import hashlib
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -80,13 +79,9 @@ def blob_mbox(mbox_file, mailbox):
     """Create a blob from a file."""
     # Read the file content once
     file_content = mbox_file.read()
-    expected_hash = hashlib.sha256(file_content).hexdigest()
-    return Blob.objects.create(
-        raw_content=file_content,
-        type=mbox_file.content_type,
-        size=mbox_file.size,
-        mailbox=mailbox,
-        sha256=expected_hash,
+    return mailbox.create_blob(
+        content=file_content,
+        content_type=mbox_file.content_type,
     )
 
 
@@ -95,13 +90,9 @@ def blob_eml(eml_file, mailbox):
     """Create a blob from a file."""
     # Read the file content once
     file_content = eml_file.read()
-    expected_hash = hashlib.sha256(file_content).hexdigest()
-    return Blob.objects.create(
-        raw_content=file_content,
-        type=eml_file.content_type,
-        size=eml_file.size,
-        mailbox=mailbox,
-        sha256=expected_hash,
+    return mailbox.create_blob(
+        content=file_content,
+        content_type=eml_file.content_type,
     )
 
 
@@ -210,7 +201,7 @@ def test_import_text_plain_mime_type(api_client, user, mailbox, blob_mbox):
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
     # Create a file with text/plain MIME type
-    blob_mbox.type = "text/plain"
+    blob_mbox.content_type = "text/plain"
     blob_mbox.save()
 
     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
@@ -334,16 +325,13 @@ def test_import_duplicate_eml_file(api_client, user, mailbox, blob_eml):
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
     # create a copy of the blob because the blob is deleted after the import
-    blob_eml2 = Blob.objects.create(
-        raw_content=blob_eml.raw_content,
-        type=blob_eml.type,
-        size=blob_eml.size,
-        mailbox=blob_eml.mailbox,
-        sha256=blob_eml.sha256,
+    blob_eml2 = blob_eml.mailbox.create_blob(
+        content=blob_eml.get_content(),
+        content_type=blob_eml.content_type,
     )
 
     # Get file content from blob
-    file_content = blob_eml.raw_content
+    file_content = blob_eml.get_content()
 
     assert Message.objects.count() == 0
     assert Thread.objects.count() == 0
@@ -404,16 +392,13 @@ def test_import_duplicate_mbox_file(api_client, user, mailbox, blob_mbox):
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
     # create a copy of the blob because the blob is deleted after the import
-    blob_mbox2 = Blob.objects.create(
-        raw_content=blob_mbox.raw_content,
-        type=blob_mbox.type,
-        size=blob_mbox.size,
-        mailbox=blob_mbox.mailbox,
-        sha256=blob_mbox.sha256,
+    blob_mbox2 = blob_mbox.mailbox.create_blob(
+        content=blob_mbox.get_content(),
+        content_type=blob_mbox.content_type,
     )
 
     # Get file content from blob
-    file_content = blob_mbox.raw_content
+    file_content = blob_mbox.get_content()
 
     assert Message.objects.count() == 0
     assert Thread.objects.count() == 0
@@ -486,19 +471,13 @@ def test_import_eml_same_message_different_mailboxes(api_client, user, eml_file_
         file_content = f.read()
 
     # Create blobs for each mailbox
-    blob1 = Blob.objects.create(
-        raw_content=file_content,
-        type="message/rfc822",
-        size=len(file_content),
-        mailbox=mailbox1,
-        sha256=hashlib.sha256(file_content).hexdigest(),
+    blob1 = mailbox1.create_blob(
+        content=file_content,
+        content_type="message/rfc822",
     )
-    blob2 = Blob.objects.create(
-        raw_content=file_content,
-        type="message/rfc822",
-        size=len(file_content),
-        mailbox=mailbox2,
-        sha256=hashlib.sha256(file_content).hexdigest(),
+    blob2 = mailbox2.create_blob(
+        content=file_content,
+        content_type="message/rfc822",
     )
 
     assert Message.objects.count() == 0
@@ -575,19 +554,13 @@ def test_import_mbox_same_message_different_mailboxes(api_client, user, mbox_fil
         file_content = f.read()
 
     # Create blobs for each mailbox
-    blob1 = Blob.objects.create(
-        raw_content=file_content,
-        type="application/mbox",
-        size=len(file_content),
-        mailbox=mailbox1,
-        sha256=hashlib.sha256(file_content).hexdigest(),
+    blob1 = mailbox1.create_blob(
+        content=file_content,
+        content_type="application/mbox",
     )
-    blob2 = Blob.objects.create(
-        raw_content=file_content,
-        type="application/mbox",
-        size=len(file_content),
-        mailbox=mailbox2,
-        sha256=hashlib.sha256(file_content).hexdigest(),
+    blob2 = mailbox2.create_blob(
+        content=file_content,
+        content_type="application/mbox",
     )
 
     assert Message.objects.count() == 0

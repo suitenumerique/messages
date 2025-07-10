@@ -37,8 +37,8 @@ class UserSerializer(AbilitiesModelSerializer):
 
     class Meta:
         model = models.User
-        fields = ["id", "email", "full_name", "short_name"]
-        read_only_fields = ["id", "email", "full_name", "short_name"]
+        fields = ["id", "email", "full_name"]
+        read_only_fields = ["id", "email", "full_name"]
 
 
 class MailboxAvailableSerializer(serializers.ModelSerializer):
@@ -134,6 +134,7 @@ class BlobSerializer(serializers.ModelSerializer):
     """Serialize blobs."""
 
     blobId = serializers.UUIDField(source="id", read_only=True)
+    type = serializers.CharField(source="content_type", read_only=True)
 
     class Meta:
         model = models.Blob

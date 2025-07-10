@@ -30,8 +30,14 @@ class TestSendOutboundMessage:
             sender=sender_contact,
             is_draft=False,
             subject="Test Outbound",
-            raw_mime=b"From: sender@sendtest.com\nTo: to@example.com\nSubject: Test Outbound\n\nTest body",
         )
+        # Create a blob with the raw MIME content
+        blob = mailbox.create_blob(
+            content=b"From: sender@sendtest.com\nTo: to@example.com\nSubject: Test Outbound\n\nTest body",
+            content_type="message/rfc822",
+        )
+        message.blob = blob
+        message.save()
         # Add recipients
         to_contact = factories.ContactFactory(mailbox=mailbox, email="to@example.com")
         cc_contact = factories.ContactFactory(mailbox=mailbox, email="cc@example.com")
@@ -86,7 +92,7 @@ class TestSendOutboundMessage:
             "bcc@example.com",
         }  # envelope_to
         # Check that the signed message was sent
-        assert call_args[2].endswith(draft_message.raw_mime)
+        assert call_args[2].endswith(draft_message.blob.get_content())
 
         # Check message object updated
         draft_message.refresh_from_db()

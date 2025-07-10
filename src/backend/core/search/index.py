@@ -51,14 +51,14 @@ def index_message(message: models.Message) -> bool:
     """Index a single message."""
     es = get_es_client()
 
-    # Parse message content if it has raw MIME
+    # Parse message content if it has a blob
     parsed_data = {}
-    if message.raw_mime:
+    if message.blob:
         try:
-            parsed_data = parse_email_message(message.raw_mime)
+            parsed_data = parse_email_message(message.blob.get_content())
         # pylint: disable=broad-exception-caught
         except Exception as e:  # noqa: BLE001
-            logger.error("Error parsing raw MIME for message %s: %s", message.id, e)
+            logger.error("Error parsing blob content for message %s: %s", message.id, e)
             return False
 
     # Extract text content from parsed data

@@ -100,14 +100,11 @@ def _process_attachments(
         try:
             # Check if we have content to store
             if "content" in attachment_info and attachment_info["content"]:
-                # Create a blob for this attachment
+                # Create a blob for this attachment using the mailbox method
                 content = attachment_info["content"]
-                blob = models.Blob.objects.create(
-                    sha256=attachment_info["sha256"],
-                    size=attachment_info["size"],
-                    type=attachment_info["type"],
-                    raw_content=content,
-                    mailbox=mailbox,
+                blob = mailbox.create_blob(
+                    content=content,
+                    content_type=attachment_info["type"],
                 )
 
                 # Create an attachment record linking to this blob
@@ -438,11 +435,16 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
                 mime_id=parsed_email.get("in_reply_to"), thread=thread
             ).first()
 
+        blob = mailbox.create_blob(
+            content=raw_data,
+            content_type="message/rfc822",
+        )
+
         message = models.Message.objects.create(
             thread=thread,
             sender=sender_contact,
             subject=parsed_email.get("subject"),
-            raw_mime=raw_data,
+            blob=blob,
             mime_id=parsed_email.get("messageId", parsed_email.get("message_id"))
             or None,
             parent=parent_message,

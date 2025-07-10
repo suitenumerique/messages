@@ -460,12 +460,18 @@ class TestMTAInboundEmailThreading:
             subject=subject,
             sender=sender_contact,
             mime_id=mime_id,
-            raw_mime=b"From: sender@example.com\r\nTo: testuser@threadtest.com\r\nSubject: "
+        )
+        # Create a blob for the message
+        blob = self.mailbox.create_blob(
+            content=b"From: sender@example.com\r\nTo: testuser@threadtest.com\r\nSubject: "
             + subject.encode("utf-8")
             + b"\r\nMessage-ID: <"
             + mime_id.encode("utf-8")
             + b">\r\n\r\nInitial body.",
+            content_type="message/rfc822",
         )
+        message.blob = blob
+        message.save()
         # Create recipients for the initial message
         recipient_contact = factories.ContactFactory(
             mailbox=self.mailbox, email=self.recipient_email
@@ -705,11 +711,17 @@ class TestMTAInboundEmailThreading:
             subject="Other Mailbox Subject",
             sender=other_sender,
             mime_id=other_mime_id,
-            raw_mime=b"From: other@sender.com\r\nTo: otheruser@otherdomain.com"
+        )
+        # Create a blob for the message
+        blob = other_mailbox.create_blob(
+            content=b"From: other@sender.com\r\nTo: otheruser@otherdomain.com"
             + b"\r\nSubject: Other Mailbox Subject\r\nMessage-ID: <"
             + other_mime_id.encode("utf-8")
             + b">\r\n\r\nBody.",
+            content_type="message/rfc822",
         )
+        other_message.blob = blob
+        other_message.save()
         # Add recipient for other message
         other_recipient_contact = factories.ContactFactory(
             mailbox=other_mailbox,

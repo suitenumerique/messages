@@ -225,36 +225,6 @@ class TestAdminMaildomainsUserList:
         assert len(response.data) == 1
         assert response.data[0]["full_name"] == user1.full_name
 
-    def test_admin_maildomains_user_list_search_by_short_name(self, api_client):
-        """Test searching users by short name."""
-        domain = factories.MailDomainFactory(name="search.local")
-        admin_user = factories.UserFactory(email="admin@search.local")
-        user1 = factories.UserFactory(
-            email="alice@search.local", full_name="Alice Smith", short_name="Alice"
-        )
-        user2 = factories.UserFactory(
-            email="bob@search.local", full_name="Bob Jones", short_name="Bob"
-        )
-
-        factories.MailDomainAccessFactory(
-            maildomain=domain,
-            user=admin_user,
-            role=enums.MailDomainAccessRoleChoices.ADMIN,
-        )
-        factories.MailboxAccessFactory(mailbox__domain=domain, user=user1)
-        factories.MailboxAccessFactory(mailbox__domain=domain, user=user2)
-
-        url = reverse(
-            "admin-maildomains-user-list", kwargs={"maildomain_pk": domain.id}
-        )
-        api_client.force_authenticate(user=admin_user)
-
-        # Search for "Alice"
-        response = api_client.get(url, {"q": "Alice"})
-        assert response.status_code == status.HTTP_200_OK
-        assert len(response.data) == 1
-        assert response.data[0]["short_name"] == user1.short_name
-
     def test_admin_maildomains_user_list_search_case_insensitive(self, api_client):
         """Test that search is case insensitive."""
         domain = factories.MailDomainFactory(name="search.local")
@@ -348,19 +318,17 @@ class TestAdminMaildomainsUserList:
     # ============================================================================
 
     def test_admin_maildomains_user_list_ordering(self, api_client):
-        """Test that users are ordered correctly (full_name, short_name, email)."""
+        """Test that users are ordered correctly (full_name, email)."""
         domain = factories.MailDomainFactory(name="order.local")
         admin_user = factories.UserFactory(
-            email="admin@order.local", full_name="Admin User", short_name="Admin"
+            email="admin@order.local", full_name="Admin User"
         )
         user1 = factories.UserFactory(
-            email="alice@order.local", full_name="Alice Smith", short_name="Alice"
+            email="alice@order.local", full_name="Alice Smith"
         )
-        user2 = factories.UserFactory(
-            email="bob@order.local", full_name="Bob Jones", short_name="Bob"
-        )
+        user2 = factories.UserFactory(email="bob@order.local", full_name="Bob Jones")
         user3 = factories.UserFactory(
-            email="charlie@order.local", full_name="Charlie Brown", short_name="Charlie"
+            email="charlie@order.local", full_name="Charlie Brown"
         )
 
         factories.MailDomainAccessFactory(
@@ -392,14 +360,10 @@ class TestAdminMaildomainsUserList:
         """Test ordering when some users have null names."""
         domain = factories.MailDomainFactory(name="order.local")
         admin_user = factories.UserFactory(
-            email="fritz@order.local", full_name="Admin User", short_name="Admin"
+            email="fritz@order.local", full_name="Admin User"
         )
-        user1 = factories.UserFactory(
-            email="bob@order.local", full_name=None, short_name=None
-        )
-        user2 = factories.UserFactory(
-            email="alice@order.local", full_name=None, short_name=None
-        )
+        user1 = factories.UserFactory(email="bob@order.local", full_name=None)
+        user2 = factories.UserFactory(email="alice@order.local", full_name=None)
 
         factories.MailDomainAccessFactory(
             maildomain=domain,
@@ -430,10 +394,10 @@ class TestAdminMaildomainsUserList:
         """Test that the serializer returns the correct fields."""
         domain = factories.MailDomainFactory(name="serializer.local")
         admin_user = factories.UserFactory(
-            email="admin@serializer.local", full_name="Admin User", short_name="Admin"
+            email="admin@serializer.local", full_name="Admin User"
         )
         user1 = factories.UserFactory(
-            email="alice@serializer.local", full_name="Alice Smith", short_name="Alice"
+            email="alice@serializer.local", full_name="Alice Smith"
         )
 
         factories.MailDomainAccessFactory(
@@ -457,16 +421,13 @@ class TestAdminMaildomainsUserList:
             assert "id" in user_data
             assert "email" in user_data
             assert "full_name" in user_data
-            assert "short_name" in user_data
             assert "abilities" not in user_data
             assert len(user_data.keys()) == 4
 
     def test_admin_maildomains_user_list_serializer_null_fields(self, api_client):
         """Test that null fields are handled correctly in the serializer."""
         domain = factories.MailDomainFactory(name="null.local")
-        admin_user = factories.UserFactory(
-            email="admin@null.local", full_name=None, short_name=None
-        )
+        admin_user = factories.UserFactory(email="admin@null.local", full_name=None)
 
         factories.MailDomainAccessFactory(
             maildomain=domain,
@@ -487,7 +448,6 @@ class TestAdminMaildomainsUserList:
         assert user_data["id"] == str(admin_user.id)
         assert user_data["email"] == admin_user.email
         assert user_data["full_name"] is None
-        assert user_data["short_name"] is None
 
     def test_admin_maildomains_user_list_user_without_email(self, api_client):
         """Test handling of users without email addresses."""

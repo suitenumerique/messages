@@ -42,8 +42,8 @@ class ImportService:
             return False, {"detail": "You do not have access to this mailbox."}
 
         try:
-            file_content = file.raw_content
-            content_type = file.type
+            file_content = file.get_content()
+            content_type = file.content_type
 
             # Check MIME type for MBOX
             if content_type in [

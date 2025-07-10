@@ -284,7 +284,7 @@ class TestDeliverInboundMessage:
         assert message.sender.email == "sender@test.com"
         assert message.sender.name == "Test Sender"
         assert message.sender.mailbox == target_mailbox
-        assert message.raw_mime == raw_email_data
+        assert message.blob.get_content() == raw_email_data
         assert message.mime_id == sample_parsed_email["message_id"]
         assert message.read_at is None
 

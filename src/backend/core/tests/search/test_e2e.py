@@ -21,6 +21,7 @@ from core.factories import (
 )
 from core.search import create_index_if_not_exists, delete_index, get_es_client
 from core.search.mapping import MESSAGE_INDEX
+from core import enums
 
 
 @pytest.fixture(name="setup_elasticsearch")
@@ -123,7 +124,7 @@ def fixture_create_test_thread(test_mailbox, wait_for_indexing):
             ).encode("utf-8"),
         )
 
-        MessageRecipientFactory(message=message, contact=contact2, type="to")
+        MessageRecipientFactory(message=message, contact=contact2, type=enums.MessageRecipientTypeChoices.TO)
 
         # Wait for indexing to complete
         wait_for_indexing()

@@ -216,13 +216,18 @@ class DraftMessageView(APIView):
                 thread_updated_fields.extend(["subject", "updated_at"])
 
         # Update recipients if provided
+        recipient_type_mapping = {
+            "to": enums.MessageRecipientTypeChoices.TO,
+            "cc": enums.MessageRecipientTypeChoices.CC,
+            "bcc": enums.MessageRecipientTypeChoices.BCC,
+        }
         recipient_types = ["to", "cc", "bcc"]
         for recipient_type in recipient_types:
             if recipient_type in request_data:
                 # Delete existing recipients of this type
                 # Ensure message has a pk before accessing m2m
                 if message.pk:
-                    message.recipients.filter(type=recipient_type).delete()
+                    message.recipients.filter(type=recipient_type_mapping[recipient_type]).delete()
 
                 # Create new recipients
                 emails = request_data.get(recipient_type) or []
@@ -240,7 +245,7 @@ class DraftMessageView(APIView):
                         models.MessageRecipient.objects.create(
                             message=message,
                             contact=contact,
-                            type=recipient_type,
+                            type=recipient_type_mapping[recipient_type],
                         )
                     # If message not saved yet (POST case), recipients will be added after save
 

@@ -92,7 +92,7 @@ def test_authentication_getter_existing_user_with_email(monkeypatch):
     When the user's info contains an email and targets an existing user,
     """
     klass = OIDCAuthenticationBackend()
-    user = UserFactory(full_name="John Doe", short_name="John")
+    user = UserFactory(full_name="John Doe")
 
     def get_userinfo_mocked(*args):
         return {
@@ -129,9 +129,7 @@ def test_authentication_getter_existing_user_change_fields_sub(
     and the user was identified by its "sub".
     """
     klass = OIDCAuthenticationBackend()
-    user = UserFactory(
-        full_name="John Doe", short_name="John", email="john.doe@example.com"
-    )
+    user = UserFactory(full_name="John Doe", email="john.doe@example.com")
 
     def get_userinfo_mocked(*args):
         return {
@@ -151,7 +149,6 @@ def test_authentication_getter_existing_user_change_fields_sub(
     user.refresh_from_db()
     assert user.email == email
     assert user.full_name == f"{first_name:s} {last_name:s}"
-    assert user.short_name == first_name
 
 
 @override_settings(MESSAGES_TESTDOMAIN=None)
@@ -170,9 +167,7 @@ def test_authentication_getter_existing_user_change_fields_email(
     and the user was identified by its "email" as fallback.
     """
     klass = OIDCAuthenticationBackend()
-    user = UserFactory(
-        full_name="John Doe", short_name="John", email="john.doe@example.com"
-    )
+    user = UserFactory(full_name="John Doe", email="john.doe@example.com")
 
     def get_userinfo_mocked(*args):
         return {
@@ -192,7 +187,6 @@ def test_authentication_getter_existing_user_change_fields_email(
     user.refresh_from_db()
     assert user.email == email
     assert user.full_name == f"{first_name:s} {last_name:s}"
-    assert user.short_name == first_name
 
 
 def test_authentication_getter_new_user_no_email(monkeypatch):
@@ -236,7 +230,6 @@ def test_authentication_getter_new_user_with_email(monkeypatch):
     assert user.sub == "123"
     assert user.email == email
     assert user.full_name == "John Doe"
-    assert user.short_name == "John"
     assert user.password == "!"
     assert models.User.objects.count() == 1
 
@@ -457,7 +450,6 @@ def test_authentication_verify_claims_success(monkeypatch):
 
     assert user.sub == "123"
     assert user.full_name == "Doe"
-    assert user.short_name is None
     assert user.email == "john.doe@example.com"
 
 
@@ -491,7 +483,6 @@ def test_authentication_getter_new_user_with_testdomain(monkeypatch):
 
     assert user.sub == "123"
     assert user.full_name == "Doe"
-    assert user.short_name is None
     assert user.email == "john.doe@sub.gouv.fr"
 
     maildomain = models.MailDomain.objects.get(name="testdomain.bzh")

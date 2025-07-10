@@ -1,6 +1,5 @@
 """API ViewSet for handling binary data upload and download (JMAP-inspired implementation)."""
 
-import hashlib
 import logging
 
 from django.http import HttpResponse
@@ -120,17 +119,13 @@ class BlobViewSet(ViewSet):
             uploaded_file = request.FILES["file"]
             content_type = uploaded_file.content_type or "application/octet-stream"
 
-            # Read file content and calculate SHA-256 hash
-            content = uploaded_file.read()  # Read once, use for both hash and storage
-            sha256 = hashlib.sha256(content).hexdigest()
+            # Read file content
+            content = uploaded_file.read()
 
-            # Create the blob record
-            blob = models.Blob.objects.create(
-                sha256=sha256,
-                size=len(content),
-                type=content_type,
-                raw_content=content,
-                mailbox=mailbox,
+            # Create the blob record using mailbox method
+            blob = mailbox.create_blob(
+                content=content,
+                content_type=content_type,
             )
 
             # Return a response with the blob details
@@ -140,7 +135,7 @@ class BlobViewSet(ViewSet):
                     "blobId": str(blob.id),
                     "type": content_type,
                     "size": len(content),
-                    "sha256": sha256,
+                    "sha256": blob.sha256.hex(),
                 },
                 status=status.HTTP_201_CREATED,
             )
@@ -181,8 +176,8 @@ class BlobViewSet(ViewSet):
             attachment = models.Attachment.objects.filter(blob=blob).first()
             filename = attachment.name if attachment else f"blob-{blob.id}.bin"
 
-            # Create response with raw_content
-            response = HttpResponse(blob.raw_content, content_type=blob.type)
+            # Create response with decompressed content
+            response = HttpResponse(blob.get_content(), content_type=blob.content_type)
 
             # Add appropriate headers for download
             response["Content-Disposition"] = f'attachment; filename="{filename}"'

@@ -25,7 +25,6 @@ class UserFactory(factory.django.DjangoModelFactory):
     sub = factory.Sequence(lambda n: f"user{n!s}")
     email = factory.Faker("email")
     full_name = factory.Faker("name")
-    short_name = factory.Faker("first_name")
     language = factory.fuzzy.FuzzyChoice([lang[0] for lang in settings.LANGUAGES])
     password = make_password("password")
 
@@ -167,6 +166,23 @@ class MessageFactory(factory.django.DjangoModelFactory):
     sender = factory.SubFactory(ContactFactory)
     created_at = factory.LazyAttribute(lambda o: timezone.now())
     mime_id = factory.Sequence(lambda n: f"message{n!s}")
+
+    @factory.post_generation
+    def raw_mime(self, create, extracted, **kwargs):
+        """
+        Create a blob with raw MIME content when raw_mime is provided.
+        Usage: MessageFactory(raw_mime=b"raw email content")
+        """
+        if not create or not extracted:
+            return
+        
+        # Create a blob with the raw MIME content using the sender's mailbox
+        blob = self.sender.mailbox.create_blob(
+            content=extracted,
+            content_type="message/rfc822",
+        )
+        self.blob = blob
+        self.save()
 
 
 class MessageRecipientFactory(factory.django.DjangoModelFactory):

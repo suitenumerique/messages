@@ -156,7 +156,7 @@ class Base(Configuration):
         "localhost", environ_name="MESSAGES_TESTDOMAIN", environ_prefix=None
     )
     MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN = values.Value(
-        "gouv.fr",
+        None,
         environ_name="MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN",
         environ_prefix=None,
     )
@@ -165,17 +165,24 @@ class Base(Configuration):
         environ_name="MESSAGES_ACCEPT_ALL_EMAILS",
         environ_prefix=None,
     )
-    MESSAGES_DKIM_SELECTOR = values.Value(
-        "default", environ_name="MESSAGES_DKIM_SELECTOR", environ_prefix=None
+
+    # Blob compression settings
+    MESSAGES_BLOB_ZSTD_LEVEL = values.PositiveIntegerValue(
+        default=3, environ_name="MESSAGES_BLOB_ZSTD_LEVEL", environ_prefix=None
     )
-    MESSAGES_DKIM_DOMAINS = values.ListValue(
-        [], environ_name="MESSAGES_DKIM_DOMAINS", environ_prefix=None
+
+    # Django fernet encrypted fields settings
+    # Can be a list for key rotation: ['new_key', 'old_key']
+    SALT_KEY = values.ListValue([], environ_name="SALT_KEY", environ_prefix=None)
+
+    # DKIM settings
+    MESSAGES_DKIM_DEFAULT_SELECTOR = values.Value(
+        "stmessages", environ_name="MESSAGES_DKIM_DEFAULT_SELECTOR", environ_prefix=None
     )
-    MESSAGES_DKIM_PRIVATE_KEY_B64 = values.Value(
-        None, environ_name="MESSAGES_DKIM_PRIVATE_KEY_B64", environ_prefix=None
-    )
-    MESSAGES_DKIM_PRIVATE_KEY_FILE = values.Value(
-        None, environ_name="MESSAGES_DKIM_PRIVATE_KEY_FILE", environ_prefix=None
+
+    # Technical domain for DNS records (MX, SPF, DKIM hosting)
+    MESSAGES_TECHNICAL_DOMAIN = values.Value(
+        "localhost", environ_name="MESSAGES_TECHNICAL_DOMAIN", environ_prefix=None
     )
 
     # Media
@@ -686,6 +693,9 @@ class Test(Base):
     IDENTITY_PROVIDER = None
 
     CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
+    
+    # Add a test encryption key for django-fernet-encrypted-fields
+    SALT_KEY = ["test-salt-for-development-only"]
 
     def __init__(self):
         # pylint: disable=invalid-name

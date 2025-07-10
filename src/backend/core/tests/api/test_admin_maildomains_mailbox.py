@@ -372,7 +372,6 @@ class TestAdminMailDomainMailboxViewSet:
         # Verify user was created with correct details
         user = models.User.objects.get(email="newuser@admin-domain1.com")
         assert user.full_name == "John Doe"
-        assert user.short_name == "John"
         assert user.password == "?"
 
         # Verify mailbox access was created
@@ -392,7 +391,6 @@ class TestAdminMailDomainMailboxViewSet:
         factories.UserFactory(
             email="existinguser@admin-domain1.com",
             full_name="Existing User",
-            short_name="Existing",
             password="existing-password",
         )
 
@@ -411,7 +409,6 @@ class TestAdminMailDomainMailboxViewSet:
         # Verify user details were not updated
         user = models.User.objects.get(email="existinguser@admin-domain1.com")
         assert user.full_name == "Existing User"  # Should not be updated
-        assert user.short_name == "Existing"  # Should not be updated
         assert user.password == "existing-password"  # Should not be updated
 
         # Verify mailbox access was created
@@ -465,7 +462,6 @@ class TestAdminMailDomainMailboxViewSet:
             assert "id" in user_data
             assert "email" in user_data
             assert "full_name" in user_data
-            assert "short_name" in user_data
 
         # Also check mailbox2_domain1 (should have 0 accesses)
         mb2_data = next(
@@ -509,7 +505,6 @@ class TestAdminMailDomainMailboxViewSet:
             assert "id" in user_data
             assert "email" in user_data
             assert "full_name" in user_data
-            assert "short_name" in user_data
 
     def test_admin_maildomains_mailbox_excludes_abilities_with_superuser(
         self,

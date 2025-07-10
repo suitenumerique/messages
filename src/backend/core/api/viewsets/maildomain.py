@@ -193,7 +193,6 @@ class AdminMailDomainMailboxViewSet(
                 email=email,
                 defaults={
                     "full_name": f"{first_name} {last_name}",
-                    "short_name": first_name,
                     "password": "?",
                 },
             )
@@ -241,7 +240,7 @@ class AdminMailDomainUserViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
                 )
             )
             .distinct()
-            .order_by("full_name", "short_name", "email")
+            .order_by("full_name", "email")
         )
 
     @extend_schema(
@@ -266,7 +265,6 @@ class AdminMailDomainUserViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
             queryset = queryset.filter(
                 Q(email__unaccent__icontains=query)
                 | Q(full_name__unaccent__icontains=query)
-                | Q(short_name__unaccent__icontains=query)
             )
 
         serializer = core_serializers.UserSerializer(queryset, many=True)

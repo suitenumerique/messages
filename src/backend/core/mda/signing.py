@@ -4,67 +4,90 @@ import base64
 import logging
 from typing import Optional
 
-from django.conf import settings
-
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from dkim import sign as dkim_sign
+
+from core.enums import DKIMAlgorithmChoices
 
 logger = logging.getLogger(__name__)
 
 
-def sign_message_dkim(raw_mime_message: bytes, sender_email: str) -> Optional[bytes]:
+def generate_dkim_key(
+    algorithm: DKIMAlgorithmChoices = DKIMAlgorithmChoices.RSA, key_size: int = 2048
+) -> tuple[str, str]:
+    """Generate a new DKIM key pair.
+
+    Args:
+        algorithm: The signing algorithm (DKIMAlgorithmChoices)
+        key_size: The key size in bits (e.g., 2048, 4096 for RSA)
+
+    Returns:
+        Tuple of (private_key_pem, public_key_base64)
+
+    Raises:
+        ValueError: If the algorithm is not supported
+    """
+
+    if algorithm != DKIMAlgorithmChoices.RSA:
+        raise ValueError(
+            f"Unsupported algorithm: {algorithm}. Only RSA is currently supported."
+        )
+
+    # Generate RSA private key
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
+
+    # Convert private key to PEM format
+    private_key_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode("utf-8")
+
+    # Extract public key for DNS records
+    public_key_der = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    public_key_b64 = base64.b64encode(public_key_der).decode("ascii")
+
+    return private_key_pem, public_key_b64
+
+
+def sign_message_dkim(
+    raw_mime_message: bytes, sender_email: str, mailbox
+) -> Optional[bytes]:
     """Sign a raw MIME message with DKIM.
 
-    Uses the private key and selector defined in Django settings.
-    Only signs domains listed in settings.MESSAGES_DKIM_DOMAINS.
+    Uses the most recent active DKIM key for the domain.
+    Only signs if the domain has an active DKIM key configured.
 
     Args:
         raw_mime_message: The raw bytes of the MIME message.
         sender_email: The email address of the sender (e.g., "user@example.com").
+        mailbox: The mailbox object containing the domain with DKIM key.
 
     Returns:
         The DKIM-Signature header bytes if signed, otherwise None.
     """
+    mail_domain = mailbox.domain
+    domain = mail_domain.name
 
-    dkim_private_key = None
-    if settings.MESSAGES_DKIM_PRIVATE_KEY_FILE:
-        try:
-            with open(settings.MESSAGES_DKIM_PRIVATE_KEY_FILE, "rb") as f:
-                dkim_private_key = f.read()
-        except FileNotFoundError:
-            logger.error(
-                "DKIM private key file not found: %s",
-                settings.MESSAGES_DKIM_PRIVATE_KEY_FILE,
-            )
-            return None
-    elif settings.MESSAGES_DKIM_PRIVATE_KEY_B64:
-        try:
-            dkim_private_key = base64.b64decode(settings.MESSAGES_DKIM_PRIVATE_KEY_B64)
-        except (TypeError, ValueError):
-            logger.error("Failed to decode MESSAGES_DKIM_PRIVATE_KEY_B64.")
-            return None
+    # Find the most recent active DKIM key for this domain
+    dkim_key = mailbox.domain.get_active_dkim_key()
 
-    if not dkim_private_key:
+    if not dkim_key:
         logger.warning(
-            "MESSAGES_DKIM_PRIVATE_KEY_B64/FILE is not set, skipping DKIM signing"
+            "Domain %s has no active DKIM key configured, skipping DKIM signing", domain
         )
         return None
 
     try:
-        domain = sender_email.split("@")[1]
-    except IndexError:
-        logger.error("Invalid sender email format for DKIM signing: %s", sender_email)
-        return None
+        dkim_private_key = dkim_key.get_private_key_bytes()
 
-    if domain not in settings.MESSAGES_DKIM_DOMAINS:
-        logger.warning(
-            "Domain %s is not in MESSAGES_DKIM_DOMAINS, skipping DKIM signing", domain
-        )
-        return None
-
-    try:
         signature = dkim_sign(
             message=raw_mime_message,
-            selector=settings.MESSAGES_DKIM_SELECTOR.encode("ascii"),
+            selector=dkim_key.selector.encode("ascii"),
             domain=domain.encode("ascii"),
             privkey=dkim_private_key,
             include_headers=[
@@ -83,7 +106,12 @@ def sign_message_dkim(raw_mime_message: bytes, sender_email: str) -> Optional[by
         # dkim_sign returns the full message including the signature header,
         # we only want the header itself.
         signature_header = (
-            signature.split(b"\\r\\n\\r\\n", 1)[0].split(b"DKIM-Signature:")[1].strip()
+            signature.split(b"\r\n\r\n", 1)[0].split(b"DKIM-Signature:")[1].strip()
+        )
+        logger.info(
+            "Successfully signed message for domain %s with selector %s",
+            domain,
+            dkim_key.selector,
         )
         return b"DKIM-Signature: " + signature_header
     except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught

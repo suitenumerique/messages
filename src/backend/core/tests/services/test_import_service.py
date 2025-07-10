@@ -1,7 +1,6 @@
 """Tests for the ImportService class."""
 
 import datetime
-import hashlib
 from unittest.mock import MagicMock, patch
 
 from django.contrib.messages.storage.fallback import FallbackStorage
@@ -86,13 +85,9 @@ def blob_mbox(mbox_file, mailbox):
     """Create a blob from a file."""
     # Read the file content once
     file_content = mbox_file.read()
-    expected_hash = hashlib.sha256(file_content).hexdigest()
-    return Blob.objects.create(
-        raw_content=file_content,
-        type=mbox_file.content_type,
-        size=mbox_file.size,
-        mailbox=mailbox,
-        sha256=expected_hash,
+    return mailbox.create_blob(
+        content=file_content,
+        content_type=mbox_file.content_type,
     )
 
 
@@ -101,13 +96,9 @@ def blob_eml(eml_file, mailbox):
     """Create a blob from a file."""
     # Read the file content once
     file_content = eml_file.read()
-    expected_hash = hashlib.sha256(file_content).hexdigest()
-    return Blob.objects.create(
-        raw_content=file_content,
-        type=eml_file.content_type,
-        size=eml_file.size,
-        mailbox=mailbox,
-        sha256=expected_hash,
+    return mailbox.create_blob(
+        content=file_content,
+        content_type=eml_file.content_type,
     )
 
 
@@ -150,7 +141,7 @@ def test_import_file_eml_by_superuser_sync(admin_user, mailbox, blob_eml):
         ):
             # Run the import
             task_result = process_eml_file_task(
-                file_content=blob_eml.raw_content,
+                file_content=blob_eml.get_content(),
                 recipient_id=str(mailbox.id),
             )
 
@@ -257,7 +248,7 @@ def test_import_file_eml_by_user_with_access_sync(
         ):
             # Run the import
             task_result = process_eml_file_task(
-                file_content=blob_eml.raw_content,
+                file_content=blob_eml.get_content(),
                 recipient_id=str(mailbox.id),
             )
 
@@ -407,13 +398,9 @@ def test_import_file_invalid_file(admin_user, mailbox, mock_request):
     """Test import with an invalid file."""
     # Create an invalid file (not EML or MBOX)
     invalid_content = b"Invalid file content"
-    expected_hash = hashlib.sha256(invalid_content).hexdigest()
-    invalid_file = Blob.objects.create(
-        raw_content=invalid_content,
-        type="application/pdf",  # Invalid MIME type for email import
-        size=len(invalid_content),
-        mailbox=mailbox,
-        sha256=expected_hash,
+    invalid_file = mailbox.create_blob(
+        content=invalid_content,
+        content_type="application/pdf",  # Invalid MIME type for email import
     )
 
     with patch("core.tasks.process_eml_file_task.delay") as mock_task:
@@ -443,13 +430,9 @@ def test_import_file_text_plain_mime_type(
         mbox_content = f.read()
 
     # Create a file with text/plain MIME type
-    expected_hash = hashlib.sha256(mbox_content).hexdigest()
-    blob_mbox = Blob.objects.create(
-        raw_content=mbox_content,
-        type="text/plain",
-        size=len(mbox_content),
-        mailbox=mailbox,
-        sha256=expected_hash,
+    blob_mbox = mailbox.create_blob(
+        content=mbox_content,
+        content_type="text/plain",
     )
 
     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
@@ -543,7 +526,7 @@ def test_import_imap_no_access(user, domain, mock_request):
 def test_import_imap_task_error(admin_user, mailbox, mock_request):
     """Test IMAP import with task error."""
     # Add access to mailbox
-    mailbox.accesses.create(user=admin_user, role="admin")
+    mailbox.accesses.create(user=admin_user, role=MailboxRoleChoices.ADMIN)
 
     with patch("core.tasks.import_imap_messages_task.delay") as mock_task:
         mock_task.side_effect = Exception("Task error")
