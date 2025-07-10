@@ -138,21 +138,19 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
         if (iframeRef.current?.contentWindow?.document) {
             const doc = iframeRef.current.contentWindow.document;
 
-            // Replace all <hr /><blockquote>...</blockquote> by
+            // Replace all <blockquote data-type="quote-separator">...</blockquote> by
             // a details element to automatically fold embedded messages
             // TODO : Try to detect replies and forward messages coming form external sources
-            doc.querySelectorAll('hr').forEach(node => {
-                const blockquote = node.nextElementSibling as HTMLQuoteElement | null;
-                if(blockquote) {
-                    const details = doc.createElement('details');
-                    details.addEventListener('toggle', resizeIframe);
+            doc.querySelectorAll('blockquote[data-type="quote-separator"]').forEach(node => {
+                const parentElement = node.parentElement;
+                const details = doc.createElement('details');
+                details.addEventListener('toggle', resizeIframe);
 
-                    const summary = doc.createElement('summary');
-                    summary.textContent = t('message_body.show_embedded_message');
-                    details.appendChild(summary);
-                    details.appendChild(blockquote);
-                    node.replaceWith(details);
-                }
+                const summary = doc.createElement('summary');
+                summary.textContent = t('message_body.show_embedded_message');
+                details.appendChild(summary);
+                details.appendChild(node);
+                parentElement?.appendChild(details);
             });
         }
         resizeIframe();

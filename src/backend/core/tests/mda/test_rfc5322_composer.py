@@ -822,7 +822,7 @@ class TestReplyGeneration:
             "This is the original <b>HTML</b> content"
             in reply["htmlBody"][0]["content"]
         )
-        assert '<hr data-type="quote-separator" />' in reply["htmlBody"][0]["content"]
+        assert '<blockquote data-type="quote-separator">' in reply["htmlBody"][0]["content"]
         assert "---------- In reply to ----------" in reply["htmlBody"][0]["content"]
 
     def test_reply_with_long_original(self):
@@ -1004,7 +1004,7 @@ class TestForwardGeneration:
         # Check HTML body
         html_content = forward["htmlBody"][0]["content"]
         assert "<p>Forward HTML content.</p>" in html_content
-        assert '<hr data-type="quote-separator" />' in html_content
+        assert '<blockquote data-type="quote-separator">' in html_content
         assert "---------- Forwarded message ----------" in html_content
         assert (
             "<strong>From:</strong> HTML Sender &lt;html@example.com&gt;<br/>"

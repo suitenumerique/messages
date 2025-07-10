@@ -694,8 +694,7 @@ def _embed_original_message(
                 orig_html = first_html.get("content", "")
 
         nested_html = f"""
-        <hr data-type="quote-separator" />
-        <blockquote>
+        <blockquote data-type="quote-separator">
             {header_html}
             {orig_html}
         </blockquote>
