@@ -23,7 +23,7 @@ function AdminDataGrid() {
       renderCell: ({ row }: { row: MailDomainAdmin }) => (
         <span
           style={{ cursor: "pointer", color: "var(--c--theme--colors--primary-600)" }}
-          onClick={() => router.push(`/admin/${row.id}`)}
+          onClick={() => router.push(`/domain/${row.id}`)}
         >
           {row.name}
         </span>
@@ -72,7 +72,7 @@ const AdminPageContent = () => {
   useEffect(() => {
     if (!isLoading && mailDomains) {
       if (mailDomains.length === 1) {
-        router.replace(`/admin/${mailDomains[0].id}`);
+        router.replace(`/domain/${mailDomains[0].id}`);
       }
     }
   }, [router, mailDomains, isLoading]);

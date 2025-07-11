@@ -29,7 +29,7 @@ function AdminLayoutContent({
     },
     {
       content: (
-        <Link href="/admin" className="c__breadcrumbs__button">
+        <Link href="/domain" className="c__breadcrumbs__button">
           {t("admin_layout.breadcrumbs.maildomains_management")}
         </Link>
       )
@@ -39,7 +39,7 @@ function AdminLayoutContent({
   if (selectedMailDomain) {
     breadcrumbItems.push({
       content: (
-        <Link href={`/admin/${selectedMailDomain.id}`} className="c__breadcrumbs__button">
+        <Link href={`/domain/${selectedMailDomain.id}`} className="c__breadcrumbs__button">
           {selectedMailDomain.name || selectedMailDomain.id}
         </Link>
       )
@@ -63,9 +63,9 @@ function AdminLayoutContent({
 
   // Build tabs if we're in a domain
   const tabs = selectedMailDomain ? [
-    { id: "addresses", label: t("admin_layout.tabs.addresses"), href: `/admin/${selectedMailDomain.id}` },
-    // { id: "dns", label: t("admin_layout.tabs.dns"), href: `/admin/${domainId}/dns` },
-    // { id: "signatures", label: t("admin_layout.tabs.signatures"), href: `/admin/${domainId}/signatures` },
+    { id: "addresses", label: t("admin_layout.tabs.addresses"), href: `/domain/${selectedMailDomain.id}` },
+    // { id: "dns", label: t("admin_layout.tabs.dns"), href: `/domain/${selectedMailDomain.id}/dns` },
+    // { id: "signatures", label: t("admin_layout.tabs.signatures"), href: `/domain/${selectedMailDomain.id}/signatures` },
   ] : [];
 
   return (
