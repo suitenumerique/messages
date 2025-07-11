@@ -8,6 +8,7 @@ import timezone_field.fields
 import uuid
 from django.conf import settings
 from django.db import migrations, models
+from django.contrib.postgres.operations import UnaccentExtension
 
 
 class Migration(migrations.Migration):
@@ -19,6 +20,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        UnaccentExtension(),
         migrations.CreateModel(
             name='Contact',
             fields=[

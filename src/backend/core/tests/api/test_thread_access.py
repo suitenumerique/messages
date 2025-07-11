@@ -200,14 +200,14 @@ class TestThreadAccessCreate:
         delegated_mailbox = factories.MailboxFactory()
         data = {
             "mailbox": str(delegated_mailbox.id),
-            "role": enums.ThreadAccessRoleChoices.VIEWER,
+            "role": "viewer",
         }
 
         response = api_client.post(get_thread_access_url(thread.id), data)
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data["thread"] == thread.id
         assert response.data["mailbox"] == delegated_mailbox.id
-        assert response.data["role"] == enums.ThreadAccessRoleChoices.VIEWER
+        assert response.data["role"] == "viewer"
 
     def test_create_thread_access_duplicate(
         self, api_client, thread_with_editor_access
@@ -218,7 +218,7 @@ class TestThreadAccessCreate:
 
         data = {
             "mailbox": str(mailbox.id),
-            "role": enums.ThreadAccessRoleChoices.EDITOR,
+            "role": "editor",
         }
 
         response = api_client.post(get_thread_access_url(thread.id), data)
@@ -255,7 +255,7 @@ class TestThreadAccessCreate:
         delegated_mailbox = factories.MailboxFactory()
         data = {
             "mailbox": str(delegated_mailbox.id),
-            "role": enums.ThreadAccessRoleChoices.VIEWER,
+            "role": "viewer",
         }
 
         response = api_client.post(get_thread_access_url(thread.id), data)
@@ -318,11 +318,11 @@ class TestThreadAccessUpdate:
         )
 
         url = get_thread_access_url(thread.id, thread_access.id)
-        data = {"role": enums.ThreadAccessRoleChoices.EDITOR}
+        data = {"role": "editor"}
 
         response = api_client.patch(url, data)
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["role"] == enums.ThreadAccessRoleChoices.EDITOR
+        assert response.data["role"] == "editor"
 
     @pytest.mark.parametrize(
         "thread_access_role, mailbox_access_role",
@@ -353,7 +353,7 @@ class TestThreadAccessUpdate:
             role=thread_access_role,
         )
         url = get_thread_access_url(thread.id, thread_access.id)
-        data = {"role": enums.ThreadAccessRoleChoices.EDITOR}
+        data = {"role": "editor"}
 
         response = api_client.patch(url, data)
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -363,7 +363,7 @@ class TestThreadAccessUpdate:
         thread_access = factories.ThreadAccessFactory()
 
         url = get_thread_access_url(thread.id, thread_access.id)
-        data = {"role": enums.ThreadAccessRoleChoices.EDITOR}
+        data = {"role": "editor"}
 
         response = api_client.patch(url, data)
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -375,7 +375,7 @@ class TestThreadAccessUpdate:
         thread = factories.ThreadFactory()
 
         url = get_thread_access_url(thread.id, uuid.uuid4())
-        data = {"role": enums.ThreadAccessRoleChoices.EDITOR}
+        data = {"role": "editor"}
 
         response = api_client.patch(url, data)
         assert response.status_code == status.HTTP_404_NOT_FOUND

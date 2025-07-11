@@ -1144,4 +1144,4 @@ class DKIMKey(BaseModel):
     def get_dns_record_value(self) -> str:
         """Get the DNS TXT record value for this DKIM key."""
         algorithm_enum = DKIMAlgorithmChoices(self.algorithm)
-        return f"v=DKIM1; k={algorithm_enum.dns_value}; p={self.public_key}"
+        return f"v=DKIM1; k={algorithm_enum.label}; p={self.public_key}"

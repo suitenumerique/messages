@@ -9,6 +9,67 @@ from rest_framework.exceptions import PermissionDenied
 from core import models
 
 
+class IntegerChoicesField(serializers.Field):
+    """
+    Custom field to handle IntegerChoices that accepts string labels for input
+    and returns string labels for output.
+    
+    Example usage:
+        role = IntegerChoicesField(MailboxRoleChoices)
+        
+    This field will:
+    - Accept strings like "viewer", "editor", "admin" for input
+    - Store them as integers (1, 2, 4) in the database  
+    - Return strings like "viewer", "editor", "admin" for output
+    - Provide helpful error messages for invalid choices
+    - Support backward compatibility with integer input
+    """
+
+    def __init__(self, choices_class, **kwargs):
+        self.choices_class = choices_class
+        super().__init__(**kwargs)
+
+    def to_representation(self, value):
+        """Convert integer value to string label for output."""
+        if value is None:
+            return None
+        enum_instance = self.choices_class(value)
+        return enum_instance.label
+
+    def to_internal_value(self, data):
+        """Convert string label to integer value for storage."""
+        if data is None:
+            return None
+        
+        # If it's already an integer (for backward compatibility), validate and return it
+        if isinstance(data, int):
+            try:
+                self.choices_class(data)  # Validate it's a valid choice
+                return data
+            except ValueError:
+                self.fail('invalid_choice', input=data)
+        
+        # Convert string label to integer value
+        if isinstance(data, str):
+            for choice_value, choice_label in self.choices_class.choices:
+                if choice_label == data:
+                    return choice_value
+            self.fail('invalid_choice', input=data)
+        
+        self.fail('invalid_choice', input=data)
+
+    default_error_messages = {
+        'invalid_choice': 'Invalid choice: {input}. Valid choices are: {choices}.'
+    }
+
+    def fail(self, key, **kwargs):
+        """Override to provide better error messages."""
+        if key == 'invalid_choice':
+            valid_choices = [label for value, label in self.choices_class.choices]
+            kwargs['choices'] = ', '.join(valid_choices)
+        super().fail(key, **kwargs)
+
+
 class AbilitiesModelSerializer(serializers.ModelSerializer):
     """
     A ModelSerializer that takes an additional `exclude` argument that
@@ -78,7 +139,8 @@ class MailboxSerializer(serializers.ModelSerializer):
         """Return the allowed actions of the logged-in user on the instance."""
         request = self.context.get("request")
         if request:
-            return instance.accesses.get(user=request.user).role
+            role_enum = models.MailboxRoleChoices(instance.accesses.get(user=request.user).role)
+            return role_enum.label
         return None
 
     def get_count_unread_messages(self, instance):
@@ -135,6 +197,11 @@ class BlobSerializer(serializers.ModelSerializer):
 
     blobId = serializers.UUIDField(source="id", read_only=True)
     type = serializers.CharField(source="content_type", read_only=True)
+    sha256 = serializers.SerializerMethodField()
+
+    def get_sha256(self, obj):
+        """Convert binary SHA256 to hex string."""
+        return obj.sha256.hex() if obj.sha256 else None
 
     class Meta:
         model = models.Blob
@@ -153,6 +220,11 @@ class AttachmentSerializer(serializers.ModelSerializer):
 
     blobId = serializers.UUIDField(source="blob.id", read_only=True)
     type = serializers.CharField(source="content_type", read_only=True)
+    sha256 = serializers.SerializerMethodField()
+
+    def get_sha256(self, obj):
+        """Convert binary SHA256 to hex string."""
+        return obj.sha256.hex() if obj.sha256 else None
 
     class Meta:
         model = models.Attachment
@@ -234,7 +306,7 @@ class ThreadAccessDetailSerializer(serializers.ModelSerializer):
     """Serializer for thread access details."""
 
     mailbox = MailboxLightSerializer()
-    role = serializers.ChoiceField(choices=models.ThreadAccessRoleChoices.choices)
+    role = IntegerChoicesField(models.ThreadAccessRoleChoices, read_only=True)
 
     class Meta:
         model = models.ThreadAccess
@@ -274,7 +346,9 @@ class ThreadSerializer(serializers.ModelSerializer):
                 return None
             if request and hasattr(request, "user") and request.user.is_authenticated:
                 try:
-                    return instance.accesses.get(mailbox=mailbox).role
+                    role_value = instance.accesses.get(mailbox=mailbox).role
+                    role_enum = models.ThreadAccessRoleChoices(role_value)
+                    return role_enum.label
                 except models.ThreadAccess.DoesNotExist:
                     return None
         return None
@@ -459,6 +533,8 @@ class MessageSerializer(serializers.ModelSerializer):
 class ThreadAccessSerializer(serializers.ModelSerializer):
     """Serialize thread access information."""
 
+    role = IntegerChoicesField(models.ThreadAccessRoleChoices)
+
     class Meta:
         model = models.ThreadAccess
         fields = ["id", "thread", "mailbox", "role", "created_at", "updated_at"]
@@ -471,6 +547,7 @@ class MailboxAccessReadSerializer(serializers.ModelSerializer):
     """
 
     user_details = UserSerializer(source="user", read_only=True, exclude_abilities=True)
+    role = IntegerChoicesField(models.MailboxRoleChoices, read_only=True)
 
     class Meta:
         model = models.MailboxAccess
@@ -482,6 +559,8 @@ class MailboxAccessWriteSerializer(serializers.ModelSerializer):
     """Serializer for creating and updating mailbox access records.
     Mailbox is set from the view based on URL parameters.
     """
+
+    role = IntegerChoicesField(models.MailboxRoleChoices)
 
     class Meta:
         model = models.MailboxAccess
@@ -517,6 +596,7 @@ class MailboxAccessNestedUserSerializer(serializers.ModelSerializer):
     """
 
     user = UserSerializer(read_only=True, exclude_abilities=True)
+    role = IntegerChoicesField(models.MailboxRoleChoices, read_only=True)
 
     class Meta:
         model = models.MailboxAccess

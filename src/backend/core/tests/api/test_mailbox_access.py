@@ -227,7 +227,7 @@ class TestMailboxAccessViewSet:
 
         data = {  # No 'mailbox' field in data, it comes from URL
             "user": str(user_beta.pk),
-            "role": MailboxRoleChoices.EDITOR.value,
+            "role": "editor",
         }
         response = api_client.post(
             self.list_create_url(mailbox_id=mailbox1_domain1.pk), data
@@ -237,7 +237,7 @@ class TestMailboxAccessViewSet:
         # Serializer might return mailbox PK if not read_only=True, or nested details.
         # For now, check what's guaranteed by create.
         assert response.data["user"] == user_beta.pk
-        assert response.data["role"] == MailboxRoleChoices.EDITOR.value
+        assert response.data["role"] == "editor"
         assert models.MailboxAccess.objects.filter(
             mailbox=mailbox1_domain1, user=user_beta, role=MailboxRoleChoices.EDITOR
         ).exists()
@@ -253,7 +253,7 @@ class TestMailboxAccessViewSet:
     ):
         """Mailbox admin should not be able to create accesses for unmanaged mailboxes."""
         api_client.force_authenticate(user=mailbox1_admin_user)
-        data = {"user": str(user_beta.pk), "role": MailboxRoleChoices.EDITOR.value}
+        data = {"user": str(user_beta.pk), "role": "editor"}
         response = api_client.post(
             self.list_create_url(mailbox_id=mailbox1_domain2.pk), data
         )  # Attempt on mailbox1_domain2
@@ -264,7 +264,7 @@ class TestMailboxAccessViewSet:
     ):
         """Domain admin should not be able to create accesses for mailboxes in unmanaged domains."""
         api_client.force_authenticate(user=domain_admin_user)  # Admin for domain1
-        data = {"user": str(user_beta.pk), "role": MailboxRoleChoices.EDITOR.value}
+        data = {"user": str(user_beta.pk), "role": "editor"}
         response = api_client.post(
             self.list_create_url(mailbox_id=mailbox1_domain2.pk), data
         )  # mailbox1_domain2 is in domain2
@@ -325,14 +325,14 @@ class TestMailboxAccessViewSet:
             domain_admin_user if admin_type == "domain_admin" else mailbox1_admin_user
         )
         api_client.force_authenticate(user=user_performing_action)
-        data = {"role": MailboxRoleChoices.ADMIN.value}
+        data = {"role": "admin"}
         response = api_client.patch(
             self.detail_url(mailbox_id=mailbox1_domain1.pk, pk=access_m1d1_alpha.pk),
             data,
         )
         assert response.status_code == status.HTTP_200_OK
         access_m1d1_alpha.refresh_from_db()
-        assert access_m1d1_alpha.role == MailboxRoleChoices.ADMIN
+        assert access_m1d1_alpha.role == MailboxRoleChoices.ADMIN.value
 
         data = {"role": "invalid"}
         response = api_client.patch(
@@ -341,7 +341,7 @@ class TestMailboxAccessViewSet:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-        data = {"role": MailboxRoleChoices.ADMIN.value, "user": str(user_beta.pk)}
+        data = {"role": "admin", "user": str(user_beta.pk)}
         response = api_client.patch(
             self.detail_url(mailbox_id=mailbox1_domain1.pk, pk=access_m1d1_alpha.pk),
             data,

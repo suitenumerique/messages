@@ -169,7 +169,7 @@ class TestAdminMailDomainMailboxViewSet:
             None,
         )
         assert user1_access_data is not None
-        assert user1_access_data["role"] == MailboxRoleChoices.EDITOR.value
+        assert user1_access_data["role"] == "editor"
         assert user1_access_data["user"]["email"] == user_for_access1.email
 
         user2_access_data = next(
@@ -181,7 +181,7 @@ class TestAdminMailDomainMailboxViewSet:
             None,
         )
         assert user2_access_data is not None
-        assert user2_access_data["role"] == MailboxRoleChoices.VIEWER.value
+        assert user2_access_data["role"] == "viewer"
 
         # Check that mailbox2_domain1 is also present
         mb2_data = next(

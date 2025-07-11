@@ -87,7 +87,7 @@ class TestBlobAPI:
         blob_id = uuid.UUID(response.data["blobId"])
         blob = models.Blob.objects.get(id=blob_id)
         assert blob.content_type == "text/plain"
-        assert blob.sha256 == expected_hash
+        assert blob.sha256.hex() == expected_hash
         assert blob.size == len(file_content)
         assert blob.mailbox == user_mailbox
 

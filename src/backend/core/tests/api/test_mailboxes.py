@@ -82,14 +82,14 @@ class TestMailboxViewSet:
             {
                 "id": str(user_mailbox2.id),
                 "email": str(user_mailbox2),
-                "role": str(models.MailboxRoleChoices.EDITOR),
+                "role": "editor",
                 "count_unread_messages": 1,
                 "count_messages": 2,
             },
             {
                 "id": str(user_mailbox1.id),
                 "email": str(user_mailbox1),
-                "role": str(models.MailboxRoleChoices.VIEWER),
+                "role": "viewer",
                 "count_unread_messages": 1,
                 "count_messages": 1,
             },
