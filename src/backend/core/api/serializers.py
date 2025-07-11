@@ -13,13 +13,13 @@ class IntegerChoicesField(serializers.Field):
     """
     Custom field to handle IntegerChoices that accepts string labels for input
     and returns string labels for output.
-    
+
     Example usage:
         role = IntegerChoicesField(MailboxRoleChoices)
-        
+
     This field will:
     - Accept strings like "viewer", "editor", "admin" for input
-    - Store them as integers (1, 2, 4) in the database  
+    - Store them as integers (1, 2, 4) in the database
     - Return strings like "viewer", "editor", "admin" for output
     - Provide helpful error messages for invalid choices
     - Support backward compatibility with integer input
@@ -40,33 +40,35 @@ class IntegerChoicesField(serializers.Field):
         """Convert string label to integer value for storage."""
         if data is None:
             return None
-        
+
         # If it's already an integer (for backward compatibility), validate and return it
         if isinstance(data, int):
             try:
                 self.choices_class(data)  # Validate it's a valid choice
                 return data
             except ValueError:
-                self.fail('invalid_choice', input=data)
-        
+                self.fail("invalid_choice", input=data)
+
         # Convert string label to integer value
         if isinstance(data, str):
             for choice_value, choice_label in self.choices_class.choices:
                 if choice_label == data:
                     return choice_value
-            self.fail('invalid_choice', input=data)
-        
-        self.fail('invalid_choice', input=data)
+            self.fail("invalid_choice", input=data)
+
+        self.fail("invalid_choice", input=data)
+
+        return None
 
     default_error_messages = {
-        'invalid_choice': 'Invalid choice: {input}. Valid choices are: {choices}.'
+        "invalid_choice": "Invalid choice: {input}. Valid choices are: {choices}."
     }
 
     def fail(self, key, **kwargs):
         """Override to provide better error messages."""
-        if key == 'invalid_choice':
+        if key == "invalid_choice":
             valid_choices = [label for value, label in self.choices_class.choices]
-            kwargs['choices'] = ', '.join(valid_choices)
+            kwargs["choices"] = ", ".join(valid_choices)
         super().fail(key, **kwargs)
 
 
@@ -139,7 +141,9 @@ class MailboxSerializer(serializers.ModelSerializer):
         """Return the allowed actions of the logged-in user on the instance."""
         request = self.context.get("request")
         if request:
-            role_enum = models.MailboxRoleChoices(instance.accesses.get(user=request.user).role)
+            role_enum = models.MailboxRoleChoices(
+                instance.accesses.get(user=request.user).role
+            )
             return role_enum.label
         return None
 

@@ -175,13 +175,12 @@ class MessageFactory(factory.django.DjangoModelFactory):
         """
         if not create or not extracted:
             return
-        
+
         # Create a blob with the raw MIME content using the sender's mailbox
-        blob = self.sender.mailbox.create_blob(
+        self.blob = self.sender.mailbox.create_blob(  # pylint: disable=attribute-defined-outside-init
             content=extracted,
             content_type="message/rfc822",
         )
-        self.blob = blob
         self.save()
 
 

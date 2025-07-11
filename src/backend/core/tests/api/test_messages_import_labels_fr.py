@@ -8,7 +8,6 @@ from rest_framework.test import APIClient
 
 from core import models
 from core.factories import MailboxFactory, UserFactory
-from core.models import Blob
 
 IMPORT_FILE_URL = "/api/v1.0/import/file/"
 

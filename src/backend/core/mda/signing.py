@@ -54,9 +54,7 @@ def generate_dkim_key(
     return private_key_pem, public_key_b64
 
 
-def sign_message_dkim(
-    raw_mime_message: bytes, sender_email: str, mailbox
-) -> Optional[bytes]:
+def sign_message_dkim(raw_mime_message: bytes, maildomain) -> Optional[bytes]:
     """Sign a raw MIME message with DKIM.
 
     Uses the most recent active DKIM key for the domain.
@@ -64,17 +62,15 @@ def sign_message_dkim(
 
     Args:
         raw_mime_message: The raw bytes of the MIME message.
-        sender_email: The email address of the sender (e.g., "user@example.com").
-        mailbox: The mailbox object containing the domain with DKIM key.
+        maildomain: The MailDomain object with DKIM key.
 
     Returns:
         The DKIM-Signature header bytes if signed, otherwise None.
     """
-    mail_domain = mailbox.domain
-    domain = mail_domain.name
+    domain = maildomain.name
 
     # Find the most recent active DKIM key for this domain
-    dkim_key = mailbox.domain.get_active_dkim_key()
+    dkim_key = maildomain.get_active_dkim_key()
 
     if not dkim_key:
         logger.warning(

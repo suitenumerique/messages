@@ -105,13 +105,20 @@ class SendMessageView(APIView):
             raise drf_exceptions.ValidationError("senderId is required.")
 
         try:
+            mailbox_sender = models.Mailbox.objects.get(id=sender_id)
+        except models.Mailbox.DoesNotExist as e:
+            raise drf_exceptions.NotFound("Sender mailbox not found.") from e
+
+        try:
             message = (
                 models.Message.objects.select_related("sender")
                 .prefetch_related(
                     "thread__accesses", "recipients__contact", "attachments__blob"
                 )
                 .get(
-                    id=message_id, is_draft=True, thread__accesses__mailbox_id=sender_id
+                    id=message_id,
+                    is_draft=True,
+                    thread__accesses__mailbox=mailbox_sender,
                 )
             )
         except models.Message.DoesNotExist as e:
@@ -120,7 +127,10 @@ class SendMessageView(APIView):
             ) from e
 
         prepared = prepare_outbound_message(
-            message, request.data.get("textBody"), request.data.get("htmlBody")
+            mailbox_sender,
+            message,
+            request.data.get("textBody"),
+            request.data.get("htmlBody"),
         )
         if not prepared:
             raise drf_exceptions.APIException(

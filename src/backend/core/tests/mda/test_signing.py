@@ -24,9 +24,7 @@ def test_generate_dkim_key():
     assert public_key_str_4096  # Should have public key
 
     # Test unsupported algorithm
-    with pytest.raises(
-        ValueError
-    ):
+    with pytest.raises(ValueError):
         generate_dkim_key(algorithm=DKIMAlgorithmChoices.ED25519)
 
 
@@ -42,7 +40,7 @@ def test_sign_message_dkim_success():
     mail_domain = MailDomain.objects.create(name="example.com")
 
     # Create a mailbox
-    mailbox = Mailbox.objects.create(
+    Mailbox.objects.create(
         local_part="test",
         domain=mail_domain,
     )
@@ -57,10 +55,9 @@ def test_sign_message_dkim_success():
         domain=mail_domain,
     )
 
-    sender_email = "test@example.com"
     raw_message = b"From: test@example.com\r\nTo: recipient@other.com\r\nSubject: Test DKIM\r\n\r\nHello World!\r\n"
 
-    signature_header_bytes = sign_message_dkim(raw_message, sender_email, mailbox)
+    signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
 
     assert signature_header_bytes is not None
     assert signature_header_bytes.startswith(b"DKIM-Signature:")
@@ -87,14 +84,13 @@ def test_sign_message_dkim_domain_not_found():
     mail_domain = MailDomain.objects.create(name="example.com")
 
     # Create a mailbox
-    mailbox = Mailbox.objects.create(
+    Mailbox.objects.create(
         local_part="test",
         domain=mail_domain,
     )
 
-    sender_email = "test@otherdomain.com"  # Different domain
     raw_message = b"From: test@otherdomain.com\r\nSubject: Test\r\n\r\nBody"
-    signature_header_bytes = sign_message_dkim(raw_message, sender_email, mailbox)
+    signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
     assert signature_header_bytes is None
 
 
@@ -105,14 +101,13 @@ def test_sign_message_dkim_no_dkim_key():
     mail_domain = MailDomain.objects.create(name="example.com")
 
     # Create a mailbox
-    mailbox = Mailbox.objects.create(
+    Mailbox.objects.create(
         local_part="test",
         domain=mail_domain,
     )
 
-    sender_email = "test@example.com"
     raw_message = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
-    signature_header_bytes = sign_message_dkim(raw_message, sender_email, mailbox)
+    signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
     assert signature_header_bytes is None
 
 
@@ -124,7 +119,7 @@ def test_sign_message_dkim_inactive_key():
 
     # Create mail domain and mailbox
     mail_domain = MailDomain.objects.create(name="example.com")
-    mailbox = Mailbox.objects.create(
+    Mailbox.objects.create(
         local_part="test",
         domain=mail_domain,
     )
@@ -139,9 +134,8 @@ def test_sign_message_dkim_inactive_key():
         domain=mail_domain,
     )
 
-    sender_email = "test@example.com"
     raw_message = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
-    signature_header_bytes = sign_message_dkim(raw_message, sender_email, mailbox)
+    signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
     assert signature_header_bytes is None
 
 
@@ -150,7 +144,7 @@ def test_sign_message_dkim_picks_most_recent_active():
     """Test that signing picks the most recent active DKIM key."""
     # Create mail domain and mailbox
     mail_domain = MailDomain.objects.create(name="example.com")
-    mailbox = Mailbox.objects.create(
+    Mailbox.objects.create(
         local_part="test",
         domain=mail_domain,
     )
@@ -177,9 +171,8 @@ def test_sign_message_dkim_picks_most_recent_active():
         domain=mail_domain,
     )
 
-    sender_email = "test@example.com"
     raw_message = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
-    signature_header_bytes = sign_message_dkim(raw_message, sender_email, mailbox)
+    signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
 
     # Should use the newer key
     assert signature_header_bytes is not None
@@ -193,7 +186,7 @@ def test_mailbox_generate_dkim_key():
     mail_domain = MailDomain.objects.create(name="example.com")
 
     # Create a mailbox
-    mailbox = Mailbox.objects.create(
+    Mailbox.objects.create(
         local_part="test",
         domain=mail_domain,
     )
@@ -211,9 +204,8 @@ def test_mailbox_generate_dkim_key():
     assert dkim_key.public_key  # Should have a public key
 
     # Test that signing now works
-    sender_email = "test@example.com"
     raw_message = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
-    signature_header_bytes = sign_message_dkim(raw_message, sender_email, mailbox)
+    signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
 
     assert signature_header_bytes is not None
     assert b"s=auto" in signature_header_bytes

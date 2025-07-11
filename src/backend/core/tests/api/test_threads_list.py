@@ -734,10 +734,7 @@ class TestThreadListAPI:
         assert str(thread1.id) not in thread_ids
         assert str(thread2.id) in thread_ids
         assert str(thread3.id) in thread_ids
-        assert (
-            response.data["results"][0]["user_role"]
-            == "viewer"
-        )
+        assert response.data["results"][0]["user_role"] == "viewer"
         # check that the accesses are returned
         assert len(response.data["results"][0]["accesses"]) == 1
         access = response.data["results"][1]["accesses"][0]

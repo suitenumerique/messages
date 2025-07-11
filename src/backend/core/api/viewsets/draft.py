@@ -227,7 +227,9 @@ class DraftMessageView(APIView):
                 # Delete existing recipients of this type
                 # Ensure message has a pk before accessing m2m
                 if message.pk:
-                    message.recipients.filter(type=recipient_type_mapping[recipient_type]).delete()
+                    message.recipients.filter(
+                        type=recipient_type_mapping[recipient_type]
+                    ).delete()
 
                 # Create new recipients
                 emails = request_data.get(recipient_type) or []

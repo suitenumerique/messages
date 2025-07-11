@@ -999,10 +999,9 @@ class Blob(BaseModel):
         """
         if self.compression == CompressionTypeChoices.NONE:
             return self.raw_content
-        elif self.compression == CompressionTypeChoices.ZSTD:
+        if self.compression == CompressionTypeChoices.ZSTD:
             return pyzstd.decompress(self.raw_content)
-        else:
-            raise ValueError(f"Unsupported compression type: {self.compression}")
+        raise ValueError(f"Unsupported compression type: {self.compression}")
 
 
 class Attachment(BaseModel):

@@ -693,7 +693,7 @@ class Test(Base):
     IDENTITY_PROVIDER = None
 
     CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
-    
+
     # Add a test encryption key for django-fernet-encrypted-fields
     SALT_KEY = ["test-salt-for-development-only"]
 

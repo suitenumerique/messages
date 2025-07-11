@@ -135,7 +135,9 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
             f"Let's discuss the project status on Monday."
         ).encode("utf-8"),
     )
-    MessageRecipientFactory(message=message1, contact=contact2, type=enums.MessageRecipientTypeChoices.TO)
+    MessageRecipientFactory(
+        message=message1, contact=contact2, type=enums.MessageRecipientTypeChoices.TO
+    )
 
     # Thread 2: Thread with CC and BCC recipients
     thread2 = ThreadFactory(subject="Team Update")
@@ -156,9 +158,15 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
             f"Here's the weekly team update with project progress."
         ).encode("utf-8"),
     )
-    MessageRecipientFactory(message=message2, contact=contact1, type=enums.MessageRecipientTypeChoices.TO)
-    MessageRecipientFactory(message=message2, contact=contact3, type=enums.MessageRecipientTypeChoices.CC)
-    MessageRecipientFactory(message=message2, contact=contact4, type=enums.MessageRecipientTypeChoices.BCC)
+    MessageRecipientFactory(
+        message=message2, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
+    )
+    MessageRecipientFactory(
+        message=message2, contact=contact3, type=enums.MessageRecipientTypeChoices.CC
+    )
+    MessageRecipientFactory(
+        message=message2, contact=contact4, type=enums.MessageRecipientTypeChoices.BCC
+    )
 
     # Thread 3: Draft message
     thread3 = ThreadFactory(subject="Draft Report")
@@ -178,7 +186,9 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
             f"This is a draft of the quarterly report."
         ).encode("utf-8"),
     )
-    MessageRecipientFactory(message=message3, contact=contact2, type=enums.MessageRecipientTypeChoices.TO)
+    MessageRecipientFactory(
+        message=message3, contact=contact2, type=enums.MessageRecipientTypeChoices.TO
+    )
 
     # Thread 4: Trashed message
     thread4 = ThreadFactory(subject="Old Newsletter")
@@ -198,7 +208,9 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
             f"This is last month's newsletter that should be in trash."
         ).encode("utf-8"),
     )
-    MessageRecipientFactory(message=message4, contact=contact1, type=enums.MessageRecipientTypeChoices.TO)
+    MessageRecipientFactory(
+        message=message4, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
+    )
 
     # Thread 5: Starred and read message
     thread5 = ThreadFactory(subject="Important Announcement")
@@ -219,7 +231,9 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
             f"Please note that our office will be closed next Monday for maintenance."
         ).encode("utf-8"),
     )
-    MessageRecipientFactory(message=message5, contact=contact1, type=enums.MessageRecipientTypeChoices.TO)
+    MessageRecipientFactory(
+        message=message5, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
+    )
 
     # Thread 6: Unread message
     thread6 = ThreadFactory(subject="New Notification")
@@ -239,7 +253,9 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
             f"You have a new notification from the system."
         ).encode("utf-8"),
     )
-    MessageRecipientFactory(message=message6, contact=contact1, type=enums.MessageRecipientTypeChoices.TO)
+    MessageRecipientFactory(
+        message=message6, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
+    )
 
     # Thread 7: For testing exact phrases
     thread7 = ThreadFactory(subject="Project Feedback")
@@ -258,7 +274,9 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
             f"The client provided positive feedback about the new interface design."
         ).encode("utf-8"),
     )
-    MessageRecipientFactory(message=message7, contact=contact1, type=enums.MessageRecipientTypeChoices.TO)
+    MessageRecipientFactory(
+        message=message7, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
+    )
 
     # Thread 8: For testing in second mailbox
     thread8 = ThreadFactory(subject="Different Mailbox Message")
@@ -277,7 +295,9 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
             f"This message is in a different mailbox for testing."
         ).encode("utf-8"),
     )
-    MessageRecipientFactory(message=message8, contact=contact2, type=enums.MessageRecipientTypeChoices.TO)
+    MessageRecipientFactory(
+        message=message8, contact=contact2, type=enums.MessageRecipientTypeChoices.TO
+    )
 
     # Thread 9: For testing sent messages
     thread9 = ThreadFactory(subject="Sent Message")
@@ -297,7 +317,9 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
             f"This is a message that was sent by the user. threadnine msgnineone"
         ).encode("utf-8"),
     )
-    MessageRecipientFactory(message=message9, contact=contact3, type=enums.MessageRecipientTypeChoices.TO)
+    MessageRecipientFactory(
+        message=message9, contact=contact3, type=enums.MessageRecipientTypeChoices.TO
+    )
 
     # A second sent message in the same thread
     message9_2 = MessageFactory(
@@ -313,7 +335,9 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
             f"This is a message that was sent by the user. threadnine msgninetwo"
         ).encode("utf-8"),
     )
-    MessageRecipientFactory(message=message9_2, contact=contact3, type=enums.MessageRecipientTypeChoices.TO)
+    MessageRecipientFactory(
+        message=message9_2, contact=contact3, type=enums.MessageRecipientTypeChoices.TO
+    )
 
     # Wait for indexing to complete
     wait_for_indexing()

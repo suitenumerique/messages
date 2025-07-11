@@ -11,7 +11,7 @@ import pytest
 
 from core import factories
 from core.enums import MailboxRoleChoices
-from core.models import Blob, Mailbox, MailDomain, Message
+from core.models import Mailbox, MailDomain, Message
 from core.services.import_service import ImportService
 from core.tasks import deliver_inbound_message, process_eml_file_task
 

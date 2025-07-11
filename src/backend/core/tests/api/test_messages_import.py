@@ -11,7 +11,7 @@ from rest_framework.test import APIClient
 
 from core import factories
 from core.enums import MailboxRoleChoices
-from core.models import Blob, Mailbox, MailDomain, Message, Thread
+from core.models import Mailbox, MailDomain, Message, Thread
 from core.tasks import process_eml_file_task, process_mbox_file_task
 
 pytestmark = pytest.mark.django_db

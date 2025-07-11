@@ -9,7 +9,7 @@ from django.db import models
 # We can use it for the choice of languages which should not be limited to the few languages
 # active in the app.
 # pylint: disable=no-member
-ALL_LANGUAGES = {language: name for language, name in global_settings.LANGUAGES}
+ALL_LANGUAGES = dict(global_settings.LANGUAGES)
 
 
 class MailboxRoleChoices(models.IntegerChoices):

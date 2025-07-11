@@ -39,7 +39,10 @@ RETRY_INTERVALS = [
 
 
 def prepare_outbound_message(
-    message: models.Message, text_body: str, html_body: str
+    mailbox_sender: models.Mailbox,
+    message: models.Message,
+    text_body: str,
+    html_body: str,
 ) -> bool:
     """Compose and sign an existing draft Message object before sending via SMTP.
 
@@ -143,12 +146,9 @@ def prepare_outbound_message(
         logger.error("Failed to compose MIME for message %s: %s", message.id, e)
         return False
 
-    # Find the mailbox for this message (get the first one from thread accesses)
-    mailbox = message.thread.accesses.first().mailbox
-
     # Sign the message with DKIM
     dkim_signature_header: Optional[bytes] = sign_message_dkim(
-        raw_mime_message=raw_mime, sender_email=message.sender.email, mailbox=mailbox
+        raw_mime_message=raw_mime, maildomain=mailbox_sender.domain
     )
 
     raw_mime_signed = raw_mime
@@ -157,7 +157,7 @@ def prepare_outbound_message(
         raw_mime_signed = dkim_signature_header + b"\r\n" + raw_mime
 
     # Create a blob to store the raw MIME content
-    blob = mailbox.create_blob(
+    blob = mailbox_sender.create_blob(
         content=raw_mime_signed,
         content_type="message/rfc822",
     )
