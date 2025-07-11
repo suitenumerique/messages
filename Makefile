@@ -232,7 +232,7 @@ back-shell: ## open a shell in the backend container
 
 back-shell-no-deps: ## open a shell in the backend container without dependencies
 	@$(COMPOSE) run --rm --no-deps --build backend-dev /bin/bash
-.PHONY: back-shell
+.PHONY: back-shell-no-deps
 
 back-exec: ## open a shell in the running backend-dev container
 	@$(COMPOSE) exec backend-dev /bin/bash

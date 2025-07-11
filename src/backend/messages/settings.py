@@ -62,6 +62,9 @@ class Base(Configuration):
 
     API_VERSION = "v1.0"
 
+    # Admin URL configuration
+    ADMIN_URL = values.Value("admin/")
+
     # Elasticsearch configuration
     ELASTICSEARCH_HOSTS = values.ListValue(
         ["http://elasticsearch:9200"],
@@ -153,7 +156,7 @@ class Base(Configuration):
 
     # Test domain settings
     MESSAGES_TESTDOMAIN = values.Value(
-        "localhost", environ_name="MESSAGES_TESTDOMAIN", environ_prefix=None
+        None, environ_name="MESSAGES_TESTDOMAIN", environ_prefix=None
     )
     MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN = values.Value(
         None,
@@ -387,8 +390,9 @@ class Base(Configuration):
     )
 
     # Posthog
-    POSTHOG_KEY = values.DictValue(
-        None, environ_name="POSTHOG_KEY", environ_prefix=None
+    POSTHOG_KEY = values.Value(None, environ_name="POSTHOG_KEY", environ_prefix=None)
+    POSTHOG_HOST = values.Value(
+        "https://eu.i.posthog.com", environ_name="POSTHOG_HOST", environ_prefix=None
     )
 
     # Celery
@@ -498,20 +502,18 @@ class Base(Configuration):
     )
 
     IDENTITY_PROVIDER = values.Value(
-        "keycloak", environ_name="IDENTITY_PROVIDER", environ_prefix=None
+        None, environ_name="IDENTITY_PROVIDER", environ_prefix=None
     )
 
     KEYCLOAK_REALM = values.Value(
-        "messages", environ_name="KEYCLOAK_REALM", environ_prefix=None
+        None, environ_name="KEYCLOAK_REALM", environ_prefix=None
     )
-    KEYCLOAK_URL = values.Value(
-        "http://keycloak:8083", environ_name="KEYCLOAK_URL", environ_prefix=None
-    )
+    KEYCLOAK_URL = values.Value(None, environ_name="KEYCLOAK_URL", environ_prefix=None)
     KEYCLOAK_CLIENT_ID = values.Value(
-        "rest-api", environ_name="KEYCLOAK_CLIENT_ID", environ_prefix=None
+        None, environ_name="KEYCLOAK_CLIENT_ID", environ_prefix=None
     )
     KEYCLOAK_CLIENT_SECRET = values.Value(
-        "ServiceAccountClientSecretForDev",
+        None,
         environ_name="KEYCLOAK_CLIENT_SECRET",
         environ_prefix=None,
     )
