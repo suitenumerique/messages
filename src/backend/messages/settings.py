@@ -517,6 +517,11 @@ class Base(Configuration):
         environ_name="KEYCLOAK_CLIENT_SECRET",
         environ_prefix=None,
     )
+    KEYCLOAK_GROUP_PATH_PREFIX = values.Value(
+        None,
+        environ_name="KEYCLOAK_GROUP_PATH_PREFIX",
+        environ_prefix=None,
+    )
 
     # Logging
     # We want to make it easy to log to console but by default we log production

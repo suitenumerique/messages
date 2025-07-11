@@ -52,16 +52,13 @@ def sync_maildomain_to_keycloak_group(maildomain: MailDomain):
 
     try:
         keycloak_admin = get_keycloak_admin_client()
-        group_name = f"maildomain-{maildomain.name}"
+        group_path = f"{settings.KEYCLOAK_GROUP_PATH_PREFIX}{maildomain.name}"
+        group_name = group_path.split("/")[-1]
 
         # Check if group exists
-        existing_groups = keycloak_admin.get_groups({"search": group_name})
-        group_id = None
-
-        for group in existing_groups:
-            if group.get("name") == group_name:
-                group_id = group["id"]
-                break
+        existing_group = keycloak_admin.get_group_by_path(group_path)
+        if existing_group and "error" in existing_group:
+            existing_group = None
 
         # Prepare group attributes
         group_attributes = {
@@ -78,11 +75,14 @@ def sync_maildomain_to_keycloak_group(maildomain: MailDomain):
                 else:
                     group_attributes[key] = [str(value)]
 
-        if group_id:
+        if existing_group:
             # Update existing group
             keycloak_admin.update_group(
-                group_id=group_id,
-                payload={"name": group_name, "attributes": group_attributes},
+                group_id=existing_group["id"],
+                payload={
+                    "name": group_name,
+                    "attributes": group_attributes,
+                },
             )
             logger.info(
                 "Updated Keycloak group %s for MailDomain %s",
@@ -91,7 +91,10 @@ def sync_maildomain_to_keycloak_group(maildomain: MailDomain):
             )
         else:
             # Create new group
-            group_payload = {"name": group_name, "attributes": group_attributes}
+            group_payload = {
+                "name": group_name,
+                "attributes": group_attributes,
+            }
             group_id = keycloak_admin.create_group(payload=group_payload)
             logger.info(
                 "Created Keycloak group %s for MailDomain %s",

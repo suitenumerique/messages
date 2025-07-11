@@ -1,6 +1,8 @@
 """Tests for the MailDomain permissions system based on get_abilities."""
 # pylint: disable=redefined-outer-name,unused-argument
 
+from django.core.exceptions import ValidationError
+
 import pytest
 
 from core import models
@@ -19,6 +21,30 @@ def user():
 def maildomain():
     """Create a test mail domain."""
     return MailDomainFactory()
+
+
+class TestMailDomainModel:
+    """Test the MailDomain model."""
+
+    def test_maildomain_name_validator(self):
+        """Test the MailDomain name validator."""
+
+        for name in [
+            "?",
+            "/",
+            "x",
+            "-invalid",
+            "invalid-",
+            "invalid.example.com/",
+            "",
+            "invalid.example.com ",
+            " ",
+        ]:
+            with pytest.raises(ValidationError):
+                MailDomainFactory(name=name)
+
+        domain = MailDomainFactory(name="va-lid.example.com")
+        assert domain.name == "va-lid.example.com"
 
 
 class TestMailDomainModelAbilities:

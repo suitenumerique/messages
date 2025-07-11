@@ -207,7 +207,17 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
 class MailDomain(BaseModel):
     """Mail domain model to store mail domain information."""
 
-    name = models.CharField(_("name"), max_length=253, unique=True)
+    name_validator = validators.RegexValidator(
+        regex=r"^[a-z0-9][a-z0-9.-]*[a-z0-9]$",
+        message=_(
+            "Enter a valid domain name. This value may contain only lowercase "
+            "letters, numbers, dots and - characters."
+        ),
+    )
+
+    name = models.CharField(
+        _("name"), max_length=253, unique=True, validators=[name_validator]
+    )
 
     alias_of = models.ForeignKey(
         "self", on_delete=models.SET_NULL, null=True, blank=True

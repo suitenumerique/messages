@@ -52,6 +52,7 @@ KEYCLOAK_REALM=messages
 KEYCLOAK_URL=http://keycloak:8083
 KEYCLOAK_CLIENT_ID=rest-api
 KEYCLOAK_CLIENT_SECRET=ServiceAccountClientSecretForDev
+KEYCLOAK_GROUP_PATH_PREFIX=/maildomain-
 
 # Frontend
 FRONTEND_THEME=dsfr
