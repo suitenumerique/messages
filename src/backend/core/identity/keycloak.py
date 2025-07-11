@@ -53,7 +53,8 @@ def sync_maildomain_to_keycloak_group(maildomain: MailDomain):
     try:
         keycloak_admin = get_keycloak_admin_client()
         group_path = f"{settings.KEYCLOAK_GROUP_PATH_PREFIX}{maildomain.name}"
-        group_name = group_path.split("/")[-1]
+        group_name = group_path.rsplit("/", maxsplit=1)[-1]
+        parent_path = group_path.rsplit("/", maxsplit=1)[0]
 
         # Check if group exists
         existing_group = keycloak_admin.get_group_by_path(group_path)
@@ -77,8 +78,9 @@ def sync_maildomain_to_keycloak_group(maildomain: MailDomain):
 
         if existing_group:
             # Update existing group
+            group_id = existing_group["id"]
             keycloak_admin.update_group(
-                group_id=existing_group["id"],
+                group_id=group_id,
                 payload={
                     "name": group_name,
                     "attributes": group_attributes,
@@ -95,7 +97,15 @@ def sync_maildomain_to_keycloak_group(maildomain: MailDomain):
                 "name": group_name,
                 "attributes": group_attributes,
             }
-            group_id = keycloak_admin.create_group(payload=group_payload)
+            parent_id = None
+            if parent_path:
+                parent_group = keycloak_admin.get_group_by_path(parent_path)
+                if parent_group and "error" not in parent_group:
+                    parent_id = parent_group["id"]
+
+            group_id = keycloak_admin.create_group(
+                payload=group_payload, parent=parent_id
+            )
             logger.info(
                 "Created Keycloak group %s for MailDomain %s",
                 group_name,

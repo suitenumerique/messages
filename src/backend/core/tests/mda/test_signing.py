@@ -78,16 +78,11 @@ def test_sign_message_dkim_success():
 
 
 @pytest.mark.django_db
-def test_sign_message_dkim_domain_not_found():
-    """Test that signing is skipped for domains not in MailDomain table."""
+def test_sign_message_dkim_no_dkim_key():
+    """Test that signing is skipped if domain has no DKIM key configured."""
     # Create a mail domain without DKIM key
     mail_domain = MailDomain.objects.create(name="example.com")
-
-    # Create a mailbox
-    Mailbox.objects.create(
-        local_part="test",
-        domain=mail_domain,
-    )
+    DKIMKey.objects.first().delete()
 
     raw_message = b"From: test@otherdomain.com\r\nSubject: Test\r\n\r\nBody"
     signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
@@ -95,44 +90,17 @@ def test_sign_message_dkim_domain_not_found():
 
 
 @pytest.mark.django_db
-def test_sign_message_dkim_no_dkim_key():
-    """Test that signing is skipped if domain has no DKIM key configured."""
-    # Create a mail domain without a DKIM key
-    mail_domain = MailDomain.objects.create(name="example.com")
-
-    # Create a mailbox
-    Mailbox.objects.create(
-        local_part="test",
-        domain=mail_domain,
-    )
-
-    raw_message = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
-    signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
-    assert signature_header_bytes is None
-
-
-@pytest.mark.django_db
 def test_sign_message_dkim_inactive_key():
     """Test that signing is skipped if DKIM key is inactive."""
-    # Generate a test private key using our function
-    private_key_pem_str, public_key_str = generate_dkim_key(key_size=1024)
 
     # Create mail domain and mailbox
     mail_domain = MailDomain.objects.create(name="example.com")
-    Mailbox.objects.create(
-        local_part="test",
-        domain=mail_domain,
-    )
+    dkim_key = mail_domain.get_active_dkim_key()
+    assert dkim_key is not None
+    assert dkim_key.is_active is True
 
-    # Create an inactive DKIM key
-    DKIMKey.objects.create(
-        selector="testselector",
-        private_key=private_key_pem_str,
-        public_key=public_key_str,
-        key_size=1024,
-        is_active=False,  # Inactive key
-        domain=mail_domain,
-    )
+    dkim_key.is_active = False
+    dkim_key.save()
 
     raw_message = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
     signature_header_bytes = sign_message_dkim(raw_message, mail_domain)
@@ -185,12 +153,6 @@ def test_mailbox_generate_dkim_key():
     # Create a mail domain
     mail_domain = MailDomain.objects.create(name="example.com")
 
-    # Create a mailbox
-    Mailbox.objects.create(
-        local_part="test",
-        domain=mail_domain,
-    )
-
     # Generate DKIM key using the domain method
     dkim_key = mail_domain.generate_dkim_key(selector="auto")
 
@@ -210,18 +172,18 @@ def test_mailbox_generate_dkim_key():
     assert signature_header_bytes is not None
     assert b"s=auto" in signature_header_bytes
 
+    # Make sure the DKIM key is encrypted in the DB.
+    raw_key = list(DKIMKey.objects.raw("SELECT private_key as pik,id from messages_dkimkey WHERE selector='auto'"))[0].pik
+    assert raw_key is not None
+    assert raw_key != dkim_key.private_key
+    assert "BEGIN PRIVATE KEY" not in raw_key
+
 
 @pytest.mark.django_db
 def test_mailbox_generate_dkim_key_custom_parameters():
     """Test the generate_dkim_key method with custom parameters."""
     # Create a mail domain
     mail_domain = MailDomain.objects.create(name="example.com")
-
-    # Create a mailbox
-    Mailbox.objects.create(
-        local_part="test",
-        domain=mail_domain,
-    )
 
     # Generate DKIM key with custom parameters
     dkim_key = mail_domain.generate_dkim_key(
@@ -244,10 +206,6 @@ def test_dkim_key_get_dns_record_value():
     """Test the get_dns_record_value method on DKIMKey."""
     # Create a mail domain and mailbox
     mail_domain = MailDomain.objects.create(name="example.com")
-    Mailbox.objects.create(
-        local_part="test",
-        domain=mail_domain,
-    )
 
     # Generate DKIM key
     dkim_key = mail_domain.generate_dkim_key(selector="test")
@@ -264,15 +222,18 @@ def test_mail_domain_get_active_dkim_key():
     # Create a mail domain
     mail_domain = MailDomain.objects.create(name="example.com")
 
-    # Should return None when no keys exist
-    assert mail_domain.get_active_dkim_key() is None
+    dkim_key = mail_domain.get_active_dkim_key()
+    assert dkim_key is not None
+    assert dkim_key.is_active is True
 
-    # Create a mailbox and DKIM key
-    Mailbox.objects.create(
-        local_part="test",
-        domain=mail_domain,
-    )
+    dkim_key.is_active = False
+    dkim_key.save()
+
+    dkim_key = mail_domain.get_active_dkim_key()
+    assert dkim_key is None
+
     dkim_key = mail_domain.generate_dkim_key(selector="test")
+    assert dkim_key is not None
 
     # Should return the key
     active_key = mail_domain.get_active_dkim_key()

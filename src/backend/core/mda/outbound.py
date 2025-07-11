@@ -162,9 +162,11 @@ def prepare_outbound_message(
         content_type="message/rfc822",
     )
 
+    draft_blob = message.draft_blob
+
     message.blob = blob
     message.is_draft = False
-    message.draft_body = None
+    message.draft_blob = None
     message.created_at = timezone.now()
     message.updated_at = timezone.now()
     message.save(
@@ -173,11 +175,19 @@ def prepare_outbound_message(
             "blob",
             "mime_id",
             "is_draft",
-            "draft_body",
+            "draft_blob",
             "created_at",
         ]
     )
     message.thread.update_stats()
+
+    # Clean up the draft blob and the attachment blobs
+    if draft_blob:
+        draft_blob.delete()
+    for attachment in message.attachments.all():
+        if attachment.blob:
+            attachment.blob.delete()
+        attachment.delete()
 
     return True
 

@@ -184,6 +184,7 @@ Content-Disposition: attachment; filename="{attachment_data["filename"]}"
 
         # Verify message content via API
         assert message_data["sender"]["email"] == "sender@example.com"
+        assert message_data["has_attachments"] is True
         assert len(message_data["textBody"]) >= 1
         assert len(message_data["htmlBody"]) >= 1
 
@@ -224,6 +225,9 @@ Content-Disposition: attachment; filename="{attachment_data["filename"]}"
         assert response.status_code == status.HTTP_200_OK
         assert response.content == attachment_data["content"]
 
-        # TODO?
-        # assert response["Content-Type"] == attachment_data["content_type"]
+        # TODO: should we get a dynamic content type from the attachment?
         assert response["Content-Type"] == "application/octet-stream"
+        assert (
+            response["Content-Disposition"]
+            == f'attachment; filename="{attachment_data["filename"]}"'
+        )

@@ -19,7 +19,10 @@ logger = logging.getLogger(__name__)
 def get_es_client():
     """Get Elasticsearch client instance."""
     if not hasattr(get_es_client, "cached_client"):
-        get_es_client.cached_client = Elasticsearch(hosts=settings.ELASTICSEARCH_HOSTS)
+        kwargs = {"hosts": settings.ELASTICSEARCH_HOSTS}
+        if settings.ELASTICSEARCH_CA_CERTS:
+            kwargs["ca_certs"] = settings.ELASTICSEARCH_CA_CERTS
+        get_es_client.cached_client = Elasticsearch(**kwargs)
     return get_es_client.cached_client
 
 

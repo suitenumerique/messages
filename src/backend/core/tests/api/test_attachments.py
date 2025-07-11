@@ -238,6 +238,10 @@ class TestDraftWithAttachments:
             thread=thread, sender=sender, is_draft=True, subject="Existing draft"
         )
 
+        # attachment blob should already be created
+        assert models.Blob.objects.count() == 1
+        assert models.Blob.objects.first().content_type == "text/plain"
+
         text_body = (
             f"This is a test draft with an attachment {random.randint(0, 10000000)}"
         )
@@ -262,6 +266,9 @@ class TestDraftWithAttachments:
 
         # Check response
         assert response.status_code == status.HTTP_200_OK
+
+        # still a single blob
+        assert models.Blob.objects.count() == 1
 
         # Verify an attachment was created and linked to the draft
         draft.refresh_from_db()
@@ -289,9 +296,12 @@ class TestDraftWithAttachments:
 
         draft.refresh_from_db()
         assert draft.is_draft is False
-        assert draft.attachments.count() == 1
-        assert draft.attachments.first().blob == blob
-        assert draft.attachments.first().mailbox == user_mailbox
+        assert draft.attachments.count() == 0
+
+        # Original attachment blob should be deleted.
+        assert models.Blob.objects.count() == 1
+        assert models.Blob.objects.first().content_type == "message/rfc822"
+
         parsed_email = email.message_from_bytes(draft.blob.get_content())
 
         # Check that the email is multipart

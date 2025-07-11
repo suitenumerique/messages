@@ -49,10 +49,6 @@ class MessageViewSet(
             else:
                 return queryset.none()
 
-        # For retrieve and list actions, prefetch attachments to optimize performance
-        if self.action in ["retrieve", "list"]:
-            queryset = queryset.prefetch_related("attachments")
-
         return queryset
 
     def destroy(self, request, *args, **kwargs):

@@ -46,6 +46,34 @@ class TestMailDomainModel:
         domain = MailDomainFactory(name="va-lid.example.com")
         assert domain.name == "va-lid.example.com"
 
+    def test_maildomain_auto_generates_dkim_key(self):
+        """Test that DKIM key is automatically generated when creating a new domain."""
+        # Create a new domain - should automatically generate DKIM key
+        domain = MailDomainFactory(name="test.example.com")
+
+        # Verify a DKIM key was created
+        dkim_key = domain.get_active_dkim_key()
+        assert dkim_key is not None
+        assert dkim_key.domain == domain
+        assert dkim_key.is_active is True
+        assert dkim_key.selector == "stmessages"  # Default selector
+        assert dkim_key.private_key is not None
+        assert dkim_key.public_key is not None
+
+    def test_maildomain_no_duplicate_dkim_keys(self):
+        """Test that no duplicate DKIM keys are generated."""
+        # Create a domain with a DKIM key manually
+        domain = MailDomainFactory(name="test.example.com")
+        original_dkim_key = domain.get_active_dkim_key()
+
+        # Save the domain again (should not create another DKIM key)
+        domain.save()
+
+        # Verify we still have only one DKIM key
+        dkim_keys = models.DKIMKey.objects.filter(domain=domain)
+        assert dkim_keys.count() == 1
+        assert dkim_keys.first() == original_dkim_key
+
 
 class TestMailDomainModelAbilities:
     """Test the get_abilities methods on MailDomain models."""

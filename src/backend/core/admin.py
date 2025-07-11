@@ -484,23 +484,16 @@ class DKIMKeyAdmin(admin.ModelAdmin):
     )
     search_fields = ("selector", "domain__name")
     list_filter = ("algorithm", "is_active", "domain")
-    readonly_fields = ("private_key", "public_key", "created_at", "updated_at")
+    readonly_fields = ("public_key", "created_at", "updated_at")
     fieldsets = (
         (
             None,
-            {"fields": ("selector", "domain", "algorithm", "key_size", "is_active")},
+            {"fields": ("selector", "domain", "algorithm", "key_size", "is_active", "created_at", "updated_at")},
         ),
         (
             _("Keys"),
             {
-                "fields": ("private_key", "public_key"),
-                "classes": ("collapse",),
-            },
-        ),
-        (
-            _("Metadata"),
-            {
-                "fields": ("created_at", "updated_at"),
+                "fields": ("public_key", ),
                 "classes": ("collapse",),
             },
         ),

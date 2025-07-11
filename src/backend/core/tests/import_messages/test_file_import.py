@@ -152,7 +152,7 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
         assert Message.objects.count() == 1
         message = Message.objects.first()
         assert message.subject == "Mon mail avec joli pj"
-        assert message.attachments.count() == 1
+        assert message.has_attachments is True
         assert message.sender.email == "sender@example.com"
         assert message.recipients.get().contact.email == "recipient@example.com"
         assert message.sent_at == message.thread.messaged_at
@@ -234,7 +234,7 @@ def test_process_mbox_file_task(mailbox, mbox_file):
 
         # Check messages
         assert messages[0].subject == "Mon mail avec joli pj"
-        assert messages[0].attachments.count() == 1
+        assert messages[0].has_attachments is True
 
         assert messages[1].subject == "Je t'envoie encore un message..."
         body1 = messages[1].get_parsed_field("textBody")[0]["content"]

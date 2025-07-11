@@ -83,41 +83,41 @@ def compute_labels_and_flags(
     return labels_to_add, message_flags, thread_flags
 
 
-def _process_attachments(
-    message: models.Message, attachment_data: List[Dict], mailbox: models.Mailbox
-) -> None:
-    """
-    Process attachments found during email parsing.
+# def _process_attachments(
+#     message: models.Message, attachment_data: List[Dict], mailbox: models.Mailbox
+# ) -> None:
+#     """
+#     Process attachments found during email parsing.
 
-    Creates Blob records for each attachment and links them to the message.
+#     Creates Blob records for each attachment and links them to the message.
 
-    Args:
-        message: The message object to link attachments to
-        attachment_data: List of attachment data dictionaries from parsing
-        mailbox: The mailbox that owns these attachments
-    """
-    for attachment_info in attachment_data:
-        try:
-            # Check if we have content to store
-            if "content" in attachment_info and attachment_info["content"]:
-                # Create a blob for this attachment using the mailbox method
-                content = attachment_info["content"]
-                blob = mailbox.create_blob(
-                    content=content,
-                    content_type=attachment_info["type"],
-                )
+#     Args:
+#         message: The message object to link attachments to
+#         attachment_data: List of attachment data dictionaries from parsing
+#         mailbox: The mailbox that owns these attachments
+#     """
+#     for attachment_info in attachment_data:
+#         try:
+#             # Check if we have content to store
+#             if "content" in attachment_info and attachment_info["content"]:
+#                 # Create a blob for this attachment using the mailbox method
+#                 content = attachment_info["content"]
+#                 blob = mailbox.create_blob(
+#                     content=content,
+#                     content_type=attachment_info["type"],
+#                 )
 
-                # Create an attachment record linking to this blob
-                attachment = models.Attachment.objects.create(
-                    name=attachment_info.get("name", "unnamed"),
-                    blob=blob,
-                    mailbox=mailbox,
-                )
+#                 # Create an attachment record linking to this blob
+#                 attachment = models.Attachment.objects.create(
+#                     name=attachment_info.get("name", "unnamed"),
+#                     blob=blob,
+#                     mailbox=mailbox,
+#                 )
 
-                # Link the attachment to the message
-                message.attachments.add(attachment)
-        except Exception as e:
-            logger.exception("Error processing attachment: %s", e)
+#                 # Link the attachment to the message
+#                 message.attachments.add(attachment)
+#         except Exception as e:
+#             logger.exception("Error processing attachment: %s", e)
 
 
 def check_local_recipient(
@@ -455,6 +455,7 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
             is_starred=False,
             is_trashed=False,
             is_unread=True,
+            has_attachments=len(parsed_email.get("attachments", [])) > 0,
         )
         if is_import:
             # We need to set the created_at field to the date of the message
@@ -550,8 +551,8 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
                 # Log and continue
 
     # --- 7. Process Attachments if present --- #
-    if parsed_email.get("attachments"):
-        _process_attachments(message, parsed_email["attachments"], mailbox)
+    # if parsed_email.get("attachments"):
+    #    _process_attachments(message, parsed_email["attachments"], mailbox)
 
     # --- 8. Final Updates --- #
     try:

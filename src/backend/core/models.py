@@ -326,7 +326,7 @@ class MailDomain(BaseModel):
 
     def generate_dkim_key(
         self,
-        selector: str,
+        selector: str = settings.MESSAGES_DKIM_DEFAULT_SELECTOR,
         algorithm: DKIMAlgorithmChoices = DKIMAlgorithmChoices.RSA,
         key_size: int = 2048,
     ) -> "DKIMKey":
@@ -882,6 +882,7 @@ class Message(BaseModel):
     is_unread = models.BooleanField(_("is unread"), default=False)
     is_spam = models.BooleanField(_("is spam"), default=False)
     is_archived = models.BooleanField(_("is archived"), default=False)
+    has_attachments = models.BooleanField(_("has attachments"), default=False)
 
     trashed_at = models.DateTimeField(_("trashed at"), null=True, blank=True)
     sent_at = models.DateTimeField(_("sent at"), null=True, blank=True)
@@ -899,9 +900,13 @@ class Message(BaseModel):
         related_name="messages",
     )
 
-    # Store the draft body as arbitrary JSON text. Might be offloaded
-    # somewhere else as well.
-    draft_body = models.TextField(_("draft body"), blank=True, null=True)
+    draft_blob = models.ForeignKey(
+        "Blob",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="drafts",
+    )
 
     # Internal cache for parsed data
     _parsed_email_cache: Optional[Dict[str, Any]] = None

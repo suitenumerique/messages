@@ -367,7 +367,7 @@ def test_import_file_mbox_by_superuser_db_creation(
     assert Message.objects.count() == 3
     message = Message.objects.last()
     assert message.subject == "Mon mail avec joli pj"
-    assert message.attachments.count() == 1
+    assert message.has_attachments is True
     assert message.sender.email == "julie.sender@example.com"
     assert message.recipients.get().contact.email == "jean.recipient@example.com"
     assert message.sent_at == message.thread.messaged_at

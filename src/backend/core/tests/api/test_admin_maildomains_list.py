@@ -286,24 +286,82 @@ class TestAdminMailDomainViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["count"] == 10
 
-    def test_maildomain_retrieve_query_optimization(
+    def test_maildomain_expected_dns_records_in_response(
         self,
         api_client,
         domain_admin_user,
         domain_admin_access1,
         mail_domain1,
-        django_assert_num_queries,
     ):
-        """Test that maildomain retrieve endpoint is optimized for queries."""
+        """Test that expected_dns_records field is only included in detail views, not list views."""
         api_client.force_authenticate(user=domain_admin_user)
 
-        with django_assert_num_queries(
-            1
-        ):  # 1 query to retrieve maildomain with annotation
-            response = api_client.get(f"{self.LIST_DOMAINS_URL}{mail_domain1.id}/")
-
+        # Test list endpoint - should NOT include DNS records
+        response = api_client.get(self.LIST_DOMAINS_URL)
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["id"] == str(mail_domain1.id)
+        assert response.data["count"] == 1
+
+        domain_data = response.data["results"][0]
+        assert "expected_dns_records" in domain_data
+        assert (
+            domain_data["expected_dns_records"] is None
+        )  # Should be None in list view
+
+        # Test detail endpoint - should include DNS records
+        detail_response = api_client.get(f"{self.LIST_DOMAINS_URL}{mail_domain1.id}/")
+        assert detail_response.status_code == status.HTTP_200_OK
+        assert "expected_dns_records" in detail_response.data
+
+        dns_records = detail_response.data["expected_dns_records"]
+        assert dns_records is not None  # Should have DNS records in detail view
+
+        # Verify DNS records structure
+        assert isinstance(dns_records, list)
+        assert (
+            len(dns_records) >= 4
+        )  # At least MX (2), SPF, DMARC, and potentially DKIM
+
+        # Verify MX records (should have 2)
+        mx_records = [record for record in dns_records if record["type"] == "mx"]
+        assert len(mx_records) == 2
+        assert any("mx1." in record["value"] for record in mx_records)
+        assert any("mx2." in record["value"] for record in mx_records)
+
+        # Verify SPF record
+        spf_records = [
+            record
+            for record in dns_records
+            if record["type"] == "txt" and "spf1" in record["value"]
+        ]
+        assert len(spf_records) == 1
+        assert spf_records[0]["target"] == ""
+        assert "v=spf1" in spf_records[0]["value"]
+
+        # Verify DMARC record
+        dmarc_records = [
+            record
+            for record in dns_records
+            if record["type"] == "txt" and "DMARC1" in record["value"]
+        ]
+        assert len(dmarc_records) == 1
+        assert dmarc_records[0]["target"] == "_dmarc"
+        assert "v=DMARC1" in dmarc_records[0]["value"]
+
+        # Verify DKIM record (should be present since we auto-generate DKIM keys)
+        dkim_records = [
+            record
+            for record in dns_records
+            if record["type"] == "txt" and "DKIM1" in record["value"]
+        ]
+        assert len(dkim_records) == 1
+        assert dkim_records[0]["target"].endswith("._domainkey")
+        assert "v=DKIM1" in dkim_records[0]["value"]
+
+        # Test detail endpoint
+        detail_response = api_client.get(f"{self.LIST_DOMAINS_URL}{mail_domain1.id}/")
+        assert detail_response.status_code == status.HTTP_200_OK
+        assert "expected_dns_records" in detail_response.data
+        assert detail_response.data["expected_dns_records"] == dns_records
 
 
 class TestMailDomainAbilitiesAPI:

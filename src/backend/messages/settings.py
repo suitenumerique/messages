@@ -77,6 +77,9 @@ class Base(Configuration):
     ELASTICSEARCH_INDEX_THREADS = values.BooleanValue(
         True, environ_name="ELASTICSEARCH_INDEX_THREADS", environ_prefix=None
     )
+    ELASTICSEARCH_CA_CERTS = values.Value(
+        None, environ_name="ELASTICSEARCH_CA_CERTS", environ_prefix=None
+    )
 
     # Security
     ALLOWED_HOSTS = values.ListValue([])

@@ -441,21 +441,43 @@ class MessageSerializer(serializers.ModelSerializer):
     @extend_schema_field(serializers.CharField())
     def get_draftBody(self, instance):  # pylint: disable=invalid-name
         """Return an arbitrary JSON object representing the draft body."""
-        return instance.draft_body
+        return (
+            instance.draft_blob.get_content().decode("utf-8")
+            if instance.draft_blob
+            else None
+        )
 
     @extend_schema_field(AttachmentSerializer(many=True))
     def get_attachments(self, instance):
         """Return the parsed email attachments or linked attachments for drafts."""
+
+        # If the message has no attachments, return an empty list
+        if not instance.has_attachments:
+            return []
+
         # First check for directly linked attachments (for drafts)
-        if instance.attachments.exists():
+        if instance.is_draft:
             return AttachmentSerializer(instance.attachments.all(), many=True).data
 
         # Then get any parsed attachments from the email if available
         parsed_attachments = instance.get_parsed_field("attachments") or []
 
         # Convert parsed attachments to a format similar to AttachmentSerializer
+        # Remove the content field from the parsed attachments and create a
+        # reference to a virtual blob msg_[message_id]_[attachment_number]
+        # This is needed to map our storage schema with the JMAP spec.
         if parsed_attachments:
-            return parsed_attachments
+            stripped_attachments = []
+            for index, attachment in enumerate(parsed_attachments):
+                stripped_attachments.append(
+                    {
+                        "blobId": f"msg_{instance.id}_{index}",
+                        "name": attachment["name"],
+                        "size": attachment["size"],
+                        "type": attachment["type"],
+                    }
+                )
+            return stripped_attachments
 
         return []
 
@@ -530,6 +552,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "is_unread",
             "is_starred",
             "is_trashed",
+            "has_attachments",
         ]
         read_only_fields = fields  # Mark all as read-only
 
@@ -587,9 +610,19 @@ class MailboxAccessWriteSerializer(serializers.ModelSerializer):
 class MailDomainAdminSerializer(AbilitiesModelSerializer):
     """Serialize mail domains for admin view."""
 
+    expected_dns_records = serializers.SerializerMethodField(read_only=True)
+
+    def get_expected_dns_records(self, instance):
+        """Return the expected DNS records for the mail domain, only in detail views."""
+        # Only include DNS records in detail views, not in list views
+        view = self.context.get("view")
+        if view and hasattr(view, "action") and view.action == "retrieve":
+            return instance.get_expected_dns_records()
+        return None
+
     class Meta:
         model = models.MailDomain
-        fields = ["id", "name", "created_at", "updated_at"]
+        fields = ["id", "name", "created_at", "updated_at", "expected_dns_records"]
         read_only_fields = fields
 
 

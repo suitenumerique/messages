@@ -253,8 +253,13 @@ class DraftMessageView(APIView):
 
         # Update draft body if provided
         if "draftBody" in request_data:
-            message.draft_body = request_data.get("draftBody", "")
-            updated_fields.append("draft_body")
+            if message.draft_blob:
+                message.draft_blob.delete()
+            message.draft_blob = self.mailbox.create_blob(
+                content=(request_data.get("draftBody") or "").encode("utf-8"),
+                content_type="application/json",
+            )
+            updated_fields.append("draft_blob")
 
         # Update attachments if provided
         if "attachments" in request_data:
@@ -335,6 +340,11 @@ class DraftMessageView(APIView):
                             set(to_add) - {a.id for a in valid_attachments},
                         )
 
+        has_attachments = message.attachments.exists()
+        if has_attachments != message.has_attachments:
+            message.has_attachments = has_attachments
+            updated_fields.append("has_attachments")
+
         # Save message and thread if changes were made
         if updated_fields and message.pk:  # Only save if message exists
             message.save(update_fields=updated_fields + ["updated_at"])
@@ -411,7 +421,10 @@ class DraftMessageView(APIView):
             read_at=timezone.now(),
             is_draft=True,
             is_sender=True,
-            draft_body=request.data.get("draftBody", ""),
+            draft_blob=self.mailbox.create_blob(
+                content=(request.data.get("draftBody") or "").encode("utf-8"),
+                content_type="application/json",
+            ),
         )
         message.save()  # Save message before adding recipients
 
