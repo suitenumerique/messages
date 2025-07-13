@@ -21,3 +21,12 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 
 # Load task modules from all registered Django apps.
 app.autodiscover_tasks()
+
+# Configure beat schedule
+app.conf.beat_schedule = {
+    "retry-pending-messages": {
+        "task": "core.tasks.retry_messages_task",
+        "schedule": 300.0,  # Every 5 minutes (300 seconds)
+        "options": {"queue": "default"},
+    },
+}

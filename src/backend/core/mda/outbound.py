@@ -142,7 +142,7 @@ def prepare_outbound_message(
             in_reply_to=message.parent.mime_id if message.parent else None,
             # TODO: Add References header logic
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("Failed to compose MIME for message %s: %s", message.id, e)
         return False
 
@@ -212,7 +212,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
             None,
             MessageDeliveryStatusChoices.RETRY,
         }
-        and (recipient.retry_at is None or recipient.retry_at < timezone.now())
+        and (recipient.retry_at is None or recipient.retry_at <= timezone.now())
     }
 
     def _mark_delivered(
@@ -271,7 +271,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     recipient_email, mime_data, message.blob.get_content()
                 )
                 _mark_delivered(recipient_email, delivered, True)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.error(
                     "Failed to deliver internal message to %s: %s", recipient_email, e
                 )
@@ -321,7 +321,7 @@ def send_outbound_message(
     statuses = {}
 
     try:
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as client:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=60) as client:
             client.ehlo()
             if settings.MTA_OUT_SMTP_USE_TLS:
                 client.starttls()

@@ -110,6 +110,6 @@ def sign_message_dkim(raw_mime_message: bytes, maildomain) -> Optional[bytes]:
             dkim_key.selector,
         )
         return b"DKIM-Signature: " + signature_header
-    except Exception as e:  # noqa: BLE001 pylint: disable=broad-exception-caught
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error during DKIM signing for domain %s: %s", domain, e)
         return None

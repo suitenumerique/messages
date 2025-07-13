@@ -103,7 +103,7 @@ class Command(BaseCommand):
             return user, session_key, data
 
         # pylint: disable=broad-except
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.error(f"Failed to process session {redis_key}: {e}")
             return None
 

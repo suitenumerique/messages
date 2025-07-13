@@ -173,7 +173,11 @@ def test_mailbox_generate_dkim_key():
     assert b"s=auto" in signature_header_bytes
 
     # Make sure the DKIM key is encrypted in the DB.
-    raw_key = list(DKIMKey.objects.raw("SELECT private_key as pik,id from messages_dkimkey WHERE selector='auto'"))[0].pik
+    raw_key = list(
+        DKIMKey.objects.raw(
+            "SELECT private_key as pik,id from messages_dkimkey WHERE selector='auto'"
+        )
+    )[0].pik
     assert raw_key is not None
     assert raw_key != dkim_key.private_key
     assert "BEGIN PRIVATE KEY" not in raw_key

@@ -191,6 +191,20 @@ class Base(Configuration):
         "localhost", environ_name="MESSAGES_TECHNICAL_DOMAIN", environ_prefix=None
     )
 
+    # DNS Provider settings
+    DNS_SCALEWAY_API_TOKEN = values.Value(
+        None, environ_name="DNS_SCALEWAY_API_TOKEN", environ_prefix=None
+    )
+    DNS_SCALEWAY_PROJECT_ID = values.Value(
+        None, environ_name="DNS_SCALEWAY_PROJECT_ID", environ_prefix=None
+    )
+    DNS_SCALEWAY_TTL = values.PositiveIntegerValue(
+        3600, environ_name="DNS_SCALEWAY_TTL", environ_prefix=None
+    )
+    DNS_DEFAULT_PROVIDER = values.Value(
+        None, environ_name="DNS_DEFAULT_PROVIDER", environ_prefix=None
+    )
+
     # Media
     AWS_S3_ENDPOINT_URL = values.Value(
         environ_name="AWS_S3_ENDPOINT_URL", environ_prefix=None

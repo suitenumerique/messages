@@ -77,7 +77,7 @@ class TestSendOutboundMessage:
         outbound.send_message(draft_message, force_mta_out=True)
 
         # Check SMTP calls
-        mock_smtp.assert_called_once_with("smtp.test", 1025, timeout=10)
+        mock_smtp.assert_called_once_with("smtp.test", 1025, timeout=60)
         mock_smtp_instance.ehlo.assert_called()
         # Assume no TLS/auth configured in this test override
         mock_smtp_instance.starttls.assert_not_called()

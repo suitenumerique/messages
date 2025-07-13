@@ -60,7 +60,7 @@ def index_message(message: models.Message) -> bool:
         try:
             parsed_data = parse_email_message(message.blob.get_content())
         # pylint: disable=broad-exception-caught
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.error("Error parsing blob content for message %s: %s", message.id, e)
             return False
 
@@ -146,7 +146,7 @@ def index_message(message: models.Message) -> bool:
         logger.debug("Indexed message %s", message.id)
         return True
     # pylint: disable=broad-exception-caught
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("Error indexing message %s: %s", message.id, e)
         return False
 
@@ -180,7 +180,7 @@ def index_thread(thread: models.Thread) -> bool:
 
         return success
     # pylint: disable=broad-exception-caught
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("Error indexing thread %s: %s", thread.id, e)
         return False
 
@@ -236,7 +236,7 @@ def reindex_mailbox(mailbox_id: str):
         return {"status": "error", "mailbox": mailbox_id, "error": "Mailbox not found"}
 
     # pylint: disable=broad-exception-caught
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("Error reindexing mailbox %s: %s", mailbox_id, e)
         return {"status": "error", "mailbox": mailbox_id, "error": str(e)}
 
@@ -256,5 +256,5 @@ def reindex_thread(thread_id: str):
     except models.Thread.DoesNotExist:
         return {"status": "error", "thread": thread_id, "error": "Thread not found"}
     # pylint: disable=broad-exception-caught
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return {"status": "error", "thread": thread_id, "error": str(e)}

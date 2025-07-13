@@ -259,8 +259,8 @@ class MailDomain(BaseModel):
         technical_domain = settings.MESSAGES_TECHNICAL_DOMAIN
 
         records = [
-            {"target": "", "type": "mx", "value": f"10 mx1.{technical_domain}"},
-            {"target": "", "type": "mx", "value": f"20 mx2.{technical_domain}"},
+            {"target": "", "type": "mx", "value": f"10 mx1.{technical_domain}."},
+            {"target": "", "type": "mx", "value": f"20 mx2.{technical_domain}."},
             {
                 "target": "",
                 "type": "txt",

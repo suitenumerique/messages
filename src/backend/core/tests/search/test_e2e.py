@@ -42,7 +42,7 @@ def fixture_setup_elasticsearch():
     try:
         delete_index()
     # pylint: disable=broad-exception-caught
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
 
@@ -86,7 +86,7 @@ def fixture_wait_for_indexing():
                 es.indices.refresh(index=MESSAGE_INDEX)
                 return True
             # pylint: disable=broad-exception-caught
-            except Exception:  # noqa: BLE001
+            except Exception:
                 time.sleep(delay)
         return False
 

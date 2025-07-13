@@ -232,7 +232,7 @@ def search_threads(
         }
 
     # pylint: disable=broad-exception-caught
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("Error searching threads: %s", e)
         return {
             "threads": [],

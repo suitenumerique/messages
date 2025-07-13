@@ -39,7 +39,7 @@ def reset_keycloak_password_action(_, request, queryset):
             success_count += 1
 
         # pylint: disable=broad-except
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             messages.error(request, f"Failed to reset password for {mailbox}: {str(e)}")
             error_count += 1
 
@@ -488,12 +488,22 @@ class DKIMKeyAdmin(admin.ModelAdmin):
     fieldsets = (
         (
             None,
-            {"fields": ("selector", "domain", "algorithm", "key_size", "is_active", "created_at", "updated_at")},
+            {
+                "fields": (
+                    "selector",
+                    "domain",
+                    "algorithm",
+                    "key_size",
+                    "is_active",
+                    "created_at",
+                    "updated_at",
+                )
+            },
         ),
         (
             _("Keys"),
             {
-                "fields": ("public_key", ),
+                "fields": ("public_key",),
                 "classes": ("collapse",),
             },
         ),
