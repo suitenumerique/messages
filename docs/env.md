@@ -2,6 +2,49 @@
 
 This document provides a comprehensive overview of all environment variables used in the Messages application. These variables are organized by service and functionality.
 
+## Development Environment
+
+### Port Configuration
+
+The development environment uses the following port structure:
+
+#### HTTP Services (890x)
+| Service | Port | Description |
+|---------|------|-------------|
+| Frontend | 8900 | Main Messages frontend |
+| Backend API | 8901 | Django REST API and admin |
+| Keycloak | 8902 | Identity provider admin |
+| Celery UI | 8903 | Task queue monitoring |
+| Mailcatcher | 8904 | Email testing interface |
+| Elasticsearch UI | 8905 | Search index management |
+
+#### Infrastructure Services (891x)
+| Service | Port | Description |
+|---------|------|-------------|
+| MTA-in (SMTP) | 8910 | Incoming email server |
+| MTA-out (SMTP) | 8911 | Outgoing email server |
+| PostgreSQL | 8912 | Database server |
+| Elasticsearch | 8913 | Search engine |
+| Redis | 8914 | Cache and message broker |
+
+### Environment Files Structure
+
+The application uses a new environment file structure with `.defaults` and `.local` files:
+
+- `*.defaults` - Committed default configurations
+- `*.local` - Gitignored local overrides (created by `make bootstrap`)
+
+#### Available Environment Files
+
+- `backend.defaults` - Main Django application settings
+- `common.defaults` - Shared settings across services
+- `frontend.defaults` - Frontend configuration
+- `postgresql.defaults` - PostgreSQL database configuration
+- `keycloak.defaults` - Keycloak configuration
+- `mta-in.defaults` - Inbound mail server settings
+- `mta-out.defaults` - Outbound mail server settings
+- `crowdin.defaults` - Translation service configuration
+
 ## Core Application Configuration
 
 ### Django Settings
@@ -22,16 +65,16 @@ This document provides a comprehensive overview of all environment variables use
 |----------|---------|-------------|----------|
 | `DATABASE_URL` | None | Complete database URL (overrides individual DB_* vars) | Optional |
 | `DB_ENGINE` | `django.db.backends.postgresql_psycopg2` | Database engine | Optional |
-| `DB_HOST` | `localhost` | Database hostname | Optional |
+| `DB_HOST` | `postgresql` | Database hostname (container name) | Optional |
 | `DB_NAME` | `messages` | Database name | Optional |
-| `DB_USER` | `dbuser` | Database username | Optional |
-| `DB_PASSWORD` | `dbpass` | Database password | Optional |
+| `DB_USER` | `user` | Database username | Optional |
+| `DB_PASSWORD` | `pass` | Database password | Optional |
 | `DB_PORT` | `5432` | Database port | Optional |
 
 #### PostgreSQL (Keycloak)
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `POSTGRES_DB` | `keycloak` | Keycloak database name | Dev |
+| `POSTGRES_DB` | `messages` | Keycloak database name | Dev |
 | `POSTGRES_USER` | `user` | Keycloak database user | Dev |
 | `POSTGRES_PASSWORD` | `pass` | Keycloak database password | Dev |
 
@@ -39,9 +82,11 @@ This document provides a comprehensive overview of all environment variables use
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `REDIS_URL` | `redis://redis:6379` | Redis connection URL | Optional |
-| `CELERY_BROKER_URL` | `redis://redis:6379` | Celery message broker URL | Optional |
+| `REDIS_URL` | `redis://redis:6379` | Redis connection URL (internal) | Optional |
+| `CELERY_BROKER_URL` | `redis://redis:6379` | Celery message broker URL (internal) | Optional |
 | `CACHES_DEFAULT_TIMEOUT` | `30` | Default cache timeout in seconds | Optional |
+
+**Note**: For external Redis access, use `localhost:8914`. For internal container communication, use `redis:6379`.
 
 ### Elasticsearch Configuration
 
@@ -57,26 +102,26 @@ This document provides a comprehensive overview of all environment variables use
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `MTA_OUT_HOST` | None | Outbound SMTP server host | Required |
-| `MTA_OUT_SMTP_USERNAME` | None | Outbound SMTP username | Optional |
-| `MTA_OUT_SMTP_PASSWORD` | None | Outbound SMTP password | Optional |
+| `MTA_OUT_HOST` | `mta-out:587` | Outbound SMTP server host | Required |
+| `MTA_OUT_SMTP_USERNAME` | `user` | Outbound SMTP username | Optional |
+| `MTA_OUT_SMTP_PASSWORD` | `pass` | Outbound SMTP password | Optional |
 | `MTA_OUT_SMTP_USE_TLS` | `True` | Use TLS for outbound SMTP | Optional |
-| `MDA_API_SECRET` | `default-mda-api-secret` | Shared secret for MDA API | Required |
-| `MDA_API_BASE_URL` | None | Base URL for MDA API | Dev |
+| `MDA_API_SECRET` | `my-shared-secret-mda` | Shared secret for MDA API | Required |
+| `MDA_API_BASE_URL` | `http://backend-dev:8000/api/v1.0/mta/` | Base URL for MDA API | Dev |
 
 ### MTA-Out Specific
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `SMTP_RELAY_HOST` | None | SMTP relay server | Dev |
-| `SMTP_USERNAME` | None | SMTP authentication username | Dev |
-| `SMTP_PASSWORD` | None | SMTP authentication password | Dev |
+| `SMTP_RELAY_HOST` | `mailcatcher:1025` | SMTP relay server | Dev |
+| `SMTP_USERNAME` | `user` | SMTP authentication username | Dev |
+| `SMTP_PASSWORD` | `pass` | SMTP authentication password | Dev |
 
 ### Email Domain Configuration
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `MESSAGES_TESTDOMAIN` | `localhost` | Test domain for development | Dev |
-| `MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN` | `gouv.fr` | Base domain mapping | Dev |
+| `MESSAGES_TESTDOMAIN` | `example.local` | Test domain for development | Dev |
+| `MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN` | `example.com` | Base domain mapping | Dev |
 | `MESSAGES_ACCEPT_ALL_EMAILS` | `False` | Accept emails to any domain | Optional |
 
 ### DKIM Configuration
@@ -94,20 +139,20 @@ This document provides a comprehensive overview of all environment variables use
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `AWS_S3_ENDPOINT_URL` | None | S3 endpoint URL | Optional |
-| `AWS_S3_ACCESS_KEY_ID` | None | S3 access key | Optional |
-| `AWS_S3_SECRET_ACCESS_KEY` | None | S3 secret key | Optional |
+| `AWS_S3_ENDPOINT_URL` | `http://minio:9000` | S3 endpoint URL | Optional |
+| `AWS_S3_ACCESS_KEY_ID` | `messages` | S3 access key | Optional |
+| `AWS_S3_SECRET_ACCESS_KEY` | `password` | S3 secret key | Optional |
 | `AWS_S3_REGION_NAME` | None | S3 region | Optional |
 | `AWS_STORAGE_BUCKET_NAME` | `st-messages-media-storage` | S3 bucket name | Optional |
 | `AWS_S3_UPLOAD_POLICY_EXPIRATION` | `86400` | Upload policy expiration (24h) | Optional |
-| `MEDIA_BASE_URL` | None | Base URL for media files | Optional |
+| `MEDIA_BASE_URL` | `http://localhost:8902` | Base URL for media files | Optional |
 | `ITEM_FILE_MAX_SIZE` | `5368709120` | Max file size (5GB) | Optional |
 
 ### Static Files
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `STORAGES_STATICFILES_BACKEND` | `whitenoise.storage.CompressedManifestStaticFilesStorage` | Static files storage backend | Optional |
+| `STORAGES_STATICFILES_BACKEND` | `django.contrib.staticfiles.storage.StaticFilesStorage` | Static files storage backend | Optional |
 
 ## Authentication & Authorization
 
@@ -116,14 +161,14 @@ This document provides a comprehensive overview of all environment variables use
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `OIDC_CREATE_USER` | `False` | Automatically create users from OIDC | Optional |
-| `OIDC_RP_CLIENT_ID` | `st_messages` | OIDC client ID | Required |
-| `OIDC_RP_CLIENT_SECRET` | None | OIDC client secret | Required |
+| `OIDC_RP_CLIENT_ID` | `messages` | OIDC client ID | Required |
+| `OIDC_RP_CLIENT_SECRET` | `ThisIsAnExampleKeyForDevPurposeOnly` | OIDC client secret | Required |
 | `OIDC_RP_SIGN_ALGO` | `RS256` | OIDC signing algorithm | Optional |
 | `OIDC_RP_SCOPES` | `openid email` | OIDC scopes | Optional |
-| `OIDC_OP_JWKS_ENDPOINT` | None | OIDC JWKS endpoint | Required |
-| `OIDC_OP_AUTHORIZATION_ENDPOINT` | None | OIDC authorization endpoint | Required |
-| `OIDC_OP_TOKEN_ENDPOINT` | None | OIDC token endpoint | Required |
-| `OIDC_OP_USER_ENDPOINT` | None | OIDC user info endpoint | Required |
+| `OIDC_OP_JWKS_ENDPOINT` | `http://keycloak:8000/realms/messages/protocol/openid-connect/certs` | OIDC JWKS endpoint | Required |
+| `OIDC_OP_AUTHORIZATION_ENDPOINT` | `http://localhost:8902/realms/messages/protocol/openid-connect/auth` | OIDC authorization endpoint | Required |
+| `OIDC_OP_TOKEN_ENDPOINT` | `http://keycloak:8000/realms/messages/protocol/openid-connect/token` | OIDC token endpoint | Required |
+| `OIDC_OP_USER_ENDPOINT` | `http://keycloak:8000/realms/messages/protocol/openid-connect/userinfo` | OIDC user info endpoint | Required |
 | `OIDC_OP_LOGOUT_ENDPOINT` | None | OIDC logout endpoint | Optional |
 
 ### OIDC Advanced Settings
@@ -132,19 +177,19 @@ This document provides a comprehensive overview of all environment variables use
 |----------|---------|-------------|----------|
 | `OIDC_USE_NONCE` | `True` | Use nonce in OIDC flow | Optional |
 | `OIDC_REDIRECT_REQUIRE_HTTPS` | `False` | Require HTTPS for redirects | Optional |
-| `OIDC_REDIRECT_ALLOWED_HOSTS` | `[]` | Allowed redirect hosts | Optional |
+| `OIDC_REDIRECT_ALLOWED_HOSTS` | `["http://localhost:8902", "http://localhost:8900"]` | Allowed redirect hosts | Optional |
 | `OIDC_STORE_ID_TOKEN` | `True` | Store ID token | Optional |
 | `OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION` | `True` | Use email as fallback identifier | Optional |
 | `OIDC_ALLOW_DUPLICATE_EMAILS` | `False` | Allow duplicate emails (⚠️ Security risk) | Optional |
-| `OIDC_AUTH_REQUEST_EXTRA_PARAMS` | `{}` | Extra parameters for auth requests | Optional |
+| `OIDC_AUTH_REQUEST_EXTRA_PARAMS` | `{"acr_values": "eidas1"}` | Extra parameters for auth requests | Optional |
 
 ### Authentication URLs
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `LOGIN_REDIRECT_URL` | None | Post-login redirect URL | Optional |
-| `LOGIN_REDIRECT_URL_FAILURE` | None | Login failure redirect URL | Optional |
-| `LOGOUT_REDIRECT_URL` | None | Post-logout redirect URL | Optional |
+| `LOGIN_REDIRECT_URL` | `http://localhost:8900` | Post-login redirect URL | Optional |
+| `LOGIN_REDIRECT_URL_FAILURE` | `http://localhost:8900` | Login failure redirect URL | Optional |
+| `LOGOUT_REDIRECT_URL` | `http://localhost:8900` | Post-logout redirect URL | Optional |
 | `ALLOW_LOGOUT_GET_METHOD` | `True` | Allow GET method for logout | Optional |
 
 ### User Mapping
@@ -159,10 +204,10 @@ This document provides a comprehensive overview of all environment variables use
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `CORS_ALLOW_ALL_ORIGINS` | `False` | Allow all CORS origins | Optional |
+| `CORS_ALLOW_ALL_ORIGINS` | `True` | Allow all CORS origins | Optional |
 | `CORS_ALLOWED_ORIGINS` | `[]` | Specific allowed CORS origins | Optional |
 | `CORS_ALLOWED_ORIGIN_REGEXES` | `[]` | Regex patterns for allowed origins | Optional |
-| `CSRF_TRUSTED_ORIGINS` | `[]` | Trusted origins for CSRF | Optional |
+| `CSRF_TRUSTED_ORIGINS` | `["http://localhost:8900", "http://localhost:8901"]` | Trusted origins for CSRF | Optional |
 | `SERVER_TO_SERVER_API_TOKENS` | `[]` | API tokens for server-to-server auth | Optional |
 
 ## Monitoring & Observability
@@ -205,9 +250,9 @@ This document provides a comprehensive overview of all environment variables use
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `FRONTEND_THEME` | None | Frontend theme identifier | Optional |
-| `NEXT_PUBLIC_API_ORIGIN` | None | Frontend API origin | Dev |
-| `NEXT_PUBLIC_S3_DOMAIN_REPLACE` | None | S3 domain replacement for frontend | Dev |
+| `FRONTEND_THEME` | `dsfr` | Frontend theme identifier | Optional |
+| `NEXT_PUBLIC_API_ORIGIN` | `http://localhost:8901` | Frontend API origin | Dev |
+| `NEXT_PUBLIC_S3_DOMAIN_REPLACE` | `http://localhost:9000` | S3 domain replacement for frontend | Dev |
 
 ## Development Tools
 
@@ -215,8 +260,8 @@ This document provides a comprehensive overview of all environment variables use
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `CROWDIN_PERSONAL_TOKEN` | None | Crowdin API token | Dev |
-| `CROWDIN_PROJECT_ID` | None | Crowdin project ID | Dev |
+| `CROWDIN_PERSONAL_TOKEN` | `Your-Personal-Token` | Crowdin API token | Dev |
+| `CROWDIN_PROJECT_ID` | `Your-Project-Id` | Crowdin project ID | Dev |
 | `CROWDIN_BASE_PATH` | `/app/src` | Base path for translations | Dev |
 
 ## Application Settings
@@ -244,19 +289,29 @@ This document provides a comprehensive overview of all environment variables use
 
 The application uses environment files located in `env.d/development/` for different services:
 
-- `backend.dist` - Main Django application settings
-- `common.dist` - Shared settings across services
-- `postgresql.dist` - PostgreSQL database configuration
-- `kc_postgresql.dist` - Keycloak database configuration
-- `mta-in.dist` - Inbound mail server settings
-- `mta-out.dist` - Outbound mail server settings
-- `crowdin.dist` - Translation service configuration
+- `backend.defaults` - Main Django application settings
+- `common.defaults` - Shared settings across services
+- `frontend.defaults` - Frontend configuration
+- `postgresql.defaults` - PostgreSQL database configuration
+- `keycloak.defaults` - Keycloak configuration
+- `mta-in.defaults` - Inbound mail server settings
+- `mta-out.defaults` - Outbound mail server settings
+- `crowdin.defaults` - Translation service configuration
+
+### Local Overrides
+
+The `make bootstrap` command creates empty `.local` files for each service with a comment header:
+```
+# Put your local-specific, gitignored env vars here
+```
+
+These files are gitignored and allow for local development customizations without affecting the repository.
 
 ## Security Notes
 
 ⚠️ **Important Security Considerations:**
 
-1. **Never commit actual secrets** - Use `.dist` files as templates
+1. **Never commit actual secrets** - Use `.local` files only
 2. **OIDC_ALLOW_DUPLICATE_EMAILS** - Should remain `False` in production
 3. **CORS_ALLOW_ALL_ORIGINS** - Should be `False` in production
 4. **DJANGO_SECRET_KEY** - Must be unique and secret in production

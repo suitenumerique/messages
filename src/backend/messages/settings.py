@@ -672,7 +672,7 @@ class Development(Base):
 
     ALLOWED_HOSTS = ["*"]
     CORS_ALLOW_ALL_ORIGINS = True
-    CSRF_TRUSTED_ORIGINS = ["http://localhost:8072", "http://localhost:3000"]
+    CSRF_TRUSTED_ORIGINS = ["http://localhost:8900", "http://localhost:8901"]
     DEBUG = True
 
     SESSION_COOKIE_NAME = "st_messages_sessionid"

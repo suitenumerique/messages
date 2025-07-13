@@ -4,17 +4,20 @@ services:
   postgresql:
     image: postgres:16.6
     ports:
-      - "6434:5432"
+      - "8912:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready"]
       interval: 1s
       timeout: 2s
       retries: 300
     env_file:
-      - env.d/development/postgresql
+      - env.d/development/postgresql.defaults
+      - env.d/development/postgresql.local
 
   redis:
     image: redis:5
+    ports:
+      - "8914:6379"
 
   elasticsearch:
     # Same version as Scalingo
@@ -26,7 +29,7 @@ services:
       - http.cors.enabled=true
       - "http.cors.allow-origin=/.*/"
     ports:
-      - "9200:9200"
+      - "8913:9200"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9200"]
       interval: 1s
@@ -36,9 +39,9 @@ services:
   elasticsearch-ui:
     image: cars10/elasticvue:latest
     ports:
-      - "8093:8080"
+      - "8905:8080"
     environment:
-      - "ELASTICVUE_CLUSTERS=[{\"name\": \"dev cluster\", \"uri\": \"http://localhost:9200\"}]"
+      - "ELASTICVUE_CLUSTERS=[{\"name\": \"dev cluster\", \"uri\": \"http://localhost:8913\"}]"
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -46,7 +49,7 @@ services:
   mailcatcher:
     image: maildev/maildev:2.2.1
     ports:
-      - "1081:1080"
+      - "8904:1080"
 
   # minio:
   #   user: ${DOCKER_USER:-1000}
@@ -87,16 +90,14 @@ services:
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
-    image: st-messages:backend-development
     environment:
       - PYLINTHOME=/app/.pylint.d
       - DJANGO_CONFIGURATION=Development
     env_file:
-      - env.d/development/common
-      - env.d/development/backend
-      - env.d/development/postgresql
+      - env.d/development/backend.defaults
+      - env.d/development/backend.local
     ports:
-      - "8071:8000"
+      - "8901:8000"
     volumes:
       - ./src/backend:/app
       - ./data/static:/data/static
@@ -116,6 +117,31 @@ services:
       # createbuckets:
       #  condition: service_started
 
+  backend-db:
+    profiles:
+      - tools
+    build:
+      context: src/backend
+      target: runtime-dev
+      args:
+        DOCKER_USER: ${DOCKER_USER:-1000}
+    user: ${DOCKER_USER:-1000}
+    environment:
+      - PYLINTHOME=/app/.pylint.d
+      - DJANGO_CONFIGURATION=Development
+    env_file:
+      - env.d/development/backend.defaults
+      - env.d/development/backend.local
+    ports:
+      - "8901:8000"
+    volumes:
+      - ./src/backend:/app
+      - ./data/static:/data/static
+    depends_on:
+      postgresql:
+        condition: service_healthy
+        restart: true
+
   backend-poetry:
     profiles:
       - tools
@@ -134,14 +160,12 @@ services:
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
-    image: st-messages:backend-development
     command: ["celery", "-A", "messages.celery_app", "worker", "-l", "DEBUG"]
     environment:
       - DJANGO_CONFIGURATION=Development
     env_file:
-      - env.d/development/common
-      - env.d/development/backend
-      - env.d/development/postgresql
+      - env.d/development/backend.defaults
+      - env.d/development/backend.local
     volumes:
       - ./src/backend:/app
       - ./data/static:/data/static
@@ -161,37 +185,13 @@ services:
       - FLOWER_UNAUTHENTICATED_API=true
       - DJANGO_CONFIGURATION=Development
     env_file:
-      - env.d/development/common
-      - env.d/development/backend
-      - env.d/development/postgresql
+      - env.d/development/backend.defaults
+      - env.d/development/backend.local
     volumes:
       - ./src/backend:/app
     ports:
-      - "5556:5556"
-    command: celery -A messages.celery_app flower --port=5556
-
-  # app:
-  #   build:
-  #     context: .
-  #     target: backend-production
-  #     args:
-  #       DOCKER_USER: ${DOCKER_USER:-1000}
-  #   user: ${DOCKER_USER:-1000}
-  #   image: st-messages:backend-production
-  #   environment:
-  #     - DJANGO_CONFIGURATION=Production
-  #   env_file:
-  #     - env.d/development/common
-  #     - env.d/development/backend
-  #     - env.d/development/postgresql
-  #   depends_on:
-  #     postgresql:
-  #       condition: service_healthy
-  #       restart: true
-  #     redis:
-  #       condition: service_started
-  #     #minio:
-  #     #  condition: service_started
+      - "8903:8803"
+    command: celery -A messages.celery_app flower --port=8803
 
   # nginx:
   #   image: nginx:1.25
@@ -210,15 +210,14 @@ services:
     build:
       context: .
       dockerfile: ./src/frontend/Dockerfile.dev
-    environment:
-      - NEXT_PUBLIC_API_ORIGIN=http://localhost:8071
-      - NEXT_PUBLIC_S3_DOMAIN_REPLACE=http://localhost:9000
-    image: st-messages:frontend-development
+    env_file:
+      - env.d/development/frontend.defaults
+      - env.d/development/frontend.local
     command: ["npm", "run", "dev"]
     volumes:
       - ./src/frontend/:/home/frontend/
     ports:
-      - "3000:3000"
+      - "8900:3000"
 
   frontend-tools:
     user: "${DOCKER_USER:-1000}"
@@ -241,57 +240,36 @@ services:
       - ./src/backend/core/api/openapi.json:/home/backend/core/api/openapi.json
       - ./src/frontend/:/home/frontend/
 
-  # frontend:
-  #   user: "${DOCKER_USER:-1000}"
-  #   build: 
-  #     context: .
-  #     dockerfile: ./src/frontend/Dockerfile
-  #     target: frontend-production
-  #     args:
-  #       API_ORIGIN: "http://localhost:8071"
-  #       S3_DOMAIN_REPLACE: "http://localhost:9000"
-  #   image: st-messages:frontend-production
-  #   ports:
-  #     - "3001:3000"
-
-  crowdin:
-    image: crowdin/cli:3.16.0
-    volumes:
-      - ".:/app"
-    env_file:
-      - env.d/development/crowdin
-    user: "${DOCKER_USER:-1000}"
-    working_dir: /app
-
-  # node:
-  #   image: node:22
-  #   user: "${DOCKER_USER:-1000}"
-  #   environment:
-  #     HOME: /tmp
+  # crowdin:
+  #   image: crowdin/cli:3.16.0
   #   volumes:
   #     - ".:/app"
+  #   env_file:
+  #     - env.d/development/crowdin
+  #   user: "${DOCKER_USER:-1000}"
+  #   working_dir: /app
 
   mta-in:
     build:
       context: src/mta-in/postfix
       dockerfile: Dockerfile
     env_file:
-      - env.d/development/common
-      - env.d/development/mta-in
+      - env.d/development/mta-in.defaults
+      - env.d/development/mta-in.local
     ports:
-      - "8025:25"
+      - "8910:25"
     depends_on:
       - backend-dev
 
   mta-out:
-    image: mta-out:latest
     build:
       context: src/mta-out/postfix
       dockerfile: Dockerfile
     env_file:
-      - env.d/development/mta-out
+      - env.d/development/mta-out.defaults
+      - env.d/development/mta-out.local
     ports:
-      - "8587:587"
+      - "8911:587"
     depends_on:
       mailcatcher:
         condition: service_started
@@ -306,24 +284,13 @@ services:
       - --features=preview
       - --import-realm
       - --proxy=edge
-      - --hostname=http://localhost:8083
-      - --hostname-admin=http://localhost:8083/
-      - --http-port=8083
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-      KC_DB: postgres
-      KC_DB_URL_HOST: postgresql
-      KC_DB_URL_DATABASE: messages
-      KC_DB_PASSWORD: pass
-      KC_DB_USERNAME: user
-      KC_DB_SCHEMA: public
-      KC_HOSTNAME_STRICT: false
-      KC_HOSTNAME_STRICT_HTTPS: false
-      KC_HTTP_ENABLED: true
-      KC_HEALTH_ENABLED: true
-      PROXY_ADDRESS_FORWARDING: "true"
+      - --hostname=http://localhost:8902
+      - --hostname-admin=http://localhost:8902/
+      - --http-port=8802
+    env_file:
+      - env.d/development/keycloak.defaults
+      - env.d/development/keycloak.local
     ports:
-      - "8083:8083"
+      - "8902:8802"
     depends_on:
       - postgresql

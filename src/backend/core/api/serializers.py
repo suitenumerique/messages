@@ -385,6 +385,7 @@ class ThreadSerializer(serializers.ModelSerializer):
             "has_trashed",
             "has_draft",
             "has_starred",
+            "has_attachments",
             "has_sender",
             "has_messages",
             "is_spam",

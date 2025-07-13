@@ -43,6 +43,7 @@ COMPOSE_EXEC        = $(COMPOSE) exec
 COMPOSE_EXEC_APP    = $(COMPOSE_EXEC) backend-dev
 COMPOSE_RUN         = $(COMPOSE) run --rm
 COMPOSE_RUN_APP     = $(COMPOSE_RUN) backend-dev
+COMPOSE_RUN_APP_DB  = $(COMPOSE_RUN) backend-db
 COMPOSE_RUN_APP_TOOLS = $(COMPOSE_RUN) --no-deps backend-dev
 COMPOSE_RUN_CROWDIN = $(COMPOSE_RUN) crowdin crowdin
 COMPOSE_RUN_MTA_IN_TESTS  = cd src/mta-in && $(COMPOSE_RUN) --build test
@@ -50,6 +51,7 @@ COMPOSE_RUN_MTA_OUT_TESTS = cd src/mta-out && $(COMPOSE_RUN) --build test
 
 # -- Backend
 MANAGE              = $(COMPOSE_RUN_APP) python manage.py
+MANAGE_DB           = $(COMPOSE_RUN_APP_DB) python manage.py
 
 
 # ==============================================================================
@@ -65,46 +67,66 @@ data/static:
 
 # -- Project
 
-create-env-files: ## Copy the dist env files to env files
+create-env-files: ## Create empty .local env files for local development
 create-env-files: \
-	env.d/development/common \
-	env.d/development/crowdin \
-	env.d/development/postgresql \
-	env.d/development/kc_postgresql \
-	env.d/development/backend \
-	env.d/development/mta-in \
-	env.d/development/mta-out
+	env.d/development/common.local \
+	env.d/development/crowdin.local \
+	env.d/development/postgresql.local \
+	env.d/development/keycloak.local \
+	env.d/development/backend.local \
+	env.d/development/frontend.local \
+	env.d/development/mta-in.local \
+	env.d/development/mta-out.local
 .PHONY: create-env-files
 
-bootstrap: ## Prepare Docker images for the project
-bootstrap: \
-	data/media \
-	data/static \
-	create-env-files \
-	build \
-	migrate \
-	collectstatic \
-	frontend-install-frozen \
-	# back-i18n-compile
+bootstrap: ## Prepare the project for local development
+	@echo "$(BOLD)"
+	@echo "╔══════════════════════════════════════════════════════════════════════════════╗"
+	@echo "║                                                                              ║"
+	@echo "║  🚀 Welcome to Messages - Collaborative Inbox from La Suite! 🚀             ║"
+	@echo "║                                                                             ║"
+	@echo "║  This will set up your development environment with :                        ║"
+	@echo "║  • Docker containers for all services                                        ║"
+	@echo "║  • Database migrations and static files                                      ║"
+	@echo "║  • Frontend dependencies and build                                           ║"
+	@echo "║  • Environment configuration files                                           ║"
+	@echo "║                                                                              ║"
+	@echo "║  Services will be available at:                                              ║"
+	@echo "║  • Frontend: http://localhost:8900                                           ║"
+	@echo "║  • API:      http://localhost:8901                                           ║"
+	@echo "║  • Admin:    http://localhost:8901/admin                                     ║"
+	@echo "║                                                                              ║"
+	@echo "╚══════════════════════════════════════════════════════════════════════════════╝"
+	@echo "$(RESET)"
+	@echo "$(GREEN)Starting bootstrap process...$(RESET)"
+	@echo ""
+	@$(MAKE) update
+	@$(MAKE) superuser
+	@$(MAKE) start
+	@echo ""
+	@echo "$(GREEN)🎉 Bootstrap completed successfully!$(RESET)"
+	@echo ""
+	@echo "$(BOLD)Next steps:$(RESET)"
+	@echo "  • Visit http://localhost:8900 to access the application"
+	@echo "  • Run 'make help' to see all available commands"
+	@echo ""
 .PHONY: bootstrap
+
+update:  ## Update the project with latest changes
+	@$(MAKE) data/media
+	@$(MAKE) data/static
+	@$(MAKE) create-env-files
+	@$(MAKE) build
+	@$(MAKE) collectstatic
+	@$(MAKE) migrate
+	@$(MAKE) frontend-install-frozen
+	# @$(MAKE) back-i18n-compile
+.PHONY: update
 
 # -- Docker/compose
 build: ## build the project containers
-	@$(MAKE) build-backend
-	@$(MAKE) build-frontend-dev
+	@$(COMPOSE) build
 .PHONY: build
-
-build-backend: ## build the backend-dev container
-	@$(COMPOSE) build backend-dev
-.PHONY: build-backend
-
-build-frontend-dev: ## build the frontend container
-	@$(COMPOSE) build frontend-dev
-.PHONY: build-frontend-dev
-
-build-frontend: ## build the frontend container
-	@$(COMPOSE) build frontend
-.PHONY: build-frontend
 
 down: ## stop and remove containers, networks, images, and volumes
 	@$(COMPOSE) down
@@ -114,18 +136,9 @@ logs: ## display backend-dev logs (follow mode)
 	@$(COMPOSE) logs -f backend-dev
 .PHONY: logs
 
-start: ## start the wsgi (production) and development server
+start: ## start full stack
 	@$(COMPOSE) up --force-recreate --build -d frontend-dev backend-dev celery-dev mta-in
 .PHONY: start
-
-run-with-frontend: ## Start all the containers needed (backend to frontend)
-	@$(MAKE) run
-	@$(COMPOSE) up --force-recreate -d frontend-dev
-.PHONY: run-with-frontend
-
-run-all-fg: ## Start backend containers and frontend in foreground
-	@$(COMPOSE) up --force-recreate --build frontend-dev backend-dev celery-dev mta-in
-.PHONY: run-all-fg
 
 status: ## an alias for "docker compose ps"
 	@$(COMPOSE) ps
@@ -136,11 +149,6 @@ stop: ## stop the development server using Docker
 .PHONY: stop
 
 # -- Backend
-
-demo: ## flush db then create a demo for load testing purpose
-	@$(MAKE) resetdb
-	@$(MANAGE) create_demo
-.PHONY: demo
 
 lint: \
   lint-ruff-format \
@@ -197,25 +205,23 @@ test-back-parallel: ## run all back-end tests in parallel
 	bin/pytest -n auto $${args:-${1}}
 .PHONY: test-back-parallel
 
-makemigrations:  ## run django makemigrations for the messages project.
+migrations:  ## run django makemigrations for the messages project.
 	@echo "$(BOLD)Running makemigrations$(RESET)"
-	@$(COMPOSE) up -d postgresql
-	@$(MANAGE) makemigrations
-.PHONY: makemigrations
+	@$(MANAGE_DB) makemigrations
+.PHONY: migrations
 
 migrate:  ## run django migrations for the messages project.
 	@echo "$(BOLD)Running migrations$(RESET)"
-	@$(COMPOSE) up -d postgresql
-	@$(MANAGE) migrate
+	@$(MANAGE_DB) migrate
 .PHONY: migrate
 
 showmigrations: ## show all migrations for the messages project.
-	@$(MANAGE) showmigrations
+	@$(MANAGE_DB) showmigrations
 .PHONY: showmigrations
 
 superuser: ## Create an admin superuser with password "admin"
 	@echo "$(BOLD)Creating a Django superuser$(RESET)"
-	@$(MANAGE) createsuperuser --email admin@example.com --password admin
+	@$(MANAGE_DB) createsuperuser --email admin@admin.local --password admin
 .PHONY: superuser
 
 back-i18n-compile: ## compile the gettext files
@@ -256,7 +262,7 @@ pip-audit: ## check the dependencies
 .PHONY: pip-audit
 
 collectstatic: ## collect static files
-	@$(MANAGE) collectstatic --noinput
+	@$(MANAGE_DB) collectstatic --noinput
 .PHONY: collectstatic
 
 shell: ## connect to django shell
@@ -276,37 +282,46 @@ dbshell: ## connect to database shell
 resetdb: FLUSH_ARGS ?=
 resetdb: ## flush database
 	@echo "$(BOLD)Flush database$(RESET)"
-	@$(MANAGE) flush $(FLUSH_ARGS)
+	@$(MANAGE_DB) flush $(FLUSH_ARGS)
 .PHONY: resetdb
 
 fullresetdb: build ## flush database, including schema
 	@echo "$(BOLD)Flush database$(RESET)"
-	$(MANAGE) drop_all_tables
-	$(MANAGE) migrate
+	$(MANAGE_DB) drop_all_tables
+	$(MANAGE_DB) migrate
 .PHONY: fullresetdb
 
-env.d/development/common:
-	cp -n env.d/development/common.dist env.d/development/common
+env.d/development/%.local:
+	@echo "# Local development overrides for $(notdir $*)" > $@
+	@echo "# Add your local-specific environment variables below:" >> $@
+	@echo "# Example: DJANGO_DEBUG=True" >> $@
+	@echo "" >> $@
 
-env.d/development/backend:
-	cp -n env.d/development/backend.dist env.d/development/backend
+# env.d/development/common.local:
+# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/common.local
 
-env.d/development/mta-in:
-	cp -n env.d/development/mta-in.dist env.d/development/mta-in
+# env.d/development/backend.local:
+# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/backend.local
 
-env.d/development/postgresql:
-	cp -n env.d/development/postgresql.dist env.d/development/postgresql
+# env.d/development/frontend.local:
+# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/frontend.local
 
-env.d/development/kc_postgresql:
-	cp -n env.d/development/kc_postgresql.dist env.d/development/kc_postgresql
+# env.d/development/mta-in.local:
+# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/mta-in.local
 
-env.d/development/mta-out:
-	cp -n env.d/development/mta-out.dist env.d/development/mta-out
+# env.d/development/postgresql.local:
+# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/postgresql.local
+
+# env.d/development/keycloak.local:
+# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/keycloak.local
+
+# env.d/development/mta-out.local:
+# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/mta-out.local
+
+# env.d/development/crowdin.local:
+# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/crowdin.local
 
 # -- Internationalization
-
-env.d/development/crowdin:
-	cp -n env.d/development/crowdin.dist env.d/development/crowdin
 
 crowdin-download: ## Download translated message from crowdin
 	@$(COMPOSE_RUN_CROWDIN) download -c crowdin/config.yml
@@ -373,6 +388,7 @@ frontend-install: ## install the frontend locally
 .PHONY: frontend-install
 
 frontend-install-frozen: ## install the frontend locally, following the frozen lockfile
+	@echo "Installing frontend dependencies, this might take a few minutes..."
 	@$(COMPOSE) run --rm frontend-tools npm ci
 .PHONY: frontend-install-frozen
 

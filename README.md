@@ -92,13 +92,13 @@ $ make bootstrap
 ```
 
 This command builds all required containers, installs dependencies, performs
-database migrations and compiles translations. It's a good idea to use this
-command each time you are pulling code from the project repository to avoid
+database migrations and compiles translations. Later it's a good idea to run
+`make update` each time you are pulling code from the project repository to avoid
 dependency-related or migration-related issues.
 
 Your Docker services should now be up and running 🎉
 
-You can access the project by going to <http://localhost:3000>.
+You can access the project by going to <http://localhost:8900>.
 
 You will be prompted to log in. The default credentials are:
 
@@ -122,18 +122,23 @@ $ make start
 $ make help
 ```
 
-### Django admin
+### Development Services
 
-You can access the Django admin site at
-[http://localhost:8071/admin](http://localhost:8071/admin).
+When running the project, the following services are available:
 
-You first need to create a superuser account:
-
-```bash
-$ make superuser
-```
-
-You can then login with email `admin@admin.local` and password `admin`.
+| Service | URL / Port | Description | Credentials |
+|---------|------------|-------------|------------|
+| **Frontend** | [http://localhost:8900](http://localhost:8900) | Main Messages frontend | `user1@example.local` / `user1` |
+| **Backend API** | [http://localhost:8901](http://localhost:8901) | Django [REST API](http://localhost:8901/api/v1.0/) and [Admin](http://localhost:8901/admin/) | `admin@admin.local` / `admin` |
+| **Keycloak** | [http://localhost:8902](http://localhost:8902) | Identity provider admin | `admin` / `admin` |
+| **Celery UI** | [http://localhost:8903](http://localhost:8903) | Task queue monitoring | No auth required |
+| **Mailcatcher** | [http://localhost:8904](http://localhost:8904) | Email testing interface | No auth required |
+| **Elasticsearch UI** | [http://localhost:8905](http://localhost:8905) | Search index management | No auth required |
+| **MTA-in (SMTP)** | 8910 | Incoming email server | No auth required |
+| **MTA-out (SMTP)** | 8911 | Outgoing email server | `user` / `pass` |
+| **PostgreSQL** | 8912 | Database server | `user` / `pass` |
+| **Elasticsearch** | 8913 | Search engine | No auth required |
+| **Redis** | 8914 | Cache and message broker | No auth required |
 
 
 ### OpenAPI client
@@ -171,19 +176,21 @@ These examples use [swaks](https://www.jetmore.org/john/code/swaks/), a simple c
 
 ```
 # First, make sure services are running
-make run
-
-# Send a test message to the MTA-out, which will then relay it to mailcatcher. Read it on http://localhost:1081/
-swaks -tls --to=test@example.com --server 127.0.0.1:8587 --auth-user testuser --auth-password=testpass
+make start
 
 # Send a test message to the MTA-in, which will relay it to the Django MDA.
-# The domain must be MESSAGES_TESTDOMAIN if you want the mailbox created automatically.
-# You can then read it on the frontend on http://localhost:3000/ (login as user1/user1) and reply to it there.
-# The replies will then be sent through the MTA-out to the mailcatcher on http://localhost:1081/
-swaks --to=user1@example.local --server 127.0.0.1:8025
+# The domain must be MESSAGES_TESTDOMAIN (default is example.local) if you want the mailbox created automatically.
+# You can then read it on the frontend at http://localhost:8900/ (login as user1/user1) and reply to it there.
+# The replies will then be sent through the MTA-out to the mailcatcher on http://localhost:8904/
+swaks --to=user1@example.local --server localhost:8910
+
+# Send a message manually to the MTA-out, which will then relay it to mailcatcher on http://localhost:8904/
+swaks -tls --to=test@example.external --server localhost:8911 --auth-user user --auth-password=pass
 
 ```
 
+> ⚠️ Most residential ISPs block the outgoing port 25, so you might not be able to send emails to outside
+> servers from your localhost. This is why the mailcatcher is so useful locally.
 
 ## Feedback 🙋‍♂️🙋‍♀️
 

@@ -511,6 +511,7 @@ class Thread(BaseModel):
     has_starred = models.BooleanField(_("has starred"), default=False)
     has_sender = models.BooleanField(_("has sender"), default=False)
     has_messages = models.BooleanField(_("has messages"), default=True)
+    has_attachments = models.BooleanField(_("has attachments"), default=False)
     is_spam = models.BooleanField(_("is spam"), default=False)
     has_active = models.BooleanField(_("has active"), default=False)
     messaged_at = models.DateTimeField(_("messaged at"), null=True, blank=True)
@@ -537,6 +538,7 @@ class Thread(BaseModel):
                 "is_sender",
                 "is_spam",
                 "is_archived",
+                "has_attachments",
                 "created_at",
                 "sender__name",
             )
@@ -551,6 +553,7 @@ class Thread(BaseModel):
             self.has_starred = False
             self.has_sender = False
             self.has_messages = False
+            self.has_attachments = False
             self.is_spam = False
             self.has_active = False
             self.messaged_at = None
@@ -570,6 +573,9 @@ class Thread(BaseModel):
             self.has_sender = any(
                 msg["is_sender"] and not msg["is_trashed"] and not msg["is_draft"]
                 for msg in message_data
+            )
+            self.has_attachments = any(
+                msg["has_attachments"] and not msg["is_trashed"] for msg in message_data
             )
 
             # Check if we have any non-trashed, non-spam messages
@@ -636,6 +642,7 @@ class Thread(BaseModel):
                 "has_starred",
                 "has_sender",
                 "has_messages",
+                "has_attachments",
                 "is_spam",
                 "has_active",
                 "messaged_at",

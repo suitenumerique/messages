@@ -9,7 +9,7 @@ type MessageBodyProps = {
 
 const CSP = [
     // Allow images from our domain and data URIs
-    "img-src 'self' data: http://localhost:3000",
+    "img-src 'self' data: http://localhost:8900",
     // Disable everything else by default
     "default-src 'none'",
     // No scripts at all

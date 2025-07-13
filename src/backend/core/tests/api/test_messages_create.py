@@ -99,6 +99,7 @@ class TestApiDraftAndSendMessage:
         assert draft_message.is_unread is False
         assert draft_message.is_trashed is False
         assert draft_message.is_starred is False
+        assert draft_message.has_attachments is False
         assert draft_message.sent_at is None
         assert draft_message.draft_blob.get_content().decode("utf-8") == draft_content
 
@@ -116,6 +117,7 @@ class TestApiDraftAndSendMessage:
         assert draft_message.thread.has_unread is False
         assert draft_message.thread.has_trashed is False
         assert draft_message.thread.has_starred is False
+        assert draft_message.thread.has_attachments is False
         assert draft_message.thread.has_draft is True
         assert draft_message.thread.sender_names == [draft_message.sender.name]
 
@@ -264,6 +266,7 @@ class TestApiDraftAndSendMessage:
         assert draft_message.is_unread is False
         assert draft_message.is_trashed is False
         assert draft_message.is_starred is False
+        assert draft_message.has_attachments is False
         assert draft_message.draft_blob.get_content().decode("utf-8") == draft_content
 
         assert draft_message.thread.has_messages is True
@@ -271,6 +274,7 @@ class TestApiDraftAndSendMessage:
         assert draft_message.thread.has_unread is False
         assert draft_message.thread.has_trashed is False
         assert draft_message.thread.has_starred is False
+        assert draft_message.thread.has_attachments is False
         assert draft_message.thread.has_draft is True
         assert draft_message.thread.sender_names == [
             message.sender.name,

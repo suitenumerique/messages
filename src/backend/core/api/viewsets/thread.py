@@ -79,6 +79,7 @@ class ThreadViewSet(
             "has_sender": "has_sender",
             "has_active": "has_active",
             "has_messages": "has_messages",
+            "has_attachments": "has_attachments",
             "is_spam": "is_spam",
         }
 
@@ -133,6 +134,12 @@ class ThreadViewSet(
                 description="Filter threads with starred messages (1=true, 0=false).",
             ),
             OpenApiParameter(
+                name="has_attachments",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads with attachments (1=true, 0=false).",
+            ),
+            OpenApiParameter(
                 name="has_sender",
                 type=OpenApiTypes.INT,
                 location=OpenApiParameter.QUERY,
@@ -145,7 +152,7 @@ class ThreadViewSet(
                 required=True,
                 description="""Comma-separated list of fields to aggregate.
                 Special values: 'all' (count all threads), 'all_unread' (count all unread threads).
-                Boolean fields: has_trashed, has_draft, has_starred, has_sender, has_active, is_spam, has_messages.
+                Boolean fields: has_trashed, has_draft, has_starred, has_attachments, has_sender, has_active, is_spam, has_messages.
                 Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.
                 Examples: 'all,all_unread', 'has_starred,has_starred_unread', 'is_spam,is_spam_unread'""",
                 enum=list(enums.THREAD_STATS_FIELDS_MAP.keys()),
@@ -202,6 +209,7 @@ class ThreadViewSet(
             "has_trashed",
             "has_draft",
             "has_starred",
+            "has_attachments",
             "has_sender",
             "has_active",
             "is_spam",
@@ -309,6 +317,12 @@ class ThreadViewSet(
                 type=OpenApiTypes.INT,
                 location=OpenApiParameter.QUERY,
                 description="Filter threads with starred messages (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_attachments",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads with attachments (1=true, 0=false).",
             ),
             OpenApiParameter(
                 name="has_sender",
