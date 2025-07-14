@@ -51,4 +51,3 @@ disable_vrfy_command = yes
 # local_destination_concurrency_limit
 # local_destination_recipient_limit / smtpd_recipient_limit
 # mailbox_size_limit
-

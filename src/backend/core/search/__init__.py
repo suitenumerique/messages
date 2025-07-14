@@ -1,9 +1,9 @@
-"""Elasticsearch search functionality for messages."""
+"""OpenSearch search functionality for messages."""
 
 from core.search.index import (
     create_index_if_not_exists,
     delete_index,
-    get_es_client,
+    get_opensearch_client,
     index_message,
     index_thread,
     reindex_all,
@@ -19,7 +19,7 @@ __all__ = [
     "MESSAGE_INDEX",
     "MESSAGE_MAPPING",
     # Client & Index management
-    "get_es_client",
+    "get_opensearch_client",
     "create_index_if_not_exists",
     "delete_index",
     # Indexing

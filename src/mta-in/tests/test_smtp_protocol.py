@@ -1,14 +1,15 @@
 # test_smtp_protocol.py
 
-import pytest
-import smtplib
-from email.mime.text import MIMEText
-import socket
-import time
 import logging
 import os
 import random
+import smtplib
+import socket
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from email.mime.text import MIMEText
+
+import pytest
 
 logger = logging.getLogger(__name__)
 MTA_HOST = os.getenv("MTA_HOST")
@@ -83,9 +84,7 @@ def test_pipelining_support():
 
         # Send multiple commands at once
         pipeline = (
-            b"HELO example.com\r\n"
-            b"MAIL FROM:<sender@example.com>\r\n"
-            b"RCPT TO:<test@example.com>\r\n"
+            b"HELO example.com\r\nMAIL FROM:<sender@example.com>\r\nRCPT TO:<test@example.com>\r\n"
         )
         s.send(pipeline)
 

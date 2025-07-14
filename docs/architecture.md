@@ -17,7 +17,7 @@
 
 - **Django REST Framework**: Main API service handling business logic, including email processing
 - **Celery Workers**: Asynchronous task processing for heavy operations
-- **Search Service**: Elasticsearch integration for full-text search
+- **Search Service**: OpenSearch integration for full-text search
 
 ### Mail Transfer Layer
 
@@ -29,7 +29,7 @@
 
 - **PostgreSQL**: Primary relational database for all structured data
 - **Redis**: Caching layer and Celery message broker
-- **Elasticsearch**: Full-text search index for messages and threads
+- **OpenSearch**: Full-text search index for messages and threads
 - **S3-Compatible Storage**: File and attachment storage (In progress)
 
 ### Authentication & Authorization
@@ -44,7 +44,7 @@
 1. External email arrives at **MTA-In** via SMTP
 2. **MTA-In** validates recipients against Django backend
 3. **MDA** parses and stores messages in PostgreSQL
-4. **Celery** tasks index content in Elasticsearch
+4. **Celery** tasks index content in OpenSearch
 5. Users see new messages in real-time via frontend
 
 ### Outbound Email Processing
@@ -58,7 +58,7 @@
 ### Search Operations
 
 1. User submits search query via frontend
-2. Backend directly queries Elasticsearch for real-time results
+2. Backend directly queries OpenSearch for real-time results
 3. Results are ranked and filtered by permissions
 4. Frontend displays paginated results
 
@@ -66,7 +66,7 @@
 
 1. New messages/threads are saved to PostgreSQL
 2. Backend queues indexing tasks to Celery
-3. Celery workers asynchronously index content in Elasticsearch
+3. Celery workers asynchronously index content in OpenSearch
 4. Heavy operations (bulk imports, reindexing) are handled via Celery
 
 ## Key Features
@@ -82,7 +82,7 @@
 - **Microservices Architecture**: Independent scaling of components
 - **Async Processing**: Non-blocking operations via Celery
 - **Caching Strategy**: Redis for session and query caching
-- **Search Optimization**: Elasticsearch for fast full-text search
+- **Search Optimization**: OpenSearch for fast full-text search
 
 ### Development Experience
 

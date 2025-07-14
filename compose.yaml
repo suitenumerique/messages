@@ -17,34 +17,33 @@ services:
   redis:
     image: redis:5
     ports:
-      - "8914:6379"
+      - "8913:6379"
 
-  elasticsearch:
-    # Same version as Scalingo
-    image: docker.elastic.co/elasticsearch/elasticsearch:7.10.2
+  opensearch:
+    image: opensearchproject/opensearch:2.19.2
     environment:
       - discovery.type=single-node
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-      - xpack.security.enabled=false
-      - http.cors.enabled=true
-      - "http.cors.allow-origin=/.*/"
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "DISABLE_INSTALL_DEMO_CONFIG=true"
+      - "DISABLE_SECURITY_PLUGIN=true"
+      # - http.cors.enabled=true
+      # - "http.cors.allow-origin=/.*/"
     ports:
-      - "8913:9200"
+      - "8914:9200"  # REST API
+      - "8915:9600"  # Performance Analyzer
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9200"]
       interval: 1s
       timeout: 5s
       retries: 60
-
-  elasticsearch-ui:
-    image: cars10/elasticvue:latest
-    ports:
-      - "8905:8080"
-    environment:
-      - "ELASTICVUE_CLUSTERS=[{\"name\": \"dev cluster\", \"uri\": \"http://localhost:8913\"}]"
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
+    ulimits:
+      memlock:
+        soft: -1 # Set memlock to unlimited (no soft or hard limit)
+        hard: -1
+      nofile:
+        soft: 65536 # Maximum number of open files for the opensearch user - set to at least 65536
+        hard: 65536
 
   mailcatcher:
     image: maildev/maildev:2.2.1
@@ -109,7 +108,7 @@ services:
         condition: service_started
       mta-out:
         condition: service_started
-      elasticsearch:
+      opensearch:
         condition: service_healthy
       keycloak:
         condition: service_started
@@ -127,8 +126,7 @@ services:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
     environment:
-      - PYLINTHOME=/app/.pylint.d
-      - DJANGO_CONFIGURATION=Development
+      - DJANGO_CONFIGURATION=DevelopmentMinimal
     env_file:
       - env.d/development/backend.defaults
       - env.d/development/backend.local
@@ -141,7 +139,7 @@ services:
       postgresql:
         condition: service_healthy
         restart: true
-
+  
   backend-poetry:
     profiles:
       - tools
@@ -151,7 +149,6 @@ services:
       context: src/backend/
       target: poetry
     pull_policy: build
-
 
   celery-dev:
     build:
@@ -251,8 +248,8 @@ services:
 
   mta-in:
     build:
-      context: src/mta-in/postfix
-      dockerfile: Dockerfile
+      context: src/mta-in
+      target: runtime-prod
     env_file:
       - env.d/development/mta-in.defaults
       - env.d/development/mta-in.local
@@ -261,10 +258,37 @@ services:
     depends_on:
       - backend-dev
 
+  mta-in-test:
+    profiles:
+      - tools
+    build:
+      context: src/mta-in
+      target: runtime-dev
+    env_file:
+      - env.d/development/mta-in.defaults
+      - env.d/development/mta-in.local
+    environment:
+      - EXEC_CMD=true
+      - MDA_API_BASE_URL=http://localhost:8000/api/mail/
+      - MTA_HOST=localhost
+    command: pytest -vvs tests/
+    volumes:
+      - ./src/mta-in:/app
+
+  mta-in-poetry:
+    profiles:
+      - tools
+    volumes:
+      - ./src/mta-in:/app
+    build:
+      context: src/mta-in
+      target: poetry
+    pull_policy: build
+
   mta-out:
     build:
-      context: src/mta-out/postfix
-      dockerfile: Dockerfile
+      context: src/mta-out
+      target: runtime-prod
     env_file:
       - env.d/development/mta-out.defaults
       - env.d/development/mta-out.local
@@ -273,6 +297,35 @@ services:
     depends_on:
       mailcatcher:
         condition: service_started
+
+  mta-out-test:
+    profiles:
+      - tools
+    build:
+      context: src/mta-out
+      target: runtime-dev
+    env_file:
+      - env.d/development/mta-out.defaults
+      - env.d/development/mta-out.local
+    environment:
+      - EXEC_CMD=true
+      - MTA_OUT_HOST=localhost:587
+      - MTA_OUT_SMTP_USERNAME=user
+      - MTA_OUT_SMTP_PASSWORD=pass
+      - SMTP_RELAY_HOST=localhost:2525
+    command: pytest -vvs tests/
+    volumes:
+      - ./src/mta-out:/app
+
+  mta-out-poetry:
+    profiles:
+      - tools
+    volumes:
+      - ./src/mta-out:/app
+    build:
+      context: src/mta-out
+      target: poetry
+    pull_policy: build
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.2.5

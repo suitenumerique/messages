@@ -1,16 +1,17 @@
-import pytest
+import hashlib
+import logging
+import os
 import smtplib
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-import uvicorn
+import socket
 import threading
 import time
-import logging
-import socket
-import jwt
-import os
-import hashlib
 from email.parser import BytesParser
+
+import jwt
+import pytest
+import uvicorn
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -51,21 +52,15 @@ class MockAPIServer:
                     options={"verify_exp": True, "verify_signature": True},
                 )
             except jwt.ExpiredSignatureError:
-                return JSONResponse(
-                    status_code=401, content={"detail": "Token expired"}
-                )
+                return JSONResponse(status_code=401, content={"detail": "Token expired"})
             except jwt.InvalidTokenError:
-                return JSONResponse(
-                    status_code=401, content={"detail": "Invalid token"}
-                )
+                return JSONResponse(status_code=401, content={"detail": "Invalid token"})
 
             raw_data = await request.body()
 
             h = hashlib.sha256(raw_data).hexdigest()
             if h != payload["body_hash"]:
-                return JSONResponse(
-                    status_code=401, content={"detail": "Invalid body hash"}
-                )
+                return JSONResponse(status_code=401, content={"detail": "Invalid body hash"})
 
             request.state.payload = payload
             request.state.raw_body = raw_data
@@ -79,23 +74,15 @@ class MockAPIServer:
             email_data = {
                 "metadata": request.state.payload,
                 "raw_email": request.state.raw_body,
-                "email": BytesParser().parsebytes(
-                    request.state.raw_body, headersonly=False
-                ),
+                "email": BytesParser().parsebytes(request.state.raw_body, headersonly=False),
             }
 
-            if (
-                "inbound-email-error@example.com"
-                in request.state.payload["original_recipients"]
-            ):
+            if "inbound-email-error@example.com" in request.state.payload["original_recipients"]:
                 return JSONResponse(
                     status_code=500,
                     content={"status": "error", "detail": "Inbound email error"},
                 )
-            if (
-                "inbound-email-timeout@example.com"
-                in request.state.payload["original_recipients"]
-            ):
+            if "inbound-email-timeout@example.com" in request.state.payload["original_recipients"]:
                 time.sleep(3)
                 return
 

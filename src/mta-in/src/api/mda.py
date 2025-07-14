@@ -1,19 +1,15 @@
-from urllib3.util import Retry
-from requests import Session
-from requests.adapters import HTTPAdapter
-import jwt
 import datetime
 import hashlib
+import os
 
+import jwt
+from requests import Session
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
-with open("/etc/st-messages/env/MDA_API_BASE_URL", "r") as f:
-    MDA_API_BASE_URL = f.read().strip()
-
-with open("/etc/st-messages/env/MDA_API_SECRET", "r") as f:
-    MDA_API_SECRET = f.read().strip()
-
-with open("/etc/st-messages/env/MDA_API_TIMEOUT", "r") as f:
-    MDA_API_TIMEOUT = int(f.read().strip()) or 30
+MDA_API_BASE_URL = os.getenv("MDA_API_BASE_URL")
+MDA_API_SECRET = os.getenv("MDA_API_SECRET")
+MDA_API_TIMEOUT = int(os.getenv("MDA_API_TIMEOUT", "30"))
 
 
 def mda_api_call(path, content_type, body, metadata):

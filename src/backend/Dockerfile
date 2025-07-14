@@ -1,8 +1,11 @@
 # https://hub.docker.com/_/python
-FROM python:3.13.3-slim-bookworm AS base
+FROM python:3.13.5-slim-bookworm AS base
 
 # Bump this to force an update of the apt repositories
-ENV MIN_UPDATE_DATE="2025-05-09"
+ENV MIN_UPDATE_DATE="2025-07-14"
+
+RUN apt-get update && apt-get upgrade \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONUNBUFFERED=1
 

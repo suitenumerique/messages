@@ -12,7 +12,7 @@ from core.identity.keycloak import (
     sync_mailbox_to_keycloak_user,
     sync_maildomain_to_keycloak_group,
 )
-from core.search import MESSAGE_INDEX, get_es_client
+from core.search import MESSAGE_INDEX, get_opensearch_client
 from core.tasks import index_message_task, reindex_thread_task
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ def sync_mailbox_to_keycloak(sender, instance, created, **kwargs):
 @receiver(post_save, sender=models.Message)
 def index_message_post_save(sender, instance, created, **kwargs):
     """Index a message after it's saved."""
-    if not getattr(settings, "ELASTICSEARCH_INDEX_THREADS", False):
+    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", False):
         return
 
     try:
@@ -68,7 +68,7 @@ def index_message_post_save(sender, instance, created, **kwargs):
 @receiver(post_save, sender=models.MessageRecipient)
 def index_message_recipient_post_save(sender, instance, created, **kwargs):
     """Index a message recipient after it's saved."""
-    if not getattr(settings, "ELASTICSEARCH_INDEX_THREADS", False):
+    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", False):
         return
 
     try:
@@ -88,7 +88,7 @@ def index_message_recipient_post_save(sender, instance, created, **kwargs):
 @receiver(post_save, sender=models.Thread)
 def index_thread_post_save(sender, instance, created, **kwargs):
     """Index a thread after it's saved."""
-    if not getattr(settings, "ELASTICSEARCH_INDEX_THREADS", False):
+    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", False):
         return
 
     try:
@@ -107,11 +107,11 @@ def index_thread_post_save(sender, instance, created, **kwargs):
 @receiver(post_delete, sender=models.Message)
 def delete_message_from_index(sender, instance, **kwargs):
     """Remove a message from the index after it's deleted."""
-    if not getattr(settings, "ELASTICSEARCH_INDEX_THREADS", False):
+    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", False):
         return
 
     try:
-        es = get_es_client()
+        es = get_opensearch_client()
         # pylint: disable=unexpected-keyword-arg
         es.delete(
             index=MESSAGE_INDEX,
@@ -131,11 +131,11 @@ def delete_message_from_index(sender, instance, **kwargs):
 @receiver(post_delete, sender=models.Thread)
 def delete_thread_from_index(sender, instance, **kwargs):
     """Remove a thread and its messages from the index after it's deleted."""
-    if not getattr(settings, "ELASTICSEARCH_INDEX_THREADS", False):
+    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", False):
         return
 
     try:
-        es = get_es_client()
+        es = get_opensearch_client()
 
         # Delete the thread document
         # pylint: disable=unexpected-keyword-arg

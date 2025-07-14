@@ -1,7 +1,17 @@
 #!/bin/bash
 
 set -e
+
+if [ "${EXEC_CMD_ONLY:-false}" = "true" ]; then
+    exec "$@"
+    exit $?
+fi
+
 echo "Configuring Postfix via Jinja2 template..."
+
+cp /app/etc/master.cf /etc/postfix/master.cf
+cp /app/etc/header_checks /etc/postfix/header_checks
+cp /app/etc/sasl/smtpd.conf /etc/postfix/sasl/smtpd.conf
 
 # === Environment Variables & Defaults ===
 # Set required vars (will exit if not set)
@@ -34,14 +44,14 @@ echo "$SMTP_PASSWORD" | saslpasswd2 -p -c -f /var/spool/postfix/etc/sasldb2 -u "
 chown root:postfix /var/spool/postfix/etc/sasldb2
 
 # === Render main.cf from Template ===
-echo "Rendering /app/main.cf.j2 to /etc/postfix/main.cf..."
+echo "Rendering /app/etc/main.cf.j2 to /etc/postfix/main.cf..."
 # Pass all environment variables to the template context
 
 python3 -c "
 import os
 import jinja2
 
-template_path = '/app/main.cf.j2'
+template_path = '/app/etc/main.cf.j2'
 output_path = '/etc/postfix/main.cf'
 
 # Use all environment variables as context
@@ -80,7 +90,22 @@ echo "Verifying Postfix configuration (/etc/postfix/main.cf)..."
 
 postfix check -v || exit 1
 
-# cat /etc/postfix/main.cf
+# If env var EXEC_CMD is true, run the tests or another command
+if [ "${EXEC_CMD:-false}" = "true" ]; then
 
-# Start Postfix in the foreground (standard way)
-postfix start-fg -v
+    # Start Postfix in the foreground (standard way)
+    #postfix start-fg -v &
+    /usr/lib/postfix/sbin/master -c /etc/postfix -d &
+    POSTFIX_PID=$!
+
+    exec "$@"
+    CMD_STATUS=$?
+
+    # Kill Postfix
+    kill $POSTFIX_PID
+
+    exit $CMD_STATUS
+else
+    # Start Postfix in the foreground (standard way)
+    postfix start-fg -v
+fi

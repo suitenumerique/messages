@@ -21,16 +21,11 @@ classifiers = [
 ]
 description = "A stateless outgoing MTA."
 keywords = ["Python", "MTA", "SMTP"]
-license = { file = "LICENSE" }
+license = "MIT"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<4.0"
 dependencies = [
-    "pytest==8.3.5",
-    "fastapi==0.115.12",
-    "uvicorn==0.34.1",
-    "requests==2.32.3",
-    "PyJWT==2.10.1",
-    "aiosmtpd==1.4.4"  # For testing SMTP server
+    "Jinja2==3.1.6"
 ]
 
 [project.urls]
@@ -41,10 +36,20 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "pytest==8.3.5",
+    "pytest-cov==6.0.0",
+    "fastapi==0.115.12",
+    "uvicorn==0.34.1",
+    "requests==2.32.3",
+    "PyJWT==2.10.1",
+    "aiosmtpd==1.4.4",
     "ruff==0.9.3",
     "pylint==3.3.4",
     "types-requests==2.32.0.20241016",
 ]
+
+[tool.poetry]
+package-mode = false
 
 [tool.setuptools]
 packages = { find = { where = ["."], exclude = ["tests"] } }
@@ -86,7 +91,7 @@ select = [
 ]
 
 [tool.ruff.lint.isort]
-section-order = ["future","standard-library","django","third-party","mta-out","first-party","local-folder"]
+section-order = ["future","standard-library","django","third-party","first-party","local-folder"]
 sections = { django=["django"] }
 extra-standard-library = ["tomllib"]
 

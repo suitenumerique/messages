@@ -133,12 +133,12 @@ When running the project, the following services are available:
 | **Keycloak** | [http://localhost:8902](http://localhost:8902) | Identity provider admin | `admin` / `admin` |
 | **Celery UI** | [http://localhost:8903](http://localhost:8903) | Task queue monitoring | No auth required |
 | **Mailcatcher** | [http://localhost:8904](http://localhost:8904) | Email testing interface | No auth required |
-| **Elasticsearch UI** | [http://localhost:8905](http://localhost:8905) | Search index management | No auth required |
 | **MTA-in (SMTP)** | 8910 | Incoming email server | No auth required |
 | **MTA-out (SMTP)** | 8911 | Outgoing email server | `user` / `pass` |
 | **PostgreSQL** | 8912 | Database server | `user` / `pass` |
-| **Elasticsearch** | 8913 | Search engine | No auth required |
-| **Redis** | 8914 | Cache and message broker | No auth required |
+| **Redis** | 8913 | Cache and message broker | No auth required |
+| **OpenSearch** | 8914 | Search engine | No auth required |
+| **OpenSearch** | 8915 | Performance analyzer | No auth required |
 
 
 ### OpenAPI client
@@ -159,13 +159,13 @@ $ make api-update
 You can also generate the schema only with:
 
 ```bash
-$ make backend-api-update
+$ make back-api-update
 ```
 
 And the frontend API client only with:
 
 ```bash
-$ make frontend-api-update
+$ make front-api-update
 ```
 
 ### Sending test emails 📨

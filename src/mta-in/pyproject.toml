@@ -1,12 +1,12 @@
 #
-# st-messages-mta package
+# st-messages-mta-in package
 #
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "st-messages-mta"
+name = "st-messages-mta-in"
 version = "0.0.1"
 authors = [{ "name" = "ANCT", "email" = "suiteterritoriale@anct.gouv.fr" }]
 classifiers = [
@@ -17,19 +17,19 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.13",
 ]
 description = "A stateless MTA."
 keywords = ["Python", "MTA"]
-license = { file = "LICENSE" }
+license = "MIT"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13,<4.0"
+
+# Note: after changing this list you must re-run `make mta-in-poetry-lock`
 dependencies = [
-    "pytest==8.3.5",
-    "fastapi==0.115.12",
-    "uvicorn==0.34.1",
     "requests==2.32.3",
-    "PyJWT==2.10.1"
+    "PyJWT==2.10.1",
+    "pymilter==1.0.5"
 ]
 
 [project.urls]
@@ -40,10 +40,17 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "pytest==8.3.5",
+    "pytest-cov==6.0.0",
+    "fastapi==0.115.12",
+    "uvicorn==0.34.1",
     "ruff==0.9.3",
     "pylint==3.3.4",
     "types-requests==2.32.0.20241016",
 ]
+
+[tool.poetry]
+package-mode = false
 
 [tool.setuptools]
 packages = { find = { where = ["."], exclude = ["tests"] } }

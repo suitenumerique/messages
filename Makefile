@@ -46,8 +46,6 @@ COMPOSE_RUN_APP     = $(COMPOSE_RUN) backend-dev
 COMPOSE_RUN_APP_DB  = $(COMPOSE_RUN) backend-db
 COMPOSE_RUN_APP_TOOLS = $(COMPOSE_RUN) --no-deps backend-dev
 COMPOSE_RUN_CROWDIN = $(COMPOSE_RUN) crowdin crowdin
-COMPOSE_RUN_MTA_IN_TESTS  = cd src/mta-in && $(COMPOSE_RUN) --build test
-COMPOSE_RUN_MTA_OUT_TESTS = cd src/mta-out && $(COMPOSE_RUN) --build test
 
 # -- Backend
 MANAGE              = $(COMPOSE_RUN_APP) python manage.py
@@ -119,7 +117,7 @@ update:  ## Update the project with latest changes
 	@$(MAKE) build
 	@$(MAKE) collectstatic
 	@$(MAKE) migrate
-	@$(MAKE) frontend-install-frozen
+	@$(MAKE) front-install-frozen
 	# @$(MAKE) back-i18n-compile
 .PHONY: update
 
@@ -140,6 +138,10 @@ start: ## start full stack
 	@$(COMPOSE) up --force-recreate --build -d frontend-dev backend-dev celery-dev mta-in
 .PHONY: start
 
+start-minimal: ## start minimal stack: only backend, frontend, keycloak and DB
+	@$(COMPOSE) up --force-recreate --build -d backend-db frontend-dev keycloak
+.PHONY: start-minimal
+
 status: ## an alias for "docker compose ps"
 	@$(COMPOSE) ps
 .PHONY: status
@@ -148,62 +150,91 @@ stop: ## stop the development server using Docker
 	@$(COMPOSE) stop
 .PHONY: stop
 
-# -- Backend
+# -- Linters
 
+lint: ## run all linters
 lint: \
-  lint-ruff-format \
-  lint-check
+  back-lint \
+  front-lint \
+  mta-in-lint \
+  mta-out-lint
 .PHONY: lint
 
-## Check-only version
-lint-check: \
-  lint-ruff-check \
-  lint-back \
-  lint-mta-in \
-  lint-mta-out
-.PHONY: lint-check
+back-lint: ## run back-end linters
+back-lint: \
+  back-ruff-format \
+  back-ruff-check \
+  back-pylint
+.PHONY: back-lint
 
-lint-ruff-format: ## format back-end python sources with ruff
-	@echo 'lint:ruff-format started…'
+back-ruff-format: ## format back-end python sources with ruff
 	@$(COMPOSE_RUN_APP_TOOLS) ruff format .
-.PHONY: lint-ruff-format
+.PHONY: back-ruff-format
 
-lint-ruff-check: ## lint back-end python sources with ruff
-	@echo 'lint:ruff-check started…'
+back-ruff-check: ## lint back-end python sources with ruff
 	@$(COMPOSE_RUN_APP_TOOLS) ruff check . --fix
-.PHONY: lint-ruff-check
+.PHONY: back-ruff-check
 
-lint-back: ## lint back-end python sources with pylint
-	@echo 'lint:pylint started…'
+back-pylint: ## lint back-end python sources with pylint
 	@$(COMPOSE_RUN_APP_TOOLS) sh -c "pylint ."
-.PHONY: lint-back
+.PHONY: back-pylint
 
-lint-mta-in: ## lint mta-in python sources with pylint
-	@echo 'lint:mta-in started…'
-	@$(COMPOSE_RUN_MTA_IN_TESTS) ruff format .
-	@$(COMPOSE_RUN_MTA_IN_TESTS) ruff check . --fix
-# 	@$(COMPOSE_RUN_MTA_IN_TESTS) pylint .
-.PHONY: lint-mta-in
+front-ts-check: ## run the frontend type checker
+	@$(COMPOSE) run --rm frontend-tools npm run ts:check
+.PHONY: front-ts-check
 
-lint-mta-out: ## lint mta-out python sources with pylint
-	@echo 'lint:mta-out started…'
-	@$(COMPOSE_RUN_MTA_OUT_TESTS) ruff format .
-	@$(COMPOSE_RUN_MTA_OUT_TESTS) ruff check . --fix
-.PHONY: lint-mta-out
+front-lint: ## run the frontend linter
+	@$(COMPOSE) run --rm frontend-tools npm run lint
+.PHONY: front-lint
 
-test: ## run project tests
-	@$(MAKE) test-back-parallel
+mta-in-lint: ## lint mta-in python sources with pylint
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff format .
+	#$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff check . --fix
+	#$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test pylint .
+.PHONY: mta-in-lint
+
+mta-out-lint: ## lint mta-out python sources with pylint
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-out-test ruff format .
+.PHONY: mta-out-lint
+
+# -- Tests
+
+test: ## run all tests
+test: \
+  back-test \
+  front-test \
+  mta-in-test \
+  mta-out-test
 .PHONY: test
 
-test-back: ## run back-end tests
+back-test: ## run back-end tests
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	bin/pytest $${args:-${1}}
-.PHONY: test-back
+.PHONY: back-test
 
-test-back-parallel: ## run all back-end tests in parallel
+back-test-parallel: ## run all back-end tests in parallel
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	bin/pytest -n auto $${args:-${1}}
-.PHONY: test-back-parallel
+.PHONY: back-test-parallel
+
+front-test: ## run the frontend tests
+	@$(COMPOSE) run --rm frontend-tools npm run test
+.PHONY: front-test
+
+front-test-amd64: ## run the frontend tests in amd64
+	@$(COMPOSE) run --rm frontend-tools-amd64 npm run test
+.PHONY: front-test
+
+mta-in-test: ## run the mta-in tests
+	@$(COMPOSE) run --build --rm mta-in-test
+.PHONY: mta-in-test
+
+mta-out-test: ## run the mta-out tests
+	@$(COMPOSE) run --build --rm mta-out-test
+.PHONY: mta-out-test
+
+
+# -- Backend
 
 migrations:  ## run django makemigrations for the messages project.
 	@echo "$(BOLD)Running makemigrations$(RESET)"
@@ -267,7 +298,7 @@ collectstatic: ## collect static files
 
 shell: ## connect to django shell
 	@$(MANAGE) shell #_plus
-.PHONY: dbshell
+.PHONY: shell
 
 keycloak-export: ## export all keycloak data to a JSON file
 	@$(COMPOSE) run -v `pwd`/src/keycloak:/tmp/keycloak-export --rm keycloak export --realm messages --file /tmp/keycloak-export/realm.json
@@ -275,21 +306,21 @@ keycloak-export: ## export all keycloak data to a JSON file
 
 # -- Database
 
-dbshell: ## connect to database shell
+db-shell: ## connect to database shell
 	docker compose exec backend-dev python manage.py dbshell
-.PHONY: dbshell
+.PHONY: db-shell
 
-resetdb: FLUSH_ARGS ?=
-resetdb: ## flush database
+db-reset: FLUSH_ARGS ?=
+db-reset: ## flush database
 	@echo "$(BOLD)Flush database$(RESET)"
 	@$(MANAGE_DB) flush $(FLUSH_ARGS)
-.PHONY: resetdb
+.PHONY: db-reset
 
-fullresetdb: build ## flush database, including schema
+db-reset-full: build ## flush database, including schema
 	@echo "$(BOLD)Flush database$(RESET)"
 	$(MANAGE_DB) drop_all_tables
 	$(MANAGE_DB) migrate
-.PHONY: fullresetdb
+.PHONY: db-reset-full
 
 env.d/development/%.local:
 	@echo "# Local development overrides for $(notdir $*)" > $@
@@ -338,13 +369,13 @@ crowdin-upload: ## Upload source translations to crowdin
 i18n-compile: ## compile all translations
 i18n-compile: \
 	back-i18n-compile \
-	frontend-i18n-compile
+	front-i18n-compile
 .PHONY: i18n-compile
 
 i18n-generate: ## create the .pot files and extract frontend messages
 i18n-generate: \
 	back-i18n-generate \
-	frontend-i18n-generate
+	front-i18n-generate
 .PHONY: i18n-generate
 
 i18n-download-and-compile: ## download all translated messages and compile them to be used by all applications
@@ -378,73 +409,64 @@ help:
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(GREEN)%-30s$(RESET) %s\n", $$1, $$2}'
 .PHONY: help
 
-frontend-shell: ## open a shell in the frontend container
+front-shell: ## open a shell in the frontend container
 	@$(COMPOSE) run --rm frontend-tools /bin/sh
-.PHONY: frontend-shell
+.PHONY: front-shell
 
 # Front
-frontend-install: ## install the frontend locally
+front-install: ## install the frontend locally
 	@$(COMPOSE) run --rm frontend-tools npm install
-.PHONY: frontend-install
+.PHONY: front-install
 
-frontend-install-frozen: ## install the frontend locally, following the frozen lockfile
+front-install-frozen: ## install the frontend locally, following the frozen lockfile
 	@echo "Installing frontend dependencies, this might take a few minutes..."
 	@$(COMPOSE) run --rm frontend-tools npm ci
-.PHONY: frontend-install-frozen
+.PHONY: front-install-frozen
 
-frontend-install-frozen-amd64: ## install the frontend locally, following the frozen lockfile
+front-install-frozen-amd64: ## install the frontend locally, following the frozen lockfile
 	@$(COMPOSE) run --rm frontend-tools-amd64 npm ci
-.PHONY: frontend-install-frozen-amd64
+.PHONY: front-install-frozen-amd64
 
-frontend-build: ## build the frontend locally
+front-build: ## build the frontend locally
 	@$(COMPOSE) run --rm frontend-tools npm run build
-.PHONY: frontend-build
+.PHONY: front-build
 
-frontend-ts-check: ## build the frontend locally
-	@$(COMPOSE) run --rm frontend-tools npm run ts:check
-.PHONY: frontend-ts-check
-
-frontend-lint: ## run the frontend linter
-	@$(COMPOSE) run --rm frontend-tools npm run lint
-.PHONY: frontend-lint
-
-frontend-test: ## run the frontend tests
-	@$(COMPOSE) run --rm frontend-tools npm run test
-.PHONY: frontend-test
-
-frontend-test-amd64: ## run the frontend tests
-	@$(COMPOSE) run --rm frontend-tools-amd64 npm run test
-.PHONY: frontend-test
-
-frontend-i18n-extract: ## Extract the frontend translation inside a json to be used for crowdin
+front-i18n-extract: ## Extract the frontend translation inside a json to be used for crowdin
 	@$(COMPOSE) run --rm frontend-tools npm run i18n:extract
-.PHONY: frontend-i18n-extract
+.PHONY: front-i18n-extract
 
-frontend-i18n-generate: ## Generate the frontend json files used for crowdin
-frontend-i18n-generate: \
+front-i18n-generate: ## Generate the frontend json files used for crowdin
 	crowdin-download-sources \
-	frontend-i18n-extract
-.PHONY: frontend-i18n-generate
+	front-i18n-extract
+.PHONY: front-i18n-generate
 
-frontend-i18n-compile: ## Format the crowin json files used deploy to the apps
+front-i18n-compile: ## Format the crowin json files used deploy to the apps
 	@$(COMPOSE) run --rm frontend-tools npm run i18n:deploy
-.PHONY: frontend-i18n-compile
+.PHONY: front-i18n-compile
 
 back-api-update: ## Update the OpenAPI schema
 	bin/update_openapi_schema
 .PHONY: back-api-update
 
-frontend-api-update: ## Update the frontend API client
+front-api-update: ## Update the frontend API client
 	@$(COMPOSE) run --rm frontend-tools npm run api:update
-.PHONY: frontend-api-update
+.PHONY: front-api-update
 
 api-update: ## Update the OpenAPI schema then frontend API client
 api-update: \
 	back-api-update \
-	frontend-api-update
+	front-api-update
 .PHONY: api-update
 
-elasticsearch-index: ## Create and/or reindex elasticsearch data
+search-index: ## Create and/or reindex opensearch data
 	@$(MANAGE) es_create_index
 	@$(MANAGE) es_reindex --all
-.PHONY: elasticsearch-index
+.PHONY: search-index
+
+mta-in-poetry-lock: ## lock the dependencies
+	@$(COMPOSE) run --rm --build mta-in-poetry poetry lock
+.PHONY: mta-in-poetry-lock
+
+mta-out-poetry-lock: ## lock the dependencies
+	@$(COMPOSE) run --rm --build mta-out-poetry poetry lock
+.PHONY: mta-out-poetry-lock

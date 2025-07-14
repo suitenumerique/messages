@@ -1,7 +1,15 @@
 #!/bin/bash
 
 set -e
+
+if [ "${EXEC_CMD_ONLY:-false}" = "true" ]; then
+    exec "$@"
+    exit $?
+fi
+
 echo "Configuring Postfix..."
+
+cp -r /app/etc/* /etc/postfix/
 
 # Postfix configuration from environment variables
 echo >> /etc/postfix/main.cf
@@ -10,13 +18,6 @@ echo "message_size_limit=${MESSAGE_SIZE_LIMIT:-10240000}" >> /etc/postfix/main.c
 if [ "${ENABLE_PROXY_PROTOCOL:-false}" = "haproxy" ]; then
   echo "postscreen_upstream_proxy_protocol = haproxy" >> /etc/postfix/main.cf
 fi
-
-# Dump env vars to files in /etc/st-messages/env/
-# They will be used by the Python scripts.
-mkdir -p /etc/st-messages/env/
-echo -n "$MDA_API_BASE_URL" > /etc/st-messages/env/MDA_API_BASE_URL
-echo -n "$MDA_API_SECRET" > /etc/st-messages/env/MDA_API_SECRET
-echo -n "$MDA_API_TIMEOUT" > /etc/st-messages/env/MDA_API_TIMEOUT
 
 echo "Verifying Postfix configuration..."
 #postconf -M  # Print active services
@@ -32,19 +33,24 @@ mkdir -p /var/spool/postfix/milter
 chown postfix:postfix /var/spool/postfix/milter
 chmod 755 /var/spool/postfix/milter
 
-/venv/bin/python3 /app/scripts/delivery_milter.py &
+/venv/bin/python3 /app/src/delivery_milter.py &
 MILTER_PID=$!
 
-# Wait a moment for milter to start and create socket
-sleep 3
+# Wait until the milter is ready, with a maximum of 10 seconds
+for i in {1..10}; do
+    if [ -S /var/spool/postfix/milter/delivery.sock ]; then
+        chown postfix:postfix /var/spool/postfix/milter/delivery.sock
+        chmod 660 /var/spool/postfix/milter/delivery.sock
+        echo "Milter socket ready"
+        break
+    fi
+    sleep 1
+done
 
-# Ensure socket has proper permissions
-if [ -S /var/spool/postfix/milter/delivery.sock ]; then
-    chown postfix:postfix /var/spool/postfix/milter/delivery.sock
-    chmod 660 /var/spool/postfix/milter/delivery.sock
-    echo "Milter socket ready"
-else
-    echo "Warning: Milter socket not found"
+# If socket still doesn't exist, exit
+if [ ! -S /var/spool/postfix/milter/delivery.sock ]; then
+    echo "ERROR: Milter socket not found"
+    exit 1
 fi
 
 echo "Starting Postfix..."
@@ -61,6 +67,12 @@ cleanup() {
 
 # Trap signals to cleanup properly
 trap cleanup SIGTERM SIGINT
+
+# If env var EXEC_CMD is true, run the tests or another command
+if [ "${EXEC_CMD:-false}" = "true" ]; then
+    exec "$@"
+    exit $?
+fi
 
 # Monitor both processes
 while true; do

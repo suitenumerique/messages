@@ -1,4 +1,4 @@
-"""Management command to delete Elasticsearch index."""
+"""Management command to delete OpenSearch index."""
 
 import sys
 
@@ -8,9 +8,9 @@ from core.search import delete_index
 
 
 class Command(BaseCommand):
-    """Delete Elasticsearch index."""
+    """Delete OpenSearch index."""
 
-    help = "Delete Elasticsearch index"
+    help = "Delete OpenSearch index"
 
     def add_arguments(self, parser):
         """Add command arguments."""
@@ -24,21 +24,21 @@ class Command(BaseCommand):
         """Execute the command."""
         if not options["force"]:
             confirm = input(
-                "Are you sure you want to delete the Elasticsearch index? This cannot be undone. [y/N] "
+                "Are you sure you want to delete the OpenSearch index? This cannot be undone. [y/N] "
             )
             if confirm.lower() != "y":
                 self.stdout.write(self.style.WARNING("Operation cancelled"))
                 return
 
-        self.stdout.write("Deleting Elasticsearch index...")
+        self.stdout.write("Deleting OpenSearch index...")
 
         result = delete_index()
         if result:
             self.stdout.write(
-                self.style.SUCCESS("Elasticsearch index deleted successfully")
+                self.style.SUCCESS("OpenSearch index deleted successfully")
             )
         else:
             self.stdout.write(
-                self.style.WARNING("Elasticsearch index not found or already deleted")
+                self.style.WARNING("OpenSearch index not found or already deleted")
             )
             sys.exit(1)

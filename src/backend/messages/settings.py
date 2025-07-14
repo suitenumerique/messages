@@ -65,20 +65,20 @@ class Base(Configuration):
     # Admin URL configuration
     ADMIN_URL = values.Value("admin/")
 
-    # Elasticsearch configuration
-    ELASTICSEARCH_HOSTS = values.ListValue(
-        ["http://elasticsearch:9200"],
-        environ_name="ELASTICSEARCH_URL",
+    # OpenSearch configuration
+    OPENSEARCH_HOSTS = values.ListValue(
+        ["http://opensearch:9200"],
+        environ_name="OPENSEARCH_URL",
         environ_prefix=None,
     )
-    ELASTICSEARCH_TIMEOUT = values.PositiveIntegerValue(
-        20, environ_name="ELASTICSEARCH_TIMEOUT", environ_prefix=None
+    OPENSEARCH_TIMEOUT = values.PositiveIntegerValue(
+        20, environ_name="OPENSEARCH_TIMEOUT", environ_prefix=None
     )
-    ELASTICSEARCH_INDEX_THREADS = values.BooleanValue(
-        True, environ_name="ELASTICSEARCH_INDEX_THREADS", environ_prefix=None
+    OPENSEARCH_INDEX_THREADS = values.BooleanValue(
+        True, environ_name="OPENSEARCH_INDEX_THREADS", environ_prefix=None
     )
-    ELASTICSEARCH_CA_CERTS = values.Value(
-        None, environ_name="ELASTICSEARCH_CA_CERTS", environ_prefix=None
+    OPENSEARCH_CA_CERTS = values.Value(
+        None, environ_name="OPENSEARCH_CA_CERTS", environ_prefix=None
     )
 
     # Security
@@ -704,6 +704,21 @@ class Development(Base):
     def __init__(self):
         # pylint: disable=invalid-name
         self.INSTALLED_APPS += ["django_extensions", "drf_spectacular_sidecar"]
+
+
+class DevelopmentMinimal(Development):
+    """
+    Development environment settings with minimal dependencies
+    """
+
+    CELERY_TASK_ALWAYS_EAGER = True
+    OPENSEARCH_INDEX_THREADS = False
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.dummy.DummyCache",
+        },
+        "session": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    }
 
 
 class Test(Base):

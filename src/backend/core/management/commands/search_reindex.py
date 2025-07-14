@@ -1,4 +1,4 @@
-"""Management command to reindex content in Elasticsearch."""
+"""Management command to reindex content in OpenSearch."""
 
 import uuid
 
@@ -15,9 +15,9 @@ from core.tasks import (
 
 
 class Command(BaseCommand):
-    """Reindex content in Elasticsearch."""
+    """Reindex content in OpenSearch."""
 
-    help = "Reindex content in Elasticsearch"
+    help = "Reindex content in OpenSearch"
 
     def add_arguments(self, parser):
         """Add command arguments."""
@@ -57,7 +57,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         """Execute the command."""
         # Ensure index exists
-        self.stdout.write("Ensuring Elasticsearch index exists...")
+        self.stdout.write("Ensuring OpenSearch index exists...")
         create_index_if_not_exists()
 
         # Handle reindexing based on scope

@@ -1,11 +1,11 @@
-import pytest
+import base64
+import logging
+import smtplib
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
-import logging
-import base64
-import smtplib
 
+import pytest
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +67,7 @@ def test_email_with_attachment(mock_api_server, smtp_client):
         (40 * 1024 * 1024, True),
     ],
 )
-def test_email_with_large_attachments(
-    mock_api_server, smtp_client, attachment_size, will_fail
-):
+def test_email_with_large_attachments(mock_api_server, smtp_client, attachment_size, will_fail):
     mock_api_server.add_mailbox("test@example.com")
 
     msg = MIMEMultipart()
@@ -80,9 +78,7 @@ def test_email_with_large_attachments(
     # Create a large attachment
     large_attachment = "X" * attachment_size
     attachment = MIMEApplication(large_attachment.encode("utf-8"))
-    attachment.add_header(
-        "Content-Disposition", "attachment", filename="large_file.txt"
-    )
+    attachment.add_header("Content-Disposition", "attachment", filename="large_file.txt")
     msg.attach(attachment)
 
     # Send email

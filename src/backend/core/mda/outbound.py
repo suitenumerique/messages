@@ -104,6 +104,7 @@ def prepare_outbound_message(
                 "email": message.sender.email,
             }
         ],
+        "date": timezone.now().strftime("%a, %d %b %Y %H:%M:%S %z"),
         "to": recipients_by_type.get(models.MessageRecipientTypeChoices.TO, []),
         "cc": recipients_by_type.get(models.MessageRecipientTypeChoices.CC, []),
         # BCC is not included in headers

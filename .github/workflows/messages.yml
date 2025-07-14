@@ -47,9 +47,9 @@ jobs:
       - name: Create env files
         run: make create-env-files
       - name: Install frontend dependencies
-        run: make frontend-install-frozen
+        run: make front-install-frozen
       - name: Run frontend tests
-        run: make frontend-test
+        run: make front-test
 
   lint-front:
     runs-on: ubuntu-latest
@@ -59,9 +59,9 @@ jobs:
       - name: Create env files
         run: make create-env-files
       - name: Install frontend dependencies
-        run: make frontend-install-frozen
+        run: make front-install-frozen
       - name: Run frontend linting
-        run: make frontend-lint
+        run: make front-lint
 
   build-front:
     runs-on: ubuntu-latest
@@ -71,9 +71,9 @@ jobs:
       - name: Create env files
         run: make create-env-files
       - name: Install frontend dependencies
-        run: make frontend-install-frozen
+        run: make front-install-frozen
       - name: Build frontend
-        run: make frontend-build
+        run: make front-build
 
   check-api-state:
     runs-on: ubuntu-latest

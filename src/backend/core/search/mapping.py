@@ -1,4 +1,4 @@
-"""Elasticsearch index and mapping configuration."""
+"""OpenSearch index and mapping configuration."""
 
 # Index name constants
 MESSAGE_INDEX = "messages"

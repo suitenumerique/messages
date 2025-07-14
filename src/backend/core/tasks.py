@@ -198,8 +198,8 @@ def _reindex_all_base(update_progress=None):
     Args:
         update_progress: Optional callback function to update progress
     """
-    if not settings.ELASTICSEARCH_INDEX_THREADS:
-        logger.info("Elasticsearch thread indexing is disabled.")
+    if not settings.OPENSEARCH_INDEX_THREADS:
+        logger.info("OpenSearch thread indexing is disabled.")
         return {"success": False, "reason": "disabled"}
 
     # Ensure index exists first
@@ -256,8 +256,8 @@ def reindex_all(self):
 @celery_app.task(bind=True)
 def reindex_thread_task(self, thread_id):
     """Reindex a specific thread and all its messages."""
-    if not settings.ELASTICSEARCH_INDEX_THREADS:
-        logger.info("Elasticsearch thread indexing is disabled.")
+    if not settings.OPENSEARCH_INDEX_THREADS:
+        logger.info("OpenSearch thread indexing is disabled.")
         return {"success": False, "reason": "disabled"}
 
     try:
@@ -289,8 +289,8 @@ def reindex_thread_task(self, thread_id):
 @celery_app.task(bind=True)
 def reindex_mailbox_task(self, mailbox_id):
     """Reindex all threads and messages in a specific mailbox."""
-    if not settings.ELASTICSEARCH_INDEX_THREADS:
-        logger.info("Elasticsearch thread indexing is disabled.")
+    if not settings.OPENSEARCH_INDEX_THREADS:
+        logger.info("OpenSearch thread indexing is disabled.")
         return {"success": False, "reason": "disabled"}
 
     # Ensure index exists first
@@ -337,8 +337,8 @@ def reindex_mailbox_task(self, mailbox_id):
 @celery_app.task(bind=True)
 def index_message_task(self, message_id):
     """Index a single message."""
-    if not settings.ELASTICSEARCH_INDEX_THREADS:
-        logger.info("Elasticsearch message indexing is disabled.")
+    if not settings.OPENSEARCH_INDEX_THREADS:
+        logger.info("OpenSearch message indexing is disabled.")
         return {"success": False, "reason": "disabled"}
 
     try:
@@ -375,8 +375,8 @@ def index_message_task(self, message_id):
 
 
 @celery_app.task(bind=True)
-def reset_elasticsearch_index(self):
-    """Delete and recreate the Elasticsearch index."""
+def reset_search_index(self):
+    """Delete and recreate the OpenSearch index."""
 
     delete_index()
     create_index_if_not_exists()

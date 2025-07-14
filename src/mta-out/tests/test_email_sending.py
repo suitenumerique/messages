@@ -43,9 +43,7 @@ def test_send_simple_text_email(smtp_client, mock_smtp_server):
     assert received["from"] == "sender@example.com"
     assert received["to"] == "recipient@external-domain.com"
 
-    assert smtp_client.noop()[0] == 250, (
-        "SMTP client should still be connected after sending"
-    )
+    assert smtp_client.noop()[0] == 250, "SMTP client should still be connected after sending"
 
 
 def test_send_simple_text_email_localhost(smtp_client, mock_smtp_server):
@@ -80,9 +78,7 @@ def test_send_simple_text_email_localhost(smtp_client, mock_smtp_server):
     assert received["from"] == "sender@example.com"
     assert received["to"] == "recipient@localhost"
 
-    assert smtp_client.noop()[0] == 250, (
-        "SMTP client should still be connected after sending"
-    )
+    assert smtp_client.noop()[0] == 250, "SMTP client should still be connected after sending"
 
 
 def test_send_html_email(smtp_client, mock_smtp_server):
@@ -134,9 +130,7 @@ def test_send_multiple_recipients(smtp_client, mock_smtp_server):
     received = mock_smtp_server.get_messages()[0]
     assert received["subject"] == "Test Multiple Recipients"
     assert received["from"] == "sender@example.com"
-    assert (
-        received["to"] == "recipient1@external-domain.com, recipient2@other-domain.com"
-    )
+    assert received["to"] == "recipient1@external-domain.com, recipient2@other-domain.com"
 
 
 def test_send_with_cc_and_bcc(smtp_client, mock_smtp_server):
@@ -146,9 +140,7 @@ def test_send_with_cc_and_bcc(smtp_client, mock_smtp_server):
     message["From"] = "sender@example.com"
     message["To"] = "recipient@external-domain.com"
     message["CC"] = "cc@external-domain.com"
-    message["BCC"] = (
-        "bcc@external-domain.com"  # BCC won't appear in headers after sending
-    )
+    message["BCC"] = "bcc@external-domain.com"  # BCC won't appear in headers after sending
     message["Subject"] = "Test CC and BCC"
 
     mock_smtp_server.clear_messages()

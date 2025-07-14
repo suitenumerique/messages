@@ -62,7 +62,7 @@ It is nice to add information about the purpose of the pull request to help revi
 - signoff your commits
 - sign your commits with your key (SSH, GPG etc.)
 - check your commits (see warnings above)
-- check the linting: `make lint && make frontend-lint`
+- check the linting: `make lint`
 - check the tests: `make test`
 
 Once all the required tests have passed, you can request a review from the project maintainers.

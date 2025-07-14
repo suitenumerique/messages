@@ -6,12 +6,14 @@ This milter processes messages before they are queued and performs
 delivery immediately. If delivery fails, the SMTP session is rejected.
 """
 
-import sys
-import os
-import Milter
-from io import BytesIO
-from api.mda import mda_api_call
 import json
+import os
+import sys
+from io import BytesIO
+
+import Milter
+
+from api.mda import mda_api_call
 
 
 class DeliveryMilter(Milter.Base):

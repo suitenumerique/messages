@@ -4,29 +4,6 @@ This document provides a comprehensive overview of all environment variables use
 
 ## Development Environment
 
-### Port Configuration
-
-The development environment uses the following port structure:
-
-#### HTTP Services (890x)
-| Service | Port | Description |
-|---------|------|-------------|
-| Frontend | 8900 | Main Messages frontend |
-| Backend API | 8901 | Django REST API and admin |
-| Keycloak | 8902 | Identity provider admin |
-| Celery UI | 8903 | Task queue monitoring |
-| Mailcatcher | 8904 | Email testing interface |
-| Elasticsearch UI | 8905 | Search index management |
-
-#### Infrastructure Services (891x)
-| Service | Port | Description |
-|---------|------|-------------|
-| MTA-in (SMTP) | 8910 | Incoming email server |
-| MTA-out (SMTP) | 8911 | Outgoing email server |
-| PostgreSQL | 8912 | Database server |
-| Elasticsearch | 8913 | Search engine |
-| Redis | 8914 | Cache and message broker |
-
 ### Environment Files Structure
 
 The application uses a new environment file structure with `.defaults` and `.local` files:
@@ -86,15 +63,15 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `CELERY_BROKER_URL` | `redis://redis:6379` | Celery message broker URL (internal) | Optional |
 | `CACHES_DEFAULT_TIMEOUT` | `30` | Default cache timeout in seconds | Optional |
 
-**Note**: For external Redis access, use `localhost:8914`. For internal container communication, use `redis:6379`.
+**Note**: For external Redis access, use `localhost:8913`. For internal container communication, use `redis:6379`.
 
-### Elasticsearch Configuration
+### OpenSearch Configuration
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `ELASTICSEARCH_URL` | `["http://elasticsearch:9200"]` | Elasticsearch hosts list | Optional |
-| `ELASTICSEARCH_TIMEOUT` | `20` | Elasticsearch query timeout | Optional |
-| `ELASTICSEARCH_INDEX_THREADS` | `True` | Enable thread indexing | Optional |
+| `OPENSEARCH_URL` | `["http://opensearch:9200"]` | OpenSearch hosts list | Optional |
+| `OPENSEARCH_TIMEOUT` | `20` | OpenSearch query timeout | Optional |
+| `OPENSEARCH_INDEX_THREADS` | `True` | Enable thread indexing | Optional |
 
 ## Mail Processing Configuration
 

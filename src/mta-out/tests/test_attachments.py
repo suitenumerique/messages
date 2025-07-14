@@ -156,9 +156,7 @@ def test_send_large_attachment(smtp_client, mock_smtp_server):
 
     # Attach the large file
     attachment = MIMEApplication(large_data, _subtype="octet-stream")
-    attachment.add_header(
-        "Content-Disposition", "attachment", filename="large_file.bin"
-    )
+    attachment.add_header("Content-Disposition", "attachment", filename="large_file.bin")
     message.attach(attachment)
 
     mock_smtp_server.clear_messages()

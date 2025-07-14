@@ -45,7 +45,7 @@ dependencies = [
     "dnspython==2.7.0",
     "dockerflow==2024.4.2",
     "drf_spectacular==0.28.0",
-    "elasticsearch==7.17.12",
+    "opensearch-py==2.8.0",
     "factory_boy==3.3.1",
     "flanker@git+https://github.com/sylvinus/flanker@f94ba2c15ab310e333610a78828d09be4e11a6b6",
     "gunicorn==23.0.0",

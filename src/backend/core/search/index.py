@@ -1,12 +1,12 @@
-"""Elasticsearch client and indexing functionality."""
+"""OpenSearch client and indexing functionality."""
 # pylint: disable=unexpected-keyword-arg
 
 import logging
 
 from django.conf import settings
 
-from elasticsearch import Elasticsearch
-from elasticsearch.exceptions import NotFoundError
+from opensearchpy import OpenSearch
+from opensearchpy.exceptions import NotFoundError
 
 from core import enums, models
 from core.mda.rfc5322 import parse_email_message
@@ -15,35 +15,35 @@ from core.search.mapping import MESSAGE_INDEX, MESSAGE_MAPPING
 logger = logging.getLogger(__name__)
 
 
-# Elasticsearch client instantiation
-def get_es_client():
-    """Get Elasticsearch client instance."""
-    if not hasattr(get_es_client, "cached_client"):
-        kwargs = {"hosts": settings.ELASTICSEARCH_HOSTS}
-        if settings.ELASTICSEARCH_CA_CERTS:
-            kwargs["ca_certs"] = settings.ELASTICSEARCH_CA_CERTS
-        get_es_client.cached_client = Elasticsearch(**kwargs)
-    return get_es_client.cached_client
+# OpenSearch client instantiation
+def get_opensearch_client():
+    """Get OpenSearch client instance."""
+    if not hasattr(get_opensearch_client, "cached_client"):
+        kwargs = {"hosts": settings.OPENSEARCH_HOSTS}
+        if settings.OPENSEARCH_CA_CERTS:
+            kwargs["ca_certs"] = settings.OPENSEARCH_CA_CERTS
+        get_opensearch_client.cached_client = OpenSearch(**kwargs)
+    return get_opensearch_client.cached_client
 
 
 def create_index_if_not_exists():
     """Create ES indices if they don't exist."""
-    es = get_es_client()
+    es = get_opensearch_client()
 
     # Check if the index exists
     if not es.indices.exists(index=MESSAGE_INDEX):
         # Create the index with our mapping
-        es.indices.create(index=MESSAGE_INDEX, **MESSAGE_MAPPING)
-        logger.info("Created Elasticsearch index: %s", MESSAGE_INDEX)
+        es.indices.create(index=MESSAGE_INDEX, body=MESSAGE_MAPPING)
+        logger.info("Created OpenSearch index: %s", MESSAGE_INDEX)
     return True
 
 
 def delete_index():
     """Delete the messages index."""
-    es = get_es_client()
+    es = get_opensearch_client()
     try:
         es.indices.delete(index=MESSAGE_INDEX)
-        logger.info("Deleted Elasticsearch index: %s", MESSAGE_INDEX)
+        logger.info("Deleted OpenSearch index: %s", MESSAGE_INDEX)
         return True
     except NotFoundError:
         logger.warning("Index %s not found, nothing to delete", MESSAGE_INDEX)
@@ -52,7 +52,7 @@ def delete_index():
 
 def index_message(message: models.Message) -> bool:
     """Index a single message."""
-    es = get_es_client()
+    es = get_opensearch_client()
 
     # Parse message content if it has a blob
     parsed_data = {}
@@ -141,7 +141,7 @@ def index_message(message: models.Message) -> bool:
             index=MESSAGE_INDEX,
             id=str(message.id),
             routing=str(message.thread_id),  # Ensure parent-child routing
-            document=doc,
+            body=doc,
         )
         logger.debug("Indexed message %s", message.id)
         return True
@@ -153,7 +153,7 @@ def index_message(message: models.Message) -> bool:
 
 def index_thread(thread: models.Thread) -> bool:
     """Index a thread and all its messages."""
-    es = get_es_client()
+    es = get_opensearch_client()
 
     # Get mailbox IDs that have access to this thread
     mailbox_ids = list(thread.accesses.values_list("mailbox__id", flat=True))
@@ -169,7 +169,7 @@ def index_thread(thread: models.Thread) -> bool:
     try:
         # Index thread as parent document
         # pylint: disable=no-value-for-parameter
-        es.index(index=MESSAGE_INDEX, id=str(thread.id), document=thread_doc)
+        es.index(index=MESSAGE_INDEX, id=str(thread.id), body=thread_doc)
 
         # Index all messages in the thread
         messages = thread.messages.all()

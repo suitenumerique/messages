@@ -1137,26 +1137,15 @@ files = [
 Django = ">=2.2"
 
 [[package]]
-name = "elasticsearch"
-version = "7.17.12"
-description = "Python client for Elasticsearch"
+name = "events"
+version = "0.5"
+description = "Bringing the elegance of C# EventHandler to Python"
 optional = false
-python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,<4,>=2.7"
+python-versions = "*"
 groups = ["main"]
 files = [
-    {file = "elasticsearch-7.17.12-py2.py3-none-any.whl", hash = "sha256:468fd5eef703c0d9238e29bcaf3a6fe4d6b092f917959fbf41f48f8fea3df2f8"},
-    {file = "elasticsearch-7.17.12.tar.gz", hash = "sha256:a1f5733ae8cf1dbf0a78593389f2503c87dd97429976099832bf0626cdfaac8b"},
+    {file = "Events-0.5-py3-none-any.whl", hash = "sha256:a7286af378ba3e46640ac9825156c93bdba7502174dd696090fdfcd4d80a1abd"},
 ]
-
-[package.dependencies]
-certifi = "*"
-urllib3 = ">=1.21.1,<2"
-
-[package.extras]
-async = ["aiohttp (>=3,<4)"]
-develop = ["black", "coverage", "jinja2", "mock", "pytest", "pytest-cov", "pyyaml", "requests (>=2.0.0,<3.0.0)", "sphinx (<1.7)", "sphinx-rtd-theme"]
-docs = ["sphinx (<1.7)", "sphinx-rtd-theme"]
-requests = ["requests (>=2.4.0,<3.0.0)"]
 
 [[package]]
 name = "execnet"
@@ -1744,6 +1733,31 @@ groups = ["main"]
 files = [
     {file = "nested-multipart-parser-1.5.0.tar.gz", hash = "sha256:28039b6c8acd3d3aa17791f50773f23b7e28604503eec628e8e08932768f73a9"},
 ]
+
+[[package]]
+name = "opensearch-py"
+version = "2.8.0"
+description = "Python client for OpenSearch"
+optional = false
+python-versions = "<4,>=3.8"
+groups = ["main"]
+files = [
+    {file = "opensearch_py-2.8.0-py3-none-any.whl", hash = "sha256:52c60fdb5d4dcf6cce3ee746c13b194529b0161e0f41268b98ab8f1624abe2fa"},
+    {file = "opensearch_py-2.8.0.tar.gz", hash = "sha256:6598df0bc7a003294edd0ba88a331e0793acbb8c910c43edf398791e3b2eccda"},
+]
+
+[package.dependencies]
+certifi = ">=2024.07.04"
+Events = "*"
+python-dateutil = "*"
+requests = ">=2.32.0,<3.0.0"
+urllib3 = {version = ">=1.26.19,<2.2.0 || >2.2.0,<2.2.1 || >2.2.1,<3", markers = "python_version >= \"3.10\""}
+
+[package.extras]
+async = ["aiohttp (>=3.9.4,<4)"]
+develop = ["black (>=24.3.0)", "botocore", "coverage (<8.0.0)", "jinja2", "myst_parser", "pytest (>=3.0.0)", "pytest-cov", "pytest-mock (<4.0.0)", "pytz", "pyyaml", "requests (>=2.0.0,<3.0.0)", "sphinx", "sphinx_copybutton", "sphinx_rtd_theme"]
+docs = ["aiohttp (>=3.9.4,<4)", "myst_parser", "sphinx", "sphinx_copybutton", "sphinx_rtd_theme"]
+kerberos = ["requests_kerberos"]
 
 [[package]]
 name = "packageurl-python"
@@ -3254,4 +3268,4 @@ dev = ["django-extensions", "drf-spectacular-sidecar", "flower", "pip-audit", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0"
-content-hash = "3fa2bf0f3890f87e490f05c11727d6df7e9a123fdd7a9fc6311dd7193c7381dc"
+content-hash = "5a40bf3ae5cf50d86f5991c8eaab14c2bb9bffd31983db37d98e9b1b47f951b4"

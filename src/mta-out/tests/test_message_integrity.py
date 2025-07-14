@@ -13,6 +13,9 @@ original_msg = EmailMessage()
 original_msg["Subject"] = "Test Message Integrity - проверка"  # Include non-ASCII
 original_msg["From"] = "integrity-sender@example.com"
 original_msg["To"] = "recipient@mock-server.com"
+original_msg["Cc"] = "cc-recipient@mock-server.com"
+original_msg["Message-ID"] = "message-id@mock-server.com"
+original_msg["Date"] = "Mon, 14 Jul 2025 16:23:05 +0000"
 original_msg["X-Custom-Header"] = "KeepThisValue"
 original_msg.set_content("""This is the plain text body.
 With multiple lines.""")
@@ -25,7 +28,7 @@ original_msg.add_alternative(
 original_bytes = original_msg.as_bytes(policy=default_policy.clone(linesep="\r\n"))
 
 # Headers that Postfix might add and we should ignore during comparison
-HEADERS_TO_IGNORE = {"x-peer", "x-mailfrom", "x-rcptto"}
+HEADERS_TO_IGNORE = {}  # "x-peer", "x-mailfrom", "x-rcptto"}
 
 
 def test_mime_message_unmodified(smtp_client, mock_smtp_server):
@@ -90,9 +93,7 @@ def test_mime_message_unmodified(smtp_client, mock_smtp_server):
 
     # Check if all original headers are present and identical in the received message
     missing_headers = set(original_headers.keys()) - set(received_headers.keys())
-    assert not missing_headers, (
-        f"Missing headers in received message: {missing_headers}"
-    )
+    assert not missing_headers, f"Missing headers in received message: {missing_headers}"
 
     mismatched_headers = {}
     extra_headers = {}
@@ -113,6 +114,4 @@ def test_mime_message_unmodified(smtp_client, mock_smtp_server):
     # Direct byte comparison of the body
     assert original_bytes == received_bytes, "Raw message body differs"
 
-    logger.info(
-        "Message integrity test passed: Headers (excluding ignored) and body match."
-    )
+    logger.info("Message integrity test passed: Headers (excluding ignored) and body match.")

@@ -1,8 +1,9 @@
-import pytest
-import smtplib
-from email.mime.text import MIMEText
 import logging
+import smtplib
 import time
+from email.mime.text import MIMEText
+
+import pytest
 
 logger = logging.getLogger(__name__)
 
@@ -178,9 +179,7 @@ def test_check_recipients_timeout(mock_api_server, smtp_client):
     with pytest.raises(smtplib.SMTPRecipientsRefused) as excinfo:
         smtp_client.send_message(msg)
     # Temporary error
-    assert (
-        excinfo.value.recipients["check-recipients-timeout@example.com"][0] // 100 == 4
-    )
+    assert excinfo.value.recipients["check-recipients-timeout@example.com"][0] // 100 == 4
 
     # No email should be received
     time.sleep(1)  # Give some time for processing

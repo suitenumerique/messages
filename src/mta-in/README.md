@@ -2,7 +2,7 @@
 
 The MTA is in charge of receiving emails from the Internet and pushing them to the MDA and ultimately the users.
 
-It only deals with inbound email but it also may send bounces.
+It only deals with inbound email and won't even send bounces by itself.
 
 This MTA container is based on standard technologies such as Postfix with a custom Python milter, and is entirely stateless. It is entirely configurable from env vars.
 
@@ -15,10 +15,16 @@ After receiving an email through SMTP, it processes each message synchronously d
 
 This architecture ensures true synchronous delivery - delivery failures cause immediate SMTP session rejection, and successful deliveries prevent the message from entering the Postfix queue.
 
-These API calls are secured by a JWT token, using a shared secret `env.MDA_API_SECRET`.
+The API calls are secured by a JWT token, using a shared secret `env.MDA_API_SECRET`.
 
-To run the tests, use:
+To run the tests, go to the repository root and do:
 
 ```
-make test
+make mta-in-test
+```
+
+You should also run lint before commit:
+
+```
+make mta-in-lint
 ```

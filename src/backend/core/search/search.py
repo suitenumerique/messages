@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 from django.conf import settings
 
-from core.search.index import get_es_client
+from core.search.index import get_opensearch_client
 from core.search.mapping import MESSAGE_INDEX
 from core.search.parse import parse_search_query
 
@@ -36,13 +36,13 @@ def search_threads(
     Returns:
         Dictionary with thread search results: {"threads": [...], "total": int, "from": int, "size": int}
     """
-    # Check if Elasticsearch is enabled
-    if not getattr(settings, "ELASTICSEARCH_INDEX_THREADS", True):
-        logger.debug("Elasticsearch search is disabled, returning empty results")
+    # Check if OpenSearch is enabled
+    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", True):
+        logger.debug("OpenSearch search is disabled, returning empty results")
         return {"threads": [], "total": 0, "from": from_offset, "size": size}
 
     try:
-        es = get_es_client()
+        es = get_opensearch_client()
 
         # Parse the query for modifiers
         parsed_query = parse_search_query(query)
@@ -50,7 +50,7 @@ def search_threads(
         # Build the search query
         search_body = {
             "query": {"bool": {"must": [], "should": [], "filter": []}},
-            "from_": from_offset,
+            "from": from_offset,
             "size": size,
             "sort": [{"created_at": {"order": "desc"}}],
         }
@@ -189,7 +189,7 @@ def search_threads(
 
         # Execute search
         # pylint: disable=unexpected-keyword-arg
-        results = es.search(index=MESSAGE_INDEX, **search_body)
+        results = es.search(index=MESSAGE_INDEX, body=search_body)
 
         if profile:
             logger.debug("Search body: %s", json.dumps(search_body, indent=2))
@@ -209,7 +209,7 @@ def search_threads(
             ):
                 total = hits["total"]["value"]
             elif "total" in hits and isinstance(hits["total"], int):
-                # Handle older Elasticsearch versions
+                # Handle older OpenSearch versions
                 total = hits["total"]
 
             thread_ids = set()

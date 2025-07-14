@@ -354,8 +354,8 @@ class ThreadViewSet(
         """List threads with optional search functionality."""
         search_query = request.query_params.get("search", "").strip()
 
-        # If search is provided and Elasticsearch is available, use it
-        if search_query and hasattr(settings, "ELASTICSEARCH_HOSTS"):
+        # If search is provided and OpenSearch is available, use it
+        if search_query and len(settings.OPENSEARCH_HOSTS[0]) > 0:
             # Get the mailbox_id for filtering
             mailbox_id = request.query_params.get("mailbox_id")
 
@@ -373,7 +373,7 @@ class ThreadViewSet(
             page = int(self.paginator.get_page_number(request, self))
             page_size = int(self.paginator.get_page_size(request))
 
-            # Get search results from Elasticsearch
+            # Get search results from OpenSearch
             results = search_threads(
                 query=search_query,
                 mailbox_ids=[mailbox_id] if mailbox_id else None,
@@ -407,7 +407,7 @@ class ThreadViewSet(
             serializer = self.get_serializer(ordered_threads, many=True)
             return drf.response.Response(serializer.data)
 
-        # Fall back to regular DB query if no search query or Elasticsearch not available
+        # Fall back to regular DB query if no search query or OpenSearch not available
         return super().list(request, *args, **kwargs)
 
     # @extend_schema(

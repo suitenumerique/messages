@@ -25,8 +25,8 @@ from core.search import (
 
 @pytest.fixture(name="mock_es_client_search")
 def fixture_mock_es_client_search():
-    """Mock the Elasticsearch client."""
-    with mock.patch("core.search.search.get_es_client") as mock_get_es_client:
+    """Mock the OpenSearch client."""
+    with mock.patch("core.search.search.get_opensearch_client") as mock_get_opensearch_client:
         mock_es = mock.MagicMock()
         # Setup standard mock returns
         mock_es.indices.exists.return_value = False
@@ -36,15 +36,15 @@ def fixture_mock_es_client_search():
         # Setup search mock
         mock_es.search.return_value = {"hits": {"total": {"value": 0}, "hits": []}}
 
-        mock_get_es_client.return_value = mock_es
+        mock_get_opensearch_client.return_value = mock_es
         mock_es.reset_mock()
         yield mock_es
 
 
 @pytest.fixture(name="mock_es_client_index")
 def fixture_mock_es_client_index():
-    """Mock the Elasticsearch client."""
-    with mock.patch("core.search.index.get_es_client") as mock_get_es_client:
+    """Mock the OpenSearch client."""
+    with mock.patch("core.search.index.get_opensearch_client") as mock_get_opensearch_client:
         mock_es = mock.MagicMock()
         # Setup standard mock returns
         mock_es.indices.exists.return_value = False
@@ -54,7 +54,7 @@ def fixture_mock_es_client_index():
         # Setup search mock
         mock_es.search.return_value = {"hits": {"total": {"value": 0}, "hits": []}}
 
-        mock_get_es_client.return_value = mock_es
+        mock_get_opensearch_client.return_value = mock_es
         mock_es.reset_mock()
         yield mock_es
 
@@ -75,7 +75,7 @@ def fixture_test_mailbox():
 
 
 def test_create_index_if_not_exists(mock_es_client_index):
-    """Test creating the Elasticsearch index."""
+    """Test creating the OpenSearch index."""
     # Reset mock and configure
     mock_es_client_index.indices.exists.return_value = False
 
@@ -88,7 +88,7 @@ def test_create_index_if_not_exists(mock_es_client_index):
 
 
 def test_delete_index(mock_es_client_index):
-    """Test deleting the Elasticsearch index."""
+    """Test deleting the OpenSearch index."""
 
     # Call the function
     delete_index()
@@ -177,7 +177,7 @@ def test_search_threads_with_query(mock_es_client_search):
 
     # Find the mailbox filter in the query
     mailbox_filter_found = False
-    for filter_item in call_args["query"]["bool"]["filter"]:
+    for filter_item in call_args["body"]["query"]["bool"]["filter"]:
         if "terms" in filter_item and "mailbox_ids" in filter_item["terms"]:
             mailbox_filter_found = True
             assert filter_item["terms"]["mailbox_ids"] == ["mailbox-id"]
@@ -213,13 +213,13 @@ def test_search_threads_pagination(mock_es_client_search):
 
     # Verify pagination parameters were passed correctly
     call_args = mock_es_client_search.search.call_args[1]
-    assert call_args["from_"] == 10
-    assert call_args["size"] == 10
+    assert call_args["body"]["from"] == 10
+    assert call_args["body"]["size"] == 10
 
 
-@override_settings(ELASTICSEARCH_INDEX_THREADS=False)
+@override_settings(OPENSEARCH_INDEX_THREADS=False)
 def test_search_threads_disabled(mock_es_client_search):
-    """Test searching threads when Elasticsearch indexing is disabled."""
+    """Test searching threads when OpenSearch indexing is disabled."""
 
     # Call the function
     result = search_threads("test query")

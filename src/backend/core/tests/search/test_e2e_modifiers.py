@@ -21,26 +21,23 @@ from core.factories import (
     ThreadFactory,
     UserFactory,
 )
-from core.search import create_index_if_not_exists, delete_index, get_es_client
+from core.search import create_index_if_not_exists, delete_index, get_opensearch_client
 from core.search.mapping import MESSAGE_INDEX
 
 
-@pytest.fixture(name="setup_elasticsearch")
-def fixture_setup_elasticsearch():
-    """Setup Elasticsearch index for testing."""
-    try:
-        delete_index()
-        create_index_if_not_exists()
+@pytest.fixture(name="setup_search")
+def fixture_setup_search():
+    """Setup OpenSearch index for testing."""
 
-        # Check if Elasticsearch is actually available
-        es = get_es_client()
+    delete_index()
+    create_index_if_not_exists()
 
-        # pylint: disable=unexpected-keyword-arg
-        es.cluster.health(wait_for_status="yellow", timeout="10s")
-        yield
-    # pylint: disable=broad-exception-caught
-    except Exception as e:
-        pytest.skip(f"Elasticsearch is not available: {e}")
+    # Check if OpenSearch is actually available
+    es = get_opensearch_client()
+
+    # pylint: disable=unexpected-keyword-arg
+    es.cluster.health(wait_for_status="yellow", timeout=10)
+    yield
 
     # Teardown
     try:
@@ -87,7 +84,7 @@ def fixture_wait_for_indexing():
 
     def _wait(max_retries=10, delay=0.5):
         """Wait for indexing to complete by refreshing the index."""
-        es = get_es_client()
+        es = get_opensearch_client()
         for _ in range(max_retries):
             try:
                 es.indices.refresh(index=MESSAGE_INDEX)
@@ -356,15 +353,15 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 
 
 @pytest.mark.skipif(
-    "elasticsearch" not in settings.ELASTICSEARCH_HOSTS[0],
-    reason="Elasticsearch is not available",
+    len(settings.OPENSEARCH_HOSTS) == 0,
+    reason="OpenSearch is not configured",
 )
 @pytest.mark.django_db
 class TestSearchModifiersE2E:
     """End-to-end tests for Gmail-style search modifiers."""
 
     def test_basic_searches(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with empty query."""
 
@@ -397,7 +394,7 @@ class TestSearchModifiersE2E:
         assert len(response.data["results"]) == 0
 
     def test_from_search_modifier(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'from:' modifier."""
         # Test English version
@@ -427,7 +424,7 @@ class TestSearchModifiersE2E:
         assert str(test_threads["thread1"].id) in thread_ids
 
     def test_to_search_modifier(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'to:' modifier."""
 
@@ -450,7 +447,7 @@ class TestSearchModifiersE2E:
         assert str(test_threads["thread1"].id) in thread_ids
 
     def test_to_search_modifier_substring(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         # Test substring search
         response = api_client.get(f"{test_url}?search=to:@example.com")
@@ -466,7 +463,7 @@ class TestSearchModifiersE2E:
         assert len(response.data["results"]) == 0
 
     def test_cc_search_modifier(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'cc:' modifier."""
         # Test English version
@@ -488,7 +485,7 @@ class TestSearchModifiersE2E:
         assert str(test_threads["thread2"].id) in thread_ids
 
     def test_bcc_search_modifier(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'bcc:' modifier."""
         # Test English version
@@ -510,7 +507,7 @@ class TestSearchModifiersE2E:
         assert str(test_threads["thread2"].id) in thread_ids
 
     def test_subject_search_modifier(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'subject:' modifier."""
         # Test English version
@@ -532,7 +529,7 @@ class TestSearchModifiersE2E:
         assert str(test_threads["thread1"].id) in thread_ids
 
     def test_exact_phrase_search(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with quoted exact phrases."""
         response = api_client.get(f'{test_url}?search="positive feedback"')
@@ -552,7 +549,7 @@ class TestSearchModifiersE2E:
         assert len(response.data["results"]) == 0
 
     def test_in_trash_search_modifier(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'in:trash' modifier."""
         # Test English version
@@ -574,7 +571,7 @@ class TestSearchModifiersE2E:
         assert str(test_threads["thread4"].id) in thread_ids
 
     def test_in_sent_search_modifier(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'in:sent' modifier."""
         # Test English version
@@ -604,7 +601,7 @@ class TestSearchModifiersE2E:
         assert str(test_threads["thread9"].id) in thread_ids
 
     def test_in_draft_search_modifier(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'in:draft' modifier."""
         # Test English version
@@ -626,7 +623,7 @@ class TestSearchModifiersE2E:
         assert str(test_threads["thread3"].id) in thread_ids
 
     def test_is_starred_search_modifier(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'is:starred' modifier."""
         # Test English version
@@ -648,7 +645,7 @@ class TestSearchModifiersE2E:
         assert str(test_threads["thread5"].id) in thread_ids
 
     def test_is_read_search_modifier(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'is:read' modifier."""
         # Test English version
@@ -670,7 +667,7 @@ class TestSearchModifiersE2E:
         assert str(test_threads["thread5"].id) in thread_ids
 
     def test_is_unread_search_modifier(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'is:unread' modifier."""
         # Test English version
@@ -692,7 +689,7 @@ class TestSearchModifiersE2E:
         assert str(test_threads["thread6"].id) in thread_ids
 
     def test_multiple_modifiers_search(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with multiple modifiers."""
         # Combine from: and subject:
@@ -716,7 +713,7 @@ class TestSearchModifiersE2E:
         assert str(test_threads["thread6"].id) in thread_ids
 
     def test_combined_text_and_modifier_search(
-        self, setup_elasticsearch, api_client, test_url, test_threads
+        self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with both free text and modifiers."""
         # Search with text and from: modifier
