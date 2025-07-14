@@ -4,7 +4,6 @@ set -e
 
 if [ "${EXEC_CMD_ONLY:-false}" = "true" ]; then
     exec "$@"
-    exit $?
 fi
 
 echo "Configuring Postfix..."
@@ -62,15 +61,16 @@ cleanup() {
     echo "Shutting down..."
     kill $MILTER_PID 2>/dev/null || true
     kill $POSTFIX_PID 2>/dev/null || true
-    exit 0
 }
 
 # Trap signals to cleanup properly
 trap cleanup SIGTERM SIGINT
 
+CMD_STATUS=0
+
 # If env var EXEC_CMD is true, run the tests or another command
 if [ "${EXEC_CMD:-false}" = "true" ]; then
-    exec "$@"
+    "$@"
     exit $?
 fi
 
@@ -92,3 +92,5 @@ while true; do
     
     sleep 5
 done
+
+exit $CMD_STATUS

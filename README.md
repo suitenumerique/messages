@@ -138,7 +138,7 @@ When running the project, the following services are available:
 | **PostgreSQL** | 8912 | Database server | `user` / `pass` |
 | **Redis** | 8913 | Cache and message broker | No auth required |
 | **OpenSearch** | 8914 | Search engine | No auth required |
-| **OpenSearch** | 8915 | Performance analyzer | No auth required |
+| **OpenSearch PA** | 8915 | Performance analyzer | No auth required |
 
 
 ### OpenAPI client

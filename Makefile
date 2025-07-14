@@ -130,15 +130,15 @@ down: ## stop and remove containers, networks, images, and volumes
 	@$(COMPOSE) down
 .PHONY: down
 
-logs: ## display backend-dev logs (follow mode)
-	@$(COMPOSE) logs -f backend-dev
+logs: ## display all services logs (follow mode)
+	@$(COMPOSE) logs -f
 .PHONY: logs
 
-start: ## start full stack
+start: ## start all development services
 	@$(COMPOSE) up --force-recreate --build -d frontend-dev backend-dev celery-dev mta-in
 .PHONY: start
 
-start-minimal: ## start minimal stack: only backend, frontend, keycloak and DB
+start-minimal: ## start minimal services (backend, frontend, keycloak and DB)
 	@$(COMPOSE) up --force-recreate --build -d backend-db frontend-dev keycloak
 .PHONY: start-minimal
 
@@ -146,7 +146,7 @@ status: ## an alias for "docker compose ps"
 	@$(COMPOSE) ps
 .PHONY: status
 
-stop: ## stop the development server using Docker
+stop: ## stop all development services
 	@$(COMPOSE) stop
 .PHONY: stop
 

@@ -4,7 +4,6 @@ set -e
 
 if [ "${EXEC_CMD_ONLY:-false}" = "true" ]; then
     exec "$@"
-    exit $?
 fi
 
 echo "Configuring Postfix via Jinja2 template..."
@@ -93,12 +92,11 @@ postfix check -v || exit 1
 # If env var EXEC_CMD is true, run the tests or another command
 if [ "${EXEC_CMD:-false}" = "true" ]; then
 
-    # Start Postfix in the foreground (standard way)
-    #postfix start-fg -v &
+    # Start Postfix in background
     /usr/lib/postfix/sbin/master -c /etc/postfix -d &
     POSTFIX_PID=$!
 
-    exec "$@"
+    "$@"
     CMD_STATUS=$?
 
     # Kill Postfix
