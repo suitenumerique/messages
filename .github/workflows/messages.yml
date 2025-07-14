@@ -37,7 +37,7 @@ jobs:
       - name: Collect static files
         run: make collectstatic
       - name: Run backend tests
-        run: make test-back
+        run: make back-test
 
   test-front:
     runs-on: ubuntu-latest
@@ -99,7 +99,8 @@ jobs:
     secrets: inherit
     with:
       image_name: "${{ github.repository }}-mta-in"
-      context: "src/mta-in/postfix"
+      context: "src/mta-in"
+      target: runtime-prod
 
   docker-publish-mta-out:
     uses: ./.github/workflows/docker-publish.yml
@@ -111,4 +112,5 @@ jobs:
     secrets: inherit
     with:
       image_name: "${{ github.repository }}-mta-out"
-      context: "src/mta-out/postfix"
+      context: "src/mta-out"
+      target: runtime-prod
