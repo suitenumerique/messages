@@ -26,7 +26,9 @@ from core.search import (
 @pytest.fixture(name="mock_es_client_search")
 def fixture_mock_es_client_search():
     """Mock the OpenSearch client."""
-    with mock.patch("core.search.search.get_opensearch_client") as mock_get_opensearch_client:
+    with mock.patch(
+        "core.search.search.get_opensearch_client"
+    ) as mock_get_opensearch_client:
         mock_es = mock.MagicMock()
         # Setup standard mock returns
         mock_es.indices.exists.return_value = False
@@ -44,7 +46,9 @@ def fixture_mock_es_client_search():
 @pytest.fixture(name="mock_es_client_index")
 def fixture_mock_es_client_index():
     """Mock the OpenSearch client."""
-    with mock.patch("core.search.index.get_opensearch_client") as mock_get_opensearch_client:
+    with mock.patch(
+        "core.search.index.get_opensearch_client"
+    ) as mock_get_opensearch_client:
         mock_es = mock.MagicMock()
         # Setup standard mock returns
         mock_es.indices.exists.return_value = False

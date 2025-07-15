@@ -10,7 +10,9 @@ from core.search.search import search_threads
 @pytest.fixture(name="mock_es_client")
 def fixture_mock_es_client():
     """Mock the OpenSearch client."""
-    with mock.patch("core.search.search.get_opensearch_client") as mock_get_opensearch_client:
+    with mock.patch(
+        "core.search.search.get_opensearch_client"
+    ) as mock_get_opensearch_client:
         mock_es = mock.MagicMock()
         # Setup standard mock returns
         mock_es.indices.exists.return_value = False
@@ -115,9 +117,7 @@ def test_search_threads_with_multiple_modifiers(mock_es_client):
                 unread_filter_found = True
                 assert filter_item["term"]["is_unread"] is True
 
-    assert starred_filter_found, (
-        "Starred filter was not found in the OpenSearch query"
-    )
+    assert starred_filter_found, "Starred filter was not found in the OpenSearch query"
     assert unread_filter_found, "Unread filter was not found in the OpenSearch query"
 
 
