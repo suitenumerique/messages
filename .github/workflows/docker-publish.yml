@@ -11,7 +11,7 @@ on:
       image_name:
         type: string
         required: true
-        description: The full image name, without the registry.
+        description: The suffix for the image name, without the registry and without the repository path.
       context:
         type: string
         required: true
@@ -44,7 +44,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ inputs.registry }}/${{ inputs.image_name }}
+          images: ${{ inputs.registry }}/${{ github.repository }}-${{ inputs.image_name }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
       - name: Build and push Docker image
         id: push
         uses: docker/build-push-action@v6
@@ -57,6 +62,20 @@ jobs:
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ${{ inputs.registry }}/${{ inputs.image_name }}
+          subject-name: ${{ inputs.registry }}/${{ github.repository }}-${{ inputs.image_name }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+      - name: Delete all untagged container images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: messages-${{ inputs.image_name }}
+          package-type: 'container'
+          min-versions-to-keep: 0
+          delete-only-untagged-versions: 'true'
+      - name: Container images retention
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: messages-${{ inputs.image_name }}
+          package-type: 'container'
+          min-versions-to-keep: 30
+          ignore-versions: '^latest|main|(\\d+\\.\\d+(\\.\\d+)?)$'

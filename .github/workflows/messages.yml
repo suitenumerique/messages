@@ -102,7 +102,7 @@ jobs:
       id-token: write
     secrets: inherit
     with:
-      image_name: "${{ github.repository }}-mta-in"
+      image_name: "mta-in"
       context: "src/mta-in"
       target: runtime-prod
 
@@ -115,6 +115,6 @@ jobs:
       id-token: write
     secrets: inherit
     with:
-      image_name: "${{ github.repository }}-mta-out"
+      image_name: "mta-out"
       context: "src/mta-out"
       target: runtime-prod
