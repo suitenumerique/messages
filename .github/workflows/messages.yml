@@ -13,7 +13,7 @@ env:
 
 jobs:
 
-  lint-all:
+  lint-back:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -21,7 +21,11 @@ jobs:
       - name: Create env files
         run: make create-env-files
       - name: Run linting checks
-        run: make lint-check
+        run: |
+          make back-lint
+          make mta-in-lint
+          make mta-out-lint
+
 
   test-back:
     runs-on: ubuntu-latest
