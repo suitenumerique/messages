@@ -52,7 +52,7 @@ function AdminUserDataGrid({ domain }: AdminUserDataGridProps) {
         if (row.accesses?.length === 0) return t("admin_maildomains_details.datagrid_row_labels.no_accesses");
 
         return row.accesses?.map((access) => {
-          return access.user?.full_name || access.user?.short_name || t("admin_maildomains_details.datagrid_row_labels.unknown_user");
+          return access.user?.full_name || t("admin_maildomains_details.datagrid_row_labels.unknown_user");
         }).join(", ");
       },
     },

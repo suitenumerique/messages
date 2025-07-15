@@ -5,7 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { ThreadAccessRoleEnum } from "./thread_access_role_enum";
+import type { ThreadAccessRoleChoices } from "./thread_access_role_choices";
 
 /**
  * Serialize thread access information.
@@ -17,7 +17,7 @@ export interface ThreadAccess {
   thread: string;
   /** primary key for the record as UUID */
   mailbox: string;
-  role?: ThreadAccessRoleEnum;
+  role: ThreadAccessRoleChoices;
   /** date and time at which a record was created */
   readonly created_at: string;
   /** date and time at which a record was last updated */

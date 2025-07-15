@@ -22,6 +22,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  MailDomainAdmin,
   MailboxAdmin,
   MailboxAdminCreate,
   MailboxAdminCreatePayloadRequest,
@@ -1099,3 +1100,184 @@ export const useMaildomainsMailboxesDestroy = <
 
   return useMutation(mutationOptions, queryClient);
 };
+/**
+ * ViewSet for listing MailDomains the user administers.
+Provides a top-level entry for mail domain administration.
+Endpoint: /maildomains/
+ */
+export type maildomainsRetrieveResponse200 = {
+  data: MailDomainAdmin;
+  status: 200;
+};
+
+export type maildomainsRetrieveResponseComposite =
+  maildomainsRetrieveResponse200;
+
+export type maildomainsRetrieveResponse =
+  maildomainsRetrieveResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMaildomainsRetrieveUrl = (id: string) => {
+  return `/api/v1.0/maildomains/${id}/`;
+};
+
+export const maildomainsRetrieve = async (
+  id: string,
+  options?: RequestInit,
+): Promise<maildomainsRetrieveResponse> => {
+  return fetchAPI<maildomainsRetrieveResponse>(getMaildomainsRetrieveUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getMaildomainsRetrieveQueryKey = (id: string) => {
+  return [`/api/v1.0/maildomains/${id}/`] as const;
+};
+
+export const getMaildomainsRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getMaildomainsRetrieveQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof maildomainsRetrieve>>
+  > = ({ signal }) => maildomainsRetrieve(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof maildomainsRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MaildomainsRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsRetrieve>>
+>;
+export type MaildomainsRetrieveQueryError = unknown;
+
+export function useMaildomainsRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof maildomainsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof maildomainsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMaildomainsRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof maildomainsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof maildomainsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMaildomainsRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMaildomainsRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMaildomainsRetrieveQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}

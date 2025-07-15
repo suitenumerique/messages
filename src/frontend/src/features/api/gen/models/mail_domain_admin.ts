@@ -7,7 +7,7 @@
  */
 
 /**
- * Serialize MailDomain basic information for admin listing.
+ * Serialize mail domains for admin view.
  */
 export interface MailDomainAdmin {
   /** primary key for the record as UUID */
@@ -17,4 +17,5 @@ export interface MailDomainAdmin {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
+  readonly expected_dns_records: string;
 }

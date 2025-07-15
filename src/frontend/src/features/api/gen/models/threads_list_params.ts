@@ -12,6 +12,10 @@ export type ThreadsListParams = {
    */
   has_active?: number;
   /**
+   * Filter threads with attachments (1=true, 0=false).
+   */
+  has_attachments?: number;
+  /**
    * Filter threads with draft messages (1=true, 0=false).
    */
   has_draft?: number;

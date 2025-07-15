@@ -9,13 +9,13 @@ from rest_framework.exceptions import PermissionDenied
 from core import models
 
 
-class IntegerChoicesField(serializers.Field):
+class IntegerChoicesField(serializers.ChoiceField):
     """
     Custom field to handle IntegerChoices that accepts string labels for input
     and returns string labels for output.
 
     Example usage:
-        role = IntegerChoicesField(MailboxRoleChoices)
+        role = IntegerChoicesField(choices=MailboxRoleChoices)
 
     This field will:
     - Accept strings like "viewer", "editor", "admin" for input
@@ -26,15 +26,37 @@ class IntegerChoicesField(serializers.Field):
     """
 
     def __init__(self, choices_class, **kwargs):
-        self.choices_class = choices_class
-        super().__init__(**kwargs)
+        super().__init__(choices=choices_class.choices, **kwargs)
+        self._override_spectacular_annotation(choices_class)
 
+    def _override_spectacular_annotation(self, choices_class):
+        """
+        Override the OpenAPI annotation for the field.
+        This method has the same effect than `extend_schema_field` decorator.
+        We do that only to be able to use class attributes as choices that is not possible with the decorator.
+        https://drf-spectacular.readthedocs.io/en/latest/drf_spectacular.html#drf_spectacular.utils.extend_schema_field
+        """
+        self._spectacular_annotation = {
+            "field": {
+                "type": "string",
+                "enum": [label for _value, label in choices_class.choices],
+            },
+            "field_component_name": choices_class.__name__,
+        }
+
+    @extend_schema_field(
+        {
+            "type": "string",
+            "enum": None,  # This will be set dynamically
+            "description": "Choice field that accepts string labels and returns string labels",
+        }
+    )
     def to_representation(self, value):
         """Convert integer value to string label for output."""
         if value is None:
             return None
-        enum_instance = self.choices_class(value)
-        return enum_instance.label
+        enum_instance = self.choices[value]
+        return enum_instance
 
     def to_internal_value(self, data):
         """Convert string label to integer value for storage."""
@@ -44,14 +66,15 @@ class IntegerChoicesField(serializers.Field):
         # If it's already an integer (for backward compatibility), validate and return it
         if isinstance(data, int):
             try:
-                self.choices_class(data)  # Validate it's a valid choice
+                # Validate it's a valid choice
+                self.choices[data]  # pylint: disable=pointless-statement
                 return data
-            except ValueError:
+            except KeyError:
                 self.fail("invalid_choice", input=data)
 
         # Convert string label to integer value
         if isinstance(data, str):
-            for choice_value, choice_label in self.choices_class.choices:
+            for choice_value, choice_label in self.choices.items():
                 if choice_label == data:
                     return choice_value
             self.fail("invalid_choice", input=data)
@@ -67,7 +90,7 @@ class IntegerChoicesField(serializers.Field):
     def fail(self, key, **kwargs):
         """Override to provide better error messages."""
         if key == "invalid_choice":
-            valid_choices = [label for value, label in self.choices_class.choices]
+            valid_choices = [label for value, label in self.choices.items()]
             kwargs["choices"] = ", ".join(valid_choices)
         super().fail(key, **kwargs)
 
@@ -137,6 +160,7 @@ class MailboxSerializer(serializers.ModelSerializer):
         """Return the email of the mailbox."""
         return str(instance)
 
+    @extend_schema_field(IntegerChoicesField(choices_class=models.MailboxRoleChoices))
     def get_role(self, instance):
         """Return the allowed actions of the logged-in user on the instance."""
         request = self.context.get("request")
@@ -310,7 +334,9 @@ class ThreadAccessDetailSerializer(serializers.ModelSerializer):
     """Serializer for thread access details."""
 
     mailbox = MailboxLightSerializer()
-    role = IntegerChoicesField(models.ThreadAccessRoleChoices, read_only=True)
+    role = IntegerChoicesField(
+        choices_class=models.ThreadAccessRoleChoices, read_only=True
+    )
 
     class Meta:
         model = models.ThreadAccess
@@ -323,7 +349,7 @@ class ThreadSerializer(serializers.ModelSerializer):
 
     messages = serializers.SerializerMethodField(read_only=True)
     sender_names = serializers.ListField(child=serializers.CharField(), read_only=True)
-    user_role = serializers.SerializerMethodField()
+    user_role = serializers.SerializerMethodField(read_only=True)
     accesses = serializers.SerializerMethodField()
     labels = serializers.SerializerMethodField()
 
@@ -339,6 +365,9 @@ class ThreadSerializer(serializers.ModelSerializer):
         # Consider performance for large threads; pagination might be needed here?
         return [str(message.id) for message in instance.messages.order_by("created_at")]
 
+    @extend_schema_field(
+        IntegerChoicesField(choices_class=models.ThreadAccessRoleChoices)
+    )
     def get_user_role(self, instance):
         """Get current user's role for this thread."""
         request = self.context.get("request")
@@ -561,7 +590,7 @@ class MessageSerializer(serializers.ModelSerializer):
 class ThreadAccessSerializer(serializers.ModelSerializer):
     """Serialize thread access information."""
 
-    role = IntegerChoicesField(models.ThreadAccessRoleChoices)
+    role = IntegerChoicesField(choices_class=models.ThreadAccessRoleChoices)
 
     class Meta:
         model = models.ThreadAccess
@@ -575,7 +604,7 @@ class MailboxAccessReadSerializer(serializers.ModelSerializer):
     """
 
     user_details = UserSerializer(source="user", read_only=True, exclude_abilities=True)
-    role = IntegerChoicesField(models.MailboxRoleChoices, read_only=True)
+    role = IntegerChoicesField(choices_class=models.MailboxRoleChoices, read_only=True)
 
     class Meta:
         model = models.MailboxAccess
@@ -588,7 +617,7 @@ class MailboxAccessWriteSerializer(serializers.ModelSerializer):
     Mailbox is set from the view based on URL parameters.
     """
 
-    role = IntegerChoicesField(models.MailboxRoleChoices)
+    role = IntegerChoicesField(choices_class=models.MailboxRoleChoices)
 
     class Meta:
         model = models.MailboxAccess
@@ -634,7 +663,7 @@ class MailboxAccessNestedUserSerializer(serializers.ModelSerializer):
     """
 
     user = UserSerializer(read_only=True, exclude_abilities=True)
-    role = IntegerChoicesField(models.MailboxRoleChoices, read_only=True)
+    role = IntegerChoicesField(choices_class=models.MailboxRoleChoices, read_only=True)
 
     class Meta:
         model = models.MailboxAccess

@@ -5,7 +5,6 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { UserAbilities } from "./user_abilities";
 
 /**
  * Serialize users.
@@ -17,8 +16,4 @@ export interface User {
   readonly email: string | null;
   /** @nullable */
   readonly full_name: string | null;
-  /** @nullable */
-  readonly short_name: string | null;
-  /** Return abilities of the logged-in user on the mail domain. */
-  readonly abilities: UserAbilities;
 }

@@ -1,7 +1,7 @@
 import { ShareModal } from "@gouvfr-lasuite/ui-kit";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MailboxAccessNestedUser, MailboxAccessRoleEnum, MailboxAdmin, useMailboxesAccessesCreate, useMailboxesAccessesDestroy, useMailboxesAccessesUpdate, useMaildomainsUsersList, User } from "@/features/api/gen";
+import { MailboxAccessNestedUser, MailboxRoleChoices, MailboxAdmin, useMailboxesAccessesCreate, useMailboxesAccessesDestroy, useMailboxesAccessesUpdate, useMaildomainsUsersList, User } from "@/features/api/gen";
 
 type ModalMailboxManageAccessesProps = {
     domainId: string;
@@ -17,7 +17,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
     const { mutate: createMailboxAccess } = useMailboxesAccessesCreate({ mutation: { onSuccess: onAccessChange } });
     const { mutate: updateMailboxAccess } = useMailboxesAccessesUpdate({ mutation: { onSuccess: onAccessChange } });
     const { mutate: deleteMailboxAccess } = useMailboxesAccessesDestroy({ mutation: { onSuccess: onAccessChange } });
-    const mailbox_write_roles: MailboxAccessRoleEnum[] = [MailboxAccessRoleEnum.admin, MailboxAccessRoleEnum.editor];
+    const mailbox_write_roles: MailboxRoleChoices[] = [MailboxRoleChoices.admin, MailboxRoleChoices.editor];
     const hasOnlyOneEditor = (mailbox?.accesses || []).filter((a) => mailbox_write_roles.includes(a.role)).length === 1;
     const searchUsersQuery = useMaildomainsUsersList(domainId, { q: searchQuery });
 
@@ -25,7 +25,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
         return {
             ...user,
             email: user.email || user.id,
-            full_name: user.full_name || user.short_name || ""
+            full_name: user.full_name || ""
         }
     };
     const searchResults = searchUsersQuery.data?.data.filter((result) => !(mailbox?.accesses||[]).some(access => access.user.id === result.id)).map(getAccessUser) ?? [];
@@ -42,7 +42,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
                 mailboxId: mailbox!.id,
                 data: {
                     user: userId,
-                    role: role as MailboxAccessRoleEnum,
+                    role: role as MailboxRoleChoices,
                 }
             });
         });
@@ -53,7 +53,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
             id: access.id,
             data: {
                 user: access.user.id,
-                role: role as MailboxAccessRoleEnum,
+                role: role as MailboxRoleChoices,
             }
         });
     }
@@ -66,11 +66,11 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
     }
 
 
-    const accessRoleOptions = (isDisabled?: boolean) => Object.values(MailboxAccessRoleEnum).map((role) => {
+    const accessRoleOptions = (isDisabled?: boolean) => Object.values(MailboxRoleChoices).map((role) => {
         return {
             label: t(`manage_accesses_modal.roles.${role}`),
             value: role,
-            isDisabled: isDisabled ?? (hasOnlyOneEditor && role !== MailboxAccessRoleEnum.editor),
+            isDisabled: isDisabled ?? (hasOnlyOneEditor && role !== MailboxRoleChoices.editor),
         }
     });
 

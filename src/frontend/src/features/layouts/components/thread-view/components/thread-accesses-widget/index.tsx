@@ -1,7 +1,7 @@
 import { Button, Tooltip } from "@openfun/cunningham-react"
 import { ShareModal } from "@gouvfr-lasuite/ui-kit"
 import { useState } from "react";
-import { ThreadAccessRoleEnum, ThreadAccessDetail, MailboxLight } from "@/features/api/gen/models";
+import { ThreadAccessRoleChoices, ThreadAccessDetail, MailboxLight } from "@/features/api/gen/models";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useTranslation } from "react-i18next";
 import { useMailboxesSearchList, useThreadsAccessesCreate, useThreadsAccessesDestroy, useThreadsAccessesUpdate } from "@/features/api/gen";
@@ -46,8 +46,8 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
 
     const searchResults = searchMailboxesQuery.data?.data.filter((mailbox) => !accesses.some(a => a.mailbox.id === mailbox.id)).map(getAccessUser) ?? [];
     const normalizedAccesses = accesses.map((access) => ({ ...access, user: getAccessUser(access.mailbox) }));
-    const hasOnlyOneEditor = accesses.filter((a) => a.role === ThreadAccessRoleEnum.editor).length === 1;
-    const isEditor = accesses.some((a) => a.role === ThreadAccessRoleEnum.editor && a.mailbox.id === selectedMailbox!.id);
+    const hasOnlyOneEditor = accesses.filter((a) => a.role === ThreadAccessRoleChoices.editor).length === 1;
+    const isEditor = accesses.some((a) => a.role === ThreadAccessRoleChoices.editor && a.mailbox.id === selectedMailbox!.id);
 
     const handleCreateAccesses = (mailboxes: MailboxLight[], role: string) => {
         const mailboxIds = [...new Set(mailboxes.map((m) => m.id))];
@@ -57,7 +57,7 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
                 data: {
                     thread: selectedThread!.id,
                     mailbox: mailboxId,
-                    role: role as ThreadAccessRoleEnum,
+                    role: role as ThreadAccessRoleChoices,
                 }
             });
         });
@@ -70,14 +70,14 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
             data: {
                 thread: selectedThread!.id,
                 mailbox: access.mailbox.id,
-                role: role as ThreadAccessRoleEnum,
+                role: role as ThreadAccessRoleChoices,
             }
         });
     }
 
     const handleDeleteAccess = (access: ThreadAccessDetail) => {
         // TODO : Update Share Modal to hide the remove button if there is only one editor
-        if (hasOnlyOneEditor && access.role === ThreadAccessRoleEnum.editor) {
+        if (hasOnlyOneEditor && access.role === ThreadAccessRoleChoices.editor) {
             addToast(<ToasterItem type="error">
                 <p>{t('thread_accesses_widget.last_editor_deletion_forbidden')}</p>
             </ToasterItem>, {
@@ -98,11 +98,11 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
         });
     }
 
-    const accessRoleOptions = (isDisabled?: boolean) => Object.values(ThreadAccessRoleEnum).map((role) => {
+    const accessRoleOptions = (isDisabled?: boolean) => Object.values(ThreadAccessRoleChoices).map((role) => {
         return {
             label: t(`roles.${role}`),
             value: role,
-            isDisabled: isDisabled ?? (hasOnlyOneEditor && role !== ThreadAccessRoleEnum.editor),
+            isDisabled: isDisabled ?? (hasOnlyOneEditor && role !== ThreadAccessRoleChoices.editor),
         }
     });
 
@@ -137,7 +137,7 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
                 searchUsersResult={searchResults}
                 accesses={normalizedAccesses}
                 accessRoleTopMessage={(access) => {
-                    if (hasOnlyOneEditor && access.role === ThreadAccessRoleEnum.editor) {
+                    if (hasOnlyOneEditor && access.role === ThreadAccessRoleChoices.editor) {
                         return t('thread_accesses_widget.last_editor_role_top_message');
                     }
                 }}

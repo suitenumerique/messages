@@ -6,17 +6,11 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-/**
- * * `viewer` - Viewer
- * `editor` - Editor
- * `admin` - Admin
- */
-export type MailboxAccessRoleEnum =
-  (typeof MailboxAccessRoleEnum)[keyof typeof MailboxAccessRoleEnum];
+export type ThreadAccessRoleChoices =
+  (typeof ThreadAccessRoleChoices)[keyof typeof ThreadAccessRoleChoices];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
-export const MailboxAccessRoleEnum = {
+export const ThreadAccessRoleChoices = {
   viewer: "viewer",
   editor: "editor",
-  admin: "admin",
 } as const;
