@@ -423,7 +423,8 @@ front-shell: ## open a shell in the frontend container
 
 # Front
 front-install: ## install the frontend locally
-	@$(COMPOSE) run --rm frontend-tools npm install
+	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
+	$(COMPOSE) run --rm frontend-tools npm install $${args:-${1}}
 .PHONY: front-install
 
 front-install-frozen: ## install the frontend locally, following the frozen lockfile
