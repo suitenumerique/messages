@@ -127,7 +127,7 @@
         "/api/v1.0/config/": {
             "get": {
                 "operationId": "config_retrieve",
-                "description": "GET /api/v1.0/config/\n    Return a dictionary of public settings.",
+                "description": "Return a dictionary of public settings for the frontend to consume.",
                 "tags": [
                     "config"
                 ],
@@ -139,7 +139,48 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "No response body"
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ENVIRONMENT": {
+                                            "type": "string",
+                                            "readOnly": true
+                                        },
+                                        "POSTHOG_KEY": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "readOnly": true
+                                        },
+                                        "POSTHOG_HOST": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "readOnly": true
+                                        },
+                                        "LANGUAGES": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            },
+                                            "readOnly": true
+                                        },
+                                        "LANGUAGE_CODE": {
+                                            "type": "string",
+                                            "readOnly": true
+                                        }
+                                    },
+                                    "required": [
+                                        "ENVIRONMENT",
+                                        "POSTHOG_KEY",
+                                        "POSTHOG_HOST",
+                                        "LANGUAGES",
+                                        "LANGUAGE_CODE"
+                                    ]
+                                }
+                            }
+                        },
+                        "description": "A dictionary of public configuration settings."
                     }
                 }
             }

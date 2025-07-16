@@ -4,6 +4,7 @@ from django.conf import settings
 
 import rest_framework as drf
 from rest_framework.permissions import AllowAny
+from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 
 class ConfigView(drf.views.APIView):
@@ -11,6 +12,32 @@ class ConfigView(drf.views.APIView):
 
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        tags=["config"],
+        responses={
+            200: OpenApiResponse(
+                description="A dictionary of public configuration settings.",
+                response={
+                    "type": "object",
+                    "properties": {
+                        "ENVIRONMENT": { "type": "string", "readOnly": True },
+                        "POSTHOG_KEY": { "type": "string", "nullable": True, "readOnly": True },
+                        "POSTHOG_HOST": { "type": "string", "nullable": True, "readOnly": True },
+                        "LANGUAGES": { "type": "array", "items": { "type": "string" }, "readOnly": True },
+                        "LANGUAGE_CODE": { "type": "string", "readOnly": True },
+                    },
+                    "required": [
+                        "ENVIRONMENT",
+                        "POSTHOG_KEY",
+                        "POSTHOG_HOST",
+                        "LANGUAGES",
+                        "LANGUAGE_CODE"
+                    ]
+                },
+            )
+        },
+        description="Return a dictionary of public settings for the frontend to consume.",
+    )
     def get(self, request):
         """
         GET /api/v1.0/config/
@@ -18,12 +45,10 @@ class ConfigView(drf.views.APIView):
         """
         array_settings = [
             "ENVIRONMENT",
-            "FRONTEND_THEME",
-            "MEDIA_BASE_URL",
             "POSTHOG_KEY",
+            "POSTHOG_HOST",
             "LANGUAGES",
-            "LANGUAGE_CODE",
-            "SENTRY_DSN",
+            "LANGUAGE_CODE"
         ]
         dict_settings = {}
         for setting in array_settings:

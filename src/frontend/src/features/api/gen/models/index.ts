@@ -10,6 +10,7 @@ export * from "./attachment";
 export * from "./blob_upload_create201";
 export * from "./blob_upload_create_body";
 export * from "./change_flag_request_request";
+export * from "./config_retrieve200";
 export * from "./contact";
 export * from "./contacts_list_params";
 export * from "./draft_create2400";

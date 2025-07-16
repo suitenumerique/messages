@@ -18,16 +18,17 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
+import type { ConfigRetrieve200 } from ".././models";
+
 import { fetchAPI } from "../../fetch-api";
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
- * GET /api/v1.0/config/
-    Return a dictionary of public settings.
+ * Return a dictionary of public settings for the frontend to consume.
  */
 export type configRetrieveResponse200 = {
-  data: void;
+  data: ConfigRetrieve200;
   status: 200;
 };
 
