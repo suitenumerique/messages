@@ -4,7 +4,7 @@ FROM python:3.13.5-slim-bookworm AS base
 # Bump this to force an update of the apt repositories
 ENV MIN_UPDATE_DATE="2025-07-14"
 
-RUN apt-get update && apt-get upgrade \
+RUN apt-get update && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONUNBUFFERED=1

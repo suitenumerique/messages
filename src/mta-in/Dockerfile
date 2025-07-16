@@ -6,7 +6,7 @@ ENV MIN_UPDATE_DATE="2025-07-14"
 
 WORKDIR /app
 
-RUN apt-get update && apt-get upgrade && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ca-certificates \
     postfix \
     postfix-pcre \
