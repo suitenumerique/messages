@@ -113,47 +113,17 @@ class Command(BaseCommand):
             if provider_used:
                 self.stdout.write(f"Provider used: {provider_used}")
 
-            if results["created"]:
+            if results["changes"]:
                 if pretend:
-                    self.stdout.write(
-                        f"Would create {len(results['created'])} records:"
-                    )
+                    self.stdout.write("Would make these changes:")
                 else:
-                    self.stdout.write(f"Created {len(results['created'])} records:")
-                for record in results["created"]:
-                    self.stdout.write(
-                        f"  - {record['type']} record for {record['name']}: {record['value']}"
-                    )
+                    self.stdout.write("Made these changes:")
+                for change in results["changes"]:
+                    self.stdout.write(f"  - {change}")
 
-            if results["updated"]:
-                if pretend:
-                    self.stdout.write(
-                        f"Would update {len(results['updated'])} records:"
-                    )
-                else:
-                    self.stdout.write(f"Updated {len(results['updated'])} records:")
-                for record in results["updated"]:
-                    self.stdout.write(
-                        f"  - {record['type']} record for {record['name']}"
-                    )
-                    self.stdout.write(f"    Old: {record['old_value']}")
-                    self.stdout.write(f"    New: {record['new_value']}")
-
-            if results["errors"]:
-                self.stdout.write(
-                    self.style.WARNING(f"Errors ({len(results['errors'])}):")
-                )
-                for error in results["errors"]:
-                    self.stdout.write(
-                        f"  - {error['type']} record for {error['name']}: {error['error']}"
-                    )
         elif pretend:
             self.stdout.write(
-                self.style.ERROR(
-                    f"✗ DNS provisioning simulation failed: {results['error']}"
-                )
+                self.style.ERROR(f"✗ DNS provisioning simulation failed: {results}")
             )
         else:
-            self.stdout.write(
-                self.style.ERROR(f"✗ DNS provisioning failed: {results['error']}")
-            )
+            self.stdout.write(self.style.ERROR(f"✗ DNS provisioning failed: {results}"))

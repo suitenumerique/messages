@@ -48,6 +48,8 @@ env.d/terraform
 node_modules
 src/frontend/out/
 tsconfig.tsbuildinfo
+src/frontend/.config
+src/frontend/.next
 
 # Mails
 src/backend/core/templates/mail/

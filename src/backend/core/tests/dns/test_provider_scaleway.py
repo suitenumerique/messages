@@ -2,7 +2,7 @@
 Tests for Scaleway DNS provider functionality.
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.test.utils import override_settings
 
@@ -61,159 +61,16 @@ class TestScalewayDNSProvider:
         DNS_SCALEWAY_PROJECT_ID="test-project",
         DNS_SCALEWAY_TTL=600,
     )
-    def test_scaleway_provider_resolve_zone_components_root_domain(self):
-        """Test that _resolve_zone_components handles root domains correctly."""
-        provider = ScalewayDNSProvider()
-
-        with patch.object(provider, "get_zones") as mock_get_zones:
-            mock_get_zones.return_value = []
-
-            parent_domain, subdomain = provider._resolve_zone_components("example.com")
-            assert parent_domain == "example.com"
-            assert subdomain == ""
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_resolve_zone_components_subdomain_no_parent(self):
-        """Test that _resolve_zone_components handles subdomains when no parent exists."""
-        provider = ScalewayDNSProvider()
-
-        with patch.object(provider, "get_zones") as mock_get_zones:
-            mock_get_zones.return_value = []
-
-            parent_domain, subdomain = provider._resolve_zone_components(
-                "mail.example.com"
-            )
-            assert parent_domain == "example.com"
-            assert subdomain == "mail"
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_resolve_zone_components_subdomain_with_parent(self):
-        """Test that _resolve_zone_components finds existing parent zone."""
-        provider = ScalewayDNSProvider()
-
-        with patch.object(provider, "get_zones") as mock_get_zones:
-            # Mock existing zones - example.com exists as a root domain
-            mock_get_zones.return_value = [
-                {"domain": "example.com", "subdomain": ""},
-            ]
-
-            parent_domain, subdomain = provider._resolve_zone_components(
-                "mail.example.com"
-            )
-            assert parent_domain == "example.com"
-            assert subdomain == "mail"
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_resolve_zone_components_nested_subdomain_with_parent(
-        self,
-    ):
-        """Test that _resolve_zone_components finds existing parent zone for nested subdomain."""
-        provider = ScalewayDNSProvider()
-
-        with patch.object(provider, "get_zones") as mock_get_zones:
-            # Mock existing zones - mail.example.com exists as a subdomain
-            mock_get_zones.return_value = [
-                {"domain": "example.com", "subdomain": "mail"},
-            ]
-
-            parent_domain, subdomain = provider._resolve_zone_components(
-                "smtp.mail.example.com"
-            )
-            assert parent_domain == "example.com"
-            assert subdomain == "smtp"
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_resolve_zone_components_deep_nested_subdomain(self):
-        """Test that _resolve_zone_components handles deeply nested subdomains."""
-        provider = ScalewayDNSProvider()
-
-        with patch.object(provider, "get_zones") as mock_get_zones:
-            # Mock existing zones - example.com exists as a root domain
-            mock_get_zones.return_value = [
-                {"domain": "example.com", "subdomain": ""},
-            ]
-
-            parent_domain, subdomain = provider._resolve_zone_components(
-                "smtp.mail.example.com"
-            )
-            assert parent_domain == "example.com"
-            assert subdomain == "smtp.mail"
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_resolve_zone_components_multiple_potential_parents(self):
-        """Test that _resolve_zone_components finds the closest existing parent."""
-        provider = ScalewayDNSProvider()
-
-        with patch.object(provider, "get_zones") as mock_get_zones:
-            # Mock existing zones - both example.com and mail.example.com exist
-            mock_get_zones.return_value = [
-                {"domain": "example.com", "subdomain": ""},
-                {"domain": "example.com", "subdomain": "mail"},
-            ]
-
-            # Should find mail.example.com as the closest parent
-            parent_domain, subdomain = provider._resolve_zone_components(
-                "smtp.mail.example.com"
-            )
-            assert parent_domain == "example.com"
-            assert subdomain == "smtp"
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_resolve_zone_components_no_parent_found(self):
-        """Test that _resolve_zone_components creates new zone when no parent exists."""
-        provider = ScalewayDNSProvider()
-
-        with patch.object(provider, "get_zones") as mock_get_zones:
-            # Mock existing zones - no relevant parent exists
-            mock_get_zones.return_value = [
-                {"domain": "other.com", "subdomain": ""},
-            ]
-
-            parent_domain, subdomain = provider._resolve_zone_components(
-                "mail.example.com"
-            )
-            assert parent_domain == "example.com"
-            assert subdomain == "mail"
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
     def test_scaleway_provider_create_zone_root_domain(self):
         """Test that create_zone handles root domains correctly."""
         provider = ScalewayDNSProvider()
 
         with (
             patch.object(provider, "_make_request") as mock_request,
-            patch.object(provider, "get_zones") as mock_get_zones,
+            patch.object(provider, "zone_exists") as mock_zone_exists,
         ):
-            mock_request.return_value = {"dns_zone": {"domain": "example.com"}}
-            mock_get_zones.return_value = []
+            mock_request.return_value = {"domain": "example.com"}
+            mock_zone_exists.return_value = False
 
             provider.create_zone("example.com")
 
@@ -236,10 +93,11 @@ class TestScalewayDNSProvider:
 
         with (
             patch.object(provider, "_make_request") as mock_request,
-            patch.object(provider, "get_zones") as mock_get_zones,
+            patch.object(provider, "zone_exists") as mock_zone_exists,
         ):
-            mock_request.return_value = {"dns_zone": {"domain": "example.com"}}
-            mock_get_zones.return_value = []
+            mock_request.return_value = {"domain": "example.com"}
+            # Parent zone exists, subdomain doesn't
+            mock_zone_exists.side_effect = lambda domain: domain == "example.com"
 
             provider.create_zone("mail.example.com")
 
@@ -256,262 +114,20 @@ class TestScalewayDNSProvider:
         DNS_SCALEWAY_PROJECT_ID="test-project",
         DNS_SCALEWAY_TTL=600,
     )
-    def test_scaleway_provider_create_zone_subdomain_with_existing_parent(self):
-        """Test that create_zone creates sub-zone when parent exists."""
+    def test_scaleway_provider_create_zone_existing_zone(self):
+        """Test that create_zone does nothing when zone already exists."""
         provider = ScalewayDNSProvider()
 
         with (
             patch.object(provider, "_make_request") as mock_request,
-            patch.object(provider, "get_zones") as mock_get_zones,
+            patch.object(provider, "zone_exists") as mock_zone_exists,
         ):
-            mock_request.return_value = {"dns_zone": {"domain": "example.com"}}
-            # Mock existing parent zone
-            mock_get_zones.return_value = [
-                {"domain": "example.com", "subdomain": ""},
-            ]
+            mock_zone_exists.return_value = True
 
-            provider.create_zone("mail.example.com")
+            provider.create_zone("example.com")
 
-            # Should still create sub-zone under existing parent
-            call_args = mock_request.call_args
-            assert call_args[0][0] == "POST"  # HTTP method
-            assert call_args[0][1] == "dns-zones"  # endpoint
-            assert call_args[0][2]["domain"] == "example.com"
-            assert call_args[0][2]["subdomain"] == "mail"
-            assert call_args[0][2]["project_id"] == "test-project"
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_get_zone_name(self):
-        """Test that _get_zone_name returns the correct zone name for API calls."""
-        provider = ScalewayDNSProvider()
-
-        with patch.object(provider, "get_zone") as mock_get_zone:
-            mock_get_zone.return_value = None
-
-            # Should return the full domain name for API calls
-            assert provider._get_zone_name("example.com") == "example.com"
-            assert provider._get_zone_name("mail.example.com") == "mail.example.com"
-            assert (
-                provider._get_zone_name("smtp.mail.example.com")
-                == "smtp.mail.example.com"
-            )
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_format_record_name(self):
-        """Test that _format_record_name formats record names correctly."""
-        provider = ScalewayDNSProvider()
-
-        # Test root domain record
-        assert provider._format_record_name("example.com", "example.com") == ""
-
-        # Test subdomain record
-        assert provider._format_record_name("test.example.com", "example.com") == "test"
-
-        # Test short name
-        assert provider._format_record_name("test", "example.com") == "test"
-
-        # Test empty name
-        assert provider._format_record_name("", "example.com") == ""
-        assert provider._format_record_name(None, "example.com") == ""
-
-        # Test edge cases
-        assert provider._format_record_name("www.example.com", "example.com") == "www"
-        assert provider._format_record_name("mail.example.com", "example.com") == "mail"
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_create_record_with_default_ttl(self):
-        """Test that create_record uses default TTL when not specified."""
-        provider = ScalewayDNSProvider()
-
-        with (
-            patch.object(provider, "_make_request") as mock_request,
-            patch.object(provider, "_validate_zone_exists") as mock_validate,
-        ):
-            mock_request.return_value = {"records": [{"id": "test-record"}]}
-            mock_validate.return_value = True
-
-            provider.create_record(
-                "example.com", "test.example.com", "A", "192.168.1.1"
-            )
-
-            # Verify TTL was passed correctly and record name is formatted
-            call_args = mock_request.call_args
-            assert call_args[0][0] == "PATCH"  # HTTP method
-            assert call_args[0][1] == "dns-zones/example.com/records"  # endpoint
-            assert call_args[0][2]["return_all_records"] is False
-            assert call_args[0][2]["changes"][0]["add"]["records"][0]["name"] == "test"
-            assert call_args[0][2]["changes"][0]["add"]["records"][0]["ttl"] == 600
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_create_record_with_custom_ttl(self):
-        """Test that create_record uses custom TTL when specified."""
-        provider = ScalewayDNSProvider()
-
-        with (
-            patch.object(provider, "_make_request") as mock_request,
-            patch.object(provider, "_validate_zone_exists") as mock_validate,
-        ):
-            mock_request.return_value = {"records": [{"id": "test-record"}]}
-            mock_validate.return_value = True
-
-            provider.create_record(
-                "example.com", "test.example.com", "A", "192.168.1.1", ttl=300
-            )
-
-            # Verify custom TTL was passed correctly
-            call_args = mock_request.call_args
-            assert call_args[0][0] == "PATCH"  # HTTP method
-            assert call_args[0][1] == "dns-zones/example.com/records"  # endpoint
-            assert call_args[0][2]["return_all_records"] is False
-            assert call_args[0][2]["changes"][0]["add"]["records"][0]["name"] == "test"
-            assert call_args[0][2]["changes"][0]["add"]["records"][0]["ttl"] == 300
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_create_record_root_domain(self):
-        """Test that create_record handles root domain records correctly."""
-        provider = ScalewayDNSProvider()
-
-        with (
-            patch.object(provider, "_make_request") as mock_request,
-            patch.object(provider, "_validate_zone_exists") as mock_validate,
-        ):
-            mock_request.return_value = {"records": [{"id": "test-record"}]}
-            mock_validate.return_value = True
-
-            provider.create_record("example.com", "example.com", "A", "192.168.1.1")
-
-            # Verify root domain record has empty name
-            call_args = mock_request.call_args
-            assert call_args[0][2]["changes"][0]["add"]["records"][0]["name"] == ""
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_update_record(self):
-        """Test that update_record uses the correct API structure."""
-        provider = ScalewayDNSProvider()
-
-        with (
-            patch.object(provider, "_make_request") as mock_request,
-            patch.object(provider, "_validate_zone_exists") as mock_validate,
-        ):
-            mock_request.return_value = {"records": [{"id": "updated-record"}]}
-            mock_validate.return_value = True
-
-            provider.update_record(
-                "example.com",
-                "record-id",
-                "test.example.com",
-                "A",
-                "192.168.1.2",
-                ttl=300,
-            )
-
-            # Verify the correct API structure with formatted record name
-            call_args = mock_request.call_args
-            assert call_args[0][0] == "PATCH"  # HTTP method
-            assert call_args[0][1] == "dns-zones/example.com/records"  # endpoint
-            assert call_args[0][2]["return_all_records"] is False
-            assert call_args[0][2]["changes"][0]["set"]["id_fields"]["name"] == "test"
-            assert call_args[0][2]["changes"][0]["set"]["id_fields"]["type"] == "A"
-            assert call_args[0][2]["changes"][0]["set"]["records"][0]["name"] == "test"
-            assert call_args[0][2]["changes"][0]["set"]["records"][0]["ttl"] == 300
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_delete_record_by_name_type(self):
-        """Test that delete_record_by_name_type uses the correct API structure."""
-        provider = ScalewayDNSProvider()
-
-        with (
-            patch.object(provider, "_make_request") as mock_request,
-            patch.object(provider, "_validate_zone_exists") as mock_validate,
-        ):
-            mock_request.return_value = {}
-            mock_validate.return_value = True
-
-            provider.delete_record_by_name_type("example.com", "test.example.com", "A")
-
-            # Verify the correct API structure with formatted record name
-            call_args = mock_request.call_args
-            assert call_args[0][0] == "PATCH"  # HTTP method
-            assert call_args[0][1] == "dns-zones/example.com/records"  # endpoint
-            assert call_args[0][2]["return_all_records"] is False
-            assert (
-                call_args[0][2]["changes"][0]["delete"]["id_fields"]["name"] == "test"
-            )
-            assert call_args[0][2]["changes"][0]["delete"]["id_fields"]["type"] == "A"
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_find_records(self):
-        """Test that find_records uses formatted record names."""
-        provider = ScalewayDNSProvider()
-
-        with patch.object(provider, "get_records") as mock_get_records:
-            mock_get_records.return_value = [
-                {"name": "test", "type": "A", "data": "192.168.1.1"},
-                {"name": "other", "type": "A", "data": "192.168.1.2"},
-            ]
-
-            records = provider.find_records("example.com", "test.example.com", "A")
-
-            # Should find the record with formatted name
-            assert len(records) == 1
-            assert records[0]["name"] == "test"
-            assert records[0]["type"] == "A"
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_record_exists(self):
-        """Test that record_exists uses formatted record names."""
-        provider = ScalewayDNSProvider()
-
-        with patch.object(provider, "find_records") as mock_find_records:
-            mock_find_records.return_value = [
-                {"name": "test", "type": "A", "data": "192.168.1.1"},
-            ]
-
-            exists = provider.record_exists(
-                "example.com", "test.example.com", "A", "192.168.1.1"
-            )
-
-            assert exists is True
-            # Verify that find_records was called with formatted name
-            mock_find_records.assert_called_once_with(
-                "example.com", "test.example.com", "A"
-            )
+            # Verify no request was made
+            mock_request.assert_not_called()
 
     @override_settings(
         DNS_SCALEWAY_API_TOKEN="test-token",
@@ -556,113 +172,38 @@ class TestScalewayDNSProvider:
         DNS_SCALEWAY_PROJECT_ID="test-project",
         DNS_SCALEWAY_TTL=600,
     )
-    def test_scaleway_provider_get_zone_name_with_existing_zone(self):
-        """Test that _get_zone_name returns correct zone name when zone exists."""
+    def test_scaleway_provider_zone_exists(self):
+        """Test that zone_exists works correctly."""
         provider = ScalewayDNSProvider()
 
-        with patch.object(provider, "get_zone") as mock_get_zone:
-            # Mock that the zone exists
-            mock_get_zone.return_value = {"domain": "example.com", "subdomain": ""}
-
-            zone_name = provider._get_zone_name("example.com")
-            assert zone_name == "example.com"
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_get_zone_name_with_parent_zone(self):
-        """Test that _get_zone_name finds parent zone when exact zone doesn't exist."""
-        provider = ScalewayDNSProvider()
-
-        with patch.object(provider, "get_zone") as mock_get_zone:
-            # Mock that exact zone doesn't exist but parent does
-            mock_get_zone.side_effect = (
-                lambda domain: {"domain": "example.com", "subdomain": ""}
-                if domain == "example.com"
-                else None
-            )
-
-            zone_name = provider._get_zone_name("mail.example.com")
-            assert zone_name == "example.com"
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_validate_zone_exists(self):
-        """Test that _validate_zone_exists works correctly."""
-        provider = ScalewayDNSProvider()
-
-        with patch.object(provider, "get_zone") as mock_get_zone:
+        with patch.object(provider, "get_records") as mock_get_records:
             # Test existing zone
-            mock_get_zone.return_value = {"domain": "example.com", "subdomain": ""}
-            assert provider._validate_zone_exists("example.com") is True
+            mock_get_records.return_value = [{"name": "test", "type": "A"}]
+            assert provider.zone_exists("example.com") is True
 
             # Test non-existing zone
-            mock_get_zone.return_value = None
-            assert provider._validate_zone_exists("nonexistent.com") is False
+            mock_get_records.return_value = []
+            assert provider.zone_exists("nonexistent.com") is False
 
     @override_settings(
         DNS_SCALEWAY_API_TOKEN="test-token",
         DNS_SCALEWAY_PROJECT_ID="test-project",
         DNS_SCALEWAY_TTL=600,
     )
-    def test_scaleway_provider_create_record_zone_not_found(self):
-        """Test that create_record raises error when zone doesn't exist."""
+    def test_scaleway_provider_get_zones(self):
+        """Test that get_zones works correctly."""
         provider = ScalewayDNSProvider()
 
-        with (
-            patch.object(provider, "_validate_zone_exists") as mock_validate,
-            patch.object(provider, "_get_zone_name") as mock_get_zone_name,
-        ):
-            mock_validate.return_value = False
-            mock_get_zone_name.return_value = "nonexistent.com"
+        with patch.object(provider, "_make_request") as mock_request:
+            mock_request.return_value = {"dns_zones": [{"domain": "example.com"}]}
 
-            with pytest.raises(Exception, match="Zone not found"):
-                provider.create_record("nonexistent.com", "test", "A", "192.168.1.1")
+            zones = provider.get_zones()
 
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_update_record_zone_not_found(self):
-        """Test that update_record raises error when zone doesn't exist."""
-        provider = ScalewayDNSProvider()
-
-        with (
-            patch.object(provider, "_validate_zone_exists") as mock_validate,
-            patch.object(provider, "_get_zone_name") as mock_get_zone_name,
-        ):
-            mock_validate.return_value = False
-            mock_get_zone_name.return_value = "nonexistent.com"
-
-            with pytest.raises(Exception, match="Zone not found"):
-                provider.update_record(
-                    "nonexistent.com", "id", "test", "A", "192.168.1.1"
-                )
-
-    @override_settings(
-        DNS_SCALEWAY_API_TOKEN="test-token",
-        DNS_SCALEWAY_PROJECT_ID="test-project",
-        DNS_SCALEWAY_TTL=600,
-    )
-    def test_scaleway_provider_delete_record_zone_not_found(self):
-        """Test that delete_record_by_name_type raises error when zone doesn't exist."""
-        provider = ScalewayDNSProvider()
-
-        with (
-            patch.object(provider, "_validate_zone_exists") as mock_validate,
-            patch.object(provider, "_get_zone_name") as mock_get_zone_name,
-        ):
-            mock_validate.return_value = False
-            mock_get_zone_name.return_value = "nonexistent.com"
-
-            with pytest.raises(Exception, match="Zone not found"):
-                provider.delete_record_by_name_type("nonexistent.com", "test", "A")
+            # Verify correct request
+            call_args = mock_request.call_args
+            assert call_args[0][0] == "GET"  # HTTP method
+            assert call_args[0][1] == "dns-zones"  # endpoint
+            assert zones == [{"domain": "example.com"}]
 
     @override_settings(
         DNS_SCALEWAY_API_TOKEN="test-token",
@@ -684,7 +225,7 @@ class TestScalewayDNSProvider:
             },
         )()
 
-        with pytest.raises(Exception, match="Zone not found"):
+        with pytest.raises(ValueError, match="Zone not found"):
             provider._handle_api_error(mock_response)
 
     @override_settings(
@@ -704,11 +245,201 @@ class TestScalewayDNSProvider:
                 "status_code": 409,
                 "json": lambda self: {
                     "message": "Zone already exists",
-                    "code": "conflict",
+                    "code": "already_exists",
                 },
                 "raise_for_status": lambda self: None,
             },
         )()
 
-        with pytest.raises(Exception, match="Zone already exists"):
+        with pytest.raises(ValueError, match="Zone already exists"):
             provider._handle_api_error(mock_response)
+
+    @override_settings(
+        DNS_SCALEWAY_API_TOKEN="test-token",
+        DNS_SCALEWAY_PROJECT_ID="test-project",
+        DNS_SCALEWAY_TTL=600,
+    )
+    def test_scaleway_provider_make_request_with_pagination(self):
+        """Test that _make_request handles pagination correctly."""
+        provider = ScalewayDNSProvider()
+
+        with patch("core.dns.providers.scaleway.requests.request") as mock_request:
+            # Mock first page response
+            mock_response1 = MagicMock()
+            mock_response1.ok = True
+            mock_response1.json.return_value = {
+                "dns_zones": [{"domain": "example.com"}],
+                "total_count": 1,
+            }
+
+            mock_request.return_value = mock_response1
+
+            response = provider._make_request("GET", "dns-zones", paginate=True)
+
+            # Verify that only one request was made since total_count equals results
+            assert mock_request.call_count == 1
+
+            # Verify response contains results
+            assert len(response["dns_zones"]) == 1
+            assert response["dns_zones"][0]["domain"] == "example.com"
+
+    @override_settings(
+        DNS_SCALEWAY_API_TOKEN="test-token",
+        DNS_SCALEWAY_PROJECT_ID="test-project",
+        DNS_SCALEWAY_TTL=600,
+    )
+    def test_scaleway_provider_make_request_without_pagination(self):
+        """Test that _make_request works normally without pagination."""
+        provider = ScalewayDNSProvider()
+
+        with patch("core.dns.providers.scaleway.requests.request") as mock_request:
+            mock_response = MagicMock()
+            mock_response.ok = True
+            mock_response.json.return_value = {"dns_zones": [{"domain": "example.com"}]}
+            mock_request.return_value = mock_response
+
+            response = provider._make_request("GET", "dns-zones", paginate=False)
+
+            # Verify that only one request was made without pagination parameters
+            mock_request.assert_called_once()
+            call_args = mock_request.call_args
+            assert (
+                call_args[1]["url"]
+                == "https://api.scaleway.com/domain/v2beta1/dns-zones"
+            )
+
+            # Verify response
+            assert response["dns_zones"] == [{"domain": "example.com"}]
+
+    @override_settings(
+        DNS_SCALEWAY_API_TOKEN="test-token",
+        DNS_SCALEWAY_PROJECT_ID="test-project",
+        DNS_SCALEWAY_TTL=600,
+    )
+    def test_scaleway_provider_make_request_pagination_single_page(self):
+        """Test that _make_request handles single page pagination correctly."""
+        provider = ScalewayDNSProvider()
+
+        with patch("core.dns.providers.scaleway.requests.request") as mock_request:
+            mock_response = MagicMock()
+            mock_response.ok = True
+            mock_response.json.return_value = {
+                "dns_zones": [{"domain": "example.com"}],
+                "total_count": 1,
+            }
+            mock_request.return_value = mock_response
+
+            response = provider._make_request("GET", "dns-zones", paginate=True)
+
+            # Verify that only one request was made
+            mock_request.assert_called_once()
+
+            # Verify response
+            assert response["dns_zones"] == [{"domain": "example.com"}]
+            assert response["total_count"] == 1
+
+    @override_settings(
+        DNS_SCALEWAY_API_TOKEN="test-token",
+        DNS_SCALEWAY_PROJECT_ID="test-project",
+        DNS_SCALEWAY_TTL=600,
+    )
+    def test_scaleway_provider_make_request_pagination_multiple_pages(self):
+        """Test that _make_request handles multiple page pagination correctly."""
+        provider = ScalewayDNSProvider()
+
+        with patch("core.dns.providers.scaleway.requests.request") as mock_request:
+            # Mock first page response
+            mock_response1 = MagicMock()
+            mock_response1.ok = True
+            mock_response1.json.return_value = {
+                "dns_zones": [{"domain": "example.com"}] * 100,
+                "total_count": 101,
+            }
+
+            # Mock second page response
+            mock_response2 = MagicMock()
+            mock_response2.ok = True
+            mock_response2.json.return_value = {
+                "dns_zones": [{"domain": "test.com"}],
+                "total_count": 101,
+            }
+
+            mock_request.side_effect = [mock_response1, mock_response2]
+
+            response = provider._make_request("GET", "dns-zones", paginate=True)
+
+            # Verify that two requests were made
+            assert mock_request.call_count == 2
+
+            # Verify response contains combined results
+            assert len(response["dns_zones"]) == 101
+            assert response["dns_zones"][0]["domain"] == "example.com"
+            assert response["dns_zones"][1]["domain"] == "example.com"
+            assert response["dns_zones"][100]["domain"] == "test.com"
+
+    @override_settings(
+        DNS_SCALEWAY_API_TOKEN="test-token",
+        DNS_SCALEWAY_PROJECT_ID="test-project",
+        DNS_SCALEWAY_TTL=600,
+    )
+    def test_scaleway_provider_provision_domain_records(self):
+        """Test that provision_domain_records works correctly."""
+        provider = ScalewayDNSProvider()
+
+        with (
+            patch.object(provider, "create_zone") as mock_create_zone,
+            patch.object(provider, "get_records") as mock_get_records,
+            patch.object(provider, "_sync_records") as mock_sync_records,
+        ):
+            mock_get_records.return_value = []
+            mock_sync_records.return_value = [{"type": "add", "record": "test"}]
+
+            expected_records = [
+                {"type": "MX", "target": "", "value": "10 mx1.example.com"},
+                {"type": "TXT", "target": "_dmarc", "value": "v=DMARC1; p=reject;"},
+            ]
+
+            results = provider.provision_domain_records("example.com", expected_records)
+
+            # Verify zone creation was called
+            mock_create_zone.assert_called_once_with("example.com", False)
+
+            # Verify records were fetched
+            mock_get_records.assert_called_once_with("example.com", paginate=True)
+
+            # Verify sync was called
+            assert mock_sync_records.call_count > 0
+
+            # Verify results
+            assert len(results) > 0
+
+    @override_settings(
+        DNS_SCALEWAY_API_TOKEN="test-token",
+        DNS_SCALEWAY_PROJECT_ID="test-project",
+        DNS_SCALEWAY_TTL=600,
+    )
+    def test_scaleway_provider_provision_domain_records_pretend(self):
+        """Test that provision_domain_records works in pretend mode."""
+        provider = ScalewayDNSProvider()
+
+        with (
+            patch.object(provider, "create_zone") as mock_create_zone,
+            patch.object(provider, "get_records") as mock_get_records,
+            patch.object(provider, "_sync_records") as mock_sync_records,
+        ):
+            mock_get_records.return_value = []
+            mock_sync_records.return_value = [{"type": "add", "record": "test"}]
+
+            expected_records = [
+                {"type": "MX", "target": "", "value": "10 mx1.example.com"},
+            ]
+
+            results = provider.provision_domain_records(
+                "example.com", expected_records, pretend=True
+            )
+
+            # Verify zone creation was called with pretend=True
+            mock_create_zone.assert_called_once_with("example.com", True)
+
+            # Verify results
+            assert len(results) > 0

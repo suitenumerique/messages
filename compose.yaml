@@ -205,8 +205,8 @@ services:
   frontend-dev:
     user: "${DOCKER_USER:-1000}"
     build:
-      context: .
-      dockerfile: ./src/frontend/Dockerfile.dev
+      context: ./src/frontend
+      dockerfile: Dockerfile.dev
     env_file:
       - env.d/development/frontend.defaults
       - env.d/development/frontend.local

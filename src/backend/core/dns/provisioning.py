@@ -9,7 +9,6 @@ from django.conf import settings
 
 import dns.resolver
 
-from core.dns.check import check_dns_records
 from core.dns.providers.scaleway import ScalewayDNSProvider
 from core.models import MailDomain
 
@@ -122,11 +121,16 @@ def provision_domain_dns(
 
     # Provision records
     try:
-        results = provider.provision_domain_records(
+        changes = provider.provision_domain_records(
             domain, expected_records, pretend=pretend
         )
-        results["provider"] = provider_name
-        results["pretend"] = pretend
+        results = {
+            "success": True,
+            "changes": changes,
+            "domain": domain,
+            "provider": provider_name,
+            "pretend": pretend,
+        }
         return results
     except Exception as e:  # pylint: disable=broad-exception-caught
         return {
@@ -136,35 +140,3 @@ def provision_domain_dns(
             "provider": provider_name,
             "pretend": pretend,
         }
-
-
-def check_and_provision_domain(
-    maildomain: MailDomain, **provider_kwargs
-) -> Dict[str, Any]:
-    """
-    Check DNS records for a domain and provision missing ones.
-
-    Args:
-        maildomain: MailDomain instance to check/provision
-        **provider_kwargs: Provider-specific configuration
-
-    Returns:
-        Dictionary with check and provisioning results
-    """
-    # Check current DNS records
-    check_results = check_dns_records(maildomain)
-
-    results = {"domain": maildomain.name, "check_results": check_results}
-
-    # Only provision if there are missing records
-    missing_records = [r for r in check_results if r["_check"]["status"] == "missing"]
-    if missing_records:
-        provisioning_results = provision_domain_dns(maildomain, **provider_kwargs)
-        results["provisioning_results"] = provisioning_results
-
-        # If provisioning was successful, check again
-        if provisioning_results.get("success"):
-            updated_check_results = check_dns_records(maildomain)
-            results["updated_check_results"] = updated_check_results
-
-    return results

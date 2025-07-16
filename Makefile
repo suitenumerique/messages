@@ -67,7 +67,6 @@ data/static:
 
 create-env-files: ## Create empty .local env files for local development
 create-env-files: \
-	env.d/development/common.local \
 	env.d/development/crowdin.local \
 	env.d/development/postgresql.local \
 	env.d/development/keycloak.local \
@@ -81,8 +80,8 @@ bootstrap: ## Prepare the project for local development
 	@echo "$(BOLD)"
 	@echo "╔══════════════════════════════════════════════════════════════════════════════╗"
 	@echo "║                                                                              ║"
-	@echo "║  🚀 Welcome to Messages - Collaborative Inbox from La Suite! 🚀             ║"
-	@echo "║                                                                             ║"
+	@echo "║  🚀 Welcome to Messages - Collaborative Inbox from La Suite! 🚀              ║"
+	@echo "║                                                                              ║"
 	@echo "║  This will set up your development environment with :                        ║"
 	@echo "║  • Docker containers for all services                                        ║"
 	@echo "║  • Database migrations and static files                                      ║"
@@ -315,7 +314,7 @@ keycloak-export: ## export all keycloak data to a JSON file
 # -- Database
 
 db-shell: ## connect to database shell
-	docker compose exec backend-dev python manage.py dbshell
+	$(COMPOSE) exec backend-dev python manage.py dbshell
 .PHONY: db-shell
 
 db-reset: FLUSH_ARGS ?=
@@ -336,29 +335,6 @@ env.d/development/%.local:
 	@echo "# Example: DJANGO_DEBUG=True" >> $@
 	@echo "" >> $@
 
-# env.d/development/common.local:
-# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/common.local
-
-# env.d/development/backend.local:
-# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/backend.local
-
-# env.d/development/frontend.local:
-# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/frontend.local
-
-# env.d/development/mta-in.local:
-# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/mta-in.local
-
-# env.d/development/postgresql.local:
-# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/postgresql.local
-
-# env.d/development/keycloak.local:
-# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/keycloak.local
-
-# env.d/development/mta-out.local:
-# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/mta-out.local
-
-# env.d/development/crowdin.local:
-# 	@echo "# Put your local-specific, gitignored env vars here" > env.d/development/crowdin.local
 
 # -- Internationalization
 

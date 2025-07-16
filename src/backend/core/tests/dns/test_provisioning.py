@@ -10,7 +10,6 @@ import pytest
 from dns.resolver import NXDOMAIN, NoNameservers, Timeout
 
 from core.dns.provisioning import (
-    check_and_provision_domain,
     detect_dns_provider,
     get_dns_provider,
     provision_domain_dns,
@@ -116,12 +115,7 @@ class TestDNSProvisioning:
                 mock_detect.return_value = "scaleway"
 
                 mock_provider = MagicMock()
-                mock_provider.provision_domain_records.return_value = {
-                    "success": True,
-                    "created": [],
-                    "updated": [],
-                    "errors": [],
-                }
+                mock_provider.provision_domain_records.return_value = []
                 mock_get_provider.return_value = mock_provider
 
                 results = provision_domain_dns(maildomain)
@@ -140,19 +134,16 @@ class TestDNSProvisioning:
 
         with patch("core.dns.provisioning.get_dns_provider") as mock_get_provider:
             mock_provider = MagicMock()
-            mock_provider.provision_domain_records.return_value = {
-                "success": True,
-                "created": [{"type": "MX", "name": "@", "value": "10 mx1.example.com"}],
-                "updated": [],
-                "errors": [],
-            }
+            mock_provider.provision_domain_records.return_value = [
+                {"type": "MX", "name": "@", "value": "10 mx1.example.com"}
+            ]
             mock_get_provider.return_value = mock_provider
 
             results = provision_domain_dns(maildomain, provider_name="scaleway")
 
             assert results["success"] is True
             assert results["provider"] == "scaleway"
-            assert len(results["created"]) == 1
+            assert len(results["changes"]) == 1
 
     def test_provision_domain_dns_no_provider_detected(self, maildomain_factory):
         """Test DNS provisioning when no provider is detected."""
@@ -207,9 +198,7 @@ class TestDNSProvisioning:
                 mock_provider = MagicMock()
                 mock_provider.provision_domain_records.return_value = {
                     "success": True,
-                    "created": [],
-                    "updated": [],
-                    "errors": [],
+                    "changes": [],
                 }
                 mock_get_provider.return_value = mock_provider
 
@@ -243,13 +232,10 @@ class TestDNSProvisioning:
 
         with patch("core.dns.provisioning.get_dns_provider") as mock_get_provider:
             mock_provider = MagicMock()
-            mock_provider.provision_domain_records.return_value = {
-                "success": True,
-                "created": [{"type": "MX", "name": "@", "value": "10 mx1.example.com"}],
-                "updated": [],
-                "errors": [],
-                "pretend": True,
-            }
+            mock_provider.provision_domain_records.return_value = [
+                {"type": "MX", "name": "@", "value": "10 mx1.example.com"}
+            ]
+
             mock_get_provider.return_value = mock_provider
 
             results = provision_domain_dns(
@@ -263,105 +249,6 @@ class TestDNSProvisioning:
             mock_provider.provision_domain_records.assert_called_once()
             call_args = mock_provider.provision_domain_records.call_args
             assert call_args[1]["pretend"] is True
-
-    def test_check_and_provision_domain_no_missing_records(self, maildomain_factory):
-        """Test check_and_provision_domain when no records are missing."""
-        maildomain = maildomain_factory(name="example.com")
-
-        with patch("core.dns.provisioning.check_dns_records") as mock_check:
-            # Mock all records as correct
-            mock_check.return_value = [
-                {
-                    "type": "MX",
-                    "target": "@",
-                    "value": "10 mx1.example.com",
-                    "_check": {"status": "correct"},
-                },
-                {
-                    "type": "TXT",
-                    "target": "@",
-                    "value": "v=spf1 include:_spf.example.com -all",
-                    "_check": {"status": "correct"},
-                },
-            ]
-
-            results = check_and_provision_domain(maildomain)
-
-            assert results["domain"] == "example.com"
-            assert results.get("provisioning_results") is None
-            assert len(results["check_results"]) == 2
-            assert "updated_check_results" not in results
-
-    def test_check_and_provision_domain_with_missing_records(self, maildomain_factory):
-        """Test check_and_provision_domain when some records are missing."""
-        maildomain = maildomain_factory(name="example.com")
-
-        with patch("core.dns.provisioning.check_dns_records") as mock_check:
-            with patch("core.dns.provisioning.provision_domain_dns") as mock_provision:
-                # Mock mixed results: one correct, one missing
-                mock_check.return_value = [
-                    {
-                        "type": "MX",
-                        "target": "@",
-                        "value": "10 mx1.example.com",
-                        "_check": {"status": "correct"},
-                    },
-                    {
-                        "type": "TXT",
-                        "target": "@",
-                        "value": "v=spf1 include:_spf.example.com -all",
-                        "_check": {"status": "missing"},
-                    },
-                ]
-
-                # Mock successful provisioning
-                mock_provision.return_value = {
-                    "success": True,
-                    "created": [
-                        {
-                            "type": "TXT",
-                            "name": "@",
-                            "value": "v=spf1 include:_spf.example.com -all",
-                        }
-                    ],
-                    "updated": [],
-                    "errors": [],
-                }
-
-                results = check_and_provision_domain(maildomain)
-
-                assert results["domain"] == "example.com"
-                assert results["provisioning_results"] is not None
-                assert results["provisioning_results"]["success"] is True
-                assert len(results["check_results"]) == 2
-                # Should have updated check results after successful provisioning
-                assert "updated_check_results" in results
-
-    def test_check_and_provision_domain_provisioning_failure(self, maildomain_factory):
-        """Test check_and_provision_domain when provisioning fails."""
-        maildomain = maildomain_factory(name="example.com")
-
-        with patch("core.dns.provisioning.check_dns_records") as mock_check:
-            with patch("core.dns.provisioning.provision_domain_dns") as mock_provision:
-                # Mock missing records
-                mock_check.return_value = [
-                    {
-                        "type": "MX",
-                        "target": "@",
-                        "value": "10 mx1.example.com",
-                        "_check": {"status": "missing"},
-                    }
-                ]
-
-                # Mock failed provisioning
-                mock_provision.return_value = {"success": False, "error": "API error"}
-
-                results = check_and_provision_domain(maildomain)
-
-                assert results["domain"] == "example.com"
-                assert results["provisioning_results"] is not None
-                assert results["provisioning_results"]["success"] is False
-                assert "updated_check_results" not in results
 
 
 @pytest.fixture(name="maildomain_factory")

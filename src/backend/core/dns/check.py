@@ -41,7 +41,12 @@ def check_single_record(
             ]
         elif record_type.upper() == "TXT":
             answers = dns.resolver.resolve(query_name, "TXT")
-            found_values = [answer.to_text().strip('"') for answer in answers]
+            if target.endswith("._domainkey"):
+                found_values = [
+                    answer.to_text().strip('"').replace('" "', "") for answer in answers
+                ]
+            else:
+                found_values = [answer.to_text().strip('"') for answer in answers]
         else:
             # For other record types, try to resolve them as-is
             answers = dns.resolver.resolve(query_name, record_type)

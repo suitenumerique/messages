@@ -42,6 +42,9 @@ server {
     location ~* ^/mailbox/[^/]+/thread/[^/]+$ {
         try_files /mailbox/[mailboxId]/thread/[threadId].html =404;
     }
+    location ~* ^/mailbox/[^/]+/new$ {
+        try_files /mailbox/[mailboxId]/new.html =404;
+    }
     location ~* ^/domain$ {
         try_files /domain.html =404;
     }

@@ -2,11 +2,15 @@
 Scaleway DNS provider implementation.
 """
 
+import logging
+from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 from django.conf import settings
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 class ScalewayDNSProvider:
@@ -32,45 +36,150 @@ class ScalewayDNSProvider:
         """
         return bool(self.api_token) and bool(self.project_id)
 
-    def _get_zone_name(self, domain: str) -> str:
+    def provision_domain_records(
+        self, domain: str, expected_records: List[Dict[str, Any]], pretend: bool = False
+    ) -> List[Dict[str, Any]]:
         """
-        Get the zone name for API calls.
+        Provision DNS records for a domain.
+        Creates records that don't already exist, tries to update existing records if they are different.
 
         Args:
             domain: Domain name
+            expected_records: List of expected DNS records
+            pretend: If True, simulate operations without making actual changes
 
         Returns:
-            Zone name for API calls
+            List of changes made to the DNS records
         """
-        # First, check if the exact domain exists as a zone
-        zone = self.get_zone(domain)
-        if zone:
-            return domain
 
-        # If not found, check if we need to use a parent zone
-        # This handles cases where the domain is a subdomain of an existing zone
-        parts = domain.split(".")
-        for i in range(1, len(parts)):
-            potential_parent = ".".join(parts[i:])
-            zone = self.get_zone(potential_parent)
-            if zone:
-                return potential_parent
+        # Create zone if it doesn't exist
+        created = self.create_zone(domain, pretend)
 
-        # If no parent found, use the domain as is
-        return domain
+        if created and pretend:
+            all_records = []
+        else:
+            all_records = self.get_records(domain, paginate=True)
 
-    def _validate_zone_exists(self, domain: str) -> bool:
+        records_by_type = defaultdict(list)
+        for record in all_records:
+            records_by_type[(record["type"].upper(), record["name"])].append(record)
+
+        expected_records_by_type = defaultdict(list)
+        for expected_record in expected_records:
+            expected_records_by_type[
+                (
+                    expected_record["type"].upper(),
+                    expected_record["target"].split(".")[-1],
+                )
+            ].append(expected_record)
+
+        results = []
+
+        for record_type, expected_records_of_type in expected_records_by_type.items():
+            # We completely swap these records if they are different.
+            if record_type in {("MX", ""), ("TXT", "_dmarc"), ("TXT", "_domainkey")}:
+                results.extend(
+                    self._sync_records(
+                        expected_records_of_type,
+                        records_by_type[record_type],
+                        domain,
+                        pretend,
+                    )
+                )
+            else:
+                for expected_record in expected_records_of_type:
+                    if record_type == ("TXT", "") and expected_record[
+                        "value"
+                    ].startswith("v=spf1 "):
+                        # This is the SPF record, we need to update it if there is an existing one.
+                        existing_spf_records = [
+                            record
+                            for record in records_by_type[record_type]
+                            if record["value"].startswith("v=spf1 ")
+                        ]
+                        results.extend(
+                            self._sync_records(
+                                [expected_record], existing_spf_records, domain, pretend
+                            )
+                        )
+                    else:
+                        raise ValueError(f"Unknown record type: {expected_record}")
+
+        return results
+
+    def _make_request(
+        self,
+        method: str,
+        endpoint: str,
+        data: Optional[Dict] = None,
+        paginate: bool = False,
+    ) -> Dict[str, Any]:
         """
-        Validate that a zone exists for the given domain.
+        Make a request to the Scaleway API.
 
         Args:
-            domain: Domain name
+            method: HTTP method
+            endpoint: API endpoint
+            data: Request data
+            paginate: If True, handle pagination for GET requests
 
         Returns:
-            True if zone exists, False otherwise
+            API response as dictionary
+
+        Raises:
+            Exception: If the request fails
         """
-        zone = self.get_zone(domain)
-        return zone is not None
+        url = f"{self.base_url}/{endpoint}"
+
+        # Handle pagination for GET requests
+        if method.upper() == "GET" and paginate:
+            all_results = []
+            page = 1
+            page_size = 100
+
+            # Determine the data key based on the endpoint
+            if endpoint.endswith("dns-zones"):
+                data_key = "dns_zones"
+            elif endpoint.endswith("/records"):
+                data_key = "records"
+            else:
+                raise ValueError(f"Unknown paginated endpoint: {endpoint}")
+
+            while True:
+                # Add pagination parameters to URL
+                paginated_url = f"{url}?page={page}&page_size={page_size}"
+
+                response = requests.request(
+                    method=method, url=paginated_url, headers=self.headers, timeout=30
+                )
+
+                if not response.ok:
+                    self._handle_api_error(response)
+
+                response_data = response.json()
+
+                # Add results from this page
+                page_results = response_data.get(data_key, [])
+                all_results.extend(page_results)
+
+                # Check if we've reached the end
+                if len(page_results) < page_size:
+                    break
+
+                page += 1
+
+            # Return the combined results in the same format as the original response
+            return {data_key: all_results, "total_count": len(all_results)}
+
+        # Non-paginated request
+        response = requests.request(
+            method=method, url=url, headers=self.headers, json=data, timeout=30
+        )
+
+        if not response.ok:
+            self._handle_api_error(response)
+
+        return response.json()
 
     def _handle_api_error(self, response: requests.Response) -> None:
         """
@@ -100,158 +209,7 @@ class ScalewayDNSProvider:
         # For any other status code
         raise ValueError(f"API error ({response.status_code}): {error_message}")
 
-    def _make_request(
-        self, method: str, endpoint: str, data: Optional[Dict] = None
-    ) -> Dict[str, Any]:
-        """
-        Make a request to the Scaleway API.
-
-        Args:
-            method: HTTP method
-            endpoint: API endpoint
-            data: Request data
-
-        Returns:
-            API response as dictionary
-
-        Raises:
-            Exception: If the request fails
-        """
-        url = f"{self.base_url}/{endpoint}"
-
-        response = requests.request(
-            method=method, url=url, headers=self.headers, json=data, timeout=30
-        )
-
-        if not response.ok:
-            self._handle_api_error(response)
-
-        return response.json()
-
-    def get_zones(self) -> List[Dict[str, Any]]:
-        """
-        Get all DNS zones.
-
-        Returns:
-            List of zone dictionaries
-        """
-        response = self._make_request("GET", "dns-zones")
-        return response.get("dns_zones", [])
-
-    def get_zone(self, domain: str) -> Optional[Dict[str, Any]]:
-        """
-        Get a specific DNS zone by domain name.
-
-        Args:
-            domain: Domain name
-
-        Returns:
-            Zone dictionary or None if not found
-        """
-        zones = self.get_zones()
-        for zone in zones:
-            # Check if this zone matches our domain
-            zone_domain = zone.get("domain", "")
-            zone_subdomain = zone.get("subdomain", "")
-
-            if zone_subdomain:
-                # This is a subdomain zone
-                zone_full_name = f"{zone_subdomain}.{zone_domain}"
-                if zone_full_name == domain:
-                    return zone
-            # This is a root domain zone
-            elif zone_domain == domain:
-                return zone
-        return None
-
-    def _resolve_zone_components(self, domain: str) -> tuple[str, str]:
-        """
-        Resolve domain into parent domain and subdomain components.
-
-        This method implements a smart algorithm to determine the correct
-        parent domain and subdomain by checking existing zones:
-        - For x.tld: create new zone, no parent
-        - For a.b.c.d.tld: recursively check potential parent zones starting with b.c.d.tld
-        - If parent exists, create sub-zone; otherwise create new zone
-
-        Args:
-            domain: Domain name
-
-        Returns:
-            Tuple of (parent_domain, subdomain)
-        """
-        if "." not in domain:
-            # Single level domain, no parent
-            return domain, ""
-
-        # Get existing zones to check for potential parents
-        existing_zones = self.get_zones()
-
-        # Split domain into parts
-        parts = domain.split(".")
-
-        # For domains like a.b.c.d.tld, check potential parents:
-        # - b.c.d.tld
-        # - c.d.tld
-        # - d.tld
-        # - tld (but this is unlikely to be a managed zone)
-
-        for i in range(1, len(parts)):
-            potential_parent = ".".join(parts[i:])
-
-            # Check if this potential parent exists as a zone
-            for zone in existing_zones:
-                zone_domain = zone.get("domain", "")
-                zone_subdomain = zone.get("subdomain", "")
-
-                if zone_subdomain:
-                    # This is a subdomain zone
-                    zone_full_name = f"{zone_subdomain}.{zone_domain}"
-                    if zone_full_name == potential_parent:
-                        # Found existing parent zone, create sub-zone
-                        # The subdomain should be the remaining parts
-                        subdomain = ".".join(parts[:i])
-                        return zone_domain, subdomain
-                # This is a root domain zone
-                elif zone_domain == potential_parent:
-                    # Found existing parent zone, create sub-zone
-                    # The subdomain should be the remaining parts
-                    subdomain = ".".join(parts[:i])
-                    return zone_domain, subdomain
-
-        # No existing parent zone found, create new zone
-        # Use the last two parts as the parent domain (common pattern)
-        if len(parts) >= 2:
-            parent_domain = ".".join(parts[-2:])
-            subdomain = ".".join(parts[:-2])
-        else:
-            parent_domain = domain
-            subdomain = ""
-
-        return parent_domain, subdomain
-
-    def create_zone(self, domain: str) -> Dict[str, Any]:
-        """
-        Create a new DNS zone.
-
-        Args:
-            domain: Domain name to create
-
-        Returns:
-            Created zone dictionary
-        """
-        parent_domain, subdomain = self._resolve_zone_components(domain)
-
-        data = {
-            "domain": parent_domain,
-            "subdomain": subdomain,
-            "project_id": self.project_id,
-        }
-
-        response = self._make_request("POST", "dns-zones", data)
-        return response.get("dns_zone", {})
-
-    def get_records(self, domain: str) -> List[Dict[str, Any]]:
+    def get_records(self, domain: str, paginate: bool = False) -> List[Dict[str, Any]]:
         """
         Get all DNS records for a zone.
 
@@ -261,363 +219,175 @@ class ScalewayDNSProvider:
         Returns:
             List of record dictionaries
         """
-        zone_name = self._get_zone_name(domain)
-        response = self._make_request("GET", f"dns-zones/{zone_name}/records")
+        response = self._make_request(
+            "GET", f"dns-zones/{domain}/records", paginate=paginate
+        )
         return response.get("records", [])
 
-    def _format_record_name(self, name: str, domain: str) -> str:
+    def zone_exists(self, zone_name: str) -> bool:
         """
-        Format record name according to Scaleway API requirements.
+        Checks if a zone exists for the given domain.
 
         Args:
-            name: Record name (can be FQDN or short name)
-            domain: Domain name
+            zone_name: Zone name to check
 
         Returns:
-            Short format record name
+            True if zone exists, False otherwise
         """
-        # If name is empty or None, return empty string
-        if not name:
-            return ""
+        try:
+            records = self.get_records(zone_name)
+            return len(records) > 0
+        except ValueError:
+            return False
 
-        # If name is exactly the domain, it's a root domain record
-        if name == domain:
-            return ""
-
-        # If name is FQDN ending with domain, extract short name
-        if name.endswith(f".{domain}"):
-            # Remove the domain suffix to get the short name
-            short_name = name[: -len(f".{domain}")]
-            # If the result is empty, it means this is a root domain record
-            return short_name if short_name else ""
-
-        # If name contains dots but doesn't end with domain, it might be a subdomain
-        # Return the first part as short name
-        if "." in name:
-            return name.split(".")[0]
-
-        # Otherwise, return as is (already short format)
-        return name
-
-    def create_record(
-        self,
-        domain: str,
-        name: str,
-        record_type: str,
-        data: str,
-        ttl: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    def create_zone(self, domain: str, pretend: bool = False) -> bool:
         """
-        Create a DNS record.
+        Create a new DNS zone if it doesn't exist already.
 
         Args:
             domain: Domain name
-            name: Record name
-            record_type: Record type (A, MX, TXT, etc.)
-            data: Record data
-            ttl: TTL in seconds (uses DNS_SCALEWAY_TTL if not specified)
+            pretend: If True, simulate operations without making actual changes
 
         Returns:
-            Created record dictionary
+            True if zone was created, False otherwise
         """
-        if ttl is None:
-            ttl = self.ttl
+        if self.zone_exists(domain):
+            return False
 
-        zone_name = self._get_zone_name(domain)
+        # Does the parent zone exist?
+        subdomain, parent_domain = domain.split(".", 1)
+        if self.zone_exists(parent_domain):
+            # Create a sub-zone
+            self._create_zone_with_parent(subdomain, parent_domain, pretend)
+        else:
+            # Create a new root zone
+            self._create_zone_with_parent("", domain, pretend)
 
-        # Validate that the zone exists
-        if not self._validate_zone_exists(zone_name):
-            raise ValueError(f"Zone not found: {zone_name}")
+        return True
 
-        short_name = self._format_record_name(name, domain)
+    def _create_zone_with_parent(
+        self, subdomain: str, parent_domain: str, pretend: bool = False
+    ):
+        """
+        Create a new DNS zone.
 
-        record_data = {
-            "return_all_records": False,
-            "changes": [
+        Args:
+            domain: Domain name to create
+
+        Returns:
+            Created zone dictionary
+        """
+
+        data = {
+            "domain": parent_domain,
+            "subdomain": subdomain,
+            "project_id": self.project_id,
+        }
+
+        if pretend:
+            logger.info(
+                "Pretend: Would create zone %s with subdomain %s",
+                parent_domain,
+                subdomain,
+            )
+            return
+
+        response = self._make_request("POST", "dns-zones", data)
+        if "domain" not in response:
+            raise ValueError(f"Failed to create zone {parent_domain}: {response}")
+
+    def get_zones(self) -> List[Dict[str, Any]]:
+        """
+        Get all DNS zones.
+
+        Returns:
+            List of zone dictionaries
+        """
+        response = self._make_request("GET", "dns-zones", paginate=True)
+        return response.get("dns_zones", [])
+
+    def _sync_records(self, expected_records, current_records, zone_name, pretend):
+        """
+        Sync DNS records.
+        """
+
+        changes = []
+
+        matching_current = set()
+        matching_expected = set()
+        for i, record in enumerate(current_records):
+            for y, expected_record in enumerate(expected_records):
+                if (
+                    record["name"] == expected_record["target"]
+                    and record["type"].upper() == expected_record["type"].upper()
+                    and record["data"] == expected_record["value"]
+                ):
+                    matching_current.add(i)
+                    matching_expected.add(y)
+                    break
+
+        # Remove records that are already in the zone.
+        current_records = [
+            record
+            for i, record in enumerate(current_records)
+            if i not in matching_current
+        ]
+        expected_records = [
+            record
+            for y, record in enumerate(expected_records)
+            if y not in matching_expected
+        ]
+
+        # Delete records from the zone that conflict with the expected records.
+        for record in current_records:
+            patch = [
+                {
+                    "delete": {
+                        "id_fields": {
+                            "name": record["name"],
+                            "type": record["type"].upper(),
+                            "data": record["data"],
+                        }
+                    }
+                }
+            ]
+            self._patch_records(zone_name, patch, pretend)
+            changes.extend(patch)
+
+        # Add records that are not in the zone.
+        if len(expected_records) > 0:
+            patch = [
                 {
                     "add": {
                         "records": [
                             {
-                                "name": short_name,
-                                "type": record_type,
-                                "data": data,
-                                "ttl": ttl,
+                                "name": record["target"],
+                                "type": record["type"].upper(),
+                                "data": record["value"],
+                                "ttl": self.ttl,
                             }
+                            for record in expected_records
                         ]
                     }
                 }
-            ],
-        }
+            ]
+            self._patch_records(zone_name, patch, pretend)
+            changes.extend(patch)
 
-        response = self._make_request(
-            "PATCH", f"dns-zones/{zone_name}/records", record_data
-        )
-        return response.get("records", [{}])[0] if response.get("records") else {}
+        return changes
 
-    def update_record(
-        self,
-        domain: str,
-        record_id: str,  # pylint: disable=unused-argument
-        name: str,
-        record_type: str,
-        data: str,
-        ttl: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    def _patch_records(self, zone_name, changes, pretend):
         """
-        Update a DNS record.
-
-        Args:
-            domain: Domain name
-            record_id: Record ID (not used, kept for compatibility)
-            name: Record name
-            record_type: Record type
-            data: Record data
-            ttl: TTL in seconds (uses DNS_SCALEWAY_TTL if not specified)
-
-        Returns:
-            Updated record dictionary
+        Send a PATCH request to the Scaleway API to update the records.
         """
-        if ttl is None:
-            ttl = self.ttl
 
-        zone_name = self._get_zone_name(domain)
+        if pretend:
+            logger.info("Pretend: Would sync records for %s: %s", zone_name, changes)
+        else:
+            response = self._make_request(
+                "PATCH", f"dns-zones/{zone_name}/records", {"changes": changes}
+            )
+            if "records" not in response:
+                raise ValueError(f"Failed to sync records for {zone_name}: {response}")
 
-        # Validate that the zone exists
-        if not self._validate_zone_exists(zone_name):
-            raise ValueError(f"Zone not found: {zone_name}")
-
-        short_name = self._format_record_name(name, domain)
-
-        record_data = {
-            "return_all_records": False,
-            "changes": [
-                {
-                    "set": {
-                        "id_fields": {
-                            "name": short_name,
-                            "type": record_type,
-                        },
-                        "records": [
-                            {
-                                "name": short_name,
-                                "type": record_type,
-                                "data": data,
-                                "ttl": ttl,
-                            }
-                        ],
-                    }
-                }
-            ],
-        }
-
-        response = self._make_request(
-            "PATCH", f"dns-zones/{zone_name}/records", record_data
-        )
-        return response.get("records", [{}])[0] if response.get("records") else {}
-
-    def delete_record(self, domain: str, record_id: str) -> None:
-        """
-        Delete a DNS record.
-
-        Args:
-            domain: Domain name
-            record_id: Record ID (not used, kept for compatibility)
-        """
-        # For delete operations, we need to specify the record by name and type
-        # Since we don't have the name and type here, this method needs to be updated
-        # to accept name and type parameters
-        raise NotImplementedError(
-            "Delete record requires name and type parameters. Use delete_record_by_name_type instead."
-        )
-
-    def delete_record_by_name_type(
-        self, domain: str, name: str, record_type: str
-    ) -> None:
-        """
-        Delete a DNS record by name and type.
-
-        Args:
-            domain: Domain name
-            name: Record name
-            record_type: Record type
-        """
-        zone_name = self._get_zone_name(domain)
-
-        # Validate that the zone exists
-        if not self._validate_zone_exists(zone_name):
-            raise ValueError(f"Zone not found: {zone_name}")
-
-        short_name = self._format_record_name(name, domain)
-
-        record_data = {
-            "return_all_records": False,
-            "changes": [
-                {
-                    "delete": {
-                        "id_fields": {
-                            "name": short_name,
-                            "type": record_type,
-                        }
-                    }
-                }
-            ],
-        }
-
-        self._make_request("PATCH", f"dns-zones/{zone_name}/records", record_data)
-
-    def find_records(
-        self, domain: str, name: str, record_type: str
-    ) -> List[Dict[str, Any]]:
-        """
-        Find all DNS records of a specific type and name.
-
-        Args:
-            domain: Domain name
-            name: Record name
-            record_type: Record type
-
-        Returns:
-            List of record dictionaries
-        """
-        records = self.get_records(domain)
-        found_records = []
-        short_name = self._format_record_name(name, domain)
-
-        for record in records:
-            if record.get("name") == short_name and record.get("type") == record_type:
-                found_records.append(record)
-        return found_records
-
-    def find_record(
-        self, domain: str, name: str, record_type: str
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Find a specific DNS record.
-
-        Args:
-            domain: Domain name
-            name: Record name
-            record_type: Record type
-
-        Returns:
-            Record dictionary or None if not found
-        """
-        records = self.find_records(domain, name, record_type)
-        return records[0] if records else None
-
-    def record_exists(
-        self, domain: str, name: str, record_type: str, expected_value: str
-    ) -> bool:
-        """
-        Check if a specific DNS record with the expected value exists.
-
-        Args:
-            domain: Domain name
-            name: Record name
-            record_type: Record type
-            expected_value: Expected record value
-
-        Returns:
-            True if the record exists with the expected value
-        """
-        records = self.find_records(domain, name, record_type)
-        for record in records:
-            if record.get("data") == expected_value:
-                return True
-        return False
-
-    def provision_domain_records(
-        self, domain: str, expected_records: List[Dict[str, Any]], pretend: bool = False
-    ) -> Dict[str, Any]:
-        """
-        Provision DNS records for a domain.
-        Only creates records that don't already exist.
-
-        Args:
-            domain: Domain name
-            expected_records: List of expected DNS records
-            pretend: If True, simulate operations without making actual changes
-
-        Returns:
-            Dictionary with provisioning results
-        """
-        # Get or create zone
-        zone = self.get_zone(domain)
-        if not zone:
-            if pretend:
-                # Simulate zone creation
-                zone = {"domain": domain}
-            else:
-                try:
-                    zone = self.create_zone(domain)
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    return {
-                        "success": False,
-                        "error": f"Failed to create zone for {domain}: {e}",
-                        "domain": domain,
-                    }
-
-        # Use domain name directly for API calls
-        zone_name = self._get_zone_name(domain)
-        results = {
-            "success": True,
-            "domain": domain,
-            "zone_name": zone_name,
-            "created": [],
-            "updated": [],
-            "errors": [],
-            "pretend": pretend,
-        }
-
-        # Provision each expected record
-        for expected_record in expected_records:
-            record_type = expected_record["type"]
-            target = expected_record["target"]
-            expected_value = expected_record["value"]
-
-            # Build record name
-            if target:
-                record_name = f"{target}.{domain}"
-            else:
-                record_name = domain
-
-            try:
-                # Check if this specific record already exists
-                if self.record_exists(domain, record_name, record_type, expected_value):
-                    # Record already exists, skip it
-                    continue
-
-                if pretend:
-                    # Simulate creating new record
-                    results["created"].append(
-                        {
-                            "name": record_name,
-                            "type": record_type,
-                            "value": expected_value,
-                            "pretend": True,
-                        }
-                    )
-                else:
-                    # Create new record only if it doesn't exist
-                    self.create_record(domain, record_name, record_type, expected_value)
-                    results["created"].append(
-                        {
-                            "name": record_name,
-                            "type": record_type,
-                            "value": expected_value,
-                        }
-                    )
-
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                error_data = {
-                    "name": record_name,
-                    "type": record_type,
-                    "value": expected_value,
-                    "error": str(e),
-                }
-                if pretend:
-                    error_data["pretend"] = True
-                results["errors"].append(error_data)
-                results["success"] = False
-
-        return results
+        return changes

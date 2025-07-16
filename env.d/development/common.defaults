@@ -1,3 +1,0 @@
-# Shared env variables by all Messages backend services
-
-MDA_API_SECRET=my-shared-secret-mda
