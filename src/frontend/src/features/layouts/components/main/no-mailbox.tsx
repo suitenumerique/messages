@@ -9,7 +9,7 @@ export const NoMailbox = () => {
             <div>
                 <span className="material-icons">error</span>
                 <p>{t('no_mailbox')}</p>
-                <Button onClick={logout}>{t('logout')}</Button>
+                <Button onClick={logout}>{t('user_menu.logout')}</Button>
             </div>
         </div>
     )
