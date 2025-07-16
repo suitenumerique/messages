@@ -200,7 +200,9 @@ class TestAdminMaildomainsUserList:
     def test_admin_maildomains_user_list_search_by_full_name(self, api_client):
         """Test searching users by full name."""
         domain = factories.MailDomainFactory(name="search.local")
-        admin_user = factories.UserFactory(email="admin@search.local")
+        admin_user = factories.UserFactory(
+            email="admin@search.local", full_name="Admin User"
+        )
         user1 = factories.UserFactory(
             email="alice@search.local", full_name="Alice Smith"
         )
@@ -228,7 +230,9 @@ class TestAdminMaildomainsUserList:
     def test_admin_maildomains_user_list_search_case_insensitive(self, api_client):
         """Test that search is case insensitive."""
         domain = factories.MailDomainFactory(name="search.local")
-        admin_user = factories.UserFactory(email="admin@search.local")
+        admin_user = factories.UserFactory(
+            email="admin@search.local", full_name="Admin User"
+        )
         user1 = factories.UserFactory(
             email="alice@search.local", full_name="Alice Smith"
         )
@@ -286,7 +290,9 @@ class TestAdminMaildomainsUserList:
     def test_admin_maildomains_user_list_search_partial_match(self, api_client):
         """Test that search works with partial matches."""
         domain = factories.MailDomainFactory(name="search.local")
-        admin_user = factories.UserFactory(email="admin@search.local")
+        admin_user = factories.UserFactory(
+            email="admin@search.local", full_name="Admin User"
+        )
         user1 = factories.UserFactory(email="fred@search.local", full_name="Fred Smith")
         user2 = factories.UserFactory(
             email="Fritz@search.local", full_name="Fritz Johnson"
@@ -448,7 +454,9 @@ class TestAdminMaildomainsUserList:
     def test_admin_maildomains_user_list_user_without_email(self, api_client):
         """Test handling of users without email addresses."""
         domain = factories.MailDomainFactory(name="noemail.local")
-        admin_user = factories.UserFactory(email="admin@noemail.local")
+        admin_user = factories.UserFactory(
+            email="admin@noemail.local", full_name="Admin User"
+        )
         user_no_email = factories.UserFactory(email=None, full_name="No Email User")
 
         factories.MailDomainAccessFactory(
