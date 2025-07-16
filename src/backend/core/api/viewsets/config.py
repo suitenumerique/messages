@@ -3,8 +3,8 @@
 from django.conf import settings
 
 import rest_framework as drf
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.permissions import AllowAny
-from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 
 class ConfigView(drf.views.APIView):
@@ -20,19 +20,37 @@ class ConfigView(drf.views.APIView):
                 response={
                     "type": "object",
                     "properties": {
-                        "ENVIRONMENT": { "type": "string", "readOnly": True },
-                        "POSTHOG_KEY": { "type": "string", "nullable": True, "readOnly": True },
-                        "POSTHOG_HOST": { "type": "string", "nullable": True, "readOnly": True },
-                        "LANGUAGES": { "type": "array", "items": { "type": "string" }, "readOnly": True },
-                        "LANGUAGE_CODE": { "type": "string", "readOnly": True },
+                        "ENVIRONMENT": {"type": "string", "readOnly": True},
+                        "POSTHOG_KEY": {
+                            "type": "string",
+                            "nullable": True,
+                            "readOnly": True,
+                        },
+                        "POSTHOG_HOST": {
+                            "type": "string",
+                            "nullable": True,
+                            "readOnly": True,
+                        },
+                        "POSTHOG_SURVEY_ID": {
+                            "type": "string",
+                            "nullable": True,
+                            "readOnly": True,
+                        },
+                        "LANGUAGES": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "readOnly": True,
+                        },
+                        "LANGUAGE_CODE": {"type": "string", "readOnly": True},
                     },
                     "required": [
                         "ENVIRONMENT",
                         "POSTHOG_KEY",
                         "POSTHOG_HOST",
+                        "POSTHOG_SURVEY_ID",
                         "LANGUAGES",
-                        "LANGUAGE_CODE"
-                    ]
+                        "LANGUAGE_CODE",
+                    ],
                 },
             )
         },
@@ -47,8 +65,9 @@ class ConfigView(drf.views.APIView):
             "ENVIRONMENT",
             "POSTHOG_KEY",
             "POSTHOG_HOST",
+            "POSTHOG_SURVEY_ID",
             "LANGUAGES",
-            "LANGUAGE_CODE"
+            "LANGUAGE_CODE",
         ]
         dict_settings = {}
         for setting in array_settings:

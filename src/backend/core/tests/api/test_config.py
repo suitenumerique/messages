@@ -16,10 +16,11 @@ pytestmark = pytest.mark.django_db
 
 
 @override_settings(
-    FRONTEND_THEME="test-theme",
-    MEDIA_BASE_URL="http://testserver/",
-    POSTHOG_KEY={"id": "132456", "host": "https://eu.i.posthog-test.com"},
-    SENTRY_DSN="https://sentry.test/123",
+    POSTHOG_KEY="132456",
+    POSTHOG_HOST="https://test.i.posthog-test.com",
+    POSTHOG_SURVEY_ID="7890",
+    LANGUAGES=[["en-us", "English"], ["fr-fr", "French"], ["de-de", "German"]],
+    LANGUAGE_CODE="en-us",
 )
 @pytest.mark.parametrize("is_authenticated", [False, True])
 def test_api_config(is_authenticated):
@@ -34,10 +35,9 @@ def test_api_config(is_authenticated):
     assert response.status_code == HTTP_200_OK
     assert response.json() == {
         "ENVIRONMENT": "test",
-        "FRONTEND_THEME": "test-theme",
         "LANGUAGES": [["en-us", "English"], ["fr-fr", "French"], ["de-de", "German"]],
         "LANGUAGE_CODE": "en-us",
-        "MEDIA_BASE_URL": "http://testserver/",
-        "POSTHOG_KEY": {"id": "132456", "host": "https://eu.i.posthog-test.com"},
-        "SENTRY_DSN": "https://sentry.test/123",
+        "POSTHOG_KEY": "132456",
+        "POSTHOG_HOST": "https://test.i.posthog-test.com",
+        "POSTHOG_SURVEY_ID": "7890",
     }

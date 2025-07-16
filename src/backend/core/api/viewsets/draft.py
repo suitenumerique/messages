@@ -253,7 +253,6 @@ class DraftMessageView(APIView):
 
         # Update draft body if provided
         if "draftBody" in request_data:
-
             try:
                 if message.draft_blob:
                     message.draft_blob.delete()

@@ -371,6 +371,9 @@
           "new_address": "New address"
         },
         "loading": "Loading addresses..."
+      },
+      "posthog": {
+        "cta": "Give feedback"
       }
     }
   },
@@ -741,6 +744,9 @@
           "new_address": "Nouvelle adresse"
         },
         "loading": "Chargement des adresses..."
+      },
+      "posthog": {
+        "cta": "Faire un retour"
       }
     }
   }

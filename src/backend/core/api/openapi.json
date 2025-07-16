@@ -158,6 +158,11 @@
                                             "nullable": true,
                                             "readOnly": true
                                         },
+                                        "POSTHOG_SURVEY_ID": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "readOnly": true
+                                        },
                                         "LANGUAGES": {
                                             "type": "array",
                                             "items": {
@@ -174,7 +179,7 @@
                                         "ENVIRONMENT",
                                         "POSTHOG_KEY",
                                         "POSTHOG_HOST",
-                                        "LANGUAGES",
+                                        "POSTHOG_SURVEY_IDLANGUAGES",
                                         "LANGUAGE_CODE"
                                     ]
                                 }

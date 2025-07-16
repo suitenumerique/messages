@@ -18,7 +18,7 @@
   @media screen and (max-width: breakpoint(tablet)) {
     grid-template-columns: auto 1fr 1fr;
     grid-template-rows: 1fr 1fr;
-    grid-template-areas: 
+    grid-template-areas:
       "toggle left left"
       "center center center";
     padding: 0 var(--c--theme--spacings--base);
@@ -65,10 +65,5 @@
   &__right {
     grid-area: right;
     justify-content: flex-end;
-    &__language-picker {
-      @media screen and (max-width: breakpoint(tablet)) {
-        display: none;
-      }
-    }
   }
 }

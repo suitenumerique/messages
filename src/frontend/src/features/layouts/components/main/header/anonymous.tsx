@@ -1,7 +1,8 @@
-import { HeaderProps } from "@gouvfr-lasuite/ui-kit";
+import { HeaderProps, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { Button } from "@openfun/cunningham-react";
-import { LanguagePicker } from "../language-picker";
 import { useTranslation } from "react-i18next";
+import { PostHogSurveyButton } from "@/features/ui/components/feedback-button";
+import { LanguagePicker } from "../language-picker";
 
 
 export const AnonymousHeader = ({
@@ -10,6 +11,7 @@ export const AnonymousHeader = ({
   isPanelOpen,
 }: HeaderProps) => {
   const { t } = useTranslation();
+  const { isDesktop } = useResponsive();
 
   return (
     <div className="c__header c__header--anonymous">
@@ -26,11 +28,18 @@ export const AnonymousHeader = ({
           }
         />
       </div>
-      <div className="c__header__left">{leftIcon}</div>
+      <div className="c__header__left">
+        {leftIcon}
+        {
+          isDesktop && (
+            <PostHogSurveyButton />
+          )
+        }
+      </div>
       <div className="c__header__right">
-        <div className="c__header__right__language-picker">
-          <LanguagePicker />
-        </div>
+        {isDesktop && (
+            <LanguagePicker />
+        )}
       </div>
     </div>
   );

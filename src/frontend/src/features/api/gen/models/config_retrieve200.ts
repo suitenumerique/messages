@@ -12,6 +12,8 @@ export type ConfigRetrieve200 = {
   readonly POSTHOG_KEY: string | null;
   /** @nullable */
   readonly POSTHOG_HOST: string | null;
-  readonly LANGUAGES: readonly string[];
+  /** @nullable */
+  readonly POSTHOG_SURVEY_ID?: string | null;
+  readonly LANGUAGES?: readonly string[];
   readonly LANGUAGE_CODE: string;
 };

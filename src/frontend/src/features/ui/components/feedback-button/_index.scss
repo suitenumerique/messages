@@ -1,0 +1,15 @@
+.feedback-button.c__button {
+    white-space: nowrap;
+    color: var(--c--theme--colors--info-600);
+    background-color: var(--c--theme--colors--info-100);
+
+    &:hover {
+      color: var(--c--theme--colors--info-600);
+      background-color: var(--c--theme--colors--info-200);
+    }
+
+    &:active {
+      color: var(--c--theme--colors--info-800);
+      background-color: var(--c--theme--colors--info-200);
+    }
+}

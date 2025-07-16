@@ -200,6 +200,8 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `POSTHOG_KEY` | None | PostHog analytics key | Optional |
+| `POSTHOG_HOST` | `https://eu.i.posthog.com` | PostHog analytics host url | Optional |
+| `POSTHOG_SURVEY_ID` | None | PostHog survey id to get feedback from users | Optional |
 
 ### Logging
 

@@ -4,8 +4,10 @@ import { getRequestUrl } from "@/features/api/utils";
 import { useUsersMeRetrieve } from "@/features/api/gen/users/users";
 import { User } from "@/features/api/gen/models/user";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { posthog } from "posthog-js";
 
 export const logout = () => {
+  posthog.reset()
   window.location.replace(getRequestUrl("/api/v1.0/logout/"));
 };
 

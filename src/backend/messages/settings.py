@@ -407,6 +407,9 @@ class Base(Configuration):
     POSTHOG_HOST = values.Value(
         "https://eu.i.posthog.com", environ_name="POSTHOG_HOST", environ_prefix=None
     )
+    POSTHOG_SURVEY_ID = values.Value(
+        None, environ_name="POSTHOG_SURVEY_ID", environ_prefix=None
+    )
 
     # Celery
     CELERY_BROKER_URL = values.Value(

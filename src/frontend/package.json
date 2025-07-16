@@ -36,6 +36,7 @@
     "dompurify": "3.2.6",
     "i18next": "25.3.0",
     "next": "15.3.4",
+    "posthog-js": "1.257.0",
     "pretty-bytes": "7.0.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
@@ -65,7 +66,7 @@
     "vitest": "3.2.4"
   },
   "optionalDependencies": {
-    "@rollup/rollup-linux-x64-musl": "4.44.1",
-    "@rollup/rollup-linux-x64-gnu": "4.44.1"
+    "@rollup/rollup-linux-x64-gnu": "4.44.1",
+    "@rollup/rollup-linux-x64-musl": "4.44.1"
   }
 }
