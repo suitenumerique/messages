@@ -1,7 +1,7 @@
 import { TreeLabel, ThreadsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useThreadsStatsRetrieve, ThreadsStatsRetrieve200, useLabelsAddThreadsCreate, useLabelsRemoveThreadsCreate } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { DropdownMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit";
-import { Button, useModal } from "@openfun/cunningham-react";
+import { Button } from "@openfun/cunningham-react";
 import clsx from "clsx";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -9,7 +9,6 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/features/ui/components/badge";
-import { LabelModal } from "../label-form-modal";
 import { useLayoutContext } from "@/features/layouts/components/main";
 import router from "next/router";
 import { MAILBOX_FOLDERS } from "../../../mailbox-list";
@@ -18,12 +17,12 @@ import { toast } from "react-toastify";
 
 type LabelItemProps = TreeLabel & {
     level?: number;
+    onEdit: (label: TreeLabel) => void;
   }
 
-export  const LabelItem = ({ level = 0, ...label }: LabelItemProps) => {
+export  const LabelItem = ({ level = 0, onEdit, ...label }: LabelItemProps) => {
     const { selectedMailbox, invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-    const { isOpen, onClose, open } = useModal();
     const [isDragOver, setIsDragOver] = useState(false);
     const queryParams = useMemo(() => {
       const params = new URLSearchParams({ label_slug: label.slug });
@@ -176,7 +175,7 @@ export  const LabelItem = ({ level = 0, ...label }: LabelItemProps) => {
                   {
                     label: t('actions.edit'),
                     icon: <span className="material-icons">edit</span>,
-                    callback: open,
+                    callback: () => onEdit(label),
                   },
                   {
                     label: t('actions.delete'),
@@ -205,11 +204,10 @@ export  const LabelItem = ({ level = 0, ...label }: LabelItemProps) => {
         {hasChildren && isExpanded && (
           <div className="label-children">
             {label.children.map((child) => (
-              <LabelItem key={child.id} {...child} level={level + 1} />
+              <LabelItem key={child.id} {...child} level={level + 1} onEdit={onEdit} />
             ))}
           </div>
         )}
-        <LabelModal isOpen={isOpen} onClose={onClose} label={label} />
       </>
     );
   }

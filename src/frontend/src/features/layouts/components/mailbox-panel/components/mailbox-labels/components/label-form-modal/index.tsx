@@ -8,7 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Modal, ModalSize } from "@openfun/cunningham-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import z from "zod";
@@ -32,13 +32,14 @@ type FormFields = z.infer<typeof formSchema>;
  */
 export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
     const { t } = useTranslation();
+    const defaultValues = useMemo(() => ({
+      name: label?.display_name ?? '',
+      color: label?.color ?? '#E3E3FD',
+      parent_label: label?.name.split('/').slice(0, -1).join('/') ?? undefined,
+    }), [label]);
     const form = useForm({
         resolver: zodResolver(formSchema),
-        defaultValues: {
-            name: label?.display_name ?? '',
-            color: label?.color ?? '#E3E3FD',
-            parent_label: label?.name.split('/').slice(0, -1).join('/') ?? undefined,
-        },
+        defaultValues,
     });
     const charColor = useMemo(
       () => ColorHelper.getContrastColor(form.watch('color')),
@@ -75,10 +76,9 @@ export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
         // Do not display current label and its children as options to nest the current label
         (option) => !label || !option.value.startsWith(label.name)
       );
-    }, [labelsQuery.data]);
+    }, [label, labelsQuery.data]);
 
     const handleClose = () => {
-      form.reset();
       onClose();
     }
 
@@ -105,6 +105,12 @@ export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
         }
       });
     }
+
+    useEffect(() => {
+      if (isOpen) {
+        form.reset(defaultValues);
+      }
+    }, [isOpen]);
 
     return (
       <Modal
