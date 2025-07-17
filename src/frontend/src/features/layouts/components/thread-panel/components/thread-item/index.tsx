@@ -81,7 +81,7 @@ export const ThreadItem = ({ thread }: ThreadItemProps) => {
                             </div>
                         </div>
                         <div className="thread-item__content">
-                            <p className="thread-item__subject">{thread.subject}</p>
+                            <p className="thread-item__subject">{thread.subject || thread.snippet || t('thread-item.no-subject')}</p>
                             {thread.labels.length > 0 && (
                                 <div className="thread-item__labels">
                                     {thread.labels.map((label) => (

@@ -305,11 +305,11 @@ const LinkToDoc = ({ imapDomain }: { imapDomain: string }) => {
         },
         "orange.fr": {
             displayName: "Orange",
-            href: "https://assistancepro.orange.fr/mail_pro/parametrer_le_mail_pro/sur_un_ordinateur/messagerie_pro_orange__activer_ou_desactiver_le_protocole_popimap_pour_les_logiciels_de_messagerie_-448045"
+            href: "https://assistance.orange.fr/ordinateurs-peripheriques/installer-et-utiliser/l-utilisation-du-mail-et-du-cloud/mail-orange/le-mail-orange-nouvelle-version/parametrer-la-boite-mail/mail-orange-comment-activer-ou-desactiver-les-acces-pop-imap-pour-les-logiciels-ou-applications-de-messagerie-tiers_427398-957069"
         },
         "wanadoo.fr": {
             displayName: "Wanadoo",
-            href: "https://assistancepro.orange.fr/mail_pro/parametrer_le_mail_pro/sur_un_ordinateur/messagerie_pro_orange__activer_ou_desactiver_le_protocole_popimap_pour_les_logiciels_de_messagerie_-448045"
+            href: "https://assistance.orange.fr/ordinateurs-peripheriques/installer-et-utiliser/l-utilisation-du-mail-et-du-cloud/mail-orange/le-mail-orange-nouvelle-version/parametrer-la-boite-mail/mail-orange-comment-activer-ou-desactiver-les-acces-pop-imap-pour-les-logiciels-ou-applications-de-messagerie-tiers_427398-957069"
         },
     }
     const doc = domainDoc[imapDomain as keyof typeof domainDoc];

@@ -183,6 +183,7 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
       }
 
       const response = await createMailbox({ maildomainPk: domainId, data: payload }, );
+      refetchMailboxes();
       setCreatedMailbox(response.data);
     } catch (error: unknown) {
       if (error instanceof APIError && error.data.local_part) {
@@ -203,11 +204,6 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
     onClose();
   };
 
-  const handleCloseSuccess = () => {
-    handleClose();
-    refetchMailboxes();
-  };
-
   const getFieldError = <Type extends "personal" | "shared" | "redirect", Errors extends FieldErrors<Extract<CreateAddressFormData, { type: Type }>> = FieldErrors<Extract<CreateAddressFormData, { type: Type }>>>(fieldName: keyof Errors) => {
       const errors = form.formState.errors as Errors;
       const error = errors?.[fieldName];
@@ -222,7 +218,7 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
       onClose={handleClose}
     >
       {createdMailbox ? (
-        <MailboxCreationSuccess type={activeTab} mailbox={createdMailbox} onClose={handleCloseSuccess} />
+        <MailboxCreationSuccess type={activeTab} mailbox={createdMailbox} onClose={handleClose} />
       ) : (
       <div className="modal-create-address">
         {/* Tab Navigation */}

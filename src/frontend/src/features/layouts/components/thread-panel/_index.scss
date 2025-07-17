@@ -43,7 +43,12 @@
         justify-content: center;
         align-items: center;
         margin: 1rem 0;
-        gap: 1rem;
+        gap: 1.5rem;
+        padding-inline: 1rem;
+
+        & > .c__spinner {
+            flex-shrink: 0;
+        }
     }
 }
 

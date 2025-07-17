@@ -76,11 +76,14 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
                     font-size: 14px;
                     color: #24292e;
                 }
+                *:not(:last-child) {
+                    margin-bottom: 1em;
+                }
                 img { max-width: 100%; height: auto; }
                 a { color: #0366d6; text-decoration: none; }
                 a:hover { text-decoration: underline; }
                 blockquote {
-                    margin: 0 0 1em;
+                    margin: 0 0 1rem;
                     padding: 0 1em;
                     color: #6a737d;
                     border-left: 0.25em solid #dfe2e5;

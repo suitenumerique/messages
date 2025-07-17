@@ -127,7 +127,7 @@ export const ThreadPanel = () => {
                         {queryStates.threads.isFetchingNextPage && (
                             <>
                                 <Spinner />
-                                <span>Loading next threads...</span>
+                                <span>{t('thread-panel.loading-next-threads')}</span>
                             </>
                         )}
                     </div>

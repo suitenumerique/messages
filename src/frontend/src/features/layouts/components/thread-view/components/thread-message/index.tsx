@@ -78,7 +78,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                     )}
                     <div className="thread-message__header-rows">
                         <div className="thread-message__header-column thread-message__header-column--left">
-                            <h2 className="thread-message__subject">{message.subject}</h2>
+                            <h2 className="thread-message__subject">{message.subject || selectedThread?.snippet || t('thread-item.no-subject')}</h2>
                         </div>
                         <div className="thread-message__header-column thread-message__header-column--right flex-row flex-align-center">
                             <div className="thread-message__metadata">
