@@ -18,6 +18,15 @@
     display: none;
 }
 
+.form-field-save-time {
+    display: inline-flex;
+    justify-content: flex-end;
+    font-size: var(--c--theme--font--sizes--sm);
+    text-align: right;
+    color: var(--c--theme--colors--greyscale-600);
+    width: 100%;
+}
+
 .form-footer {
     display: flex;
     flex-direction: row-reverse;

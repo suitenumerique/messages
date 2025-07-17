@@ -1,7 +1,7 @@
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button } from "@openfun/cunningham-react";
 import { clsx } from "clsx";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -16,6 +16,7 @@ import { toast } from "react-toastify";
 import { useSentBox } from "@/features/providers/sent-box";
 import { useRouter } from "next/router";
 import { AttachmentUploader } from "./attachment-uploader";
+import { DateHelper } from "@/features/utils/date-helper";
 
 export type MessageFormMode = "new" |"reply" | "reply_all" | "forward";
 
@@ -50,9 +51,7 @@ const messageFormSchema = z.object({
           .optional()
           .transform(toEmailArray)
           .pipe(emailArraySchema),
-    subject: z.string()
-        .trim()
-        .nonempty("message_form.error.subject_required"),
+    subject: z.string().trim(),
     messageEditorHtml: z.string().optional().readonly(),
     messageEditorText: z.string().optional().readonly(),
     messageEditorDraft: z.string().optional().readonly(),
@@ -79,6 +78,8 @@ export const MessageForm = ({
     const [showCCField, setShowCCField] = useState((draftMessage?.cc?.length ?? 0) > 0);
     const [showBCCField, setShowBCCField] = useState((draftMessage?.bcc?.length ?? 0) > 0);
     const [pendingSubmit, setPendingSubmit] = useState(false);
+    const [currentTime, setCurrentTime] = useState(new Date());
+    const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
     const { selectedMailbox, mailboxes, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
     const hideSubjectField = Boolean(parentMessage);
     const defaultSenderId = mailboxes?.find((mailbox) => {
@@ -205,6 +206,7 @@ export const MessageForm = ({
 
     const handleDeleteMessage = (messageId: string) => {
         if(window.confirm(t("message_form.confirm.delete"))) {
+            stopAutoSave();
             deleteMessageMutation.mutate({
                 id: messageId
             }, {
@@ -251,12 +253,24 @@ export const MessageForm = ({
             router.replace(`/mailbox/${mailboxId}/thread/${threadId}?has_draft=1`);
         }
     }
-
     /**
      * Update or create a draft message if any field to change.
      */
     const saveDraft = async (data: MessageFormFields) => {
-        if (Object.keys(form.formState.dirtyFields).length === 0) return draft;
+        const canSaveDraft = (
+            Object.keys(form.formState.dirtyFields).length > 0
+            && (
+                draft || (
+                    data.subject.length > 0
+                    || data.to.length > 0
+                    || data.cc.length > 0
+                    || data.bcc.length > 0
+                    || (data.messageEditorText?.length ?? 0) > 0
+                    || (data.attachments?.length ?? 0) > 0
+                )
+            )
+        )
+        if (!canSaveDraft) return draft;
 
         const payload = {
             to: data.to,
@@ -290,10 +304,33 @@ export const MessageForm = ({
     }
 
     /**
+     * Auto-save draft every 30 seconds
+     */
+    const startAutoSave = () => {
+        // Clear existing timer
+        if (autoSaveTimerRef.current) {
+            clearInterval(autoSaveTimerRef.current);
+        }
+
+        // Start new timer
+        autoSaveTimerRef.current = setInterval(() => {
+            form.handleSubmit(saveDraft)();
+        }, 30000); // 30 seconds
+    };
+
+    const stopAutoSave = () => {
+        if (autoSaveTimerRef.current) {
+            clearInterval(autoSaveTimerRef.current);
+            autoSaveTimerRef.current = null;
+        }
+    };
+
+    /**
      * Send the draft message
      */
     const handleSubmit = async (data: MessageFormFields) => {
         setPendingSubmit(true);
+        stopAutoSave(); // Stop auto-save when submitting
 
         // recipients are optional to save the draft but required to send the message
         // so we have to manually check that at least one recipient is present.
@@ -340,6 +377,34 @@ export const MessageForm = ({
             form.reset(undefined, { keepSubmitCount: true, keepDirty: false, keepValues: true, keepDefaultValues: false });
         }
     }, [draft]);
+
+    // Start auto-save when component mounts
+    useEffect(() => {
+        startAutoSave();
+
+        // Cleanup on unmount
+        return () => {
+            stopAutoSave();
+        };
+    }, []);
+
+    // Restart auto-save when form becomes dirty
+    useEffect(() => {
+        if (Object.keys(form.formState.dirtyFields).length > 0) {
+            startAutoSave();
+        }
+    }, [form.formState.dirtyFields]);
+
+    // Update current time every 15 seconds for relative time display
+    useEffect(() => {
+        const timeUpdateInterval = setInterval(() => {
+            setCurrentTime(new Date());
+        }, 15000); // 15 seconds
+
+        return () => {
+            clearInterval(timeUpdateInterval);
+        };
+    }, []);
 
     useEffect(() => {
         if (!showCCField && form.formState.errors?.cc) {
@@ -435,6 +500,18 @@ export const MessageForm = ({
 
                 <AttachmentUploader initialAttachments={getDefaultAttachments()} onChange={form.handleSubmit(saveDraft)} />
 
+                <div className="form-field-row form-field-save-time">
+                    {
+                        (draftCreateMutation.isPending || draftUpdateMutation.isPending) && (
+                            <Spinner size="sm" />
+                        )
+                    }
+                    {
+                        draft && (
+                            t("message_form.last_save.label", { relativeTime: t(...DateHelper.formatRelativeTime(draft.updated_at, currentTime)) })
+                        )
+                    }
+                </div>
                 <footer className="form-footer">
                     <Button
                         color="primary"

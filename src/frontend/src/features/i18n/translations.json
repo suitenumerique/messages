@@ -78,6 +78,12 @@
         "reply": "Reply",
         "forward": "Forward"
       },
+      "thread-panel": {
+        "loading-next-threads": "Loading next threads..."
+      },
+      "thread-item": {
+        "no-subject": "No subject"
+      },
       "thread-view": {
         "trashed-banner": {
           "message_one": "{{count}} message of this thread has been deleted.",
@@ -133,6 +139,9 @@
         },
         "confirm": {
           "delete": "Are you sure you want to delete this draft? This action cannot be undone."
+        },
+        "last_save": {
+          "label": "Last saved {{relativeTime}}"
         }
       },
       "queued_message": {
@@ -175,6 +184,16 @@
           "Kb": "kb",
           "Mb": "Mb",
           "Gb": "Gb"
+        },
+        "past_relative_time": {
+          "just_now": "just now",
+          "less_than_minute_ago": "less than a minute ago",
+          "minutes_ago_one": "{{count}} minute ago",
+          "minutes_ago_other": "{{count}} minutes ago",
+          "hours_ago_one": "{{count}} hour ago",
+          "hours_ago_other": "{{count}} hours ago",
+          "days_ago_one": "{{count}} day ago",
+          "days_ago_other": "{{count}} days ago"
         }
       },
       "roles": {
@@ -456,6 +475,12 @@
         "reply": "Répondre",
         "forward": "Transférer"
       },
+      "thread-panel": {
+        "loading-next-threads": "Chargement des conversations suivantes..."
+      },
+      "thread-item": {
+        "no-subject": "Aucun sujet"
+      },
       "thread-view": {
         "trashed-banner": {
           "message_one": "{{count}} message de cette conversation a été supprimé.",
@@ -511,6 +536,9 @@
         },
         "confirm": {
           "delete": "Êtes-vous sûr de vouloir supprimer ce brouillon ? Cette action est irréversible."
+        },
+        "last_save": {
+          "label": "Dernière sauvegarde {{relativeTime}}"
         }
       },
       "queued_message": {
@@ -553,6 +581,16 @@
           "Kb": "ko",
           "Mb": "Mo",
           "Gb": "Go"
+        },
+        "past_relative_time": {
+          "just_now": "à l'instant",
+          "less_than_minute_ago": "il y a moins d'une minute",
+          "minutes_ago_one": "il y a {{count}} minute",
+          "minutes_ago_other": "il y a {{count}} minutes",
+          "hours_ago_one": "il y a {{count}} heure",
+          "hours_ago_other": "il y a {{count}} heures",
+          "days_ago_one": "il y a {{count}} jour",
+          "days_ago_other": "il y a {{count}} jours"
         }
       },
       "roles": {

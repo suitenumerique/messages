@@ -29,4 +29,40 @@ export class DateHelper {
 
     return format(date, 'dd/MM/yyyy', { locale: dateLocale });
   }
+
+  /**
+   * Compute a relative time between a given date and a time reference and
+   * return a translation key and a count if needed.
+   *
+   * For now only past relative time is supported.
+   *
+   * @param dateString - The date string to format
+   * @param timeRef - The time reference to compute the relative time from
+   * @returns [translationKey, count]
+   */
+  public static formatRelativeTime(dateString: string, timeRef: Date | string = new Date()): [string, undefined | { count: number }] {
+    const now = timeRef instanceof Date ? timeRef : new Date(timeRef);
+    const date = new Date(dateString);
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (isNaN(diffInSeconds)) {
+      return ["", undefined];
+    }
+
+    if (diffInSeconds < 5) {
+      return ["units.past_relative_time.just_now", undefined];
+    }
+    else if (diffInSeconds < 60) {
+      return ["units.past_relative_time.less_than_minute_ago", undefined];
+    }
+    else if (diffInSeconds < 3600) {
+      return ["units.past_relative_time.minutes_ago", { count: Math.floor(diffInSeconds / 60) }];
+    }
+    else if (diffInSeconds < 86400) {
+      return ["units.past_relative_time.hours_ago", { count: Math.floor(diffInSeconds / 3600) }];
+    }
+    else {
+      return ["units.past_relative_time.days_ago", { count: Math.floor(diffInSeconds / 86400) }];
+    }
+  }
 }
