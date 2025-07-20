@@ -85,6 +85,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Create env files
         run: make create-env-files
+      - name: Install frontend dependencies
+        run: make front-install-frozen
       - name: Run API update
         run: make api-update
       - name: Check for changes
