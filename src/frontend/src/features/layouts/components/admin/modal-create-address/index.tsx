@@ -12,6 +12,7 @@ import { Banner } from "@/features/ui/components/banner";
 import { APIError } from "@/features/api/api-error";
 import { MailboxAdminCreate, MailboxAdminCreatePayloadRequest } from "@/features/api/gen";
 import { MailboxCreationSuccess } from "./mailbox-creation-success";
+import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
 import clsx from "clsx";
 
 export const MODAL_CREATE_ADDRESS_ID = "modal-create-address";
@@ -72,11 +73,13 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [prefixManuallyChanged, setPrefixManuallyChanged] = useState(false);
   const [prefixHasFocus, setPrefixHasFocus] = useState(false);
+  const [firstFieldRef, setFirstFieldRef] = useState<HTMLInputElement | null>(null);
 
   // Get existing mailboxes and domain info
   const { data: mailboxesData, refetch: refetchMailboxes } = useMaildomainsMailboxesList(domainId);
   const mailboxes = mailboxesData?.data.results || [];
-  const domainName = mailboxes[0]?.domain_name || "";
+  const { selectedMailDomain } = useAdminMailDomain();
+  const domainName = selectedMailDomain?.name || "";
   const { mutateAsync: createMailbox } = useMaildomainsMailboxesCreate();
   const [createdMailbox, setCreatedMailbox] = useState<MailboxAdminCreate | null>(null);
 
@@ -131,6 +134,16 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
     }
   }, [watchedValues, activeTab, prefixManuallyChanged, setValue]);
 
+  // Focus first field when tab changes
+  useEffect(() => {
+    if (firstFieldRef && isOpen) {
+      // Small delay to ensure the field is rendered
+      setTimeout(() => {
+        firstFieldRef.focus();
+      }, 100);
+    }
+  }, [activeTab, isOpen, firstFieldRef]);
+
   // Reset form when switching tabs
   const handleTabChange = (tab: "personal" | "shared" | "redirect") => {
     setActiveTab(tab);
@@ -174,6 +187,8 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
       if (data.type === "personal") {
         payload.metadata.first_name = data.first_name;
         payload.metadata.last_name = data.last_name;
+      } else if (data.type === "shared") {
+        payload.metadata.name = data.name;
       } else if (data.type === "redirect") {
         // Find target mailbox for alias creation
         const targetMailbox = mailboxes.find(mb =>
@@ -238,6 +253,7 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
             {t('create_address_modal.tabs.shared')}
           </button>
           <button
+            disabled={true}
             type="button"
             className={clsx('modal-tab', {'modal-tab--active': activeTab === "redirect"})}
             onClick={() => handleTabChange("redirect")}
@@ -263,6 +279,11 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
                     text={getFieldError<"personal">('first_name')}
                     name="first_name"
                     className="name-input"
+                    ref={(el) => {
+                      if (activeTab === "personal") {
+                        setFirstFieldRef(el);
+                      }
+                    }}
                   />
                   <RhfInput
                     label={t('create_address_modal.form.labels.last_name')}
@@ -309,6 +330,11 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
                     text={getFieldError<"shared">('name')}
                     name="name"
                     fullWidth
+                    ref={(el) => {
+                      if (activeTab === "shared") {
+                        setFirstFieldRef(el);
+                      }
+                    }}
                   />
                 </div>
 
@@ -344,6 +370,11 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
                     onBlur={() => setPrefixHasFocus(false)}
                     onInput={() => {
                       setPrefixManuallyChanged(true);
+                    }}
+                    ref={(el) => {
+                      if (activeTab === "redirect") {
+                        setFirstFieldRef(el);
+                      }
                     }}
                   />
                   <span className="domain-suffix">@{domainName}</span>

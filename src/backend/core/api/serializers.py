@@ -711,6 +711,7 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
             "id",
             "local_part",
             "domain_name",
+            "is_identity",
             "alias_of",  # show if it's an alias
             "accesses",  # List of users and their roles
             "created_at",

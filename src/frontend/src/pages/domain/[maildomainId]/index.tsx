@@ -29,16 +29,30 @@ function AdminUserDataGrid({ domain }: AdminUserDataGridProps) {
 
   const columns = [
     {
-      id: "alias_status",
+      id: "mailbox_type",
       headerName: t("admin_maildomains_details.datagrid_headers.type"),
-      size: 100,
-      renderCell: ({ row }: { row: MailboxAdmin }) => (
-        <span style={{
-          color: row.alias_of ? "var(--c--theme--colors--info-600)" : "var(--c--theme--colors--success-600)"
-        }}>
-          {row.alias_of ? t("admin_maildomains_details.datagrid_row_labels.alias") : t("admin_maildomains_details.datagrid_row_labels.mailbox")}
-        </span>
-      ),
+      size: 140,
+      renderCell: ({ row }: { row: MailboxAdmin }) => {
+        let typeLabel: string;
+        let color: string;
+        
+        if (row.alias_of) {
+          typeLabel = t("admin_maildomains_details.datagrid_row_labels.alias");
+          color = "var(--c--theme--colors--info-600)";
+        } else if (row.is_identity) {
+          typeLabel = t("admin_maildomains_details.datagrid_row_labels.personal_mailbox");
+          color = "var(--c--theme--colors--success-600)";
+        } else {
+          typeLabel = t("admin_maildomains_details.datagrid_row_labels.shared_mailbox");
+          color = "var(--c--theme--colors--success-600)";
+        }
+        
+        return (
+          <span style={{ color }}>
+            {typeLabel}
+          </span>
+        );
+      },
     },
     {
       id: "email",
@@ -49,7 +63,13 @@ function AdminUserDataGrid({ domain }: AdminUserDataGridProps) {
       id: "user_name",
       headerName: t("admin_maildomains_details.datagrid_headers.accesses"),
       renderCell: ({ row }: { row: MailboxAdmin }) => {
-        if (row.accesses?.length === 0) return t("admin_maildomains_details.datagrid_row_labels.no_accesses");
+        if (row.accesses?.length === 0) {
+          return (
+            <span style={{ color: "var(--c--theme--colors--danger-600)" }}>
+              {t("admin_maildomains_details.datagrid_row_labels.no_accesses")}
+            </span>
+          );
+        }
 
         return row.accesses?.map((access) => {
           return access.user?.full_name || access.user?.email || t("admin_maildomains_details.datagrid_row_labels.unknown_user");

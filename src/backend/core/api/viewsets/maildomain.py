@@ -3,7 +3,9 @@
 from django.conf import settings
 from django.db.models import F, Q
 from django.shortcuts import get_object_or_404
-from django.utils.translation import gettext_lazy as _  # For user-facing error messages
+from django.utils.translation import (
+    gettext_lazy as _t,
+)  # For user-facing error messages
 
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -112,6 +114,9 @@ class AdminMailDomainMailboxViewSet(
                         "last_name": drf_serializers.CharField(
                             required=False, allow_blank=True
                         ),
+                        "name": drf_serializers.CharField(
+                            required=False, allow_blank=True
+                        ),
                     },
                 ),
             },
@@ -138,7 +143,7 @@ class AdminMailDomainMailboxViewSet(
         # --- Validation for local_part ---
         if not local_part:
             return Response(
-                {"local_part": [_("This field may not be blank.")]},
+                {"local_part": [_t("This field may not be blank.")]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -149,7 +154,7 @@ class AdminMailDomainMailboxViewSet(
             return Response(
                 {
                     "local_part": [
-                        _(
+                        _t(
                             "A mailbox with this local part already exists in this domain."
                         )
                     ]
@@ -165,7 +170,7 @@ class AdminMailDomainMailboxViewSet(
                 return Response(
                     {
                         "alias_of": [
-                            _(
+                            _t(
                                 "Invalid mailbox ID for alias, or mailbox not in the same domain."
                             )
                         ]
@@ -174,14 +179,19 @@ class AdminMailDomainMailboxViewSet(
                 )
             if alias_of.alias_of is not None:  # Prevent chaining aliases for now
                 return Response(
-                    {"alias_of": [_("Cannot create an alias of an existing alias.")]},
+                    {"alias_of": [_t("Cannot create an alias of an existing alias.")]},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
         # --- Create Mailbox ---
         # Will validate local_part format via the model's validator
+        # Set is_identity based on mailbox type
+        is_identity = mailbox_type == "personal"
         mailbox = models.Mailbox.objects.create(
-            domain=domain, local_part=local_part, alias_of=alias_of
+            domain=domain,
+            local_part=local_part,
+            alias_of=alias_of,
+            is_identity=is_identity,
         )
 
         # --- Create user and mailbox access if type is personal ---
@@ -202,12 +212,40 @@ class AdminMailDomainMailboxViewSet(
                 role=models.MailboxRoleChoices.ADMIN,
             )
 
+            contact, _ = models.Contact.objects.get_or_create(
+                email=email,
+                mailbox=mailbox,
+                defaults={"name": f"{first_name} {last_name}"},
+            )
+            mailbox.contact = contact
+            mailbox.save()
+
+        elif mailbox_type == "shared":
+            email = f"{local_part}@{domain.name}"
+            name = metadata.get("name")
+            contact, _ = models.Contact.objects.get_or_create(
+                email=email,
+                mailbox=mailbox,
+                defaults={"name": name},
+            )
+            mailbox.contact = contact
+            mailbox.save()
+
         serializer = self.get_serializer(mailbox)
         headers = self.get_success_headers(serializer.data)
         payload = serializer.data
-        if mailbox_type == "personal" and settings.IDENTITY_PROVIDER == "keycloak":
+
+        # This is a somewhat hacky bypass of abstractions, but for now
+        # we need to return a one time password synchronously
+        if (
+            mailbox_type == "personal"
+            and settings.IDENTITY_PROVIDER == "keycloak"
+            and is_identity
+            and domain.identity_sync
+        ):
             mailbox_password = reset_keycloak_user_password(email)
             payload["one_time_password"] = mailbox_password
+
         return Response(payload, status=status.HTTP_201_CREATED, headers=headers)
 
 

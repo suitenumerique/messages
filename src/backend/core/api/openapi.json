@@ -179,7 +179,8 @@
                                         "ENVIRONMENT",
                                         "POSTHOG_KEY",
                                         "POSTHOG_HOST",
-                                        "POSTHOG_SURVEY_IDLANGUAGES",
+                                        "POSTHOG_SURVEY_ID",
+                                        "LANGUAGES",
                                         "LANGUAGE_CODE"
                                     ]
                                 }
@@ -1568,7 +1569,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "detail": "You need EDITOR or ADMIN role to manage labels"
+                                    "detail": "You need EDITOR, SENDER or ADMIN role to manage labels"
                                 }
                             }
                         },
@@ -1639,7 +1640,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "detail": "You need EDITOR or ADMIN role to manage labels"
+                                    "detail": "You need EDITOR, SENDER or ADMIN role to manage labels"
                                 }
                             }
                         },
@@ -1724,7 +1725,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "detail": "You need EDITOR or ADMIN role to manage labels"
+                                    "detail": "You need EDITOR, SENDER or ADMIN role to manage labels"
                                 }
                             }
                         },
@@ -1802,7 +1803,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "detail": "You need EDITOR or ADMIN role to manage labels"
+                                    "detail": "You need EDITOR, SENDER or ADMIN role to manage labels"
                                 }
                             }
                         },
@@ -1877,7 +1878,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "detail": "You need EDITOR or ADMIN role to manage labels"
+                                    "detail": "You need EDITOR, SENDER or ADMIN role to manage labels"
                                 }
                             }
                         },
@@ -4129,7 +4130,7 @@
                     "user": {
                         "type": "string",
                         "format": "uuid",
-                        "description": "primary key for the record as UUID"
+                        "description": "User ID (UUID) or email address"
                     },
                     "role": {
                         "$ref": "#/components/schemas/MailboxRoleChoices"
@@ -4164,7 +4165,7 @@
                     "user": {
                         "type": "string",
                         "format": "uuid",
-                        "description": "primary key for the record as UUID"
+                        "description": "User ID (UUID) or email address"
                     },
                     "role": {
                         "$ref": "#/components/schemas/MailboxRoleChoices"
@@ -4192,6 +4193,11 @@
                     "domain_name": {
                         "type": "string",
                         "readOnly": true
+                    },
+                    "is_identity": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "description": "Whether this mailbox identifies a person (i.e. is not an alias or a group)"
                     },
                     "alias_of": {
                         "type": "string",
@@ -4228,6 +4234,7 @@
                     "created_at",
                     "domain_name",
                     "id",
+                    "is_identity",
                     "local_part",
                     "updated_at"
                 ]
@@ -4249,6 +4256,11 @@
                     "domain_name": {
                         "type": "string",
                         "readOnly": true
+                    },
+                    "is_identity": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "description": "Whether this mailbox identifies a person (i.e. is not an alias or a group)"
                     },
                     "alias_of": {
                         "type": "string",
@@ -4291,6 +4303,7 @@
                     "created_at",
                     "domain_name",
                     "id",
+                    "is_identity",
                     "local_part",
                     "one_time_password",
                     "updated_at"
@@ -4306,6 +4319,9 @@
                         "type": "string"
                     },
                     "last_name": {
+                        "type": "string"
+                    },
+                    "name": {
                         "type": "string"
                     }
                 },
@@ -4750,7 +4766,7 @@
                     "user": {
                         "type": "string",
                         "format": "uuid",
-                        "description": "primary key for the record as UUID"
+                        "description": "User ID (UUID) or email address"
                     },
                     "role": {
                         "$ref": "#/components/schemas/MailboxRoleChoices"

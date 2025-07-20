@@ -14,7 +14,7 @@ Mailbox is set from the view based on URL parameters.
 export interface MailboxAccessWrite {
   /** primary key for the record as UUID */
   readonly id: string;
-  /** primary key for the record as UUID */
+  /** User ID (UUID) or email address */
   user: string;
   role: MailboxRoleChoices;
   /** date and time at which a record was created */

@@ -279,6 +279,9 @@ class TestAdminMailDomainMailboxViewSet:
         """Test that personal mailbox creation triggers Keycloak password reset when IDENTITY_PROVIDER is keycloak."""
         mock_reset_password.return_value = "temporary-password-123"
 
+        mail_domain1.identity_sync = True
+        mail_domain1.save()
+
         api_client.force_authenticate(user=domain_admin_user)
         url = self.mailboxes_url(mail_domain1.pk)
 
@@ -297,6 +300,37 @@ class TestAdminMailDomainMailboxViewSet:
         mock_reset_password.assert_called_once_with("testuser@admin-domain1.com")
 
     @patch("core.api.viewsets.maildomain.reset_keycloak_user_password")
+    @override_settings(IDENTITY_PROVIDER="keycloak")
+    def test_admin_maildomains_mailbox_create_personal_without_maildomain_identity_sync(
+        self,
+        mock_reset_password,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Test that personal mailbox creation doesn't trigger password reset when maildomain identity_sync is False."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+
+        mail_domain1.identity_sync = False
+        mail_domain1.save()
+
+        data = {
+            "local_part": "testuser",
+            "metadata": {"type": "personal", "first_name": "Test", "last_name": "User"},
+        }
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["local_part"] == "testuser"
+        assert "one_time_password" not in response.data
+
+        # Verify Keycloak password reset was not called
+        mock_reset_password.assert_not_called()
+
+    @patch("core.api.viewsets.maildomain.reset_keycloak_user_password")
     @override_settings(IDENTITY_PROVIDER="other_provider")
     def test_admin_maildomains_mailbox_create_personal_without_keycloak_identity_provider(
         self,
@@ -309,6 +343,9 @@ class TestAdminMailDomainMailboxViewSet:
         """Test that personal mailbox creation doesn't trigger password reset when IDENTITY_PROVIDER is not keycloak."""
         api_client.force_authenticate(user=domain_admin_user)
         url = self.mailboxes_url(mail_domain1.pk)
+
+        mail_domain1.identity_sync = True
+        mail_domain1.save()
 
         data = {
             "local_part": "testuser",
@@ -336,6 +373,9 @@ class TestAdminMailDomainMailboxViewSet:
         api_client.force_authenticate(user=domain_admin_user)
         url = self.mailboxes_url(mail_domain1.pk)
 
+        mail_domain1.identity_sync = True
+        mail_domain1.save()
+
         data = {"local_part": "sharedmailbox", "metadata": {"type": "shared"}}
 
         response = api_client.post(url, data, format="json")
@@ -359,6 +399,9 @@ class TestAdminMailDomainMailboxViewSet:
 
         api_client.force_authenticate(user=domain_admin_user)
         url = self.mailboxes_url(mail_domain1.pk)
+
+        mail_domain1.identity_sync = True
+        mail_domain1.save()
 
         data = {
             "local_part": "newuser",
@@ -393,6 +436,9 @@ class TestAdminMailDomainMailboxViewSet:
             full_name="Existing User",
             password="existing-password",
         )
+
+        mail_domain1.identity_sync = True
+        mail_domain1.save()
 
         api_client.force_authenticate(user=domain_admin_user)
         url = self.mailboxes_url(mail_domain1.pk)

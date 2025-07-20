@@ -12,7 +12,7 @@ import type { MailboxRoleChoices } from "./mailbox_role_choices";
 Mailbox is set from the view based on URL parameters.
  */
 export interface PatchedMailboxAccessWriteRequest {
-  /** primary key for the record as UUID */
+  /** User ID (UUID) or email address */
   user?: string;
   role?: MailboxRoleChoices;
 }

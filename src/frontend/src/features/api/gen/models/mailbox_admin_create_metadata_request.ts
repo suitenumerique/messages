@@ -11,4 +11,5 @@ export interface MailboxAdminCreateMetadataRequest {
   type: TypeEnum;
   first_name?: string;
   last_name?: string;
+  name?: string;
 }

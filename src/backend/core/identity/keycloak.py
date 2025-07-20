@@ -125,11 +125,7 @@ def sync_mailbox_to_keycloak_user(mailbox: Mailbox):
     Creates the user if it doesn't exist and adds them to the appropriate group.
     Uses email as username in Keycloak.
     """
-    if not mailbox.domain.identity_sync:
-        logger.debug(
-            "Skipping Keycloak sync for Mailbox %s - identity_sync disabled on domain",
-            mailbox,
-        )
+    if not mailbox.domain.identity_sync or not mailbox.is_identity:
         return None
 
     try:

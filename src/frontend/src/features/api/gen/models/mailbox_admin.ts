@@ -15,6 +15,8 @@ export interface MailboxAdmin {
   readonly id: string;
   readonly local_part: string;
   readonly domain_name: string;
+  /** Whether this mailbox identifies a person (i.e. is not an alias or a group) */
+  readonly is_identity: boolean;
   /**
    * primary key for the record as UUID
    * @nullable

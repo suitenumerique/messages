@@ -300,7 +300,7 @@
         "tabs": {
           "personal": "Create a new personal mailbox",
           "shared": "Create a new shared mailbox",
-          "redirect": "Create a simple redirect"
+          "redirect": "Create a simple redirect (Coming soon)"
         },
         "form": {
           "labels": {
@@ -382,8 +382,9 @@
         "datagrid_row_labels": {
           "no_accesses": "No accesses",
           "unknown_user": "Unknown user",
-          "alias": "Alias",
-          "mailbox": "Mailbox"
+          "alias": "Redirection",
+          "personal_mailbox": "Personal mailbox",
+          "shared_mailbox": "Shared mailbox"
         },
         "actions": {
           "manage_accesses": "Manage accesses",
@@ -680,7 +681,7 @@
         "tabs": {
           "personal": "Créer une nouvelle boîte personnelle",
           "shared": "Créer une nouvelle boîte partagée",
-          "redirect": "Créer une simple redirection"
+          "redirect": "Créer une simple redirection (Bientôt disponible)"
         },
         "success": {
           "personal": "L'adresse de messagerie personnelle <strong>{{mailbox}}</strong> a été créée avec succès.",
@@ -774,8 +775,9 @@
         "datagrid_row_labels": {
           "no_accesses": "Aucun accès",
           "unknown_user": "Utilisateur inconnu",
-          "alias": "Alias",
-          "mailbox": "Boîte"
+          "alias": "Redirection",
+          "personal_mailbox": "Boîte personnelle",
+          "shared_mailbox": "Boîte partagée"
         },
         "actions": {
           "manage_accesses": "Gérer les accès",

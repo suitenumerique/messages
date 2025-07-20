@@ -379,6 +379,14 @@ class Mailbox(BaseModel):
         related_name="mailboxes",
     )
 
+    is_identity = models.BooleanField(
+        _("is identity"),
+        default=True,
+        help_text=_(
+            "Whether this mailbox identifies a person (i.e. is not an alias or a group)"
+        ),
+    )
+
     alias_of = models.ForeignKey(
         "self", on_delete=models.SET_NULL, null=True, blank=True
     )
