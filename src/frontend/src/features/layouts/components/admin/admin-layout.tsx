@@ -64,7 +64,7 @@ function AdminLayoutContent({
   // Build tabs if we're in a domain
   const tabs = selectedMailDomain ? [
     { id: "addresses", label: t("admin_layout.tabs.addresses"), href: `/domain/${selectedMailDomain.id}` },
-    // { id: "dns", label: t("admin_layout.tabs.dns"), href: `/domain/${selectedMailDomain.id}/dns` },
+    { id: "dns", label: t("admin_layout.tabs.dns"), href: `/domain/${selectedMailDomain.id}/dns` },
     // { id: "signatures", label: t("admin_layout.tabs.signatures"), href: `/domain/${selectedMailDomain.id}/signatures` },
   ] : [];
 

@@ -22,6 +22,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  DNSCheckResponse,
   MailDomainAdmin,
   MailboxAdmin,
   MailboxAdminCreate,
@@ -1281,3 +1282,105 @@ export function useMaildomainsRetrieve<
 
   return query;
 }
+
+/**
+ * Check DNS records for a specific mail domain.
+ */
+export type maildomainsCheckDnsCreateResponse200 = {
+  data: DNSCheckResponse;
+  status: 200;
+};
+
+export type maildomainsCheckDnsCreateResponseComposite =
+  maildomainsCheckDnsCreateResponse200;
+
+export type maildomainsCheckDnsCreateResponse =
+  maildomainsCheckDnsCreateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMaildomainsCheckDnsCreateUrl = (id: string) => {
+  return `/api/v1.0/maildomains/${id}/check-dns/`;
+};
+
+export const maildomainsCheckDnsCreate = async (
+  id: string,
+  options?: RequestInit,
+): Promise<maildomainsCheckDnsCreateResponse> => {
+  return fetchAPI<maildomainsCheckDnsCreateResponse>(
+    getMaildomainsCheckDnsCreateUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getMaildomainsCheckDnsCreateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["maildomainsCheckDnsCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return maildomainsCheckDnsCreate(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MaildomainsCheckDnsCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>
+>;
+
+export type MaildomainsCheckDnsCreateMutationError = unknown;
+
+export const useMaildomainsCheckDnsCreate = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationOptions = getMaildomainsCheckDnsCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};

@@ -107,7 +107,7 @@ _spf.mail.yourdomain.com. TXT "v=spf1 ip4:YOUR_SERVER_IP -all"
 _dmarc TXT "v=DMARC1; p=reject; adkim=s; aspf=s;"
 ```
 
-The DNS records for each customer domains are available either via API at http://localhost:8901/api/v1.0/maildomains/{maildomain-uuid}/ or in the admin interface at http://localhost:8900/domains
+The DNS records for each customer domains are available either via API at http://localhost:8901/api/v1.0/maildomains/{maildomain-uuid}/ or in the admin interface at http://localhost:8900/domain
 
 ### 2. Environment Configuration
 

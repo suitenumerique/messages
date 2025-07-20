@@ -2685,6 +2685,44 @@
                 }
             }
         },
+        "/api/v1.0/maildomains/{id}/check-dns/": {
+            "post": {
+                "operationId": "maildomains_check_dns_create",
+                "description": "Check DNS records for a specific mail domain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DNSCheckResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/messages/": {
             "get": {
                 "operationId": "messages_list",
@@ -3715,6 +3753,72 @@
                 "required": [
                     "email",
                     "id"
+                ]
+            },
+            "DNSCheckResponse": {
+                "type": "object",
+                "properties": {
+                    "domain": {
+                        "type": "string"
+                    },
+                    "records": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DNSRecordCheck"
+                        }
+                    }
+                },
+                "required": [
+                    "domain",
+                    "records"
+                ]
+            },
+            "DNSCheckResult": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string"
+                    },
+                    "found": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "error": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "status"
+                ]
+            },
+            "DNSRecordCheck": {
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string"
+                    },
+                    "value": {
+                        "type": "string"
+                    },
+                    "_check": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/DNSCheckResult"
+                            }
+                        ],
+                        "title": " check"
+                    }
+                },
+                "required": [
+                    "_check",
+                    "target",
+                    "type",
+                    "value"
                 ]
             },
             "DraftMessageRequestRequest": {

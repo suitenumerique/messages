@@ -392,6 +392,32 @@
         },
         "loading": "Loading addresses..."
       },
+      "admin_maildomains_dns": {
+        "explanation": "These DNS records must be configured on the domain {{domain}} for the mail system to work properly. If you don't know how to update them, please contact your technical service provider or system administrator.",
+        "errors": {
+          "failed_to_load_dns": "Error while loading DNS records",
+          "failed_to_check_dns": "Error while checking DNS records"
+        },
+        "datagrid_headers": {
+          "type": "Type",
+          "target": "Target",
+          "value": "Value",
+          "status": "Current status"
+        },
+        "datagrid_row_labels": {
+          "status_correct": "Correct",
+          "status_incorrect": "Incorrect",
+          "status_missing": "Missing",
+          "status_unknown": "Unknown"
+        },
+        "actions": {
+          "check_dns": "Check DNS again"
+        },
+        "loading": "Loading DNS records...",
+        "checking": "Checking DNS records...",
+        "no_records": "No DNS records found",
+        "copy": "Copy"
+      },
       "posthog": {
         "cta": "Give feedback"
       }
@@ -784,6 +810,32 @@
           "new_address": "Nouvelle adresse"
         },
         "loading": "Chargement des adresses..."
+      },
+      "admin_maildomains_dns": {
+        "explanation": "Ces enregistrements DNS doivent être configurés sur le domaine {{domain}} pour que le système de messagerie fonctionne correctement. Si vous ne savez pas comment les mettre à jour, contactez votre prestataire technique ou votre administrateur système.",
+        "errors": {
+          "failed_to_load_dns": "Erreur lors du chargement des enregistrements DNS",
+          "failed_to_check_dns": "Erreur lors de la vérification des enregistrements DNS"
+        },
+        "datagrid_headers": {
+          "type": "Type",
+          "target": "Cible",
+          "value": "Valeur",
+          "status": "Statut actuel"
+        },
+        "datagrid_row_labels": {
+          "status_correct": "Correct",
+          "status_incorrect": "Incorrect",
+          "status_missing": "Manquant",
+          "status_unknown": "Inconnu"
+        },
+        "actions": {
+          "check_dns": "Revérifier"
+        },
+        "loading": "Chargement des enregistrements DNS...",
+        "checking": "Vérification des enregistrements DNS...",
+        "no_records": "Aucun enregistrement DNS trouvé",
+        "copy": "Copier"
       },
       "posthog": {
         "cta": "Faire un retour"

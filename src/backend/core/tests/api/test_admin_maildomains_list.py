@@ -160,8 +160,8 @@ class TestAdminMailDomainViewSet:
         mail_domain2,
         unmanaged_domain,
     ):
-        """Test that superuser with staff status can list all domains."""
-        superuser_staff = factories.UserFactory(is_superuser=True, is_staff=True)
+        """Test that superuser without staff status can list all domains."""
+        superuser_staff = factories.UserFactory(is_superuser=True, is_staff=False)
         api_client.force_authenticate(user=superuser_staff)
         response = api_client.get(self.LIST_DOMAINS_URL)
 
@@ -171,21 +171,6 @@ class TestAdminMailDomainViewSet:
         assert str(mail_domain1.id) in domain_ids
         assert str(mail_domain2.id) in domain_ids
         assert str(unmanaged_domain.id) in domain_ids
-
-    def test_admin_maildomains_listadministered_maildomains_superuser_not_staff(
-        self,
-        api_client,
-        mail_domain1,
-        mail_domain2,
-        unmanaged_domain,
-    ):
-        """Test that superuser without staff status cannot list all domains."""
-        superuser_not_staff = factories.UserFactory(is_superuser=True, is_staff=False)
-        api_client.force_authenticate(user=superuser_not_staff)
-        response = api_client.get(self.LIST_DOMAINS_URL)
-
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 0
 
     def test_admin_maildomains_listadministered_maildomains_staff_not_superuser(
         self,

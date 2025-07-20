@@ -23,11 +23,13 @@ from rest_framework import (
 from rest_framework import (
     serializers as drf_serializers,
 )
+from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from core import models
 from core.api import permissions as core_permissions
 from core.api import serializers as core_serializers
+from core.dns.check import check_dns_records
 from core.identity.keycloak import reset_keycloak_user_password
 
 
@@ -48,7 +50,7 @@ class AdminMailDomainViewSet(
         if not user or not user.is_authenticated:
             return models.MailDomain.objects.none()
 
-        if user.is_superuser and user.is_staff:
+        if user.is_superuser:
             # For superusers, preload accesses to avoid N+1 queries in get_abilities
             return models.MailDomain.objects.prefetch_related("accesses").order_by(
                 "name"
@@ -62,6 +64,71 @@ class AdminMailDomainViewSet(
             .annotate(user_role=F("accesses__role"))
             .distinct()
             .order_by("name")
+        )
+
+    @extend_schema(
+        description="Check DNS records for a specific mail domain.",
+        responses={
+            200: inline_serializer(
+                name="DNSCheckResponse",
+                fields={
+                    "domain": drf_serializers.CharField(),
+                    "records": drf_serializers.ListField(
+                        child=inline_serializer(
+                            name="DNSRecordCheck",
+                            fields={
+                                "target": drf_serializers.CharField(),
+                                "type": drf_serializers.CharField(),
+                                "value": drf_serializers.CharField(),
+                                "_check": inline_serializer(
+                                    name="DNSCheckResult",
+                                    fields={
+                                        "status": drf_serializers.CharField(),
+                                        "found": drf_serializers.ListField(
+                                            child=drf_serializers.CharField(),
+                                            required=False,
+                                        ),
+                                        "error": drf_serializers.CharField(
+                                            required=False,
+                                        ),
+                                    },
+                                ),
+                            },
+                        ),
+                    ),
+                },
+            ),
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="check-dns")
+    def check_dns(self, request, pk=None):
+        """
+        Check DNS records for a specific mail domain.
+        Returns the expected DNS records with their current status.
+        """
+        maildomain = get_object_or_404(models.MailDomain, pk=pk)
+
+        # Check if user has admin access to this domain
+        if not request.user.is_superuser:
+            if not maildomain.accesses.filter(
+                user=request.user,
+                role=models.MailDomainAccessRoleChoices.ADMIN,
+            ).exists():
+                return Response(
+                    {
+                        "detail": "You don't have permission to check DNS for this domain."
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        # Perform DNS check
+        check_results = check_dns_records(maildomain)
+
+        return Response(
+            {
+                "domain": maildomain.name,
+                "records": check_results,
+            }
         )
 
 

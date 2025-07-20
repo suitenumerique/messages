@@ -668,10 +668,12 @@ class MailDomainAdminSerializer(AbilitiesModelSerializer):
 
     def get_expected_dns_records(self, instance):
         """Return the expected DNS records for the mail domain, only in detail views."""
+
         # Only include DNS records in detail views, not in list views
         view = self.context.get("view")
         if view and hasattr(view, "action") and view.action == "retrieve":
             return instance.get_expected_dns_records()
+
         return None
 
     class Meta:
