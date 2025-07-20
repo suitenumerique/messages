@@ -300,7 +300,6 @@ class Base(Configuration):
         "django.middleware.csrf.CsrfViewMiddleware",
         "django.contrib.auth.middleware.AuthenticationMiddleware",
         "django.contrib.messages.middleware.MessageMiddleware",
-        "dockerflow.django.middleware.DockerflowMiddleware",
     ]
 
     AUTHENTICATION_BACKENDS = [
@@ -317,7 +316,6 @@ class Base(Configuration):
         "django_celery_beat",
         "django_celery_results",
         "django_filters",
-        "dockerflow.django",
         "rest_framework",
         "parler",
         # Django
@@ -539,6 +537,8 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    ENABLE_DOCKERFLOW = values.BooleanValue(default=True)
+
     # Logging
     # We want to make it easy to log to console but by default we log production
     # to Sentry and don't want to log to console.
@@ -582,6 +582,14 @@ class Base(Configuration):
         environ_name="API_USERS_LIST_LIMIT",
         environ_prefix=None,
     )
+
+    # pylint: disable=invalid-name
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Remove dockerflow if SKIP_DOCKERFLOW is True
+        if self.ENABLE_DOCKERFLOW:
+            self.INSTALLED_APPS += ["dockerflow.django"]
+            self.MIDDLEWARE += ["dockerflow.django.middleware.DockerflowMiddleware"]
 
     # pylint: disable=invalid-name
     @property
@@ -700,8 +708,9 @@ class Development(Base):
         },
     }
 
+    # pylint: disable=invalid-name
     def __init__(self):
-        # pylint: disable=invalid-name
+        super().__init__()
         self.INSTALLED_APPS += ["django_extensions", "drf_spectacular_sidecar"]
 
 
@@ -735,8 +744,9 @@ class Test(Base):
     # Add a test encryption key for django-fernet-encrypted-fields
     SALT_KEY = ["test-salt-for-development-only"]
 
+    # pylint: disable=invalid-name
     def __init__(self):
-        # pylint: disable=invalid-name
+        super().__init__()
         self.INSTALLED_APPS += ["drf_spectacular_sidecar"]
 
 
