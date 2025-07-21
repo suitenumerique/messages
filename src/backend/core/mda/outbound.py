@@ -19,6 +19,8 @@ from core.mda.rfc5322 import (
     parse_email_message,
 )
 from core.mda.signing import sign_message_dkim
+from core.mda.smtp import send_smtp_mail
+from core.mda.outbound_mta import send_message_via_mta
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +299,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
 def send_outbound_message(
     recipient_emails: list[str], message: models.Message
 ) -> dict[str, Any]:
-    """Send an existing Message object via MTA out (SMTP)."""
+    """Send an existing Message object via MTA out (SMTP) or direct MX if not configured."""
 
     def _global_error(error: str) -> dict[str, Any]:
         return {
@@ -308,57 +310,22 @@ def send_outbound_message(
             for email in recipient_emails
         }
 
-    # Send via SMTP
     if not settings.MTA_OUT_HOST:
-        logger.warning(
-            "MTA_OUT_HOST is not set, skipping SMTP sending for %s", message.id
-        )
-        return _global_error("MTA_OUT_HOST is not set")
+        # Use internal direct MX delivery
+        return send_message_via_mta(message)
 
     smtp_host, smtp_port_str = settings.MTA_OUT_HOST.split(":")
     smtp_port = int(smtp_port_str)
     envelope_from = message.sender.email
 
-    statuses = {}
-
-    try:
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=60) as client:
-            client.ehlo()
-            if settings.MTA_OUT_SMTP_USE_TLS:
-                client.starttls()
-                client.ehlo()  # Re-EHLO after STARTTLS
-
-            # Authenticate if credentials provided
-            if settings.MTA_OUT_SMTP_USERNAME and settings.MTA_OUT_SMTP_PASSWORD:
-                client.login(
-                    settings.MTA_OUT_SMTP_USERNAME,
-                    settings.MTA_OUT_SMTP_PASSWORD,
-                )
-
-            smtp_response = client.sendmail(
-                envelope_from, recipient_emails, message.blob.get_content()
-            )
-            logger.info(
-                "Sent message %s via SMTP. Response: %s",
-                message.id,
-                smtp_response,
-            )
-            # Return delivery success for each recipient, looking at smtp_response
-            for recipient_email in recipient_emails:
-                if recipient_email not in smtp_response:
-                    statuses[recipient_email] = {"delivered": True}
-                else:
-                    statuses[recipient_email] = {
-                        "error": smtp_response[recipient_email],
-                        "delivered": False,
-                    }
-
-    except (smtplib.SMTPException, OSError) as e:
-        logger.error(
-            "SMTP error sending message %s: %s",
-            message.id,
-            e,
-        )
-        return _global_error(str(e))
-
+    statuses = send_smtp_mail(
+        smtp_host=smtp_host,
+        smtp_port=smtp_port,
+        envelope_from=envelope_from,
+        recipient_emails=recipient_emails,
+        message_content=message.blob.get_content(),
+        use_tls=getattr(settings, "MTA_OUT_SMTP_USE_TLS", False),
+        username=getattr(settings, "MTA_OUT_SMTP_USERNAME", None),
+        password=getattr(settings, "MTA_OUT_SMTP_PASSWORD", None),
+    )
     return statuses
