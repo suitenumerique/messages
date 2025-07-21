@@ -151,9 +151,15 @@ stop: ## stop all development services
 
 restart: ## restart all development services
 restart: \
-	down \
+	stop \
 	start
 .PHONY: restart
+
+restart-minimal: ## restart minimal services
+restart-minimal: \
+	stop \
+	start-minimal
+.PHONY: restart-minimal
 
 # -- Linters
 

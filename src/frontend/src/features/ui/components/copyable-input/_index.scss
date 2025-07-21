@@ -1,0 +1,18 @@
+.copyable-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+
+  &__input {
+    width: 100%;
+    padding: 8px 0px;
+    border: 0px;
+    font-size: 0.875rem;
+    font-family: monospace;
+    background-color: var(--c--theme--colors--neutral-50);
+    color: var(--c--theme--colors--neutral-900);
+    outline: none;
+    flex: 1;
+  }
+}

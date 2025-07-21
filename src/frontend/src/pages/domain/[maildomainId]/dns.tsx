@@ -1,84 +1,15 @@
 import { AdminLayout } from "@/features/layouts/components/admin/admin-layout";
 import { useState, useEffect, useRef } from "react";
 import { Button, DataGrid } from "@openfun/cunningham-react";
-import { useTranslation } from "react-i18next";
+import { useTranslation, Trans } from "react-i18next";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { MailDomainAdmin, DNSRecordCheck } from "@/features/api/gen";
 import { Banner } from "@/features/ui/components/banner";
 import { useMaildomainsCheckDnsCreate, useMaildomainsRetrieve } from "@/features/api/gen/maildomains/maildomains";
 import { useRouter } from "next/router";
+import { CopyableInput } from "@/features/ui/components/copyable-input";
 
 type DNSRecordWithId = DNSRecordCheck & { id: string };
-
-type CopyableInputProps = {
-  value: string;
-  readOnly?: boolean;
-};
-
-function CopyableInput({ value, readOnly = true }: CopyableInputProps) {
-  const { t } = useTranslation();
-  const [showCopyButton, setShowCopyButton] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy text: ', err);
-    }
-  };
-
-  const handleFocus = (event: React.FocusEvent<HTMLInputElement>) => {
-    setTimeout(() => event.target.select(), 100);
-  };
-
-  return (
-    <div 
-      style={{ 
-        position: 'relative',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '5px'
-      }}
-      onMouseEnter={() => setShowCopyButton(true)}
-      onMouseLeave={() => setShowCopyButton(false)}
-    >
-      <input
-        type="text"
-        value={value}
-        readOnly={readOnly}
-        onFocus={handleFocus}
-        style={{
-          width: '100%',
-          padding: '8px 0px',
-          border: '0px',
-          fontSize: '0.875rem',
-          fontFamily: 'monospace',
-          backgroundColor: 'var(--c--theme--colors--neutral-50)',
-          color: 'var(--c--theme--colors--neutral-900)',
-          outline: 'none',
-          flex: 1
-        }}
-      />
-      {showCopyButton && (
-        <Button
-          size="small"
-          color="secondary"
-          onClick={handleCopy}
-          style={{
-            minWidth: 'auto',
-            padding: '4px 8px',
-            fontSize: '0.75rem'
-          }}
-        >
-          {copied ? '✓' : t("admin_maildomains_dns.copy")}
-        </Button>
-      )}
-    </div>
-  );
-}
 
 type AdminDNSDataGridProps = {
   domain: MailDomainAdmin;
@@ -191,7 +122,7 @@ function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSData
     <div className="admin-data-grid">
       <div style={{ marginBottom: "1.5rem" }}>
         <Banner type="info">
-          <div dangerouslySetInnerHTML={{ __html: t("admin_maildomains_dns.explanation", { domain: `<strong>${domain.name}</strong>` }) }} />
+          <Trans i18nKey="admin_maildomains_dns.explanation" values={{ domain: domain.name }} components={{ strong: <strong /> }} />
         </Banner>
       </div>
       <DataGrid

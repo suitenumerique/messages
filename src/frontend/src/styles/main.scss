@@ -22,6 +22,7 @@
 @use "./../features/ui/components/bar";
 @use "./../features/ui/components/banner";
 @use "./../features/ui/components/feedback-button";
+@use "./../features/ui/components/copyable-input";
 @use "./../features/layouts/components/mailbox-panel";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-actions";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-list";
@@ -43,6 +44,7 @@
 @use "./../features/forms/components/search-filters-form";
 @use "./../features/controlled-modals/message-importer";
 @use "./../features/layouts/components/admin/modal-create-address";
+
 // Application views
 @use "./../pages";
 @use "./../pages/mailbox";
