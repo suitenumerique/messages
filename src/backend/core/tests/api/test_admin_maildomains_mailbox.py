@@ -268,39 +268,6 @@ class TestAdminMailDomainMailboxViewSet:
 
     @patch("core.api.viewsets.maildomain.reset_keycloak_user_password")
     @override_settings(IDENTITY_PROVIDER="keycloak")
-    def test_admin_maildomains_mailbox_create_personal_with_keycloak_password_reset(
-        self,
-        mock_reset_password,
-        api_client,
-        domain_admin_user,
-        domain_admin_access1,
-        mail_domain1,
-    ):
-        """Test that personal mailbox creation triggers Keycloak password reset when IDENTITY_PROVIDER is keycloak."""
-        mock_reset_password.return_value = "temporary-password-123"
-
-        mail_domain1.identity_sync = True
-        mail_domain1.save()
-
-        api_client.force_authenticate(user=domain_admin_user)
-        url = self.mailboxes_url(mail_domain1.pk)
-
-        data = {
-            "local_part": "testuser",
-            "metadata": {"type": "personal", "first_name": "Test", "last_name": "User"},
-        }
-
-        response = api_client.post(url, data, format="json")
-
-        assert response.status_code == status.HTTP_201_CREATED
-        assert response.data["local_part"] == "testuser"
-        assert response.data["one_time_password"] == "temporary-password-123"
-
-        # Verify Keycloak password reset was called with correct email
-        mock_reset_password.assert_called_once_with("testuser@admin-domain1.com")
-
-    @patch("core.api.viewsets.maildomain.reset_keycloak_user_password")
-    @override_settings(IDENTITY_PROVIDER="keycloak")
     def test_admin_maildomains_mailbox_create_personal_without_maildomain_identity_sync(
         self,
         mock_reset_password,
@@ -361,9 +328,11 @@ class TestAdminMailDomainMailboxViewSet:
         # Verify Keycloak password reset was not called
         mock_reset_password.assert_not_called()
 
+    @patch("core.signals.sync_maildomain_to_keycloak_group")
     @override_settings(IDENTITY_PROVIDER="keycloak")
     def test_admin_maildomains_mailbox_create_non_personal_no_keycloak_integration(
         self,
+        mock_sync_maildomain_to_keycloak_group,
         api_client,
         domain_admin_user,
         domain_admin_access1,
@@ -384,11 +353,15 @@ class TestAdminMailDomainMailboxViewSet:
         assert response.data["local_part"] == "sharedmailbox"
         assert "one_time_password" not in response.data
 
+    @patch("core.signals.sync_mailbox_to_keycloak_user")
+    @patch("core.signals.sync_maildomain_to_keycloak_group")
     @patch("core.api.viewsets.maildomain.reset_keycloak_user_password")
     @override_settings(IDENTITY_PROVIDER="keycloak")
     def test_admin_maildomains_mailbox_create_personal_user_creation_and_access(
         self,
         mock_reset_password,
+        mock_sync_maildomain_to_keycloak_group,
+        mock_sync_mailbox_to_keycloak_user,
         api_client,
         domain_admin_user,
         domain_admin_access1,
@@ -410,7 +383,14 @@ class TestAdminMailDomainMailboxViewSet:
 
         response = api_client.post(url, data, format="json")
 
+        assert mock_sync_maildomain_to_keycloak_group.call_count > 0
+        assert mock_sync_mailbox_to_keycloak_user.call_count > 0
+
         assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["one_time_password"] == "temporary-password-123"
+
+        # Verify Keycloak password reset was called with correct email
+        mock_reset_password.assert_called_once_with("newuser@admin-domain1.com")
 
         # Verify user was created with correct details
         user = models.User.objects.get(email="newuser@admin-domain1.com")
