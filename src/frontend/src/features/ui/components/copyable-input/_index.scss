@@ -6,9 +6,9 @@
 
   &__input {
     width: 100%;
-    padding: 8px 0px;
+    padding: var(--c--theme--spacings--xs) 0;
     border: 0px;
-    font-size: 0.875rem;
+    font-size: var(--c--theme--font--sizes--sm);
     font-family: monospace;
     background-color: var(--c--theme--colors--neutral-50);
     color: var(--c--theme--colors--neutral-900);

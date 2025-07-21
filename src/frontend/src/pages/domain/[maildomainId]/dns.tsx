@@ -53,9 +53,9 @@ function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSData
       headerName: t("admin_maildomains_dns.datagrid_headers.type"),
       size: 80,
       renderCell: ({ row }: { row: DNSRecordWithId }) => (
-        <span style={{ fontWeight: "bold" }}>
+        <strong>
           {row.type.toUpperCase()}
-        </span>
+        </strong>
       ),
     },
     {
@@ -192,9 +192,9 @@ export default function AdminDNSPage() {
 
   if (domainError || !selectedMailDomain) {
     return (
-        <div style={{ padding: "2rem", textAlign: "center", color: "var(--c--theme--colors--danger-600)" }}>
+        <Banner type="error">
           {t("admin_maildomains_details.errors.domain_not_found")}
-        </div>
+        </Banner>
     );
   }
 

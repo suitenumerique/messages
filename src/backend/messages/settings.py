@@ -586,7 +586,7 @@ class Base(Configuration):
     # pylint: disable=invalid-name
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Remove dockerflow if SKIP_DOCKERFLOW is True
+        # Add dockerflow if ENABLE_DOCKERFLOW is True
         if self.ENABLE_DOCKERFLOW:
             self.INSTALLED_APPS += ["dockerflow.django"]
             self.MIDDLEWARE += ["dockerflow.django.middleware.DockerflowMiddleware"]
