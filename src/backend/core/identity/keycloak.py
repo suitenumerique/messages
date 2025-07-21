@@ -2,7 +2,6 @@
 
 import logging
 import secrets
-import string
 
 from django.conf import settings
 
@@ -282,7 +281,26 @@ def resync_all_mailboxes_to_keycloak():
 
 
 def generate_password(length=12):
-    """Generate a secure random password."""
-    alphabet = string.ascii_letters + string.digits
-    password = "".join(secrets.choice(alphabet) for _ in range(length))
-    return password
+    """Generate a secure random password with at least one uppercase, one lowercase, and one digit."""
+    if length < 3:
+        raise ValueError(
+            "Password length must be at least 3 to satisfy all requirements."
+        )
+
+    _upper = "ABCDEFGHJKLMNPQRTUVWXYZ"
+    _lower = "abcdefghijkmnopqrstuvwxyz"
+    _digits = "2346789"
+
+    # Ensure at least one of each required character type
+    password_chars = [
+        secrets.choice(_upper),
+        secrets.choice(_lower),
+        secrets.choice(_digits),
+    ]
+    # Fill the rest of the password length with random choices
+    password_chars += [
+        secrets.choice(_upper + _lower + _digits) for _ in range(length - 3)
+    ]
+    # Shuffle to avoid predictable positions
+    secrets.SystemRandom().shuffle(password_chars)
+    return "".join(password_chars)

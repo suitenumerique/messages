@@ -135,6 +135,7 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
   }, [watchedValues, activeTab, prefixManuallyChanged, setValue]);
 
   // Focus first field when tab changes
+  // TODO: might be better to use form.setFocus if we can make it work
   useEffect(() => {
     if (firstFieldRef && isOpen) {
       // Small delay to ensure the field is rendered
@@ -253,7 +254,7 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
             {t('create_address_modal.tabs.shared')}
           </button>
           <button
-            disabled={true}
+            disabled
             type="button"
             className={clsx('modal-tab', {'modal-tab--active': activeTab === "redirect"})}
             onClick={() => handleTabChange("redirect")}

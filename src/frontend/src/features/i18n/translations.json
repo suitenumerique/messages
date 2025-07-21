@@ -689,7 +689,7 @@
           "redirect": "L'adresse de redirection <strong>{{mailbox}}</strong> a été créée avec succès.",
           "credential_identity": "Identifiant",
           "credential_password": "Mot de passe temporaire",
-          "shared_password_info": "Partager les identifiants de cette boîte mail avec son utilisateur. Vous devez le lui transmettre de façon sécurisée, de préférence physiquement.",
+          "shared_password_info": "Transmettez les identifiants de cette boîte mail à son utilisateur de façon sécurisée, de préférence physiquement.",
           "credential_info": "Vous pouvez désormais prévenir la personne que sa boîte mail est prête à être utilisée et lui communiquer les instructions pour s'authentifier."
         },
         "form": {

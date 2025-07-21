@@ -185,13 +185,11 @@ class AdminMailDomainMailboxViewSet(
 
         # --- Create Mailbox ---
         # Will validate local_part format via the model's validator
-        # Set is_identity based on mailbox type
-        is_identity = mailbox_type == "personal"
         mailbox = models.Mailbox.objects.create(
             domain=domain,
             local_part=local_part,
             alias_of=alias_of,
-            is_identity=is_identity,
+            is_identity=(mailbox_type == "personal"),
         )
 
         # --- Create user and mailbox access if type is personal ---
@@ -240,7 +238,6 @@ class AdminMailDomainMailboxViewSet(
         if (
             mailbox_type == "personal"
             and settings.IDENTITY_PROVIDER == "keycloak"
-            and is_identity
             and domain.identity_sync
         ):
             mailbox_password = reset_keycloak_user_password(email)
