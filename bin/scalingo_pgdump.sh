@@ -33,3 +33,4 @@ export RESTIC_REPOSITORY=s3:https://s3.fr-par.scw.cloud/${BACKUP_PGSQL_S3_BUCKET
 ./restic snapshots -q || ./restic init
 
 ./restic backup ${FILENAME}
+./restic forget --keep-daily 30
