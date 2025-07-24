@@ -34,14 +34,4 @@ export interface ImportIMAPRequest {
   password: string;
   /** Use SSL for IMAP connection */
   use_ssl?: boolean;
-  /**
-   * IMAP folder to import from
-   * @minLength 1
-   */
-  folder?: string;
-  /**
-   * Maximum number of messages to import (0 for all)
-   * @minimum 0
-   */
-  max_messages?: number;
 }

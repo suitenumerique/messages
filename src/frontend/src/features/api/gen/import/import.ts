@@ -151,8 +151,6 @@ export const useImportFileCreate = <TError = void, TContext = unknown>(
         
         Optional parameters:
         - use_ssl: Whether to use SSL for the connection (default: true)
-        - folder: IMAP folder to import from (default: "INBOX")
-        - max_messages: Maximum number of messages to import (default: 0, meaning all messages)
         
  */
 export type importImapCreateResponse202 = {
@@ -189,12 +187,6 @@ export const importImapCreate = async (
   formData.append(`password`, importIMAPRequest.password);
   if (importIMAPRequest.use_ssl !== undefined) {
     formData.append(`use_ssl`, importIMAPRequest.use_ssl.toString());
-  }
-  if (importIMAPRequest.folder !== undefined) {
-    formData.append(`folder`, importIMAPRequest.folder);
-  }
-  if (importIMAPRequest.max_messages !== undefined) {
-    formData.append(`max_messages`, importIMAPRequest.max_messages.toString());
   }
 
   return fetchAPI<importImapCreateResponse>(getImportImapCreateUrl(), {
