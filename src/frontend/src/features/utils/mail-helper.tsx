@@ -49,7 +49,7 @@ class MailHelper {
         if (required && (recipients.length === 0)) {
             return false;
         }
-        if (!recipients.every(r => this.#isValidEmail(r))) {
+        if (!recipients.every(r => this.isValidEmail(r))) {
             return false;
         }
         return true;
@@ -58,7 +58,7 @@ class MailHelper {
     /**
      * Test if an email address is valid.
      */
-    static #isValidEmail(email: string): boolean {
+    static isValidEmail(email: string): boolean {
         return z.string().email().safeParse(email).success;
     }
 
@@ -66,7 +66,7 @@ class MailHelper {
      * Get the domain from an email address.
      */
     static getDomainFromEmail(email: string) {
-        if (!this.#isValidEmail(email)) return undefined;
+        if (!this.isValidEmail(email)) return undefined;
         return email.split('@')[1];
     }
 

@@ -18,6 +18,7 @@ import { useRouter } from "next/router";
 import { AttachmentUploader } from "./attachment-uploader";
 import { DateHelper } from "@/features/utils/date-helper";
 import { Banner } from "@/features/ui/components/banner";
+import { RhfContactComboBox } from "../react-hook-form/rhf-contact-combobox";
 
 export type MessageFormMode = "new" |"reply" | "reply_all" | "forward";
 
@@ -33,25 +34,12 @@ interface MessageFormProps {
 }
 
 // Zod schema for form validation
-const toEmailArray = (value?: string) => {
-    if (!value) return [];
-    return value.split(',');
-}
 const emailArraySchema = z.array(z.string().trim().email("message_form.error.invalid_recipient"));
 const messageFormSchema = z.object({
     from: z.string().nonempty("message_form.error.mailbox_required"),
-    to: z.string()
-         .optional()
-         .transform(toEmailArray)
-         .pipe(emailArraySchema),
-    cc: z.string()
-         .optional()
-         .transform(toEmailArray)
-         .pipe(emailArraySchema),
-    bcc: z.string()
-          .optional()
-          .transform(toEmailArray)
-          .pipe(emailArraySchema),
+    to: emailArraySchema,
+    cc: emailArraySchema.optional(),
+    bcc: emailArraySchema.optional(),
     subject: z.string().trim(),
     messageEditorHtml: z.string().optional().readonly(),
     messageEditorText: z.string().optional().readonly(),
@@ -147,9 +135,9 @@ export const MessageForm = ({
 
     const formDefaultValues = useMemo(() => ({
         from: defaultSenderId ?? '',
-        to: (draft?.to?.map(contact => contact.email) ?? recipients).join(', '),
-        cc: (draft?.cc?.map(contact => contact.email) ?? []).join(', '),
-        bcc: (draft?.bcc?.map(contact => contact.email) ?? []).join(', '),
+        to: draft?.to?.map(contact => contact.email) ?? recipients,
+        cc: draft?.cc?.map(contact => contact.email) ?? [],
+        bcc: draft?.bcc?.map(contact => contact.email) ?? [],
         subject: getDefaultSubject(),
         messageEditorDraft: draft?.draftBody,
         messageEditorHtml: undefined,
@@ -278,8 +266,8 @@ export const MessageForm = ({
                 draft || (
                     data.subject.length > 0
                     || data.to.length > 0
-                    || data.cc.length > 0
-                    || data.bcc.length > 0
+                    || (data.cc?.length ?? 0) > 0
+                    || (data.bcc?.length ?? 0) > 0
                     || (data.messageEditorText?.length ?? 0) > 0
                     || (data.attachments?.length ?? 0) > 0
                 )
@@ -289,8 +277,8 @@ export const MessageForm = ({
 
         const payload = {
             to: data.to,
-            cc: data.cc || [],
-            bcc: data.bcc || [],
+            cc: data.cc ?? [],
+            bcc: data.bcc ?? [],
             subject: data.subject,
             senderId: data.from,
             parentId: parentMessage?.id,
@@ -349,7 +337,7 @@ export const MessageForm = ({
 
         // recipients are optional to save the draft but required to send the message
         // so we have to manually check that at least one recipient is present.
-        const hasNoRecipients = data.to.length === 0 && data.cc.length === 0 && data.bcc.length === 0;
+        const hasNoRecipients = data.to.length === 0 && (data.cc?.length ?? 0) === 0 && (data.bcc?.length ?? 0) === 0;
         if (hasNoRecipients) {
             setPendingSubmit(false);
             form.setError("to", { message: t("message_form.error.min_recipient") });
@@ -456,13 +444,14 @@ export const MessageForm = ({
                     />
                 </div>
                 <div className="form-field-row">
-                    <RhfInput
+                    <RhfContactComboBox
                         name="to"
                         label={t("thread_message.to")}
-                        icon={<span className="material-icons">group</span>}
-                        fullWidth
+                        // icon={<span className="material-icons">group</span>}
                         text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? t(form.formState.errors.to.message as string) : t("message_form.helper_text.recipients")}
-                        textItems={Array.isArray(form.formState.errors.to) ? form.formState.errors.to?.map((error, index) => t(error!.message as string, { email: form.getValues(`to`)!.split(',')[index] })) : undefined}
+                        textItems={Array.isArray(form.formState.errors.to) ? form.formState.errors.to?.map((error, index) => t(error!.message as string, { email: form.getValues('to')?.[index] })) : []}
+                        fullWidth
+                        clearable
                     />
                     <Button tabIndex={-1} type="button" size="nano" color={showCCField ? "tertiary" : "tertiary-text"} onClick={() => setShowCCField(!showCCField)}>cc</Button>
                     <Button tabIndex={-1} type="button" size="nano" color={showBCCField ? "tertiary" : "tertiary-text"} onClick={() => setShowBCCField(!showBCCField)}>bcc</Button>
@@ -470,26 +459,28 @@ export const MessageForm = ({
 
                 {showCCField && (
                     <div className="form-field-row">
-                        <RhfInput
+                        <RhfContactComboBox
                             name="cc"
                             label={t("thread_message.cc")}
-                            icon={<span className="material-icons">group</span>}
+                            // icon={<span className="material-icons">group</span>}
                             text={form.formState.errors.cc && !Array.isArray(form.formState.errors.cc) ? t(form.formState.errors.cc.message as string) : t("message_form.helper_text.recipients")}
-                            textItems={Array.isArray(form.formState.errors.cc) ? form.formState.errors.cc?.map((error, index) => t(error!.message as string, { email: form.getValues('cc')?.split(',')[index] })) : []}
+                            textItems={Array.isArray(form.formState.errors.cc) ? form.formState.errors.cc?.map((error, index) => t(error!.message as string, { email: form.getValues('cc')?.[index] })) : []}
                             fullWidth
+                            clearable
                         />
                     </div>
                 )}
 
                 {showBCCField && (
                     <div className="form-field-row">
-                        <RhfInput
+                        <RhfContactComboBox
                             name="bcc"
                             label={t("thread_message.bcc")}
-                            icon={<span className="material-icons">visibility_off</span>}
+                            // icon={<span className="material-icons">visibility_off</span>}
                             text={form.formState.errors.bcc && !Array.isArray(form.formState.errors.bcc) ? t(form.formState.errors.bcc.message as string) : t("message_form.helper_text.recipients")}
-                            textItems={Array.isArray(form.formState.errors.bcc) ? form.formState.errors.bcc?.map((error, index) => t(error!.message as string, { email: form.getValues('bcc')?.split(',')[index] })) : []}
+                            textItems={Array.isArray(form.formState.errors.bcc) ? form.formState.errors.bcc?.map((error, index) => t(error!.message as string, { email: form.getValues('bcc')?.[index] })) : []}
                             fullWidth
+                            clearable
                         />
                     </div>
                 )}
@@ -514,8 +505,8 @@ export const MessageForm = ({
                 </div>
 
                 <AttachmentUploader initialAttachments={getDefaultAttachments()} onChange={form.handleSubmit(saveDraft)} />
-            
-                {showAttachmentsForgetAlert && 
+
+                {showAttachmentsForgetAlert &&
                   <Banner type="warning">
                     {t("attachments.forgot_question")}
                   </Banner>
