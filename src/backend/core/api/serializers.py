@@ -800,12 +800,3 @@ class ImportIMAPSerializer(ImportBaseSerializer):
     use_ssl = serializers.BooleanField(
         help_text="Use SSL for IMAP connection", required=False, default=True
     )
-    folder = serializers.CharField(
-        help_text="IMAP folder to import from", required=False, default="INBOX"
-    )
-    max_messages = serializers.IntegerField(
-        help_text="Maximum number of messages to import (0 for all)",
-        required=False,
-        default=0,
-        min_value=0,
-    )

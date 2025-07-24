@@ -67,13 +67,17 @@ def mock_imap_connection(sample_email):
 
     # Mock successful login and folder selection
     mock_imap.login.return_value = ("OK", [b"Logged in"])
+
+    # Mock list folders - return INBOX folder
+    mock_imap.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "INBOX"'])
+
     mock_imap.select.return_value = ("OK", [b"1"])
 
     # Mock message search
     mock_imap.search.return_value = ("OK", [b"1 2 3"])  # Three messages
 
-    # Mock message fetch
-    mock_imap.fetch.return_value = ("OK", [(None, sample_email)])
+    # Mock message fetch with proper IMAP format including flags
+    mock_imap.fetch.return_value = ("OK", [(b"1 (FLAGS (\\Seen))", sample_email)])
 
     # Mock close and logout
     mock_imap.close.return_value = ("OK", [b"Closed"])
@@ -89,8 +93,6 @@ def test_imap_import_form_validation(mailbox):
         "username": "test@example.com",
         "password": "password123",
         "use_ssl": True,
-        "folder": "INBOX",
-        "max_messages": 0,
         "recipient": mailbox.id,  # Will be set in test
     }
 
@@ -107,13 +109,6 @@ def test_imap_import_form_validation(mailbox):
     form = IMAPImportForm(form_data)
     assert not form.is_valid()
     assert "imap_port" in form.errors
-
-    # Test with invalid max_messages
-    form_data["imap_port"] = 993
-    form_data["max_messages"] = -1
-    form = IMAPImportForm(form_data)
-    assert not form.is_valid()
-    assert "max_messages" in form.errors
 
 
 def test_imap_import_form_view(admin_client, mailbox):
@@ -132,8 +127,6 @@ def test_imap_import_form_view(admin_client, mailbox):
         "username": "test@example.com",
         "password": "password123",
         "use_ssl": True,
-        "folder": "INBOX",
-        "max_messages": 0,
         "recipient": mailbox.id,
     }
 
@@ -169,14 +162,15 @@ def test_imap_import_task_success(
             username="test@example.com",
             password="password123",
             use_ssl=True,
-            folder="INBOX",
-            max_messages=0,
             recipient_id=str(mailbox.id),
         )
 
         # Verify results
         assert task["status"] == "SUCCESS"
-        assert task["result"]["message_status"] == "Completed processing messages"
+        assert (
+            task["result"]["message_status"]
+            == "Completed processing messages from folder 'INBOX'"
+        )
         assert task["result"]["type"] == "imap"
         assert task["result"]["total_messages"] == 3
         assert task["result"]["success_count"] == 3
@@ -194,7 +188,7 @@ def test_imap_import_task_success(
                     "result": {
                         "message_status": f"Processing message {i} of 3",
                         "total_messages": 3,
-                        "success_count": i - 1,  # Previous messages were successful
+                        "success_count": i,  # Current message was successful
                         "failure_count": 0,
                         "type": "imap",
                         "current_message": i,
@@ -255,8 +249,6 @@ def test_imap_import_task_login_failure(mailbox):
             username="test@example.com",
             password="wrong_password",
             use_ssl=True,
-            folder="INBOX",
-            max_messages=0,
             recipient_id=str(mailbox.id),
         )
 
@@ -283,123 +275,6 @@ def test_imap_import_task_login_failure(mailbox):
         assert Message.objects.count() == 0
 
 
-@pytest.mark.django_db
-def test_imap_import_task_folder_not_found(mailbox):
-    """Test IMAP import task with non-existent folder."""
-    # Create a mock task instance
-    mock_task = MagicMock()
-    mock_task.update_state = MagicMock()
-
-    # Mock IMAP connection to raise an error on folder selection
-    with (
-        patch.object(import_imap_messages_task, "update_state", mock_task.update_state),
-        patch("core.tasks.imaplib.IMAP4_SSL") as mock_imap,
-    ):
-        mock_imap_instance = MagicMock()
-        mock_imap.return_value = mock_imap_instance
-        mock_imap_instance.login.return_value = ("OK", [b"Logged in"])
-        mock_imap_instance.select.side_effect = Exception("Folder not found")
-
-        # Run the task
-        task_result = import_imap_messages_task(
-            imap_server="imap.example.com",
-            imap_port=993,
-            username="test@example.com",
-            password="password123",
-            use_ssl=True,
-            folder="NONEXISTENT",
-            max_messages=0,
-            recipient_id=str(mailbox.id),
-        )
-
-        # Verify task result
-        assert task_result["status"] == "FAILURE"
-        assert task_result["result"]["message_status"] == "Failed to process messages"
-        assert task_result["result"]["type"] == "imap"
-        assert task_result["result"]["total_messages"] == 0
-        assert task_result["result"]["success_count"] == 0
-        assert task_result["result"]["failure_count"] == 0
-        assert task_result["result"]["current_message"] == 0
-        assert "Folder not found" in task_result["error"]
-
-        # Verify only failure update was called
-        assert mock_task.update_state.call_count == 1
-        mock_task.update_state.assert_called_once_with(
-            state="FAILURE",
-            meta={
-                "result": task_result["result"],
-                "error": task_result["error"],
-            },
-        )
-
-        # Verify no messages were created
-        assert Message.objects.count() == 0
-
-
-@patch("imaplib.IMAP4_SSL")
-@patch.object(celery_app.backend, "store_result")
-def test_imap_import_task_max_messages(
-    mock_store_result, mock_imap4_ssl, mailbox, mock_imap_connection
-):
-    """Test IMAP import task with max_messages limit."""
-    mock_store_result.return_value = None
-    mock_imap4_ssl.return_value = mock_imap_connection
-
-    # Create a mock task instance
-    mock_task = MagicMock()
-    mock_task.update_state = MagicMock()
-
-    with patch.object(
-        import_imap_messages_task, "update_state", mock_task.update_state
-    ):
-        # Run the task with max_messages=2
-        task = import_imap_messages_task(
-            imap_server="imap.example.com",
-            imap_port=993,
-            username="test@example.com",
-            password="password123",
-            use_ssl=True,
-            folder="INBOX",
-            max_messages=2,
-            recipient_id=str(mailbox.id),
-        )
-
-        # Verify only 2 messages were processed
-        assert task["status"] == "SUCCESS"
-        assert task["result"]["message_status"] == "Completed processing messages"
-        assert task["result"]["type"] == "imap"
-        assert task["result"]["total_messages"] == 2
-        assert task["result"]["success_count"] == 2
-        assert task["result"]["failure_count"] == 0
-        assert task["result"]["current_message"] == 2
-
-        # Verify progress updates were called correctly
-        assert mock_task.update_state.call_count == 3  # 2 PROGRESS + 1 SUCCESS
-
-        # Verify progress updates
-        for i in range(1, 3):
-            mock_task.update_state.assert_any_call(
-                state="PROGRESS",
-                meta={
-                    "result": {
-                        "message_status": f"Processing message {i} of 2",
-                        "total_messages": 2,
-                        "success_count": i - 1,  # Previous messages were successful
-                        "failure_count": 0,
-                        "type": "imap",
-                        "current_message": i,
-                    },
-                    "error": None,
-                },
-            )
-
-        # Verify success update
-        mock_task.update_state.assert_any_call(
-            state="SUCCESS",
-            meta=task,
-        )
-
-
 @patch("imaplib.IMAP4_SSL")
 @patch.object(celery_app.backend, "store_result")
 def test_imap_import_task_message_fetch_failure(
@@ -409,9 +284,16 @@ def test_imap_import_task_message_fetch_failure(
     mock_store_result.return_value = None
     mock_imap = MagicMock()
     mock_imap.login.return_value = ("OK", [b"Logged in"])
+
+    # Mock list folders - return INBOX folder
+    mock_imap.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "INBOX"'])
+
     mock_imap.select.return_value = ("OK", [b"1"])
     mock_imap.search.return_value = ("OK", [b"1 2 3"])
-    mock_imap.fetch.return_value = ("NO", [b"Message not found"])
+    # Mock fetch to return error for all messages
+    mock_imap.fetch.side_effect = Exception("Message fetch failed")
+    mock_imap.close.return_value = ("OK", [b"Closed"])
+    mock_imap.logout.return_value = ("OK", [b"Logged out"])
     mock_imap4_ssl.return_value = mock_imap
 
     # Create a mock task instance
@@ -428,14 +310,15 @@ def test_imap_import_task_message_fetch_failure(
             username="test@example.com",
             password="password123",
             use_ssl=True,
-            folder="INBOX",
-            max_messages=0,
             recipient_id=str(mailbox.id),
         )
 
         # Verify all messages failed
         assert task["status"] == "SUCCESS"
-        assert task["result"]["message_status"] == "Completed processing messages"
+        assert (
+            task["result"]["message_status"]
+            == "Completed processing messages from folder 'INBOX'"
+        )
         assert task["result"]["type"] == "imap"
         assert task["result"]["total_messages"] == 3
         assert task["result"]["success_count"] == 0
@@ -454,7 +337,7 @@ def test_imap_import_task_message_fetch_failure(
                         "message_status": f"Processing message {i} of 3",
                         "total_messages": 3,
                         "success_count": 0,
-                        "failure_count": i - 1,  # Previous messages failed
+                        "failure_count": i,  # Current message failed
                         "type": "imap",
                         "current_message": i,
                     },

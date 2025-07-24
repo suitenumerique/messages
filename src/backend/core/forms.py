@@ -74,16 +74,3 @@ class IMAPImportForm(forms.Form):
         required=False,
         initial=True,
     )
-    folder = forms.CharField(
-        label="Folder",
-        help_text="IMAP folder to import from (e.g. INBOX)",
-        required=True,
-        initial="INBOX",
-    )
-    max_messages = forms.IntegerField(
-        label="Maximum Messages",
-        help_text="Maximum number of messages to import (0 for all)",
-        required=False,
-        initial=0,
-        min_value=0,
-    )

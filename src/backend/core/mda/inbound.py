@@ -18,67 +18,102 @@ logger = logging.getLogger(__name__)
 # Helper function to extract Message-IDs
 MESSAGE_ID_RE = re.compile(r"<([^<>]+)>")
 
-
-GMAIL_LABEL_TO_MESSAGE_FLAG = {
+IMAP_LABEL_TO_MESSAGE_FLAG = {
     "Drafts": "is_draft",
     "Brouillons": "is_draft",
+    "[Gmail]/Drafts": "is_draft",
+    "[Gmail]/Brouillons": "is_draft",
+    "DRAFT": "is_draft",
     "Sent": "is_sender",
     "Messages envoyés": "is_sender",
+    "[Gmail]/Sent Mail": "is_sender",
+    "[Gmail]/Mails envoyés": "is_sender",
+    "[Gmail]/Messages envoyés": "is_sender",
+    "Sent Mail": "is_sender",
+    "Mails envoyés": "is_sender",
     "Archived": "is_archived",
     "Messages archivés": "is_archived",
     "Starred": "is_starred",
+    "[Gmail]/Starred": "is_starred",
+    "[Gmail]/Suivis": "is_starred",
     "Favoris": "is_starred",
     "Trash": "is_trashed",
+    "TRASH": "is_trashed",
+    "[Gmail]/Corbeille": "is_trashed",
     "Corbeille": "is_trashed",
+    # TODO: '[Gmail]/Important'
+    "OUTBOX": "is_sender",
 }
 
-GMAIL_LABEL_TO_THREAD_FLAG = {
+IMAP_LABEL_TO_THREAD_FLAG = {
     "Spam": "is_spam",
+    "QUARANTAINE": "is_spam",
 }
 
-GMAIL_READ_UNREAD_LABELS = {
+IMAP_READ_UNREAD_LABELS = {
     "Ouvert": "read",
     "Non lus": "unread",
     "Opened": "read",
     "Unread": "unread",
 }
 
-GMAIL_LABELS_TO_IGNORE = [
+IMAP_LABELS_TO_IGNORE = [
     "Promotions",
     "Social",
     "Boîte de réception",
     "Inbox",
+    "INBOX",
+    "[Gmail]/Important",
+    "[Gmail]/All Mail",
+    "[Gmail]/Tous les messages",
 ]
 
 
 def compute_labels_and_flags(
     parsed_email: Dict[str, Any],
+    imap_labels: Optional[List[str]],
+    imap_flags: Optional[List[str]],
 ) -> Tuple[List[str], Dict[str, bool], Dict[str, bool]]:
     """Compute labels and flags for a parsed email."""
-    labels = parsed_email.get("gmail_labels", [])
+
+    # Combine both imap_labels and gmail_labels from parsed email
+    gmail_labels = parsed_email.get("gmail_labels", [])
+    imap_labels = imap_labels or []
+    imap_flags = imap_flags or []
+    all_labels = list(imap_labels) + list(gmail_labels)
+
     message_flags = {}
     thread_flags = {}
     labels_to_add = []
-    for label in labels:
+    for label in all_labels:
         # Handle read/unread status
-        if label in GMAIL_READ_UNREAD_LABELS:
-            if GMAIL_READ_UNREAD_LABELS[label] == "read":
+        if label in IMAP_READ_UNREAD_LABELS:
+            if IMAP_READ_UNREAD_LABELS[label] == "read":
                 message_flags["is_unread"] = False
-            elif GMAIL_READ_UNREAD_LABELS[label] == "unread":
+            elif IMAP_READ_UNREAD_LABELS[label] == "unread":
                 message_flags["is_unread"] = True
             continue  # Skip further processing for this label
-        message_flag = GMAIL_LABEL_TO_MESSAGE_FLAG.get(label)
-        thread_flag = GMAIL_LABEL_TO_THREAD_FLAG.get(label)
+        message_flag = IMAP_LABEL_TO_MESSAGE_FLAG.get(label)
+        thread_flag = IMAP_LABEL_TO_THREAD_FLAG.get(label)
         if message_flag:
             message_flags[message_flag] = True
         elif thread_flag:
             thread_flags[thread_flag] = True
-        elif label not in GMAIL_LABELS_TO_IGNORE:
+        elif label not in IMAP_LABELS_TO_IGNORE:
             labels_to_add.append(label)
+
+    # Handle read/unread status via IMAP flags
+    if imap_flags:
+        # If the \\Seen flag is present, the message is read
+        is_seen = "\\Seen" in imap_flags
+        message_flags["is_unread"] = not is_seen
 
     # Special case: if message is sender or draft, it should not be unread
     if message_flags.get("is_sender") or message_flags.get("is_draft"):
         message_flags["is_unread"] = False
+
+    if "is_sender" in imap_flags:
+        message_flags["is_sender"] = True
 
     return labels_to_add, message_flags, thread_flags
 
@@ -224,11 +259,67 @@ def find_thread_for_inbound_message(
     return None  # potential_parents.first().thread
 
 
+def _find_thread_by_message_ids(
+    in_reply_to: str, references: str, mailbox: models.Mailbox
+) -> Optional[models.Thread]:
+    """Find thread by message IDs (in_reply_to and references)."""
+    # First try to find a thread by message IDs
+    if in_reply_to or references:
+        thread = models.Thread.objects.filter(
+            messages__mime_id__in=[in_reply_to] if in_reply_to else [],
+            accesses__mailbox=mailbox,
+        ).first()
+        if not thread and references:
+            # Extract message IDs from references
+            ref_ids = MESSAGE_ID_RE.findall(references)
+            if ref_ids:
+                thread = models.Thread.objects.filter(
+                    messages__mime_id__in=ref_ids,
+                    accesses__mailbox=mailbox,
+                ).first()
+        return thread
+    return None
+
+
+def _handle_duplicate_message(
+    existing_message: models.Message,
+    parsed_email: Dict[str, Any],
+    imap_labels: List[str],
+    imap_flags: List[str],
+    mailbox: models.Mailbox,
+) -> None:
+    """Handle duplicate message by updating labels and flags."""
+    # get labels from parsed_email
+    labels, message_flags, thread_flags = compute_labels_and_flags(
+        parsed_email, imap_labels, imap_flags
+    )
+    for label in labels:
+        try:
+            label_obj, _ = models.Label.objects.get_or_create(
+                name=label, mailbox=mailbox
+            )
+            existing_message.thread.labels.add(label_obj)
+            for flag, value in message_flags.items():
+                if hasattr(existing_message, flag):
+                    setattr(existing_message, flag, value)
+                    existing_message.save(update_fields=[flag])
+            existing_message.save(update_fields=message_flags.keys())
+            for flag, value in thread_flags.items():
+                if hasattr(existing_message.thread, flag):
+                    setattr(existing_message.thread, flag, value)
+            existing_message.thread.save(update_fields=thread_flags.keys())
+        except Exception as e:
+            logger.exception("Error creating label %s: %s", label, e)
+            continue
+
+
 def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-statements, too-many-locals
     recipient_email: str,
     parsed_email: Dict[str, Any],
     raw_data: bytes,
     is_import: bool = False,
+    imap_labels: Optional[List[str]] = None,
+    imap_flags: Optional[List[str]] = None,
 ) -> bool:  # Return True on success, False on failure
     """Deliver a parsed inbound email message to the correct mailbox and thread.
 
@@ -261,6 +352,10 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
         ).first()
 
         if existing_message:
+            if is_import and imap_labels:
+                _handle_duplicate_message(
+                    existing_message, parsed_email, imap_labels, imap_flags, mailbox
+                )
             logger.info(
                 "Skipping duplicate message %s (MIME ID: %s) in mailbox %s",
                 existing_message.id,
@@ -271,46 +366,34 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
 
     # --- 3. Find or Create Thread --- #
     try:
-        # thread = None
-        # if is_import:
-        #     # During import, try to find an existing thread that contains messages
-        #     # with the same subject or referenced message IDs
-        #     subject = parsed_email.get("subject", "")
-        #     in_reply_to = parsed_email.get("in_reply_to")
-        #     references = parsed_email.get("headers", {}).get("references", "")
+        thread = None
+        if is_import:
+            # During import, try to find an existing thread that contains messages
+            # with the same subject or referenced message IDs
+            subject = parsed_email.get("subject", "")
+            in_reply_to = parsed_email.get("in_reply_to")
+            references = parsed_email.get("headers", {}).get("references", "")
 
-        #     # First try to find a thread by message IDs
-        #     if in_reply_to or references:
-        #         thread = models.Thread.objects.filter(
-        #             messages__mime_id__in=[in_reply_to] if in_reply_to else [],
-        #             accesses__mailbox=mailbox,
-        #         ).first()
-        #         if not thread and references:
-        #             # Extract message IDs from references
-        #             ref_ids = MESSAGE_ID_RE.findall(references)
-        #             if ref_ids:
-        #                 thread = models.Thread.objects.filter(
-        #                     messages__mime_id__in=ref_ids,
-        #                     accesses__mailbox=mailbox,
-        #                 ).first()
+            # First try to find a thread by message IDs
+            thread = _find_thread_by_message_ids(in_reply_to, references, mailbox)
 
-        #     # If no thread found by message IDs, try by subject
-        #     if not thread and subject:
-        #         # Look for threads with similar subjects
-        #         canonical_subject = re.sub(
-        #             r"^((re|fwd|fw|rep|tr|rép)\s*:\s+)+",
-        #             "",
-        #             subject.lower(),
-        #             flags=re.IGNORECASE,
-        #         ).strip()
-        #         thread = models.Thread.objects.filter(
-        #             subject__iregex=rf"^(re|fwd|fw|rep|tr|rép)\s*:\s*{re.escape(canonical_subject)}$",
-        #             accesses__mailbox=mailbox,
-        #         ).first()
+            # If no thread found by message IDs, try by subject
+            if not thread and subject:
+                # Look for threads with similar subjects
+                canonical_subject = re.sub(
+                    r"^((re|fwd|fw|rep|tr|rép)\s*:\s+)+",
+                    "",
+                    subject.lower(),
+                    flags=re.IGNORECASE,
+                ).strip()
+                thread = models.Thread.objects.filter(
+                    subject__iregex=rf"^(re|fwd|fw|rep|tr|rép)\s*:\s*{re.escape(canonical_subject)}$",
+                    accesses__mailbox=mailbox,
+                ).first()
 
-        # # If no thread found or not an import, use normal thread finding logic
-        # if not thread:
-        thread = find_thread_for_inbound_message(parsed_email, mailbox)
+        # If no thread found or not an import, use normal thread finding logic
+        if not thread:
+            thread = find_thread_for_inbound_message(parsed_email, mailbox)
 
         if not thread:
             snippet = ""
@@ -349,7 +432,9 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
 
     if is_import:
         # get labels from parsed_email
-        labels, message_flags, thread_flags = compute_labels_and_flags(parsed_email)
+        labels, message_flags, thread_flags = compute_labels_and_flags(
+            parsed_email, imap_labels, imap_flags
+        )
         for label in labels:
             try:
                 label_obj, _ = models.Label.objects.get_or_create(
@@ -361,7 +446,6 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
                 continue
 
     # --- 4. Get or Create Sender Contact --- #
-    logger.warning(parsed_email)
     sender_info = parsed_email.get("from", {})
     sender_email = sender_info.get("email")
     sender_name = sender_info.get("name")

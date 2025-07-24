@@ -463,8 +463,6 @@ def test_import_imap_by_superuser(admin_user, mailbox, mock_request):
             recipient=mailbox,
             user=admin_user,
             use_ssl=True,
-            folder="INBOX",
-            max_messages=0,
             request=mock_request,
         )
 
@@ -497,8 +495,6 @@ def test_import_imap_by_user_with_access(user, mailbox, mock_request, role):
             recipient=mailbox,
             user=user,
             use_ssl=True,
-            folder="INBOX",
-            max_messages=0,
             request=mock_request,
         )
 
@@ -521,8 +517,6 @@ def test_import_imap_no_access(user, domain, mock_request):
         recipient=mailbox,
         user=user,
         use_ssl=True,
-        folder="INBOX",
-        max_messages=0,
         request=mock_request,
     )
 
@@ -545,8 +539,6 @@ def test_import_imap_task_error(admin_user, mailbox, mock_request):
             recipient=mailbox,
             user=admin_user,
             use_ssl=True,
-            folder="INBOX",
-            max_messages=0,
             request=mock_request,
         )
 
@@ -561,10 +553,23 @@ def test_import_imap_messages_by_superuser(admin_user, mailbox, mock_request):
     # Mock IMAP connection and responses
     with patch("imaplib.IMAP4_SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
+
+        # Mock login
+        mock_imap_instance.login.return_value = ("OK", [b"Logged in"])
+
+        # Mock list folders - return INBOX folder
+        mock_imap_instance.list.return_value = (
+            "OK",
+            [b'(\\HasNoChildren) "/" "INBOX"'],
+        )
+
+        # Mock select folder
         mock_imap_instance.select.return_value = ("OK", [b"1"])
+
+        # Mock search for messages
         mock_imap_instance.search.return_value = ("OK", [b"1 2"])
 
-        # Mock 2 messages
+        # Mock 2 messages with proper IMAP response format
         message1 = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Test Message 1
@@ -579,9 +584,12 @@ Date: Mon, 26 May 2025 11:00:00 +0000
 
 Test message body 2"""
 
+        # Mock fetch responses with proper IMAP format including flags
         mock_imap_instance.fetch.side_effect = [
-            ("OK", [(b"1", message1)]),
-            ("OK", [(b"2", message2)]),
+            # First message: flags + content
+            ("OK", [(b"1 (FLAGS (\\Seen \\Answered))", message1)]),
+            # Second message: flags + content
+            ("OK", [(b"2 (FLAGS (\\Seen))", message2)]),
         ]
 
         success, response_data = ImportService.import_imap(
@@ -592,8 +600,6 @@ Test message body 2"""
             recipient=mailbox,
             user=admin_user,
             use_ssl=True,
-            folder="INBOX",
-            max_messages=2,
             request=mock_request,
         )
 
@@ -605,8 +611,16 @@ Test message body 2"""
         mock_imap_instance.login.assert_called_once_with(
             "test@example.com", "password123"
         )
-        mock_imap_instance.select.assert_called_once_with("INBOX")
-        mock_imap_instance.search.assert_called_once_with(None, "ALL")
+        # The select method may be called multiple times with different folder name variations
+        assert mock_imap_instance.select.call_count >= 1
+        # Check that at least one call was made with "INBOX"
+        select_calls = [call[0][0] for call in mock_imap_instance.select.call_args_list]
+        assert "INBOX" in select_calls
+        # The search method may be called multiple times with different criteria
+        assert mock_imap_instance.search.call_count >= 1
+        # Check that at least one call was made with "ALL"
+        search_calls = [call[0][1] for call in mock_imap_instance.search.call_args_list]
+        assert "ALL" in search_calls
         assert mock_imap_instance.fetch.call_count == 2
         assert Message.objects.count() == 2
         message = Message.objects.last()
@@ -626,7 +640,20 @@ def test_import_imap_messages_user_with_access(user, mailbox, mock_request):
     # Mock IMAP connection and responses
     with patch("imaplib.IMAP4_SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
+
+        # Mock login
+        mock_imap_instance.login.return_value = ("OK", [b"Logged in"])
+
+        # Mock list folders - return INBOX folder
+        mock_imap_instance.list.return_value = (
+            "OK",
+            [b'(\\HasNoChildren) "/" "INBOX"'],
+        )
+
+        # Mock select folder
         mock_imap_instance.select.return_value = ("OK", [b"1"])
+
+        # Mock search for messages
         mock_imap_instance.search.return_value = ("OK", [b"1 2"])
 
         # Mock 2 messages
@@ -645,8 +672,10 @@ Date: Mon, 26 May 2025 11:00:00 +0000
 Test message body 2"""
 
         mock_imap_instance.fetch.side_effect = [
-            ("OK", [(b"1", message1)]),
-            ("OK", [(b"2", message2)]),
+            # First message: flags + content
+            ("OK", [(b"1 (FLAGS (\\Seen \\Answered))", message1)]),
+            # Second message: flags + content
+            ("OK", [(b"2 (FLAGS (\\Seen))", message2)]),
         ]
 
         success, response_data = ImportService.import_imap(
@@ -657,8 +686,6 @@ Test message body 2"""
             recipient=mailbox,
             user=user,
             use_ssl=True,
-            folder="INBOX",
-            max_messages=2,
             request=mock_request,
         )
 
@@ -670,9 +697,16 @@ Test message body 2"""
         mock_imap_instance.login.assert_called_once_with(
             "test@example.com", "password123"
         )
-        mock_imap_instance.select.assert_called_once_with("INBOX")
-        mock_imap_instance.search.assert_called_once_with(None, "ALL")
-        assert mock_imap_instance.fetch.call_count == 2
+        # The select method may be called multiple times with different folder name variations
+        assert mock_imap_instance.select.call_count >= 1
+        # Check that at least one call was made with "INBOX"
+        select_calls = [call[0][0] for call in mock_imap_instance.select.call_args_list]
+        assert "INBOX" in select_calls
+        # The search method may be called multiple times with different criteria
+        assert mock_imap_instance.search.call_count >= 1
+        # Check that at least one call was made with "ALL"
+        search_calls = [call[0][1] for call in mock_imap_instance.search.call_args_list]
+        assert "ALL" in search_calls
         assert Message.objects.count() == 2
         message = Message.objects.last()
         assert message.subject == "Test Message 1"

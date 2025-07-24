@@ -97,8 +97,6 @@ class ImportService:
         recipient: Mailbox,
         user: Any,
         use_ssl: bool = True,
-        folder: str = "INBOX",
-        max_messages: int = 0,
         request: Optional[HttpRequest] = None,
     ) -> Tuple[bool, Dict[str, Any]]:
         """Import messages from an IMAP server.
@@ -111,8 +109,6 @@ class ImportService:
             recipient: The recipient mailbox
             user: The user performing the import
             use_ssl: Whether to use SSL
-            folder: IMAP folder to import from
-            max_messages: Maximum number of messages to import (0 for all)
             request: Optional HTTP request for admin messages
 
         Returns:
@@ -130,8 +126,6 @@ class ImportService:
                 username=username,
                 password=password,
                 use_ssl=use_ssl,
-                folder=folder,
-                max_messages=max_messages,
                 recipient_id=str(recipient.id),
             )
             response_data = {"task_id": task.id, "type": "imap"}

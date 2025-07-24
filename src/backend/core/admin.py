@@ -369,8 +369,6 @@ class MessageAdmin(admin.ModelAdmin):
                     recipient=form.cleaned_data["recipient"],
                     user=request.user,
                     use_ssl=form.cleaned_data["use_ssl"],
-                    folder=form.cleaned_data["folder"],
-                    max_messages=form.cleaned_data["max_messages"],
                     request=request,
                 )
                 if success:

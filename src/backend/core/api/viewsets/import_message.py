@@ -129,8 +129,6 @@ class ImportViewSet(viewsets.ViewSet):
         
         Optional parameters:
         - use_ssl: Whether to use SSL for the connection (default: true)
-        - folder: IMAP folder to import from (default: "INBOX")
-        - max_messages: Maximum number of messages to import (default: 0, meaning all messages)
         """,
     )
     @action(detail=False, methods=["post"], url_path="imap")
@@ -149,8 +147,6 @@ class ImportViewSet(viewsets.ViewSet):
             recipient=mailbox,
             user=request.user,
             use_ssl=data.get("use_ssl", True),
-            folder=data.get("folder", "INBOX"),
-            max_messages=data.get("max_messages", 0),
         )
 
         if not success:

@@ -230,8 +230,6 @@ def test_import_imap_task(api_client, user, mailbox):
             "username": "test@example.com",
             "password": "password123",
             "use_ssl": True,
-            "folder": "INBOX",
-            "max_messages": 0,
         }
         response = api_client.post(IMPORT_IMAP_URL, data, format="json")
         assert response.status_code == 202
@@ -246,10 +244,23 @@ def test_import_imap(api_client, user, mailbox):
     # Mock IMAP connection and responses
     with patch("imaplib.IMAP4_SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
+
+        # Mock login
+        mock_imap_instance.login.return_value = ("OK", [b"Logged in"])
+
+        # Mock list folders - return INBOX folder
+        mock_imap_instance.list.return_value = (
+            "OK",
+            [b'(\\HasNoChildren) "/" "INBOX"'],
+        )
+
+        # Mock select folder
         mock_imap_instance.select.return_value = ("OK", [b"1"])
+
+        # Mock search for messages
         mock_imap_instance.search.return_value = ("OK", [b"1 2"])
 
-        # Mock 2 messages
+        # Mock 2 messages with proper IMAP response format
         message1 = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Test Message 1
@@ -264,9 +275,12 @@ Date: Mon, 26 May 2025 11:00:00 +0000
 
 Test message body 2"""
 
+        # Mock fetch responses with proper IMAP format including flags
         mock_imap_instance.fetch.side_effect = [
-            ("OK", [(b"1", message1)]),
-            ("OK", [(b"2", message2)]),
+            # First message: flags + content
+            ("OK", [(b"1 (FLAGS (\\Seen \\Answered))", message1)]),
+            # Second message: flags + content
+            ("OK", [(b"2 (FLAGS (\\Seen))", message2)]),
         ]
 
         data = {
@@ -276,8 +290,6 @@ Test message body 2"""
             "username": "test@example.com",
             "password": "password123",
             "use_ssl": True,
-            "folder": "INBOX",
-            "max_messages": 0,
         }
         response = api_client.post(IMPORT_IMAP_URL, data, format="json")
         assert response.status_code == 202
@@ -311,8 +323,6 @@ def test_import_imap_no_access(api_client, domain):
         "username": "test@example.com",
         "password": "password123",
         "use_ssl": True,
-        "folder": "INBOX",
-        "max_messages": 0,
     }
     response = api_client.post(IMPORT_IMAP_URL, data, format="json")
     assert response.status_code == 403
@@ -632,7 +642,20 @@ def test_import_duplicate_imap_messages(api_client, user, mailbox):
     # Mock IMAP connection and responses
     with patch("imaplib.IMAP4_SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
+
+        # Mock login
+        mock_imap_instance.login.return_value = ("OK", [b"Logged in"])
+
+        # Mock list folders - return INBOX folder
+        mock_imap_instance.list.return_value = (
+            "OK",
+            [b'(\\HasNoChildren) "/" "INBOX"'],
+        )
+
+        # Mock select folder
         mock_imap_instance.select.return_value = ("OK", [b"1"])
+
+        # Mock search for messages
         mock_imap_instance.search.return_value = ("OK", [b"1"])
 
         # Mock message with Message-ID header
@@ -644,7 +667,11 @@ Date: Mon, 26 May 2025 10:00:00 +0000
 
 Test message body"""
 
-        mock_imap_instance.fetch.return_value = ("OK", [(b"1", message)])
+        # Mock fetch response with proper IMAP format including flags
+        mock_imap_instance.fetch.return_value = (
+            "OK",
+            [(b"1 (FLAGS (\\Seen))", message)],
+        )
 
         data = {
             "recipient": str(mailbox.id),
@@ -653,8 +680,6 @@ Test message body"""
             "username": "test@example.com",
             "password": "password123",
             "use_ssl": True,
-            "folder": "INBOX",
-            "max_messages": 0,
         }
 
         # First import
@@ -690,8 +715,22 @@ def test_import_duplicate_imap_messages_different_mailboxes(api_client, user, ma
     # Mock IMAP connection and responses
     with patch("imaplib.IMAP4_SSL") as mock_imap:
         mock_imap_instance = mock_imap.return_value
+
+        # Mock login
+        mock_imap_instance.login.return_value = ("OK", [b"Logged in"])
+
+        # Mock list folders - return INBOX folder
+        mock_imap_instance.list.return_value = (
+            "OK",
+            [b'(\\HasNoChildren) "/" "INBOX"'],
+        )
+
+        # Mock select folder
         mock_imap_instance.select.return_value = ("OK", [b"1"])
+
+        # Mock search for messages
         mock_imap_instance.search.return_value = ("OK", [b"1"])
+
         # Mock message with Message-ID header
         message = b"""From: sender@example.com
 To: recipient@example.com
@@ -701,7 +740,11 @@ Date: Mon, 26 May 2025 10:00:00 +0000
 
 Test message body"""
 
-        mock_imap_instance.fetch.return_value = ("OK", [(b"1", message)])
+        # Mock fetch response with proper IMAP format including flags
+        mock_imap_instance.fetch.return_value = (
+            "OK",
+            [(b"1 (FLAGS (\\Seen))", message)],
+        )
 
         data = {
             "recipient": str(mailbox.id),
@@ -710,8 +753,6 @@ Test message body"""
             "username": "test@example.com",
             "password": "password123",
             "use_ssl": True,
-            "folder": "INBOX",
-            "max_messages": 0,
         }
 
         # First import
