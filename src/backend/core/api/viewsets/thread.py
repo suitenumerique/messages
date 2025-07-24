@@ -59,16 +59,17 @@ class ThreadViewSet(
 
         if label_slug:
             # Filter threads by label slug, ensuring user has access to the label's mailbox
-            try:
-                label = models.Label.objects.get(
-                    slug=label_slug,
-                    mailbox__accesses__user=user,
-                )
-                queryset = queryset.filter(labels=label)
-            except models.Label.DoesNotExist as e:
-                raise drf.exceptions.PermissionDenied(
-                    "You do not have access to this label."
-                ) from e
+            # Get labels accessible to the user, joining with mailbox access
+            labels = models.Label.objects.filter(
+                slug=label_slug,
+                mailbox__accesses__user=user,
+            )
+            if mailbox_id:
+                # Further filter by mailbox if specified
+                labels = labels.filter(mailbox__id=mailbox_id)
+
+            # Filter threads that have any of these labels
+            queryset = queryset.filter(labels__in=labels)
 
         # Apply boolean filters
         # These filters operate on the Thread model's boolean fields

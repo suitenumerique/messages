@@ -148,7 +148,8 @@ class TestThreadFilterLabel:
         response = api_client.get(
             url, {"label_slug": "00000000-0000-0000-0000-000000000000"}
         )
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 0
 
     def test_filter_threads_by_label_no_access(self, api_client, url):
         """Test filtering threads by a label the user doesn't have access to."""
@@ -161,7 +162,8 @@ class TestThreadFilterLabel:
 
         # Try to filter by label in mailbox user doesn't have access to
         response = api_client.get(url, {"label_slug": str(label.slug)})
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 0
 
     def test_filter_threads_by_label_combined_filters(
         self, api_client, url, setup_threads_with_labels

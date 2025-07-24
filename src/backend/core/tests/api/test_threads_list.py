@@ -9,6 +9,7 @@ from rest_framework import status
 from core import enums
 from core.factories import (
     ContactFactory,
+    LabelFactory,
     MailboxAccessFactory,
     MailboxFactory,
     MailDomainFactory,
@@ -437,6 +438,183 @@ class TestThreadStatsAPI:
         assert response.status_code == 200
         assert response.data == {"has_draft": 1}
         assert "has_messages" not in response.data
+
+    def test_stats_with_identical_labels_different_mailboxes(self, api_client, url):
+        """Test that stats with identical label slugs in different mailboxes work correctly."""
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+
+        # Create two mailboxes with user access
+        mailbox1 = MailboxFactory()
+        mailbox2 = MailboxFactory()
+        mailbox1.accesses.create(user=user, role=enums.MailboxRoleChoices.EDITOR)
+        mailbox2.accesses.create(user=user, role=enums.MailboxRoleChoices.EDITOR)
+
+        # Create identical labels in both mailboxes
+        label1_mbx1 = LabelFactory(name="Work", mailbox=mailbox1)
+        label1_mbx2 = LabelFactory(name="Work", mailbox=mailbox2)
+
+        # Create threads in each mailbox with the respective labels
+        thread1_mbx1 = ThreadFactory(has_unread=True, has_messages=True)
+        ThreadAccessFactory(
+            mailbox=mailbox1,
+            thread=thread1_mbx1,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        thread1_mbx1.labels.add(label1_mbx1)
+
+        thread1_mbx2 = ThreadFactory(has_unread=True, has_messages=True)
+        ThreadAccessFactory(
+            mailbox=mailbox2,
+            thread=thread1_mbx2,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        thread1_mbx2.labels.add(label1_mbx2)
+
+        # Test stats with label_slug filter - should return threads from both mailboxes
+        response = api_client.get(
+            url,
+            {
+                "label_slug": label1_mbx1.slug,  # Same slug as label1_mbx2
+                "stats_fields": "all,all_unread",
+            },
+        )
+
+        assert response.status_code == 200
+        # Should count threads from both mailboxes since user has access to both
+        assert response.data["all"] == 2
+        assert response.data["all_unread"] == 2
+
+        # Test stats with label_slug and mailbox_id filter - should return only threads from that mailbox
+        response = api_client.get(
+            url,
+            {
+                "label_slug": label1_mbx1.slug,
+                "mailbox_id": str(mailbox1.id),
+                "stats_fields": "all,all_unread",
+            },
+        )
+
+        assert response.status_code == 200
+        # Should count only threads from mailbox1
+        assert response.data["all"] == 1
+        assert response.data["all_unread"] == 1
+
+    def test_stats_with_identical_labels_hierarchical_different_mailboxes(
+        self, api_client, url
+    ):
+        """Test that stats with identical hierarchical label slugs in different mailboxes work correctly."""
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+
+        # Create two mailboxes with user access
+        mailbox1 = MailboxFactory()
+        mailbox2 = MailboxFactory()
+        mailbox1.accesses.create(user=user, role=enums.MailboxRoleChoices.EDITOR)
+        mailbox2.accesses.create(user=user, role=enums.MailboxRoleChoices.EDITOR)
+
+        # Create identical hierarchical labels in both mailboxes
+        # Mailbox1: Work/Projects
+        label1_mbx1 = LabelFactory(name="Work", mailbox=mailbox1)
+        child1_mbx1 = LabelFactory(name="Work/Projects", mailbox=mailbox1)
+
+        # Mailbox2: Work/Projects (same structure)
+        label1_mbx2 = LabelFactory(name="Work", mailbox=mailbox2)
+        child1_mbx2 = LabelFactory(name="Work/Projects", mailbox=mailbox2)
+
+        # Create threads with both parent and child labels
+        thread1_mbx1 = ThreadFactory(has_unread=True, has_messages=True)
+        ThreadAccessFactory(
+            mailbox=mailbox1,
+            thread=thread1_mbx1,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        thread1_mbx1.labels.add(label1_mbx1)  # Add parent label
+        thread1_mbx1.labels.add(child1_mbx1)  # Add child label
+
+        thread1_mbx2 = ThreadFactory(has_unread=True, has_messages=True)
+        ThreadAccessFactory(
+            mailbox=mailbox2,
+            thread=thread1_mbx2,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        thread1_mbx2.labels.add(label1_mbx2)  # Add parent label
+        thread1_mbx2.labels.add(child1_mbx2)  # Add child label
+
+        # Test stats with child label_slug filter
+        response = api_client.get(
+            url,
+            {
+                "label_slug": child1_mbx1.slug,  # Same slug as child1_mbx2
+                "stats_fields": "all,all_unread",
+            },
+        )
+
+        assert response.status_code == 200
+        # Should count threads from both mailboxes
+        assert response.data["all"] == 2
+        assert response.data["all_unread"] == 2
+
+        # Test stats with parent label_slug filter
+        response = api_client.get(
+            url,
+            {
+                "label_slug": label1_mbx1.slug,  # Same slug as label1_mbx2
+                "stats_fields": "all,all_unread",
+            },
+        )
+
+        assert response.status_code == 200
+        # Should count threads from both mailboxes (parent labels)
+        assert response.data["all"] == 2
+        assert response.data["all_unread"] == 2
+
+    def test_stats_with_label_slug_no_access(self, api_client, url):
+        """Test that stats with label_slug filter respects user access permissions."""
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+
+        # Create mailbox with user access
+        mailbox1 = MailboxFactory()
+        mailbox1.accesses.create(user=user, role=enums.MailboxRoleChoices.EDITOR)
+
+        # Create mailbox without user access
+        mailbox2 = MailboxFactory()
+
+        # Create identical labels in both mailboxes
+        label1_mbx1 = LabelFactory(name="Work", mailbox=mailbox1)
+        label1_mbx2 = LabelFactory(name="Work", mailbox=mailbox2)
+
+        # Create threads with these labels
+        thread1_mbx1 = ThreadFactory(has_unread=True, has_messages=True)
+        ThreadAccessFactory(
+            mailbox=mailbox1,
+            thread=thread1_mbx1,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        thread1_mbx1.labels.add(label1_mbx1)
+
+        thread1_mbx2 = ThreadFactory(has_unread=True, has_messages=True)
+        ThreadAccessFactory(
+            mailbox=mailbox2,
+            thread=thread1_mbx2,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        thread1_mbx2.labels.add(label1_mbx2)
+
+        # Test stats with label_slug filter - should only return accessible threads
+        response = api_client.get(
+            url,
+            {
+                "label_slug": label1_mbx1.slug,  # Same slug as label1_mbx2
+                "stats_fields": "all,all_unread",
+            },
+        )
+
+        assert response.status_code == 200
+        # Should count only threads from mailbox1 (user has access)
+        assert response.data["all"] == 1
+        assert response.data["all_unread"] == 1
 
     def test_stats_no_matching_threads(self, api_client, url):
         """Test retrieving stats when no threads match the filters."""

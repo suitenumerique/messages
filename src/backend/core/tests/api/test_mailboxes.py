@@ -303,7 +303,6 @@ class TestMailboxViewSet:
         assert response.data["count_unread_messages"] == 1
         assert response.data["count_messages"] == 1
 
-
     def test_retrieve_mailbox_unauthorized(self):
         """Test that users cannot retrieve mailboxes they don't have access to."""
         # Create user without access to mailbox
