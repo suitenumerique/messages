@@ -105,6 +105,12 @@ export const ComboBox = (props: ComboBoxProps) => {
                 onBlurCapture: extractNewItemsIfNeeded,
                 onBlur: () => { setInputFocused(false) },
                 onFocus: () => { setInputFocused(true) },
+                onChange: (e) => {
+                    // Synchronously update the input value
+                    // This is important to avoid cursor jumping to the end of the input
+                    // https://dev.to/kwirke/solving-caret-jumping-in-react-inputs-36ic
+                    setInputValue((e.target as HTMLInputElement).value);
+                },
                 onKeyDown: (e) => {
                     if (e.key === 'Tab') {
                         if (inputValue.length > 0) {
