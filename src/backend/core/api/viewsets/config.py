@@ -49,6 +49,22 @@ class ConfigView(drf.views.APIView):
                             "type": "boolean",
                             "readOnly": True,
                         },
+                        "DRIVE": {
+                            "type": "object",
+                            "description": "The URLs of the Drive external service.",
+                            "properties": {
+                                "sdk_url": {
+                                    "type": "string",
+                                    "readOnly": True,
+                                },
+                                "api_url": {
+                                    "type": "string",
+                                    "readOnly": True,
+                                },
+                            },
+                            "readOnly": True,
+                            "required": ["sdk_url", "api_url"],
+                        },
                     },
                     "required": [
                         "ENVIRONMENT",
@@ -83,7 +99,19 @@ class ConfigView(drf.views.APIView):
             if hasattr(settings, setting):
                 dict_settings[setting] = getattr(settings, setting)
 
+        # AI Features
         dict_settings["AI_ENABLED"] = is_ai_enabled()
         dict_settings["AI_FEATURE_SUMMARY_ENABLED"] = is_ai_summary_enabled()
+
+        # Drive service
+        if base_url := settings.DRIVE_CONFIG.get("base_url"):
+            dict_settings.update(
+                {
+                    "DRIVE": {
+                        "sdk_url": f"{base_url}{settings.DRIVE_CONFIG.get('sdk_url')}",
+                        "api_url": f"{base_url}{settings.DRIVE_CONFIG.get('api_url')}",
+                    }
+                }
+            )
 
         return drf.response.Response(dict_settings)

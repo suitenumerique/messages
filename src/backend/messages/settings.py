@@ -592,6 +592,18 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    # External services
+    # Settings related to the interoperability with external services
+    # that messages is able to use
+    # 1. Drive - https://github.com/suitenumerique/drive
+    DRIVE_CONFIG = {
+        "base_url": values.Value(
+            default=None, environ_name="DRIVE_BASE_URL", environ_prefix=None
+        ),
+        "sdk_url": "/sdk",
+        "api_url": "/api/v1.0",
+    }
+
     # pylint: disable=invalid-name
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

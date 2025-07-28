@@ -73,9 +73,13 @@ MTA_OUT_SMTP_PASSWORD=pass
 MDA_API_SECRET=my-shared-secret-mda
 SALT_KEY=ThisIsAnExampleSaltForDevPurposeOnly
 
-# AI 
+# AI
 AI_BASE_URL=
 AI_API_KEY=
 AI_MODEL=
 
 AI_FEATURE_SUMMARY_ENABLED=False
+
+# Interoperability
+# Drive - https://github.com/suitenumerique/drive
+DRIVE_BASE_URL=

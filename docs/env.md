@@ -268,6 +268,16 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `AI_MODEL` | None | Default model used for AI features | Optional |
 | `AI_FEATURE_SUMMARY_ENABLED` | `False` | Default enabled mode for summary AI features | Required |
 
+### External Services
+
+#### Drive
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `DRIVE_BASE_URL` | None | Base URL to access Drive endpoints | Optional |
+
+
+
 ## Legend
 
 - **Required**: Must be set for the application to function

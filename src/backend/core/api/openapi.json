@@ -181,6 +181,25 @@
                                         "AI_FEATURE_SUMMARY_ENABLED": {
                                             "type": "boolean",
                                             "readOnly": true
+                                        },
+                                        "DRIVE": {
+                                            "type": "object",
+                                            "description": "The URLs of the Drive external service.",
+                                            "properties": {
+                                                "sdk_url": {
+                                                    "type": "string",
+                                                    "readOnly": true
+                                                },
+                                                "api_url": {
+                                                    "type": "string",
+                                                    "readOnly": true
+                                                }
+                                            },
+                                            "readOnly": true,
+                                            "required": [
+                                                "sdk_url",
+                                                "api_url"
+                                            ]
                                         }
                                     },
                                     "required": [

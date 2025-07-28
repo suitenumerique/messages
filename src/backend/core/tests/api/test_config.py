@@ -25,6 +25,7 @@ pytestmark = pytest.mark.django_db
     AI_BASE_URL=None,
     AI_MODEL=None,
     AI_FEATURE_SUMMARY_ENABLED=False,
+    DRIVE_CONFIG={"base_url": None},
 )
 @pytest.mark.parametrize("is_authenticated", [False, True])
 def test_api_config(is_authenticated):
@@ -46,4 +47,23 @@ def test_api_config(is_authenticated):
         "POSTHOG_SURVEY_ID": "7890",
         "AI_ENABLED": False,
         "AI_FEATURE_SUMMARY_ENABLED": False,
+    }
+
+
+@override_settings(
+    DRIVE_CONFIG={
+        "base_url": "http://localhost:8902",
+        "sdk_url": "/sdk",
+        "api_url": "/api/v1.0",
+    }
+)
+def test_api_config_with_external_services():
+    """If Drive external service is configured, it should be included in the configuration."""
+    client = APIClient()
+
+    response = client.get("/api/v1.0/config/")
+    assert response.status_code == HTTP_200_OK
+    assert response.json().get("DRIVE") == {
+        "sdk_url": "http://localhost:8902/sdk",
+        "api_url": "http://localhost:8902/api/v1.0",
     }

@@ -5,6 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { ConfigRetrieve200DRIVE } from "./config_retrieve200_driv_e";
 
 export type ConfigRetrieve200 = {
   readonly ENVIRONMENT: string;
@@ -18,4 +19,6 @@ export type ConfigRetrieve200 = {
   readonly LANGUAGE_CODE: string;
   readonly AI_ENABLED: boolean;
   readonly AI_FEATURE_SUMMARY_ENABLED: boolean;
+  /** The URLs of the Drive external service. */
+  readonly DRIVE?: ConfigRetrieve200DRIVE;
 };
