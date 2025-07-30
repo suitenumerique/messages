@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useAIFeaturesConfig } from "@/features/utils/ai-config";
+import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { ActionBar } from "./components/thread-action-bar"
 import { ThreadMessage } from "./components/thread-message"
 import { useMailboxContext } from "@/features/providers/mailbox"
@@ -49,8 +49,7 @@ export const ThreadView = () => {
         });
         return rootMessages
     }, [messages]);
-    const aiConfig = useAIFeaturesConfig();
-    const isAISummaryEnabled = aiConfig.isAISummaryEnabled;
+    const isAISummaryEnabled = useFeatureFlag(FEATURE_KEYS.AI_SUMMARY);
 
     /**
      * If we are in the trash view, we only want to show trashed messages
