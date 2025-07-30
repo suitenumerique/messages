@@ -311,7 +311,11 @@
           "credential_identity": "Identity",
           "credential_password": "Temporary password",
           "shared_password_info": "Share the credentials of this mailbox with its user. You must transfer them securely, preferably physically.",
-          "credential_info": "You can now inform the person that their mailbox is ready to be used and communicate the instructions for authentication."
+          "credential_info": "You can now inform the person that their mailbox is ready to be used and communicate the instructions for authentication.",
+          "copy_to_clipboard": "Copy to clipboard",
+          "credentials_copied": "Credentials copied!",
+          "credentials_copy_error": "Unable to copy credentials.",
+          "credential_text": "Your Messages credentials are:\n- Email: {{id}}\n- Password: {{password}}\n\nIt will be asked to change your password at your first login."
         },
         "tabs": {
           "personal": "Create a new personal mailbox",
@@ -749,7 +753,11 @@
           "credential_identity": "Identifiant",
           "credential_password": "Mot de passe temporaire",
           "shared_password_info": "Transmettez les identifiants de cette boîte mail à son utilisateur de façon sécurisée, de préférence physiquement.",
-          "credential_info": "Vous pouvez désormais prévenir la personne que sa boîte mail est prête à être utilisée et lui communiquer les instructions pour s'authentifier."
+          "credential_info": "Vous pouvez désormais prévenir la personne que sa boîte mail est prête à être utilisée et lui communiquer les instructions pour s'authentifier.",
+          "copy_to_clipboard": "Copier dans le presse-papiers",
+          "credentials_copy_error": "Impossible de copier des identifiants.",
+          "credentials_copied": "Identifiants copiés !",
+          "credential_text": "Vos identifiants Messages sont : \n- Courriel : {{id}}\n- Mot de passe : {{password}}\n\nIl vous sera demandé de changer votre mot de passe lors de votre première connexion."
         },
         "form": {
           "labels": {
