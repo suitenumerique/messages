@@ -310,6 +310,7 @@ class Base(Configuration):
     # Django applications from the highest priority to the lowest
     INSTALLED_APPS = [
         "core",
+        "deep_search",  # AI-powered search functionality
         "drf_spectacular",
         # Third party apps
         "corsheaders",

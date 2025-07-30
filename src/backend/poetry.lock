@@ -3558,6 +3558,17 @@ docs = ["Sphinx (>=1.7.5)", "pylons-sphinx-themes"]
 testing = ["coverage", "pytest (>=3.1.0)", "pytest-cov", "pytest-xdist"]
 
 [[package]]
+name = "wget"
+version = "3.2"
+description = "pure python download utility"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "wget-3.2.zip", hash = "sha256:35e630eca2aa50ce998b9b1a127bb26b30dfee573702782aa982f875e3f16061"},
+]
+
+[[package]]
 name = "whitenoise"
 version = "6.8.2"
 description = "Radically simplified static file serving for WSGI applications"
@@ -3578,4 +3589,4 @@ dev = ["django-extensions", "drf-spectacular-sidecar", "flower", "pip-audit", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0"
-content-hash = "19de897b2b3ff7c3d9b64d6a1b3a3bd7a611a062c7065a7596310df33401fd0d"
+content-hash = "e22ac075afd89a3e2aee96a09e2dcf3817a328ba12e3d0b91120fcc0daa4a17a"

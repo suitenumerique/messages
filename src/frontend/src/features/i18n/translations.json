@@ -176,6 +176,12 @@
             "read": "Read",
             "unread": "Unread",
             "read_state": "Read state"
+          },
+          "placeholder": {
+            "advanced_research": "Ask the AI to help you search..."
+          },
+          "advanced_research": {
+            "send": "Send to AI"
           }
         }
       },
@@ -609,6 +615,12 @@
             "read": "Lu",
             "unread": "Non lu",
             "read_state": "État de lecture"
+          },
+          "placeholder": {
+            "advanced_research": "Demandez à l'IA de vous aider à rechercher..."
+          },
+          "advanced_research": {
+            "send": "Envoyer à l'IA"
           }
         }
       },

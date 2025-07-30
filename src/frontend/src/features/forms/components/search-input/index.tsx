@@ -22,7 +22,28 @@ export const SearchInput = () => {
     }
 
     const handleFiltersChange = (query: string, submit: boolean = true) => {
-        handleSearch(query, submit);
+        // Check if this is a direct message_ids query from the chatbot
+        const urlParams = new URLSearchParams(query);
+        if (urlParams.has('message_ids') && !urlParams.has('search')) {
+            // This is a direct message_ids search without text search, pass it through without modifying
+            setValue(''); // Clear the search input since this is not a text search
+            if (submit) {
+                closeLeftPanel();
+                router.replace(pathname + '?' + query, undefined, { shallow: true });
+            }
+        } else if (urlParams.has('message_ids') && urlParams.has('search')) {
+            // This is an intelligent search with both message_ids and search text
+            // Update the search input to show what search was performed
+            const searchText = urlParams.get('search') || '';
+            setValue(searchText);
+            if (submit) {
+                closeLeftPanel();
+                router.replace(pathname + '?' + query, undefined, { shallow: true });
+            }
+        } else {
+            // Regular search handling
+            handleSearch(query, submit);
+        }
         if (submit) setShowFilters(false);
     }
 

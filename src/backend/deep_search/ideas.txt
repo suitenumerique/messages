@@ -1,0 +1,15 @@
+- mesure de try except pour retenter des calls api qui échouent
+- faire une recherche au fur et à mesure dans les mails, 50 par 50
+- rechercher dans les divers caractéristiques des mails petit à petit : le titre, 
+les pièces jointes, etc.
+- faire du tool calling pour décider de la façon dont chercher le mail, si la recherche doit 
+être globale, on cherche sur tous les titres machins, si c'est un mail / une pièce jointe en 
+particulier, on cherche dans les mails 50 par 50 (tri particulier à faire avant ?)
+- faire des trucs algorithmes, arbres binaires de recherche ?
+
+- faire un historique de recherche en cache pour éviter
+
+à faire : se renseigner sur elastic search
+
+le score est trop random
+la recherche ne se fait pas dans "chercher dans"

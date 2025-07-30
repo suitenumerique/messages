@@ -10,12 +10,38 @@ import { useSearchParams } from "next/navigation";
 import { MAILBOX_FOLDERS } from "../mailbox-panel/components/mailbox-list";
 
 export const ThreadPanel = () => {
-    const { threads, queryStates, refetchMailboxes, unselectThread, loadNextThreads, selectedThread } = useMailboxContext();
+    const { threads, queryStates, refetchMailboxes, unselectThread, loadNextThreads, selectedThread, error } = useMailboxContext();
     const { markAsRead, markAsUnread } = useRead();
     const searchParams = useSearchParams();
     const { t } = useTranslation();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const loaderRef = useRef<HTMLDivElement>(null);
+    
+    // Debug: Log thread panel state when message_ids is present
+    useEffect(() => {
+        if (searchParams.get('message_ids')) {
+            console.log('Thread Panel: Detected message_ids parameter:', searchParams.get('message_ids'));
+            console.log('Thread Panel: Threads data:', {
+                threads_count: threads?.results.length || 0,
+                threads_total: threads?.count || 0,
+                query_status: queryStates.threads.status,
+                is_loading: queryStates.threads.isLoading,
+                is_fetching: queryStates.threads.isFetching,
+                has_error: !!error.threads,
+                raw_threads_object: threads
+            });
+            if (threads?.results.length) {
+                console.log('Thread Panel: First thread details:', {
+                    id: threads.results[0].id,
+                    subject: threads.results[0].subject,
+                    sender_names: threads.results[0].sender_names
+                });
+            } else {
+                console.log('Thread Panel: No threads found despite API success - this is the bug!');
+            }
+        }
+    }, [searchParams, threads, queryStates.threads, error.threads]);
+    
     const showImportButton = useMemo(() => {
         // Only show import button if there are no threads in inbox or all messages folders
         if (threads?.results.length) return false;
@@ -59,6 +85,17 @@ export const ThreadPanel = () => {
     }
 
     if (!threads?.results.length) {
+        // Debug: Log why we're showing empty state when message_ids is present
+        if (searchParams.get('message_ids')) {
+            console.log('Thread Panel: Showing empty state despite message_ids parameter:', {
+                message_ids: searchParams.get('message_ids'),
+                threads_object: threads,
+                threads_results_length: threads?.results?.length,
+                query_status: queryStates.threads.status,
+                is_loading: queryStates.threads.isLoading
+            });
+        }
+        
         return (
             <div className="thread-panel thread-panel--empty">
                 <div>
@@ -121,7 +158,17 @@ export const ThreadPanel = () => {
                 </DropdownMenu>
             </Bar>
             <div className="thread-panel__threads_list">
-                {threads?.results.map((thread) => <ThreadItem key={thread.id} thread={thread} />)}
+                {threads?.results.map((thread) => {
+                    // Debug: Log each thread being rendered when message_ids is present
+                    if (searchParams.get('message_ids')) {
+                        console.log('Thread Panel: Rendering thread:', {
+                            id: thread.id,
+                            subject: thread.subject,
+                            sender_names: thread.sender_names
+                        });
+                    }
+                    return <ThreadItem key={thread.id} thread={thread} />;
+                })}
                 {threads!.next && (
                     <div className="thread-panel__page-loader" ref={loaderRef}>
                         {queryStates.threads.isFetchingNextPage && (

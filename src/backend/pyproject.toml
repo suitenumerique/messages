@@ -61,6 +61,7 @@ dependencies = [
     "requests==2.32.3",
     "sentry-sdk[django]==2.27.0",
     "url-normalize==1.4.3",
+    "wget==3.2",
     "whitenoise==6.8.2",
 ]
 

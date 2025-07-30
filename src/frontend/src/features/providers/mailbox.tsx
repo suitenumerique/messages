@@ -1,5 +1,5 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo } from "react";
-import { Mailbox, PaginatedMessageList, PaginatedThreadList, Thread, useLabelsList, useMailboxesList, useMessagesList, useThreadsListInfinite } from "../api/gen";
+import { Mailbox, PaginatedMessageList, PaginatedThreadList, Thread, ThreadsListParams, useLabelsList, useMailboxesList, useMessagesList, useThreadsListInfinite } from "../api/gen";
 import { FetchStatus, QueryStatus, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import usePrevious from "@/hooks/use-previous";
@@ -108,35 +108,111 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     }, [router.query.mailboxId, mailboxQuery.data])
 
     const previousUnreadMessagesCount = usePrevious(selectedMailbox?.count_unread_messages || 0);
+    
+    // Build thread list params from router query
+    const threadListParams = useMemo(() => {
+        const params: ThreadsListParams = {
+            ...(router.query as Record<string, string>),
+            mailbox_id: selectedMailbox?.id ?? '',
+        };
+        // Remove non-thread params
+        delete (params as any).mailboxId;
+        delete (params as any).threadId;
+        
+        // Debug: Log the thread list params when message_ids is present
+        if (params.message_ids) {
+            console.log('Mailbox Provider: Sending API request with message_ids:', params.message_ids);
+            console.log('Mailbox Provider: Full thread list params:', params);
+            console.log('Mailbox Provider: API URL will be constructed with these params - checking for conflicting search param:', {
+                has_search_param: !!params.search,
+                search_value: params.search,
+                has_message_ids: !!params.message_ids,
+                message_ids_value: params.message_ids
+            });
+        }
+        
+        return params;
+    }, [router.query, selectedMailbox?.id]);
+    
     const threadQueryKey = useMemo(() => {
         const queryKey = ['threads', selectedMailbox?.id];
-        if (searchParams.get('search')) {
+        // Use router.query to ensure consistency with threadListParams
+        if (router.query.search) {
             return [...queryKey, 'search'];
         }
-        return [...queryKey, searchParams.toString()];
-    }, [selectedMailbox?.id, searchParams]);
-    const threadsQuery = useThreadsListInfinite(undefined, {
+        // Handle AI search results with message_ids
+        if (router.query.message_ids) {
+            return [...queryKey, 'ai-search', router.query.message_ids];
+        }
+        // Create a consistent query key based on the actual params being sent
+        const paramsString = new URLSearchParams(
+            Object.entries(threadListParams)
+                .filter(([_, value]) => value !== undefined && value !== '')
+                .map(([key, value]) => [key, String(value)])
+        ).toString();
+        return [...queryKey, paramsString];
+    }, [selectedMailbox?.id, router.query, threadListParams]);
+
+    const threadsQuery = useThreadsListInfinite(threadListParams, {
         query: {
             enabled: !!selectedMailbox,
             initialPageParam: 1,
             queryKey: threadQueryKey,
-            getNextPageParam: (lastPage, pages) => {
+            // Force fresh data when message_ids is present
+            staleTime: threadListParams.message_ids ? 0 : 30000,
+            getNextPageParam: (_lastPage: any, pages: any[]) => {
                 return pages.length + 1;
             },
         },
-        request: {
-            params: {
-                ...(router.query as Record<string, string>),
-                mailbox_id: selectedMailbox?.id ?? '',
-            }
-        }
     });
+
+    // Debug: Log query key changes when message_ids is present
+    useEffect(() => {
+        if (threadListParams.message_ids) {
+            console.log('Mailbox Provider: Query key changed with message_ids:', {
+                threadQueryKey,
+                threadListParams,
+                query_status: threadsQuery.status,
+                data_pages: threadsQuery.data?.pages.length,
+                first_page_results: threadsQuery.data?.pages[0]?.data.results.length
+            });
+            
+            // Clear all thread-related cache when switching to AI search
+            queryClient.invalidateQueries({ queryKey: ['threads', selectedMailbox?.id] });
+            
+            // Force query refetch when message_ids changes to ensure fresh data
+            threadsQuery.refetch();
+        }
+    }, [threadQueryKey, threadListParams.message_ids, selectedMailbox?.id, queryClient]);
+    
+    // Separate effect to log query status changes
+    useEffect(() => {
+        if (threadListParams.message_ids && threadsQuery.status && threadsQuery.data) {
+            console.log('Mailbox Provider: Query status/data changed:', {
+                status: threadsQuery.status,
+                data_available: !!threadsQuery.data,
+                pages_count: threadsQuery.data?.pages.length,
+                total_results: threadsQuery.data?.pages[0]?.data.results.length
+            });
+        }
+    }, [threadsQuery.status, threadsQuery.data, threadListParams.message_ids]);
+
+    // Debug: Log when threads are successfully fetched with message_ids
+    useEffect(() => {
+        if (threadListParams.message_ids && threadsQuery.data) {
+            console.log('Mailbox Provider: Successfully fetched threads with message_ids:', threadListParams.message_ids);
+            console.log('Mailbox Provider: Fetched threads count:', threadsQuery.data.pages[0]?.data.count);
+            console.log('Mailbox Provider: Thread query key:', threadQueryKey);
+            console.log('Mailbox Provider: Query status:', threadsQuery.status);
+            console.log('Mailbox Provider: Query error:', threadsQuery.error);
+        }
+    }, [threadListParams.message_ids, threadsQuery.data, threadQueryKey, threadsQuery.status, threadsQuery.error]);
 
     /**
      * Flatten the threads paginated query to a single result array
      */
     const flattenThreads = useMemo(() => {
-        return threadsQuery.data?.pages.reduce((acc, page, index) => {
+        const result = threadsQuery.data?.pages.reduce((acc, page, index) => {
             const isLastPage = index === threadsQuery.data?.pages.length - 1;
             acc.results.push(...page.data.results);
             if (isLastPage) {
@@ -146,7 +222,24 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             }
             return acc;
             }, {results: [], count: 0, next: null, previous: null} as PaginatedThreadList);
-    }, [threadsQuery.data?.pages]);
+        
+        // Debug: Log the flattened threads when message_ids is present
+        if (threadListParams.message_ids && result) {
+            console.log('Mailbox Provider: Flattened threads with message_ids filter:', {
+                message_ids: threadListParams.message_ids,
+                total_threads: result.results.length,
+                thread_ids: result.results.map(t => t.id),
+                first_thread_subject: result.results[0]?.subject || 'No subject',
+                query_key: threadQueryKey,
+                raw_pages_data: threadsQuery.data?.pages.map(p => ({
+                    results_count: p.data.results.length,
+                    count: p.data.count
+                }))
+            });
+        }
+        
+        return result;
+    }, [threadsQuery.data?.pages, threadListParams.message_ids]);
 
     const selectedThread = useMemo(() => {
         const threadId = router.query.threadId;
@@ -199,7 +292,14 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
      */
     const unselectThread = () => {
         if (selectedMailbox && router.query.threadId) {
-            router.push(`/mailbox/${selectedMailbox!.id}?${searchParams}`);
+            // Build query string from router.query to ensure consistency
+            const queryString = new URLSearchParams();
+            Object.entries(router.query).forEach(([key, value]) => {
+                if (key !== 'mailboxId' && key !== 'threadId' && value) {
+                    queryString.set(key, String(value));
+                }
+            });
+            router.push(`/mailbox/${selectedMailbox!.id}?${queryString.toString()}`);
         }
     }
 
@@ -259,7 +359,29 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
                 if (router.query.threadId) {
                     router.replace(`/mailbox/${selectedMailbox.id}/thread/${router.query.threadId}?${router.query.search}${hash}`);
                 } else {
-                    router.replace(`/mailbox/${selectedMailbox.id}?${new URLSearchParams(defaultFolder.filter).toString()}${hash}`);
+                    // Preserve existing query parameters (including message_ids from AI search)
+                    const currentParams = new URLSearchParams();
+                    Object.entries(router.query).forEach(([key, value]) => {
+                        if (key !== 'mailboxId' && key !== 'threadId' && value) {
+                            currentParams.set(key, String(value));
+                        }
+                    });
+                    
+                    // Debug: Log when redirecting to preserve search params
+                    if (currentParams.has('message_ids')) {
+                        console.log('Mailbox Provider: Preserving message_ids during redirect:', currentParams.get('message_ids'));
+                    }
+                    
+                    // Only add default folder filter if no search parameters exist
+                    if (currentParams.toString() === '') {
+                        if (defaultFolder.filter) {
+                            Object.entries(defaultFolder.filter).forEach(([key, value]) => {
+                                currentParams.set(key, value);
+                            });
+                        }
+                    }
+                    
+                    router.replace(`/mailbox/${selectedMailbox.id}?${currentParams.toString()}${hash}`);
                 }
                 invalidateThreadMessages();
             }
@@ -271,7 +393,14 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             const threadId = router.query.threadId;
             const thread = flattenThreads?.results.find((thread) => thread.id === threadId);
             if (thread) {
-                router.replace(`/mailbox/${selectedMailbox.id}/thread/${thread.id}?${searchParams}`);
+                // Build query string from router.query to ensure consistency
+                const queryString = new URLSearchParams();
+                Object.entries(router.query).forEach(([key, value]) => {
+                    if (key !== 'mailboxId' && value) {
+                        queryString.set(key, String(value));
+                    }
+                });
+                router.replace(`/mailbox/${selectedMailbox.id}/thread/${thread.id}?${queryString.toString()}`);
             }
         }
     }, [flattenThreads]);

@@ -74,8 +74,8 @@ MDA_API_SECRET=my-shared-secret-mda
 SALT_KEY=ThisIsAnExampleSaltForDevPurposeOnly
 
 # AI 
-AI_BASE_URL=
-AI_API_KEY=
-AI_MODEL=
+AI_BASE_URL=https://albert.api.etalab.gouv.fr/v1
+AI_API_KEY=<my-ai-api-key>
+AI_MODEL=albert-large
 
 AI_FEATURE_SUMMARY_ENABLED=False

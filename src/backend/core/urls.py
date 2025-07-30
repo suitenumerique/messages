@@ -2,6 +2,8 @@
 
 from django.conf import settings
 from django.urls import include, path
+from django.shortcuts import redirect
+from django.http import HttpResponse
 
 from rest_framework.routers import DefaultRouter
 
@@ -29,6 +31,31 @@ from core.api.viewsets.thread import ThreadViewSet
 from core.api.viewsets.thread_access import ThreadAccessViewSet
 from core.api.viewsets.user import UserViewSet
 from core.authentication.urls import urlpatterns as oidc_urls
+
+def api_root(request):
+    """Simple API root view showing available endpoints."""
+    return HttpResponse("""
+    <html>
+    <head><title>Messages API</title></head>
+    <body>
+        <h1>Messages API</h1>
+        <h2>Available Endpoints:</h2>
+        <ul>
+            <li><a href="/api/v1.0/">API Root</a></li>
+            <li><a href="/api/v1.0/deep_search/status/">Deep Search Status</a></li>
+            <li><a href="/v1.0/swagger/">API Documentation (Swagger)</a></li>
+            <li><a href="/v1.0/redoc/">API Documentation (ReDoc)</a></li>
+        </ul>
+        <h3>Deep Search Endpoints:</h3>
+        <ul>
+            <li><strong>POST</strong> /api/v1.0/deep_search/intelligent-search/ - AI-powered email search</li>
+            <li><strong>POST</strong> /api/v1.0/deep_search/conversation/ - Chatbot conversation</li>
+            <li><strong>GET</strong> /api/v1.0/deep_search/status/ - Service status</li>
+        </ul>
+        <p><em>Note: Most endpoints require authentication.</em></p>
+    </body>
+    </html>
+    """, content_type="text/html")
 
 # - Main endpoints
 router = DefaultRouter()
@@ -68,6 +95,8 @@ mailbox_management_nested_router.register(
 )
 
 urlpatterns = [
+    # Root URL for API discovery
+    path("", api_root, name="api-root"),
     path(
         f"api/{settings.API_VERSION}/",
         include(
@@ -91,6 +120,8 @@ urlpatterns = [
                         mailbox_management_nested_router.urls
                     ),  # Includes /maildomains/{id}/mailboxes/, # Includes /maildomains/{id}/users/
                 ),
+                # Deep search endpoints for AI-powered search
+                path("deep_search/", include("deep_search.urls")),
                 *oidc_urls,
             ]
         ),
