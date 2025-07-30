@@ -1,12 +1,14 @@
-import { Attachment } from "@/features/api/gen/models"
 import { Button } from "@openfun/cunningham-react"
 import { useTranslation } from "react-i18next";
-import { AttachmentHelper } from "@/features/utils/attachment-helper";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Icon, Spinner } from "@gouvfr-lasuite/ui-kit";
 import clsx from "clsx";
+import { Attachment } from "@/features/api/gen/models"
+import { AttachmentHelper } from "@/features/utils/attachment-helper";
+import { DriveIcon } from "@/features/forms/components/message-form/drive-icon";
+import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
 
 type AttachmentItemProps = {
-    attachment: Attachment | File;
+    attachment: Attachment | File | DriveFile;
     isLoading?: boolean;
     canDownload?: boolean;
     variant?: "error" | "default";
@@ -15,23 +17,33 @@ type AttachmentItemProps = {
     onDelete?: () => void;
 }
 
-const isAttachment = (attachment: Attachment | File): attachment is Attachment => {
+const isAttachment = (attachment: Attachment | File | DriveFile): attachment is Attachment => {
     return 'blobId' in attachment;
+}
+const isDriveFile = (attachment: Attachment | File | DriveFile): attachment is DriveFile => {
+    return 'url' in attachment;
 }
 
 export const AttachmentItem = ({ attachment, isLoading = false, canDownload = true, variant = "default", errorMessage, errorAction, onDelete }: AttachmentItemProps) => {
     const { t, i18n } = useTranslation();
     const icon = AttachmentHelper.getIcon(attachment);
-    const downloadUrl = isAttachment(attachment) ? AttachmentHelper.getDownloadUrl(attachment) : undefined;
+    const downloadUrl = isAttachment(attachment) || isDriveFile(attachment) ? AttachmentHelper.getDownloadUrl(attachment) : undefined;
 
     return (
         <div className={clsx("attachment-item", { "attachment-item--loading": isLoading, "attachment-item--error": variant === "error" })} title={attachment.name}>
             <div className="attachment-item-metadata">
-                { variant === "error" ?
-                    <span className="attachment-item-icon material-icons">error</span>
-                :
-                    <img className="attachment-item-icon" src={icon} alt="" />
-                }
+                <div className="attachment-item-icon-container">
+                    { variant === "error" ?
+                        <Icon name="error" className="attachment-item-icon attachment-item-icon--error" />
+                    :
+                        (
+                            <>
+                                <img className="attachment-item-icon" src={icon} alt="" />
+                                {isDriveFile(attachment) && <DriveIcon className="attachment-item-icon-drive" size="small" />}
+                            </>
+                        )
+                    }
+                </div>
                 <p className="attachment-item-size">{AttachmentHelper.getFormattedSize(attachment.size, i18n.resolvedLanguage)}</p>
             </div>
             <div className="attachment-item-content">
@@ -48,7 +60,7 @@ export const AttachmentItem = ({ attachment, isLoading = false, canDownload = tr
                             <Button
                                 aria-label={t("actions.retry")}
                                 title={t("actions.retry")}
-                                icon={<span className="material-icons">loop</span>}
+                                icon={<Icon name="loop" />}
                                 size="medium"
                                 color="tertiary-text"
                                 onClick={errorAction}
@@ -60,7 +72,7 @@ export const AttachmentItem = ({ attachment, isLoading = false, canDownload = tr
                                 aria-label={t("actions.download")}
                                 title={t("actions.download")}
                                 size="medium"
-                                icon={<span className="material-icons">download</span>}
+                                icon={<Icon name="download" />}
                                 color="tertiary-text"
                                 href={downloadUrl}
                                 download={attachment.name}
@@ -71,7 +83,7 @@ export const AttachmentItem = ({ attachment, isLoading = false, canDownload = tr
                             <Button
                                 aria-label={t("actions.delete")}
                                 title={t("actions.delete")}
-                                icon={<span className="material-icons">close</span>}
+                                icon={<Icon name="close" />}
                                 size="medium"
                                 color="tertiary-text"
                                 onClick={onDelete}

@@ -136,3 +136,8 @@
     box-sizing: border-box;
     position: relative;
 }
+
+.drive-attachment-picker:disabled {
+    cursor: wait;
+    pointer-events: auto;
+}

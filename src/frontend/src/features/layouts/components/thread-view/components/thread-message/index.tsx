@@ -12,6 +12,7 @@ import MessageReplyForm from "../message-reply-form";
 import { AttachmentList } from "../thread-attachment-list";
 import { Banner } from "@/features/ui/components/banner";
 import { MessageFormMode } from "@/features/forms/components/message-form";
+import MailHelper from "@/features/utils/mail-helper";
 
 type ThreadMessageProps = {
     message: Message,
@@ -40,6 +41,9 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
             return message.to.length + message.cc.length > 1;
         }, [message])
         const showReplyButton = isLatest && !showReplyForm && !message.is_draft && !message.is_trashed && !draftMessage
+
+        const [htmlBody, driveAttachments] = MailHelper.extractDriveAttachmentsFromHtmlBody(message.htmlBody[0]?.content as string);
+        const [textBody,] = MailHelper.extractDriveAttachmentsFromTextBody(message.textBody[0]?.content as string);
 
         const handleCloseReplyForm = () => {
             setReplyFormMode(null);
@@ -181,12 +185,12 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                     </div>
                 </header>
                 <MessageBody
-                    rawTextBody={message.textBody[0]?.content as string}
-                    rawHtmlBody={message.htmlBody[0]?.content as string}
+                    rawTextBody={textBody}
+                    rawHtmlBody={htmlBody}
                 />
                 <footer className="thread-message__footer">
-                    {!message.is_draft && message.attachments.length > 0 && (
-                        <AttachmentList attachments={message.attachments} />
+                    {!message.is_draft && (message.attachments.length > 0 || driveAttachments.length > 0) && (
+                        <AttachmentList attachments={[...message.attachments, ...driveAttachments]} />
                     )}
                     {
                         showReplyButton && (

@@ -100,6 +100,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const mailboxQuery = useMailboxesList({
         query: {
             refetchInterval: 30 * 1000, // 30 seconds
+            refetchOnWindowFocus: true,
         },
     });
     const selectedMailbox = useMemo(() => {

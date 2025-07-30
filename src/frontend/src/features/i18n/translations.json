@@ -77,7 +77,9 @@
         "mark_as_important": "Mark as important",
         "more_options": "More options",
         "reply": "Reply",
-        "forward": "Forward"
+        "forward": "Forward",
+        "add_attachment_from_drive": "Add attachment from Fichiers",
+        "upload_to_drive": "Upload to Fichiers"
       },
       "thread-panel": {
         "loading-next-threads": "Loading next threads..."
@@ -114,7 +116,8 @@
         "counter_zero": "No attachments",
         "counter_one": "{{count}} attachment",
         "counter_other": "{{count}} attachments",
-        "forgot_question": "Did you forget an attachment?"
+        "forgot_question": "Did you forget an attachment?",
+        "upload_to_drive_success": "Attachment uploaded to Fichiers"
       },
       "message_form": {
         "helper_text": {
@@ -514,13 +517,16 @@
         "more_options": "Plus d'options",
         "mark_as_important": "Marquer comme important",
         "reply": "Répondre",
-        "forward": "Transférer"
+        "forward": "Transférer",
+        "add_attachment_from_drive": "Ajouter un pièce jointe depuis Fichiers"
       },
       "thread-panel": {
         "loading-next-threads": "Chargement des conversations suivantes..."
       },
       "thread-item": {
-        "no-subject": "Aucun sujet"
+        "no-subject": "Aucun sujet",
+        "reply": "Répondre",
+        "upload_to_drive": "Sauvegarder dans Fichiers"
       },
       "thread-view": {
         "trashed-banner": {
@@ -551,7 +557,8 @@
         "counter_zero": "Aucune pièce jointe",
         "counter_one": "{{count}} pièce jointe",
         "counter_other": "{{count}} pièces jointes",
-        "forgot_question": "N'avez-vous pas oublié une pièce jointe ?"
+        "forgot_question": "N'avez-vous pas oublié une pièce jointe ?",
+        "upload_to_drive_success": "Pièce jointe sauvegardée dans Fichiers"
       },
       "message_form": {
         "helper_text": {

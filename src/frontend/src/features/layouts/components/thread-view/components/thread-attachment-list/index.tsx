@@ -2,8 +2,11 @@ import { Attachment } from "@/features/api/gen/models/attachment";
 import { AttachmentItem } from "./attachment-item";
 import { useTranslation } from "react-i18next";
 import { AttachmentHelper } from "@/features/utils/attachment-helper";
+import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
+
+
 type AttachmentListProps = {
-    attachments: readonly Attachment[]
+    attachments: readonly (DriveFile | Attachment)[]
 }
 
 export const AttachmentList = ({ attachments }: AttachmentListProps) => {

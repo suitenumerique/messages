@@ -19,6 +19,7 @@ import { AttachmentUploader } from "./attachment-uploader";
 import { DateHelper } from "@/features/utils/date-helper";
 import { Banner } from "@/features/ui/components/banner";
 import { RhfContactComboBox } from "../react-hook-form/rhf-contact-combobox";
+import { DriveFile } from "./drive-attachment-picker";
 
 export type MessageFormMode = "new" |"reply" | "reply_all" | "forward";
 
@@ -35,6 +36,18 @@ interface MessageFormProps {
 
 // Zod schema for form validation
 const emailArraySchema = z.array(z.string().trim().email("message_form.error.invalid_recipient"));
+const attachmentSchema = z.object({
+    blobId: z.string(),
+    name: z.string(),
+});
+const driveAttachmentSchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    url: z.string(),
+    type: z.string(),
+    size: z.number(),
+    created_at: z.string(),
+});
 const messageFormSchema = z.object({
     from: z.string().nonempty("message_form.error.mailbox_required"),
     to: emailArraySchema,
@@ -44,10 +57,8 @@ const messageFormSchema = z.object({
     messageEditorHtml: z.string().optional().readonly(),
     messageEditorText: z.string().optional().readonly(),
     messageEditorDraft: z.string().optional().readonly(),
-    attachments: z.array(z.object({
-        blobId: z.string(),
-        name: z.string(),
-    })).optional(),
+    attachments: z.array(attachmentSchema).optional(),
+    driveAttachments: z.array(driveAttachmentSchema).optional(),
 });
 
 type MessageFormFields = z.infer<typeof messageFormSchema>;
@@ -127,23 +138,27 @@ export const MessageForm = ({
     }
 
     const getDefaultAttachments = () => {
-        let attachments: readonly Attachment[]= [];
-        if (draft?.attachments) attachments = draft.attachments;
-        if (mode === "forward" && parentMessage?.attachments) attachments = parentMessage.attachments;
+        let attachments: Attachment[] = [];
+        if (draft?.attachments) attachments = [...draft.attachments];
+        if (mode === "forward" && parentMessage?.attachments) attachments = [...parentMessage.attachments];
         return attachments;
     }
 
-    const formDefaultValues = useMemo(() => ({
-        from: defaultSenderId ?? '',
-        to: draft?.to?.map(contact => contact.email) ?? recipients,
-        cc: draft?.cc?.map(contact => contact.email) ?? [],
-        bcc: draft?.bcc?.map(contact => contact.email) ?? [],
-        subject: getDefaultSubject(),
-        messageEditorDraft: draft?.draftBody,
-        messageEditorHtml: undefined,
-        messageEditorText: undefined,
-        attachments: [],
-    }), [draft, selectedMailbox])
+    const formDefaultValues = useMemo(() => {
+        const [draftBody, draftDriveAttachments] = MailHelper.extractDriveAttachmentsFromDraft(draft?.draftBody);
+        return {
+            from: defaultSenderId ?? '',
+            to: draft?.to?.map(contact => contact.email) ?? recipients,
+            cc: draft?.cc?.map(contact => contact.email) ?? [],
+            bcc: draft?.bcc?.map(contact => contact.email) ?? [],
+            subject: getDefaultSubject(),
+            messageEditorDraft: draftBody,
+            messageEditorHtml: undefined,
+            messageEditorText: undefined,
+            attachments: getDefaultAttachments(),
+            driveAttachments: draftDriveAttachments,
+        }
+    }, [draft, selectedMailbox])
 
     const form = useForm({
         resolver: zodResolver(messageFormSchema),
@@ -163,9 +178,18 @@ export const MessageForm = ({
         name: "attachments",
     }) || [];
 
+    const driveAttachments = useWatch({
+        control: form.control,
+        name: "driveAttachments",
+    }) || [];
+
+    const initialAttachments = useMemo((): (Attachment | DriveFile)[] => {
+        return [...(draft?.attachments ?? []), ...(driveAttachments ?? [])];
+    }, [draft, driveAttachments]);
+
     const showAttachmentsForgetAlert = useMemo(() => {
-        return MailHelper.areAttachmentsMentionedInDraft(messageEditorDraft) && attachments.length === 0;
-    }, [messageEditorDraft, attachments]);
+        return MailHelper.areAttachmentsMentionedInDraft(messageEditorDraft) && attachments.length === 0 && driveAttachments.length === 0;
+    }, [messageEditorDraft, attachments, driveAttachments]);
 
     const messageMutation = useSendCreate({
         mutation: {
@@ -270,6 +294,7 @@ export const MessageForm = ({
                     || (data.bcc?.length ?? 0) > 0
                     || (data.messageEditorText?.length ?? 0) > 0
                     || (data.attachments?.length ?? 0) > 0
+                    || (data.driveAttachments?.length ?? 0) > 0
                 )
             )
         )
@@ -282,8 +307,8 @@ export const MessageForm = ({
             subject: data.subject,
             senderId: data.from,
             parentId: parentMessage?.id,
-            draftBody: data.messageEditorDraft,
-            attachments: form.getValues('attachments'),
+            draftBody: MailHelper.attachDriveAttachmentsToDraft(data.messageEditorDraft, data.driveAttachments),
+            attachments: data.attachments,
         }
         let response;
 
@@ -355,8 +380,8 @@ export const MessageForm = ({
             data: {
                 messageId: draft.id,
                 senderId: data.from,
-                htmlBody: form.getValues('messageEditorHtml'),
-                textBody: form.getValues('messageEditorText'),
+                htmlBody: MailHelper.attachDriveAttachmentsToHtmlBody(data.messageEditorHtml, data.driveAttachments),
+                textBody: MailHelper.attachDriveAttachmentsToTextBody(data.messageEditorText, data.driveAttachments),
             }
         });
     };
@@ -504,7 +529,7 @@ export const MessageForm = ({
                     />
                 </div>
 
-                <AttachmentUploader initialAttachments={getDefaultAttachments()} onChange={form.handleSubmit(saveDraft)} />
+                <AttachmentUploader initialAttachments={initialAttachments} onChange={form.handleSubmit(saveDraft)} />
 
                 {showAttachmentsForgetAlert &&
                   <Banner type="warning">

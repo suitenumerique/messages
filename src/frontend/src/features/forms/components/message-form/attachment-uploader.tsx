@@ -10,9 +10,11 @@ import { useDropzone } from 'react-dropzone';
 import { AttachmentHelper } from '@/features/utils/attachment-helper';
 import { useDebounceCallback } from '@/hooks/use-debounce-callback';
 import { DropZone } from './dropzone';
+import { DriveAttachmentPicker, DriveFile } from './drive-attachment-picker';
+import { Icon } from '@gouvfr-lasuite/ui-kit';
 
 interface AttachmentUploaderProps {
-    initialAttachments?: readonly Attachment[];
+    initialAttachments?: (DriveFile | Attachment)[];
     onChange: () => void;
 }
 
@@ -25,7 +27,7 @@ export const AttachmentUploader = ({
     const form = useFormContext();
     const { t, i18n } = useTranslation();
     const { selectedMailbox } = useMailboxContext();
-    const [attachments, setAttachments] = useState<Attachment[]>(initialAttachments.map((a) => ({ ...a, state: 'idle' })));
+    const [attachments, setAttachments] = useState<(DriveFile | Attachment)[]>(initialAttachments.map((a) => ({ ...a, state: 'idle' })));
     const [uploadingQueue, setUploadingQueue] = useState<File[]>([]);
     const [failedQueue, setFailedQueue] = useState<File[]>([]);
     const { mutateAsync: uploadBlob } = useBlobUploadCreate();
@@ -46,14 +48,18 @@ export const AttachmentUploader = ({
     }
     const removeToUploadingQueue = (attachments: File[]) => setUploadingQueue(uploadingQueue => removeToQueue(uploadingQueue, attachments));
     const removeToFailedQueue = (attachments: File[]) => setFailedQueue(failedQueue => removeToQueue(failedQueue, attachments));
-    const appendToAttachments = (newAttachments: Attachment[]) => {
+    const appendToAttachments = (newAttachments: (DriveFile | Attachment)[]) => {
         // Append attachments to the end of the list and sort by descending created_at
         setAttachments(
             attachments => [...attachments, ...newAttachments].sort((a, b) => Number(new Date(b.created_at)) - Number(new Date(a.created_at)))
         );
     }
-    const removeToAttachments = (entries: Attachment[]) => {
-        setAttachments(attachments => attachments.filter((a) => !entries.some(e => e.blobId === a.blobId)));
+
+    const removeToAttachments = (entries: (DriveFile | Attachment)[]) => {
+        setAttachments(attachments => attachments.filter((a) => !entries.some(e => {
+            if ('blobId' in a && 'blobId' in e) return e.blobId === a.blobId;
+            return e.id === a.id;
+        })));
     }
 
     /**
@@ -94,18 +100,24 @@ export const AttachmentUploader = ({
         if (!hasClickInBucketList) {
             getRootProps().onClick?.(event);
         }
+    }
 
+    const handleDriveAttachmentPick = (attachments: DriveFile[]) => {
+        appendToAttachments(attachments);
     }
 
     /**
-     * Update the form value when the attachments change
-     * Trigger the onChange callback to update the form each 1s
+     * Update the form value when the attachments change.
      */
     useEffect(() => {
-        form.setValue('attachments', attachments.map((attachment) => ({
+        // Only keep local attachments
+        const localAttachments = attachments.filter(attachment => 'blobId' in attachment);
+        const driveAttachments = attachments.filter(attachment => 'url' in attachment);
+        form.setValue('attachments', localAttachments.map((attachment) => ({
             blobId: attachment.blobId,
             name: attachment.name
         })), { shouldDirty: true });
+        form.setValue('driveAttachments', driveAttachments, { shouldDirty: true });
         if (form.formState.dirtyFields.attachments) {
             debouncedOnChange();
         }
@@ -122,11 +134,12 @@ export const AttachmentUploader = ({
             <div className="attachment-uploader__input">
                 <Button
                     color="tertiary"
-                    icon={<span className="material-icons">attach_file</span>}
+                    icon={<Icon name="attach_file" />}
                     type="button"
                 >
                     {t("message_form.attachments_uploader.input_label")}
                 </Button>
+                <DriveAttachmentPicker onPick={handleDriveAttachmentPick} />
                 <p className="attachment-uploader__input__helper-text">
                     {t("message_form.attachments_uploader.or_drag_and_drop")}
                 </p>
@@ -154,7 +167,11 @@ export const AttachmentUploader = ({
                             <AttachmentItem key={`uploading-${entry.name}-${entry.size}-${entry.lastModified}`} attachment={entry} isLoading />
                         ))}
                         {attachments.map((entry) => (
-                            <AttachmentItem key={entry.blobId} attachment={entry} onDelete={() => removeToAttachments([entry])} />
+                            <AttachmentItem
+                                key={'blobId' in entry ? entry.blobId : entry.id}
+                                attachment={entry}
+                                onDelete={() => removeToAttachments([entry])}
+                            />
                         ))}
                     </div>
                 </div>
