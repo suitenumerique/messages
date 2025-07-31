@@ -16,7 +16,7 @@
       border: 2px solid var(--c--theme--colors--greyscale-300);
       border-radius: var(--c--theme--border-radius--base);
       background: var(--c--theme--colors--greyscale-000);
-      font-size: var(--c--theme--font-sizes--s);
+      font-size: var(--c--theme--font--sizes--sm);
       font-weight: 500;
       text-align: center;
       cursor: pointer;
@@ -70,7 +70,7 @@
         transform: translateY(-50%);
         color: var(--c--theme--colors--greyscale-600);
         font-weight: 500;
-        font-size: var(--c--theme--font-sizes--m);
+        font-size: var(--c--theme--font--sizes--md);
         padding: var(--c--theme--spacings--xs) var(--c--theme--spacings--s);
         pointer-events: none;
         z-index: 2;
@@ -91,7 +91,7 @@
       p {
         margin: 0;
         color: var(--c--theme--colors--info-800);
-        font-size: var(--c--theme--font-sizes--s);
+        font-size: var(--c--theme--font--sizes--sm);
         line-height: 1.5;
       }
     }
@@ -115,7 +115,7 @@
       font-weight: 400;
       cursor: pointer;
       line-height: 1.3;
-      font-size: var(--c--theme--font-sizes--s);
+      font-size: var(--c--theme--font--sizes--sm);
     }
   }
 
@@ -124,7 +124,7 @@
     margin-top: var(--c--theme--spacings--base);
     padding: var(--c--theme--spacings--base) var(--c--theme--spacings--xl);
     font-weight: 600;
-    font-size: var(--c--theme--font-sizes--m);
+    font-size: var(--c--theme--font--sizes--md);
   }
 }
 
@@ -175,7 +175,7 @@
       dt {
         font-weight: 600;
         color: var(--c--theme--colors--primary-800);
-        font-size: var(--c--theme--font-sizes--s);
+        font-size: var(--c--theme--font--sizes--sm);
         margin-bottom: var(--c--theme--spacings--xs);
         text-transform: uppercase;
         letter-spacing: 0.5px;
@@ -188,7 +188,7 @@
         border: 1px solid var(--c--theme--colors--greyscale-200);
         border-radius: var(--c--theme--border-radius--s);
         font-family: monospace;
-        font-size: var(--c--theme--font-sizes--m);
+        font-size: var(--c--theme--font--sizes--md);
         font-weight: 600;
         color: var(--c--theme--colors--greyscale-900);
         word-break: break-all;

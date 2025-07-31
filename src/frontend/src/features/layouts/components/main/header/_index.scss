@@ -2,7 +2,8 @@
 
 .c__header {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, calc(100% / 3));
+  gap: 0.5rem;
   grid-template-areas: "left center right";
   background-color: var(--c--theme--colors--greyscale-000);
   border-bottom: 1px solid var(--c--theme--colors--greyscale-200);
@@ -21,6 +22,7 @@
     grid-template-areas:
       "toggle left left"
       "center center center";
+    gap: 0rem;
     padding: 0 var(--c--theme--spacings--base);
 
     &__left {
@@ -65,5 +67,53 @@
   &__right {
     grid-area: right;
     justify-content: flex-end;
+  }
+
+}
+.user-menu {
+  min-width: 0;
+
+  & > .c__dropdown-menu-trigger {
+    max-width: 100%;
+  }
+
+  .user-menu__cta-content {
+    display: flex;
+    align-items: center;
+    gap: var(--c--theme--spacings--sm);
+    overflow: hidden;
+  }
+
+  .user-menu__cta {
+    display: flex;
+    align-items: center;
+    gap: var(--c--theme--spacings--sm);
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .user-menu__account {
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+    line-height: 1.1;
+    max-width: 100%;
+    min-width: 0;
+    white-space: nowrap;
+
+    &-name {
+      display: inline-block;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+
+    &-email {
+      display: inline-block;
+      font-size: var(--c--theme--font--sizes--xs);
+      font-weight: 400;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   }
 }

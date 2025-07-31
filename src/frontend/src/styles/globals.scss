@@ -30,7 +30,7 @@ body {
   overflow: inherit !important;
 }
 
-.material-icons {
+.material-icons:not(.icon--xsmall):not(.icon--small):not(.icon--medium):not(.icon--large):not(.icon--xlarge) {
   font-size: 1.25em;
 }
 
