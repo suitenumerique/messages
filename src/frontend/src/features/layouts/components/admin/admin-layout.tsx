@@ -3,6 +3,8 @@ import { Breadcrumbs } from "@/features/ui/components/breadcrumbs";
 import Link from "next/link";
 import { useTranslation } from "react-i18next";
 import { AdminMailDomainProvider, useAdminMailDomain } from "@/features/providers/admin-maildomain";
+import useAbility, { Abilities } from "@/hooks/use-abilty";
+import ErrorPage from "next/error";
 
 type AdminLayoutProps = {
   children: React.ReactNode;
@@ -17,6 +19,7 @@ function AdminLayoutContent({
 }: AdminLayoutProps) {
   const { t } = useTranslation();
   const { selectedMailDomain } = useAdminMailDomain();
+  const canViewDomainAdmin = useAbility(Abilities.CAN_VIEW_DOMAIN_ADMIN);
 
   // Build breadcrumb items
   const breadcrumbItems = [
@@ -67,6 +70,10 @@ function AdminLayoutContent({
     { id: "dns", label: t("admin_layout.tabs.dns"), href: `/domain/${selectedMailDomain.id}/dns` },
     // { id: "signatures", label: t("admin_layout.tabs.signatures"), href: `/domain/${selectedMailDomain.id}/signatures` },
   ] : [];
+
+  if (!canViewDomainAdmin) {
+    return <ErrorPage statusCode={403} />;
+  }
 
   return (
     <div className="admin-page">

@@ -12,7 +12,8 @@
         "title": "New message"
       },
       "user_menu": {
-        "logout": "Logout"
+        "logout": "Logout",
+        "domain_admin": "Domain admin"
       },
       "aria": {
         "labels": {
@@ -456,7 +457,8 @@
         "title": "Nouveau message"
       },
       "user_menu": {
-        "logout": "Déconnexion"
+        "logout": "Déconnexion",
+        "domain_admin": "Gestion des domaines"
       },
       "aria": {
         "labels": {
