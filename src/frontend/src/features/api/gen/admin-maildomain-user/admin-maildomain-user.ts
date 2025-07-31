@@ -18,7 +18,10 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { MaildomainsUsersListParams, User } from ".././models";
+import type {
+  MaildomainsUsersListParams,
+  UserWithoutAbilities,
+} from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
 
@@ -28,7 +31,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
  * Search users by email, first name and last name.
  */
 export type maildomainsUsersListResponse200 = {
-  data: User[];
+  data: UserWithoutAbilities[];
   status: 200;
 };
 

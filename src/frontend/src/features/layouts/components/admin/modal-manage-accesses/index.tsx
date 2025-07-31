@@ -1,7 +1,7 @@
 import { ShareModal } from "@gouvfr-lasuite/ui-kit";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MailboxAccessNestedUser, MailboxRoleChoices, MailboxAdmin, useMailboxesAccessesCreate, useMailboxesAccessesDestroy, useMailboxesAccessesUpdate, useMaildomainsUsersList, User } from "@/features/api/gen";
+import { MailboxAccessNestedUser, MailboxRoleChoices, MailboxAdmin, useMailboxesAccessesCreate, useMailboxesAccessesDestroy, useMailboxesAccessesUpdate, useMaildomainsUsersList, UserWithoutAbilities } from "@/features/api/gen";
 
 type ModalMailboxManageAccessesProps = {
     domainId: string;
@@ -21,7 +21,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
     const hasOnlyOneEditor = (mailbox?.accesses || []).filter((a) => mailbox_write_roles.includes(a.role)).length === 1;
     const searchUsersQuery = useMaildomainsUsersList(domainId, { q: searchQuery });
 
-    const getAccessUser = (user: User) => {
+    const getAccessUser = (user: UserWithoutAbilities) => {
         return {
             ...user,
             email: user.email || user.id,
@@ -35,7 +35,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
     }));
 
 
-    const handleCreateAccesses = (users: User[], role: string) => {
+    const handleCreateAccesses = (users: UserWithoutAbilities[], role: string) => {
         const userIds = [...new Set(users.map((m) => m.id))];
         userIds.forEach((userId) => {
             createMailboxAccess({
@@ -77,7 +77,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
     if (!mailbox) return null;
 
     return (
-        <ShareModal<User, User, MailboxAccessNestedUser>
+        <ShareModal<UserWithoutAbilities, UserWithoutAbilities, MailboxAccessNestedUser>
             modalTitle={t('manage_accesses_modal.title', { mailbox: mailbox.local_part + "@" + mailbox.domain_name })}
             isOpen={isOpen}
             loading={searchUsersQuery.isLoading}

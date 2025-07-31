@@ -176,7 +176,8 @@ lint-check:  ## run all linters in check mode
 lint-check: \
   back-ruff-check \
   back-pylint \
-  front-ts-check
+  front-ts-check \
+  front-lint
 .PHONY: lint-check
 
 back-lint: ## run back-end linters

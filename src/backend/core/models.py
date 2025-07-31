@@ -29,6 +29,7 @@ from core.enums import (
     MessageDeliveryStatusChoices,
     MessageRecipientTypeChoices,
     ThreadAccessRoleChoices,
+    UserAbilityChoices,
 )
 from core.mda.rfc5322 import parse_email_message
 from core.mda.signing import generate_dkim_key as _generate_dkim_key
@@ -199,8 +200,8 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
         has_access = self.maildomain_accesses.exists()
         is_super_admin = self.is_superuser and self.is_staff
         return {
-            "create_maildomains": is_super_admin,
-            "view_maildomains": has_access or is_super_admin,
+            UserAbilityChoices.CAN_VIEW_DOMAIN_ADMIN: has_access or is_super_admin,
+            UserAbilityChoices.CAN_CREATE_MAILDOMAINS: is_super_admin,
         }
 
 

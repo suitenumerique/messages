@@ -9,7 +9,7 @@ from .. import permissions, serializers
 class UserViewSet(viewsets.ViewSet):
     """ViewSet for User model."""
 
-    serializer_class = serializers.UserSerializer
+    serializer_class = serializers.UserWithAbilitiesSerializer
     permission_classes = [permissions.IsSelf]
 
     @drf.decorators.action(

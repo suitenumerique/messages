@@ -324,7 +324,7 @@ class AdminMailDomainUserViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
         core_permissions.IsAuthenticated,
         core_permissions.IsMailDomainAdmin,
     ]
-    serializer_class = core_serializers.UserSerializer
+    serializer_class = core_serializers.UserWithoutAbilitiesSerializer
     pagination_class = None
 
     def get_queryset(self):
@@ -355,7 +355,7 @@ class AdminMailDomainUserViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
                 description="Search maildomains user by full name, short name or email.",
             ),
         ],
-        responses=core_serializers.UserSerializer(many=True),
+        responses=core_serializers.UserWithoutAbilitiesSerializer(many=True),
     )
     def list(self, request, *args, **kwargs):
         """
@@ -369,5 +369,7 @@ class AdminMailDomainUserViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
                 | Q(full_name__unaccent__icontains=query)
             )
 
-        serializer = core_serializers.UserSerializer(queryset, many=True)
+        serializer = core_serializers.UserWithoutAbilitiesSerializer(
+            queryset, many=True
+        )
         return response.Response(serializer.data)

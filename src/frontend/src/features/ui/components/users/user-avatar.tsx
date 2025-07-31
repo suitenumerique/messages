@@ -1,4 +1,4 @@
-import { User as UserType } from "@/features/api/gen/models/user";
+import { UserWithoutAbilities as UserType } from "@/features/api/gen/models/user_without_abilities";
 
 interface UserAvatarProps {
   user: UserType;

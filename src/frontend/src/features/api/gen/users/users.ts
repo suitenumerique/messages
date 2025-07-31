@@ -18,7 +18,7 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { User } from ".././models";
+import type { UserWithAbilities } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
 
@@ -28,7 +28,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
  * Return information on currently logged user
  */
 export type usersMeRetrieveResponse200 = {
-  data: User;
+  data: UserWithAbilities;
   status: 200;
 };
 

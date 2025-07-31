@@ -102,20 +102,36 @@ class AbilitiesModelSerializer(serializers.ModelSerializer):
     """
 
     def __init__(self, *args, **kwargs):
-        """Exclude fields after class instanciation."""
-        self.exclude_abilities = kwargs.pop("exclude_abilities", False)
+        """Add abilities field unless exclude_abilities is True."""
+        if not hasattr(self, "exclude_abilities"):
+            self.exclude_abilities = kwargs.pop("exclude_abilities", False)
         super().__init__(*args, **kwargs)
 
-    def to_representation(self, instance):
-        """Add abilities except when the serializer is nested."""
-        representation = super().to_representation(instance)
+        # Add abilities field unless exclude_abilities is True
+        if not self.exclude_abilities:
+            abilities_field = serializers.SerializerMethodField(read_only=True)
+            self.fields["abilities"] = abilities_field
+
+    # This decorator is generic, override the `get_abilities` method
+    # in the child serializer to provide the specific implementation if needed.
+    @extend_schema_field(
+        {
+            "type": "object",
+            "description": "Instance permissions and capabilities",
+            "additionalProperties": {"type": "boolean"},
+            "nullable": True,
+        }
+    )
+    def get_abilities(self, instance):
+        """Get abilities for the instance."""
         request = self.context.get("request")
-        if request and not self.exclude_abilities:
-            if isinstance(instance, models.User):
-                representation["abilities"] = instance.get_abilities()
-            else:
-                representation["abilities"] = instance.get_abilities(request.user)
-        return representation
+        if not request:
+            return {}
+
+        if isinstance(instance, models.User):
+            return instance.get_abilities()
+
+        return instance.get_abilities(request.user)
 
 
 class UserSerializer(AbilitiesModelSerializer):
@@ -124,7 +140,40 @@ class UserSerializer(AbilitiesModelSerializer):
     class Meta:
         model = models.User
         fields = ["id", "email", "full_name"]
-        read_only_fields = ["id", "email", "full_name"]
+        read_only_fields = fields
+
+    @extend_schema_field(
+        {
+            "type": "object",
+            "description": "Instance permissions and capabilities",
+            "properties": {
+                choice.value: {"type": "boolean", "description": choice.label}
+                for choice in models.UserAbilityChoices
+            },
+            "required": [choice.value for choice in models.UserAbilityChoices],
+        }
+    )
+    def get_abilities(self, instance):
+        """Get abilities for the instance."""
+        return instance.get_abilities()
+
+
+class UserWithAbilitiesSerializer(UserSerializer):
+    """
+    Serialize users with abilities.
+    Allow to have separated OpenAPI definition for users with and without abilities.
+    """
+
+    exclude_abilities = False
+
+
+class UserWithoutAbilitiesSerializer(UserSerializer):
+    """
+    Serialize users without abilities.
+    Allow to have separated OpenAPI definition for users with and without abilities.
+    """
+
+    exclude_abilities = True
 
 
 class MailboxAvailableSerializer(serializers.ModelSerializer):
@@ -618,7 +667,7 @@ class MailboxAccessReadSerializer(serializers.ModelSerializer):
     Mailbox context is implied by the URL, so mailbox details are not included here.
     """
 
-    user_details = UserSerializer(source="user", read_only=True, exclude_abilities=True)
+    user_details = UserWithoutAbilitiesSerializer(source="user", read_only=True)
     role = IntegerChoicesField(choices_class=models.MailboxRoleChoices, read_only=True)
 
     class Meta:
@@ -702,7 +751,7 @@ class MailboxAccessNestedUserSerializer(serializers.ModelSerializer):
     Shows user details and their role on the mailbox.
     """
 
-    user = UserSerializer(read_only=True, exclude_abilities=True)
+    user = UserWithoutAbilitiesSerializer(read_only=True)
     role = IntegerChoicesField(choices_class=models.MailboxRoleChoices, read_only=True)
 
     class Meta:

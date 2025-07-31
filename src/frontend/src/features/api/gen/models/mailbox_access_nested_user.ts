@@ -5,7 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { User } from "./user";
+import type { UserWithoutAbilities } from "./user_without_abilities";
 import type { MailboxRoleChoices } from "./mailbox_role_choices";
 
 /**
@@ -15,6 +15,6 @@ Shows user details and their role on the mailbox.
 export interface MailboxAccessNestedUser {
   /** primary key for the record as UUID */
   readonly id: string;
-  readonly user: User;
+  readonly user: UserWithoutAbilities;
   readonly role: MailboxRoleChoices;
 }

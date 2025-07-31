@@ -5,7 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { User } from "./user";
+import type { UserWithoutAbilities } from "./user_without_abilities";
 import type { MailboxRoleChoices } from "./mailbox_role_choices";
 
 /**
@@ -15,7 +15,7 @@ Mailbox context is implied by the URL, so mailbox details are not included here.
 export interface MailboxAccessRead {
   /** primary key for the record as UUID */
   readonly id: string;
-  readonly user_details: User;
+  readonly user_details: UserWithoutAbilities;
   readonly role: MailboxRoleChoices;
   /** date and time at which a record was created */
   readonly created_at: string;

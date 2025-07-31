@@ -69,3 +69,11 @@ THREAD_STATS_FIELDS_MAP = {
     "all": "all",
     "all_unread": "all_unread",
 }
+
+
+# Abilities
+class UserAbilityChoices(models.TextChoices):
+    """Defines the possible abilities a user can have."""
+
+    CAN_VIEW_DOMAIN_ADMIN = "view_maildomains", "Can view domain admin"
+    CAN_CREATE_MAILDOMAINS = "create_maildomains", "Can create maildomains"

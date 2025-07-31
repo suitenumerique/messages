@@ -6,6 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 import type { MailboxRoleChoices } from "./mailbox_role_choices";
+import type { MailboxAbilities } from "./mailbox_abilities";
 
 /**
  * Serialize mailboxes.
@@ -17,4 +18,9 @@ export interface Mailbox {
   readonly role: MailboxRoleChoices;
   readonly count_unread_messages: string;
   readonly count_messages: string;
+  /**
+   * Instance permissions and capabilities
+   * @nullable
+   */
+  readonly abilities: MailboxAbilities;
 }

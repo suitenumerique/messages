@@ -2,9 +2,9 @@ import React, { PropsWithChildren, useEffect } from "react";
 
 import { getRequestUrl } from "@/features/api/utils";
 import { useUsersMeRetrieve } from "@/features/api/gen/users/users";
-import { User } from "@/features/api/gen/models/user";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { posthog } from "posthog-js";
+import { UserWithAbilities } from "../api/gen/models/user_with_abilities";
 
 export const logout = () => {
   posthog.reset()
@@ -16,7 +16,7 @@ export const login = () => {
 };
 
 interface AuthContextInterface {
-  user?: User | null;
+  user?: UserWithAbilities | null;
 }
 
 export const AuthContext = React.createContext<AuthContextInterface>({});

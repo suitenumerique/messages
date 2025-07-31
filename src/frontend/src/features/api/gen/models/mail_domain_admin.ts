@@ -5,6 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { MailDomainAdminAbilities } from "./mail_domain_admin_abilities";
 
 /**
  * Serialize mail domains for admin view.
@@ -18,4 +19,9 @@ export interface MailDomainAdmin {
   /** date and time at which a record was last updated */
   readonly updated_at: string;
   readonly expected_dns_records: string;
+  /**
+   * Instance permissions and capabilities
+   * @nullable
+   */
+  readonly abilities: MailDomainAdminAbilities;
 }

@@ -7,9 +7,10 @@
  */
 
 /**
- * Serialize users.
+ * Serialize users without abilities.
+Allow to have separated OpenAPI definition for users with and without abilities.
  */
-export interface User {
+export interface UserWithoutAbilities {
   /** primary key for the record as UUID */
   readonly id: string;
   /** @nullable */

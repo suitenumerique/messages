@@ -2666,7 +2666,7 @@
                                 "schema": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/components/schemas/User"
+                                        "$ref": "#/components/schemas/UserWithoutAbilities"
                                     }
                                 }
                             }
@@ -3765,7 +3765,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/User"
+                                    "$ref": "#/components/schemas/UserWithAbilities"
                                 }
                             }
                         },
@@ -4209,9 +4209,19 @@
                     "expected_dns_records": {
                         "type": "string",
                         "readOnly": true
+                    },
+                    "abilities": {
+                        "type": "object",
+                        "description": "Instance permissions and capabilities",
+                        "additionalProperties": {
+                            "type": "boolean"
+                        },
+                        "nullable": true,
+                        "readOnly": true
                     }
                 },
                 "required": [
+                    "abilities",
                     "created_at",
                     "expected_dns_records",
                     "id",
@@ -4248,9 +4258,19 @@
                     "count_messages": {
                         "type": "string",
                         "readOnly": true
+                    },
+                    "abilities": {
+                        "type": "object",
+                        "description": "Instance permissions and capabilities",
+                        "additionalProperties": {
+                            "type": "boolean"
+                        },
+                        "nullable": true,
+                        "readOnly": true
                     }
                 },
                 "required": [
+                    "abilities",
                     "count_messages",
                     "count_unread_messages",
                     "email",
@@ -4271,7 +4291,7 @@
                     "user": {
                         "allOf": [
                             {
-                                "$ref": "#/components/schemas/User"
+                                "$ref": "#/components/schemas/UserWithoutAbilities"
                             }
                         ],
                         "readOnly": true
@@ -4304,7 +4324,7 @@
                     "user_details": {
                         "allOf": [
                             {
-                                "$ref": "#/components/schemas/User"
+                                "$ref": "#/components/schemas/UserWithoutAbilities"
                             }
                         ],
                         "readOnly": true
@@ -5417,9 +5437,58 @@
                 "type": "string",
                 "description": "* `personal` - personal\n* `shared` - shared\n* `redirect` - redirect"
             },
-            "User": {
+            "UserWithAbilities": {
                 "type": "object",
-                "description": "Serialize users.",
+                "description": "Serialize users with abilities.\nAllow to have separated OpenAPI definition for users with and without abilities.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "readOnly": true,
+                        "nullable": true,
+                        "title": "Identity email address"
+                    },
+                    "full_name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "abilities": {
+                        "type": "object",
+                        "description": "Instance permissions and capabilities",
+                        "properties": {
+                            "view_maildomains": {
+                                "type": "boolean",
+                                "description": "Can view domain admin"
+                            },
+                            "create_maildomains": {
+                                "type": "boolean",
+                                "description": "Can create maildomains"
+                            }
+                        },
+                        "required": [
+                            "view_maildomains",
+                            "create_maildomains"
+                        ],
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "abilities",
+                    "email",
+                    "full_name",
+                    "id"
+                ]
+            },
+            "UserWithoutAbilities": {
+                "type": "object",
+                "description": "Serialize users without abilities.\nAllow to have separated OpenAPI definition for users with and without abilities.",
                 "properties": {
                     "id": {
                         "type": "string",
