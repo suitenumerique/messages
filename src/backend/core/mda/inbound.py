@@ -26,6 +26,7 @@ IMAP_LABEL_TO_MESSAGE_FLAG = {
     "[Gmail]/Drafts": "is_draft",
     "[Gmail]/Brouillons": "is_draft",
     "DRAFT": "is_draft",
+    "Draft": "is_draft",
     "Sent": "is_sender",
     "Messages envoyés": "is_sender",
     "[Gmail]/Sent Mail": "is_sender",
