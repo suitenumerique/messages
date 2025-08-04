@@ -204,8 +204,8 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
 
   const handleDelete = async () => {
     const decision = await modals.deleteConfirmationModal({
-      title: <span className="label-item__delete-modal__title">{t('labels.delete_modal.title', { label: label.display_name })}</span>,
-      children: <span className="label-item__delete-modal__message">{t('labels.delete_modal.message', { label: label.display_name })}</span>,
+      title: <span className="c__modal__text--centered">{t('labels.delete_modal.title', { label: label.display_name })}</span>,
+      children: t('labels.delete_modal.message'),
     });
 
     if (decision === 'delete') {

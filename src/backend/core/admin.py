@@ -610,3 +610,38 @@ class DKIMKeyAdmin(admin.ModelAdmin):
             },
         ),
     )
+
+
+@admin.register(models.MessageTemplate)
+class MessageTemplateAdmin(admin.ModelAdmin):
+    """Admin class for the MessageTemplate model"""
+
+    list_display = (
+        "id",
+        "name",
+        "type",
+        "is_forced",
+        "preview_content",
+        "created_at",
+    )
+    list_filter = (
+        "type",
+        "is_forced",
+        "created_at",
+    )
+    search_fields = (
+        "name",
+        "html_body",
+        "text_body",
+    )
+    readonly_fields = ("id", "created_at", "updated_at")
+
+    def preview_content(self, obj):
+        """Display a preview of the formatted content."""
+        formatted = obj.get_formatted_content()
+        return format_html(
+            '<div style="max-width: 400px; overflow: hidden; text-overflow: ellipsis;">{}</div>',
+            formatted[:100] + "..." if len(formatted) > 100 else formatted,
+        )
+
+    preview_content.short_description = "Content Preview"

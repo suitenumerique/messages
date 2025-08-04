@@ -2,6 +2,7 @@ import type { ReactElement, ReactNode } from "react";
 import type { NextPage } from "next";
 import type { AppProps } from "next/app";
 import { CunninghamProvider } from "@gouvfr-lasuite/ui-kit";
+import "@blocknote/mantine/style.css";
 import {
   MutationCache,
   Query,
@@ -10,7 +11,6 @@ import {
   QueryClientProvider,
 } from "@tanstack/react-query";
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-
 import "../styles/main.scss";
 import "../features/i18n/initI18n";
 import {

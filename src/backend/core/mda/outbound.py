@@ -43,6 +43,7 @@ def prepare_outbound_message(
     message: models.Message,
     text_body: str,
     html_body: str,
+    user: Optional[models.User] = None,
 ) -> bool:
     """Compose and sign an existing draft Message object before sending via SMTP.
 
@@ -62,6 +63,50 @@ def prepare_outbound_message(
 
     # Generate a MIME id
     message.mime_id = message.generate_mime_id()
+
+    # Insert signature from message.signature if present
+    if message.signature and message.signature.is_active:
+        # Verify signature is in sender scope
+        in_sender_scope = (
+            message.signature.mailbox_id
+            and message.signature.mailbox_id == mailbox_sender.id
+        ) or (
+            message.signature.maildomain_id
+            and message.signature.maildomain_id == mailbox_sender.domain_id
+        )
+
+        if in_sender_scope and user:
+            try:
+                signatures = message.signature.render_template(user)
+                if signatures:
+                    text_body = (
+                        text_body + "\n" + signatures["text_body"]
+                        if text_body
+                        else signatures["text_body"]
+                    )
+                    html_body = (
+                        html_body + "<p>" + signatures["html_body"] + "</p>"
+                        if html_body
+                        else signatures["html_body"]
+                    )
+            except Exception as e:
+                logger.error(
+                    "Failed to render signature %s for message %s: %s",
+                    message.signature.id,
+                    message.id,
+                    e,
+                )
+        elif in_sender_scope:
+            logger.debug(
+                "Skipping signature rendering for message %s: no user provided",
+                message.id,
+            )
+        else:
+            logger.warning(
+                "Signature %s is not in scope for mailbox %s",
+                message.signature.id,
+                mailbox_sender.id,
+            )
 
     # Handle reply and forward message embedding
     if message.parent:
