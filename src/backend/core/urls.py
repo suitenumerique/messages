@@ -30,11 +30,12 @@ from core.api.viewsets.task import TaskDetailView
 from core.api.viewsets.thread import ThreadViewSet
 from core.api.viewsets.thread_access import ThreadAccessViewSet
 from core.api.viewsets.user import UserViewSet
+from core.api.viewsets.channel import AdminChannelViewSet
+from core.api.viewsets.inbound import InboundViewSet
 from core.authentication.urls import urlpatterns as oidc_urls
 
 # - Main endpoints
 router = DefaultRouter()
-router.register("mta", MTAViewSet, basename="mta")
 router.register("users", UserViewSet, basename="users")
 router.register("messages", MessageViewSet, basename="messages")
 router.register("blob", BlobViewSet, basename="blob")
@@ -43,6 +44,8 @@ router.register("threads", ThreadViewSet, basename="threads")
 router.register("labels", LabelViewSet, basename="labels")
 router.register("mailboxes", MailboxViewSet, basename="mailboxes")
 router.register("maildomains", AdminMailDomainViewSet, basename="admin-maildomains")
+router.register("channels", AdminChannelViewSet, basename="admin-channels")
+router.register("inbound", InboundViewSet, basename="inbound")
 
 # Router for /threads/{thread_id}/accesses/
 thread_access_nested_router = DefaultRouter()
@@ -90,6 +93,13 @@ urlpatterns = [
                 path(
                     "maildomains/<uuid:maildomain_pk>/",
                     include(maildomain_nested_router.urls),
+                ),
+                path(
+                    "inbound/<str:channel_type>/",
+                    include([
+                        path("check/", InboundViewSet.as_view({"post": "check"}), name="inbound-check"),
+                        path("deliver/", InboundViewSet.as_view({"post": "deliver"}), name="inbound-deliver"),
+                    ])
                 ),
                 *oidc_urls,
             ]

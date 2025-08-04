@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Feedback Widget Demo</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background: #f5f5f5;
+      }
+      h1 {
+        color: #333;
+        text-align: center;
+      }
+      .controls {
+        text-align: center;
+        margin: 20px 0;
+      }
+      button {
+        margin: 0 10px;
+        padding: 10px 20px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Feedback Widget Demo</h1>
+    <script type="module" src="../src/widgets/feedback/main.ts" defer></script>
+    <script>
+      window._stmsg_widget = window._stmsg_widget || [];
+      _stmsg_widget.push(["feedback", "init", {
+        "title": "Do you have any feedback?"
+      }]);
+    </script>
+  </body>
+</html> 

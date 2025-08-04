@@ -133,6 +133,7 @@ When running the project, the following services are available:
 | **Keycloak** | [http://localhost:8902](http://localhost:8902) | Identity provider admin | `admin` / `admin` |
 | **Celery UI** | [http://localhost:8903](http://localhost:8903) | Task queue monitoring | No auth required |
 | **Mailcatcher** | [http://localhost:8904](http://localhost:8904) | Email testing interface | No auth required |
+| **Widgets** | [http://localhost:8905](http://localhost:8905) | Widgets development server | No auth required |
 | **MTA-in (SMTP)** | 8910 | Incoming email server | No auth required |
 | **MTA-out (SMTP)** | 8911 | Outgoing email server | `user` / `pass` |
 | **PostgreSQL** | 8912 | Database server | `user` / `pass` |

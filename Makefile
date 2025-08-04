@@ -27,12 +27,6 @@ BOLD := \033[1m
 RESET := \033[0m
 GREEN := \033[1;32m
 
-
-# -- Database
-
-DB_HOST            = postgresql
-DB_PORT            = 5432
-
 # -- Docker
 # Get the current user ID to use for docker run and docker exec commands
 DOCKER_UID          = $(shell id -u)
@@ -74,7 +68,11 @@ create-env-files: \
 	env.d/development/frontend.local \
 	env.d/development/mta-in.local \
 	env.d/development/mta-out.local \
+<<<<<<< HEAD
 	env.d/development/socks-proxy.local
+=======
+	env.d/development/widgets.local
+>>>>>>> d2e0fa3 (✨(channels) add multipe inbound channels & alpha frontend widgets)
 .PHONY: create-env-files
 
 bootstrap: ## Prepare the project for local development
@@ -462,6 +460,26 @@ back-api-update: ## Update the OpenAPI schema
 front-api-update: ## Update the frontend API client
 	@$(COMPOSE) run --rm frontend-tools npm run api:update
 .PHONY: front-api-update
+
+# Widgets
+widgets-install: ## install the widgets locally
+	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
+	$(COMPOSE) run --build --rm widgets-dev npm install $${args:-${1}}
+.PHONY: widgets-install
+
+widgets-freeze-deps: ## freeze the widgets dependencies
+	rm -rf src/widgets/package-lock.json
+	@$(MAKE) widgets-install
+.PHONY: widgets-freeze-deps
+
+widgets-build: ## build the widgets
+	$(COMPOSE) run --build --rm widgets-dev npm run build
+.PHONY: widgets-build
+
+widgets-shell: ## open a shell in the widgets container
+	$(COMPOSE) run --build --rm widgets-dev /bin/sh
+.PHONY: widgets-shell
+
 
 api-update: ## Update the OpenAPI schema then frontend API client
 api-update: \

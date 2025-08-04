@@ -138,7 +138,7 @@ Content-Disposition: attachment; filename="{attachment_data["filename"]}"
         )
 
         response = api_client_service_account.post(
-            "/api/v1.0/mta/inbound-email/",
+            "/api/v1.0/inbound/mta/deliver/",
             data=multipart_email_with_attachment,
             content_type="message/rfc822",
             HTTP_AUTHORIZATION=f"Bearer {token}",

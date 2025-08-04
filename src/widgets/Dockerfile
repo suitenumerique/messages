@@ -1,6 +1,6 @@
-FROM node:22-slim AS frontend-deps
+FROM node:22-slim AS widgets-deps
 
-WORKDIR /home/frontend/
+WORKDIR /home/widgets/
 
 RUN npm install -g npm@11.3.0 && npm cache clean -f
 

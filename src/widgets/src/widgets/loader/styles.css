@@ -1,0 +1,59 @@
+/* Widget styles */
+div {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+}
+
+button {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #000091;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 145, 0.3);
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+svg {
+    width: 35px;
+    height: 35px;
+}
+
+button:hover {
+  background: #1212ff;
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(18, 18, 255, 0.4);
+}
+
+button:active {
+  transform: scale(0.95);
+}
+
+button.loading {
+  background: #2323ff;
+}
+
+button.loading::after {
+  content: '';
+  width: 25px;
+  height: 25px;
+  border: 3px solid transparent;
+  border-top: 3px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+button.loading svg {
+    display: none;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

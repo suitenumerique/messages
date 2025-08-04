@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Loader Widget Demo</title>
+    <style>
+      * {
+        color: #666;
+      }
+      html {
+        font-family: Arial, sans-serif;
+        padding: 0px;
+        background: #f5f5f5;
+      }
+      * {
+        text-align: center;
+      }
+      button {
+        margin: 0 10px;
+        padding: 10px 20px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Loader Widget Demo</h1>
+
+    <button onclick="document.documentElement.style.backgroundColor = '#000'">Make background dark</button>
+    <button onclick="document.documentElement.style.backgroundColor = '#fff'">Make background light</button>
+
+    <script type="module" src="../src/widgets/loader/main.ts" defer></script>
+    <script>
+      window._stmsg_widget = window._stmsg_widget || [];
+      _stmsg_widget.push(["loader", "init", {
+        "load": {
+          "widget": "feedback",
+          "url": "../src/widgets/feedback/main.ts",
+          "title": "Do you have any feedback?",
+          "api": "http://localhost:8905/demo/api.json?"
+        },
+        "label": "Feedback Widget"
+      }]);
+    </script>
+  </body>
+</html> 

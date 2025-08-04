@@ -217,7 +217,7 @@ services:
     user: "${DOCKER_USER:-1000}"
     build:
       context: ./src/frontend
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     env_file:
       - env.d/development/frontend.defaults
       - env.d/development/frontend.local
@@ -232,7 +232,7 @@ services:
     profiles:
       - frontend-tools
     build:
-      dockerfile: ./src/frontend/Dockerfile.dev
+      dockerfile: ./src/frontend/Dockerfile
     volumes:
       - ./src/backend/core/api/openapi.json:/home/backend/core/api/openapi.json
       - ./src/frontend/:/home/frontend/
@@ -243,10 +243,26 @@ services:
       - frontend-tools
     platform: linux/amd64
     build:
-      dockerfile: ./src/frontend/Dockerfile.dev
+      dockerfile: ./src/frontend/Dockerfile
     volumes:
       - ./src/backend/core/api/openapi.json:/home/backend/core/api/openapi.json
       - ./src/frontend/:/home/frontend/
+
+
+  widgets-dev:
+    user: "${DOCKER_USER:-1000}"
+    build:
+      context: ./src/widgets
+      dockerfile: Dockerfile
+    env_file:
+      - env.d/development/widgets.defaults
+      - env.d/development/widgets.local
+    command: ["npm", "run", "dev"]
+    volumes:
+      - ./src/widgets/:/home/widgets/
+    ports:
+      - "8905:8905"
+
 
   # crowdin:
   #   image: crowdin/cli:3.16.0

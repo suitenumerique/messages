@@ -411,6 +411,54 @@ class MailDomain(BaseModel):
         )
 
 
+class Channel(BaseModel):
+    """Channel model to store channel information for receiving messages from various sources."""
+
+    name = models.CharField(
+        _("name"), 
+        max_length=255,
+        help_text=_("Human-readable name for this channel")
+    )
+    
+    type = models.CharField(
+        _("type"),
+        max_length=255,
+        help_text=_("Type of channel"),
+        default="mta"
+    )
+    
+    settings = models.JSONField(
+        _("settings"),
+        default=dict,
+        blank=True,
+        help_text=_("Channel-specific configuration settings")
+    )
+    
+    mailbox = models.ForeignKey(
+        "Mailbox",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="channels",
+        help_text=_("Mailbox that receives messages from this channel")
+    )
+    
+    maildomain = models.ForeignKey(
+        "MailDomain",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="channels",
+        help_text=_("Mail domain that owns this channel")
+    )
+
+    class Meta:
+        db_table = "messages_channel"
+        verbose_name = _("channel")
+        verbose_name_plural = _("channels")
+        ordering = ["-created_at"]
+
+
 class Mailbox(BaseModel):
     """Mailbox model to store mailbox information."""
 

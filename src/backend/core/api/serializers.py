@@ -9,7 +9,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from core import models
-
+from core.channels import list_channel_types
 
 class IntegerChoicesField(serializers.ChoiceField):
     """
@@ -1139,3 +1139,47 @@ class ImportIMAPSerializer(ImportBaseSerializer):
     use_ssl = serializers.BooleanField(
         help_text="Use SSL for IMAP connection", required=False, default=True
     )
+
+
+class ChannelSerializer(AbilitiesModelSerializer):
+    """Serialize Channel model."""
+
+    class Meta:
+        model = models.Channel
+        fields = [
+            "id",
+            "name",
+            "type",
+            "settings",
+            "mailbox",
+            "maildomain",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate(self, data):
+        """Validate channel data."""
+        mailbox = data.get("mailbox")
+        maildomain = data.get("maildomain")
+        channel_type = data.get("type")
+        
+        # Validate that either mailbox or maildomain is set, but not both
+        if not mailbox and not maildomain:
+            raise serializers.ValidationError(
+                "Either mailbox or maildomain must be specified."
+            )
+        
+        if mailbox and maildomain:
+            raise serializers.ValidationError(
+                "Cannot specify both mailbox and maildomain."
+            )
+        
+        # Validate that the channel type exists
+        if channel_type:
+            if channel_type not in list_channel_types().keys():
+                raise serializers.ValidationError(
+                    f"Invalid channel type"
+                )
+        
+        return data
