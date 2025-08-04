@@ -23,10 +23,13 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 
 # Configure beat schedule
-app.conf.beat_schedule = {
-    "retry-pending-messages": {
-        "task": "core.tasks.retry_messages_task",
-        "schedule": 300.0,  # Every 5 minutes (300 seconds)
-        "options": {"queue": "default"},
-    },
-}
+# This can be disabled manually, for example when pushing the application for the first time
+# to a PaaS service when no migration was applied yet.
+if not os.environ.get("DISABLE_CELERY_BEAT_SCHEDULE"):
+    app.conf.beat_schedule = {
+        "retry-pending-messages": {
+            "task": "core.tasks.retry_messages_task",
+            "schedule": 300.0,  # Every 5 minutes (300 seconds)
+            "options": {"queue": "default"},
+        },
+    }
