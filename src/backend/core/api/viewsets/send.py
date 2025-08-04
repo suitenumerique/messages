@@ -133,6 +133,7 @@ class SendMessageView(APIView):
             message,
             request.data.get("textBody"),
             request.data.get("htmlBody"),
+            request.user,
         )
         if not prepared:
             raise drf_exceptions.APIException(

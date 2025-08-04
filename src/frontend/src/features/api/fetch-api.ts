@@ -12,10 +12,10 @@ export const fetchAPI= async <T>(
   pathname: string,
   { params, logoutOn401, ...requestInit }: RequestInit & fetchAPIOptions & { params?: Record<string, string> } = {},
 ): Promise<T> => {
-  const requesUrl = getRequestUrl(pathname, params);
+  const requestUrl = getRequestUrl(pathname, params);
   const isMultipartFormData = requestInit.body instanceof FormData;
 
-  const response = await fetch(requesUrl, {
+  const response = await fetch(requestUrl, {
     ...requestInit,
     credentials: "include",
     headers: getHeaders(requestInit.headers, isMultipartFormData),

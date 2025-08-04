@@ -1,6 +1,10 @@
+# pylint: disable=too-many-lines
 """Client serializers for the messages core app."""
 # pylint: disable=too-many-lines
 
+import json
+
+from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q
 from django.utils.translation import gettext_lazy as _
 
@@ -8,7 +12,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
-from core import models
+from core import enums, models
 
 
 class IntegerChoicesField(serializers.ChoiceField):
@@ -299,6 +303,62 @@ class MailboxLightSerializer(serializers.ModelSerializer):
         return None
 
 
+class ReadOnlyMessageTemplateSerializer(serializers.ModelSerializer):
+    """Serialize message templates for read-only operations."""
+
+    type = IntegerChoicesField(choices_class=models.MessageTemplateTypeChoices)
+    html_body = serializers.SerializerMethodField()
+    text_body = serializers.SerializerMethodField()
+    raw_body = serializers.SerializerMethodField()
+
+    def get_html_body(self, obj) -> str:
+        """Get HTML body from blob."""
+        if not obj.blob:
+            return ""
+        try:
+            content = json.loads(obj.blob.get_content().decode("utf-8"))
+            return content.get("html", "")
+        except (json.JSONDecodeError, AttributeError):
+            return ""
+
+    def get_text_body(self, obj) -> str:
+        """Get text body from content blob."""
+        if not obj.blob:
+            return ""
+        try:
+            content = json.loads(obj.blob.get_content().decode("utf-8"))
+            return content.get("text", "")
+        except (json.JSONDecodeError, AttributeError):
+            return ""
+
+    def get_raw_body(self, obj) -> str | None:
+        """Get raw blob from content blob."""
+        if not obj.blob:
+            return None
+        try:
+            content = json.loads(obj.blob.get_content().decode("utf-8"))
+            raw_body = content.get("raw")
+            return json.dumps(raw_body) if raw_body is not None else None
+        except (json.JSONDecodeError, AttributeError):
+            return None
+
+    class Meta:
+        model = models.MessageTemplate
+        fields = [
+            "id",
+            "name",
+            "html_body",
+            "text_body",
+            "raw_body",
+            "type",
+            "is_active",
+            "is_forced",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
 class ContactSerializer(serializers.ModelSerializer):
     """Serialize contacts."""
 
@@ -576,6 +636,8 @@ class MessageSerializer(serializers.ModelSerializer):
         source="thread.id", allow_null=True, read_only=True
     )
 
+    signature = ReadOnlyMessageTemplateSerializer(read_only=True, allow_null=True)
+
     @extend_schema_field(serializers.ListField(child=serializers.DictField()))
     def get_textBody(self, instance):  # pylint: disable=invalid-name
         """Return the list of text body parts (JMAP style)."""
@@ -665,7 +727,7 @@ class MessageSerializer(serializers.ModelSerializer):
             and instance.is_sender
             and instance.thread.accesses.filter(
                 mailbox__accesses__user=request.user,
-                role=models.ThreadAccessRoleChoices.EDITOR,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
             ).exists()
         ):
             contacts = models.Contact.objects.filter(
@@ -701,6 +763,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "is_starred",
             "is_trashed",
             "has_attachments",
+            "signature",
         ]
         read_only_fields = fields  # Mark all as read-only
 
@@ -1095,3 +1158,185 @@ class ImportIMAPSerializer(ImportBaseSerializer):
     use_ssl = serializers.BooleanField(
         help_text="Use SSL for IMAP connection", required=False, default=True
     )
+
+
+class MessageTemplateSerializer(serializers.ModelSerializer):
+    """Serialize message templates for POST/PUT/PATCH operations."""
+
+    type = IntegerChoicesField(choices_class=models.MessageTemplateTypeChoices)
+
+    # Write fields for creating/updating relationships
+    mailbox_id = serializers.UUIDField(
+        required=False, write_only=True, help_text="Mailbox UUID"
+    )
+    maildomain_id = serializers.UUIDField(
+        required=False, write_only=True, help_text="Maildomain UUID"
+    )
+    is_forced = serializers.BooleanField(
+        required=False, default=False, help_text="Set as forced template"
+    )
+    html_body = serializers.CharField(required=False)
+    text_body = serializers.CharField(required=False)
+    raw_body = serializers.CharField(required=False)
+
+    class Meta:
+        model = models.MessageTemplate
+        fields = [
+            "id",
+            "name",
+            "html_body",
+            "text_body",
+            "raw_body",
+            "type",
+            "is_active",
+            "is_forced",
+            "created_at",
+            "updated_at",
+            "mailbox_id",
+            "maildomain_id",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def __init__(self, *args, **kwargs):
+        """Initialize serializer. Do not allow to update mailbox_id and maildomain_id."""
+        super().__init__(*args, **kwargs)
+        if self.instance:
+            self.fields["mailbox_id"].read_only = True
+            self.fields["maildomain_id"].read_only = True
+
+    def validate(self, attrs):
+        """Validate template data."""
+        # For creation or update, all content fields must be provided
+        # if one of fields html_body, text_body, raw_body is provided, all must be provided
+        if any(field in attrs for field in ["html_body", "text_body", "raw_body"]):
+            if not all(
+                field in attrs for field in ["html_body", "text_body", "raw_body"]
+            ):
+                raise serializers.ValidationError(
+                    "All content fields (html_body, text_body, raw_body) must be provided for creation."
+                )
+        return attrs
+
+    def create(self, validated_data):
+        """Create template with relationships and ensure atomic content creation."""
+        mailbox_id = validated_data.pop("mailbox_id", None)
+        maildomain_id = validated_data.pop("maildomain_id", None)
+        html_body = validated_data.pop("html_body", "")
+        text_body = validated_data.pop("text_body", "")
+        raw_body = validated_data.pop("raw_body", "")
+
+        if mailbox_id and maildomain_id:
+            # Can't provide both
+            raise serializers.ValidationError(
+                "Only one of mailbox_id or maildomain_id can be provided."
+            )
+        # Exactly one must be provided
+        if not mailbox_id and not maildomain_id:
+            raise serializers.ValidationError(
+                "Either mailbox_id or maildomain_id is required."
+            )
+
+        # Resolve and validate mailbox/maildomain
+        try:
+            mailbox = None
+            maildomain = None
+            if mailbox_id is not None:
+                mailbox = models.Mailbox.objects.get(id=mailbox_id)
+                validated_data["mailbox"] = mailbox
+            if maildomain_id is not None:
+                maildomain = models.MailDomain.objects.get(id=maildomain_id)
+                validated_data["maildomain"] = maildomain
+        except models.Mailbox.DoesNotExist as err:
+            raise serializers.ValidationError(
+                {"mailbox_id": "Mailbox not found"}
+            ) from err
+        except models.MailDomain.DoesNotExist as err:
+            raise serializers.ValidationError(
+                {"maildomain_id": "Maildomain not found"}
+            ) from err
+
+        # Use atomic transaction to ensure all content fields are created together
+        with transaction.atomic():
+            # Create content blob with all content
+            # Parse raw_body if it's a JSON string
+            try:
+                raw_body = json.loads(raw_body) if raw_body else None
+            except json.JSONDecodeError:
+                pass
+
+            content = json.dumps(
+                {"html": html_body, "text": text_body, "raw": raw_body}
+            )
+            # content is changed to bytes
+            blob = models.Blob.objects.create_blob(
+                content=content.encode("utf-8"),
+                content_type="application/json",
+                mailbox=mailbox,
+                maildomain=maildomain,
+            )
+            validated_data["blob"] = blob
+            template = super().create(validated_data)
+            return template
+
+    def update(self, instance, validated_data):
+        """Update template with relationships. Not allowed to change mailbox or maildomain."""
+        html_body = validated_data.pop("html_body", None)
+        text_body = validated_data.pop("text_body", None)
+        raw_body = validated_data.pop("raw_body", None)
+
+        # Use atomic transaction to ensure all content fields are updated together
+        with transaction.atomic():
+            # Update content blob if any content field is provided
+            if any(field is not None for field in [html_body, text_body, raw_body]):
+                # Get current content
+                current_content = (
+                    instance.blob.get_content().decode("utf-8")
+                    if instance.blob
+                    else {"html": "", "text": "", "raw": None}
+                )
+
+                # Update with new values, keeping existing values if not provided
+                # Parse raw_body if it's a JSON string
+                try:
+                    raw_body = (
+                        json.loads(raw_body)
+                        if raw_body is not None
+                        else current_content["raw"]
+                    )
+                except json.JSONDecodeError:
+                    raw_body = (
+                        raw_body if raw_body is not None else current_content["raw"]
+                    )
+
+                content = {
+                    "html": html_body
+                    if html_body is not None
+                    else current_content["html"],
+                    "text": text_body
+                    if text_body is not None
+                    else current_content["text"],
+                    "raw": raw_body,
+                }
+
+                # Delete old blob
+                try:
+                    if instance.blob:
+                        instance.blob.delete()
+                except models.Blob.DoesNotExist:
+                    pass
+
+                # Create new blob
+
+                blob = models.Blob.objects.create_blob(
+                    content=json.dumps(content).encode("utf-8"),
+                    content_type="application/json",
+                    maildomain=self.instance.maildomain
+                    if self.instance.maildomain
+                    else None,
+                    mailbox=self.instance.mailbox if self.instance.mailbox else None,
+                )
+                validated_data["blob"] = blob
+
+            # Update all fields atomically
+            template = super().update(instance, validated_data)
+            return template
