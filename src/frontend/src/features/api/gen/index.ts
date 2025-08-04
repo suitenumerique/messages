@@ -9,6 +9,7 @@ export * from "./mailboxes/mailboxes";
 export * from "./mailbox-accesses/mailbox-accesses";
 export * from "./maildomains/maildomains";
 export * from "./admin-maildomain-user/admin-maildomain-user";
+export * from "./message-templates/message-templates";
 export * from "./mta/mta";
 export * from "./placeholders/placeholders";
 export * from "./tasks/tasks";

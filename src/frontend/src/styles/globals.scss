@@ -71,6 +71,15 @@ body {
   color: var(--c--components--button--tertiary-text--color-hover);
 }
 
+// Cunningham modal class utilities
+.c__modal__text--centered {
+  display: inline-block;
+  width: 100%;
+  text-align: center;
+}
+
+
+
 // Hide toast container as we use react-toastify
 .c__toast__container {
   display: none;

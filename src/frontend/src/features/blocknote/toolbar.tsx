@@ -1,6 +1,9 @@
 import { BasicTextStyleButton, BlockTypeSelect, CreateLinkButton, FormattingToolbar } from "@blocknote/react";
 
-const MessageEditorToolbar = () => {
+type ToolbarProps = {
+    children?: React.ReactNode;
+}
+export const Toolbar = ({ children }: ToolbarProps) => {
     return (
         <FormattingToolbar>
             <BlockTypeSelect key={"blockTypeSelect"} />
@@ -20,13 +23,8 @@ const MessageEditorToolbar = () => {
                 basicTextStyle={"strike"}
                 key={"strikeStyleButton"}
             />
-            <BasicTextStyleButton
-                key={"codeStyleButton"}
-                basicTextStyle={"code"}
-            />
             <CreateLinkButton key={"createLinkButton"} />
+            {children}
         </FormattingToolbar>
     )
 }
-
-export default MessageEditorToolbar;

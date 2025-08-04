@@ -22,6 +22,7 @@ from core.api.viewsets.maildomain import (
     AdminMailDomainViewSet,
 )
 from core.api.viewsets.message import MessageViewSet
+from core.api.viewsets.message_template import MessageTemplateViewSet
 from core.api.viewsets.metrics import MailDomainUsersMetricsApiView
 from core.api.viewsets.mta import MTAViewSet
 from core.api.viewsets.placeholder import PlaceholderView
@@ -43,6 +44,9 @@ router.register("threads", ThreadViewSet, basename="threads")
 router.register("labels", LabelViewSet, basename="labels")
 router.register("mailboxes", MailboxViewSet, basename="mailboxes")
 router.register("maildomains", AdminMailDomainViewSet, basename="admin-maildomains")
+router.register(
+    "message-templates", MessageTemplateViewSet, basename="message-templates"
+)
 
 # Router for /threads/{thread_id}/accesses/
 thread_access_nested_router = DefaultRouter()

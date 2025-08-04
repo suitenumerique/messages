@@ -7,7 +7,7 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from core import models
+from core import enums, models
 from core.factories import (
     LabelFactory,
     MailboxFactory,
@@ -526,7 +526,7 @@ class TestLabelViewSet:
         for thread in threads:
             thread.accesses.create(
                 mailbox=mailbox,
-                role=models.ThreadAccessRoleChoices.EDITOR,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
             )
 
         url = reverse("labels-add-threads", args=[label.pk])
@@ -595,7 +595,7 @@ class TestLabelViewSet:
         for thread in threads:
             thread.accesses.create(
                 mailbox=mailbox,
-                role=models.ThreadAccessRoleChoices.EDITOR,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
             )
             label.threads.add(thread)
 
@@ -612,7 +612,7 @@ class TestLabelViewSet:
         thread = ThreadFactory()
         thread.accesses.create(
             mailbox=other_mailbox,
-            role=models.ThreadAccessRoleChoices.EDITOR,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
         )
         label.threads.add(thread)
 
