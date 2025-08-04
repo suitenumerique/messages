@@ -215,3 +215,19 @@ class LabelFactory(factory.django.DjangoModelFactory):
         if isinstance(extracted, (list, tuple)):
             for thread in extracted:
                 self.threads.add(thread)
+
+
+class MessageTemplateFactory(factory.django.DjangoModelFactory):
+    """A factory to create message templates for testing purposes."""
+
+    class Meta:
+        model = models.MessageTemplate
+
+    name = factory.Sequence(lambda n: f"Template {n}")
+    description = factory.Faker("text", max_nb_chars=200)
+    html_body = factory.Faker("sentence", nb_words=10)
+    text_body = factory.Faker("text", max_nb_chars=100)
+    kind = factory.fuzzy.FuzzyChoice(
+        [choice[0] for choice in models.MessageTemplateKindChoices.choices]
+    )
+    is_active = True

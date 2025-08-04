@@ -33,6 +33,7 @@ from core.enums import (
     MailDomainAccessRoleChoices,
     MessageDeliveryStatusChoices,
     MessageRecipientTypeChoices,
+    MessageTemplateKindChoices,
     ThreadAccessRoleChoices,
     UserAbilities,
 )
@@ -481,51 +482,13 @@ class Mailbox(BaseModel):
         Raises:
             ValueError: If content is empty
         """
-        if not content:
-            raise ValueError("Content cannot be empty")
 
-        # Calculate SHA256 hash of the original content
-        sha256_hash = hashlib.sha256(content).digest()
-
-        # Store the original size
-        original_size = len(content)
-
-        # Apply compression if requested
-        compressed_content = content
-        if compression == CompressionTypeChoices.ZSTD:
-            compressed_content = pyzstd.compress(
-                content, level_or_option=settings.MESSAGES_BLOB_ZSTD_LEVEL
-            )
-            logger.debug(
-                "Compressed blob from %d bytes to %d bytes (%.1f%% reduction)",
-                original_size,
-                len(compressed_content),
-                (1 - len(compressed_content) / original_size) * 100,
-            )
-        elif compression == CompressionTypeChoices.NONE:
-            compressed_content = content
-        else:
-            raise ValueError(f"Unsupported compression type: {compression}")
-
-        # Create the blob
-        blob = Blob.objects.create(
-            sha256=sha256_hash,
-            size=original_size,
+        return Blob.objects.create_blob(
+            content=content,
             content_type=content_type,
             compression=compression,
-            raw_content=compressed_content,
             mailbox=self,
         )
-
-        logger.info(
-            "Created blob %s: %d bytes, %s compression, %s content type",
-            blob.id,
-            original_size,
-            compression.label,
-            content_type,
-        )
-
-        return blob
 
     def get_abilities(self, user):
         """
@@ -1192,6 +1155,74 @@ class Message(BaseModel):
         return len(counted_text.split())
 
 
+class BlobManager(models.Manager):
+    """Custom Manager for Blob model."""
+
+    def create_blob(
+        self,
+        content: bytes,
+        content_type: str,
+        compression: Optional[CompressionTypeChoices] = CompressionTypeChoices.ZSTD,
+        **kwargs,
+    ) -> "Blob":
+        """
+        Create a new blob with automatic SHA256 calculation and compression.
+        Args:
+            content: Raw binary content to store
+            content_type: MIME type of the content
+            compression: Compression type to use (defaults to ZSTD)
+        Returns:
+            The created Blob instance
+        Raises:
+            ValueError: If content is empty
+        """
+        if not content:
+            raise ValueError("Content cannot be empty")
+
+        # Calculate SHA256 hash of the original content
+        sha256_hash = hashlib.sha256(content).digest()
+
+        # Store the original size
+        original_size = len(content)
+
+        # Apply compression if requested
+        compressed_content = content
+        if compression == CompressionTypeChoices.ZSTD:
+            compressed_content = pyzstd.compress(
+                content, level_or_option=settings.MESSAGES_BLOB_ZSTD_LEVEL
+            )
+            logger.debug(
+                "Compressed blob from %d bytes to %d bytes (%.1f%% reduction)",
+                original_size,
+                len(compressed_content),
+                (1 - len(compressed_content) / original_size) * 100,
+            )
+        elif compression == CompressionTypeChoices.NONE:
+            compressed_content = content
+        else:
+            raise ValueError(f"Unsupported compression type: {compression}")
+
+        # Create the blob
+        blob = Blob.objects.create(
+            sha256=sha256_hash,
+            size=original_size,
+            content_type=content_type,
+            compression=compression,
+            raw_content=compressed_content,
+            **kwargs,
+        )
+
+        logger.info(
+            "Created blob %s: %d bytes, %s compression, %s content type",
+            blob.id,
+            original_size,
+            compression.label,
+            content_type,
+        )
+
+        return blob
+
+
 class Blob(BaseModel):
     """
     Blob model to store immutable binary data.
@@ -1230,10 +1261,14 @@ class Blob(BaseModel):
 
     mailbox = models.ForeignKey(
         "Mailbox",
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="blobs",
         help_text=_("Mailbox that owns this blob"),
     )
+
+    objects = BlobManager()
 
     class Meta:
         db_table = "messages_blob"
@@ -1401,3 +1436,191 @@ class DKIMKey(BaseModel):
         """Get the DNS TXT record value for this DKIM key."""
         algorithm_enum = DKIMAlgorithmChoices(self.algorithm)
         return f"v=DKIM1; k={algorithm_enum.label}; p={self.public_key}"
+
+
+class MessageTemplate(BaseModel):
+    """Message template model to store reusable message templates and signatures."""
+
+    name = models.CharField(
+        _("name"),
+        max_length=255,
+        help_text=_(
+            "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')"
+        ),
+    )
+
+    description = models.TextField(
+        _("description"),
+        blank=True,
+        help_text=_("Optional description of when to use this template"),
+    )
+
+    html_body = models.TextField(
+        _("HTML body"),
+        blank=True,
+        help_text=_(
+            "HTML email body template with placeholders (e.g., '<p>Dear {recipient_name},</p>') or signature content"
+        ),
+    )
+
+    text_body = models.TextField(
+        _("text body"),
+        blank=True,
+        help_text=_(
+            "Plain text email body template with placeholders (e.g., 'Dear {recipient_name},') or signature content"
+        ),
+    )
+
+    raw_blob = models.ForeignKey(
+        "Blob",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="message_templates",
+        help_text=_("Reference to the blob containing raw template data"),
+    )
+
+    kind = models.SmallIntegerField(
+        _("kind"),
+        choices=MessageTemplateKindChoices.choices,
+        default=MessageTemplateKindChoices.REPLY,
+        help_text=_(
+            "Kind of template (reply, forward, new message, auto reply, signature)"
+        ),
+    )
+
+    is_active = models.BooleanField(
+        _("is active"),
+        default=True,
+        help_text=_("Whether this template is available for use"),
+    )
+
+    maildomains = models.ManyToManyField(
+        "MailDomain",
+        through="MessageTemplateMailDomain",
+        related_name="message_templates",
+        help_text=_("Mail domains that can use this template"),
+    )
+
+    mailboxes = models.ManyToManyField(
+        "Mailbox",
+        through="MessageTemplateMailbox",
+        related_name="message_templates",
+        help_text=_("Mailboxes that can use this template"),
+    )
+
+    class Meta:
+        db_table = "messages_messagetemplate"
+        verbose_name = _("message template")
+        verbose_name_plural = _("message templates")
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_kind_display()})"
+
+    def get_abilities(self, user):
+        """Get abilities for this template based on user permissions."""
+        abilities = []
+
+        # Check if user has access to any of the mailboxes
+        if user.is_superuser or self.mailboxes.filter(accesses__user=user).exists():
+            abilities.extend(
+                [
+                    UserAbilities.CAN_VIEW_DOMAIN_ADMIN,
+                    UserAbilities.CAN_CREATE_MAILDOMAINS,
+                ]
+            )
+
+        return abilities
+
+    def render_template(self, context: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Render the template with the given context.
+
+        Args:
+            context: Dictionary of variables to substitute in the template
+
+        Returns:
+            Dictionary with 'html_body' and 'text_body' keys containing rendered content
+        """
+        rendered_html_body = self.html_body
+        rendered_text_body = self.text_body
+
+        # Simple placeholder substitution
+        for key, value in context.items():
+            placeholder = f"{{{key}}}"
+            rendered_html_body = rendered_html_body.replace(placeholder, str(value))
+            rendered_text_body = rendered_text_body.replace(placeholder, str(value))
+
+        return {
+            "html_body": rendered_html_body,
+            "text_body": rendered_text_body,
+        }
+
+    def get_formatted_content(self) -> str:
+        """
+        Get the template content with proper formatting based on type.
+        Mainly used for signatures.
+
+        Returns:
+            Formatted template content
+        """
+        return self.html_body or self.text_body
+
+
+class MessageTemplateMailDomain(BaseModel):
+    """Through model for MessageTemplate to MailDomain relationship with is_default flag."""
+
+    template = models.ForeignKey(
+        "MessageTemplate",
+        on_delete=models.CASCADE,
+        related_name="template_maildomains",
+    )
+    maildomain = models.ForeignKey(
+        "MailDomain",
+        on_delete=models.CASCADE,
+        related_name="template_maildomains",
+    )
+    is_default = models.BooleanField(
+        _("is default"),
+        default=False,
+        help_text=_("Whether this template is the default for this mail domain"),
+    )
+
+    class Meta:
+        db_table = "messages_messagetemplatemaildomain"
+        verbose_name = _("message template mail domain")
+        verbose_name_plural = _("message template mail domains")
+        unique_together = ("template", "maildomain")
+
+    def __str__(self):
+        return f"{self.template.name} - {self.maildomain.name}"
+
+
+class MessageTemplateMailbox(BaseModel):
+    """Through model for MessageTemplate to Mailbox relationship with is_default flag."""
+
+    template = models.ForeignKey(
+        "MessageTemplate",
+        on_delete=models.CASCADE,
+        related_name="template_mailboxes",
+    )
+    mailbox = models.ForeignKey(
+        "Mailbox",
+        on_delete=models.CASCADE,
+        related_name="template_mailboxes",
+    )
+    is_default = models.BooleanField(
+        _("is default"),
+        default=False,
+        help_text=_("Whether this template is the default for this mailbox"),
+    )
+
+    class Meta:
+        db_table = "messages_messagetemplatemailbox"
+        verbose_name = _("message template mailbox")
+        verbose_name_plural = _("message template mailboxes")
+        unique_together = ("template", "mailbox")
+
+    def __str__(self):
+        return f"{self.template.name} - {self.mailbox}"

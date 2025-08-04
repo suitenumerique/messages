@@ -54,6 +54,22 @@ reset_keycloak_password_action.short_description = (
 )
 
 
+def duplicate_template_action(_, request, queryset):
+    """Admin action to duplicate email templates."""
+    count = 0
+    for template in queryset:
+        template.pk = None
+        template.name = f"{template.name} (Copy)"
+        template.is_default = False
+        template.save()
+        count += 1
+
+    messages.success(request, f"Successfully duplicated {count} template(s).")
+
+
+duplicate_template_action.short_description = "Duplicate selected templates"
+
+
 @admin.register(models.User)
 class UserAdmin(auth_admin.UserAdmin):
     """Admin class for the User model"""
@@ -509,3 +525,120 @@ class DKIMKeyAdmin(admin.ModelAdmin):
             },
         ),
     )
+
+
+class MessageTemplateMailDomainInline(admin.TabularInline):
+    """Inline class for the MessageTemplateMailDomain model"""
+
+    model = models.MessageTemplateMailDomain
+    extra = 1
+
+
+class MessageTemplateMailboxInline(admin.TabularInline):
+    """Inline class for the MessageTemplateMailbox model"""
+
+    model = models.MessageTemplateMailbox
+    extra = 1
+
+
+@admin.register(models.MessageTemplate)
+class MessageTemplateAdmin(admin.ModelAdmin):
+    """Admin class for the MessageTemplate model"""
+
+    inlines = [MessageTemplateMailDomainInline, MessageTemplateMailboxInline]
+    list_display = (
+        "id",
+        "name",
+        "kind",
+        "is_active",
+        "preview_content",
+        "created_at",
+    )
+    list_filter = (
+        "kind",
+        "is_active",
+        "created_at",
+    )
+    search_fields = (
+        "name",
+        "description",
+        "html_body",
+        "text_body",
+    )
+    readonly_fields = ("id", "created_at", "updated_at")
+    actions = [duplicate_template_action]
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "id",
+                    "name",
+                    "description",
+                    "kind",
+                )
+            },
+        ),
+        (
+            _("Content"),
+            {
+                "fields": ("html_body", "text_body"),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            _("Settings"),
+            {
+                "fields": ("is_active",),
+            },
+        ),
+        (
+            _("Metadata"),
+            {
+                "fields": ("created_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+
+    def get_queryset(self, request):
+        """Filter queryset based on user permissions."""
+        qs = super().get_queryset(request)
+        if request.user.is_superuser:
+            return qs
+        # Filter by mailboxes the user has access to
+        accessible_mailboxes = models.Mailbox.objects.filter(
+            accesses__user=request.user
+        )
+        return qs.filter(mailboxes__in=accessible_mailboxes)
+
+    def preview_content(self, obj):
+        """Display a preview of the formatted content."""
+        formatted = obj.get_formatted_content()
+        return format_html(
+            '<div style="max-width: 400px; overflow: hidden; text-overflow: ellipsis;">{}</div>',
+            formatted[:100] + "..." if len(formatted) > 100 else formatted,
+        )
+
+    preview_content.short_description = "Content Preview"
+    preview_content.allow_tags = True
+
+
+@admin.register(models.MessageTemplateMailDomain)
+class MessageTemplateMailDomainAdmin(admin.ModelAdmin):
+    """Admin class for the MessageTemplateMailDomain model"""
+
+    list_display = ("id", "template", "maildomain", "is_default")
+    list_filter = ("is_default", "template__kind", "maildomain")
+    search_fields = ("template__name", "maildomain__name")
+    ordering = ("template__name", "maildomain__name")
+
+
+@admin.register(models.MessageTemplateMailbox)
+class MessageTemplateMailboxAdmin(admin.ModelAdmin):
+    """Admin class for the MessageTemplateMailbox model"""
+
+    list_display = ("id", "template", "mailbox", "is_default")
+    list_filter = ("is_default", "template__kind", "mailbox__domain")
+    search_fields = ("template__name", "mailbox__local_part", "mailbox__domain__name")
+    ordering = ("template__name", "mailbox__local_part")

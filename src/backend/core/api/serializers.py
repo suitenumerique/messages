@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Client serializers for the messages core app."""
 
 from django.db.models import Count, Exists, OuterRef, Q
@@ -915,3 +916,245 @@ class ImportIMAPSerializer(ImportBaseSerializer):
     use_ssl = serializers.BooleanField(
         help_text="Use SSL for IMAP connection", required=False, default=True
     )
+
+
+class ReadOnlyMessageTemplateSerializer(AbilitiesModelSerializer):
+    """Serialize message templates for read-only operations."""
+
+    kind = IntegerChoicesField(choices_class=models.MessageTemplateKindChoices)
+    is_default = serializers.SerializerMethodField()
+    raw_blob = serializers.SerializerMethodField()
+
+    def get_is_default(self, obj) -> bool:
+        """Get is_default information."""
+        maildomain_id = self.context.get("maildomain_id")
+        mailbox_id = self.context.get("mailbox_id")
+        template = (
+            obj.template_mailboxes.filter(mailbox_id=mailbox_id).first()
+            if mailbox_id
+            else obj.template_maildomains.filter(maildomain_id=maildomain_id).first()
+            if maildomain_id
+            else None
+        )
+        return template.is_default if template else False
+
+    def get_raw_blob(self, obj) -> str | None:
+        """Get raw blob."""
+        return obj.raw_blob.get_content().decode("utf-8") if obj.raw_blob else None
+
+    class Meta:
+        model = models.MessageTemplate
+        fields = [
+            "id",
+            "name",
+            "description",
+            "html_body",
+            "text_body",
+            "raw_blob",
+            "kind",
+            "is_active",
+            "is_default",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at", "raw_blob"]
+
+
+class MessageTemplateSerializer(AbilitiesModelSerializer):
+    """Serialize message templates for POST/PUT/PATCH operations."""
+
+    kind = IntegerChoicesField(choices_class=models.MessageTemplateKindChoices)
+
+    # Write fields for creating/updating relationships
+    mailbox_id = serializers.CharField(
+        required=False, write_only=True, help_text="Mailbox UUID"
+    )
+    maildomain_id = serializers.CharField(
+        required=False, write_only=True, help_text="Maildomain UUID"
+    )
+    is_default = serializers.BooleanField(
+        required=False, default=False, help_text="Set as default template"
+    )
+    raw_blob = serializers.CharField(
+        required=True, help_text="Raw blob content"
+    )
+
+    def to_representation(self, instance):
+        """Convert model instance to serialized data."""
+        data = super().to_representation(instance)
+        # Override raw_blob in representation to get content from blob
+        if instance.raw_blob:
+            data['raw_blob'] = instance.raw_blob.get_content().decode("utf-8")
+        else:
+            data['raw_blob'] = None
+        return data
+
+    class Meta:
+        model = models.MessageTemplate
+        fields = [
+            "id",
+            "name",
+            "description",
+            "html_body",
+            "text_body",
+            "raw_blob",
+            "kind",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "mailbox_id",
+            "maildomain_id",
+            "is_default",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        """Validate template data."""
+        # exactly one maildomain_id or mailbox_id is required
+        mailbox_id = attrs.get("mailbox_id")
+        maildomain_id = attrs.get("maildomain_id")
+
+        if not self.instance:  # Only for creation
+            if not mailbox_id and not maildomain_id:
+                raise serializers.ValidationError(
+                    "Either mailbox_id or maildomain_id is required."
+                )
+
+        # For creation or when both html_body and text_body are being updated
+        if "html_body" in attrs or "text_body" in attrs:
+            html_body = attrs.get("html_body", "")
+            text_body = attrs.get("text_body", "")
+
+            # If we're updating both fields and both are empty, that's invalid
+            if not html_body and not text_body:
+                raise serializers.ValidationError(
+                    "At least one of html_body or text_body must be provided."
+                )
+
+        return attrs
+
+    # TODO: manage is_default update on other mailbox and maildomain relationships in save method
+    def create(self, validated_data):
+        """Create template with relationships."""
+        mailbox_id = validated_data.pop("mailbox_id", None)
+        maildomain_id = validated_data.pop("maildomain_id", None)
+        is_default = validated_data.pop("is_default", False)
+        raw_blob_content = validated_data.pop("raw_blob", None)
+
+        # Create raw_blob relationship
+        if raw_blob_content:
+            blob = models.Blob.objects.create_blob(
+                content=raw_blob_content.encode("utf-8"),
+                content_type="application/json",
+            )
+            validated_data["raw_blob"] = blob
+
+        template = super().create(validated_data)
+
+        # Create mailbox relationship
+        if mailbox_id:
+            mailbox = models.Mailbox.objects.get(id=mailbox_id)
+
+            # Unset previous defaults if this one is default
+            if is_default:
+                models.MessageTemplateMailbox.objects.filter(
+                    mailbox=mailbox, template__kind=template.kind, is_default=True
+                ).update(is_default=False)
+
+            models.MessageTemplateMailbox.objects.create(
+                template=template, mailbox=mailbox, is_default=is_default
+            )
+        # Create maildomain relationship
+        elif maildomain_id:
+            maildomain = models.MailDomain.objects.get(id=maildomain_id)
+
+            # Unset previous defaults if this one is default
+            if is_default:
+                models.MessageTemplateMailDomain.objects.filter(
+                    maildomain=maildomain, template__kind=template.kind, is_default=True
+                ).update(is_default=False)
+
+            models.MessageTemplateMailDomain.objects.create(
+                template=template, maildomain=maildomain, is_default=is_default
+            )
+
+        return template
+
+    def update(self, instance, validated_data):
+        """Update template with relationships."""
+        mailbox_id = validated_data.pop("mailbox_id", None)
+        maildomain_id = validated_data.pop("maildomain_id", None)
+        is_default = validated_data.pop("is_default", None)
+        raw_blob_content = validated_data.pop("raw_blob", None)
+
+        if raw_blob_content is not None:
+            try:
+                if instance.raw_blob:
+                    instance.raw_blob.delete()
+            except models.Blob.DoesNotExist:
+                pass
+
+            if raw_blob_content:  # Only create blob if content is not empty
+                blob = models.Blob.objects.create_blob(
+                    content=raw_blob_content.encode("utf-8"),
+                    content_type="application/json",
+                )
+                validated_data["raw_blob"] = blob
+            else:
+                validated_data["raw_blob"] = None
+
+        template = super().update(instance, validated_data)
+
+        # Update relationships if provided
+        if mailbox_id is not None or maildomain_id is not None:
+            # Handle mailbox relationship
+            if mailbox_id:
+                mailbox = models.Mailbox.objects.get(id=mailbox_id)
+
+                # Unset previous defaults if this one is default
+                if is_default:
+                    models.MessageTemplateMailbox.objects.filter(
+                        mailbox=mailbox, template__kind=template.kind, is_default=True
+                    ).update(is_default=False)
+
+                # Update existing relationship or create new one
+                template_mailbox, created = (
+                    models.MessageTemplateMailbox.objects.get_or_create(
+                        template=template,
+                        mailbox=mailbox,
+                        defaults={"is_default": is_default or False},
+                    )
+                )
+
+                if not created:
+                    # Update existing relationship
+                    template_mailbox.is_default = is_default or False
+                    template_mailbox.save()
+
+            # Handle maildomain relationship
+            elif maildomain_id:
+                maildomain = models.MailDomain.objects.get(id=maildomain_id)
+
+                # Unset previous defaults if this one is default
+                if is_default:
+                    models.MessageTemplateMailDomain.objects.filter(
+                        maildomain=maildomain,
+                        template__kind=template.kind,
+                        is_default=True,
+                    ).update(is_default=False)
+
+                # Update existing relationship or create new one
+                template_maildomain, created = (
+                    models.MessageTemplateMailDomain.objects.get_or_create(
+                        template=template,
+                        maildomain=maildomain,
+                        defaults={"is_default": is_default or False},
+                    )
+                )
+
+                if not created:
+                    # Update existing relationship
+                    template_maildomain.is_default = is_default or False
+                    template_maildomain.save()
+
+        return template

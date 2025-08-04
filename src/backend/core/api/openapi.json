@@ -2767,6 +2767,283 @@
                 }
             }
         },
+        "/api/v1.0/message-templates/": {
+            "get": {
+                "operationId": "message_templates_list",
+                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- kind: Filter by template kind (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_default: Filter by default status (true/false) - works with mailbox or maildomain",
+                "tags": [
+                    "message-templates"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/ReadOnlyMessageTemplate"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "message_templates_create",
+                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- kind: Filter by template kind (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_default: Filter by default status (true/false) - works with mailbox or maildomain",
+                "tags": [
+                    "message-templates"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/message-templates/{id}/": {
+            "get": {
+                "operationId": "message_templates_retrieve",
+                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- kind: Filter by template kind (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_default: Filter by default status (true/false) - works with mailbox or maildomain",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "message-templates"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "message_templates_update",
+                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- kind: Filter by template kind (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_default: Filter by default status (true/false) - works with mailbox or maildomain",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "message-templates"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "message_templates_partial_update",
+                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- kind: Filter by template kind (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_default: Filter by default status (true/false) - works with mailbox or maildomain",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "message-templates"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMessageTemplateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMessageTemplateRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "message_templates_destroy",
+                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- kind: Filter by template kind (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_default: Filter by default status (true/false) - works with mailbox or maildomain",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "message-templates"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/message-templates/{id}/render/": {
+            "get": {
+                "operationId": "message_templates_render_retrieve",
+                "description": "Render a template with the provided context variables.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "message-templates"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "html_body": {
+                                            "type": "string"
+                                        },
+                                        "text_body": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Template rendered with provided context"
+                    },
+                    "404": {
+                        "description": "Template not found"
+                    }
+                }
+            }
+        },
         "/api/v1.0/messages/": {
             "get": {
                 "operationId": "messages_list",
@@ -4939,6 +5216,149 @@
                     "updated_at"
                 ]
             },
+            "MessageTemplate": {
+                "type": "object",
+                "description": "Serialize message templates for POST/PUT/PATCH operations.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')",
+                        "maxLength": 255
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional description of when to use this template"
+                    },
+                    "html_body": {
+                        "type": "string",
+                        "description": "HTML email body template with placeholders (e.g., '<p>Dear {recipient_name},</p>') or signature content"
+                    },
+                    "text_body": {
+                        "type": "string",
+                        "description": "Plain text email body template with placeholders (e.g., 'Dear {recipient_name},') or signature content"
+                    },
+                    "raw_blob": {
+                        "type": "string",
+                        "description": "Raw blob content"
+                    },
+                    "kind": {
+                        "$ref": "#/components/schemas/MessageTemplateKindChoices"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "description": "Whether this template is available for use"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    },
+                    "is_default": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Set as default template"
+                    },
+                    "abilities": {
+                        "type": "object",
+                        "description": "Instance permissions and capabilities",
+                        "additionalProperties": {
+                            "type": "boolean"
+                        },
+                        "nullable": true,
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "abilities",
+                    "created_at",
+                    "id",
+                    "kind",
+                    "name",
+                    "raw_blob",
+                    "updated_at"
+                ]
+            },
+            "MessageTemplateKindChoices": {
+                "type": "string",
+                "enum": [
+                    "reply",
+                    "new_message",
+                    "signature"
+                ]
+            },
+            "MessageTemplateRequest": {
+                "type": "object",
+                "description": "Serialize message templates for POST/PUT/PATCH operations.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')",
+                        "maxLength": 255
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional description of when to use this template"
+                    },
+                    "html_body": {
+                        "type": "string",
+                        "description": "HTML email body template with placeholders (e.g., '<p>Dear {recipient_name},</p>') or signature content"
+                    },
+                    "text_body": {
+                        "type": "string",
+                        "description": "Plain text email body template with placeholders (e.g., 'Dear {recipient_name},') or signature content"
+                    },
+                    "raw_blob": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Raw blob content"
+                    },
+                    "kind": {
+                        "$ref": "#/components/schemas/MessageTemplateKindChoices"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "description": "Whether this template is available for use"
+                    },
+                    "mailbox_id": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "minLength": 1,
+                        "description": "Mailbox UUID"
+                    },
+                    "maildomain_id": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "minLength": 1,
+                        "description": "Maildomain UUID"
+                    },
+                    "is_default": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Set as default template"
+                    }
+                },
+                "required": [
+                    "kind",
+                    "name",
+                    "raw_blob"
+                ]
+            },
             "PaginatedMailDomainAdminList": {
                 "type": "object",
                 "required": [
@@ -5180,6 +5600,59 @@
                     }
                 }
             },
+            "PatchedMessageTemplateRequest": {
+                "type": "object",
+                "description": "Serialize message templates for POST/PUT/PATCH operations.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')",
+                        "maxLength": 255
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional description of when to use this template"
+                    },
+                    "html_body": {
+                        "type": "string",
+                        "description": "HTML email body template with placeholders (e.g., '<p>Dear {recipient_name},</p>') or signature content"
+                    },
+                    "text_body": {
+                        "type": "string",
+                        "description": "Plain text email body template with placeholders (e.g., 'Dear {recipient_name},') or signature content"
+                    },
+                    "raw_blob": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Raw blob content"
+                    },
+                    "kind": {
+                        "$ref": "#/components/schemas/MessageTemplateKindChoices"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "description": "Whether this template is available for use"
+                    },
+                    "mailbox_id": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "minLength": 1,
+                        "description": "Mailbox UUID"
+                    },
+                    "maildomain_id": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "minLength": 1,
+                        "description": "Maildomain UUID"
+                    },
+                    "is_default": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Set as default template"
+                    }
+                }
+            },
             "PatchedThreadAccessRequest": {
                 "type": "object",
                 "description": "Serialize thread access information.",
@@ -5198,6 +5671,86 @@
                         "$ref": "#/components/schemas/ThreadAccessRoleChoices"
                     }
                 }
+            },
+            "ReadOnlyMessageTemplate": {
+                "type": "object",
+                "description": "Serialize message templates for read-only operations.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')",
+                        "maxLength": 255
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional description of when to use this template"
+                    },
+                    "html_body": {
+                        "type": "string",
+                        "description": "HTML email body template with placeholders (e.g., '<p>Dear {recipient_name},</p>') or signature content"
+                    },
+                    "text_body": {
+                        "type": "string",
+                        "description": "Plain text email body template with placeholders (e.g., 'Dear {recipient_name},') or signature content"
+                    },
+                    "raw_blob": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Get raw blob.",
+                        "readOnly": true
+                    },
+                    "kind": {
+                        "$ref": "#/components/schemas/MessageTemplateKindChoices"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "description": "Whether this template is available for use"
+                    },
+                    "is_default": {
+                        "type": "boolean",
+                        "description": "Get is_default information.",
+                        "readOnly": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    },
+                    "abilities": {
+                        "type": "object",
+                        "description": "Instance permissions and capabilities",
+                        "additionalProperties": {
+                            "type": "boolean"
+                        },
+                        "nullable": true,
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "abilities",
+                    "created_at",
+                    "id",
+                    "is_default",
+                    "kind",
+                    "name",
+                    "raw_blob",
+                    "updated_at"
+                ]
             },
             "SendMessageRequestRequest": {
                 "type": "object",
