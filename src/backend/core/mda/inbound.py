@@ -12,7 +12,7 @@ from django.core.exceptions import ValidationError
 from django.db.utils import Error as DjangoDbError
 from django.utils import timezone
 
-from core import models
+from core import enums, models
 from core.ai.call_label import assign_label_to_thread
 from core.ai.thread_summarizer import summarize_thread
 from core.ai.utils import (
@@ -434,7 +434,7 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
             models.ThreadAccess.objects.create(
                 thread=thread,
                 mailbox=mailbox,
-                role=models.ThreadAccessRoleChoices.EDITOR,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
             )
     except (DjangoDbError, ValidationError) as e:
         logger.error("Failed to find or create thread for %s: %s", recipient_email, e)

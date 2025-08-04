@@ -58,7 +58,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
             FORBID_TAGS: ['script', 'object', 'iframe', 'embed', 'audio', 'video'],
             ADD_ATTR: ['target', 'rel'],
         });
-    }, []);
+    }, [rawHtmlBody, rawTextBody]);
 
     const wrappedHtml = useMemo(() => {
         return `

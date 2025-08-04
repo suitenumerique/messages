@@ -327,7 +327,8 @@
                                         ],
                                         "bcc": [
                                             "bcc@example.com"
-                                        ]
+                                        ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                     },
                                     "summary": "New Draft Message"
                                 },
@@ -350,6 +351,7 @@
                                         "to": [
                                             "new-recipient@example.com"
                                         ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                         "attachments": [
                                             {
                                                 "partId": "att-1",
@@ -395,7 +397,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -418,6 +421,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -452,7 +456,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -475,6 +480,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -553,7 +559,8 @@
                                         ],
                                         "bcc": [
                                             "bcc@example.com"
-                                        ]
+                                        ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                     },
                                     "summary": "New Draft Message"
                                 },
@@ -576,6 +583,7 @@
                                         "to": [
                                             "new-recipient@example.com"
                                         ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                         "attachments": [
                                             {
                                                 "partId": "att-1",
@@ -621,7 +629,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -644,6 +653,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -678,7 +688,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -701,6 +712,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -792,7 +804,8 @@
                                         ],
                                         "bcc": [
                                             "bcc@example.com"
-                                        ]
+                                        ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                     },
                                     "summary": "New Draft Message"
                                 },
@@ -815,6 +828,7 @@
                                         "to": [
                                             "new-recipient@example.com"
                                         ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                         "attachments": [
                                             {
                                                 "partId": "att-1",
@@ -860,7 +874,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -883,6 +898,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -917,7 +933,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -940,6 +957,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -1029,7 +1047,8 @@
                                         ],
                                         "bcc": [
                                             "bcc@example.com"
-                                        ]
+                                        ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                     },
                                     "summary": "New Draft Message"
                                 },
@@ -1052,6 +1071,7 @@
                                         "to": [
                                             "new-recipient@example.com"
                                         ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                         "attachments": [
                                             {
                                                 "partId": "att-1",
@@ -1097,7 +1117,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -1120,6 +1141,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -1154,7 +1176,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -1177,6 +1200,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -2957,6 +2981,405 @@
                 }
             }
         },
+        "/api/v1.0/maildomains/{maildomain_pk}/users/": {
+            "get": {
+                "operationId": "maildomains_users_list",
+                "description": "Search users by email, first name and last name.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Search maildomains user by full name, short name or email."
+                    }
+                ],
+                "tags": [
+                    "admin-maildomain-user"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/UserWithoutAbilities"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/maildomains/{id}/": {
+            "get": {
+                "operationId": "maildomains_retrieve",
+                "description": "ViewSet for listing MailDomains the user administers.\nProvides a top-level entry for mail domain administration.\nEndpoint: /maildomains/",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailDomainAdmin"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/maildomains/{id}/check-dns/": {
+            "post": {
+                "operationId": "maildomains_check_dns_create",
+                "description": "Check DNS records for a specific mail domain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DNSCheckResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/message-templates/": {
+            "get": {
+                "operationId": "message_templates_list",
+                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- type: Filter by template type (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_forced: Filter by forced status (true/false) - works with mailbox or maildomain",
+                "tags": [
+                    "message-templates"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/ReadOnlyMessageTemplate"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "message_templates_create",
+                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- type: Filter by template type (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_forced: Filter by forced status (true/false) - works with mailbox or maildomain",
+                "tags": [
+                    "message-templates"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/message-templates/{id}/": {
+            "get": {
+                "operationId": "message_templates_retrieve",
+                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- type: Filter by template type (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_forced: Filter by forced status (true/false) - works with mailbox or maildomain",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "message-templates"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "message_templates_update",
+                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- type: Filter by template type (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_forced: Filter by forced status (true/false) - works with mailbox or maildomain",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "message-templates"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "message_templates_partial_update",
+                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- type: Filter by template type (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_forced: Filter by forced status (true/false) - works with mailbox or maildomain",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "message-templates"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMessageTemplateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMessageTemplateRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "message_templates_destroy",
+                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- type: Filter by template type (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_forced: Filter by forced status (true/false) - works with mailbox or maildomain",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "message-templates"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/message-templates/{id}/render/": {
+            "get": {
+                "operationId": "message_templates_render_retrieve",
+                "description": "Render a template with the provided context variables.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "message-templates"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "html_body": {
+                                            "type": "string"
+                                        },
+                                        "text_body": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Template rendered with provided context"
+                    },
+                    "404": {
+                        "description": "Template not found"
+                    }
+                }
+            }
+        },
         "/api/v1.0/messages/": {
             "get": {
                 "operationId": "messages_list",
@@ -4277,6 +4700,12 @@
                             "additionalProperties": {}
                         },
                         "description": "List of attachment objects with blobId, partId, and name"
+                    },
+                    "signatureId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "nullable": true,
+                        "description": "ID of the signature template to use"
                     }
                 },
                 "required": [
@@ -5346,6 +5775,15 @@
                     "has_attachments": {
                         "type": "boolean",
                         "readOnly": true
+                    },
+                    "signature": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/ReadOnlyMessageTemplate"
+                            }
+                        ],
+                        "readOnly": true,
+                        "nullable": true
                     }
                 },
                 "required": [
@@ -5366,11 +5804,131 @@
                     "read_at",
                     "sender",
                     "sent_at",
+                    "signature",
                     "subject",
                     "textBody",
                     "thread_id",
                     "to",
                     "updated_at"
+                ]
+            },
+            "MessageTemplate": {
+                "type": "object",
+                "description": "Serialize message templates for POST/PUT/PATCH operations.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')",
+                        "maxLength": 255
+                    },
+                    "html_body": {
+                        "type": "string"
+                    },
+                    "text_body": {
+                        "type": "string"
+                    },
+                    "raw_body": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "$ref": "#/components/schemas/MessageTemplateTypeChoices"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "description": "Whether this template is available for use"
+                    },
+                    "is_forced": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Set as forced template"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "name",
+                    "type",
+                    "updated_at"
+                ]
+            },
+            "MessageTemplateRequest": {
+                "type": "object",
+                "description": "Serialize message templates for POST/PUT/PATCH operations.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')",
+                        "maxLength": 255
+                    },
+                    "html_body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "text_body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "raw_body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "type": {
+                        "$ref": "#/components/schemas/MessageTemplateTypeChoices"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "description": "Whether this template is available for use"
+                    },
+                    "is_forced": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Set as forced template"
+                    },
+                    "mailbox_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "writeOnly": true,
+                        "description": "Mailbox UUID"
+                    },
+                    "maildomain_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "writeOnly": true,
+                        "description": "Maildomain UUID"
+                    }
+                },
+                "required": [
+                    "name",
+                    "type"
+                ]
+            },
+            "MessageTemplateTypeChoices": {
+                "type": "string",
+                "enum": [
+                    "reply",
+                    "new_message",
+                    "signature"
                 ]
             },
             "PaginatedMailDomainAdminList": {
@@ -5622,6 +6180,54 @@
                     }
                 }
             },
+            "PatchedMessageTemplateRequest": {
+                "type": "object",
+                "description": "Serialize message templates for POST/PUT/PATCH operations.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')",
+                        "maxLength": 255
+                    },
+                    "html_body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "text_body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "raw_body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "type": {
+                        "$ref": "#/components/schemas/MessageTemplateTypeChoices"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "description": "Whether this template is available for use"
+                    },
+                    "is_forced": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Set as forced template"
+                    },
+                    "mailbox_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "writeOnly": true,
+                        "description": "Mailbox UUID"
+                    },
+                    "maildomain_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "writeOnly": true,
+                        "description": "Maildomain UUID"
+                    }
+                }
+            },
             "PatchedThreadAccessRequest": {
                 "type": "object",
                 "description": "Serialize thread access information.",
@@ -5640,6 +6246,78 @@
                         "$ref": "#/components/schemas/ThreadAccessRoleChoices"
                     }
                 }
+            },
+            "ReadOnlyMessageTemplate": {
+                "type": "object",
+                "description": "Serialize message templates for read-only operations.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')"
+                    },
+                    "html_body": {
+                        "type": "string",
+                        "description": "Get HTML body from blob.",
+                        "readOnly": true
+                    },
+                    "text_body": {
+                        "type": "string",
+                        "description": "Get text body from content blob.",
+                        "readOnly": true
+                    },
+                    "raw_body": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Get raw blob from content blob.",
+                        "readOnly": true
+                    },
+                    "type": {
+                        "$ref": "#/components/schemas/MessageTemplateTypeChoices"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "description": "Whether this template is available for use"
+                    },
+                    "is_forced": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "description": "Whether this template is forced; no other template of the same type can be used in the same scope"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "html_body",
+                    "id",
+                    "is_active",
+                    "is_forced",
+                    "name",
+                    "raw_body",
+                    "text_body",
+                    "type",
+                    "updated_at"
+                ]
             },
             "ResetPasswordError": {
                 "type": "object",

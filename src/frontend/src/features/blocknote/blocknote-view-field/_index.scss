@@ -1,23 +1,23 @@
-.message-editor {
-    &--error {
-        .message-editor {
+.composer-field {
+    &.c__field--error {
+        .composer-field-input {
             border-color: var(--c--theme--colors--error);
         }
     }
-    &--success {
-        .message-editor {
+    &.c__field--success {
+        .composer-field-input {
             border-color: var(--c--theme--colors--success);
         }
     }
     &--disabled {
         pointer-events: none;
-        .message-editor-input {
+        .composer-field-input {
             cursor: not-allowed;
             border-color: var(--c--theme--colors--greyscale-200);
         }
     }
 }
-.message-editor-input {
+.composer-field-input {
     border-radius: var(--c--components--forms-input--border-radius);
     border-width: var(--c--components--forms-input--border-width);
     border-color: var(--c--components--forms-input--border-color);

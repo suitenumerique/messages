@@ -4,6 +4,7 @@ import logging
 import uuid
 from typing import Optional
 
+from django.db.models import Case, Q, When
 from django.utils import timezone
 
 import rest_framework as drf
@@ -11,6 +12,89 @@ import rest_framework as drf
 from core import enums, models
 
 logger = logging.getLogger(__name__)
+
+
+def get_validated_signature(
+    mailbox: models.Mailbox, signature_id: str, user: models.User
+) -> models.MessageTemplate | None:
+    """Helper method to validate and retrieve a signature template.
+
+    Args:
+        signature_id: ID of the signature template
+        user: User making the request
+
+    Returns:
+        MessageTemplate if valid and accessible, None otherwise
+    """
+    signature = None
+    # Check for forced signature with mailbox having priority over domain
+    forced_signature = (
+        models.MessageTemplate.objects.filter(
+            Q(mailbox=mailbox) | Q(maildomain=mailbox.domain),
+            type=enums.MessageTemplateTypeChoices.SIGNATURE,
+            is_forced=True,
+            is_active=True,
+        )
+        .order_by(
+            # mailbox signatures first (mailbox_id not null), then domain signatures
+            Case(
+                When(mailbox__isnull=False, then=0),
+                default=1,
+            )
+        )
+        .first()
+    )
+
+    signature = forced_signature if forced_signature else None
+    if not signature and not signature_id:
+        return None
+
+    if not signature and signature_id:
+        try:
+            signature = models.MessageTemplate.objects.get(
+                id=signature_id,
+                type=enums.MessageTemplateTypeChoices.SIGNATURE,
+                is_active=True,
+            )
+        except models.MessageTemplate.DoesNotExist:
+            logger.error("Signature template not found with id: %s", signature_id)
+            return None
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Error fetching signature template: %s", str(e))
+            return None
+
+        # Verify signature is in sender scope
+        in_sender_scope = (
+            signature.mailbox_id and signature.mailbox_id == mailbox.id
+        ) or (signature.maildomain_id and signature.maildomain_id == mailbox.domain_id)
+        if not in_sender_scope:
+            logger.warning(
+                "User %s attempted to use signature %s outside sender scope",
+                user.id,
+                signature_id,
+            )
+            return None
+
+        # Verify user has access to the signature template
+        user_has_access = False
+        # Check if user has access through mailbox
+        if signature.mailbox:
+            user_has_access = signature.mailbox.accesses.filter(user=user).exists()
+        # Check if user has access through maildomain
+        elif signature.maildomain:
+            user_has_access = (
+                signature.maildomain.accesses.filter(user=user).exists()
+                or signature.maildomain.mailbox_set.filter(accesses__user=user).exists()
+            )
+        if not user_has_access:
+            logger.warning(
+                "User %s attempted to use unauthorized signature %s",
+                user.id,
+                signature_id,
+            )
+            return None
+
+    return signature
 
 
 def create_draft(
@@ -22,6 +106,8 @@ def create_draft(
     cc_emails: Optional[list] = None,
     bcc_emails: Optional[list] = None,
     attachments: Optional[list] = None,
+    signature_id: Optional[str] = None,
+    user: Optional[models.User] = None,
 ) -> models.Message:
     """
     Create a new draft message.
@@ -35,6 +121,8 @@ def create_draft(
         cc_emails: List of CC recipient emails
         bcc_emails: List of BCC recipient emails
         attachments: List of attachment objects with blobId, partId, and name
+        signature_id: Optional signature template ID
+        user: Optional user
 
     Returns:
         The created draft message
@@ -83,6 +171,8 @@ def create_draft(
             mailbox=mailbox,
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
+    # Validate and get signature if provided
+    signature = get_validated_signature(mailbox, signature_id, user) if user else None
 
     # Create message instance
     message = models.Message(
@@ -99,6 +189,7 @@ def create_draft(
         )
         if draft_body
         else None,
+        signature=signature,
     )
     message.save()
 
@@ -119,7 +210,10 @@ def create_draft(
 
 
 def update_draft(
-    mailbox: models.Mailbox, message: models.Message, update_data: dict
+    mailbox: models.Mailbox,
+    message: models.Message,
+    update_data: dict,
+    user: models.User = None,
 ) -> models.Message:
     """
     Update draft details (subject, recipients, body, attachments).
@@ -149,6 +243,17 @@ def update_draft(
         ).exists()
     ):
         raise drf.exceptions.PermissionDenied("Access denied to this message's thread.")
+
+    # Update signature if provided
+    signature_id = update_data.get("signatureId")
+    signature = get_validated_signature(mailbox, signature_id, user) if user else None
+    if signature and message.signature != signature:
+        message.signature = signature
+        message.save(update_fields=["signature", "updated_at"])
+    elif not signature_id and "signatureId" in update_data and signature is None:
+        # explicitly clearing the signature
+        message.signature = None
+        message.save(update_fields=["signature", "updated_at"])
 
     # Update subject if provided
     if "subject" in update_data and update_data["subject"] != message.subject:
