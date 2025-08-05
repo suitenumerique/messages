@@ -8,6 +8,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from celery.utils.log import get_task_logger
 
+from core.mda.inbound import deliver_inbound_message
+from core.mda.rfc5322 import parse_email_message
+
 logger = get_task_logger(__name__)
 
 
@@ -361,8 +364,6 @@ def _process_folder_messages(  # pylint: disable=too-many-arguments
     total_messages: int,
 ) -> Tuple[int, int, int]:
     """Process messages in a specific folder."""
-    from core.mda.inbound import deliver_inbound_message
-    from core.mda.rfc5322 import parse_email_message
 
     folder_message_count = len(message_list)
     logger.info("Processing %s messages from folder %s", folder_message_count, folder)
