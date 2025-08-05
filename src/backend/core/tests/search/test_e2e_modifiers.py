@@ -21,8 +21,12 @@ from core.factories import (
     ThreadFactory,
     UserFactory,
 )
-from core.search import create_index_if_not_exists, delete_index, get_opensearch_client
-from core.search.mapping import MESSAGE_INDEX
+from core.services.search import (
+    create_index_if_not_exists,
+    delete_index,
+    get_opensearch_client,
+)
+from core.services.search.mapping import MESSAGE_INDEX
 
 
 @pytest.fixture(name="setup_search")

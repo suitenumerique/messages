@@ -9,8 +9,8 @@ from django.utils.html import escape, format_html
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
-from core.identity.keycloak import reset_keycloak_user_password
-from core.services.import_service import ImportService
+from core.services.identity.keycloak import reset_keycloak_user_password
+from core.services.importer import ImportService
 
 from . import models
 from .forms import IMAPImportForm, MessageImportForm

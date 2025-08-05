@@ -4,7 +4,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from keycloak.exceptions import KeycloakError
 
-from core.identity.keycloak import (
+from core.services.identity.keycloak import (
     list_keycloak_users,
     reset_keycloak_user_password,
     resync_all_mailboxes_to_keycloak,

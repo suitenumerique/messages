@@ -7,9 +7,9 @@ from typing import Any, Dict, Optional
 
 from django.conf import settings
 
-from core.search.index import get_opensearch_client
-from core.search.mapping import MESSAGE_INDEX
-from core.search.parse import parse_search_query
+from core.services.search.index import get_opensearch_client
+from core.services.search.mapping import MESSAGE_INDEX
+from core.services.search.parse import parse_search_query
 
 logger = logging.getLogger(__name__)
 

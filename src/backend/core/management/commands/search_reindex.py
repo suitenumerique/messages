@@ -5,8 +5,8 @@ import uuid
 from django.core.management.base import BaseCommand, CommandError
 
 from core import models
-from core.search import create_index_if_not_exists
-from core.tasks import (
+from core.services.search import create_index_if_not_exists
+from core.services.search.tasks import (
     _reindex_all_base,
     reindex_all,
     reindex_mailbox_task,

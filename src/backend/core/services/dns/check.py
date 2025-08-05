@@ -4,9 +4,9 @@ DNS checking functionality for mail domains.
 
 from typing import Dict, List
 
-import dns.resolver
-
 from core.models import MailDomain
+
+import dns.resolver
 
 
 def check_single_record(

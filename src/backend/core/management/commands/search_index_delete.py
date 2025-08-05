@@ -4,7 +4,7 @@ import sys
 
 from django.core.management.base import BaseCommand
 
-from core.search import delete_index
+from core.services.search import delete_index
 
 
 class Command(BaseCommand):

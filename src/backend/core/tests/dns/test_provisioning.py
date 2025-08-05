@@ -9,12 +9,12 @@ from django.test.utils import override_settings
 import pytest
 from dns.resolver import NXDOMAIN, NoNameservers, Timeout
 
-from core.dns.provisioning import (
+from core.models import MailDomain
+from core.services.dns.provisioning import (
     detect_dns_provider,
     get_dns_provider,
     provision_domain_dns,
 )
-from core.models import MailDomain
 
 
 @pytest.mark.django_db
@@ -23,7 +23,9 @@ class TestDNSProvisioning:
 
     def test_detect_dns_provider_scaleway(self):
         """Test detection of Scaleway DNS provider."""
-        with patch("core.dns.provisioning.dns.resolver.resolve") as mock_resolve:
+        with patch(
+            "core.services.dns.provisioning.dns.resolver.resolve"
+        ) as mock_resolve:
             # Mock nameservers for Scaleway
             mock_ns1 = MagicMock()
             mock_ns1.target.to_text.return_value = "ns0.dom.scw.cloud."
@@ -37,7 +39,9 @@ class TestDNSProvisioning:
 
     def test_detect_dns_provider_unknown(self):
         """Test detection of unknown DNS provider."""
-        with patch("core.dns.provisioning.dns.resolver.resolve") as mock_resolve:
+        with patch(
+            "core.services.dns.provisioning.dns.resolver.resolve"
+        ) as mock_resolve:
             # Mock unknown nameservers
             mock_ns1 = MagicMock()
             mock_ns1.target.to_text.return_value = "ns1.unknown.com."
@@ -51,7 +55,9 @@ class TestDNSProvisioning:
 
     def test_detect_dns_provider_exception(self):
         """Test DNS provider detection with exception."""
-        with patch("core.dns.provisioning.dns.resolver.resolve") as mock_resolve:
+        with patch(
+            "core.services.dns.provisioning.dns.resolver.resolve"
+        ) as mock_resolve:
             mock_resolve.side_effect = Exception("DNS error")
 
             provider = detect_dns_provider("example.com")
@@ -59,7 +65,9 @@ class TestDNSProvisioning:
 
     def test_detect_dns_provider_nxdomain(self):
         """Test DNS provider detection when domain doesn't exist."""
-        with patch("core.dns.provisioning.dns.resolver.resolve") as mock_resolve:
+        with patch(
+            "core.services.dns.provisioning.dns.resolver.resolve"
+        ) as mock_resolve:
             mock_resolve.side_effect = NXDOMAIN()
 
             provider = detect_dns_provider("example.com")
@@ -67,7 +75,9 @@ class TestDNSProvisioning:
 
     def test_detect_dns_provider_no_nameservers(self):
         """Test DNS provider detection when no nameservers are found."""
-        with patch("core.dns.provisioning.dns.resolver.resolve") as mock_resolve:
+        with patch(
+            "core.services.dns.provisioning.dns.resolver.resolve"
+        ) as mock_resolve:
             mock_resolve.side_effect = NoNameservers()
 
             provider = detect_dns_provider("example.com")
@@ -75,7 +85,9 @@ class TestDNSProvisioning:
 
     def test_detect_dns_provider_timeout(self):
         """Test DNS provider detection when query times out."""
-        with patch("core.dns.provisioning.dns.resolver.resolve") as mock_resolve:
+        with patch(
+            "core.services.dns.provisioning.dns.resolver.resolve"
+        ) as mock_resolve:
             mock_resolve.side_effect = Timeout()
 
             provider = detect_dns_provider("example.com")
@@ -110,8 +122,10 @@ class TestDNSProvisioning:
         """Test DNS provisioning with auto-detection."""
         maildomain = maildomain_factory(name="example.com")
 
-        with patch("core.dns.provisioning.detect_dns_provider") as mock_detect:
-            with patch("core.dns.provisioning.get_dns_provider") as mock_get_provider:
+        with patch("core.services.dns.provisioning.detect_dns_provider") as mock_detect:
+            with patch(
+                "core.services.dns.provisioning.get_dns_provider"
+            ) as mock_get_provider:
                 mock_detect.return_value = "scaleway"
 
                 mock_provider = MagicMock()
@@ -132,7 +146,9 @@ class TestDNSProvisioning:
         """Test DNS provisioning with specific provider."""
         maildomain = maildomain_factory(name="example.com")
 
-        with patch("core.dns.provisioning.get_dns_provider") as mock_get_provider:
+        with patch(
+            "core.services.dns.provisioning.get_dns_provider"
+        ) as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.provision_domain_records.return_value = [
                 {"type": "MX", "name": "@", "value": "10 mx1.example.com"}
@@ -149,7 +165,7 @@ class TestDNSProvisioning:
         """Test DNS provisioning when no provider is detected."""
         maildomain = maildomain_factory(name="example.com")
 
-        with patch("core.dns.provisioning.detect_dns_provider") as mock_detect:
+        with patch("core.services.dns.provisioning.detect_dns_provider") as mock_detect:
             mock_detect.return_value = None
 
             results = provision_domain_dns(maildomain)
@@ -161,7 +177,9 @@ class TestDNSProvisioning:
         """Test DNS provisioning with unsupported provider."""
         maildomain = maildomain_factory(name="example.com")
 
-        with patch("core.dns.provisioning.get_dns_provider") as mock_get_provider:
+        with patch(
+            "core.services.dns.provisioning.get_dns_provider"
+        ) as mock_get_provider:
             mock_get_provider.return_value = None
 
             results = provision_domain_dns(maildomain, provider_name="unsupported")
@@ -173,7 +191,9 @@ class TestDNSProvisioning:
         """Test DNS provisioning when provider raises an error."""
         maildomain = maildomain_factory(name="example.com")
 
-        with patch("core.dns.provisioning.get_dns_provider") as mock_get_provider:
+        with patch(
+            "core.services.dns.provisioning.get_dns_provider"
+        ) as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.provision_domain_records.side_effect = Exception(
                 "Provider error"
@@ -190,8 +210,10 @@ class TestDNSProvisioning:
         """Test DNS provisioning using default provider from environment."""
         maildomain = maildomain_factory(name="example.com")
 
-        with patch("core.dns.provisioning.detect_dns_provider") as mock_detect:
-            with patch("core.dns.provisioning.get_dns_provider") as mock_get_provider:
+        with patch("core.services.dns.provisioning.detect_dns_provider") as mock_detect:
+            with patch(
+                "core.services.dns.provisioning.get_dns_provider"
+            ) as mock_get_provider:
                 # No provider detected
                 mock_detect.return_value = None
 
@@ -214,7 +236,7 @@ class TestDNSProvisioning:
         """Test DNS provisioning when no provider is detected and no default is configured."""
         maildomain = maildomain_factory(name="example.com")
 
-        with patch("core.dns.provisioning.detect_dns_provider") as mock_detect:
+        with patch("core.services.dns.provisioning.detect_dns_provider") as mock_detect:
             # No provider detected
             mock_detect.return_value = None
 
@@ -230,7 +252,9 @@ class TestDNSProvisioning:
         """Test DNS provisioning in pretend mode."""
         maildomain = maildomain_factory(name="example.com")
 
-        with patch("core.dns.provisioning.get_dns_provider") as mock_get_provider:
+        with patch(
+            "core.services.dns.provisioning.get_dns_provider"
+        ) as mock_get_provider:
             mock_provider = MagicMock()
             mock_provider.provision_domain_records.return_value = [
                 {"type": "MX", "name": "@", "value": "10 mx1.example.com"}

@@ -10,7 +10,7 @@ from opensearchpy.exceptions import NotFoundError
 
 from core import enums, models
 from core.mda.rfc5322 import parse_email_message
-from core.search.mapping import MESSAGE_INDEX, MESSAGE_MAPPING
+from core.services.search.mapping import MESSAGE_INDEX, MESSAGE_MAPPING
 
 logger = logging.getLogger(__name__)
 

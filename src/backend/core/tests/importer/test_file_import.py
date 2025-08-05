@@ -11,7 +11,7 @@ import pytest
 
 from core import factories
 from core.models import Mailbox, MailDomain, Message, Thread
-from core.tasks import process_eml_file_task, process_mbox_file_task
+from core.services.importer.tasks import process_eml_file_task, process_mbox_file_task
 
 
 @pytest.fixture
@@ -95,7 +95,7 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
     mock_task.update_state = MagicMock()
 
     with (
-        patch("core.tasks.process_eml_file_task.delay") as mock_delay,
+        patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_delay,
         patch.object(process_eml_file_task, "update_state", mock_task.update_state),
     ):
         mock_delay.return_value.id = "fake-task-id"

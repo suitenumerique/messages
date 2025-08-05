@@ -1,4 +1,4 @@
-"""Tests for the core.search module."""
+"""Tests for the core.services.search module."""
 
 from unittest import mock
 
@@ -12,7 +12,7 @@ from core.factories import (
     ThreadAccessFactory,
     ThreadFactory,
 )
-from core.search import (
+from core.services.search import (
     create_index_if_not_exists,
     delete_index,
     index_message,
@@ -27,7 +27,7 @@ from core.search import (
 def fixture_mock_es_client_search():
     """Mock the OpenSearch client."""
     with mock.patch(
-        "core.search.search.get_opensearch_client"
+        "core.services.search.search.get_opensearch_client"
     ) as mock_get_opensearch_client:
         mock_es = mock.MagicMock()
         # Setup standard mock returns
@@ -47,7 +47,7 @@ def fixture_mock_es_client_search():
 def fixture_mock_es_client_index():
     """Mock the OpenSearch client."""
     with mock.patch(
-        "core.search.index.get_opensearch_client"
+        "core.services.search.index.get_opensearch_client"
     ) as mock_get_opensearch_client:
         mock_es = mock.MagicMock()
         # Setup standard mock returns

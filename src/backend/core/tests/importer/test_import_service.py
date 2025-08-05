@@ -1,5 +1,6 @@
 """Tests for the ImportService class."""
 
+# pylint: disable=redefined-outer-name, unused-argument, no-value-for-parameter
 import datetime
 from unittest.mock import MagicMock, patch
 
@@ -11,9 +12,10 @@ import pytest
 
 from core import factories
 from core.enums import MailboxRoleChoices
+from core.mda.inbound import deliver_inbound_message
 from core.models import Mailbox, MailDomain, Message
-from core.services.import_service import ImportService
-from core.tasks import deliver_inbound_message, process_eml_file_task
+from core.services.importer import ImportService
+from core.services.importer.tasks import process_eml_file_task
 
 
 @pytest.fixture
@@ -54,7 +56,7 @@ def mock_request():
     # Set up messages framework
     request.session = "session"
     messages = FallbackStorage(request)
-    request._messages = messages
+    request._messages = messages  # pylint: disable=protected-access
     return request
 
 
@@ -105,7 +107,7 @@ def blob_eml(eml_file, mailbox):
 @pytest.mark.django_db
 def test_import_file_eml_by_superuser(admin_user, mailbox, blob_eml, mock_request):
     """Test successful EML file import for superuser."""
-    with patch("core.tasks.process_eml_file_task.delay") as mock_task:
+    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
             file=blob_eml,
@@ -131,7 +133,7 @@ def test_import_file_eml_by_superuser_sync(admin_user, mailbox, blob_eml):
         original_deliver(recipient_email, parsed_email, raw_data, **kwargs)
         return True
 
-    with patch("core.tasks.deliver_inbound_message", side_effect=mock_deliver):
+    with patch("core.mda.inbound.deliver_inbound_message", side_effect=mock_deliver):
         # Create a mock task instance
         mock_task = MagicMock()
         mock_task.update_state = MagicMock()
@@ -207,7 +209,7 @@ def test_import_file_eml_by_user_with_access_task(
     # Add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
-    with patch("core.tasks.process_eml_file_task.delay") as mock_task:
+    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
             file=blob_eml,
@@ -238,7 +240,7 @@ def test_import_file_eml_by_user_with_access_sync(
         original_deliver(recipient_email, parsed_email, raw_data, **kwargs)
         return True
 
-    with patch("core.tasks.deliver_inbound_message", side_effect=mock_deliver):
+    with patch("core.mda.inbound.deliver_inbound_message", side_effect=mock_deliver):
         # Create a mock task instance
         mock_task = MagicMock()
         mock_task.update_state = MagicMock()
@@ -312,7 +314,9 @@ def test_import_file_mbox_by_superuser_task(
 ):
     """Test successful MBOX file import by superuser."""
 
-    with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.process_mbox_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
             file=blob_mbox,
@@ -335,7 +339,9 @@ def test_import_file_mbox_by_user_with_access_task(
     # Add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
-    with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.process_mbox_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
             file=blob_mbox,
@@ -403,7 +409,7 @@ def test_import_file_invalid_file(admin_user, mailbox, mock_request):
         content_type="application/pdf",  # Invalid MIME type for email import
     )
 
-    with patch("core.tasks.process_eml_file_task.delay") as mock_task:
+    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
         # The task should not be called for invalid files
         mock_task.assert_not_called()
 
@@ -435,7 +441,9 @@ def test_import_file_text_plain_mime_type(
         content_type="text/plain",
     )
 
-    with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.process_mbox_file_task.delay"
+    ) as mock_task:
         # The task should be called for text/plain files (they are now accepted as MBOX)
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
@@ -453,7 +461,9 @@ def test_import_file_text_plain_mime_type(
 
 def test_import_imap_by_superuser(admin_user, mailbox, mock_request):
     """Test successful IMAP import."""
-    with patch("core.tasks.import_imap_messages_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.import_imap_messages_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_imap(
             imap_server="imap.example.com",
@@ -485,7 +495,9 @@ def test_import_imap_by_user_with_access(user, mailbox, mock_request, role):
     # Add access to mailbox
     mailbox.accesses.create(user=user, role=role)
 
-    with patch("core.tasks.import_imap_messages_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.import_imap_messages_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_imap(
             imap_server="imap.example.com",
@@ -529,7 +541,9 @@ def test_import_imap_task_error(admin_user, mailbox, mock_request):
     # Add access to mailbox
     mailbox.accesses.create(user=admin_user, role=MailboxRoleChoices.ADMIN)
 
-    with patch("core.tasks.import_imap_messages_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.import_imap_messages_task.delay"
+    ) as mock_task:
         mock_task.side_effect = Exception("Task error")
         success, response_data = ImportService.import_imap(
             imap_server="imap.example.com",
@@ -577,7 +591,7 @@ Date: Mon, 26 May 2025 10:00:00 +0000
 
 Test message body 1"""
 
-        message2 = b"""From: sender@example.com 
+        message2 = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Test Message 2
 Date: Mon, 26 May 2025 11:00:00 +0000
@@ -664,7 +678,7 @@ Date: Mon, 26 May 2025 10:00:00 +0000
 
 Test message body 1"""
 
-        message2 = b"""From: sender@example.com 
+        message2 = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Test Message 2
 Date: Mon, 26 May 2025 11:00:00 +0000

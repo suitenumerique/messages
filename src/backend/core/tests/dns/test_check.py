@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from dns.resolver import NXDOMAIN, YXDOMAIN, NoAnswer, NoNameservers, Timeout
 
-from core.dns.check import check_dns_records, check_single_record
 from core.models import MailDomain
+from core.services.dns.check import check_dns_records, check_single_record
 
 
 @pytest.mark.django_db
@@ -20,7 +20,7 @@ class TestDNSChecking:
         maildomain = maildomain_factory(name="example.com")
         expected_record = {"type": "MX", "target": "@", "value": "10 mx1.example.com"}
 
-        with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock correct MX record
             mock_answer = MagicMock()
             mock_answer.preference = 10
@@ -37,7 +37,7 @@ class TestDNSChecking:
         maildomain = maildomain_factory(name="example.com")
         expected_record = {"type": "MX", "target": "@", "value": "10 mx1.example.com"}
 
-        with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock incorrect MX record
             mock_answer = MagicMock()
             mock_answer.preference = 20
@@ -58,7 +58,7 @@ class TestDNSChecking:
             "value": "v=spf1 include:_spf.example.com -all",
         }
 
-        with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock correct TXT record
             mock_answer = MagicMock()
             mock_answer.to_text.return_value = '"v=spf1 include:_spf.example.com -all"'
@@ -74,7 +74,7 @@ class TestDNSChecking:
         maildomain = maildomain_factory(name="example.com")
         expected_record = {"type": "MX", "target": "@", "value": "10 mx1.example.com"}
 
-        with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock missing record
             mock_resolve.side_effect = Exception("No records found")
 
@@ -88,7 +88,7 @@ class TestDNSChecking:
         maildomain = maildomain_factory(name="example.com")
         expected_record = {"type": "MX", "target": "@", "value": "10 mx1.example.com"}
 
-        with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock NXDOMAIN
             mock_resolve.side_effect = NXDOMAIN()
 
@@ -102,7 +102,7 @@ class TestDNSChecking:
         maildomain = maildomain_factory(name="example.com")
         expected_record = {"type": "MX", "target": "@", "value": "10 mx1.example.com"}
 
-        with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock NoAnswer
             mock_resolve.side_effect = NoAnswer()
 
@@ -116,7 +116,7 @@ class TestDNSChecking:
         maildomain = maildomain_factory(name="example.com")
         expected_record = {"type": "MX", "target": "@", "value": "10 mx1.example.com"}
 
-        with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock NoNameservers
             mock_resolve.side_effect = NoNameservers()
 
@@ -130,7 +130,7 @@ class TestDNSChecking:
         maildomain = maildomain_factory(name="example.com")
         expected_record = {"type": "MX", "target": "@", "value": "10 mx1.example.com"}
 
-        with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock Timeout
             mock_resolve.side_effect = Timeout()
 
@@ -144,7 +144,7 @@ class TestDNSChecking:
         maildomain = maildomain_factory(name="example.com")
         expected_record = {"type": "MX", "target": "@", "value": "10 mx1.example.com"}
 
-        with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock YXDOMAIN
             mock_resolve.side_effect = YXDOMAIN()
 
@@ -158,7 +158,7 @@ class TestDNSChecking:
         maildomain = maildomain_factory(name="example.com")
         expected_record = {"type": "MX", "target": "@", "value": "10 mx1.example.com"}
 
-        with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock generic exception
             mock_resolve.side_effect = Exception("Network error")
 
@@ -172,7 +172,7 @@ class TestDNSChecking:
         maildomain = maildomain_factory(name="example.com")
         expected_record = {"type": "MX", "target": "@", "value": "10 mx1.example.com"}
 
-        with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock correct MX record
             mock_answer = MagicMock()
             mock_answer.preference = 10
@@ -189,7 +189,7 @@ class TestDNSChecking:
         maildomain = maildomain_factory(name="example.com")
         expected_record = {"type": "MX", "target": "@", "value": "10 mx1.example.com"}
 
-        with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock MX record with different preference
             mock_answer = MagicMock()
             mock_answer.preference = 20
@@ -215,7 +215,7 @@ class TestDNSChecking:
                 },
             ]
 
-            with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+            with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
                 # Mock responses for both records
                 mock_mx_answer = MagicMock()
                 mock_mx_answer.preference = 10
@@ -254,7 +254,7 @@ class TestDNSChecking:
                 {"type": "A", "target": "@", "value": "192.168.1.1"},
             ]
 
-            with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+            with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
                 # Mock responses: correct MX, incorrect TXT, missing A
                 mock_mx_answer = MagicMock()
                 mock_mx_answer.preference = 10
@@ -278,7 +278,7 @@ class TestDNSChecking:
         maildomain = maildomain_factory(name="example.com")
         expected_record = {"type": "A", "target": "www", "value": "192.168.1.1"}
 
-        with patch("core.dns.check.dns.resolver.resolve") as mock_resolve:
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock correct A record for subdomain
             mock_answer = MagicMock()
             mock_answer.to_text.return_value = "192.168.1.1"

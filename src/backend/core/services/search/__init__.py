@@ -1,6 +1,6 @@
 """OpenSearch search functionality for messages."""
 
-from core.search.index import (
+from core.services.search.index import (
     create_index_if_not_exists,
     delete_index,
     get_opensearch_client,
@@ -10,9 +10,9 @@ from core.search.index import (
     reindex_mailbox,
     reindex_thread,
 )
-from core.search.mapping import MESSAGE_INDEX, MESSAGE_MAPPING
-from core.search.parse import parse_search_query
-from core.search.search import search_threads
+from core.services.search.mapping import MESSAGE_INDEX, MESSAGE_MAPPING
+from core.services.search.parse import parse_search_query
+from core.services.search.search import search_threads
 
 __all__ = [
     # Mapping

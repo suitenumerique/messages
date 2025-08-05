@@ -9,7 +9,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from core.models import Blob, Mailbox
-from core.services.import_service import ImportService
+from core.services.importer import ImportService
 
 from .. import permissions
 from ..serializers import ImportFileSerializer, ImportIMAPSerializer

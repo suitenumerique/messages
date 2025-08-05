@@ -4,14 +4,14 @@ from unittest import mock
 
 import pytest
 
-from core.search.search import search_threads
+from core.services.search.search import search_threads
 
 
 @pytest.fixture(name="mock_es_client")
 def fixture_mock_es_client():
     """Mock the OpenSearch client."""
     with mock.patch(
-        "core.search.search.get_opensearch_client"
+        "core.services.search.search.get_opensearch_client"
     ) as mock_get_opensearch_client:
         mock_es = mock.MagicMock()
         # Setup standard mock returns

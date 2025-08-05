@@ -13,7 +13,7 @@ from core import models
 from core.factories import MailboxFactory, UserFactory
 from core.mda.inbound import deliver_inbound_message
 from core.models import Message
-from core.tasks import process_mbox_file_task, split_mbox_file
+from core.services.importer.tasks import process_mbox_file_task, split_mbox_file
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +191,10 @@ class TestProcessMboxFileTask:
             patch.object(
                 process_mbox_file_task, "update_state", mock_task.update_state
             ),
-            patch("core.tasks.deliver_inbound_message", side_effect=mock_deliver),
+            patch(
+                "core.services.importer.tasks.deliver_inbound_message",
+                side_effect=mock_deliver,
+            ),
         ):
             # Call the task once
             task_result = process_mbox_file_task(sample_mbox_content, str(mailbox.id))
@@ -330,7 +333,10 @@ class TestProcessMboxFileTask:
         mock_task.update_state = MagicMock()
 
         with (
-            patch("core.tasks.parse_email_message", side_effect=mock_parse),
+            patch(
+                "core.services.importer.tasks.parse_email_message",
+                side_effect=mock_parse,
+            ),
             patch.object(
                 process_mbox_file_task, "update_state", mock_task.update_state
             ),

@@ -7,7 +7,8 @@ from django.contrib import messages
 from django.http import HttpRequest
 
 from core.models import Blob, Mailbox
-from core.tasks import (
+
+from .tasks import (
     import_imap_messages_task,
     process_eml_file_task,
     process_mbox_file_task,

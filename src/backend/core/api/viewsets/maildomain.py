@@ -29,8 +29,8 @@ from rest_framework.response import Response
 from core import models
 from core.api import permissions as core_permissions
 from core.api import serializers as core_serializers
-from core.dns.check import check_dns_records
-from core.identity.keycloak import reset_keycloak_user_password
+from core.services.dns.check import check_dns_records
+from core.services.identity.keycloak import reset_keycloak_user_password
 
 
 class AdminMailDomainViewSet(

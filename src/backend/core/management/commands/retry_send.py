@@ -7,7 +7,7 @@ from django.db import transaction
 
 from core import models
 from core.enums import MessageDeliveryStatusChoices
-from core.tasks import retry_messages_task
+from core.mda.tasks import retry_messages_task
 
 logger = logging.getLogger(__name__)
 

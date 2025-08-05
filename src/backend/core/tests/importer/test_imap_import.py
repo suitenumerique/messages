@@ -12,7 +12,7 @@ import pytest
 from core import factories
 from core.forms import IMAPImportForm
 from core.models import Mailbox, MailDomain, Message, Thread
-from core.tasks import import_imap_messages_task
+from core.services.importer.tasks import import_imap_messages_task
 
 from messages.celery_app import app as celery_app
 
@@ -130,7 +130,9 @@ def test_imap_import_form_view(admin_client, mailbox):
         "recipient": mailbox.id,
     }
 
-    with patch("core.tasks.import_imap_messages_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.import_imap_messages_task.delay"
+    ) as mock_task:
         response = admin_client.post(url, form_data, follow=True)
         assert response.status_code == 200
         assert (
@@ -236,7 +238,7 @@ def test_imap_import_task_login_failure(mailbox):
     # Mock IMAP connection to raise an error on login
     with (
         patch.object(import_imap_messages_task, "update_state", mock_task.update_state),
-        patch("core.tasks.imaplib.IMAP4_SSL") as mock_imap,
+        patch("core.services.importer.imap.imaplib.IMAP4_SSL") as mock_imap,
     ):
         mock_imap_instance = MagicMock()
         mock_imap.return_value = mock_imap_instance

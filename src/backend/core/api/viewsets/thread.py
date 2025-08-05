@@ -14,7 +14,7 @@ from rest_framework import mixins, status, viewsets
 
 from core import enums, models
 from core.ai.thread_summarizer import summarize_thread
-from core.search import search_threads
+from core.services.search import search_threads
 
 from .. import permissions, serializers
 

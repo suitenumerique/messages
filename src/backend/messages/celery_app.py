@@ -28,7 +28,7 @@ app.autodiscover_tasks()
 if not os.environ.get("DISABLE_CELERY_BEAT_SCHEDULE"):
     app.conf.beat_schedule = {
         "retry-pending-messages": {
-            "task": "core.tasks.retry_messages_task",
+            "task": "core.mda.tasks.retry_messages_task",
             "schedule": 300.0,  # Every 5 minutes (300 seconds)
             "options": {"queue": "default"},
         },

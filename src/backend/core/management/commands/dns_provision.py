@@ -5,11 +5,11 @@ Django management command to provision DNS records for mail domains.
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
-from core.dns.provisioning import (
+from core.models import MailDomain
+from core.services.dns.provisioning import (
     detect_dns_provider,
     provision_domain_dns,
 )
-from core.models import MailDomain
 
 
 class Command(BaseCommand):

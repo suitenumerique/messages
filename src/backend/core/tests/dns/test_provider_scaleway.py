@@ -8,7 +8,7 @@ from django.test.utils import override_settings
 
 import pytest
 
-from core.dns.providers.scaleway import ScalewayDNSProvider
+from core.services.dns.providers.scaleway import ScalewayDNSProvider
 
 
 @pytest.mark.django_db
@@ -263,7 +263,9 @@ class TestScalewayDNSProvider:
         """Test that _make_request handles pagination correctly."""
         provider = ScalewayDNSProvider()
 
-        with patch("core.dns.providers.scaleway.requests.request") as mock_request:
+        with patch(
+            "core.services.dns.providers.scaleway.requests.request"
+        ) as mock_request:
             # Mock first page response
             mock_response1 = MagicMock()
             mock_response1.ok = True
@@ -292,7 +294,9 @@ class TestScalewayDNSProvider:
         """Test that _make_request works normally without pagination."""
         provider = ScalewayDNSProvider()
 
-        with patch("core.dns.providers.scaleway.requests.request") as mock_request:
+        with patch(
+            "core.services.dns.providers.scaleway.requests.request"
+        ) as mock_request:
             mock_response = MagicMock()
             mock_response.ok = True
             mock_response.json.return_value = {"dns_zones": [{"domain": "example.com"}]}
@@ -320,7 +324,9 @@ class TestScalewayDNSProvider:
         """Test that _make_request handles single page pagination correctly."""
         provider = ScalewayDNSProvider()
 
-        with patch("core.dns.providers.scaleway.requests.request") as mock_request:
+        with patch(
+            "core.services.dns.providers.scaleway.requests.request"
+        ) as mock_request:
             mock_response = MagicMock()
             mock_response.ok = True
             mock_response.json.return_value = {
@@ -347,7 +353,9 @@ class TestScalewayDNSProvider:
         """Test that _make_request handles multiple page pagination correctly."""
         provider = ScalewayDNSProvider()
 
-        with patch("core.dns.providers.scaleway.requests.request") as mock_request:
+        with patch(
+            "core.services.dns.providers.scaleway.requests.request"
+        ) as mock_request:
             # Mock first page response
             mock_response1 = MagicMock()
             mock_response1.ok = True

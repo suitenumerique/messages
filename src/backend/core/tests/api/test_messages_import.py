@@ -12,7 +12,7 @@ from rest_framework.test import APIClient
 from core import factories
 from core.enums import MailboxRoleChoices
 from core.models import Mailbox, MailDomain, Message, Thread
-from core.tasks import process_eml_file_task, process_mbox_file_task
+from core.services.importer.tasks import process_eml_file_task, process_mbox_file_task
 
 pytestmark = pytest.mark.django_db
 
@@ -168,7 +168,9 @@ def test_import_mbox_async(api_client, user, mailbox, blob_mbox):
     """Test import of MBOX file asynchronously."""
     # add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
-    with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.process_mbox_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         mock_task.return_value.status = "PENDING"
         response = api_client.post(
@@ -204,7 +206,9 @@ def test_import_text_plain_mime_type(api_client, user, mailbox, blob_mbox):
     blob_mbox.content_type = "text/plain"
     blob_mbox.save()
 
-    with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.process_mbox_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         response = api_client.post(
             IMPORT_FILE_URL,
@@ -221,7 +225,9 @@ def test_import_text_plain_mime_type(api_client, user, mailbox, blob_mbox):
 def test_import_imap_task(api_client, user, mailbox):
     """Test import of IMAP messages."""
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
-    with patch("core.tasks.import_imap_messages_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.import_imap_messages_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         data = {
             "recipient": str(mailbox.id),
@@ -347,7 +353,7 @@ def test_import_duplicate_eml_file(api_client, user, mailbox, blob_eml):
     assert Thread.objects.count() == 0
 
     # First import
-    with patch("core.tasks.process_eml_file_task.delay") as mock_task:
+    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id-1"
         response = api_client.post(
             IMPORT_FILE_URL,
@@ -371,7 +377,7 @@ def test_import_duplicate_eml_file(api_client, user, mailbox, blob_eml):
         assert Thread.objects.count() == 1
 
     # Second import of the same file
-    with patch("core.tasks.process_eml_file_task.delay") as mock_task:
+    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id-2"
         response = api_client.post(
             IMPORT_FILE_URL,
@@ -414,7 +420,9 @@ def test_import_duplicate_mbox_file(api_client, user, mailbox, blob_mbox):
     assert Thread.objects.count() == 0
 
     # First import
-    with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.process_mbox_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id-1"
         response = api_client.post(
             IMPORT_FILE_URL,
@@ -441,7 +449,9 @@ def test_import_duplicate_mbox_file(api_client, user, mailbox, blob_mbox):
         assert Thread.objects.count() == 2
 
     # Second import of the same file
-    with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.process_mbox_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id-2"
         response = api_client.post(
             IMPORT_FILE_URL,
@@ -493,7 +503,7 @@ def test_import_eml_same_message_different_mailboxes(api_client, user, eml_file_
     assert Message.objects.count() == 0
 
     # Import to first mailbox
-    with patch("core.tasks.process_eml_file_task.delay") as mock_task:
+    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id-1"
         response = api_client.post(
             IMPORT_FILE_URL,
@@ -517,7 +527,7 @@ def test_import_eml_same_message_different_mailboxes(api_client, user, eml_file_
         assert Message.objects.count() == 1
 
     # Import to second mailbox
-    with patch("core.tasks.process_eml_file_task.delay") as mock_task:
+    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id-2"
         response = api_client.post(
             IMPORT_FILE_URL,
@@ -576,7 +586,9 @@ def test_import_mbox_same_message_different_mailboxes(api_client, user, mbox_fil
     assert Message.objects.count() == 0
 
     # Import to first mailbox
-    with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.process_mbox_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id-1"
         response = api_client.post(
             IMPORT_FILE_URL,
@@ -600,7 +612,9 @@ def test_import_mbox_same_message_different_mailboxes(api_client, user, mbox_fil
         assert Message.objects.count() == 3
 
     # Import to second mailbox
-    with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.tasks.process_mbox_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id-2"
         response = api_client.post(
             IMPORT_FILE_URL,
@@ -800,7 +814,7 @@ Test message body"""
 #     assert Thread.objects.count() == 0
 
 #     # First import
-#     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
+#     with patch("core.mda.tasks.process_mbox_file_task.delay") as mock_task:
 #         mock_task.return_value.id = "fake-task-id-1"
 #         with open(mbox_file_path, "rb") as f:
 #             response = api_client.post(
@@ -847,7 +861,7 @@ Test message body"""
 #             assert messages[1].thread.messages.count() == 2
 
 #     # Second import of the same file
-#     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
+#     with patch("core.mda.tasks.process_mbox_file_task.delay") as mock_task:
 #         mock_task.return_value.id = "fake-task-id-2"
 #         with open(mbox_file_path, "rb") as f:
 #             response = api_client.post(
@@ -906,7 +920,7 @@ Test message body"""
 
 # This is another reply to the same thread."""
 
-#     with patch("core.tasks.process_mbox_file_task.delay") as mock_task:
+#     with patch("core.mda.tasks.process_mbox_file_task.delay") as mock_task:
 #         mock_task.return_value.id = "fake-task-id-3"
 #         # Create a new MBOX file with just the new message
 #         new_mbox_content = b"From \n" + new_message_content + b"\n\n"

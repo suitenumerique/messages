@@ -4,7 +4,7 @@ import sys
 
 from django.core.management.base import BaseCommand
 
-from core.search import create_index_if_not_exists
+from core.services.search import create_index_if_not_exists
 
 
 class Command(BaseCommand):

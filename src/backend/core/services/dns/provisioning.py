@@ -7,10 +7,10 @@ from typing import Any, Dict, Optional
 
 from django.conf import settings
 
-import dns.resolver
-
-from core.dns.providers.scaleway import ScalewayDNSProvider
 from core.models import MailDomain
+from core.services.dns.providers.scaleway import ScalewayDNSProvider
+
+import dns.resolver
 
 logger = logging.getLogger(__name__)
 

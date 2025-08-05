@@ -1,6 +1,6 @@
 """Unit tests for the Gmail-style search query parser."""
 
-from core.search.parse import parse_search_query
+from core.services.search.parse import parse_search_query
 
 
 def test_basic_query_without_modifiers():
