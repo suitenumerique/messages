@@ -4,7 +4,7 @@ import { clsx } from "clsx";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
-import { z } from "zod";
+import z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Attachment, DraftMessageRequestRequest, Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
 import MessageEditor from "@/features/forms/components/message-editor";
@@ -35,21 +35,21 @@ interface MessageFormProps {
 }
 
 // Zod schema for form validation
-const emailArraySchema = z.array(z.string().trim().email("message_form.error.invalid_recipient"));
+const emailArraySchema = z.array(z.email({ error: "message_form.error.invalid_recipient" }));
 const attachmentSchema = z.object({
-    blobId: z.string(),
+    blobId: z.uuid(),
     name: z.string(),
 });
 const driveAttachmentSchema = z.object({
     id: z.string(),
     name: z.string(),
-    url: z.string(),
+    url: z.url(),
     type: z.string(),
     size: z.number(),
     created_at: z.string(),
 });
 const messageFormSchema = z.object({
-    from: z.string().nonempty("message_form.error.mailbox_required"),
+    from: z.string().nonempty({ error: "message_form.error.mailbox_required" }),
     to: emailArraySchema,
     cc: emailArraySchema.optional(),
     bcc: emailArraySchema.optional(),

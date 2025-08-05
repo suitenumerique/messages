@@ -2,7 +2,7 @@ import { renderToString } from "react-dom/server";
 import { Markdown } from "@react-email/components";
 import DetectionMap from "@/features/i18n/attachments-detection-map.json";
 import React from "react";
-import { z } from "zod";
+import z from "zod";
 import { DriveFile } from "../forms/components/message-form/drive-attachment-picker";
 
 type ImapConfig = {
@@ -68,7 +68,7 @@ class MailHelper {
      * Test if an email address is valid.
      */
     static isValidEmail(email: string): boolean {
-        return z.string().email().safeParse(email).success;
+        return z.email().safeParse(email).success;
     }
 
     /**

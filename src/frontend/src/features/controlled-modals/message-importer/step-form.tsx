@@ -13,29 +13,26 @@ import { RhfFileUploader } from "../../forms/components/react-hook-form/rhf-file
 import { RhfCheckbox } from "../../forms/components/react-hook-form/rhf-checkbox";
 import { Banner } from "@/features/ui/components/banner";
 
+const usernameSchema = z.email('message_importer_modal.form.errors.username_invalid');
 
-const usernameSchema = z
-    .string()
-    .nonempty('message_importer_modal.form.errors.username_required')
-    .email('message_importer_modal.form.errors.username_invalid');
 const importerFormSchema = z.object({
     archive_file: z.array(z.instanceof(File)),
     username: usernameSchema.optional(),
     imap_server: z
         .string()
-        .nonempty('message_importer_modal.form.errors.imap_server_required')
+        .nonempty({ error: 'message_importer_modal.form.errors.imap_server_required' })
         .optional(),
     imap_port: z
-        .number()
-        .min(1)
-        .max(65535)
-        .optional(),
+        .preprocess(
+            (value: string | number) => typeof value === 'number' ? value : parseInt(value, 10),
+            z.int().min(1).max(65535)
+        ).optional(),
     use_ssl: z
         .boolean()
         .optional(),
     password: z
         .string()
-        .nonempty('message_importer_modal.form.errors.password_required')
+        .nonempty({ error: 'message_importer_modal.form.errors.password_required' })
         .optional(),
 })
 

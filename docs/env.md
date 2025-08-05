@@ -276,8 +276,6 @@ The application uses a new environment file structure with `.defaults` and `.loc
 |----------|---------|-------------|----------|
 | `DRIVE_BASE_URL` | None | Base URL to access Drive endpoints | Optional |
 
-
-
 ## Legend
 
 - **Required**: Must be set for the application to function

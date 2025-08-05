@@ -20,7 +20,7 @@ type LabelModalProps = {
 }
 
 const formSchema = z.object({
-    name: z.string().min(1, { message: 'labels.form.errors.name_required' }),
+    name: z.string().min(1, { error: 'labels.form.errors.name_required' }),
     color: z.string().regex(/^#([0-9a-fA-F]{6})$/),
     parent_label: z.string().optional(),
 });
