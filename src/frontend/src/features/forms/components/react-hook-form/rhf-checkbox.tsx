@@ -16,7 +16,7 @@ export const RhfCheckbox = (props: InputProps & { name: string }) => {
       render={({ field, fieldState }) => {
         return (
           <Checkbox
-          {...props}
+            {...props}
             aria-invalid={!!fieldState.error}
             state={fieldState.error ? "error" : "default"}
             onBlur={(event) => {

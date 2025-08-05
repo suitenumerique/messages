@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { FieldErrors, FormProvider, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import z from "zod";
+import * as z from "zod";
 import { useRouter } from "next/router";
 import { useMaildomainsMailboxesCreate, useMaildomainsMailboxesList } from "@/features/api/gen/maildomains/maildomains";
 import { RhfInput } from "@/features/forms/components/react-hook-form";
@@ -14,10 +14,15 @@ import { MailboxAdminCreate, MailboxAdminCreatePayloadRequest } from "@/features
 import { MailboxCreationSuccess } from "./mailbox-creation-success";
 import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
 import clsx from "clsx";
+import { RhfJsonSchemaField } from "@/features/forms/components/react-hook-form/rhf-json-schema-field";
+import { convertJsonSchemaToZod, ItemJsonSchema } from "@/features/forms/components/zod-json-schema-serializer";
+import { useConfig } from "@/features/providers/config";
+import { JSONSchema } from "zod/v4/core";
 
 export const MODAL_CREATE_ADDRESS_ID = "modal-create-address";
 
 type MailboxType = "personal" | "shared" | "redirect";
+type MailboxTypeErrors<FormData, Type extends MailboxType> = FieldErrors<Extract<FormData, { type: Type }>>
 
 // Slugify function to transform text into URL-friendly format
 const slugify = (text: string): string => {
@@ -29,36 +34,6 @@ const slugify = (text: string): string => {
     .replace(/-+/g, '-') // Replace multiple hyphens with single
     .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
 };
-
-// Form schema with conditional validation
-const createAddressSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("personal"),
-    first_name: z.string().min(1, "create_address_modal.form.errors.first_name_required"),
-    last_name: z.string().min(1, "create_address_modal.form.errors.last_name_required"),
-    prefix: z.string()
-      .min(1, "create_address_modal.form.errors.prefix_required")
-      .regex(/^[a-zA-Z0-9_.-]+$/, "create_address_modal.form.errors.prefix_invalid"),
-    confirmation_accepted: z.boolean().refine(val => val === true, "create_address_modal.form.errors.confirmation_required"),
-  }),
-  z.object({
-    type: z.literal("shared"),
-    name: z.string().min(1, "create_address_modal.form.errors.name_required"),
-    prefix: z.string()
-      .min(1, "create_address_modal.form.errors.prefix_required")
-      .regex(/^[a-zA-Z0-9_.-]+$/, "create_address_modal.form.errors.prefix_invalid"),
-  }),
-  z.object({
-    type: z.literal("redirect"),
-    prefix: z.string()
-      .min(1, "create_address_modal.form.errors.prefix_required")
-      .regex(/^[a-zA-Z0-9_.-]+$/, "create_address_modal.form.errors.prefix_invalid"),
-    target_email: z.string().email("create_address_modal.form.errors.target_email_invalid"),
-  }),
-]);
-
-type CreateAddressFormData = z.infer<typeof createAddressSchema>;
-
 type ModalCreateAddressProps = {
   isOpen: boolean;
   onClose: () => void;
@@ -82,16 +57,65 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
   const domainName = selectedMailDomain?.name || "";
   const { mutateAsync: createMailbox } = useMaildomainsMailboxesCreate();
   const [createdMailbox, setCreatedMailbox] = useState<MailboxAdminCreate | null>(null);
+  const { SCHEMA_CUSTOM_ATTRIBUTES_USER } = useConfig();
+
+  const createAddressSchema = z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("personal"),
+      first_name: z.string().min(1, { error: "create_address_modal.form.errors.first_name_required" }),
+      last_name: z.string().min(1, { error: "create_address_modal.form.errors.last_name_required" }),
+      prefix: z.string()
+        .min(1, { error: "create_address_modal.form.errors.prefix_required" })
+        .regex(/^[a-zA-Z0-9_.-]+$/, { error: "create_address_modal.form.errors.prefix_invalid" }),
+      confirmation_accepted: z.boolean().refine(val => val === true, { error: "create_address_modal.form.errors.confirmation_required" }),
+      ...convertJsonSchemaToZod(SCHEMA_CUSTOM_ATTRIBUTES_USER as JSONSchema.Schema),
+    }),
+    z.object({
+      type: z.literal("shared"),
+      name: z.string().min(1, { error: "create_address_modal.form.errors.name_required" }),
+      prefix: z.string()
+        .min(1, { error: "create_address_modal.form.errors.prefix_required" })
+        .regex(/^[a-zA-Z0-9_.-]+$/, { error: "create_address_modal.form.errors.prefix_invalid" }),
+    }),
+    z.object({
+      type: z.literal("redirect"),
+      prefix: z.string()
+        .min(1, { error: "create_address_modal.form.errors.prefix_required" })
+        .regex(/^[a-zA-Z0-9_.-]+$/, { error: "create_address_modal.form.errors.prefix_invalid" }),
+      target_email: z.email({ error: "create_address_modal.form.errors.target_email_invalid" }),
+    }),
+  ]);
+  type CreateAddressFormData = z.infer<typeof createAddressSchema>;
+
+  const getDefaultValues = (type: MailboxType): CreateAddressFormData => {
+    if (type === "personal") {
+      const customAttributes = SCHEMA_CUSTOM_ATTRIBUTES_USER?.properties ?? {};
+      return {
+        type: "personal",
+        first_name: "",
+        last_name: "",
+        prefix: "",
+        confirmation_accepted: false,
+        ...Object.fromEntries(Object.entries(customAttributes).map(([name, schema]) => ([name, schema.default ?? '']))),
+      };
+    } else if (type === "shared") {
+      return {
+        type: "shared",
+        name: "",
+        prefix: "",
+      };
+    } else {
+      return {
+        type: "redirect",
+        prefix: "",
+        target_email: "",
+      };
+    }
+  }
 
   const form = useForm<CreateAddressFormData>({
     resolver: zodResolver(createAddressSchema),
-    defaultValues: {
-      type: "personal",
-      first_name: "",
-      last_name: "",
-      prefix: "",
-      confirmation_accepted: false,
-    },
+    defaultValues: getDefaultValues(activeTab),
   });
 
   const { handleSubmit, reset, setValue, watch } = form;
@@ -146,41 +170,25 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
   }, [activeTab, isOpen, firstFieldRef]);
 
   // Reset form when switching tabs
-  const handleTabChange = (tab: "personal" | "shared" | "redirect") => {
+  const handleTabChange = (tab: MailboxType) => {
     setActiveTab(tab);
     setPrefixManuallyChanged(false);
-
-    if (tab === "personal") {
-      reset({
-        type: "personal",
-        first_name: "",
-        last_name: "",
-        prefix: "",
-        confirmation_accepted: false,
-      });
-    } else if (tab === "shared") {
-      reset({
-        type: "shared",
-        name: "",
-        prefix: "",
-      });
-    } else {
-      reset({
-        type: "redirect",
-        prefix: "",
-        target_email: "",
-      });
-    }
+    const defaultValues = getDefaultValues(tab);
+    reset(defaultValues);
   };
 
   const onSubmit = async (data: CreateAddressFormData) => {
     setError(null);
     setIsSubmitting(true);
     try {
+      const customAttributeKeys = Object.keys(SCHEMA_CUSTOM_ATTRIBUTES_USER?.properties ?? {});
       const payload: MailboxAdminCreatePayloadRequest = {
         local_part: data.prefix,
         metadata: {
           type: data.type,
+          custom_attributes: {
+            ...Object.fromEntries(Object.entries(data).filter(([key]) => customAttributeKeys.includes(key)).map(([key, value]) => [key, value])),
+          },
         },
       };
 
@@ -220,7 +228,10 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
     onClose();
   };
 
-  const getFieldError = <Type extends "personal" | "shared" | "redirect", Errors extends FieldErrors<Extract<CreateAddressFormData, { type: Type }>> = FieldErrors<Extract<CreateAddressFormData, { type: Type }>>>(fieldName: keyof Errors) => {
+  const getFieldError = <
+    Type extends MailboxType,
+    Errors extends MailboxTypeErrors<CreateAddressFormData, Type
+  > = MailboxTypeErrors<CreateAddressFormData, Type>>(fieldName: keyof Errors) => {
       const errors = form.formState.errors as Errors;
       const error = errors?.[fieldName];
       return error?.message ? t(error.message as string) : undefined;
@@ -309,6 +320,20 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
                   />
                   <span className="domain-suffix">@{domainName}</span>
                 </div>
+
+                {
+                  Object.entries(SCHEMA_CUSTOM_ATTRIBUTES_USER?.properties ?? {}).map(([name, schema]: [string, ItemJsonSchema]) => (
+                      <div className="form-field-row" key={`json-schema-field-${name}`}>
+                        <RhfJsonSchemaField
+                          schema={schema}
+                          state={getFieldError<"personal">(name as keyof MailboxTypeErrors<CreateAddressFormData, 'personal'> ) ? "error" : "default"}
+                          text={getFieldError<"personal">(name as keyof MailboxTypeErrors<CreateAddressFormData, 'personal'>)}
+                          name={name}
+                          fullWidth
+                        />
+                      </div>
+                  ))
+                }
 
                 <div className="form-field-row">
                   <RhfCheckbox

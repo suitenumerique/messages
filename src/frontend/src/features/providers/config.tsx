@@ -1,4 +1,5 @@
 import { ConfigRetrieve200, useConfigRetrieve } from "@/features/api/gen";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { PropsWithChildren, createContext, useContext, useMemo } from "react";
 
 const DEFAULT_CONFIG: ConfigRetrieve200 = {
@@ -21,8 +22,23 @@ const ConfigContext = createContext<ConfigRetrieve200>(DEFAULT_CONFIG)
  * and sharing it to the app.
  */
 export const ConfigProvider = ({ children }: PropsWithChildren) => {
-    const { data: config } = useConfigRetrieve();
+    const { data: config, isFetched } = useConfigRetrieve();
     const configValue = useMemo(() => config?.data ?? DEFAULT_CONFIG, [config])
+
+    if (!isFetched) {
+        return (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              height: "100vh",
+            }}
+          >
+            <Spinner />
+          </div>
+        );
+      }
 
     return (
         <ConfigContext.Provider value={configValue}>

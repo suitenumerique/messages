@@ -252,6 +252,15 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `TRASHBIN_CUTOFF_DAYS` | `30` | Days before permanent deletion | Optional |
 | `INVITATION_VALIDITY_DURATION` | `604800` | Invitation validity (7 days) | Optional |
 
+### Model custom attributes schema
+
+**Note**: Custom attributes are stored in a JSONField (Take a look at User and MailDomain models).
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `SCHEMA_CUSTOM_ATTRIBUTES_USER` | {} | JSONSchema definition of the User custom attributes | Optional |
+| `SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN` | {} | JSONSchema definition of the MailDomain custom attributes | Optional |
+
 ### Internationalization
 
 | Variable | Default | Description | Required |
