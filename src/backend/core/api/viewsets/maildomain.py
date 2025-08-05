@@ -1,6 +1,7 @@
 """Admin ViewSets for MailDomain and Mailbox management."""
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models import F, Q
 from django.shortcuts import get_object_or_404
 from django.utils.translation import (
@@ -184,6 +185,7 @@ class AdminMailDomainMailboxViewSet(
                         "name": drf_serializers.CharField(
                             required=False, allow_blank=True
                         ),
+                        "custom_attributes": drf_serializers.JSONField(required=False),
                     },
                 ),
             },
@@ -198,6 +200,7 @@ class AdminMailDomainMailboxViewSet(
             ),
         },
     )
+    @transaction.atomic
     def create(self, request, *args, **kwargs):
         maildomain_pk = self.kwargs.get("maildomain_pk")
         domain = get_object_or_404(models.MailDomain, pk=maildomain_pk)
@@ -264,8 +267,10 @@ class AdminMailDomainMailboxViewSet(
             email = f"{local_part}@{domain.name}"
             first_name = metadata.get("first_name")
             last_name = metadata.get("last_name")
+            custom_attributes = metadata.get("custom_attributes", {})
             user, _created = models.User.objects.get_or_create(
                 email=email,
+                custom_attributes=custom_attributes,
                 defaults={
                     "full_name": f"{first_name} {last_name}",
                     "password": "?",

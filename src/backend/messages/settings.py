@@ -21,6 +21,8 @@ import sentry_sdk
 from configurations import Configuration, values
 from sentry_sdk.integrations.django import DjangoIntegration
 
+from core.utils import JSONValue
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -114,6 +116,14 @@ class Base(Configuration):
         }
     }
     DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
+
+    # Model custom attributes schema
+    SCHEMA_CUSTOM_ATTRIBUTES_USER = JSONValue(
+        {}, environ_name="SCHEMA_CUSTOM_ATTRIBUTES_USER", environ_prefix=None
+    )
+    SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN = JSONValue(
+        {}, environ_name="SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN", environ_prefix=None
+    )
 
     DATA_DIR = values.Value(
         "/data", environ_name="DJANGO_DATA_DIR", environ_prefix=None
@@ -764,6 +774,9 @@ class Test(Base):
 
     # Add a test encryption key for django-fernet-encrypted-fields
     SALT_KEY = ["test-salt-for-development-only"]
+
+    SCHEMA_CUSTOM_ATTRIBUTES_USER = {}
+    SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN = {}
 
     # pylint: disable=invalid-name
     def __init__(self):

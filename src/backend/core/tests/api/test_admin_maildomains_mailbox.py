@@ -209,6 +209,46 @@ class TestAdminMailDomainMailboxViewSet:
         response = api_client.get(url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    @override_settings(
+        SCHEMA_CUSTOM_ATTRIBUTES_USER={
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://github.com/suitenumerique/messages/schemas/custom-fields/user",
+            "type": "object",
+            "title": "User custom fields",
+            "additionalProperties": False,
+            "properties": {},
+            "required": [],
+        }
+    )
+    def test_admin_maildomains_mailbox_create_is_atomic(
+        self, api_client, domain_admin_user, domain_admin_access1, mail_domain1
+    ):
+        """
+        Test that domain admins create method is atomic.
+        Once method raises an exception, no data should be persisted.
+        """
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+        data = {
+            "local_part": "john.doe",
+            "metadata": {
+                "type": "personal",
+                "custom_attributes": {"job_title": "test"},
+            },
+        }
+        response = api_client.post(url, data=data, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json() == {
+            "custom_attributes": [
+                "Additional properties are not allowed ('job_title' was unexpected)"
+            ]
+        }
+        assert models.Mailbox.objects.count() == 0
+        assert models.User.objects.count() == 1
+        assert models.Contact.objects.count() == 0
+        assert models.MailboxAccess.objects.count() == 0
+
     @pytest.mark.parametrize("valid_local_part", ["valid", "valid-pa_rt09.xx"])
     def test_admin_maildomains_mailbox_create_success(
         self,

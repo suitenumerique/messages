@@ -13,10 +13,12 @@ from django.conf import settings
 from django.contrib.auth import models as auth_models
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.core import validators
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
+import jsonschema
 import pyzstd
 from encrypted_fields.fields import EncryptedTextField
 from timezone_field import TimeZoneField
@@ -175,8 +177,7 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
 
     custom_attributes = models.JSONField(
         _("Custom attributes"),
-        default=None,
-        null=True,
+        default=dict,
         blank=True,
         help_text=_("Metadata to sync to the user in the identity provider."),
     )
@@ -193,6 +194,24 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
 
     def __str__(self):
         return self.email or self.admin_email or str(self.id)
+
+    def save(self, *args, **kwargs):
+        """Enforce validation before saving."""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        """Validate fields values."""
+        try:
+            jsonschema.validate(
+                self.custom_attributes, settings.SCHEMA_CUSTOM_ATTRIBUTES_USER
+            )
+        except jsonschema.ValidationError as exception:
+            raise ValidationError(
+                {"custom_attributes": exception.message}
+            ) from exception
+
+        super().clean()
 
     def get_abilities(self):
         """Return abilities of the logged-in user."""
@@ -238,8 +257,7 @@ class MailDomain(BaseModel):
 
     custom_attributes = models.JSONField(
         _("Custom attributes"),
-        default=None,
-        null=True,
+        default=dict,
         blank=True,
         help_text=_(
             "Metadata to sync to the maildomain group in the identity provider."
@@ -253,6 +271,24 @@ class MailDomain(BaseModel):
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        """Enforce validation before saving."""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        """Validate custom attributes."""
+        try:
+            jsonschema.validate(
+                self.custom_attributes, settings.SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN
+            )
+        except jsonschema.ValidationError as exception:
+            raise ValidationError(
+                {"custom_attributes": exception.message}
+            ) from exception
+
+        super().clean()
 
     def get_expected_dns_records(self) -> List[str]:
         """Get the list of DNS records we expect to be present for this domain."""

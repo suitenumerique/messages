@@ -47,6 +47,8 @@ def test_api_config(is_authenticated):
         "POSTHOG_SURVEY_ID": "7890",
         "AI_ENABLED": False,
         "AI_FEATURE_SUMMARY_ENABLED": False,
+        "SCHEMA_CUSTOM_ATTRIBUTES_USER": {},
+        "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN": {},
     }
 
 

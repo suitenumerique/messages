@@ -10,6 +10,8 @@ const DEFAULT_CONFIG: ConfigRetrieve200 = {
     LANGUAGE_CODE: "",
     AI_ENABLED: false,
     AI_FEATURE_SUMMARY_ENABLED: false,
+    SCHEMA_CUSTOM_ATTRIBUTES_USER: {},
+    SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN: {},
 }
 
 const ConfigContext = createContext<ConfigRetrieve200>(DEFAULT_CONFIG)

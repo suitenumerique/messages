@@ -6,6 +6,8 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 import type { ConfigRetrieve200DRIVE } from "./config_retrieve200_driv_e";
+import type { ConfigRetrieve200SCHEMACUSTOMATTRIBUTESUSER } from "./config_retrieve200_schemacustomattributesuse_r";
+import type { ConfigRetrieve200SCHEMACUSTOMATTRIBUTESMAILDOMAIN } from "./config_retrieve200_schemacustomattributesmaildomai_n";
 
 export type ConfigRetrieve200 = {
   readonly ENVIRONMENT: string;
@@ -21,4 +23,6 @@ export type ConfigRetrieve200 = {
   readonly AI_FEATURE_SUMMARY_ENABLED: boolean;
   /** The URLs of the Drive external service. */
   readonly DRIVE?: ConfigRetrieve200DRIVE;
+  readonly SCHEMA_CUSTOM_ATTRIBUTES_USER: ConfigRetrieve200SCHEMACUSTOMATTRIBUTESUSER;
+  readonly SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN: ConfigRetrieve200SCHEMACUSTOMATTRIBUTESMAILDOMAIN;
 };

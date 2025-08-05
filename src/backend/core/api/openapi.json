@@ -200,6 +200,14 @@
                                                 "sdk_url",
                                                 "api_url"
                                             ]
+                                        },
+                                        "SCHEMA_CUSTOM_ATTRIBUTES_USER": {
+                                            "type": "object",
+                                            "readOnly": true
+                                        },
+                                        "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN": {
+                                            "type": "object",
+                                            "readOnly": true
                                         }
                                     },
                                     "required": [
@@ -210,7 +218,9 @@
                                         "LANGUAGES",
                                         "LANGUAGE_CODE",
                                         "AI_ENABLED",
-                                        "AI_FEATURE_SUMMARY_ENABLED"
+                                        "AI_FEATURE_SUMMARY_ENABLED",
+                                        "SCHEMA_CUSTOM_ATTRIBUTES_USER",
+                                        "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN"
                                     ]
                                 }
                             }
@@ -4566,7 +4576,8 @@
                     },
                     "name": {
                         "type": "string"
-                    }
+                    },
+                    "custom_attributes": {}
                 },
                 "required": [
                     "type"

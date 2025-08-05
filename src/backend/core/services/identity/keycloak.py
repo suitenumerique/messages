@@ -64,6 +64,7 @@ def sync_maildomain_to_keycloak_group(maildomain: MailDomain):
         group_attributes = {
             "maildomain_id": [str(maildomain.id)],
             "maildomain_name": [maildomain.name],
+            **(maildomain.custom_attributes or {}),
         }
 
         # Add custom attributes
@@ -132,6 +133,13 @@ def sync_mailbox_to_keycloak_user(mailbox: Mailbox):
         email = str(mailbox)  # e.g., "user@domain.com"
         username = email  # Use email as username
 
+        # Retrieve the mailbox initial user and get its custom attributes
+        owner_mailbox_access = mailbox.accesses.order_by("created_at").first()
+        user_custom_attributes = {}
+        if owner_mailbox_access:
+            local_user = owner_mailbox_access.user
+            user_custom_attributes = local_user.custom_attributes
+
         # Check if user exists
         existing_users = keycloak_admin.get_users({"username": username})
         user_id = None
@@ -145,6 +153,7 @@ def sync_mailbox_to_keycloak_user(mailbox: Mailbox):
             "maildomain_id": [str(mailbox.domain.id)],
             "local_part": [mailbox.local_part],
             "domain_name": [mailbox.domain.name],
+            **user_custom_attributes,
         }
 
         # Get contact name if available

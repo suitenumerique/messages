@@ -65,6 +65,14 @@ class ConfigView(drf.views.APIView):
                             "readOnly": True,
                             "required": ["sdk_url", "api_url"],
                         },
+                        "SCHEMA_CUSTOM_ATTRIBUTES_USER": {
+                            "type": "object",
+                            "readOnly": True,
+                        },
+                        "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN": {
+                            "type": "object",
+                            "readOnly": True,
+                        },
                     },
                     "required": [
                         "ENVIRONMENT",
@@ -75,6 +83,8 @@ class ConfigView(drf.views.APIView):
                         "LANGUAGE_CODE",
                         "AI_ENABLED",
                         "AI_FEATURE_SUMMARY_ENABLED",
+                        "SCHEMA_CUSTOM_ATTRIBUTES_USER",
+                        "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN",
                     ],
                 },
             )
@@ -93,6 +103,8 @@ class ConfigView(drf.views.APIView):
             "POSTHOG_SURVEY_ID",
             "LANGUAGES",
             "LANGUAGE_CODE",
+            "SCHEMA_CUSTOM_ATTRIBUTES_USER",
+            "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN",
         ]
         dict_settings = {}
         for setting in array_settings:

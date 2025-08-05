@@ -78,6 +78,7 @@ class UserAdmin(auth_admin.UserAdmin):
                     "full_name",
                     "language",
                     "timezone",
+                    "custom_attributes",
                 )
             },
         ),
