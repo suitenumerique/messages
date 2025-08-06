@@ -7,7 +7,7 @@ import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/router";
 import { BlobUploadCreate201, importFileCreateResponse202, importImapCreateResponse202, useBlobUploadCreate, useImportFileCreate, useImportImapCreate } from "@/features/api/gen";
-import MailHelper from "@/features/utils/mail-helper";
+import MailHelper, { IMAP_DOMAIN_REGEXES } from "@/features/utils/mail-helper";
 import { RhfInput } from "../../forms/components/react-hook-form";
 import { RhfFileUploader } from "../../forms/components/react-hook-form/rhf-file-uploader";
 import { RhfCheckbox } from "../../forms/components/react-hook-form/rhf-checkbox";
@@ -296,20 +296,24 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
 const LinkToDoc = ({ imapDomain }: { imapDomain: string }) => {
     const { t } = useTranslation();
     const domainDoc = {
-        "gmail.com": {
+        [IMAP_DOMAIN_REGEXES.get("gmail")!]: {
             displayName: "Gmail",
             href: "https://support.google.com/accounts/answer/185833"
         },
-        "orange.fr": {
+        [IMAP_DOMAIN_REGEXES.get("orange")!]: {
             displayName: "Orange",
             href: "https://assistance.orange.fr/ordinateurs-peripheriques/installer-et-utiliser/l-utilisation-du-mail-et-du-cloud/mail-orange/le-mail-orange-nouvelle-version/parametrer-la-boite-mail/mail-orange-comment-activer-ou-desactiver-les-acces-pop-imap-pour-les-logiciels-ou-applications-de-messagerie-tiers_427398-957069"
         },
-        "wanadoo.fr": {
+        [IMAP_DOMAIN_REGEXES.get("wanadoo")!]: {
             displayName: "Wanadoo",
             href: "https://assistance.orange.fr/ordinateurs-peripheriques/installer-et-utiliser/l-utilisation-du-mail-et-du-cloud/mail-orange/le-mail-orange-nouvelle-version/parametrer-la-boite-mail/mail-orange-comment-activer-ou-desactiver-les-acces-pop-imap-pour-les-logiciels-ou-applications-de-messagerie-tiers_427398-957069"
         },
+        [IMAP_DOMAIN_REGEXES.get("yahoo")!]: {
+            displayName: "Yahoo!",
+            href: "https://fr.aide.yahoo.com/kb/SLN4075.html?activity=yhelp-signin&guccounter=1&guce_referrer=aHR0cHM6Ly9sb2dpbi55YWhvby5jb20v&guce_referrer_sig=AQAAAL_UYOz8UEdd09wJ1xwaD2Wk7ZEVJTpLoR2yd3KnPbAE4SJGaRT33BA_kqufMpZRtaNzcoOlt7D8hHCog4XCzkqWNwQTfq8pQCqNk3PxxeZ-SwPx_gNC7wl6aPZ_f7JDM-_Co419TiTtNKwZ2f2cxleG_AqbLPzRblPmozI3STS0"
+        }
     }
-    const doc = domainDoc[imapDomain as keyof typeof domainDoc];
+    const doc = Array.from(Object.entries(domainDoc)).find(([regex]) => new RegExp(`^${regex}$`).test(imapDomain))?.[1];
 
     if (!doc) return null;
     return <a href={doc.href} target="_blank" rel="noreferrer noopener">{t('message_importer_modal.form.imap_banner.link_label', { name: doc.displayName })}</a>

@@ -11,10 +11,18 @@ type ImapConfig = {
     use_ssl: boolean;
 }
 
+export const IMAP_DOMAIN_REGEXES = new Map<string, string>([
+    ["orange", "orange.fr"],
+    ["wanadoo", "wanadoo.fr"],
+    ["gmail", "gmail.com"],
+    ["yahoo", "yahoo\.(?:[a-z]{2,4}|[a-z]{2}\.[a-z]{2})"],
+]);
+
 export const SUPPORTED_IMAP_DOMAINS = new Map<string, ImapConfig>([
-    ["orange.fr", { host: "imap.orange.fr", port: 993, use_ssl: true }],
-    ["wanadoo.fr", { host: "imap.orange.fr", port: 993, use_ssl: true }],
-    ["gmail.com", { host: "imap.gmail.com", port: 993, use_ssl: true }]
+    [IMAP_DOMAIN_REGEXES.get("orange")!, { host: "imap.orange.fr", port: 993, use_ssl: true }],
+    [IMAP_DOMAIN_REGEXES.get("wanadoo")!, { host: "imap.orange.fr", port: 993, use_ssl: true }],
+    [IMAP_DOMAIN_REGEXES.get("gmail")!, { host: "imap.gmail.com", port: 993, use_ssl: true }],
+    [IMAP_DOMAIN_REGEXES.get("yahoo")!, { host: "imap.mail.yahoo.com", port: 993, use_ssl: true }],
 ]);
 
 /* /!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\
@@ -87,7 +95,9 @@ class MailHelper {
         const domain = this.getDomainFromEmail(email);
         if (!domain) return undefined;
 
-        return SUPPORTED_IMAP_DOMAINS.get(domain)!;
+        return Array
+            .from(SUPPORTED_IMAP_DOMAINS.entries())
+            .find(([regex]) => new RegExp(`^${regex}$`).test(domain))?.[1];
     }
 
     /**

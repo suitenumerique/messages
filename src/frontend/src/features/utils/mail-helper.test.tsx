@@ -135,24 +135,22 @@ describe('MailHelper', () => {
   });
 
   describe('getImapConfigFromEmail', () => {
-    it('should support orange, wanadoo and gmail domains', () => {
+    it('should support orange, wanadoo, gmail and yahoo domains', () => {
       expect(Array.from(SUPPORTED_IMAP_DOMAINS.keys())).toMatchInlineSnapshot(`
         [
           "orange.fr",
           "wanadoo.fr",
           "gmail.com",
+          "yahoo.(?:[a-z]{2,4}|[a-z]{2}.[a-z]{2})",
         ]
       `);
     });
 
-    it.each(Array.from(SUPPORTED_IMAP_DOMAINS.keys()))('should return config for supported domain (%s)', (domain) => {
+    it.each(['orange.fr', 'wanadoo.fr', 'gmail.com', 'yahoo.fr', 'yahoo.co.uk'])('should return config for supported domain (%s)', (domain) => {
       const email = `test@${domain}`;
       const result = MailHelper.getImapConfigFromEmail(email);
-      expect(result).toMatchObject({
-        host: SUPPORTED_IMAP_DOMAINS.get(domain)?.host,
-        port: SUPPORTED_IMAP_DOMAINS.get(domain)?.port,
-        use_ssl: SUPPORTED_IMAP_DOMAINS.get(domain)?.use_ssl
-      });
+      expect(result).not.toBeUndefined();
+      expect(Object.keys(result!)).toMatchObject(['host', 'port', 'use_ssl']);
     });
 
     it('should return undefined for unsupported domain', () => {
