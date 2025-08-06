@@ -148,14 +148,14 @@ class UserSerializer(AbilitiesModelSerializer):
             "description": "Instance permissions and capabilities",
             "properties": {
                 choice.value: {"type": "boolean", "description": choice.label}
-                for choice in models.UserAbilityChoices
+                for choice in models.UserAbilities
             },
-            "required": [choice.value for choice in models.UserAbilityChoices],
+            "required": [choice.value for choice in models.UserAbilities],
         }
     )
     def get_abilities(self, instance):
         """Get abilities for the instance."""
-        return instance.get_abilities()
+        return super().get_abilities(instance)
 
 
 class UserWithAbilitiesSerializer(UserSerializer):
@@ -205,6 +205,10 @@ class MailboxSerializer(AbilitiesModelSerializer):
     count_unread_messages = serializers.SerializerMethodField(read_only=True)
     count_messages = serializers.SerializerMethodField(read_only=True)
 
+    class Meta:
+        model = models.Mailbox
+        fields = ["id", "email", "role", "count_unread_messages", "count_messages"]
+
     def get_email(self, instance):
         """Return the email of the mailbox."""
         return str(instance)
@@ -246,9 +250,23 @@ class MailboxSerializer(AbilitiesModelSerializer):
             "total"
         ]
 
-    class Meta:
-        model = models.Mailbox
-        fields = ["id", "email", "role", "count_unread_messages", "count_messages"]
+    @extend_schema_field(
+        {
+            "type": "object",
+            "description": "Instance permissions and capabilities",
+            "properties": {
+                choice.value: {"type": "boolean", "description": choice.label}
+                for choice in [*models.CRUDAbilities, *models.MailboxAbilities]
+            },
+            "required": [
+                choice.value
+                for choice in [*models.CRUDAbilities, *models.MailboxAbilities]
+            ],
+        }
+    )
+    def get_abilities(self, instance):
+        """Get abilities for the instance."""
+        return super().get_abilities(instance)
 
 
 class MailboxLightSerializer(serializers.ModelSerializer):
@@ -743,6 +761,24 @@ class MailDomainAdminSerializer(AbilitiesModelSerializer):
         model = models.MailDomain
         fields = ["id", "name", "created_at", "updated_at", "expected_dns_records"]
         read_only_fields = fields
+
+    @extend_schema_field(
+        {
+            "type": "object",
+            "description": "Instance permissions and capabilities",
+            "properties": {
+                choice.value: {"type": "boolean", "description": choice.label}
+                for choice in [*models.CRUDAbilities, *models.MailDomainAbilities]
+            },
+            "required": [
+                choice.value
+                for choice in [*models.CRUDAbilities, *models.MailDomainAbilities]
+            ],
+        }
+    )
+    def get_abilities(self, instance):
+        """Return the abilities for the mail domain."""
+        return super().get_abilities(instance)
 
 
 class MailboxAccessNestedUserSerializer(serializers.ModelSerializer):

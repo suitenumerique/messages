@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { useMailboxesSearchList, useThreadsAccessesCreate, useThreadsAccessesDestroy, useThreadsAccessesUpdate } from "@/features/api/gen";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ThreadAccessesList } from "./thread-accesses-list";
+import useAbility, { Abilities } from "@/hooks/use-ability";
 
 
 
@@ -47,7 +48,7 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
     const searchResults = searchMailboxesQuery.data?.data.filter((mailbox) => !accesses.some(a => a.mailbox.id === mailbox.id)).map(getAccessUser) ?? [];
     const normalizedAccesses = accesses.map((access) => ({ ...access, user: getAccessUser(access.mailbox) }));
     const hasOnlyOneEditor = accesses.filter((a) => a.role === ThreadAccessRoleChoices.editor).length === 1;
-    const isEditor = accesses.some((a) => a.role === ThreadAccessRoleChoices.editor && a.mailbox.id === selectedMailbox!.id);
+    const canManageThreadAccess = useAbility(Abilities.CAN_MANAGE_THREAD_ACCESS, [selectedMailbox!, selectedThread!]);
 
     const handleCreateAccesses = (mailboxes: MailboxLight[], role: string) => {
         const mailboxIds = [...new Set(mailboxes.map((m) => m.id))];
@@ -109,24 +110,18 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
     return (
         <>
             <Tooltip content={t('thread_accesses_widget.see_members')}>
-            {accesses.length > 1 ? (
                 <Button color="tertiary-text" size="small" className="thread-accesses-widget" onClick={() => setIsShareModalOpen(true)}>
                     <ThreadAccessesList accesses={accesses} />
                     <div className="thread-accesses-widget__item thread-accesses-widget__item--count">
                         {accesses.length}
                     </div>
                 </Button>
-            ) : (
-                <Button className="thread-accesses-widget__create-cta" color="tertiary-text" size="small" icon={<span className="material-icons">supervised_user_circle</span>} onClick={() => setIsShareModalOpen(true)}>
-                    {t('thread_accesses_widget.share_access')}
-                    </Button>
-                )}
             </Tooltip>
             <ShareModal<MailboxLight, MailboxLight, ThreadAccessDetail>
                 modalTitle={t('thread_accesses_widget.share_access')}
                 isOpen={isShareModalOpen}
                 loading={searchMailboxesQuery.isLoading}
-                canUpdate={isEditor}
+                canUpdate={canManageThreadAccess}
                 onClose={() => setIsShareModalOpen(false)}
                 invitationRoles={accessRoleOptions(false)}
                 getAccessRoles={() => accessRoleOptions()}

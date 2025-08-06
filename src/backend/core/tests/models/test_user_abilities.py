@@ -27,8 +27,8 @@ class TestUserGetAbilities:
 
         abilities = user.get_abilities()
 
-        assert abilities["create_maildomains"] is False
-        assert abilities["view_maildomains"] is False
+        assert abilities["create_maildomains"] is True
+        assert abilities["view_maildomains"] is True
 
     def test_abilities_staff_not_superuser(self):
         """Test abilities when user is staff but not superuser."""

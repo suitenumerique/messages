@@ -22,6 +22,13 @@ class IsAuthenticated(permissions.BasePermission):
         return bool(request.auth) or request.user.is_authenticated
 
 
+class IsSuperUser(permissions.IsAdminUser):
+    """Allows access only to superusers users."""
+
+    def has_permission(self, request, view):
+        return request.user and (request.user.is_superuser)
+
+
 class IsAuthenticatedOrSafe(IsAuthenticated):
     """Allows access to authenticated users (or anonymous users but only on safe methods)."""
 
@@ -320,6 +327,8 @@ class IsMailDomainAdmin(permissions.BasePermission):
     Allows access only to users who have ADMIN MailDomainAccess
     to the maildomain specified by 'maildomain_pk' in the URL.
     Used for viewsets nested under a maildomain.
+    If no maildomain_pk is provided, the permission checks if the user
+    is at least an ADMIN of one maildomain.
     """
 
     message = "You do not have administrative rights for this mail domain."
@@ -328,15 +337,15 @@ class IsMailDomainAdmin(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
 
+        qs_filters = {
+            "user": request.user,
+            "role": models.MailDomainAccessRoleChoices.ADMIN,
+        }
         maildomain_pk = view.kwargs.get("maildomain_pk")
-        if not maildomain_pk:
-            return False
+        if maildomain_pk:
+            qs_filters["maildomain_id"] = maildomain_pk
 
-        return models.MailDomainAccess.objects.filter(
-            user=request.user,
-            maildomain_id=maildomain_pk,
-            role=models.MailDomainAccessRoleChoices.ADMIN,
-        ).exists()
+        return models.MailDomainAccess.objects.filter(**qs_filters).exists()
 
     # No has_object_permission, assumes objects are correctly scoped by view's get_queryset
     # based on the maildomain_pk.

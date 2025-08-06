@@ -1,5 +1,5 @@
 import { logout } from "@/features/auth";
-import useAbility, { Abilities } from "@/hooks/use-abilty";
+import useAbility, { Abilities } from "@/hooks/use-ability";
 import { DropdownMenu, Icon } from "@gouvfr-lasuite/ui-kit";
 import { Button } from "@openfun/cunningham-react";
 import { useRouter } from "next/router";

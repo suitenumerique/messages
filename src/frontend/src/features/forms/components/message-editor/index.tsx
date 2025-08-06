@@ -12,6 +12,7 @@ import { useFormContext } from 'react-hook-form';
 import { useEffect } from 'react';
 import { QuotedMessageBlock } from '@/features/blocknote/quoted-message-block';
 import { Message } from '@/features/api/gen/models/message';
+import clsx from 'clsx';
 
 const BLOCKNOTE_SCHEMA = BlockNoteSchema.create({
     blockSpecs: {
@@ -24,6 +25,7 @@ type MessageEditorProps = FieldProps & {
     blockNoteOptions?: Partial<typeof BLOCKNOTE_SCHEMA>
     defaultValue?: string;
     quotedMessage?: Message;
+    disabled?: boolean;
 }
 
 /**
@@ -35,7 +37,7 @@ type MessageEditorProps = FieldProps & {
  * when the editor is blurred. Those inputs must be used in the parent form
  * to retrieve text and html content.
  */
-const MessageEditor = ({ blockNoteOptions, defaultValue, quotedMessage, ...props }: MessageEditorProps) => {
+const MessageEditor = ({ blockNoteOptions, defaultValue, quotedMessage, disabled = false,...props }: MessageEditorProps) => {
     const form = useFormContext();
     const { t, i18n } = useTranslation();
 
@@ -95,11 +97,12 @@ const MessageEditor = ({ blockNoteOptions, defaultValue, quotedMessage, ...props
     }, [])
 
     return (
-        <Field {...props}>
+        <Field {...props} className={clsx(props.className, "message-editor", { 'message-editor--disabled': disabled })}>
             <BlockNoteView
                 editor={editor}
                 theme="light"
-                className="message-editor"
+                className="message-editor-input"
+                editable={!disabled}
                 sideMenu={false}
                 slashMenu={false}
                 formattingToolbar={false}

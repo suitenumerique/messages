@@ -13,6 +13,7 @@ import { AttachmentList } from "../thread-attachment-list";
 import { Banner } from "@/features/ui/components/banner";
 import { MessageFormMode } from "@/features/forms/components/message-form";
 import MailHelper from "@/features/utils/mail-helper";
+import useAbility, { Abilities } from "@/hooks/use-ability";
 
 type ThreadMessageProps = {
     message: Message,
@@ -30,9 +31,10 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         const showReplyForm = replyFormMode !== null;
         const { markAsUnread } = useRead()
         const { markAsTrashed, markAsUntrashed } = useTrash()
-        const { unselectThread, selectedThread, messages, queryStates } = useMailboxContext()
+        const { unselectThread, selectedThread, messages, queryStates, selectedMailbox } = useMailboxContext()
         const isFetchingMessages = queryStates.messages.isFetching;
         const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+        const canSendMessages = useAbility(Abilities.CAN_SEND_MESSAGES, selectedMailbox);
         const hasSiblingMessages = useMemo(() => {
             if (!selectedThread) return false;
             return selectedThread?.messages?.length > 1;
@@ -40,7 +42,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         const hasSeveralRecipients = useMemo(() => {
             return message.to.length + message.cc.length > 1;
         }, [message])
-        const showReplyButton = isLatest && !showReplyForm && !message.is_draft && !message.is_trashed && !draftMessage
+        const showReplyButton = canSendMessages && isLatest && !showReplyForm && !message.is_draft && !message.is_trashed && !draftMessage
 
         const [htmlBody, driveAttachments] = MailHelper.extractDriveAttachmentsFromHtmlBody(message.htmlBody[0]?.content as string);
         const [textBody,] = MailHelper.extractDriveAttachmentsFromTextBody(message.textBody[0]?.content as string);
@@ -109,7 +111,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                 }
                             </div>
                             <div className="thread-message__header-actions">
-                                {hasSeveralRecipients && (
+                                {canSendMessages && hasSeveralRecipients && (
                                     <Tooltip content={t('actions.reply_all')}>
                                         <Button
                                             color="tertiary-text"
@@ -120,6 +122,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                         />
                                     </Tooltip>
                                 )}
+                                {canSendMessages && (
                                 <Tooltip content={t('actions.reply')}>
                                     <Button
                                         color="tertiary-text"
@@ -127,17 +130,20 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                         icon={<span className="material-icons">reply</span>}
                                         aria-label={t('actions.reply')}
                                         onClick={() => setReplyFormMode('reply')}
-                                    />
-                                </Tooltip>
-                                <Tooltip content={t('actions.forward')}>
-                                    <Button
-                                        color="tertiary-text"
+                                        />
+                                    </Tooltip>
+                                )}
+                                {canSendMessages && (
+                                    <Tooltip content={t('actions.forward')}>
+                                        <Button
+                                            color="tertiary-text"
                                         size="small"
                                         icon={<span className="material-icons">forward</span>}
                                         aria-label={t('actions.forward')}
                                         onClick={() => setReplyFormMode('forward')}
-                                    />
-                                </Tooltip>
+                                        />
+                                    </Tooltip>
+                                )}
                                 <DropdownMenu
                                     isOpen={isDropdownOpen}
                                     onOpenChange={setIsDropdownOpen}

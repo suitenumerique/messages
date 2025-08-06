@@ -4223,10 +4223,45 @@
                     "abilities": {
                         "type": "object",
                         "description": "Instance permissions and capabilities",
-                        "additionalProperties": {
-                            "type": "boolean"
+                        "properties": {
+                            "get": {
+                                "type": "boolean",
+                                "description": "Can read"
+                            },
+                            "post": {
+                                "type": "boolean",
+                                "description": "Can create"
+                            },
+                            "put": {
+                                "type": "boolean",
+                                "description": "Can update"
+                            },
+                            "patch": {
+                                "type": "boolean",
+                                "description": "Can partially update"
+                            },
+                            "delete": {
+                                "type": "boolean",
+                                "description": "Can delete"
+                            },
+                            "manage_accesses": {
+                                "type": "boolean",
+                                "description": "Can manage accesses"
+                            },
+                            "manage_mailboxes": {
+                                "type": "boolean",
+                                "description": "Can manage mailboxes"
+                            }
                         },
-                        "nullable": true,
+                        "required": [
+                            "get",
+                            "post",
+                            "put",
+                            "patch",
+                            "delete",
+                            "manage_accesses",
+                            "manage_mailboxes"
+                        ],
                         "readOnly": true
                     }
                 },
@@ -4272,10 +4307,55 @@
                     "abilities": {
                         "type": "object",
                         "description": "Instance permissions and capabilities",
-                        "additionalProperties": {
-                            "type": "boolean"
+                        "properties": {
+                            "get": {
+                                "type": "boolean",
+                                "description": "Can read"
+                            },
+                            "post": {
+                                "type": "boolean",
+                                "description": "Can create"
+                            },
+                            "put": {
+                                "type": "boolean",
+                                "description": "Can update"
+                            },
+                            "patch": {
+                                "type": "boolean",
+                                "description": "Can partially update"
+                            },
+                            "delete": {
+                                "type": "boolean",
+                                "description": "Can delete"
+                            },
+                            "manage_accesses": {
+                                "type": "boolean",
+                                "description": "Can manage accesses"
+                            },
+                            "view_messages": {
+                                "type": "boolean",
+                                "description": "Can view mailbox messages"
+                            },
+                            "send_messages": {
+                                "type": "boolean",
+                                "description": "Can send messages from mailbox"
+                            },
+                            "manage_labels": {
+                                "type": "boolean",
+                                "description": "Can manage mailbox labels"
+                            }
                         },
-                        "nullable": true,
+                        "required": [
+                            "get",
+                            "post",
+                            "put",
+                            "patch",
+                            "delete",
+                            "manage_accesses",
+                            "view_messages",
+                            "send_messages",
+                            "manage_labels"
+                        ],
                         "readOnly": true
                     }
                 },

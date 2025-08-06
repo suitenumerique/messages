@@ -3,7 +3,7 @@ import { Breadcrumbs } from "@/features/ui/components/breadcrumbs";
 import Link from "next/link";
 import { useTranslation } from "react-i18next";
 import { AdminMailDomainProvider, useAdminMailDomain } from "@/features/providers/admin-maildomain";
-import useAbility, { Abilities } from "@/hooks/use-abilty";
+import useAbility, { Abilities } from "@/hooks/use-ability";
 import ErrorPage from "next/error";
 
 type AdminLayoutProps = {

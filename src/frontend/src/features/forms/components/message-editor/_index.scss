@@ -1,4 +1,4 @@
-.c__field {
+.message-editor {
     &--error {
         .message-editor {
             border-color: var(--c--theme--colors--error);
@@ -9,8 +9,15 @@
             border-color: var(--c--theme--colors--success);
         }
     }
+    &--disabled {
+        pointer-events: none;
+        .message-editor-input {
+            cursor: not-allowed;
+            border-color: var(--c--theme--colors--greyscale-200);
+        }
+    }
 }
-.message-editor {
+.message-editor-input {
     border-radius: var(--c--components--forms-input--border-radius);
     border-width: var(--c--components--forms-input--border-width);
     border-color: var(--c--components--forms-input--border-color);
@@ -22,7 +29,7 @@
     background-color: var(--bn-colors-editor-background);
     position: relative;
     min-height: 20rem;
-     
+
     & .bn-toolbar.bn-formatting-toolbar {
         background: none;
         box-shadow: none;

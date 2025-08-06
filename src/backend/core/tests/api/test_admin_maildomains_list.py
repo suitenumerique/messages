@@ -126,7 +126,9 @@ class TestAdminMailDomainViewSet:
     ):
         """Test that a domain admin can list domains they have admin access to."""
         api_client.force_authenticate(user=domain_admin_user)
-        with django_assert_num_queries(2):  # 1 for list + 1 for pagination
+        with django_assert_num_queries(
+            3
+        ):  # 1 for permission + 1 for list + 1 for pagination
             response = api_client.get(self.LIST_DOMAINS_URL)
 
         assert response.status_code == status.HTTP_200_OK
@@ -143,8 +145,7 @@ class TestAdminMailDomainViewSet:
         # other_user has no MailDomainAccess records
         api_client.force_authenticate(user=other_user)
         response = api_client.get(self.LIST_DOMAINS_URL)
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 0
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_admin_maildomains_list_administered_maildomains_unauthenticated(
         self, api_client
@@ -184,8 +185,7 @@ class TestAdminMailDomainViewSet:
         api_client.force_authenticate(user=staff_not_superuser)
         response = api_client.get(self.LIST_DOMAINS_URL)
 
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 0
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_admin_maildomains_listadministered_maildomains_staff_not_superuser_with_access(
         self,
@@ -238,7 +238,9 @@ class TestAdminMailDomainViewSet:
 
         api_client.force_authenticate(user=domain_admin_user)
 
-        with django_assert_num_queries(2):  # 1 for list + 1 for pagination
+        with django_assert_num_queries(
+            3
+        ):  # 1 for permission + 1 for list + 1 for pagination
             response = api_client.get(self.LIST_DOMAINS_URL)
 
         assert response.status_code == status.HTTP_200_OK
@@ -395,25 +397,73 @@ class TestMailDomainAbilitiesAPI:
         assert abilities["manage_accesses"] is True
         assert abilities["manage_mailboxes"] is True
 
-    def test_maildomain_detail_no_access_abilities(
+    def test_maildomain_detail_permissions_user_without_access(
         self, api_client, other_user, mail_domain1
     ):
-        """Test that abilities are correctly set when user has no access to detail."""
+        """User with no maildomain abilities should not be able to get maildomain details."""
         api_client.force_authenticate(user=other_user)
         url = reverse("admin-maildomains-detail", args=[mail_domain1.id])
         response = api_client.get(url)
 
-        # Should return 404 since user has no access to this domain
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+        # Should return 403 since user has no access to this domain
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_maildomain_list_no_access_abilities(
+    def test_maildomain_detail_permissions_staff_user(
+        self, api_client, other_user, mail_domain1
+    ):
+        """Staff User should not be able to get maildomain details."""
+        staff_user = factories.UserFactory(is_staff=True)
+        api_client.force_authenticate(user=staff_user)
+        url = reverse("admin-maildomains-detail", args=[mail_domain1.id])
+        response = api_client.get(url)
+
+        # Should return 403 since user has no access to this domain
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_maildomain_detail_permissions_super_user(
+        self, api_client, other_user, mail_domain1
+    ):
+        """Super User should be able to get maildomain details."""
+        super_user = factories.UserFactory(is_superuser=True)
+        api_client.force_authenticate(user=super_user)
+        url = reverse("admin-maildomains-detail", args=[mail_domain1.id])
+        response = api_client.get(url)
+
+        # Should return 200 since user has access to this domain
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_maildomain_list_permissions_user_without_access(
         self, api_client, other_user, mail_domain1, mail_domain2
     ):
-        """Test that abilities are correctly set when user has no access."""
+        """User with no maildomain access should not be able to list maildomains."""
         api_client.force_authenticate(user=other_user)
         url = reverse("admin-maildomains-list")
         response = api_client.get(url)
 
-        # User has no access, so should get empty list
+        # User has no access, so should get 403
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_maildomain_list_permissions_staff_user(
+        self, api_client, other_user, mail_domain1, mail_domain2
+    ):
+        """Staff User should not be able to list maildomains."""
+        staff_user = factories.UserFactory(is_staff=True)
+        api_client.force_authenticate(user=staff_user)
+        url = reverse("admin-maildomains-list")
+        response = api_client.get(url)
+
+        # User has no access, so should get 403
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_maildomain_list_permissions_super_user(
+        self, api_client, other_user, mail_domain1, mail_domain2
+    ):
+        """Super User should be able to list maildomains."""
+        super_user = factories.UserFactory(is_superuser=True)
+        api_client.force_authenticate(user=super_user)
+        url = reverse("admin-maildomains-list")
+        response = api_client.get(url)
+
+        # User has no access, so should get 200
         assert response.status_code == status.HTTP_200_OK
-        assert len(response.data["results"]) == 0
+        assert response.data["count"] == 2

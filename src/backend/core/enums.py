@@ -72,8 +72,34 @@ THREAD_STATS_FIELDS_MAP = {
 
 
 # Abilities
-class UserAbilityChoices(models.TextChoices):
+class UserAbilities(models.TextChoices):
     """Defines the possible abilities a user can have."""
 
     CAN_VIEW_DOMAIN_ADMIN = "view_maildomains", "Can view domain admin"
     CAN_CREATE_MAILDOMAINS = "create_maildomains", "Can create maildomains"
+
+
+class CRUDAbilities(models.TextChoices):
+    """Mixin that provides standard CRUD abilities."""
+
+    CAN_READ = "get", "Can read"
+    CAN_CREATE = "post", "Can create"
+    CAN_UPDATE = "put", "Can update"
+    CAN_PARTIALLY_UPDATE = "patch", "Can partially update"
+    CAN_DELETE = "delete", "Can delete"
+
+
+class MailDomainAbilities(models.TextChoices):
+    """Defines specific abilities a MailDomain can have."""
+
+    CAN_MANAGE_ACCESSES = "manage_accesses", "Can manage accesses"
+    CAN_MANAGE_MAILBOXES = "manage_mailboxes", "Can manage mailboxes"
+
+
+class MailboxAbilities(models.TextChoices):
+    """Defines specific abilities a Mailbox can have."""
+
+    CAN_MANAGE_ACCESSES = "manage_accesses", "Can manage accesses"
+    CAN_VIEW_MESSAGES = "view_messages", "Can view mailbox messages"
+    CAN_SEND_MESSAGES = "send_messages", "Can send messages from mailbox"
+    CAN_MANAGE_LABELS = "manage_labels", "Can manage mailbox labels"

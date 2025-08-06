@@ -20,6 +20,7 @@ import { DateHelper } from "@/features/utils/date-helper";
 import { Banner } from "@/features/ui/components/banner";
 import { RhfContactComboBox } from "../react-hook-form/rhf-contact-combobox";
 import { DriveFile } from "./drive-attachment-picker";
+import useAbility, { Abilities } from "@/hooks/use-ability";
 
 export type MessageFormMode = "new" |"reply" | "reply_all" | "forward";
 
@@ -183,6 +184,15 @@ export const MessageForm = ({
         name: "driveAttachments",
     }) || [];
 
+    const currentSenderId = useWatch({
+        control: form.control,
+        name: "from",
+    });
+    const currentSender = mailboxes?.find((mailbox) => mailbox.id === currentSenderId);
+    const canSendMessages = useAbility(Abilities.CAN_SEND_MESSAGES, currentSender!);
+    const canWriteMessages = useAbility(Abilities.CAN_WRITE_MESSAGES, currentSender!);
+    const canChangeSender = !draft || canWriteMessages;
+
     const initialAttachments = useMemo((): (Attachment | DriveFile)[] => {
         return [...(draft?.attachments ?? []), ...(driveAttachments ?? [])];
     }, [draft, driveAttachments]);
@@ -284,6 +294,7 @@ export const MessageForm = ({
      * Update or create a draft message if any field to change.
      */
     const saveDraft = async (data: MessageFormFields) => {
+        if (!canWriteMessages) return;
         const canSaveDraft = (
             Object.keys(form.formState.dirtyFields).length > 0
             && (
@@ -357,6 +368,7 @@ export const MessageForm = ({
      * Send the draft message
      */
     const handleSubmit = async (data: MessageFormFields) => {
+        if (!canSendMessages) return;
         setPendingSubmit(true);
         stopAutoSave(); // Stop auto-save when submitting
 
@@ -462,6 +474,7 @@ export const MessageForm = ({
                         options={getMailboxOptions()}
                         label={t("thread_message.from")}
                         clearable={false}
+                        disabled={!canChangeSender}
                         compact
                         fullWidth
                         showLabelWhenSelected={false}
@@ -475,6 +488,7 @@ export const MessageForm = ({
                         // icon={<span className="material-icons">group</span>}
                         text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? t(form.formState.errors.to.message as string) : t("message_form.helper_text.recipients")}
                         textItems={Array.isArray(form.formState.errors.to) ? form.formState.errors.to?.map((error, index) => t(error!.message as string, { email: form.getValues('to')?.[index] })) : []}
+                        disabled={!canWriteMessages}
                         fullWidth
                         clearable
                     />
@@ -490,6 +504,7 @@ export const MessageForm = ({
                             // icon={<span className="material-icons">group</span>}
                             text={form.formState.errors.cc && !Array.isArray(form.formState.errors.cc) ? t(form.formState.errors.cc.message as string) : t("message_form.helper_text.recipients")}
                             textItems={Array.isArray(form.formState.errors.cc) ? form.formState.errors.cc?.map((error, index) => t(error!.message as string, { email: form.getValues('cc')?.[index] })) : []}
+                            disabled={!canWriteMessages}
                             fullWidth
                             clearable
                         />
@@ -504,6 +519,7 @@ export const MessageForm = ({
                             // icon={<span className="material-icons">visibility_off</span>}
                             text={form.formState.errors.bcc && !Array.isArray(form.formState.errors.bcc) ? t(form.formState.errors.bcc.message as string) : t("message_form.helper_text.recipients")}
                             textItems={Array.isArray(form.formState.errors.bcc) ? form.formState.errors.bcc?.map((error, index) => t(error!.message as string, { email: form.getValues('bcc')?.[index] })) : []}
+                            disabled={!canWriteMessages}
                             fullWidth
                             clearable
                         />
@@ -515,6 +531,7 @@ export const MessageForm = ({
                             name="subject"
                             label={t("thread_message.subject")}
                             text={form.formState.errors.subject && t(form.formState.errors.subject.message as string)}
+                            disabled={!canWriteMessages}
                             fullWidth
                         />
                     </div>
@@ -526,10 +543,15 @@ export const MessageForm = ({
                         state={form.formState.errors?.messageEditorDraft ? "error" : "default"}
                         text={form.formState.errors?.messageEditorDraft?.message}
                         quotedMessage={mode !== "new" ? parentMessage : undefined}
+                        disabled={!canWriteMessages}
                     />
                 </div>
 
-                <AttachmentUploader initialAttachments={initialAttachments} onChange={form.handleSubmit(saveDraft)} />
+                <AttachmentUploader
+                    initialAttachments={initialAttachments}
+                    onChange={form.handleSubmit(saveDraft)}
+                    disabled={!canWriteMessages}
+                />
 
                 {showAttachmentsForgetAlert &&
                   <Banner type="warning">
@@ -552,7 +574,7 @@ export const MessageForm = ({
                 <footer className="form-footer">
                     <Button
                         color="primary"
-                        disabled={!draft || pendingSubmit}
+                        disabled={!canSendMessages || !draft || pendingSubmit}
                         icon={pendingSubmit ? <Spinner size="sm" /> : undefined}
                         type="submit"
                     >
@@ -568,7 +590,7 @@ export const MessageForm = ({
                         </Button>
                     )}
                     {
-                        draft && (
+                        canWriteMessages && draft && (
                             <Button
                                 type="button"
                                 color="secondary"

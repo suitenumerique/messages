@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { addToast, ToasterItem } from "../toaster";
 import { toast } from "react-toastify";
+import useAbility, { Abilities } from "@/hooks/use-ability";
 
 type LabelBadgeProps = {
     label: ThreadLabel;
@@ -26,7 +27,8 @@ export const LabelBadge = ({ label, removable = false, linkable = false }: Label
         return `${pathname}?${params.toString()}`;
     }, [label, pathname]);
     const isActive = searchParams.get('label_slug') === label.slug;
-    const { invalidateThreadMessages, selectedThread } = useMailboxContext();
+    const { invalidateThreadMessages, selectedThread, selectedMailbox } = useMailboxContext();
+    const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
     const badgeColor = ColorHelper.getContrastColor(label.color!);
     const {mutate: deleteLabelMutation, isPending: isDeletingLabel} = useLabelsRemoveThreadsCreate({
         mutation: {
@@ -63,7 +65,7 @@ export const LabelBadge = ({ label, removable = false, linkable = false }: Label
     return (
         <Badge title={label.name} className="label-badge" style={{ backgroundColor: label.color, color: badgeColor}}>
             {showLink ? <Link href={link}>{label.name}</Link> : label.name}
-            {selectedThread?.id && removable && (
+            {canManageLabels &&selectedThread?.id && removable && (
                 <Tooltip content={t('actions.delete')}>
                     <button
                         className="label-badge__remove-cta"

@@ -76,7 +76,7 @@ class TestMailboxModelAbilities:
         assert abilities["manage_accesses"] is False
         assert abilities["view_messages"] is True
         assert abilities["send_messages"] is False
-        assert abilities["manage_labels"] is False
+        assert abilities["manage_labels"] is True
 
     def test_mailbox_get_abilities_admin(self, user, mailbox):
         """Test Mailbox.get_abilities when user has admin access."""
@@ -116,4 +116,4 @@ class TestMailboxModelAbilities:
         assert abilities["manage_accesses"] is False
         assert abilities["view_messages"] is True
         assert abilities["send_messages"] is True
-        assert abilities["manage_labels"] is False
+        assert abilities["manage_labels"] is True

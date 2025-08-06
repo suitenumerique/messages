@@ -114,8 +114,8 @@ def test_api_users_retrieve_me_with_abilities_superuser_not_staff():
     assert response.status_code == 200
     data = response.json()
     abilities = data["abilities"]
-    assert abilities["create_maildomains"] is False
-    assert abilities["view_maildomains"] is False
+    assert abilities["create_maildomains"] is True
+    assert abilities["view_maildomains"] is True
 
 
 def test_api_users_retrieve_me_with_abilities_staff_not_superuser():

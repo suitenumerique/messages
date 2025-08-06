@@ -58,6 +58,15 @@
     cursor: pointer;
 }
 
+.attachment-uploader--disabled {
+    cursor: not-allowed;
+    border-color: var(--c--theme--colors--greyscale-200);
+
+    & .attachment-uploader__input__helper-text {
+        color: var(--c--components--forms-labelledbox--label-color--small--disabled);
+    }
+}
+
 .attachment-uploader__dropzone {
     position: absolute;
     inset: -1px;

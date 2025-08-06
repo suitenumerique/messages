@@ -12,16 +12,19 @@ import { useDebounceCallback } from '@/hooks/use-debounce-callback';
 import { DropZone } from './dropzone';
 import { DriveAttachmentPicker, DriveFile } from './drive-attachment-picker';
 import { Icon } from '@gouvfr-lasuite/ui-kit';
+import clsx from 'clsx';
 
 interface AttachmentUploaderProps {
     initialAttachments?: (DriveFile | Attachment)[];
     onChange: () => void;
+    disabled?: boolean;
 }
 
 const MAX_ATTACHMENT_SIZE = 24 * 1024 * 1024; // 25MB
 
 export const AttachmentUploader = ({
     initialAttachments = [],
+    disabled = false,
     onChange
 }: AttachmentUploaderProps) => {
     const form = useFormContext();
@@ -36,6 +39,7 @@ export const AttachmentUploader = ({
         onDrop: async (acceptedFiles) => {
             await Promise.all(acceptedFiles.map(uploadFile));
         },
+        disabled,
         maxSize: MAX_ATTACHMENT_SIZE,
     });
 
@@ -129,13 +133,14 @@ export const AttachmentUploader = ({
             state={isFileTooLarge ? 'error' : 'default'}
             fullWidth
         >
-        <section className="attachment-uploader" {...getRootProps()} onClick={handleClick}>
+        <section className={clsx("attachment-uploader", { 'attachment-uploader--disabled': disabled })} {...getRootProps()} onClick={handleClick}>
             <DropZone isHidden={!isDragActive} />
             <div className="attachment-uploader__input">
                 <Button
                     color="tertiary"
                     icon={<Icon name="attach_file" />}
                     type="button"
+                    disabled={disabled}
                 >
                     {t("message_form.attachments_uploader.input_label")}
                 </Button>

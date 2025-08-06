@@ -17,7 +17,7 @@ export const MailboxPanel = () => {
     const { closeLeftPanel } = useLayoutContext();
 
     const getMailboxOptions = () => {
-        if(!mailboxes) return [];
+        if (!mailboxes) return [];
         return mailboxes.map((mailbox) => ({
             label: mailbox.email,
             value: mailbox.id
@@ -30,27 +30,27 @@ export const MailboxPanel = () => {
                 <MailboxPanelActions />
                 <HorizontalSeparator withPadding={false} />
             </div>
-            {!selectedMailbox || queryStates.mailboxes.isLoading ? <Spinner /> : 
-            (
-                <>
-                    <Select
-                        className="mailbox-panel__mailbox-title"
-                        options={getMailboxOptions()}
-                        value={selectedMailbox.id}
-                        label={t('mailbox')}
-                        onChange={(event) => {
-                            closeLeftPanel();
-                            router.push(`/mailbox/${event.target.value}?${searchParams.toString()}`);
-                        }}
-                        clearable={false}
-                        compact
-                        fullWidth
-                        showLabelWhenSelected={false}
-                    />
-                    <MailboxList />
-                    <MailboxLabels mailboxId={selectedMailbox.id} />
-                </>
-            )}
+            {!selectedMailbox || queryStates.mailboxes.isLoading ? <Spinner /> :
+                (
+                    <>
+                        <Select
+                            className="mailbox-panel__mailbox-title"
+                            options={getMailboxOptions()}
+                            value={selectedMailbox.id}
+                            label={t('mailbox')}
+                            onChange={(event) => {
+                                closeLeftPanel();
+                                router.push(`/mailbox/${event.target.value}?${searchParams.toString()}`);
+                            }}
+                            clearable={false}
+                            compact
+                            fullWidth
+                            showLabelWhenSelected={false}
+                        />
+                        <MailboxList />
+                        <MailboxLabels mailbox={selectedMailbox} />
+                    </>
+                )}
         </div>
     )
 }

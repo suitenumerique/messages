@@ -1,9 +1,9 @@
-import { MainLayout } from "@/features/layouts/components/main";
-import { MessageForm } from "@/features/forms/components/message-form";
 import { useRouter } from "next/router";
 import { useTranslation } from "react-i18next";
-import { useMailboxContext } from "@/features/providers/mailbox";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { MainLayout } from "@/features/layouts/components/main";
+import { MessageForm } from "@/features/forms/components/message-form";
+import { useMailboxContext } from "@/features/providers/mailbox";
 import { MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
 
 const NewMessageFormPage = () => {

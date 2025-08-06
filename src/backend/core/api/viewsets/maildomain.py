@@ -44,7 +44,9 @@ class AdminMailDomainViewSet(
     """
 
     serializer_class = core_serializers.MailDomainAdminSerializer
-    permission_classes = [core_permissions.IsAuthenticated]
+    permission_classes = [
+        core_permissions.IsSuperUser | core_permissions.IsMailDomainAdmin
+    ]
 
     def get_queryset(self):
         user = self.request.user
@@ -109,19 +111,6 @@ class AdminMailDomainViewSet(
         """
         maildomain = get_object_or_404(models.MailDomain, pk=pk)
 
-        # Check if user has admin access to this domain
-        if not request.user.is_superuser:
-            if not maildomain.accesses.filter(
-                user=request.user,
-                role=models.MailDomainAccessRoleChoices.ADMIN,
-            ).exists():
-                return Response(
-                    {
-                        "detail": "You don't have permission to check DNS for this domain."
-                    },
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
         # Perform DNS check
         check_results = check_dns_records(maildomain)
 
@@ -152,8 +141,7 @@ class AdminMailDomainMailboxViewSet(
     """
 
     permission_classes = [
-        core_permissions.IsAuthenticated,
-        core_permissions.IsMailDomainAdmin,
+        core_permissions.IsSuperUser | core_permissions.IsMailDomainAdmin
     ]
     serializer_class = core_serializers.MailboxAdminSerializer
 
@@ -326,8 +314,7 @@ class AdminMailDomainUserViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
     """
 
     permission_classes = [
-        core_permissions.IsAuthenticated,
-        core_permissions.IsMailDomainAdmin,
+        core_permissions.IsSuperUser | core_permissions.IsMailDomainAdmin
     ]
     serializer_class = core_serializers.UserWithoutAbilitiesSerializer
     pagination_class = None

@@ -415,7 +415,7 @@ class TestMailboxAbilitiesAPI:
         assert abilities["manage_accesses"] is False
         assert abilities["view_messages"] is True
         assert abilities["send_messages"] is False
-        assert abilities["manage_labels"] is False
+        assert abilities["manage_labels"] is True
 
     def test_mailbox_detail_no_access_abilities(self, api_client, user, mailbox):
         """Test that abilities are correctly set when user has no access to detail."""

@@ -19,9 +19,6 @@ export interface MailDomainAdmin {
   /** date and time at which a record was last updated */
   readonly updated_at: string;
   readonly expected_dns_records: string;
-  /**
-   * Instance permissions and capabilities
-   * @nullable
-   */
+  /** Instance permissions and capabilities */
   readonly abilities: MailDomainAdminAbilities;
 }

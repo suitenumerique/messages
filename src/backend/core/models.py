@@ -25,13 +25,16 @@ from timezone_field import TimeZoneField
 
 from core.enums import (
     CompressionTypeChoices,
+    CRUDAbilities,
     DKIMAlgorithmChoices,
+    MailboxAbilities,
     MailboxRoleChoices,
+    MailDomainAbilities,
     MailDomainAccessRoleChoices,
     MessageDeliveryStatusChoices,
     MessageRecipientTypeChoices,
     ThreadAccessRoleChoices,
-    UserAbilityChoices,
+    UserAbilities,
 )
 from core.mda.rfc5322 import parse_email_message
 from core.mda.signing import generate_dkim_key as _generate_dkim_key
@@ -214,13 +217,18 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
         super().clean()
 
     def get_abilities(self):
-        """Return abilities of the logged-in user."""
-        # if user as access to any maildomain, he can view them
+        """
+        Return abilities of the logged-in user.
+
+        - Superuser and maildomain admin can view maildomains
+        - Only superuser can create maildomains!
+        """
+        # if user as access to any maildomain or is superuser, he can view them
         has_access = self.maildomain_accesses.exists()
-        is_super_admin = self.is_superuser and self.is_staff
+        is_admin = self.is_superuser
         return {
-            UserAbilityChoices.CAN_VIEW_DOMAIN_ADMIN: has_access or is_super_admin,
-            UserAbilityChoices.CAN_CREATE_MAILDOMAINS: is_super_admin,
+            UserAbilities.CAN_VIEW_DOMAIN_ADMIN: has_access or is_admin,
+            UserAbilities.CAN_CREATE_MAILDOMAINS: is_admin,
         }
 
 
@@ -349,16 +357,16 @@ class MailDomain(BaseModel):
                     except (MailDomainAccess.DoesNotExist, IndexError):
                         role = None
 
-        is_admin = role == MailDomainAccessRoleChoices.ADMIN
+        is_admin = role == MailDomainAccessRoleChoices.ADMIN or user.is_superuser
 
         return {
-            "get": bool(role),
-            "patch": is_admin,
-            "put": is_admin,
-            "post": is_admin,
-            "delete": is_admin,
-            "manage_accesses": is_admin,
-            "manage_mailboxes": is_admin,
+            CRUDAbilities.CAN_READ: bool(role),
+            CRUDAbilities.CAN_CREATE: is_admin,
+            CRUDAbilities.CAN_UPDATE: is_admin,
+            CRUDAbilities.CAN_PARTIALLY_UPDATE: is_admin,
+            CRUDAbilities.CAN_DELETE: is_admin,
+            MailDomainAbilities.CAN_MANAGE_ACCESSES: is_admin,
+            MailDomainAbilities.CAN_MANAGE_MAILBOXES: is_admin,
         }
 
     def generate_dkim_key(
@@ -566,15 +574,15 @@ class Mailbox(BaseModel):
         has_access = bool(role)
 
         return {
-            "get": has_access,
-            "patch": can_modify,
-            "put": can_modify,
-            "post": can_modify,
-            "delete": can_delete,
-            "manage_accesses": is_admin,
-            "view_messages": has_access,
-            "send_messages": can_send,
-            "manage_labels": is_admin,
+            CRUDAbilities.CAN_READ: has_access,
+            CRUDAbilities.CAN_CREATE: can_modify,
+            CRUDAbilities.CAN_PARTIALLY_UPDATE: can_modify,
+            CRUDAbilities.CAN_UPDATE: can_modify,
+            CRUDAbilities.CAN_DELETE: can_delete,
+            MailboxAbilities.CAN_MANAGE_ACCESSES: is_admin,
+            MailboxAbilities.CAN_VIEW_MESSAGES: has_access,
+            MailboxAbilities.CAN_SEND_MESSAGES: can_send,
+            MailboxAbilities.CAN_MANAGE_LABELS: can_modify,
         }
 
 

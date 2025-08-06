@@ -8,6 +8,20 @@
 
 /**
  * Instance permissions and capabilities
- * @nullable
  */
-export type MailDomainAdminAbilities = { [key: string]: boolean } | null;
+export type MailDomainAdminAbilities = {
+  /** Can read */
+  readonly get: boolean;
+  /** Can create */
+  readonly post: boolean;
+  /** Can update */
+  readonly put: boolean;
+  /** Can partially update */
+  readonly patch: boolean;
+  /** Can delete */
+  readonly delete: boolean;
+  /** Can manage accesses */
+  readonly manage_accesses: boolean;
+  /** Can manage mailboxes */
+  readonly manage_mailboxes: boolean;
+};

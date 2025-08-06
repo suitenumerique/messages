@@ -32,7 +32,7 @@ class TestAdminMaildomainsUserList:
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert (
             str(response.data["detail"])
-            == "You do not have administrative rights for this mail domain."
+            == "You do not have permission to perform this action."
         )
 
     def test_admin_maildomains_user_list_forbidden_unauthenticated(self, api_client):

@@ -5,16 +5,18 @@ import { useTranslation } from "react-i18next";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { AdminLayout } from "@/features/layouts/components/admin/admin-layout";
 import Bar from "@/features/ui/components/bar";
-import { useMaildomainsList } from "@/features/api/gen/maildomains/maildomains";
 import { MailDomainAdmin } from "@/features/api/gen";
 import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
+import useAbility, { Abilities } from "@/hooks/use-ability";
+import { Banner } from "@/features/ui/components/banner";
 
-function AdminDataGrid() {
+type AdminDataGridProps = {
+  domains: MailDomainAdmin[];
+}
+
+function AdminDataGrid({ domains }: AdminDataGridProps) {
   const router = useRouter();
   const { t, i18n } = useTranslation();
-  const { data: maildomainsData, error } = useMaildomainsList();
-
-  const domains = maildomainsData?.data.results || [];
 
   const columns = [
     {
@@ -41,16 +43,6 @@ function AdminDataGrid() {
     },
   ];
 
-  if (error) {
-    return (
-      <div className="admin-data-grid">
-        <div style={{ padding: "2rem", textAlign: "center", color: "var(--c--theme--colors--danger-600)" }}>
-          {t("admin_maildomains_list.loading_error")}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="admin-data-grid">
       <DataGrid
@@ -64,20 +56,21 @@ function AdminDataGrid() {
 const AdminPageContent = () => {
   const router = useRouter();
   const { t } = useTranslation();
-  const { mailDomains, isLoading } = useAdminMailDomain();
+  const { mailDomains, isLoading, error } = useAdminMailDomain();
+  const canCreateMaildomain = useAbility(Abilities.CAN_CREATE_MAILDOMAINS);
+  const shouldRedirect = !canCreateMaildomain && !isLoading && mailDomains.length === 1;
 
   /**
-   * Auto-navigate to first domain if there's only one.
+   * Auto-navigate to first domain if there's only one and the
+   * user has no ability to create maildomains.
    */
   useEffect(() => {
-    if (!isLoading && mailDomains) {
-      if (mailDomains.length === 1) {
+    if (shouldRedirect) {
         router.replace(`/domain/${mailDomains[0].id}`);
-      }
     }
-  }, [router, mailDomains, isLoading]);
+  }, [router, shouldRedirect]);
 
-  if (isLoading || mailDomains?.length === 1) {
+  if (isLoading || shouldRedirect) {
     return (
         <div className="admin-page__loading">
           <Spinner />
@@ -85,12 +78,20 @@ const AdminPageContent = () => {
     )
   }
 
+  if (error) {
+    return (
+      <Banner type="error">
+          {t("admin_maildomains_list.loading_error")}
+      </Banner>
+    );
+  }
+
   return (
     <>
       <Bar className="admin-page__bar">
         <h1>{t("admin_maildomains_list.title")}</h1>
       </Bar>
-      <AdminDataGrid />
+      <AdminDataGrid domains={mailDomains} />
     </>
   )
 }

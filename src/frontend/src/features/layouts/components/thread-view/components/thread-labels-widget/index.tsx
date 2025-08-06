@@ -1,6 +1,7 @@
 import { ThreadLabel, TreeLabel, useLabelsAddThreadsCreate, useLabelsList, useLabelsRemoveThreadsCreate } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import StringHelper from "@/features/utils/string-helper";
+import useAbility, { Abilities } from "@/hooks/use-ability";
 import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button, Checkbox, Input, Tooltip } from "@openfun/cunningham-react";
 import { useMemo, useState } from "react";
@@ -14,8 +15,14 @@ type ThreadLabelsWidgetProps = {
 export const ThreadLabelsWidget = ({ threadId, selectedLabels = [] }: ThreadLabelsWidgetProps) => {
     const { t } = useTranslation();
     const { selectedMailbox } = useMailboxContext();
-    const {data: labelsList, isLoading: isLoadingLabelsList } = useLabelsList({ mailbox_id: selectedMailbox!.id });
+    const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
+    const {data: labelsList, isLoading: isLoadingLabelsList } = useLabelsList(
+        { mailbox_id: selectedMailbox!.id },
+        { query: { enabled: canManageLabels } }
+    );
     const [isPopupOpen, setIsPopupOpen] = useState(false);
+
+    if (!canManageLabels) return null;
 
     if (isLoadingLabelsList) {
         return (

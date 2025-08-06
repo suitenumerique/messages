@@ -18,9 +18,10 @@ import { toast } from "react-toastify";
 type LabelItemProps = TreeLabel & {
     level?: number;
     onEdit: (label: TreeLabel) => void;
+    canManage: boolean;
   }
 
-export  const LabelItem = ({ level = 0, onEdit, ...label }: LabelItemProps) => {
+export  const LabelItem = ({ level = 0, onEdit, canManage, ...label }: LabelItemProps) => {
     const { selectedMailbox, invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isDragOver, setIsDragOver] = useState(false);
@@ -120,9 +121,11 @@ export  const LabelItem = ({ level = 0, onEdit, ...label }: LabelItemProps) => {
     const handleDrop = (e: React.DragEvent<HTMLAnchorElement>) => {
       e.preventDefault();
       setIsDragOver(false);
+      const rawData = e.dataTransfer.getData('application/json');
+      if (!rawData) return;
 
       try {
-        const data = JSON.parse(e.dataTransfer.getData('application/json'));
+        const data = JSON.parse(rawData);
         const canBeAssigned = !data.labels.includes(label.id);
         if (data.type === 'thread' && data.threadId && canBeAssigned) {
           addThreadMutation.mutate({
@@ -146,9 +149,9 @@ export  const LabelItem = ({ level = 0, onEdit, ...label }: LabelItemProps) => {
           style={{ paddingLeft: `${level * 1}rem` }}
           data-focus-within={isDropdownOpen}
           title={label.display_name}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          onDragOver={canManage ? handleDragOver : undefined}
+          onDragLeave={canManage ? handleDragLeave : undefined}
+          onDrop={canManage ? handleDrop : undefined}
         >
           <div className="label-item__column">
             <button
@@ -167,36 +170,38 @@ export  const LabelItem = ({ level = 0, onEdit, ...label }: LabelItemProps) => {
             </div>
           </div>
           <div className="label-item__column">
-            <div className="label-item__dropdown-actions">
-              <DropdownMenu
-                isOpen={isDropdownOpen}
-                onOpenChange={setIsDropdownOpen}
-                options={[
-                  {
-                    label: t('actions.edit'),
-                    icon: <span className="material-icons">edit</span>,
-                    callback: () => onEdit(label),
-                  },
-                  {
-                    label: t('actions.delete'),
-                    icon: <span className="material-icons">delete</span>,
-                    callback: () => deleteMutation.mutate({ id: label.id }, {
-                      onSuccess: () => {
-                        queryClient.invalidateQueries({ queryKey: labelsQuery.queryKey });
-                      },
-                    }),
-                  },
-                ]}
-              >
-                <Button
-                  onClick={() => setIsDropdownOpen(true)}
-                  icon={<span className="material-icons">more_vert</span>}
-                  color="primary-text"
-                  aria-label={t('tooltips.more_options')}
-                  size="small"
-                />
-              </DropdownMenu>
-            </div>
+            {canManage && (
+              <div className="label-item__dropdown-actions">
+                <DropdownMenu
+                  isOpen={isDropdownOpen}
+                  onOpenChange={setIsDropdownOpen}
+                  options={[
+                    {
+                      label: t('actions.edit'),
+                      icon: <span className="material-icons">edit</span>,
+                      callback: () => onEdit(label),
+                    },
+                    {
+                      label: t('actions.delete'),
+                      icon: <span className="material-icons">delete</span>,
+                      callback: () => deleteMutation.mutate({ id: label.id }, {
+                        onSuccess: () => {
+                          queryClient.invalidateQueries({ queryKey: labelsQuery.queryKey });
+                        },
+                      }),
+                    },
+                  ]}
+                >
+                  <Button
+                    onClick={() => setIsDropdownOpen(true)}
+                    icon={<span className="material-icons">more_vert</span>}
+                    color="primary-text"
+                    aria-label={t('tooltips.more_options')}
+                    size="small"
+                  />
+                  </DropdownMenu>
+              </div>
+            )}
             {unreadCount > 0 && <Badge>{unreadCount}</Badge>}
           </div>
         </Link>
@@ -204,7 +209,7 @@ export  const LabelItem = ({ level = 0, onEdit, ...label }: LabelItemProps) => {
         {hasChildren && isExpanded && (
           <div className="label-children">
             {label.children.map((child) => (
-              <LabelItem key={child.id} {...child} level={level + 1} onEdit={onEdit} />
+              <LabelItem key={child.id} {...child} level={level + 1} onEdit={onEdit} canManage={canManage} />
             ))}
           </div>
         )}

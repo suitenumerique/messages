@@ -8,6 +8,24 @@
 
 /**
  * Instance permissions and capabilities
- * @nullable
  */
-export type MailboxAbilities = { [key: string]: boolean } | null;
+export type MailboxAbilities = {
+  /** Can read */
+  readonly get: boolean;
+  /** Can create */
+  readonly post: boolean;
+  /** Can update */
+  readonly put: boolean;
+  /** Can partially update */
+  readonly patch: boolean;
+  /** Can delete */
+  readonly delete: boolean;
+  /** Can manage accesses */
+  readonly manage_accesses: boolean;
+  /** Can view mailbox messages */
+  readonly view_messages: boolean;
+  /** Can send messages from mailbox */
+  readonly send_messages: boolean;
+  /** Can manage mailbox labels */
+  readonly manage_labels: boolean;
+};

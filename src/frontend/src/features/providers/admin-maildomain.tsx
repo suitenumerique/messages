@@ -7,26 +7,24 @@ type AdminMailDomainContextType = {
     selectedMailDomain: MailDomainAdmin | null;
     mailDomains: MailDomainAdmin[];
     isLoading: boolean;
+    error: unknown | null;
 }
 
-const AdminMailDomainContext = createContext<AdminMailDomainContextType>({
-    selectedMailDomain: null,
-    mailDomains: [],
-    isLoading: false,
-})
+const AdminMailDomainContext = createContext<AdminMailDomainContextType | undefined>(undefined)
 
 /**
  * Context provider for the admin mail domain views.
  * It centralizes mail domain data fetching and selection.
  */
 export const AdminMailDomainProvider = ({ children }: PropsWithChildren) => {
-    const { data: maildomainsData, isLoading } = useMaildomainsList();
+    const { data: maildomainsData, isLoading, error } = useMaildomainsList();
     const router = useRouter();
     const [selectedMailDomain, setSelectedMailDomain] = useState<MailDomainAdmin | null>(null);
     const context = useMemo(() => ({
         selectedMailDomain,
         mailDomains: maildomainsData?.data.results || [],
         isLoading,
+        error,
     }), [selectedMailDomain, maildomainsData, isLoading]);
 
     useEffect(() => {
@@ -45,7 +43,7 @@ export const AdminMailDomainProvider = ({ children }: PropsWithChildren) => {
 
 export const useAdminMailDomain = () => {
     const context = useContext(AdminMailDomainContext);
-    if (!context) {
+    if (context === undefined) {
         throw new Error("useAdminMailDomain must be used within an AdminMailDomainProvider");
     }
     return context;

@@ -5,6 +5,7 @@ import { Button, Tooltip } from "@openfun/cunningham-react";
 import { DropdownMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useLayoutContext } from "../../../main";
+import useAbility, { Abilities } from "@/hooks/use-ability";
 
 export const MailboxPanelActions = () => {
     const { t } = useTranslation();
@@ -12,9 +13,11 @@ export const MailboxPanelActions = () => {
     const router = useRouter();
     const { selectedMailbox } = useMailboxContext();
     const { closeLeftPanel } = useLayoutContext();
+    const canWriteMessages = useAbility(Abilities.CAN_WRITE_MESSAGES, selectedMailbox);
 
     const goToNewMessageForm = (event: React.MouseEvent<HTMLButtonElement | HTMLAnchorElement>) => {
         event.preventDefault();
+        if (!canWriteMessages) return;
         closeLeftPanel();
         router.push(`/mailbox/${selectedMailbox!.id}/new`);
     }
@@ -23,13 +26,18 @@ export const MailboxPanelActions = () => {
 
     return (
         <div className="mailbox-panel-actions">
-            <Button
-                onClick={goToNewMessageForm}
-                href={`/mailbox/${selectedMailbox.id}/new`}
-                icon={<span className="material-icons">edit_note</span>}
-            >
-                {t("actions.new_message")}
-            </Button>
+            <div>
+            {
+                <Button
+                    onClick={goToNewMessageForm}
+                    href={`/mailbox/${selectedMailbox.id}/new`}
+                    icon={<span className="material-icons">edit_note</span>}
+                    disabled={!canWriteMessages}
+                >
+                    {t("actions.new_message")}
+                </Button>
+            }
+            </div>
             <div className="mailbox-panel-actions__extra">
                 <DropdownMenu
                     isOpen={isDropdownOpen}
