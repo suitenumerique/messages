@@ -145,7 +145,7 @@ export const MessageForm = ({
     }
 
     const formDefaultValues = useMemo(() => {
-        const [draftBody, draftDriveAttachments] = MailHelper.extractDriveAttachmentsFromDraft(draft?.draftBody);
+        const [draftBody, draftDriveAttachments] = MailHelper.extractDriveAttachmentsFromDraft(draft?.draftBody ?? '');
         return {
             from: defaultSenderId ?? '',
             to: draft?.to?.map(contact => contact.email) ?? recipients,

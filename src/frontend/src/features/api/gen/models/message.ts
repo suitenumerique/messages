@@ -29,7 +29,8 @@ export interface Message {
   readonly updated_at: string;
   readonly htmlBody: readonly MessageHtmlBodyItem[];
   readonly textBody: readonly MessageTextBodyItem[];
-  readonly draftBody: string;
+  /** @nullable */
+  readonly draftBody: string | null;
   readonly attachments: readonly Attachment[];
   readonly sender: Contact;
   readonly to: readonly Contact[];

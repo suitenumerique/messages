@@ -4696,6 +4696,7 @@
                     },
                     "draftBody": {
                         "type": "string",
+                        "nullable": true,
                         "readOnly": true
                     },
                     "attachments": {

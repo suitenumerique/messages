@@ -532,7 +532,7 @@ class MessageSerializer(serializers.ModelSerializer):
         """Return the list of HTML body parts (JMAP style)."""
         return instance.get_parsed_field("htmlBody") or []
 
-    @extend_schema_field(serializers.CharField())
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_draftBody(self, instance):  # pylint: disable=invalid-name
         """Return an arbitrary JSON object representing the draft body."""
         return (
