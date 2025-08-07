@@ -135,7 +135,7 @@ def update_draft(
     """
 
     updated_fields = []
-    thread_updated_fields = ["updated_at"]  # Always update thread timestamp
+    thread_updated_fields = []
 
     # Check access to the thread
     if (
@@ -149,13 +149,13 @@ def update_draft(
         raise drf.exceptions.PermissionDenied("Access denied to this message's thread.")
 
     # Update subject if provided
-    if "subject" in update_data:
+    if "subject" in update_data and update_data["subject"] != message.subject:
         message.subject = update_data["subject"]
         updated_fields.append("subject")
         # Also update thread subject if this is the first message
         if message.pk and message.thread.messages.count() == 1:
             message.thread.subject = update_data["subject"]
-            thread_updated_fields.extend(["subject", "updated_at"])
+            thread_updated_fields.append("subject")
 
     # Update recipients if provided
     recipient_type_mapping = {
@@ -285,11 +285,10 @@ def update_draft(
         updated_fields.append("has_attachments")
 
     # Save message and thread if changes were made
-    if updated_fields and message.pk:  # Only save if message exists
+    if len(updated_fields) > 0 and message.pk:  # Only save if message exists
+        logger.info("Saving message %s with fields %s", message.id, updated_fields)
         message.save(update_fields=updated_fields + ["updated_at"])
-    if thread_updated_fields and message.thread.pk:  # Check thread exists
-        message.thread.save(
-            update_fields=list(set(thread_updated_fields))
-        )  # Use set to avoid duplicate updated_at
+    if len(thread_updated_fields) > 0 and message.thread.pk:  # Check thread exists
+        message.thread.save(update_fields=thread_updated_fields + ["updated_at"])
 
     return message

@@ -77,8 +77,14 @@ def create_and_send_draft(
     if not prepare_outbound_message(from_mailbox, message, text_body, html_body):
         raise SelfCheckError("Failed to prepare outbound message")
 
-    # Send the message
+    # Send the message synchronously
     send_message(message, force_mta_out=True)
+
+    # Check message delivery status
+    recipient_status = message.recipients.first().delivery_status  # pylint: disable=no-member
+
+    if recipient_status != models.MessageDeliveryStatusChoices.SENT:
+        raise SelfCheckError("Message not delivered")
 
     return message
 
@@ -130,11 +136,16 @@ def _create_test_mailboxes(
 
 def _wait_for_message_reception(
     to_mailbox: models.Mailbox,
+    from_email: str,
+    subject: str,
     secret: str,
-    timeout_seconds: int = 60,
-    check_interval_seconds: int = 2,
+    timeout_seconds: int = None,
+    check_interval_seconds: float = 0.1,
 ) -> Optional[models.Message]:
     """Wait for a message containing the secret to be received in the target mailbox."""
+
+    if timeout_seconds is None:
+        timeout_seconds = settings.MESSAGES_SELFCHECK_TIMEOUT
 
     start_time = time.time()
     deadline = start_time + timeout_seconds
@@ -143,7 +154,8 @@ def _wait_for_message_reception(
         # Check for messages in the mailbox that contain the secret
         messages = models.Message.objects.filter(
             thread__accesses__mailbox=to_mailbox,
-            sender__email__contains=to_mailbox.contact.email.split("@")[0],
+            sender__email=from_email,
+            subject=subject,
             created_at__gte=timezone.now() - timedelta(minutes=5),
         ).select_related("thread", "sender")
 
@@ -185,14 +197,11 @@ def _verify_message_integrity(message: models.Message, original_secret: str) -> 
     return True
 
 
-def _cleanup_test_data(message: models.Message, thread: models.Thread):
+def _cleanup_test_data(message: models.Message):
     """Clean up test message and thread, but keep mailboxes."""
 
-    # Delete the message (this will also clean up the blob)
-    message.delete()
-
-    # Delete the thread - it's dedicated to the test message
-    thread.delete()
+    # Delete the whole thread (this will also clean up the message and blobs)
+    message.thread.delete()
     logger.info("Cleaned up test thread")
 
 
@@ -261,13 +270,15 @@ that the mail delivery pipeline is working correctly.</p>
 </html>
         """.strip()
 
+        subject = f"Self-check test message - {secret[:8]}"
+
         # Step 3: Create and send message using new draft function
         start_time = time.time()
 
         message = create_and_send_draft(
             from_mailbox=from_mailbox,
             to_emails=[to_email],
-            subject=f"Self-check test message - {secret[:8]}",
+            subject=subject,
             text_body=text_body,
             html_body=html_body,
         )
@@ -277,11 +288,15 @@ that the mail delivery pipeline is working correctly.</p>
 
         # Step 4: Wait for message reception
         reception_start = time.time()
-        received_message = _wait_for_message_reception(to_mailbox, secret)
+        received_message = _wait_for_message_reception(
+            to_mailbox, from_email, subject, secret
+        )
         result["reception_time"] = time.time() - reception_start
 
         if not received_message:
-            raise SelfCheckError("Message not received within timeout")
+            raise SelfCheckError(
+                f"Message not received within {settings.MESSAGES_SELFCHECK_TIMEOUT} seconds"
+            )
 
         logger.info("Message received: %s", received_message.id)
 
@@ -289,10 +304,6 @@ that the mail delivery pipeline is working correctly.</p>
         if not _verify_message_integrity(received_message, secret):
             raise SelfCheckError("Message integrity verification failed")
         logger.info("Message integrity verified")
-
-        # Step 6: Cleanup
-        _cleanup_test_data(message, message.thread)
-        logger.info("Cleanup completed")
 
         # Set success
         result["success"] = True
@@ -306,6 +317,7 @@ that the mail delivery pipeline is working correctly.</p>
 
     finally:
         if "message" in locals():
-            _cleanup_test_data(message, message.thread)
+            _cleanup_test_data(message)
+        logger.info("Cleanup completed")
 
     return result

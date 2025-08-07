@@ -169,6 +169,11 @@ class TestMessagesDelete:
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
         message = factories.MessageFactory(subject="Test message", thread=thread)
+        message_blob = mailbox.create_blob(b"test", "text/plain")
+        message_draft_blob = mailbox.create_blob(b"test", "text/plain")
+        message.blob = message_blob
+        message.draft_blob = message_draft_blob
+        message.save()
         message2 = factories.MessageFactory(subject="Test message 2", thread=thread)
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -191,6 +196,11 @@ class TestMessagesDelete:
         # check thread stats was updated after message was deleted
         thread.refresh_from_db()
         assert thread.has_messages is True
+
+        assert not models.Blob.objects.filter(id=message_blob.id).exists()
+        assert not models.Blob.objects.filter(id=message_draft_blob.id).exists()
+
+        # TODO: check attachments blobs are deleted
 
     @pytest.mark.parametrize(
         "mailbox_role",

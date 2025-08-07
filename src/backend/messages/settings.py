@@ -193,6 +193,11 @@ class Base(Configuration):
         environ_name="MESSAGES_SELFCHECK_INTERVAL",
         environ_prefix=None,
     )
+    MESSAGES_SELFCHECK_TIMEOUT = values.PositiveIntegerValue(
+        60,  # 60 seconds
+        environ_name="MESSAGES_SELFCHECK_TIMEOUT",
+        environ_prefix=None,
+    )
 
     # Blob compression settings
     MESSAGES_BLOB_ZSTD_LEVEL = values.PositiveIntegerValue(

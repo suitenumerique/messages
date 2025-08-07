@@ -105,6 +105,22 @@ def index_thread_post_save(sender, instance, created, **kwargs):
 
 
 @receiver(post_delete, sender=models.Message)
+def delete_message_blobs(sender, instance, **kwargs):
+    """Delete the blobs associated with a message."""
+    if instance.blob:
+        instance.blob.delete()
+    if instance.draft_blob:
+        instance.draft_blob.delete()
+
+
+# @receiver(post_delete, sender=models.Attachment)
+# def delete_attachments_blobs(sender, instance, **kwargs):
+#     """Delete the blob associated with an attachment."""
+#     if instance.blob:
+#         instance.blob.delete()
+
+
+@receiver(post_delete, sender=models.Message)
 def delete_message_from_index(sender, instance, **kwargs):
     """Remove a message from the index after it's deleted."""
     if not getattr(settings, "OPENSEARCH_INDEX_THREADS", False):
