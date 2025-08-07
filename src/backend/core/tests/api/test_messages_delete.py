@@ -171,12 +171,22 @@ class TestMessagesDelete:
             thread=thread,
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
+<<<<<<< HEAD
         message = factories.MessageFactory(
             subject="Test message", thread=thread, raw_mime=b"raw email content"
         )
         message2 = factories.MessageFactory(
             subject="Test message 2", thread=thread, raw_mime=b"raw email content 2"
         )
+=======
+        message = factories.MessageFactory(subject="Test message", thread=thread)
+        message_blob = mailbox.create_blob(b"test", "text/plain")
+        message_draft_blob = mailbox.create_blob(b"test", "text/plain")
+        message.blob = message_blob
+        message.draft_blob = message_draft_blob
+        message.save()
+        message2 = factories.MessageFactory(subject="Test message 2", thread=thread)
+>>>>>>> 997eb9b (🐛(selfcheck) fix selfcheck after tests, cleanup message blobs after delete)
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
@@ -201,7 +211,14 @@ class TestMessagesDelete:
         thread.refresh_from_db()
         assert thread.has_messages is True
 
+<<<<<<< HEAD
         assert models.Blob.objects.count() == 1
+=======
+        assert not models.Blob.objects.filter(id=message_blob.id).exists()
+        assert not models.Blob.objects.filter(id=message_draft_blob.id).exists()
+
+        # TODO: check attachments blobs are deleted
+>>>>>>> 997eb9b (🐛(selfcheck) fix selfcheck after tests, cleanup message blobs after delete)
 
     @pytest.mark.parametrize(
         "mailbox_role",

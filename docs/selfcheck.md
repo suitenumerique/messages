@@ -22,6 +22,7 @@ The selfcheck system uses the following environment variables:
 - `MESSAGES_SELFCHECK_TO`: Email address to send to (for instance: `selfcheck-receiver@example.local`)
 - `MESSAGES_SELFCHECK_SECRET`: Secret string to include in the message body (for instance: `selfcheck-secret-xyz`)
 - `MESSAGES_SELFCHECK_INTERVAL`: Interval in seconds between self-checks (for instance: `600` - 10 minutes)
+- `MESSAGES_SELFCHECK_TIMEOUT`: Timeout in seconds for message reception (for instance: `60` - 60 seconds)
 
 ## Usage
 
@@ -60,7 +61,7 @@ If the selfcheck fails, it will return an error message and attempt to clean up 
 
 - **Message preparation failure**: The outbound message preparation failed
 - **Message sending failure**: The message could not be sent via the MTA
-- **Reception timeout**: The message was not received within the timeout period (60 seconds)
+- **Reception timeout**: The message was not received within the timeout period (configurable via `MESSAGES_SELFCHECK_TIMEOUT`)
 - **Integrity verification failure**: The received message does not contain the expected secret or has structural issues
 
 ## Monitoring
