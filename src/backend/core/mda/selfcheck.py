@@ -318,6 +318,9 @@ that the mail delivery pipeline is working correctly.</p>
     finally:
         if "message" in locals():
             _cleanup_test_data(message)
+        if "received_message" in locals():
+            if received_message.thread:
+                _cleanup_test_data(received_message)
         logger.info("Cleanup completed")
 
     return result
