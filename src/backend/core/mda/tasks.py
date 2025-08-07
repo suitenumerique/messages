@@ -65,7 +65,7 @@ def send_message_task(self, message_id, force_mta_out=False):
 @celery_app.task(bind=True)
 def selfcheck_task(self):
     """Run a selfcheck of the mail delivery system.
-    
+
     This task performs an end-to-end test of the mail delivery pipeline:
     1. Creates test mailboxes if they don't exist
     2. Creates a test message with a secret
@@ -74,13 +74,13 @@ def selfcheck_task(self):
     5. Verifies the integrity of the received message
     6. Cleans up test data
     7. Returns timing metrics
-    
+
     Returns:
         dict: A dictionary with success status, timings, and metrics
     """
     try:
         result = run_selfcheck()
-        
+
         # Update task state with progress information
         self.update_state(
             state="SUCCESS",
@@ -91,7 +91,7 @@ def selfcheck_task(self):
                 "reception_time": result["reception_time"],
             },
         )
-        
+
         return result
     # pylint: disable=broad-exception-caught
     except Exception as e:

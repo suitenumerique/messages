@@ -34,12 +34,27 @@ def fixture_authenticated_user():
     return factories.UserFactory(full_name="Julie Dupont", email="julie@example.com")
 
 
+@pytest.fixture(name="authenticated_user2")
+def fixture_authenticated_user2():
+    """Create an authenticated user to authenticate."""
+    return factories.UserFactory(full_name="Paul Dupont", email="paul@example2.com")
+
+
 @pytest.fixture(name="mailbox")
 def fixture_mailbox(authenticated_user):
     """Create a mailbox for the authenticated user."""
     return factories.MailboxFactory(
         local_part=authenticated_user.email.split("@")[0],
         domain__name=authenticated_user.email.split("@")[1],
+    )
+
+
+@pytest.fixture(name="mailbox2")
+def fixture_mailbox2(authenticated_user2):
+    """Create a mailbox for the authenticated user."""
+    return factories.MailboxFactory(
+        local_part=authenticated_user2.email.split("@")[0],
+        domain__name=authenticated_user2.email.split("@")[1],
     )
 
 
@@ -460,8 +475,16 @@ class TestApiDraftAndSendMessage:
         # Assert the response is forbidden, there is no mailbox access
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_draft_message_unauthorized(self):
+    def test_draft_message_unauthorized(
+        self,
+        mailbox,
+        mailbox2,
+        draft_detail_url,
+        authenticated_user,
+        authenticated_user2,
+    ):
         """Test create draft message unauthorized."""
+
         # Create a client
         client = APIClient()
         # No one is authenticated
@@ -478,6 +501,64 @@ class TestApiDraftAndSendMessage:
         )
         # Assert the response is unauthorized
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        client.force_authenticate(user=authenticated_user)
+
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "test",
+                "draftBody": "<p>test</p> or test",
+                "to": ["pierre@external.com"],
+            },
+            format="json",
+        )
+        # Assert the response is forbidden, there is no mailbox access
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+
+        # Then, authenticate and create a real draft
+        draft_response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "test",
+                "draftBody": "Test content",
+                "to": ["pierre@external.com"],
+            },
+            format="json",
+        )
+
+        assert draft_response.status_code == status.HTTP_201_CREATED
+        draft_message_id = draft_response.data["id"]
+
+        # As a second user, we should not be able to update the draft
+        client.force_authenticate(user=authenticated_user2)
+        factories.MailboxAccessFactory(
+            mailbox=mailbox2,
+            user=authenticated_user2,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+
+        update_response = client.put(
+            draft_detail_url(draft_message_id),
+            {
+                "senderId": mailbox.id,
+                "subject": "updated subject",
+                "draftBody": "updated content",
+                "to": ["pierre@example.com", "jacques@example.com"],
+                "cc": ["paul@example.com"],
+            },
+            format="json",
+        )
+
+        assert update_response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_draft_message_with_empty_subject(self, mailbox, authenticated_user):
         """Test create draft message with empty subject."""
