@@ -109,7 +109,7 @@ services:
     depends_on:
       postgresql:
         condition: service_healthy
-        restart: true
+        # restart: true
       redis:
         condition: service_started
       opensearch:

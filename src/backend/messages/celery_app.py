@@ -4,6 +4,7 @@ import os
 
 from celery import Celery
 from configurations.importer import install
+from django.conf import settings
 
 # Set the default Django settings module for the 'celery' program.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "messages.settings")
@@ -30,6 +31,11 @@ if not os.environ.get("DISABLE_CELERY_BEAT_SCHEDULE"):
         "retry-pending-messages": {
             "task": "core.mda.tasks.retry_messages_task",
             "schedule": 300.0,  # Every 5 minutes (300 seconds)
+            "options": {"queue": "default"},
+        },
+        "selfcheck": {
+            "task": "core.mda.tasks.selfcheck_task",
+            "schedule": settings.MESSAGES_SELFCHECK_INTERVAL,
             "options": {"queue": "default"},
         },
     }

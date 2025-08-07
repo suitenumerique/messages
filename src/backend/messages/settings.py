@@ -196,6 +196,28 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    # Self-check settings
+    MESSAGES_SELFCHECK_FROM = values.Value(
+        None,
+        environ_name="MESSAGES_SELFCHECK_FROM",
+        environ_prefix=None,
+    )
+    MESSAGES_SELFCHECK_TO = values.Value(
+        None,
+        environ_name="MESSAGES_SELFCHECK_TO",
+        environ_prefix=None,
+    )
+    MESSAGES_SELFCHECK_SECRET = values.Value(
+        "self-check-secret-for-dev",
+        environ_name="MESSAGES_SELFCHECK_SECRET",
+        environ_prefix=None,
+    )
+    MESSAGES_SELFCHECK_INTERVAL = values.PositiveIntegerValue(
+        600,  # 10 minutes
+        environ_name="MESSAGES_SELFCHECK_INTERVAL",
+        environ_prefix=None,
+    )
+
     # Blob compression settings
     MESSAGES_BLOB_ZSTD_LEVEL = values.PositiveIntegerValue(
         default=3, environ_name="MESSAGES_BLOB_ZSTD_LEVEL", environ_prefix=None

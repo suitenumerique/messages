@@ -10,6 +10,7 @@ from celery.utils.log import get_task_logger
 from core import models
 from core.enums import MessageDeliveryStatusChoices
 from core.mda.outbound import send_message
+from core.mda.selfcheck import run_selfcheck
 
 from messages.celery_app import app as celery_app
 
@@ -57,6 +58,47 @@ def send_message_task(self, message_id, force_mta_out=False):
         self.update_state(
             state="FAILURE",
             meta={"status": "failed", "message_id": str(message_id), "error": str(e)},
+        )
+        raise
+
+
+@celery_app.task(bind=True)
+def selfcheck_task(self):
+    """Run a selfcheck of the mail delivery system.
+    
+    This task performs an end-to-end test of the mail delivery pipeline:
+    1. Creates test mailboxes if they don't exist
+    2. Creates a test message with a secret
+    3. Sends the message via the outbound system
+    4. Waits for the message to be received
+    5. Verifies the integrity of the received message
+    6. Cleans up test data
+    7. Returns timing metrics
+    
+    Returns:
+        dict: A dictionary with success status, timings, and metrics
+    """
+    try:
+        result = run_selfcheck()
+        
+        # Update task state with progress information
+        self.update_state(
+            state="SUCCESS",
+            meta={
+                "status": "completed",
+                "success": result["success"],
+                "send_time": result["send_time"],
+                "reception_time": result["reception_time"],
+            },
+        )
+        
+        return result
+    # pylint: disable=broad-exception-caught
+    except Exception as e:
+        logger.exception("Error in selfcheck_task: %s", e)
+        self.update_state(
+            state="FAILURE",
+            meta={"status": "failed", "error": str(e)},
         )
         raise
 
