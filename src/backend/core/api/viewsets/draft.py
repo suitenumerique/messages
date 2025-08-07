@@ -2,10 +2,8 @@
 
 import json
 import logging
-import uuid
 
 from django.db import transaction
-from django.utils import timezone
 
 import rest_framework as drf
 from drf_spectacular.utils import (
@@ -18,7 +16,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core import enums, models
+from core import models
 from core.mda.draft import create_draft, update_draft
 
 from .. import permissions, serializers
@@ -190,16 +188,18 @@ class DraftMessageView(APIView):
         sender_id = request.data.get("senderId")
         if not sender_id:
             raise drf.exceptions.ValidationError("senderId is required")
-            
+
         subject = request.data.get("subject")
 
         # Get mailbox (permission class validates access)
         try:
             sender_mailbox = models.Mailbox.objects.get(id=sender_id)
         except models.Mailbox.DoesNotExist as exc:
-            raise drf.exceptions.NotFound(f"Mailbox with senderId {sender_id} not found.") from exc
-        
-        # Create draft using the new function
+            raise drf.exceptions.NotFound(
+                f"Mailbox with senderId {sender_id} not found."
+            ) from exc
+
+        # Create draft
         message = create_draft(
             mailbox=sender_mailbox,
             subject=subject,
@@ -210,7 +210,7 @@ class DraftMessageView(APIView):
             bcc_emails=request.data.get("bcc", []),
             attachments=request.data.get("attachments", []),
         )
-        
+
         # Refresh to get latest data
         message.refresh_from_db()
         return Response(
@@ -224,14 +224,14 @@ class DraftMessageView(APIView):
             raise drf.exceptions.ValidationError(
                 "Message ID is required for updating a draft."
             )
-        
+
         # Validate required fields
         sender_id = request.data.get("senderId")
         if not sender_id:
             raise drf.exceptions.ValidationError(
                 "senderId is required in request body for update."
             )
-        
+
         # Get mailbox
         try:
             sender_mailbox = models.Mailbox.objects.get(id=sender_id)

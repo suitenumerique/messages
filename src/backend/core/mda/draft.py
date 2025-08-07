@@ -2,13 +2,13 @@
 
 import logging
 import uuid
-from typing import Dict, Any, Optional, Tuple
+from typing import Optional
 
-from django.db import transaction
 from django.utils import timezone
+
 import rest_framework as drf
 
-from core import models, enums
+from core import enums, models
 
 logger = logging.getLogger(__name__)
 
@@ -25,25 +25,25 @@ def create_draft(
 ) -> models.Message:
     """
     Create a new draft message.
-    
+
     Args:
         mailbox: The mailbox that will be the sender
         subject: Subject of the draft message
         draft_body: Content of the draft (usually JSON)
         parent_id: Optional message ID to reply to
         to_emails: List of TO recipient emails
-        cc_emails: List of CC recipient emails  
+        cc_emails: List of CC recipient emails
         bcc_emails: List of BCC recipient emails
         attachments: List of attachment objects with blobId, partId, and name
-        
+
     Returns:
         The created draft message
-        
+
     Raises:
         drf.exceptions.NotFound: If parent message not found
         drf.exceptions.PermissionDenied: If access denied to parent thread
     """
-    
+
     # Get or create sender contact
     mailbox_email = f"{mailbox.local_part}@{mailbox.domain.name}"
     sender_contact, _ = models.Contact.objects.get_or_create(
@@ -54,7 +54,7 @@ def create_draft(
             "name": mailbox.local_part,
         },
     )
-    
+
     # Handle parent message if this is a reply
     reply_to_message = None
     if parent_id:
@@ -83,7 +83,7 @@ def create_draft(
             mailbox=mailbox,
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
-    
+
     # Create message instance
     message = models.Message(
         thread=thread,
@@ -99,7 +99,7 @@ def create_draft(
         ),
     )
     message.save()
-    
+
     # Update draft details with recipients and attachments
     update_data = {
         "to": to_emails or [],
@@ -107,35 +107,33 @@ def create_draft(
         "bcc": bcc_emails or [],
         "attachments": attachments or [],
     }
-    
+
     message = update_draft(mailbox, message, update_data)
-    
+
     # Update thread stats
     thread.update_stats()
-    
+
     return message
 
 
 def update_draft(
-    mailbox: models.Mailbox,
-    message: models.Message,
-    update_data: dict
+    mailbox: models.Mailbox, message: models.Message, update_data: dict
 ) -> models.Message:
     """
     Update draft details (subject, recipients, body, attachments).
-    
+
     Args:
         mailbox: The mailbox making the update
         message: The draft message to update
         update_data: Dictionary containing fields to update
-        
+
     Returns:
         The updated message
-        
+
     Raises:
         drf.exceptions.PermissionDenied: If access denied to thread
     """
-    
+
     updated_fields = []
     thread_updated_fields = ["updated_at"]  # Always update thread timestamp
 
@@ -148,9 +146,7 @@ def update_draft(
             role=enums.ThreadAccessRoleChoices.EDITOR,
         ).exists()
     ):
-        raise drf.exceptions.PermissionDenied(
-            "Access denied to this message's thread."
-        )
+        raise drf.exceptions.PermissionDenied("Access denied to this message's thread.")
 
     # Update subject if provided
     if "subject" in update_data:
@@ -258,9 +254,7 @@ def update_draft(
                     new_attachment_ids.append(attachment.id)
 
                 except (ValueError, models.Blob.DoesNotExist) as e:
-                    logger.warning(
-                        "Invalid or missing blob %s: %s", blob_id, str(e)
-                    )
+                    logger.warning("Invalid or missing blob %s: %s", blob_id, str(e))
 
             # Combine all valid attachment IDs
             new_attachments = set(new_attachment_ids)
