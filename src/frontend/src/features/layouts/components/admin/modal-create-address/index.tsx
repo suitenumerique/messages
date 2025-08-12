@@ -37,9 +37,10 @@ const slugify = (text: string): string => {
 type ModalCreateAddressProps = {
   isOpen: boolean;
   onClose: () => void;
+  onCreate: () => void;
 }
 
-export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps) => {
+export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAddressProps) => {
   const { t } = useTranslation();
   const router = useRouter();
   const domainId = router.query.maildomainId as string;
@@ -209,6 +210,7 @@ export const ModalCreateAddress = ({ isOpen, onClose }: ModalCreateAddressProps)
       const response = await createMailbox({ maildomainPk: domainId, data: payload }, );
       refetchMailboxes();
       setCreatedMailbox(response.data);
+      onCreate();
     } catch (error: unknown) {
       if (error instanceof APIError && error.data.local_part) {
         setError("create_address_modal.api_errors.prefix_exists");

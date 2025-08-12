@@ -3,23 +3,23 @@ import { ModalMailboxManageAccesses } from "@/features/layouts/components/admin/
 import { Banner } from "@/features/ui/components/banner";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, DataGrid } from "@openfun/cunningham-react";
-import { useState } from "react";
+import { Button, DataGrid, usePagination } from "@openfun/cunningham-react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 type AdminUserDataGridProps = {
     domain: MailDomainAdmin;
+    pagination: ReturnType<typeof usePagination>;
 }
 
-export const AdminMailboxDataGrid = ({ domain }: AdminUserDataGridProps) => {
+export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridProps) => {
     const { t } = useTranslation();
-    const { data: mailboxesData, isLoading, error, refetch: refetchMailboxes } = useMaildomainsMailboxesList(domain.id);
+    const { data: mailboxesData, isLoading, error, refetch: refetchMailboxes } = useMaildomainsMailboxesList(domain.id, { page: pagination.page });
     const mailboxes = mailboxesData?.data.results || [];
-    const [editedMailboxId, setEditedMailboxId] = useState<string | null>(null);
-    const editedMailbox = mailboxes.find((mailbox) => mailbox.id === editedMailboxId);
+    const [editedMailbox, setEditedMailbox] = useState<MailboxAdmin | null>(null);
     const canManageMailboxes = useAbility(Abilities.CAN_MANAGE_MAILDOMAIN_MAILBOXES, domain);
     const handleCloseEditUserModal = (refetch: boolean = false) => {
-        setEditedMailboxId(null);
+        setEditedMailbox(null);
         if (refetch) {
             refetchMailboxes();
         }
@@ -58,7 +58,7 @@ export const AdminMailboxDataGrid = ({ domain }: AdminUserDataGridProps) => {
             renderCell: ({ row }: { row: MailboxAdmin }) => `${row.local_part}@${row.domain_name}`,
         },
         {
-            id: "user_name",
+            id: "accesses",
             headerName: t("admin_maildomains_details.datagrid_headers.accesses"),
             renderCell: ({ row }: { row: MailboxAdmin }) => {
                 if (row.accesses?.length === 0) {
@@ -69,9 +69,10 @@ export const AdminMailboxDataGrid = ({ domain }: AdminUserDataGridProps) => {
                     );
                 }
 
-                return row.accesses?.map((access) => {
+                const otherAccessesCount = row.accesses?.length - 2;
+                return row.accesses?.slice(0, 2).map((access) => {
                     return access.user?.full_name || access.user?.email || t("admin_maildomains_details.datagrid_row_labels.unknown_user");
-                }).join(", ");
+                }).join(", ") + (otherAccessesCount > 0 ? ` ${t("admin_maildomains_details.datagrid_row_labels.other_user", { count: otherAccessesCount })}` : "");
             },
         },
         ...(canManageMailboxes ? [{
@@ -84,7 +85,7 @@ export const AdminMailboxDataGrid = ({ domain }: AdminUserDataGridProps) => {
                         color="secondary"
                         size="small"
                         onClick={() => {
-                            setEditedMailboxId(row.id);
+                            setEditedMailbox(row);
                         }}
                     >
                         {t('admin_maildomains_details.actions.manage_accesses')}
@@ -93,6 +94,19 @@ export const AdminMailboxDataGrid = ({ domain }: AdminUserDataGridProps) => {
             ),
         }] : []),
     ];
+
+    useEffect(() => {
+        if (!pagination.pagesCount && mailboxesData?.data.count) {
+            pagination.setPagesCount(Math.ceil(mailboxesData.data.count / pagination.pageSize));
+        }
+    }, [mailboxesData?.data.count, pagination.pageSize]);
+
+    useEffect(() => {
+        if (editedMailbox) {
+            const updatedMailbox = mailboxes.find((mailbox) => mailbox.id === editedMailbox.id);
+            if (updatedMailbox) setEditedMailbox(updatedMailbox);
+        }
+    }, [mailboxes, editedMailbox]);
 
     if (isLoading) {
         return (
@@ -119,6 +133,9 @@ export const AdminMailboxDataGrid = ({ domain }: AdminUserDataGridProps) => {
             <DataGrid
                 columns={columns}
                 rows={mailboxes}
+                pagination={pagination}
+                enableSorting={false}
+                onSortModelChange={() => undefined}
             />
             {canManageMailboxes && (
                 <ModalMailboxManageAccesses

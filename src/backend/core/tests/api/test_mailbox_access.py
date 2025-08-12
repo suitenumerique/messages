@@ -1,6 +1,7 @@
 """Tests for the MailboxAccessViewSet API endpoint (nested under mailboxes)."""
 # pylint: disable=unused-argument
 
+from django.contrib.auth.models import AnonymousUser
 from django.urls import reverse
 
 import pytest
@@ -13,6 +14,13 @@ pytestmark = pytest.mark.django_db
 
 
 # --- Users ---
+@pytest.fixture(name="super_user")
+def fixture_super_user():
+    """User with ADMIN access to mail_domain1."""
+    user = factories.UserFactory(is_superuser=True, is_staff=False)
+    return user
+
+
 @pytest.fixture(name="domain_admin_user")
 def fixture_domain_admin_user(mail_domain1):
     """User with ADMIN access to mail_domain1."""
@@ -131,6 +139,29 @@ class TestMailboxAccessViewSet:
         )
 
     # --- LIST Tests ---
+    def test_list_as_super_user_for_managed_mailbox(
+        self,
+        api_client,
+        super_user,
+        mailbox1_domain1,
+        access_m1d1_alpha,
+        access_m1d1_beta,
+    ):
+        """Super user should see accesses for the specified mailbox."""
+        api_client.force_authenticate(
+            user=super_user
+        )  # Admin for domain1, which mailbox1_domain1 is in
+        response = api_client.get(self.list_create_url(mailbox_id=mailbox1_domain1.pk))
+
+        assert response.status_code == status.HTTP_200_OK
+
+        # access_m2d1_alpha is for a different mailbox, so should not be listed here.
+        assert {item["id"] for item in response.data["results"]} == {
+            str(access_m1d1_alpha.pk),
+            str(access_m1d1_beta.pk),
+        }
+        assert response.data["count"] == 2
+
     def test_list_as_domain_admin_for_managed_mailbox(
         self,
         api_client,
@@ -209,11 +240,14 @@ class TestMailboxAccessViewSet:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     # --- CREATE Tests ---
-    @pytest.mark.parametrize("admin_type", ["domain_admin", "mailbox_admin"])
+    @pytest.mark.parametrize(
+        "admin_type", ["domain_admin", "mailbox_admin", "super_user"]
+    )
     def test_create_access_success(
         self,
         api_client,
         admin_type,
+        super_user,
         domain_admin_user,
         mailbox1_admin_user,
         mailbox1_domain1,
@@ -221,9 +255,14 @@ class TestMailboxAccessViewSet:
         user_alpha,
     ):
         """Domain and mailbox admins should be able to create new accesses."""
-        user_performing_action = (
-            domain_admin_user if admin_type == "domain_admin" else mailbox1_admin_user
-        )
+        user_performing_action = AnonymousUser()
+        if admin_type == "super_user":
+            user_performing_action = super_user
+        elif admin_type == "domain_admin":
+            user_performing_action = domain_admin_user
+        elif admin_type == "mailbox_admin":
+            user_performing_action = mailbox1_admin_user
+
         api_client.force_authenticate(user=user_performing_action)
 
         data = {  # No 'mailbox' field in data, it comes from URL
@@ -288,20 +327,28 @@ class TestMailboxAccessViewSet:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     # --- RETRIEVE Tests ---
-    @pytest.mark.parametrize("admin_type", ["domain_admin", "mailbox_admin"])
+    @pytest.mark.parametrize(
+        "admin_type", ["domain_admin", "mailbox_admin", "super_user"]
+    )
     def test_retrieve_access_success(
         self,
         api_client,
         admin_type,
+        super_user,
         domain_admin_user,
         mailbox1_admin_user,
         mailbox1_domain1,
         access_m1d1_alpha,
     ):
-        """Domain and mailbox admins should be able to retrieve mailbox access details."""
-        user_performing_action = (
-            domain_admin_user if admin_type == "domain_admin" else mailbox1_admin_user
-        )
+        """Super user, Domain and mailbox admins should be able to retrieve mailbox access details."""
+        user_performing_action = AnonymousUser()
+        if admin_type == "super_user":
+            user_performing_action = super_user
+        elif admin_type == "domain_admin":
+            user_performing_action = domain_admin_user
+        elif admin_type == "mailbox_admin":
+            user_performing_action = mailbox1_admin_user
+
         api_client.force_authenticate(user=user_performing_action)
         response = api_client.get(
             self.detail_url(mailbox_id=mailbox1_domain1.pk, pk=access_m1d1_alpha.pk)
@@ -326,11 +373,14 @@ class TestMailboxAccessViewSet:
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     # --- UPDATE Tests ---
-    @pytest.mark.parametrize("admin_type", ["domain_admin", "mailbox_admin"])
+    @pytest.mark.parametrize(
+        "admin_type", ["domain_admin", "mailbox_admin", "super_user"]
+    )
     def test_update_access_role_success(
         self,
         admin_type,
         api_client,
+        super_user,
         user_beta,
         domain_admin_user,
         mailbox1_admin_user,
@@ -338,9 +388,14 @@ class TestMailboxAccessViewSet:
         access_m1d1_alpha,
     ):
         """Test that domain and mailbox admins can update mailbox access roles."""
-        user_performing_action = (
-            domain_admin_user if admin_type == "domain_admin" else mailbox1_admin_user
-        )
+        user_performing_action = AnonymousUser()
+        if admin_type == "super_user":
+            user_performing_action = super_user
+        elif admin_type == "domain_admin":
+            user_performing_action = domain_admin_user
+        elif admin_type == "mailbox_admin":
+            user_performing_action = mailbox1_admin_user
+
         api_client.force_authenticate(user=user_performing_action)
         data = {"role": "admin"}
         response = api_client.patch(
@@ -366,20 +421,28 @@ class TestMailboxAccessViewSet:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     # --- DELETE Tests ---
-    @pytest.mark.parametrize("admin_type", ["domain_admin", "mailbox_admin"])
+    @pytest.mark.parametrize(
+        "admin_type", ["domain_admin", "mailbox_admin", "super_user"]
+    )
     def test_delete_access_success(
         self,
         api_client,
         admin_type,
+        super_user,
         domain_admin_user,
         mailbox1_admin_user,
         mailbox1_domain1,
         access_m1d1_alpha,
     ):
         """Test that domain and mailbox admins can delete mailbox accesses."""
-        user_performing_action = (
-            domain_admin_user if admin_type == "domain_admin" else mailbox1_admin_user
-        )
+        user_performing_action = AnonymousUser()
+        if admin_type == "super_user":
+            user_performing_action = super_user
+        elif admin_type == "domain_admin":
+            user_performing_action = domain_admin_user
+        elif admin_type == "mailbox_admin":
+            user_performing_action = mailbox1_admin_user
+
         api_client.force_authenticate(user=user_performing_action)
         response = api_client.delete(
             self.detail_url(mailbox_id=mailbox1_domain1.pk, pk=access_m1d1_alpha.pk)

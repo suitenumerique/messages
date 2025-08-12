@@ -376,7 +376,11 @@ class IsMailboxAdmin(permissions.BasePermission):
         except (models.Mailbox.DoesNotExist, ValueError):  # ValueError for invalid UUID
             return False
 
-        # Check 1: Is user an admin of the specific mailbox?
+        # Check 1 : Is user a super user ?
+        if user.is_superuser:
+            return True
+
+        # Check 2: Is user an admin of the specific mailbox?
         is_mailbox_admin = models.MailboxAccess.objects.filter(
             user=user, mailbox=target_mailbox, role=models.MailboxRoleChoices.ADMIN
         ).exists()
@@ -384,7 +388,7 @@ class IsMailboxAdmin(permissions.BasePermission):
         if is_mailbox_admin:
             return True
 
-        # Check 2: Is user an admin of the mailbox's domain?
+        # Check 3: Is user an admin of the mailbox's domain?
         if target_mailbox.domain:
             is_domain_admin = models.MailDomainAccess.objects.filter(
                 user=user,
@@ -412,7 +416,11 @@ class IsMailboxAdmin(permissions.BasePermission):
         user = request.user
         target_mailbox = obj.mailbox  # The mailbox related to the MailboxAccess object
 
-        # Check 1: Is user an admin of this specific mailbox?
+        # Check 1 : Is user a super user ?
+        if user.is_superuser:
+            return True
+
+        # Check 2: Is user an admin of this specific mailbox?
         is_mailbox_admin = models.MailboxAccess.objects.filter(
             user=user, mailbox=target_mailbox, role=models.MailboxRoleChoices.ADMIN
         ).exists()
@@ -420,7 +428,7 @@ class IsMailboxAdmin(permissions.BasePermission):
         if is_mailbox_admin:
             return True
 
-        # Check 2: Is user an admin of the mailbox's domain?
+        # Check 3: Is user an admin of the mailbox's domain?
         is_domain_admin = models.MailDomainAccess.objects.filter(
             user=user,
             maildomain=target_mailbox.domain,

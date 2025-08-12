@@ -147,9 +147,7 @@ class AdminMailDomainMailboxViewSet(
 
     def get_queryset(self):
         maildomain_pk = self.kwargs.get("maildomain_pk")
-        return models.Mailbox.objects.filter(domain_id=maildomain_pk).order_by(
-            "local_part"
-        )
+        return models.Mailbox.objects.filter(domain_id=maildomain_pk)
 
     @extend_schema(
         description="Create new mailbox in a specific maildomain.",

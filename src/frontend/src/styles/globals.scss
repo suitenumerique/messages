@@ -49,6 +49,11 @@ body {
   font-size: var(--c--theme--font--sizes--ml);
 }
 
+.c__datagrid .c__pagination .c__button--active {
+  background-color: var(--c--components--button--tertiary-text--background--color-hover);
+  color: var(--c--components--button--tertiary-text--color-hover);
+}
+
 // Related to @viselect/react
 .selection-area {
   background: rgba(46, 115, 252, 0.11);

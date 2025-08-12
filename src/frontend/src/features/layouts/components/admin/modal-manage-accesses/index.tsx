@@ -7,7 +7,7 @@ type ModalMailboxManageAccessesProps = {
     domainId: string;
     isOpen: boolean;
     onClose: () => void;
-    mailbox: MailboxAdmin | undefined;
+    mailbox: MailboxAdmin | null;
     onAccessChange: () => void;
 }
 

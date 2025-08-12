@@ -4,11 +4,15 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import { Button, useModal } from "@openfun/cunningham-react";
 import { useTranslation } from "react-i18next";
 
+type CreateMailboxActionProps = {
+    onCreate: () => void;
+}
+
 /**
  * Action button to create a new mailbox.
  * Only visible if the user has the ability to manage mailboxes.
  */
-export const CreateMailboxAction = () => {
+export const CreateMailboxAction = ({ onCreate }: CreateMailboxActionProps) => {
     const modal = useModal();
     const { t } = useTranslation();
     const { selectedMailDomain } = useAdminMailDomain();
@@ -26,6 +30,7 @@ export const CreateMailboxAction = () => {
             <ModalCreateAddress
                 isOpen={modal.isOpen}
                 onClose={modal.close}
+                onCreate={onCreate}
             />
         </>
     )

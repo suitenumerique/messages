@@ -2,8 +2,13 @@ import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { AdminMailboxDataGrid } from "./mailbox-data-grid";
 import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
 import { useTranslation } from "react-i18next";
+import { usePagination } from "@openfun/cunningham-react";
 
-export const AdminDomainPageContent = () => {
+type AdminDomainPageContentProps = {
+    pagination: ReturnType<typeof usePagination>;
+}
+
+export const AdminDomainPageContent = ({ pagination }: AdminDomainPageContentProps) => {
     const { t } = useTranslation();
     const { selectedMailDomain, isLoading } = useAdminMailDomain();
 
@@ -23,5 +28,5 @@ export const AdminDomainPageContent = () => {
       );
     }
 
-    return <AdminMailboxDataGrid domain={selectedMailDomain} />;
+    return <AdminMailboxDataGrid domain={selectedMailDomain} pagination={pagination} />;
   }

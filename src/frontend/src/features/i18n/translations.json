@@ -403,6 +403,8 @@
         "datagrid_row_labels": {
           "no_accesses": "No accesses",
           "unknown_user": "Unknown user",
+          "other_user_one": "and 1 other user",
+          "other_user_other": "and {{count}} other users",
           "alias": "Redirection",
           "personal_mailbox": "Personal mailbox",
           "shared_mailbox": "Shared mailbox"
@@ -844,6 +846,8 @@
         "datagrid_row_labels": {
           "no_accesses": "Aucun accès",
           "unknown_user": "Utilisateur inconnu",
+          "other_user_one": "et 1 autre utilisateur",
+          "other_user_other": "et {{count}} autres utilisateurs",
           "alias": "Redirection",
           "personal_mailbox": "Boîte personnelle",
           "shared_mailbox": "Boîte partagée"

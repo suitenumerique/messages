@@ -1,13 +1,15 @@
-import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react"
+import { createContext, PropsWithChildren, useContext, useEffect, useMemo } from "react"
 import { MailDomainAdmin } from "../api/gen/models/mail_domain_admin";
-import { useMaildomainsList } from "../api/gen";
+import { useMaildomainsList, useMaildomainsRetrieve } from "../api/gen";
 import { useRouter } from "next/router";
+import { usePagination } from "@openfun/cunningham-react";
 
 type AdminMailDomainContextType = {
     selectedMailDomain: MailDomainAdmin | null;
     mailDomains: MailDomainAdmin[];
     isLoading: boolean;
     error: unknown | null;
+    pagination: ReturnType<typeof usePagination>;
 }
 
 const AdminMailDomainContext = createContext<AdminMailDomainContextType | undefined>(undefined)
@@ -17,24 +19,24 @@ const AdminMailDomainContext = createContext<AdminMailDomainContextType | undefi
  * It centralizes mail domain data fetching and selection.
  */
 export const AdminMailDomainProvider = ({ children }: PropsWithChildren) => {
-    const { data: maildomainsData, isLoading, error } = useMaildomainsList();
     const router = useRouter();
-    const [selectedMailDomain, setSelectedMailDomain] = useState<MailDomainAdmin | null>(null);
+    const pagination = usePagination({ pageSize: 20 });
+    const { data: maildomainsData, isLoading: isLoadingList, error: listError } = useMaildomainsList({ page: pagination.page });
+    const { data: selectedMaildomainData, isLoading: isLoadingItem, error: itemError } = useMaildomainsRetrieve(
+        router.query.maildomainId as string, { query: { enabled: !!router.query.maildomainId } });
     const context = useMemo(() => ({
-        selectedMailDomain,
+        selectedMailDomain: selectedMaildomainData?.data || null,
         mailDomains: maildomainsData?.data.results || [],
-        isLoading,
-        error,
-    }), [selectedMailDomain, maildomainsData, isLoading]);
+        isLoading: isLoadingList || isLoadingItem,
+        error: listError || itemError,
+        pagination
+    }), [selectedMaildomainData, maildomainsData, isLoadingList, isLoadingItem, listError, itemError, pagination.page]);
 
     useEffect(() => {
-        if (router.query.maildomainId) {
-            const maildomain = maildomainsData?.data.results?.find((maildomain) => maildomain.id === router.query.maildomainId);
-            if (maildomain) {
-                setSelectedMailDomain(maildomain);
-            }
+        if (maildomainsData?.data.count) {
+            pagination.setPagesCount(Math.ceil(maildomainsData.data.count / pagination.pageSize));
         }
-    }, [router.query.maildomainId, maildomainsData]);
+    }, [maildomainsData?.data.count, pagination.pageSize, pagination.setPagesCount]);
 
     return (
         <AdminMailDomainContext.Provider value={context}>{children}</AdminMailDomainContext.Provider>

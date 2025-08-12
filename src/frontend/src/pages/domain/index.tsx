@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { DataGrid } from "@openfun/cunningham-react";
+import { DataGrid, usePagination } from "@openfun/cunningham-react";
 import { useRouter } from "next/router";
 import { useTranslation } from "react-i18next";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
@@ -11,10 +11,11 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import { Banner } from "@/features/ui/components/banner";
 
 type AdminDataGridProps = {
+  pagination: ReturnType<typeof usePagination>;
   domains: MailDomainAdmin[];
 }
 
-function AdminDataGrid({ domains }: AdminDataGridProps) {
+function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
   const router = useRouter();
   const { t, i18n } = useTranslation();
 
@@ -48,6 +49,9 @@ function AdminDataGrid({ domains }: AdminDataGridProps) {
       <DataGrid
         columns={columns}
         rows={domains}
+        pagination={pagination}
+        enableSorting={false}
+        onSortModelChange={() => undefined}
       />
     </div>
   );
@@ -56,7 +60,7 @@ function AdminDataGrid({ domains }: AdminDataGridProps) {
 const AdminPageContent = () => {
   const router = useRouter();
   const { t } = useTranslation();
-  const { mailDomains, isLoading, error } = useAdminMailDomain();
+  const { mailDomains, isLoading, error, pagination } = useAdminMailDomain();
   const canCreateMaildomain = useAbility(Abilities.CAN_CREATE_MAILDOMAINS);
   const shouldRedirect = !canCreateMaildomain && !isLoading && mailDomains.length === 1;
 
@@ -91,7 +95,7 @@ const AdminPageContent = () => {
       <Bar className="admin-page__bar">
         <h1>{t("admin_maildomains_list.title")}</h1>
       </Bar>
-      <AdminDataGrid domains={mailDomains} />
+      <AdminDataGrid domains={mailDomains} pagination={pagination} />
     </>
   )
 }
