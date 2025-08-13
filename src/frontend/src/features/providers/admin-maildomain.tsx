@@ -3,6 +3,7 @@ import { MailDomainAdmin } from "../api/gen/models/mail_domain_admin";
 import { useMaildomainsList, useMaildomainsRetrieve } from "../api/gen";
 import { useRouter } from "next/router";
 import { usePagination } from "@openfun/cunningham-react";
+import { DEFAULT_PAGE_SIZE } from "../config/constants";
 
 type AdminMailDomainContextType = {
     selectedMailDomain: MailDomainAdmin | null;
@@ -20,7 +21,7 @@ const AdminMailDomainContext = createContext<AdminMailDomainContextType | undefi
  */
 export const AdminMailDomainProvider = ({ children }: PropsWithChildren) => {
     const router = useRouter();
-    const pagination = usePagination({ pageSize: 20 });
+    const pagination = usePagination({ pageSize: DEFAULT_PAGE_SIZE });
     const { data: maildomainsData, isLoading: isLoadingList, error: listError } = useMaildomainsList({ page: pagination.page });
     const { data: selectedMaildomainData, isLoading: isLoadingItem, error: itemError } = useMaildomainsRetrieve(
         router.query.maildomainId as string, { query: { enabled: !!router.query.maildomainId } });
@@ -30,7 +31,7 @@ export const AdminMailDomainProvider = ({ children }: PropsWithChildren) => {
         isLoading: isLoadingList || isLoadingItem,
         error: listError || itemError,
         pagination
-    }), [selectedMaildomainData, maildomainsData, isLoadingList, isLoadingItem, listError, itemError, pagination.page]);
+    }), [selectedMaildomainData, maildomainsData, isLoadingList, isLoadingItem, listError, itemError, pagination]);
 
     useEffect(() => {
         if (maildomainsData?.data.count) {

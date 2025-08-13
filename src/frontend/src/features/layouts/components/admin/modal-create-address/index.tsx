@@ -52,7 +52,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
   const [firstFieldRef, setFirstFieldRef] = useState<HTMLInputElement | null>(null);
 
   // Get existing mailboxes and domain info
-  const { data: mailboxesData, refetch: refetchMailboxes } = useMaildomainsMailboxesList(domainId);
+  const { data: mailboxesData } = useMaildomainsMailboxesList(domainId);
   const mailboxes = mailboxesData?.data.results || [];
   const { selectedMailDomain } = useAdminMailDomain();
   const domainName = selectedMailDomain?.name || "";
@@ -208,7 +208,6 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
       }
 
       const response = await createMailbox({ maildomainPk: domainId, data: payload }, );
-      refetchMailboxes();
       setCreatedMailbox(response.data);
       onCreate();
     } catch (error: unknown) {
