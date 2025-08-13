@@ -9,6 +9,7 @@ import { MailDomainAdmin } from "@/features/api/gen";
 import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { Banner } from "@/features/ui/components/banner";
+import { CreateDomainAction } from "@/features/layouts/components/admin/domains-view/create-domain-action";
 
 type AdminDataGridProps = {
   pagination: ReturnType<typeof usePagination>;
@@ -105,7 +106,7 @@ const AdminPageContent = () => {
  */
 export default function AdminPage() {
   return (
-    <AdminLayout>
+    <AdminLayout actions={<CreateDomainAction onCreate={() => {}} />}>
       <AdminPageContent />
     </AdminLayout>
   );

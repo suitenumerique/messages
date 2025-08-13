@@ -823,6 +823,25 @@
           "default": "Une erreur est survenue lors de la création de l'adresse."
         }
       },
+      "create_domain_modal": {
+        "title": "Créer un domaine",
+        "form": {
+          "labels": {
+            "name": "Nom",
+            "oidc_autojoin": "Créer les boîtes aux lettres automatiquement selon les emails OIDC",
+            "identity_sync": "Synchroniser les boîtes aux lettres avec un fournisseur d'identité"
+          },
+          "placeholders": {
+            "name": "Nom du domaine..."
+          },
+          "errors": {
+            "name_required": "Le nom est requis."
+          }
+        },
+        "api_errors": {
+          "default": "Une erreur est survenue lors de la création du domaine."
+        }
+      },
       "manage_accesses_modal": {
         "title": "Gérer les accès à {{mailbox}}",
         "roles": {
@@ -852,7 +871,8 @@
           "updated_at": "Modifié le"
         },
         "actions": {
-          "manage_access": "Gérer les accès"
+          "manage_access": "Gérer les accès",
+          "new_domain": "Nouveau domaine"
         },
         "loading": "Chargement des domaines...",
         "loading_error": "Une erreur est survenue lors du chargement des domaines."

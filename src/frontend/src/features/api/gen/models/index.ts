@@ -48,6 +48,8 @@ export * from "./labels_list_params";
 export * from "./labels_remove_threads_create_body";
 export * from "./mail_domain_admin";
 export * from "./mail_domain_admin_abilities";
+export * from "./mail_domain_admin_write";
+export * from "./mail_domain_admin_write_request";
 export * from "./mailbox";
 export * from "./mailbox_abilities";
 export * from "./mailbox_access_nested_user";

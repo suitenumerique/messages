@@ -24,6 +24,8 @@ import type {
 import type {
   DNSCheckResponse,
   MailDomainAdmin,
+  MailDomainAdminWrite,
+  MailDomainAdminWriteRequest,
   MailboxAdmin,
   MailboxAdminCreate,
   MailboxAdminCreatePayloadRequest,
@@ -224,6 +226,103 @@ export function useMaildomainsList<
   return query;
 }
 
+/**
+ * ViewSet for listing MailDomains the user administers.
+Provides a top-level entry for mail domain administration.
+Endpoint: /maildomains/
+ */
+export type maildomainsCreateResponse201 = {
+  data: MailDomainAdminWrite;
+  status: 201;
+};
+
+export type maildomainsCreateResponseComposite = maildomainsCreateResponse201;
+
+export type maildomainsCreateResponse = maildomainsCreateResponseComposite & {
+  headers: Headers;
+};
+
+export const getMaildomainsCreateUrl = () => {
+  return `/api/v1.0/maildomains/`;
+};
+
+export const maildomainsCreate = async (
+  mailDomainAdminWriteRequest: MailDomainAdminWriteRequest,
+  options?: RequestInit,
+): Promise<maildomainsCreateResponse> => {
+  return fetchAPI<maildomainsCreateResponse>(getMaildomainsCreateUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(mailDomainAdminWriteRequest),
+  });
+};
+
+export const getMaildomainsCreateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsCreate>>,
+    TError,
+    { data: MailDomainAdminWriteRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsCreate>>,
+  TError,
+  { data: MailDomainAdminWriteRequest },
+  TContext
+> => {
+  const mutationKey = ["maildomainsCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsCreate>>,
+    { data: MailDomainAdminWriteRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return maildomainsCreate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MaildomainsCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsCreate>>
+>;
+export type MaildomainsCreateMutationBody = MailDomainAdminWriteRequest;
+export type MaildomainsCreateMutationError = unknown;
+
+export const useMaildomainsCreate = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof maildomainsCreate>>,
+      TError,
+      { data: MailDomainAdminWriteRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsCreate>>,
+  TError,
+  { data: MailDomainAdminWriteRequest },
+  TContext
+> => {
+  const mutationOptions = getMaildomainsCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
 /**
  * ViewSet for managing Mailboxes within a specific MailDomain.
 Nested under /maildomains/{maildomain_pk}/mailboxes/

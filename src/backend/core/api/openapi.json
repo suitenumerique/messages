@@ -2370,6 +2370,45 @@
                         "description": ""
                     }
                 }
+            },
+            "post": {
+                "operationId": "maildomains_create",
+                "description": "ViewSet for listing MailDomains the user administers.\nProvides a top-level entry for mail domain administration.\nEndpoint: /maildomains/",
+                "tags": [
+                    "maildomains"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailDomainAdminWriteRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailDomainAdminWriteRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailDomainAdminWrite"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
             }
         },
         "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/": {
@@ -4334,6 +4373,74 @@
                     "id",
                     "name",
                     "updated_at"
+                ]
+            },
+            "MailDomainAdminWrite": {
+                "type": "object",
+                "description": "Serialize mail domains for creating / editing admin view.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9.-]*[a-z0-9]$",
+                        "maxLength": 253
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    },
+                    "oidc_autojoin": {
+                        "type": "boolean",
+                        "description": "Create mailboxes automatically based on OIDC emails."
+                    },
+                    "identity_sync": {
+                        "type": "boolean",
+                        "description": "Sync mailboxes to an identity provider."
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "name",
+                    "updated_at"
+                ]
+            },
+            "MailDomainAdminWriteRequest": {
+                "type": "object",
+                "description": "Serialize mail domains for creating / editing admin view.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[a-z0-9][a-z0-9.-]*[a-z0-9]$",
+                        "maxLength": 253
+                    },
+                    "oidc_autojoin": {
+                        "type": "boolean",
+                        "description": "Create mailboxes automatically based on OIDC emails."
+                    },
+                    "identity_sync": {
+                        "type": "boolean",
+                        "description": "Sync mailboxes to an identity provider."
+                    }
+                },
+                "required": [
+                    "name"
                 ]
             },
             "Mailbox": {
