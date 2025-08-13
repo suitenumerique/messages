@@ -1,12 +1,12 @@
 import { ThreadsStatsRetrieve200, ThreadsStatsRetrieveStatsFields, useThreadsStatsRetrieve } from "@/features/api/gen"
 import { useMailboxContext } from "@/features/providers/mailbox"
-import { Badge } from "@/features/ui/components/badge"
 import clsx from "clsx"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { useMemo } from "react"
 import { useLayoutContext } from "../../../main"
 import { useTranslation } from "react-i18next"
+import { Icon, IconType } from "@gouvfr-lasuite/ui-kit"
 
 // @TODO: replace with real data when folder will be ready
 type Folder = {
@@ -136,10 +136,10 @@ const FolderItem = ({ folder }: FolderItemProps) => {
             })}
         >
             <p className="mailbox__item-label">
-                <span className="material-icons" aria-hidden="true">{folder.icon}</span>
+                <Icon name={folder.icon} type={IconType.OUTLINED} aria-hidden="true" />
                 {t(folder.name)}
             </p>
-            {(folderStats?.[stats_fields] ?? 0) > 0 && <Badge>{folderStats[stats_fields]}</Badge>}
+            {(folderStats?.[stats_fields] ?? 0) > 0 && <span className="mailbox__item-counter">{folderStats[stats_fields]}</span>}
         </Link>
     )
 }

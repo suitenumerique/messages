@@ -14,14 +14,17 @@ import router from "next/router";
 import { MAILBOX_FOLDERS } from "../../../mailbox-list";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { toast } from "react-toastify";
+import { useFold } from "@/features/providers/fold";
+import { SubLabelCreation } from "../label-form-modal";
 
 type LabelItemProps = TreeLabel & {
     level?: number;
-    onEdit: (label: TreeLabel) => void;
+    onEdit: (label: TreeLabel | SubLabelCreation) => void;
     canManage: boolean;
+    defaultFoldState?: false | undefined;
   }
 
-export  const LabelItem = ({ level = 0, onEdit, canManage, ...label }: LabelItemProps) => {
+export  const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...label }: LabelItemProps) => {
     const { selectedMailbox, invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isDragOver, setIsDragOver] = useState(false);
@@ -44,8 +47,9 @@ export  const LabelItem = ({ level = 0, onEdit, canManage, ...label }: LabelItem
     const searchParams = useSearchParams();
     const { t } = useTranslation();
     const isActive = searchParams.get('label_slug') === label.slug;
-    const hasActiveChild = searchParams.get('label_slug')?.startsWith(`${label.slug}-`);
-    const [isExpanded, setIsExpanded] = useState(hasActiveChild);
+    const hasActiveChild = Boolean(searchParams.get('label_slug')?.startsWith(`${label.slug}-`));
+    const isFoldedByDefault = label.children.length === 0 ? null : (defaultFoldState ?? !hasActiveChild);
+    const { isFolded, toggle } = useFold(`label-item-${label.display_name}`, isFoldedByDefault);
     const goToDefaultFolder = () => {
       const defaultFolder = MAILBOX_FOLDERS[0];
       router.push(pathname + `?${new URLSearchParams(defaultFolder.filter).toString()}`);
@@ -71,7 +75,7 @@ export  const LabelItem = ({ level = 0, onEdit, canManage, ...label }: LabelItem
     const hasChildren = label.children && label.children.length > 0;
     const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
       e.preventDefault();
-      setIsExpanded(!isExpanded);
+      toggle();
     }
 
     const deleteThreadMutation = useLabelsRemoveThreadsCreate({
@@ -140,13 +144,22 @@ export  const LabelItem = ({ level = 0, onEdit, canManage, ...label }: LabelItem
       }
     };
 
+    const getPaddingLeftItem = (level: number) => {
+      let offset = 0;
+      if (level === 1 && !hasChildren) offset = 3.3;
+      else if (!hasChildren) offset = 2.25;
+      else offset = 1.15;
+
+      return `${offset * level}rem`;
+    }
+
     return (
       <>
         <Link
           href={`${pathname}?${queryParams}`}
           onClick={closeLeftPanel}
           className={clsx("label-item", isActive && "label-item--active", isDragOver && "label-item--drag-over")}
-          style={{ paddingLeft: `${level * 1}rem` }}
+          style={level > 0 ? { paddingLeft: getPaddingLeftItem(level) } : {}}
           data-focus-within={isDropdownOpen}
           title={label.display_name}
           onDragOver={canManage ? handleDragOver : undefined}
@@ -154,18 +167,19 @@ export  const LabelItem = ({ level = 0, onEdit, canManage, ...label }: LabelItem
           onDrop={canManage ? handleDrop : undefined}
         >
           <div className="label-item__column">
-            <button
-              onClick={handleClick}
-              className='label-item__toggle'
-              disabled={!hasChildren}
-              aria-expanded={isExpanded}
-              title={isExpanded ? t('labels.collapse') : t('labels.expand')}
-            >
-              <Icon type={IconType.OUTLINED} icon={isExpanded ? "expand_more" : "chevron_right"} name={isExpanded ? "expand_more" : "chevron_right"} />
-              <span className="c__offscreen">{isExpanded ? t('labels.collapse') : t('labels.expand')}</span>
-            </button>
+            {hasChildren && (
+              <button
+                onClick={handleClick}
+                className='label-item__toggle'
+                aria-expanded={isFolded}
+                title={isFolded ? t('labels.collapse') : t('labels.expand')}
+              >
+                <Icon type={IconType.OUTLINED} name={isFolded ? "chevron_right" : "expand_more"} />
+                <span className="c__offscreen">{isFolded ? t('labels.expand') : t('labels.collapse')}</span>
+              </button>
+            )}
             <div className="label-item__name">
-              <Icon icon="label" name="label" color={label.color} />
+              <Icon className="label-item__icon" icon="label" name="label" style={{ 'color': label.color, '--strokeColor': `${label.color}AF`}} />
               <span className="label-name label-name--truncated">{label.display_name}</span>
             </div>
           </div>
@@ -190,11 +204,16 @@ export  const LabelItem = ({ level = 0, onEdit, canManage, ...label }: LabelItem
                         },
                       }),
                     },
+                    {
+                      label: t('labels.add_sub_label'),
+                      icon: <span className="material-icons">add</span>,
+                      callback: () => onEdit({ name: `${label.name}/`, color: label.color }),
+                    },
                   ]}
                 >
                   <Button
                     onClick={() => setIsDropdownOpen(true)}
-                    icon={<span className="material-icons">more_vert</span>}
+                    icon={<Icon name="more_horiz" />}
                     color="primary-text"
                     aria-label={t('tooltips.more_options')}
                     size="small"
@@ -206,10 +225,10 @@ export  const LabelItem = ({ level = 0, onEdit, canManage, ...label }: LabelItem
           </div>
         </Link>
 
-        {hasChildren && isExpanded && (
+        {hasChildren && isFolded === false && (
           <div className="label-children">
             {label.children.map((child) => (
-              <LabelItem key={child.id} {...child} level={level + 1} onEdit={onEdit} canManage={canManage} />
+              <LabelItem key={child.id} {...child} level={level + 1} onEdit={onEdit} canManage={canManage} defaultFoldState={defaultFoldState} />
             ))}
           </div>
         )}

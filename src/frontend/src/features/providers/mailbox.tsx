@@ -1,5 +1,5 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo } from "react";
-import { Mailbox, PaginatedMessageList, PaginatedThreadList, Thread, useLabelsList, useMailboxesList, useMessagesList, useThreadsListInfinite } from "../api/gen";
+import { Mailbox, MailboxRoleChoices, PaginatedMessageList, PaginatedThreadList, Thread, useLabelsList, useMailboxesList, useMessagesList, useThreadsListInfinite } from "../api/gen";
 import { FetchStatus, QueryStatus, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import usePrevious from "@/hooks/use-previous";
@@ -103,9 +103,17 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             refetchOnWindowFocus: true,
         },
     });
+
     const selectedMailbox = useMemo(() => {
+        if (!mailboxQuery.data?.data.length) return null;
+
         const mailboxId = router.query.mailboxId;
-        return mailboxQuery.data?.data.find((mailbox) => mailbox.id === mailboxId) ?? mailboxQuery.data?.data[0] ?? null;
+        return mailboxQuery.data?.data.find((mailbox) => mailbox.id === mailboxId)
+            ?? mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.admin)
+            ?? mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.editor)
+            ?? mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.sender)
+            ?? mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.viewer)
+            ?? mailboxQuery.data.data[mailboxQuery.data.data.length - 1]
     }, [router.query.mailboxId, mailboxQuery.data])
 
     const previousUnreadMessagesCount = usePrevious(selectedMailbox?.count_unread_messages || 0);

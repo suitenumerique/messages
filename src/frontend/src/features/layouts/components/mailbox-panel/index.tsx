@@ -1,26 +1,26 @@
-import { HorizontalSeparator, Spinner } from "@gouvfr-lasuite/ui-kit"
+import { DropdownMenu, HorizontalSeparator, Icon, Spinner } from "@gouvfr-lasuite/ui-kit"
 import { MailboxPanelActions } from "./components/mailbox-actions"
 import { MailboxList } from "./components/mailbox-list"
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { Select } from "@openfun/cunningham-react";
-import { useTranslation } from "react-i18next";
+import { Button } from "@openfun/cunningham-react";
 import { useRouter } from "next/router";
 import { useSearchParams } from "next/navigation";
 import { useLayoutContext } from "../main";
 import { MailboxLabels } from "./components/mailbox-labels";
+import { useState } from "react";
 
 export const MailboxPanel = () => {
-    const { t } = useTranslation();
     const router = useRouter();
     const searchParams = useSearchParams();
     const { selectedMailbox, mailboxes, queryStates } = useMailboxContext();
     const { closeLeftPanel } = useLayoutContext();
+    const [isOpen, setIsOpen] = useState(false);
 
     const getMailboxOptions = () => {
         if (!mailboxes) return [];
         return mailboxes.map((mailbox) => ({
             label: mailbox.email,
-            value: mailbox.id
+            value: mailbox.id,
         }));
     }
 
@@ -33,20 +33,28 @@ export const MailboxPanel = () => {
             {!selectedMailbox || queryStates.mailboxes.isLoading ? <Spinner /> :
                 (
                     <>
-                        <Select
-                            className="mailbox-panel__mailbox-title"
-                            options={getMailboxOptions()}
-                            value={selectedMailbox.id}
-                            label={t('mailbox')}
-                            onChange={(event) => {
-                                closeLeftPanel();
-                                router.push(`/mailbox/${event.target.value}?${searchParams.toString()}`);
-                            }}
-                            clearable={false}
-                            compact
-                            fullWidth
-                            showLabelWhenSelected={false}
-                        />
+                        <div className="mailbox-panel__mailbox-title">
+                            <DropdownMenu
+                                options={getMailboxOptions()}
+                                isOpen={isOpen}
+                                onOpenChange={setIsOpen}
+                                selectedValues={[selectedMailbox.id]}
+                                onSelectValue={(value) => {
+                                    closeLeftPanel();
+                                    router.push(`/mailbox/${value}?${searchParams.toString()}`);
+                                }}
+                            >
+                                <Button
+                                    className="mailbox-panel__mailbox-title__dropdown-button"
+                                    color="tertiary-text"
+                                    icon={<Icon name={isOpen ? "arrow_drop_up" : "arrow_drop_down"} />}
+                                    iconPosition="right"
+                                    onClick={() => setIsOpen(!isOpen)}
+                                >
+                                    <span className="button__label">{selectedMailbox.email}</span>
+                                </Button>
+                            </DropdownMenu>
+                        </div>
                         <MailboxList />
                         <MailboxLabels mailbox={selectedMailbox} />
                     </>

@@ -1,0 +1,90 @@
+.color-palette-field {
+    display: flex;
+    flex-direction: row;
+    gap: var(--c--theme--spacings--xs);
+    justify-content: space-between;
+    padding-block: var(--c--theme--spacings--sm);
+    width: 100%;
+}
+
+.color-palette-field > div:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--theme--spacings--xs);
+}
+
+.color-palette-field__colors {
+    display: grid;
+    grid-template-columns: repeat(5, 24px);
+    grid-template-rows: repeat(auto, 24px);
+    gap: var(--c--theme--spacings--md);
+
+    .color-palette-field__color {
+        appearance: none;
+        border: none;
+        padding: 0;
+        margin: 0;
+        width: 100%;
+        aspect-ratio: 1;
+        border-radius: 4px;
+        background-color: var(--background-color);
+        box-shadow: 0 0 0 2px var(--border-color);
+        cursor: pointer;
+
+        &--selected {
+            outline: 2px solid var(--c--theme--colors--primary-400);
+            outline-offset: 4px;
+        }
+
+        &:focus {
+            outline-width: 2px;
+            outline-style: solid;
+            outline-offset: 4px;
+        }
+    }
+}
+
+//
+// == Input of hell
+//
+.color-palette-field__input-of-hell {
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: var(--c--components--forms-input--border-radius);
+    background-color: var(--c--components--forms-input--border-color);
+    border-width: var(--c--components--forms-input--border-width);
+    border-color: var(--c--components--forms-input--border-color);
+    border-style: var(--c--components--forms-input--border-style);
+}
+
+.color-palette-field__input-of-hell:hover,
+.color-palette-field__input-of-hell:focus-within {
+    border-width: 2px;
+}
+
+.color-palette-field__input-of-hell input {
+    appearance: none;
+    display: block;
+    cursor: pointer;
+    position: absolute;
+    inset: -10px;
+    height: calc(100% + 20px);
+    width: calc(100% + 20px);
+    border-radius: 0;
+}
+
+.color-palette-field__input-of-hell__icon {
+    color: var(--char-color);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -55%);
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--char-color);
+    pointer-events: none;
+    z-index: 1;
+}

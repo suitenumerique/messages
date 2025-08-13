@@ -268,14 +268,17 @@
         "title": "Labels",
         "create": "Create a Label",
         "update": "Update a Label",
+        "add_sub_label": "Add a sub-label",
         "thread_assigned": "Label \"{{label}}\" assigned to this conversation.",
         "thread_unassigned": "Label \"{{label}}\" removed from this conversation.",
         "expand": "Expand",
         "collapse": "Collapse",
+        "expand_all": "Expand all",
+        "collapse_all": "Collapse all",
         "form": {
           "fields": {
             "name": "Label name",
-            "color": "Label color",
+            "color": "Color: ",
             "parent_label": "Select a parent label"
           },
           "submit_create": "Create",
@@ -708,14 +711,17 @@
         "title": "Libellés",
         "create": "Créer un libellé",
         "update": "Modifier un libellé",
+        "add_sub_label": "Ajouter un sous-libellé",
         "thread_assigned": "Libellé \"{{label}}\" assigné à cette conversation.",
         "thread_unassigned": "Libellé \"{{label}}\" retiré de cette conversation.",
         "expand": "Développer",
         "collapse": "Réduire",
+        "expand_all": "Tout développer",
+        "collapse_all": "Tout réduire",
         "form": {
           "fields": {
             "name": "Nom du libellé",
-            "color": "Couleur du libellé",
+            "color": "Couleur : ",
             "parent_label": "Sélectionnez un libellé parent"
           },
           "submit_create": "Créer",

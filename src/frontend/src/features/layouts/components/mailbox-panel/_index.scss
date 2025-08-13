@@ -16,13 +16,37 @@
 
 .mailbox-panel__mailbox-title {
     margin: 0;
-    padding-inline: var(--c--theme--spacings--sm);
-    padding-top: var(--c--theme--spacings--sm);
-    margin-bottom: var(--c--theme--spacings--sm);
     flex-shrink: 0;
+    padding-block: var(--c--theme--spacings--sm);
 
-    & .c__select__inner__value {
+    & > .c__dropdown-menu-trigger {
+        justify-content: flex-start;
+        width: 100%;
+    }
+
+    button.mailbox-panel__mailbox-title__dropdown-button {
+        color: var(--c--theme--colors--greyscale-900);
         font-weight: 600;
+        padding-block: var(--c--theme--spacings--sm);
+        // 1.1rem hardcoded to be aligned with other icon in the sidebar
+        padding-inline: var(--c--theme--spacings--base) 1.1rem;
+        width: 100%;
+        height: inherit;
+
+        & > .button__label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+            text-align: left;
+            justify-content: flex-start;
+        }
+
+        &:hover,
+        &:focus,
+        &:active {
+            color: inherit;
+        }
     }
 }
 
@@ -32,6 +56,6 @@
 }
 
 .mailbox-panel .mailbox-labels {
-    margin-top: var(--c--theme--spacings--xxxl);
+    border-top: 1px solid var(--c--theme--colors--greyscale-200);
     flex: 1;
 }

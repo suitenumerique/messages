@@ -2,8 +2,6 @@ import { Label, TreeLabel } from "@/features/api/gen";
 import { useLabelsCreate, useLabelsList, useLabelsUpdate } from "@/features/api/gen/labels/labels";
 import { RhfInput, RhfSelect } from "@/features/forms/components/react-hook-form";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { ColorHelper } from "@/features/utils/color-helper";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Modal, ModalSize } from "@openfun/cunningham-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -12,11 +10,14 @@ import { useEffect, useMemo } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import z from "zod";
+import { RhfColorPaletteField } from "./components/color-palette-field";
+
+export type SubLabelCreation = Pick<TreeLabel, 'name' | 'color'>;
 
 type LabelModalProps = {
     isOpen: boolean;
     onClose: () => void;
-    label?: TreeLabel
+    label?: TreeLabel | SubLabelCreation
 }
 
 const formSchema = z.object({
@@ -33,18 +34,15 @@ type FormFields = z.infer<typeof formSchema>;
 export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
     const { t } = useTranslation();
     const defaultValues = useMemo(() => ({
-      name: label?.display_name ?? '',
-      color: label?.color ?? '#E3E3FD',
+      name: (label as TreeLabel)?.display_name ?? '',
+      color: (label as TreeLabel)?.color ?? '#E3E3FD',
       parent_label: label?.name.split('/').slice(0, -1).join('/') ?? undefined,
     }), [label]);
+    const isUpdate = (label as TreeLabel)?.id;
     const form = useForm({
         resolver: zodResolver(formSchema),
         defaultValues,
     });
-    const charColor = useMemo(
-      () => ColorHelper.getContrastColor(form.watch('color')),
-      [form.watch('color')]
-  );
 
     const createMutation = useLabelsCreate();
     const updateMutation = useLabelsUpdate();
@@ -83,10 +81,10 @@ export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
     }
 
     const handleSubmit = (data: FormFields) => {
-      const mutation = label ? updateMutation : createMutation;
+      const mutation = isUpdate ? updateMutation : createMutation;
 
       mutation.mutate({
-        id: label?.id || '',
+        id: (label as TreeLabel)?.id || '',
         data: {
           name: data.parent_label ? `${data.parent_label}/${data.name}` : data.name,
           color: data.color,
@@ -96,7 +94,7 @@ export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
         onSuccess: (data) => {
           queryClient.invalidateQueries({ queryKey: labelsQuery.queryKey });
           // If the active label has been updated, update the search params
-          if (searchParams.get('label_slug') === label?.slug) {
+          if (isUpdate && searchParams.get('label_slug') === (label as TreeLabel)?.slug) {
             const newSearchParams = new URLSearchParams(searchParams.toString());
             newSearchParams.set('label_slug', (data.data as Label).slug);
             router.push(`${pathname}?${newSearchParams.toString()}`);
@@ -117,7 +115,7 @@ export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
         size={ModalSize.SMALL}
         isOpen={isOpen}
         onClose={handleClose}
-        title={label ? t('labels.update') : t('labels.create')}
+        title={isUpdate ? t('labels.update') : t('labels.create')}
         closeOnClickOutside
       >
         <FormProvider {...form}>
@@ -127,19 +125,8 @@ export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
                 name="name"
                 label={t('labels.form.fields.name')}
                 text={form.formState.errors.name?.message && t(form.formState.errors.name.message)}
+                fullWidth
               />
-              <label
-                  className="label-form__color-field"
-                  htmlFor="color"
-                  style={{ '--char-color': charColor } as React.CSSProperties}
-              >
-                  <span className="c__offscreen">{t('labels.form.fields.color')}</span>
-                  <Icon name="format_color_fill" className="label-form__color-field__icon" size={18} />
-                  <input
-                    type="color"
-                    {...form.register('color')}
-                  />
-              </label>
             </div>
             <div className="form-field-row">
               <RhfSelect
@@ -158,12 +145,15 @@ export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
                 fullWidth
               />
             </div>
+            <div className="form-field-row">
+              <RhfColorPaletteField name="color" />
+            </div>
             <footer className="form-field-row">
               <Button type="button" color="secondary" size="medium" onClick={onClose}>
                 {t('actions.cancel')}
               </Button>
               <Button type="submit" color="primary" size="medium">
-                {label ? t('labels.form.submit_update') : t('labels.form.submit_create')}
+                {isUpdate ? t('labels.form.submit_update') : t('labels.form.submit_create')}
               </Button>
             </footer>
           </form>

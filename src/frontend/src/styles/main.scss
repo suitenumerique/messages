@@ -46,6 +46,7 @@
 @use "./../features/controlled-modals/message-importer";
 @use "./../features/layouts/components/admin/modal-create-address";
 @use "./../features/forms/components/combobox";
+@use "./../features/layouts/components/mailbox-panel/components/mailbox-labels/components/label-form-modal/components/color-palette-field";
 
 // Application views
 @use "./../pages";

@@ -30,8 +30,25 @@ body {
   overflow: inherit !important;
 }
 
-.material-icons {
-  font-size: 1.25em;
+.material-icons.icon--xsmall {
+  font-size: 0.6875rem;
+}
+
+.material-icons.icon--small {
+  font-size: 1rem;
+}
+
+.material-icons,
+.material-icons.icon--medium {
+  font-size: 1.5rem;
+}
+
+.material-icons.icon--large {
+  font-size: 2rem;
+}
+
+.material-icons.icon--xlarge {
+  font-size: 3rem;
 }
 
 // Cunningham tweaks

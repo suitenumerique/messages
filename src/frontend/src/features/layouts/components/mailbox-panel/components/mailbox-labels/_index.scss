@@ -20,15 +20,27 @@
     -webkit-backdrop-filter: blur(8px);
     z-index: 5;
     flex-shrink: 0;
-    padding-top: var(--c--theme--spacings--xs);
-    padding-bottom: var(--c--theme--spacings--xs);
+    padding-top: var(--c--theme--spacings--sm);
+}
+
+.mailbox-labels__actions {
+    display: flex;
+    gap: var(--c--theme--spacings--xs);
+}
+
+.mailbox-labels__fold-button {
+    padding: 0;
+
+    .c__button__icon > span {
+        font-size: 1.71rem;
+    }
 }
 
 .label-list {
     display: flex;
     flex-direction: column;
     gap: var(--c--theme--spacings--4xs);
-    margin-inline: var(--c--theme--spacings--xs);
+    margin-inline: var(--c--theme--spacings--sm);
     flex: 1;
     min-height: 0;
     padding-bottom: var(--c--theme--spacings--sm);

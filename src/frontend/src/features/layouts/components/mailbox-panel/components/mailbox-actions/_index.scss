@@ -4,12 +4,3 @@
     align-items: center;
     padding: var(--c--theme--spacings--sm);
 }
-
-// Workaround to apply disabled style to the button link
-// TODO: Remove that once https://github.com/openfun/cunningham/pull/359 is merged
-.mailbox-panel-actions .c__button[disabled] {
-    background-color: var(--c--components--button--primary--background--disabled);
-    color: var(--c--components--button--primary--disabled);
-    pointer-events: none;
-    cursor: not-allowed;
-}

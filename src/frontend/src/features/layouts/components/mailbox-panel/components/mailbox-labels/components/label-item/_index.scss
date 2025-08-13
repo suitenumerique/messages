@@ -1,10 +1,13 @@
+@use "sass:math";
+
 .label-item {
     display: flex;
     align-items: center;
     gap: var(--c--theme--spacings--base);
-    padding-inline: var(--c--theme--spacings--xs);
-    padding-block: var(--c--theme--spacings--3xs);
+    padding-block: calc(8/14 * 1rem);
+    padding-inline: calc(6/14 * 1rem);;
     color: inherit;
+    font-weight: 500;
     text-decoration: none;
     border-radius: 4px;
     justify-content: space-between;
@@ -37,15 +40,9 @@
     background-color: var(--c--theme--colors--greyscale-100);
 }
 
-.label-item:hover .label-item__toggle,
-.label-item:focus-within .label-item__toggle,
-.label-item.label-item--active {
-    box-shadow: 0 0 0 4px #FFF;
-}
-
 .label-item--active {
-    background-color: var(--c--theme--colors--primary-100);
-    color: var(--c--theme--colors--primary-600);
+    background-color: var(--c--theme--colors--greyscale-100);
+    font-weight: 600;
 }
 
 .label-item__toggle {
@@ -60,7 +57,7 @@
     margin: 0;
     font-size: 1rem;
     padding: 0.1rem;
-    color: var(--c--theme--colors--greyscale-400);
+    color: var(--c--theme--colors--greyscale-600);
 }
 
 .label-item__toggle:disabled {
@@ -76,6 +73,11 @@
     flex: 1;
     min-width: 0;
 
+    .label-item__icon {
+        -webkit-text-stroke: 3px var(--strokeColor);
+        color: var(--color);
+    }
+
     .label-name {
         display: block;
         white-space: nowrap;
@@ -86,20 +88,25 @@
 }
 
 .label-item__toggle:hover {
-    background-color: var(--c--theme--colors--greyscale-300);
-    color: var(--c--theme--colors--greyscale-500);
+    background-color: rgba(0, 0, 0, 0.1);
 }
 
 .label-item:hover .label-item__dropdown-actions,
 .label-item[data-focus-within="true"] .label-item__dropdown-actions {
-    display: block;
+    visibility: visible;
+    opacity: 1;
 }
 
 .label-item__dropdown-actions {
-    position: absolute;
-    display: none;
-    background-color: var(--c--theme--colors--greyscale-200);
-    box-shadow: 0 0 0 4px #FFF;
-    border-radius: 3px;
-    right: -4px;
+    visibility: hidden;
+    opacity: 0;
+
+    & .c__button__icon > span {
+        font-size: 1.5rem;
+    }
+}
+
+.label-item__dropdown-actions .c__button:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+
 }

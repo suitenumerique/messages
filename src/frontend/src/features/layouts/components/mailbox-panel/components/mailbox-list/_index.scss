@@ -1,7 +1,7 @@
 .mailbox-list {
     display: flex;
     flex-direction: column;
-    margin-inline: var(--c--theme--spacings--xs);
+    margin-inline: var(--c--theme--spacings--sm);
     gap: var(--c--theme--spacings--4xs);
     flex-shrink: 0;
 }
@@ -11,9 +11,10 @@
     display: flex;
     flex-direction: row;
     justify-content: space-between;
+    align-items: center;
     width: auto;
-    padding-inline: var(--c--theme--spacings--base);
-    padding-block: var(--c--theme--spacings--2xs);
+    padding-inline: var(--c--theme--spacings--xs);
+    padding-block: var(--c--theme--spacings--sm);
     border-radius: 4px;
     text-decoration: none;
 }
@@ -25,8 +26,11 @@
 
 .mailbox__item--active {
     pointer-events: none;
-    background-color: var(--c--theme--colors--primary-100);
-    color: var(--c--theme--colors--primary-600);
+    background-color: var(--c--theme--colors--greyscale-100);
+
+    .mailbox__item-label {
+        font-weight: 600;
+    }
 }
 
 .mailbox__item-label {
@@ -36,5 +40,12 @@
     color: currentColor;
     align-items: center;
     margin: 0;
-    font-weight: 600;
+    font-weight: 500;
+}
+
+.mailbox__item-counter {
+    color: var(--c--theme--colors--greyscale-600);
+    font-weight: 500;
+    font-size: var(--c--theme--font--sizes--sm);
+    padding: 2px 4px;
 }

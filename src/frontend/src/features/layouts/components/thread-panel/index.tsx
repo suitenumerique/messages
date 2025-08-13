@@ -8,6 +8,7 @@ import useRead from "@/features/message/use-read";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { MAILBOX_FOLDERS } from "../mailbox-panel/components/mailbox-list";
+import Image from "next/image";
 
 export const ThreadPanel = () => {
     const { threads, queryStates, refetchMailboxes, unselectThread, loadNextThreads, selectedThread } = useMailboxContext();
@@ -62,7 +63,7 @@ export const ThreadPanel = () => {
         return (
             <div className="thread-panel thread-panel--empty">
                 <div>
-                    <span className="material-icons">mail</span>
+                    <Image src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
                     <p>{t('no_threads')}</p>
                     {showImportButton && (
                         <Button href="#modal-message-importer">{t('actions.import_messages')}</Button>
