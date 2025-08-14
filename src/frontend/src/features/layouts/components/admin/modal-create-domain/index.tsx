@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { FormProvider, useForm } from 'react-hook-form';
-import { MailDomainAdminWrite, MailDomainAdminWriteRequest, useMaildomainsCreate, useMaildomainsList } from '@/features/api/gen';
+import { MailDomainAdminWriteRequest, useMaildomainsCreate } from '@/features/api/gen';
 import { Banner } from '@/features/ui/components/banner';
 import { RhfInput } from '@/features/forms/components/react-hook-form';
 import { RhfCheckbox } from '@/features/forms/components/react-hook-form/rhf-checkbox';
@@ -21,11 +21,8 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
   const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [createdDomain, setCreatedDomain] = useState<MailDomainAdminWrite | null>(null);
   const { mutateAsync: createDomain } = useMaildomainsCreate();
 
-  const {data: domainsData, refetch: refetchDomains} = useMaildomainsList();
-  const domains = domainsData?.data.results || [];
   const createDomainSchema = z.object({
       name: z.string().min(1, { error: "create_domain_modal.form.errors.name_required" }),
       oidc_autojoin: z.boolean(),
@@ -44,13 +41,12 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
     },
   });
 
-  const { handleSubmit, reset, setValue, watch } = form;
+  const { handleSubmit } = form;
 
 
   const handleClose = () => {
     form.reset();
     setError(null);
-    setCreatedDomain(null);
     onClose();
   };
 
@@ -59,9 +55,11 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
     setIsSubmitting(true);
     try {
       const payload: MailDomainAdminWriteRequest = data;
-      const response = await createDomain({data: payload});
-      refetchDomains()
-    } catch (error) {
+      await createDomain({data: payload});
+      onCreate();
+      handleClose();
+
+    } catch (_) {
       setError("create_domain_modal.api_errors.default");
     } finally {
       setIsSubmitting(false);

@@ -5,11 +5,12 @@ import { useTranslation } from "react-i18next";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { AdminLayout } from "@/features/layouts/components/admin/admin-layout";
 import Bar from "@/features/ui/components/bar";
-import { MailDomainAdmin } from "@/features/api/gen";
+import { getMaildomainsListQueryOptions, MailDomainAdmin } from "@/features/api/gen";
 import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { Banner } from "@/features/ui/components/banner";
 import { CreateDomainAction } from "@/features/layouts/components/admin/domains-view/create-domain-action";
+import { useQueryClient } from "@tanstack/react-query";
 
 type AdminDataGridProps = {
   pagination: ReturnType<typeof usePagination>;
@@ -105,8 +106,16 @@ const AdminPageContent = () => {
  * Admin page which list all mail domains.
  */
 export default function AdminPage() {
+  const queryClient = useQueryClient();
+
+  const handleCreateDomain = () => {
+    queryClient.invalidateQueries({
+      queryKey: getMaildomainsListQueryOptions().queryKey,
+    });
+  };
+
   return (
-    <AdminLayout actions={<CreateDomainAction onCreate={() => {}} />}>
+    <AdminLayout actions={<CreateDomainAction onCreate={handleCreateDomain} />}>
       <AdminPageContent />
     </AdminLayout>
   );
