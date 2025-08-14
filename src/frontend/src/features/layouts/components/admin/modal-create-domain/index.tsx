@@ -59,7 +59,7 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
       onCreate();
       handleClose();
 
-    } catch (_) {
+    } catch {
       setError("create_domain_modal.api_errors.default");
     } finally {
       setIsSubmitting(false);
