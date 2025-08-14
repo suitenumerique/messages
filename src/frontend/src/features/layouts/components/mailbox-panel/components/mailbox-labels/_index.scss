@@ -5,6 +5,26 @@
     overflow-y: auto;
 }
 
+.mailbox-labels__drag-over-indicator {
+    margin-inline: var(--c--theme--spacings--base);
+    margin-block: var(--c--theme--spacings--2xs) var(--c--theme--spacings--xs);
+    background-color: var(--c--theme--colors--greyscale-000);
+    height: 10px;
+    border-radius: 2px;
+    position: sticky;
+    bottom: 0;
+
+    &::after {
+        content: '';
+        display: block;
+        height: 2px;
+        left: 0;
+        right: 0;
+        top: 4px;
+        background-color: var(--c--theme--colors--greyscale-300);
+    }
+}
+
 .mailbox-labels__header {
     display: flex;
     justify-content: space-between;
@@ -44,4 +64,8 @@
     flex: 1;
     min-height: 0;
     padding-bottom: var(--c--theme--spacings--sm);
+
+    > div {
+        position: relative;
+    }
 }

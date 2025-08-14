@@ -101,7 +101,9 @@
       "thread-labels-widget": {
         "popup": {
           "title": "Add labels",
-          "search_placeholder": "Search a label"
+          "search_placeholder": "Search a label",
+          "create_label": "Create the label \"{{label}}\"",
+          "create_new_label": "Create a new label"
         }
       },
       "thread_message": {
@@ -552,7 +554,9 @@
       "thread-labels-widget": {
         "popup": {
           "title": "Ajouter des libellés",
-          "search_placeholder": "Rechercher un libellé"
+          "search_placeholder": "Rechercher un libellé",
+          "create_label": "Créer le libellé \"{{label}}\"",
+          "create_new_label": "Créer un nouveau libellé"
         }
       },
       "thread_message": {

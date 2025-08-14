@@ -71,6 +71,13 @@ body {
   color: var(--c--components--button--tertiary-text--color-hover);
 }
 
+// React Modal tweaks
+// Make it always on top of the other modals
+.ReactModalPortal {
+  position: relative;
+  z-index: 999999;
+}
+
 // Related to @viselect/react
 .selection-area {
   background: rgba(46, 115, 252, 0.11);

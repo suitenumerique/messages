@@ -29,7 +29,7 @@
     border-radius: 4px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     z-index: 10000;
-    min-width: min(400px, 50vw);
+    width: min(400px, 60vw);
     max-height: max(600px, 80vh);
     margin-top: 4px;
 }
@@ -71,4 +71,20 @@
     width: 100%;
     height: 100%;
     z-index: 1000;
+}
+
+.thread-labels-widget__popup__content__empty .c__button {
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    max-width: 100%;
+
+    & > .thread-labels-widget__popup__content__empty__button-label {
+        text-overflow: ellipsis;
+        overflow: hidden;
+        white-space: nowrap;
+        max-width: 100%;
+        min-width: 0;
+    }
 }

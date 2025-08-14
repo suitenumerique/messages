@@ -1,12 +1,13 @@
-import { Mailbox, TreeLabel, useLabelsList } from "@/features/api/gen";
+import { Mailbox, TreeLabel, useLabelsList, useLabelsPartialUpdate } from "@/features/api/gen";
 import { Icon, IconSize, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button, useModal, Tooltip } from "@openfun/cunningham-react";
 import { useTranslation } from "react-i18next";
 import { LabelModal, SubLabelCreation } from "./components/label-form-modal";
-import { LabelItem } from "./components/label-item";
+import { LabelItem, LabelTransferData } from "./components/label-item";
 import { useEffect, useState } from "react";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { FoldProvider, useFold } from "@/features/providers/fold";
+import { useQueryClient } from "@tanstack/react-query";
 
 type MailboxLabelsProps = {
   mailbox: Mailbox;
@@ -20,6 +21,9 @@ export const MailboxLabelsBase = ({ mailbox }: MailboxLabelsProps) => {
   const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, mailbox);
   const { areAllFolded, toggleAll } = useFold();
   const [defaultFoldState, setDefaultFoldState] = useState<false | undefined>(undefined);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const queryClient = useQueryClient();
+  const moveLabelMutation = useLabelsPartialUpdate();
 
   const editLabel = (label: TreeLabel | SubLabelCreation) => {
     setLabelToEdit(label)
@@ -42,8 +46,54 @@ export const MailboxLabelsBase = ({ mailbox }: MailboxLabelsProps) => {
     }
   }, [defaultFoldState]);
 
+  const handleDragOver = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'link';
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const handleDropLabel = (transferData: LabelTransferData) => {
+    // If this is a root label do nothing.
+    if (transferData.label.name === transferData.label.display_name) return;
+    moveLabelMutation.mutate({
+      id: transferData.label.id,
+      data: {
+        name: transferData.label.display_name,
+      }
+    }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: labelsQuery.queryKey });
+      },
+    });
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    const rawData = e.dataTransfer.getData('application/json');
+    if (!rawData) return;
+
+    try {
+      const data = JSON.parse(rawData);
+
+      if (data.type === 'label') handleDropLabel(data);
+    } catch (error) {
+      console.error('Error parsing drag data:', error);
+    }
+  };
+
   return (
-      <section className="mailbox-labels">
+      <section
+        className="mailbox-labels"
+        onDragOver={canManageLabels ? handleDragOver : undefined}
+        onDragLeave={canManageLabels ? handleDragLeave : undefined}
+        onDrop={canManageLabels ? handleDrop : undefined}
+      >
         <header className="mailbox-labels__header">
           <p className="mailbox-labels__title">{t('labels.title')}</p>
           <div className="mailbox-labels__actions">
@@ -76,11 +126,16 @@ export const MailboxLabelsBase = ({ mailbox }: MailboxLabelsProps) => {
           </div>
         </header>
         <div className="label-list">
-          {
-            labelsQuery.data?.data.map((label) => (
-              <LabelItem key={label.id} {...label} onEdit={editLabel} canManage={canManageLabels} defaultFoldState={defaultFoldState} />
-            ))
-          }
+          <div>
+            {
+              labelsQuery.data?.data.map((label) => (
+                <LabelItem key={label.id} {...label} onEdit={editLabel} canManage={canManageLabels} defaultFoldState={defaultFoldState} />
+              ))
+            }
+            {isDragOver && (
+              <div className="mailbox-labels__drag-over-indicator" />
+            )}
+          </div>
         </div>
         <LabelModal isOpen={isOpen} onClose={handleClose} label={labelToEdit} />
       </section>

@@ -220,59 +220,13 @@ class LabelViewSet(
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        # Get the validated data
-        name = serializer.validated_data["name"]
         mailbox = serializer.validated_data["mailbox"]
 
         # Check if user has EDITOR or ADMIN role for the mailbox
         self.check_mailbox_permissions(mailbox)
+        self.perform_create(serializer)
 
-        color = serializer.validated_data.get(
-            "color",
-            models.Label._meta.get_field("color").default,  # noqa: SLF001
-        )
-
-        # Create the actual label with color if provided, otherwise use model default
-        label = models.Label.objects.create(name=name, mailbox=mailbox, color=color)
-
-        # Get all labels for the mailbox to build the tree structure
-        all_labels = models.Label.objects.filter(mailbox=mailbox).order_by("slug")
-        label_dict = {}
-        root_labels = []
-
-        # Build the tree structure
-        for label in all_labels:
-            label_data = {
-                "id": str(label.id),
-                "name": label.name,
-                "slug": label.slug,
-                "color": label.color,
-                "display_name": label.basename,
-                "parent_name": label.parent_name,
-                "depth": label.depth,
-                "children": [],
-            }
-            label_dict[label.id] = label_data
-
-            # Add to root labels or parent's children
-            if label.parent_name is None:
-                root_labels.append(label_data)
-            else:
-                # Find parent label by name
-                parent_label = next(
-                    (l for l in all_labels if l.name == label.parent_name), None
-                )
-                if parent_label:
-                    label_dict[parent_label.id]["children"].append(label_data)
-
-        # Sort children alphabetically by name
-        for label_data in label_dict.values():
-            label_data["children"].sort(key=lambda x: x["name"])
-
-        # Sort root labels alphabetically
-        root_labels.sort(key=lambda x: x["name"])
-
-        return Response(root_labels, status=status.HTTP_201_CREATED)
+        return drf.response.Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @extend_schema(
         responses={

@@ -12,11 +12,12 @@ import { useTranslation } from "react-i18next";
 import z from "zod";
 import { RhfColorPaletteField } from "./components/color-palette-field";
 
-export type SubLabelCreation = Pick<TreeLabel, 'name' | 'color'>;
+export type SubLabelCreation = Partial<Pick<TreeLabel, 'name' | 'color' | 'display_name'>>;
 
 type LabelModalProps = {
     isOpen: boolean;
     onClose: () => void;
+    onSuccess?: (label: TreeLabel) => void;
     label?: TreeLabel | SubLabelCreation
 }
 
@@ -31,12 +32,12 @@ type FormFields = z.infer<typeof formSchema>;
 /**
  * Modal component which contains a form to create/update a label
  */
-export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
+export const LabelModal = ({ isOpen, onClose, label, onSuccess }: LabelModalProps) => {
     const { t } = useTranslation();
     const defaultValues = useMemo(() => ({
       name: (label as TreeLabel)?.display_name ?? '',
       color: (label as TreeLabel)?.color ?? '#E3E3FD',
-      parent_label: label?.name.split('/').slice(0, -1).join('/') ?? undefined,
+      parent_label: label?.name?.split('/').slice(0, -1).join('/') ?? undefined,
     }), [label]);
     const isUpdate = (label as TreeLabel)?.id;
     const form = useForm({
@@ -72,7 +73,7 @@ export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
 
       return flatten((labelsQuery.data.data)).filter(
         // Do not display current label and its children as options to nest the current label
-        (option) => !label || !option.value.startsWith(label.name)
+        (option) => !label?.name || !option.value.startsWith(label.name)
       );
     }, [label, labelsQuery.data]);
 
@@ -91,14 +92,15 @@ export const LabelModal = ({ isOpen, onClose, label }: LabelModalProps) => {
           mailbox: selectedMailbox!.id,
         }
       }, {
-        onSuccess: (data) => {
-          queryClient.invalidateQueries({ queryKey: labelsQuery.queryKey });
+        onSuccess: async (data) => {
+          await queryClient.invalidateQueries({ queryKey: labelsQuery.queryKey });
           // If the active label has been updated, update the search params
           if (isUpdate && searchParams.get('label_slug') === (label as TreeLabel)?.slug) {
             const newSearchParams = new URLSearchParams(searchParams.toString());
             newSearchParams.set('label_slug', (data.data as Label).slug);
             router.push(`${pathname}?${newSearchParams.toString()}`);
           }
+          onSuccess?.(data.data as TreeLabel);
           handleClose();
         }
       });

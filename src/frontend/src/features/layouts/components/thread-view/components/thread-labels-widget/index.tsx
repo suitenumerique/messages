@@ -1,11 +1,12 @@
 import { ThreadLabel, TreeLabel, useLabelsAddThreadsCreate, useLabelsList, useLabelsRemoveThreadsCreate } from "@/features/api/gen";
+import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Button, Checkbox, Input, Tooltip, useModal } from "@openfun/cunningham-react";
+import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import StringHelper from "@/features/utils/string-helper";
 import useAbility, { Abilities } from "@/hooks/use-ability";
-import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, Checkbox, Input, Tooltip } from "@openfun/cunningham-react";
-import { useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { LabelModal } from "@/features/layouts/components/mailbox-panel/components/mailbox-labels/components/label-form-modal";
 
 type ThreadLabelsWidgetProps = {
     selectedLabels: readonly ThreadLabel[];
@@ -72,6 +73,7 @@ type LabelsPopupProps = {
 
 const LabelsPopup = ({ labels = [], selectedLabels, threadId }: LabelsPopupProps) => {
     const { t } = useTranslation();
+    const {open, close, isOpen} = useModal();
     const [searchQuery, setSearchQuery] = useState('');
     const { invalidateThreadMessages } = useMailboxContext();
     const getFlattenLabelOptions = (label: TreeLabel, level: number = 0): Array<{label: string, value: string, checked: boolean}> => {
@@ -89,11 +91,11 @@ const LabelsPopup = ({ labels = [], selectedLabels, threadId }: LabelsPopupProps
         return labels
         .map((label) => getFlattenLabelOptions(label))
         .flat()
-        .filter((option) =>
-            StringHelper
-                .normalizeForSearch(option.label)
-                .includes(searchQuery)
-        )
+        .filter((option) => {
+            const normalizedLabel = StringHelper.normalizeForSearch(option.label);
+            const normalizedSearchQuery = StringHelper.normalizeForSearch(searchQuery);
+            return normalizedLabel.includes(normalizedSearchQuery);
+    })
         .sort((a, b) => {
             if (a.checked !== b.checked) return a.checked ? -1 : 1;
             return a.label.localeCompare(b.label);
@@ -144,7 +146,7 @@ const LabelsPopup = ({ labels = [], selectedLabels, threadId }: LabelsPopupProps
                     icon={<Icon type={IconType.OUTLINED} name="search" />}
                     label={t('thread-labels-widget.popup.search_placeholder')}
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(StringHelper.normalizeForSearch(e.target.value))}
+                    onChange={(e) => setSearchQuery(e.target.value)}
                     fullWidth
                 />
             </header>
@@ -158,6 +160,19 @@ const LabelsPopup = ({ labels = [], selectedLabels, threadId }: LabelsPopupProps
                         />
                     </li>
                 ))}
+                <li className="thread-labels-widget__popup__content__empty">
+                    <Button color="secondary" onClick={open} fullWidth icon={<Icon type={IconType.OUTLINED} name="add" />}>
+                        <span className="thread-labels-widget__popup__content__empty__button-label">
+                        {searchQuery && labelsOptions.length === 0 ? t('thread-labels-widget.popup.create_label', { label: searchQuery }) : t('thread-labels-widget.popup.create_new_label')}
+                        </span>
+                    </Button>
+                    <LabelModal
+                        isOpen={isOpen}
+                        onClose={close}
+                        label={{ display_name: searchQuery }}
+                        onSuccess={(label) => { handleAddLabel(label.id)}}
+                     />
+                </li>
             </ul>
         </div>
     );
