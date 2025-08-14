@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { FormProvider, useForm } from 'react-hook-form';
-import { MailDomainAdminWriteRequest, useMaildomainsCreate } from '@/features/api/gen';
+import { MailDomainAdminWrite, MailDomainAdminWriteRequest, useMaildomainsCreate } from '@/features/api/gen';
 import { Banner } from '@/features/ui/components/banner';
 import { RhfInput } from '@/features/forms/components/react-hook-form';
 import { RhfCheckbox } from '@/features/forms/components/react-hook-form/rhf-checkbox';
@@ -13,7 +13,7 @@ import { RhfCheckbox } from '@/features/forms/components/react-hook-form/rhf-che
 type ModalCreateAddressProps = {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: () => void;
+  onCreate: (createdDomain: MailDomainAdminWrite) => void;
 }
 
 export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddressProps) => {
@@ -55,8 +55,8 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
     setIsSubmitting(true);
     try {
       const payload: MailDomainAdminWriteRequest = data;
-      await createDomain({data: payload});
-      onCreate();
+      const response = await createDomain({data: payload});
+      onCreate(response.data);
       handleClose();
 
     } catch {
@@ -72,7 +72,7 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
           title={t('create_domain_modal.title')}
           size={ModalSize.LARGE}
           onClose={handleClose}
-        >
+    >
       <div className="modal-create-domain">
         <FormProvider {...form}>
           <form onSubmit={handleSubmit(onSubmit)} noValidate>

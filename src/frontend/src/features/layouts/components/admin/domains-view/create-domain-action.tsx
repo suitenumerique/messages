@@ -1,10 +1,11 @@
+import { MailDomainAdminWrite } from "@/features/api/gen";
 import { ModalCreateDomain } from "@/features/layouts/components/admin/modal-create-domain";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { Button, useModal } from "@openfun/cunningham-react";
 import { useTranslation } from "react-i18next";
 
 type CreateDomainActionProps = {
-    onCreate: () => void;
+    onCreate: (createdDomain: MailDomainAdminWrite) => void;
 }
 
 /**

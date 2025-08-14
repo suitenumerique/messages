@@ -874,6 +874,7 @@
           "manage_access": "Gérer les accès",
           "new_domain": "Nouveau domaine"
         },
+        "creation_success": "Le domaine <strong>{{domain}}</strong> a été créé avec succès.",
         "loading": "Chargement des domaines...",
         "loading_error": "Une erreur est survenue lors du chargement des domaines."
       },
