@@ -71,6 +71,11 @@ body {
   color: var(--c--components--button--tertiary-text--color-hover);
 }
 
+// Hide toast container as we use react-toastify
+.c__toast__container {
+  display: none;
+}
+
 // React Modal tweaks
 // Make it always on top of the other modals
 .ReactModalPortal {

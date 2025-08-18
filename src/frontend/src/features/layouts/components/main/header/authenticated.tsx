@@ -1,9 +1,12 @@
-import { SearchInput } from "@/features/forms/components/search-input";
-import { HeaderProps, useResponsive } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenu, HeaderProps, Icon, IconType, useResponsive, UserMenu, VerticalSeparator } from "@gouvfr-lasuite/ui-kit";
 import { Button, useCunningham } from "@openfun/cunningham-react";
-import { LanguagePicker } from "../language-picker";
-import { useAuth } from "@/features/auth";
-import UserMenu from "./user-menu";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useRouter } from "next/router";
+import { SearchInput } from "@/features/forms/components/search-input";
+import useAbility, { Abilities } from "@/hooks/use-ability";
+import { useAuth, logout } from "@/features/auth";
+import { LanguagePicker } from "@/features/layouts/components/main/language-picker";
 
 
 type AuthenticatedHeaderProps = HeaderProps & {
@@ -48,12 +51,51 @@ export const AuthenticatedHeader = ({
 };
 
 export const HeaderRight = () => {
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const { user } = useAuth();
+  const { isDesktop } = useResponsive();
+  const { t } = useTranslation();
+  const router = useRouter();
+  const canAccessDomainAdmin = useAbility(Abilities.CAN_VIEW_DOMAIN_ADMIN);
 
   return (
     <>
-      {user && <UserMenu />}
-      <LanguagePicker />
+      <DropdownMenu
+          isOpen={isDropdownOpen}
+          onOpenChange={setIsDropdownOpen}
+          options={[
+              ...(canAccessDomainAdmin ? [{
+                label: t("user_menu.domain_admin"),
+                icon: <Icon name="domain" />,
+                callback: () => router.push("/domain"),
+              }] : []),
+              {
+                  label: t("actions.import_messages"),
+                  icon: <Icon name="archive" type={IconType.OUTLINED} />,
+                  callback: () => {
+                      window.location.hash = `#modal-message-importer`;
+                  }
+              },
+          ]}
+      >
+      <Button
+          onClick={() => setIsDropdownOpen(true)}
+          icon={<Icon name="settings" type={IconType.OUTLINED} />}
+          aria-label={t("mailbox-panel.actions.more_options")}
+          color="tertiary-text"
+      />
+      </DropdownMenu>
+      {isDesktop && <VerticalSeparator size="24px" />}
+      <UserMenu
+        user={user ? {
+          full_name: user.full_name ?? undefined,
+          email: user.email!
+        } : null}
+        logout={logout}
+        footerAction={
+          <LanguagePicker size="small" color="secondary" />
+        }
+      />
     </>
   );
 };

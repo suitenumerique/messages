@@ -1,10 +1,11 @@
 import { useResponsive } from "@gouvfr-lasuite/ui-kit";
-import { MailboxPanel } from "../../mailbox-panel";
+import { usePostHog } from "posthog-js/react";
 import { useAuth } from "@/features/auth";
 import { HeaderRight } from "../header/authenticated";
 import { PostHogSurveyButton } from "@/features/ui/components/feedback-button";
 import { useConfig } from "@/features/providers/config";
-import { usePostHog } from "posthog-js/react";
+import { MailboxPanel } from "../../mailbox-panel";
+import { LanguagePicker } from "../language-picker";
 
 export const LeftPanel = ({ hasNoMailbox = true }: { hasNoMailbox?: boolean }) => {
     const { user } = useAuth();
@@ -21,7 +22,7 @@ export const LeftPanel = ({ hasNoMailbox = true }: { hasNoMailbox?: boolean }) =
             </div>
             {isTablet &&
                 <div className="left-panel__footer">
-                    <HeaderRight />
+                    {user ? <HeaderRight /> : <LanguagePicker />}
                 </div>
             }
             {posthog.__loaded && config.POSTHOG_SURVEY_ID && (
