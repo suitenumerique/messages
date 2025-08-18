@@ -73,7 +73,8 @@ create-env-files: \
 	env.d/development/backend.local \
 	env.d/development/frontend.local \
 	env.d/development/mta-in.local \
-	env.d/development/mta-out.local
+	env.d/development/mta-out.local \
+	env.d/development/mta-out-proxy.local
 .PHONY: create-env-files
 
 bootstrap: ## Prepare the project for local development
@@ -253,6 +254,9 @@ mta-out-test: ## run the mta-out tests
 	@$(COMPOSE) run --build --rm mta-out-test
 .PHONY: mta-out-test
 
+socks-proxy-test: ## run the socks-proxy tests
+	@$(COMPOSE) run --build --rm socks-proxy-test
+.PHONY: socks-proxy-test
 
 # -- Backend
 
