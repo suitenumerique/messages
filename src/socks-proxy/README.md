@@ -19,13 +19,14 @@ This service provides a SOCKS5 proxy server that can be used for routing SMTP tr
 
 ### Environment Variables
 
-The service requires the `PROXY_USERS` environment variable:
-
-```bash
-PROXY_USERS=user1:password1,user2:password2
-```
-
-**Format**: Comma-separated list of `username:password` pairs
+|Variable|Description|Required|Default|
+|---|---|---|---|
+| PROXY_USERS | List of username:password pairs allowed to connect in the format "user1:pass1,user2:pass2". | true | |
+| PROXY_EXTERNAL | The outbound connections IP address or interface name. | true | |
+| PROXY_INTERNAL | The inbound connections IP addresses or interfaces names.  | false | "0.0.0.0" |
+| PROXY_INTERNAL_PORT | The inbound connections TCP port to listen to. | false | "1080" |
+| PROXY_DEBUG_LEVEL | The debug level. | false | "0" |
+| PROXY_SOURCE_IP_WHITELIST | The source IPs allowed to connect to the proxy. Be aware you have to use `network_mode: host` for this feature to work. | false | "0.0.0.0/0" |
 
 ## Testing
 

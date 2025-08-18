@@ -119,3 +119,15 @@ jobs:
       image_name: "mta-out"
       context: "src/mta-out"
       target: runtime-prod
+
+  docker-publish-socks-proxy:
+    uses: ./.github/workflows/docker-publish.yml
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+    with:
+      image_name: "socks-proxy"
+      context: "src/socks-proxy"

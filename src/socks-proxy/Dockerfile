@@ -4,31 +4,29 @@ ARG DANTE_VER=1.4.4
 ARG DANTE_URL=https://www.inet.no/dante/files/dante-$DANTE_VER.tar.gz
 ARG DANTE_SHA256=1973c7732f1f9f0a4c0ccf2c1ce462c7c25060b25643ea90f9b98f53a813faec
 
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl
+RUN <<EOR
+apt-get update
+apt-get install -y build-essential curl
+EOR
 
-RUN curl -L -o dante.tar.gz $DANTE_URL \
-    && echo "$DANTE_SHA256 dante.tar.gz" | sha256sum -c - \
-    && tar -xzf dante.tar.gz \
-    && cd dante-$DANTE_VER \
-    && ./configure \
-    && make \
-    && make install
+RUN <<EOR
+set -eu
+curl -fsSL -o dante.tar.gz $DANTE_URL
+echo "$DANTE_SHA256 dante.tar.gz" | sha256sum -c -
+tar -xzf dante.tar.gz
+cd dante-$DANTE_VER
+./configure
+make
+make install
+EOR
 
 FROM debian:trixie-slim AS runtime
 
-RUN apt-get update && apt-get install -y \
-    apache2-utils \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY --from=base /usr/local/sbin/sockd /usr/local/sbin/sockd
 
-COPY sockd.conf /etc/sockd.conf
-COPY entrypoint.sh /entrypoint.sh
-
-RUN chmod +x /entrypoint.sh
+COPY --chmod=0755 entrypoint.sh /entrypoint.sh
 
 EXPOSE 1080
 
-CMD ["/entrypoint.sh"]
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/usr/local/sbin/sockd"]
