@@ -1,7 +1,7 @@
 import { TreeLabel, ThreadsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useThreadsStatsRetrieve, ThreadsStatsRetrieve200, useLabelsAddThreadsCreate, useLabelsRemoveThreadsCreate, useLabelsPartialUpdate } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { DropdownMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit";
-import { Button } from "@openfun/cunningham-react";
+import { Button, useModals } from "@openfun/cunningham-react";
 import clsx from "clsx";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -30,6 +30,7 @@ type LabelItemProps = TreeLabel & {
 
 export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...label }: LabelItemProps) => {
   const { selectedMailbox, invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
+  const modals = useModals();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const queryParams = useMemo(() => {
@@ -201,6 +202,21 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
     }
   };
 
+  const handleDelete = async () => {
+    const decision = await modals.deleteConfirmationModal({
+      title: <span className="label-item__delete-modal__title">{t('labels.delete_modal.title', { label: label.display_name })}</span>,
+      children: <span className="label-item__delete-modal__message">{t('labels.delete_modal.message', { label: label.display_name })}</span>,
+    });
+
+    if (decision === 'delete') {
+      deleteMutation.mutate({ id: label.id }, {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: labelsQuery.queryKey });
+        },
+      })
+    }
+  }
+
   const getPaddingLeftItem = (level: number) => {
     let offset = 0;
     if (level === 1 && !hasChildren) offset = 3.3;
@@ -254,18 +270,15 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
                     callback: () => onEdit(label),
                   },
                   {
-                    label: t('actions.delete'),
-                    icon: <span className="material-icons">delete</span>,
-                    callback: () => deleteMutation.mutate({ id: label.id }, {
-                      onSuccess: () => {
-                        queryClient.invalidateQueries({ queryKey: labelsQuery.queryKey });
-                      },
-                    }),
-                  },
-                  {
                     label: t('labels.add_sub_label'),
                     icon: <span className="material-icons">add</span>,
                     callback: () => onEdit({ name: `${label.name}/`, color: label.color }),
+                    showSeparator: true,
+                  },
+                  {
+                    label: t('actions.delete'),
+                    icon: <span className="material-icons">delete</span>,
+                    callback: handleDelete,
                   },
                 ]}
               >

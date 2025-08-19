@@ -288,6 +288,10 @@
           "errors": {
             "name_required": "A name is required."
           }
+        },
+        "delete_modal": {
+          "title": "Delete label \"{{label}}\"",
+          "message": "Are you sure you want to delete this label? This action is irreversible!"
         }
       },
       "quoted_message_block": {
@@ -733,6 +737,10 @@
           "errors": {
             "name_required": "Un nom est requis."
           }
+        },
+        "delete_modal": {
+          "title": "Supprimer le libellé \"{{label}}\"",
+          "message": "Voulez-vous vraiment supprimer ce libellé ? Cette action est irréversible!"
         }
       },
       "quoted_message_block": {
