@@ -370,6 +370,25 @@
           "default": "An error occurred while creating the address."
         }
       },
+      "create_domain_modal": {
+        "title": "Add a domain",
+        "form": {
+          "labels": {
+            "name": "Name",
+            "oidc_autojoin": "Automatically create mailboxes according to OIDC emails",
+            "identity_sync": "Synchronize mailboxes with an identity provider"
+          },
+          "placeholders": {
+            "name": "Domain name..."
+          },
+          "errors": {
+            "name_required": "Name is required."
+          }
+        },
+        "api_errors": {
+          "default": "An error occurred while creating the domain."
+        }
+      },
       "manage_accesses_modal": {
         "title": "Manage accesses",
         "roles": {
@@ -824,7 +843,7 @@
         }
       },
       "create_domain_modal": {
-        "title": "Créer un domaine",
+        "title": "Ajouter un domaine",
         "form": {
           "labels": {
             "name": "Nom",
