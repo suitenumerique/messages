@@ -52,3 +52,11 @@ if settings.USE_SWAGGER or settings.DEBUG:
             name="redoc-schema",
         ),
     ]
+
+if settings.ENABLE_PROMETHEUS:
+    urlpatterns += [
+        path(
+            "",
+            include("django_prometheus.urls"),
+        ),
+    ]

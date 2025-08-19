@@ -607,6 +607,8 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    ENABLE_PROMETHEUS = values.BooleanValue(default=True)
+
     # AI
     AI_API_KEY = values.Value(None, environ_name="AI_API_KEY", environ_prefix=None)
     AI_BASE_URL = values.Value(None, environ_name="AI_BASE_URL", environ_prefix=None)
@@ -675,6 +677,18 @@ class Base(Configuration):
         "sdk_url": "/sdk",
         "api_url": "/api/v1.0",
     }
+
+    # pylint: disable=invalid-name
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if self.ENABLE_PROMETHEUS:
+            self.INSTALLED_APPS += ["django_prometheus"]
+            self.MIDDLEWARE = [
+                "django_prometheus.middleware.PrometheusBeforeMiddleware",
+                *self.MIDDLEWARE,
+                "django_prometheus.middleware.PrometheusAfterMiddleware",
+            ]
 
     # pylint: disable=invalid-name
     @property
