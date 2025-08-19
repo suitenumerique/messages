@@ -24,6 +24,12 @@ The selfcheck system uses the following environment variables:
 - `MESSAGES_SELFCHECK_INTERVAL`: Interval in seconds between self-checks (for instance: `600` - 10 minutes)
 - `MESSAGES_SELFCHECK_TIMEOUT`: Timeout in seconds for message reception (for instance: `60` - 60 seconds)
 
+As well as these prometheus specific environment variables:
+
+- `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_ENABLED`: Enable or disable Prometheus metrics reporting (default: `False`)
+- `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PUSHGATEWAY_URL`: URL of the Prometheus Pushgateway to which metrics are sent (default: `None`)
+- `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PREFIX`: Prefix for all Prometheus metrics names (default: empty string)
+
 ## Usage
 
 ### Manual Execution
@@ -64,17 +70,13 @@ If the selfcheck fails, it will return an error message and attempt to clean up 
 - **Reception timeout**: The message was not received within the timeout period (configurable via `MESSAGES_SELFCHECK_TIMEOUT`)
 - **Integrity verification failure**: The received message does not contain the expected secret or has structural issues
 
-## Monitoring
+## Logging
 
 The selfcheck system logs all operations with appropriate log levels:
 
 - `INFO`: Normal operation progress
 - `WARNING`: Non-critical issues (e.g., parsing errors for individual messages)
 - `ERROR`: Critical failures that cause the self-check to fail
-
-
-
-## Integration with Monitoring
 
 The selfcheck results can be integrated with monitoring systems by:
 
@@ -83,9 +85,21 @@ The selfcheck results can be integrated with monitoring systems by:
 3. **Alerting on failures** to quickly identify delivery pipeline issues
 4. **Tracking trends** in reception times to identify system bottlenecks
 
+## Monitoring
+
+By setting `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_ENABLED` to `True` as well as setting `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PUSHGATEWAY_URL` to your [prometheus pushgateway](https://github.com/prometheus/pushgateway)'s url, the job will push the following metrics:
+
+- `self_check_start_time`: Start timestamp of the self check
+- `self_check_end_time`: End timestamp of the self check
+- `self_check_success`: 1 if the self check succeeded, 0 if it failed
+- `self_check_send_duration_seconds`: Time taken to send the test message (seconds), only on succesful send
+- `self_check_reception_duration_seconds`: Time taken to receive the test message (seconds), only on succesful reception
+
+All metric names can be prefixed using the `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PREFIX` environment variable.
+
 ## Security Considerations
 
 - The selfcheck uses dedicated test mailboxes that are separate from user data
 - Test messages are automatically cleaned up after verification
 - The secret string is configurable to prevent predictable patterns
-- All test data is isolated from production user data 
+- All test data is isolated from production user data
