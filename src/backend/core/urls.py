@@ -23,6 +23,7 @@ from core.api.viewsets.maildomain import (
 )
 from core.api.viewsets.message import MessageViewSet
 from core.api.viewsets.mta import MTAViewSet
+from core.api.viewsets.placeholder import PlaceholderView
 from core.api.viewsets.send import SendMessageView
 from core.api.viewsets.task import TaskDetailView
 from core.api.viewsets.thread import ThreadViewSet
@@ -130,5 +131,10 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/import/imap/",
         ImportViewSet.as_view({"post": "import_imap"}),
         name="import-imap",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/placeholders/",
+        PlaceholderView.as_view(),
+        name="placeholders",
     ),
 ]

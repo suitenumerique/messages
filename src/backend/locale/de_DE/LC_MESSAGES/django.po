@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-docs\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-02-05 15:02+0000\n"
+"POT-Creation-Date: 2025-08-20 09:35+0000\n"
 "PO-Revision-Date: 2025-01-27 09:27\n"
 "Last-Translator: \n"
 "Language-Team: German\n"
@@ -17,153 +17,98 @@ msgstr ""
 "X-Crowdin-File: backend-drive.pot\n"
 "X-Crowdin-File-ID: 18\n"
 
-#: core/admin.py:29
+#: core/admin.py:73
 msgid "Personal info"
 msgstr "Persönliche Daten"
 
-#: core/admin.py:42 core/admin.py:122
+#: core/admin.py:86
 msgid "Permissions"
 msgstr "Berechtigungen"
 
-#: core/admin.py:54
+#: core/admin.py:97
 msgid "Important dates"
 msgstr "Wichtige Daten"
 
-#: core/admin.py:132
-msgid "Tree structure"
+#: core/admin.py:209
+msgid "Statistics"
 msgstr ""
 
-#: core/api/filters.py:16
-msgid "Creator is me"
-msgstr "Ersteller bin ich"
-
-#: core/api/filters.py:19
-msgid "Favorite"
-msgstr "Favorit"
-
-#: core/api/filters.py:22
-msgid "Title"
-msgstr "Titel"
-
-#: core/api/serializers.py:319
-msgid "This field is required for files."
+#: core/admin.py:226
+msgid "Metadata"
 msgstr ""
 
-#: core/authentication/backends.py:61
+#: core/admin.py:254 core/admin.py:277
+msgid "Labels"
+msgstr ""
+
+#: core/admin.py:260
+msgid "No labels"
+msgstr ""
+
+#: core/admin.py:352 core/templates/admin/core/message/change_list.html:8
+#: core/templates/admin/core/message/import_messages.html:21
+#, fuzzy
+#| msgid "Important dates"
+msgid "Import Messages"
+msgstr "Wichtige Daten"
+
+#: core/admin.py:382
+msgid "Import Messages from IMAP"
+msgstr ""
+
+#: core/admin.py:505
+msgid "Keys"
+msgstr ""
+
+#: core/api/viewsets/placeholder.py:48
+#, fuzzy
+#| msgid "full name"
+msgid "Full name"
+msgstr "Name"
+
+#: core/apps.py:12
+msgid "messages core application"
+msgstr ""
+
+#: core/authentication/backends.py:70
 msgid "Invalid response format or token verification failed"
 msgstr "Ungültiges Antwortformat oder Token-Verifizierung fehlgeschlagen"
 
-#: core/authentication/backends.py:108
+#: core/authentication/backends.py:114
 msgid "User account is disabled"
 msgstr "Benutzerkonto ist deaktiviert"
 
-#: core/enums.py:19
-msgid "First child"
-msgstr ""
-
-#: core/enums.py:20
-msgid "Last child"
-msgstr ""
-
-#: core/enums.py:21
-msgid "First sibling"
-msgstr ""
-
-#: core/enums.py:22
-msgid "Last sibling"
-msgstr ""
-
-#: core/enums.py:23
-msgid "Left"
-msgstr ""
-
-#: core/enums.py:24
-msgid "Right"
-msgstr ""
-
-#: core/models.py:54 core/models.py:61
-msgid "Reader"
-msgstr "Lesen"
-
-#: core/models.py:55 core/models.py:62
-msgid "Editor"
-msgstr "Bearbeiten"
-
-#: core/models.py:63
-msgid "Administrator"
-msgstr ""
-
 #: core/models.py:64
-msgid "Owner"
-msgstr "Besitzer"
-
-#: core/models.py:75
-msgid "Restricted"
-msgstr "Beschränkt"
-
-#: core/models.py:79
-msgid "Authenticated"
-msgstr "Authentifiziert"
-
-#: core/models.py:81
-msgid "Public"
-msgstr "Öffentlich"
-
-#: core/models.py:87
-msgid "Folder"
-msgstr ""
-
-#: core/models.py:88
-msgid "Link"
-msgstr ""
-
-#: core/models.py:89
-msgid "File"
-msgstr ""
-
-#: core/models.py:95
-msgid "Pending"
-msgstr ""
-
-#: core/models.py:96
-msgid "Uploading"
-msgstr ""
-
-#: core/models.py:97
-msgid "Uploaded"
-msgstr ""
-
-#: core/models.py:119
 msgid "id"
 msgstr ""
 
-#: core/models.py:120
+#: core/models.py:65
 msgid "primary key for the record as UUID"
 msgstr ""
 
-#: core/models.py:126
+#: core/models.py:71
 msgid "created on"
 msgstr "Erstellt"
 
-#: core/models.py:127
+#: core/models.py:72
 msgid "date and time at which a record was created"
 msgstr "Datum und Uhrzeit, an dem ein Datensatz erstellt wurde"
 
-#: core/models.py:132
+#: core/models.py:77
 msgid "updated on"
 msgstr "Aktualisiert"
 
-#: core/models.py:133
+#: core/models.py:78
 msgid "date and time at which a record was last updated"
 msgstr "Datum und Uhrzeit, an dem zuletzt aktualisiert wurde"
 
-#: core/models.py:169
+#: core/models.py:114
 msgid ""
 "We couldn't find a user with this sub but the email is already associated "
 "with a registered user."
 msgstr ""
 
-#: core/models.py:182
+#: core/models.py:127
 msgid ""
 "Enter a valid sub. This value may contain only letters, numbers, and @/./+/-/"
 "_/: characters."
@@ -171,11 +116,11 @@ msgstr ""
 "Geben Sie eine gültige Unterseite ein. Dieser Wert darf nur Buchstaben, "
 "Zahlen und die @/./+/-/_/: Zeichen enthalten."
 
-#: core/models.py:188
+#: core/models.py:133
 msgid "sub"
 msgstr "unter"
 
-#: core/models.py:190
+#: core/models.py:135
 msgid ""
 "Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: "
 "characters only."
@@ -183,55 +128,43 @@ msgstr ""
 "Erforderlich. 255 Zeichen oder weniger. Buchstaben, Zahlen und die Zeichen "
 "@/./+/-/_/:"
 
-#: core/models.py:199
+#: core/models.py:144
 msgid "full name"
 msgstr "Name"
 
-#: core/models.py:200
-msgid "short name"
-msgstr "Kurzbezeichnung"
-
-#: core/models.py:202
+#: core/models.py:146
 msgid "identity email address"
 msgstr "Identitäts-E-Mail-Adresse"
 
-#: core/models.py:207
+#: core/models.py:151
 msgid "admin email address"
 msgstr "Admin E-Mail-Adresse"
 
-#: core/models.py:214
+#: core/models.py:158
 msgid "language"
 msgstr "Sprache"
 
-#: core/models.py:215
+#: core/models.py:159
 msgid "The language in which the user wants to see the interface."
 msgstr "Die Sprache, in der der Benutzer die Benutzeroberfläche sehen möchte."
 
-#: core/models.py:221
+#: core/models.py:165
 msgid "The timezone in which the user wants to see times."
 msgstr "Die Zeitzone, in der der Nutzer Zeiten sehen möchte."
 
-#: core/models.py:224
-msgid "device"
-msgstr "Gerät"
-
-#: core/models.py:226
-msgid "Whether the user is a device or a real user."
-msgstr "Ob der Benutzer ein Gerät oder ein echter Benutzer ist."
-
-#: core/models.py:229
+#: core/models.py:168
 msgid "staff status"
 msgstr "Status des Teammitgliedes"
 
-#: core/models.py:231
+#: core/models.py:170
 msgid "Whether the user can log into this admin site."
 msgstr "Gibt an, ob der Benutzer sich in diese Admin-Seite einloggen kann."
 
-#: core/models.py:234
+#: core/models.py:173
 msgid "active"
 msgstr "aktiviert"
 
-#: core/models.py:237
+#: core/models.py:176
 msgid ""
 "Whether this user should be treated as active. Unselect this instead of "
 "deleting accounts."
@@ -239,183 +172,644 @@ msgstr ""
 "Ob dieser Benutzer als aktiviert behandelt werden soll. Deaktivieren Sie "
 "diese Option, anstatt Konten zu löschen."
 
-#: core/models.py:249
+#: core/models.py:182 core/models.py:267
+msgid "Custom attributes"
+msgstr ""
+
+#: core/models.py:185
+msgid "Metadata to sync to the user in the identity provider."
+msgstr ""
+
+#: core/models.py:195
 msgid "user"
 msgstr "Benutzer"
 
-#: core/models.py:250
+#: core/models.py:196
 msgid "users"
 msgstr "Benutzer"
 
-#: core/models.py:385
-msgid "title"
-msgstr "Titel"
+#: core/models.py:241
+#, fuzzy
+#| msgid ""
+#| "Enter a valid sub. This value may contain only letters, numbers, and @/./"
+#| "+/-/_/: characters."
+msgid ""
+"Enter a valid domain name. This value may contain only lowercase letters, "
+"numbers, dots and - characters."
+msgstr ""
+"Geben Sie eine gültige Unterseite ein. Dieser Wert darf nur Buchstaben, "
+"Zahlen und die @/./+/-/_/: Zeichen enthalten."
 
-#: core/models.py:427
-msgid "Item"
+#: core/models.py:247 core/models.py:770 core/models.py:997
+#, fuzzy
+#| msgid "full name"
+msgid "name"
+msgstr "Name"
+
+#: core/models.py:255
+msgid "oidc autojoin"
+msgstr ""
+
+#: core/models.py:257
+msgid "Create mailboxes automatically based on OIDC emails."
+msgstr ""
+
+#: core/models.py:261
+msgid "Identity sync"
+msgstr ""
+
+#: core/models.py:263
+msgid "Sync mailboxes to an identity provider."
+msgstr ""
+
+#: core/models.py:271
+msgid "Metadata to sync to the maildomain group in the identity provider."
+msgstr ""
+
+#: core/models.py:277
+msgid "mail domain"
+msgstr ""
+
+#: core/models.py:278
+msgid "mail domains"
+msgstr ""
+
+#: core/models.py:414
+msgid "local part"
 msgstr ""
 
 #: core/models.py:428
-#, fuzzy
-#| msgid "items"
-msgid "Items"
-msgstr "Dokumente"
+msgid "is identity"
+msgstr ""
 
-#: core/models.py:440
-#, fuzzy
-#| msgid "Untitled item"
-msgid "Untitled Item"
-msgstr "Unbenanntes Dokument"
+#: core/models.py:431
+msgid ""
+"Whether this mailbox identifies a person (i.e. is not an alias or a group)"
+msgstr ""
 
-#: core/models.py:626
-#, fuzzy, python-brace-format
-#| msgid "{name} shared a item with you!"
-msgid "{name} shared an item with you!"
-msgstr "{name} hat ein Dokument mit Ihnen geteilt!"
+#: core/models.py:441
+msgid "mailbox"
+msgstr ""
+
+#: core/models.py:442
+msgid "mailboxes"
+msgstr ""
+
+#: core/models.py:599 core/models.py:979 core/models.py:1328
+msgid "role"
+msgstr ""
+
+#: core/models.py:606
+#, fuzzy
+#| msgid "email address"
+msgid "mailbox access"
+msgstr "E-Mail-Adresse"
+
+#: core/models.py:607
+#, fuzzy
+#| msgid "email address"
+msgid "mailbox accesses"
+msgstr "E-Mail-Adresse"
+
+#: core/models.py:617 core/models.py:1062
+msgid "subject"
+msgstr ""
+
+#: core/models.py:618
+msgid "snippet"
+msgstr ""
+
+#: core/models.py:619
+msgid "has unread"
+msgstr ""
+
+#: core/models.py:620
+msgid "has trashed"
+msgstr ""
+
+#: core/models.py:621
+msgid "has draft"
+msgstr ""
+
+#: core/models.py:622
+msgid "has starred"
+msgstr ""
+
+#: core/models.py:623
+msgid "has sender"
+msgstr ""
+
+#: core/models.py:624
+msgid "has messages"
+msgstr ""
+
+#: core/models.py:625 core/models.py:1076
+msgid "has attachments"
+msgstr ""
+
+#: core/models.py:626 core/models.py:1074
+msgid "is spam"
+msgstr ""
+
+#: core/models.py:627
+#, fuzzy
+#| msgid "active"
+msgid "has active"
+msgstr "aktiviert"
 
 #: core/models.py:628
-#, python-brace-format
-msgid "{name} invited you with the role \"{role}\" on the following item:"
-msgstr ""
-"{name} hat Sie mit der Rolle \"{role}\" zu folgendem Dokument eingeladen:"
-
-#: core/models.py:631
-#, fuzzy, python-brace-format
-#| msgid "{name} shared a item with you: {title}"
-msgid "{name} shared an item with you: {title}"
-msgstr "{name} hat ein Dokument mit Ihnen geteilt: {title}"
-
-#: core/models.py:665
-#, fuzzy
-#| msgid "This team is already in this template."
-msgid "This item is not deleted."
-msgstr "Dieses Team ist bereits in diesem Template."
-
-#: core/models.py:671
-msgid "This item was permanently deleted and cannot be restored."
+msgid "messaged at"
 msgstr ""
 
-#: core/models.py:707
-msgid "Only folders can have children."
+#: core/models.py:629
+#, fuzzy
+#| msgid "short name"
+msgid "sender names"
+msgstr "Kurzbezeichnung"
+
+#: core/models.py:630
+msgid "summary"
 msgstr ""
 
-#: core/models.py:714
-msgid "Only folders can be targeted when moving an item"
+#: core/models.py:634
+msgid "thread"
 msgstr ""
 
-#: core/models.py:736
-#, fuzzy
-#| msgid "item/user link trace"
-msgid "Item/user link trace"
-msgstr "Dokument/Benutzer Linkverfolgung"
-
-#: core/models.py:737
-#, fuzzy
-#| msgid "item/user link traces"
-msgid "Item/user link traces"
-msgstr "Dokument/Benutzer Linkverfolgung"
-
-#: core/models.py:743
-msgid "A link trace already exists for this item/user."
+#: core/models.py:635
+msgid "threads"
 msgstr ""
-
-#: core/models.py:766
-#, fuzzy
-#| msgid "item favorite"
-msgid "Item favorite"
-msgstr "Dokumentenfavorit"
-
-#: core/models.py:767
-#, fuzzy
-#| msgid "item favorites"
-msgid "Item favorites"
-msgstr "Dokumentfavoriten"
 
 #: core/models.py:773
 msgid ""
-"This item is already targeted by a favorite relation instance for the same "
-"user."
+"Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/"
+"Projects')"
 msgstr ""
-"Dieses Dokument ist bereits durch den gleichen Benutzer favorisiert worden."
 
-#: core/models.py:795
-#, fuzzy
-#| msgid "item/user relation"
-msgid "Item/user relation"
-msgstr "Dokument/Benutzerbeziehung"
+#: core/models.py:777
+msgid "slug"
+msgstr ""
+
+#: core/models.py:779
+msgid "URL-friendly version of the name"
+msgstr ""
+
+#: core/models.py:782
+msgid "color"
+msgstr ""
+
+#: core/models.py:785
+msgid "Color of the label in hex format (e.g. #FF0000)"
+msgstr ""
+
+#: core/models.py:791
+msgid "Mailbox that owns this label"
+msgstr ""
 
 #: core/models.py:796
-#, fuzzy
-#| msgid "item/user relations"
-msgid "Item/user relations"
-msgstr "Dokument/Benutzerbeziehungen"
+msgid "Threads that have this label"
+msgstr ""
 
-#: core/models.py:802
-msgid "This user is already in this item."
-msgstr "Dieser Benutzer befindet sich bereits in diesem Dokument."
+#: core/models.py:800
+msgid "description"
+msgstr "Beschreibung"
 
-#: core/models.py:808
-msgid "This team is already in this item."
-msgstr "Dieses Team befindet sich bereits in diesem Dokument."
+#: core/models.py:804
+msgid "Description of the label, used by AI to understand its purpose"
+msgstr ""
+
+#: core/models.py:807
+msgid "auto labeling"
+msgstr ""
+
+#: core/models.py:809
+msgid "Whether this label should be automatically applied by AI"
+msgstr ""
 
 #: core/models.py:814
-msgid "Either user or team must be set, not both."
-msgstr "Benutzer oder Team müssen gesetzt werden, nicht beides."
+msgid "label"
+msgstr ""
 
-#: core/models.py:841
-msgid "email address"
-msgstr "E-Mail-Adresse"
+#: core/models.py:815
+msgid "labels"
+msgstr ""
 
-#: core/models.py:860
+#: core/models.py:986
+msgid "thread access"
+msgstr ""
+
+#: core/models.py:987
+msgid "thread accesses"
+msgstr ""
+
+#: core/models.py:998
+msgid "email"
+msgstr ""
+
+#: core/models.py:1007
+msgid "contact"
+msgstr ""
+
+#: core/models.py:1008
+msgid "contacts"
+msgstr ""
+
+#: core/models.py:1030
 #, fuzzy
-#| msgid "item invitation"
-msgid "Item invitation"
-msgstr "Einladung zum Dokument"
+#| msgid "Body type"
+msgid "type"
+msgstr "Typ"
 
-#: core/models.py:861
+#: core/models.py:1035
+msgid "delivered at"
+msgstr ""
+
+#: core/models.py:1037
+msgid "delivery status"
+msgstr ""
+
+#: core/models.py:1042
+msgid "delivery message"
+msgstr ""
+
+#: core/models.py:1043
+msgid "retry count"
+msgstr ""
+
+#: core/models.py:1044
+msgid "retry at"
+msgstr ""
+
+#: core/models.py:1048
+msgid "message recipient"
+msgstr ""
+
+#: core/models.py:1049
+msgid "message recipients"
+msgstr ""
+
+#: core/models.py:1069
+msgid "is draft"
+msgstr ""
+
+#: core/models.py:1070
+msgid "is sender"
+msgstr ""
+
+#: core/models.py:1071
+msgid "is starred"
+msgstr ""
+
+#: core/models.py:1072
+msgid "is trashed"
+msgstr ""
+
+#: core/models.py:1073
+msgid "is unread"
+msgstr ""
+
+#: core/models.py:1075
+msgid "is archived"
+msgstr ""
+
+#: core/models.py:1078
+msgid "trashed at"
+msgstr ""
+
+#: core/models.py:1079
+msgid "sent at"
+msgstr ""
+
+#: core/models.py:1080
+msgid "read at"
+msgstr ""
+
+#: core/models.py:1081
+msgid "archived at"
+msgstr ""
+
+#: core/models.py:1083
+msgid "mime id"
+msgstr ""
+
+#: core/models.py:1107
+msgid "message"
+msgstr ""
+
+#: core/models.py:1108
+msgid "messages"
+msgstr ""
+
+#: core/models.py:1160 core/models.py:1183
+msgid "No subject"
+msgstr ""
+
+#: core/models.py:1206
+msgid "sha256 hash"
+msgstr ""
+
+#: core/models.py:1209
+msgid "SHA-256 hash of the uncompressed blob content"
+msgstr ""
+
+#: core/models.py:1213
+msgid "file size"
+msgstr ""
+
+#: core/models.py:1213
+msgid "Size of the blob in bytes"
+msgstr ""
+
+#: core/models.py:1217
+msgid "content type"
+msgstr ""
+
+#: core/models.py:1217
+msgid "MIME type of the blob"
+msgstr ""
+
+#: core/models.py:1221
+msgid "compression"
+msgstr ""
+
+#: core/models.py:1227
+msgid "raw content"
+msgstr ""
+
+#: core/models.py:1228
+msgid "Compressed binary content of the blob"
+msgstr ""
+
+#: core/models.py:1235
+msgid "Mailbox that owns this blob"
+msgstr ""
+
+#: core/models.py:1240
+msgid "blob"
+msgstr ""
+
+#: core/models.py:1241
+msgid "blobs"
+msgstr ""
+
+#: core/models.py:1268
 #, fuzzy
-#| msgid "item invitations"
-msgid "Item invitations"
-msgstr "Dokumenteinladungen"
+#| msgid "full name"
+msgid "file name"
+msgstr "Name"
 
-#: core/models.py:881
-msgid "This email is already associated to a registered user."
-msgstr "Diese E-Mail ist bereits einem registrierten Benutzer zugeordnet."
-
-#: core/templates/mail/html/invitation.html:162
-#: core/templates/mail/text/invitation.txt:3
-msgid "Logo email"
+#: core/models.py:1270
+msgid "Original filename of the attachment"
 msgstr ""
 
-#: core/templates/mail/html/invitation.html:209
-#: core/templates/mail/text/invitation.txt:10
-msgid "Open"
+#: core/models.py:1277
+msgid "Reference to the blob containing the attachment data"
 msgstr ""
 
-#: core/templates/mail/html/invitation.html:226
-#: core/templates/mail/text/invitation.txt:14
-msgid ""
-" Drive, your new essential tool for organizing, sharing and collaborating as "
-"a team. "
+#: core/models.py:1284
+msgid "Mailbox that owns this attachment"
 msgstr ""
 
-#: core/templates/mail/html/invitation.html:233
-#: core/templates/mail/text/invitation.txt:16
-#, python-format
-msgid " Brought to you by %(brandname)s "
+#: core/models.py:1290
+msgid "Messages that use this attachment"
 msgstr ""
 
-#: drive/settings.py:239
+#: core/models.py:1295
+msgid "attachment"
+msgstr ""
+
+#: core/models.py:1296
+msgid "attachments"
+msgstr ""
+
+#: core/models.py:1335
+msgid "mail domain access"
+msgstr ""
+
+#: core/models.py:1336
+msgid "mail domain accesses"
+msgstr ""
+
+#: core/models.py:1347
+msgid "selector"
+msgstr ""
+
+#: core/models.py:1349
+msgid "DKIM selector (e.g., 'default', 'mail')"
+msgstr ""
+
+#: core/models.py:1353
+msgid "private key"
+msgstr ""
+
+#: core/models.py:1354
+msgid "DKIM private key in PEM format (encrypted)"
+msgstr ""
+
+#: core/models.py:1358
+#, fuzzy
+#| msgid "public"
+msgid "public key"
+msgstr "öffentlich"
+
+#: core/models.py:1359
+msgid "DKIM public key for DNS record generation"
+msgstr ""
+
+#: core/models.py:1363
+msgid "algorithm"
+msgstr ""
+
+#: core/models.py:1366
+msgid "DKIM signing algorithm"
+msgstr ""
+
+#: core/models.py:1370
+msgid "key size"
+msgstr ""
+
+#: core/models.py:1371
+msgid "Key size in bits (e.g., 2048, 4096 for RSA)"
+msgstr ""
+
+#: core/models.py:1375
+#, fuzzy
+#| msgid "active"
+msgid "is active"
+msgstr "aktiviert"
+
+#: core/models.py:1377
+msgid "Whether this DKIM key is active and should be used for signing"
+msgstr ""
+
+#: core/models.py:1384
+msgid "Domain that owns this DKIM key"
+msgstr ""
+
+#: core/models.py:1389
+msgid "DKIM key"
+msgstr ""
+
+#: core/models.py:1390
+msgid "DKIM keys"
+msgstr ""
+
+#: core/templates/admin/core/message/change_list.html:13
+#: core/templates/admin/core/message/import_imap.html:20
+msgid "Import from IMAP"
+msgstr ""
+
+#: core/templates/admin/core/message/import_imap.html:17
+msgid "Home"
+msgstr ""
+
+#: core/templates/admin/core/message/import_imap.html:32
+msgid "Please correct the error below."
+msgstr ""
+
+#: core/templates/admin/core/message/import_imap.html:34
+msgid "Please correct the errors below."
+msgstr ""
+
+#: core/templates/admin/core/message/import_imap.html:53
+msgid "Start Import"
+msgstr ""
+
+#: messages/settings.py:266
 msgid "English"
 msgstr "Englisch"
 
-#: drive/settings.py:240
+#: messages/settings.py:267
 msgid "French"
 msgstr "Französisch"
 
-#: drive/settings.py:241
+#: messages/settings.py:268
 msgid "German"
 msgstr "Deutsch"
+
+#~ msgid "Creator is me"
+#~ msgstr "Ersteller bin ich"
+
+#~ msgid "Favorite"
+#~ msgstr "Favorit"
+
+#~ msgid "Title"
+#~ msgstr "Titel"
+
+#~ msgid "Reader"
+#~ msgstr "Lesen"
+
+#~ msgid "Editor"
+#~ msgstr "Bearbeiten"
+
+#~ msgid "Owner"
+#~ msgstr "Besitzer"
+
+#~ msgid "Restricted"
+#~ msgstr "Beschränkt"
+
+#~ msgid "Authenticated"
+#~ msgstr "Authentifiziert"
+
+#~ msgid "Public"
+#~ msgstr "Öffentlich"
+
+#~ msgid "device"
+#~ msgstr "Gerät"
+
+#~ msgid "Whether the user is a device or a real user."
+#~ msgstr "Ob der Benutzer ein Gerät oder ein echter Benutzer ist."
+
+#~ msgid "title"
+#~ msgstr "Titel"
+
+#, fuzzy
+#~| msgid "items"
+#~ msgid "Items"
+#~ msgstr "Dokumente"
+
+#, fuzzy
+#~| msgid "Untitled item"
+#~ msgid "Untitled Item"
+#~ msgstr "Unbenanntes Dokument"
+
+#, fuzzy, python-brace-format
+#~| msgid "{name} shared a item with you!"
+#~ msgid "{name} shared an item with you!"
+#~ msgstr "{name} hat ein Dokument mit Ihnen geteilt!"
+
+#, python-brace-format
+#~ msgid "{name} invited you with the role \"{role}\" on the following item:"
+#~ msgstr ""
+#~ "{name} hat Sie mit der Rolle \"{role}\" zu folgendem Dokument eingeladen:"
+
+#, fuzzy, python-brace-format
+#~| msgid "{name} shared a item with you: {title}"
+#~ msgid "{name} shared an item with you: {title}"
+#~ msgstr "{name} hat ein Dokument mit Ihnen geteilt: {title}"
+
+#, fuzzy
+#~| msgid "This team is already in this template."
+#~ msgid "This item is not deleted."
+#~ msgstr "Dieses Team ist bereits in diesem Template."
+
+#, fuzzy
+#~| msgid "item/user link trace"
+#~ msgid "Item/user link trace"
+#~ msgstr "Dokument/Benutzer Linkverfolgung"
+
+#, fuzzy
+#~| msgid "item/user link traces"
+#~ msgid "Item/user link traces"
+#~ msgstr "Dokument/Benutzer Linkverfolgung"
+
+#, fuzzy
+#~| msgid "item favorite"
+#~ msgid "Item favorite"
+#~ msgstr "Dokumentenfavorit"
+
+#, fuzzy
+#~| msgid "item favorites"
+#~ msgid "Item favorites"
+#~ msgstr "Dokumentfavoriten"
+
+#~ msgid ""
+#~ "This item is already targeted by a favorite relation instance for the "
+#~ "same user."
+#~ msgstr ""
+#~ "Dieses Dokument ist bereits durch den gleichen Benutzer favorisiert "
+#~ "worden."
+
+#, fuzzy
+#~| msgid "item/user relation"
+#~ msgid "Item/user relation"
+#~ msgstr "Dokument/Benutzerbeziehung"
+
+#, fuzzy
+#~| msgid "item/user relations"
+#~ msgid "Item/user relations"
+#~ msgstr "Dokument/Benutzerbeziehungen"
+
+#~ msgid "This user is already in this item."
+#~ msgstr "Dieser Benutzer befindet sich bereits in diesem Dokument."
+
+#~ msgid "This team is already in this item."
+#~ msgstr "Dieses Team befindet sich bereits in diesem Dokument."
+
+#~ msgid "Either user or team must be set, not both."
+#~ msgstr "Benutzer oder Team müssen gesetzt werden, nicht beides."
+
+#, fuzzy
+#~| msgid "item invitation"
+#~ msgid "Item invitation"
+#~ msgstr "Einladung zum Dokument"
+
+#, fuzzy
+#~| msgid "item invitations"
+#~ msgid "Item invitations"
+#~ msgstr "Dokumenteinladungen"
+
+#~ msgid "This email is already associated to a registered user."
+#~ msgstr "Diese E-Mail ist bereits einem registrierten Benutzer zugeordnet."
 
 #~ msgid "A new item was created on your behalf!"
 #~ msgstr "Ein neues Dokument wurde in Ihrem Namen erstellt!"
@@ -426,23 +820,14 @@ msgstr "Deutsch"
 #~ msgid "Body"
 #~ msgstr "Inhalt"
 
-#~ msgid "Body type"
-#~ msgstr "Typ"
-
 #~ msgid "item"
 #~ msgstr "Dokument"
-
-#~ msgid "description"
-#~ msgstr "Beschreibung"
 
 #~ msgid "code"
 #~ msgstr "Code"
 
 #~ msgid "css"
 #~ msgstr "CSS"
-
-#~ msgid "public"
-#~ msgstr "öffentlich"
 
 #~ msgid "Whether this template is public for anyone to use."
 #~ msgstr "Ob diese Vorlage für jedermann öffentlich ist."

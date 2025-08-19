@@ -10,6 +10,7 @@ export * from "./mailbox-accesses/mailbox-accesses";
 export * from "./maildomains/maildomains";
 export * from "./admin-maildomain-user/admin-maildomain-user";
 export * from "./mta/mta";
+export * from "./placeholders/placeholders";
 export * from "./tasks/tasks";
 export * from "./threads/threads";
 export * from "./thread-access/thread-access";

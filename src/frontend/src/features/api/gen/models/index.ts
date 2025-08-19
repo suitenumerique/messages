@@ -78,6 +78,7 @@ export * from "./paginated_thread_list";
 export * from "./patched_label_request";
 export * from "./patched_mailbox_access_write_request";
 export * from "./patched_thread_access_request";
+export * from "./placeholders_retrieve200";
 export * from "./send_create400";
 export * from "./send_create403";
 export * from "./send_create503";

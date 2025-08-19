@@ -2899,6 +2899,43 @@
                 }
             }
         },
+        "/api/v1.0/placeholders/": {
+            "get": {
+                "operationId": "placeholders_retrieve",
+                "description": "Get the structure of all available fields with their labels",
+                "summary": "Get field structure",
+                "tags": [
+                    "placeholders"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "description": "Field slugs mapped to their verbose labels",
+                                    "additionalProperties": {
+                                        "type": "string",
+                                        "description": "Verbose label for the field"
+                                    },
+                                    "example": {
+                                        "full_name": "Full name",
+                                        "job_title": "Job title",
+                                        "is_elected": "Is elected"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/send/": {
             "post": {
                 "operationId": "send_create",

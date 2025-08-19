@@ -30,7 +30,6 @@ MANIFEST
 .next/
 
 # Translations	# Translations
-*.mo
 *.pot
 
 # Environments
