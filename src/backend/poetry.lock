@@ -2032,10 +2032,9 @@ files = [
 name = "prometheus-client"
 version = "0.22.1"
 description = "Python client for the Prometheus monitoring system."
-optional = true
+optional = false
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"dev\""
 files = [
     {file = "prometheus_client-0.22.1-py3-none-any.whl", hash = "sha256:cca895342e308174341b2cbf99a56bef291fbc0ef7b9e5412a0f26d653ba7094"},
     {file = "prometheus_client-0.22.1.tar.gz", hash = "sha256:190f1331e783cf21eb60bca559354e0a4d4378facecf78f5428c39b675d20d28"},
@@ -3551,4 +3550,4 @@ dev = ["django-extensions", "drf-spectacular-sidecar", "flower", "pip-audit", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0"
-content-hash = "0ced3e1a62968f2dec83fec6848292e27324c50bc78b52758e0432514f6a76e0"
+content-hash = "5bf76d67f4c627d94bf16a48effa61ebd1a675d8fa9a1447a8c58feb3f74e5bb"
