@@ -12,6 +12,7 @@
 @use "./../features/layouts/components/main/header";
 @use "./../features/layouts/components/main/layout";
 @use "./../features/layouts/components/main/left-panel";
+
 // Application Components
 @use "./../features/layouts/components/main";
 @use "./../features/ui/components/users";
@@ -41,13 +42,18 @@
 @use "./../features/layouts/components/thread-view/components/thread-accesses-widget";
 @use "./../features/layouts/components/thread-view/components/thread-labels-widget";
 @use "./../features/forms/components/message-form";
-@use "./../features/forms/components/message-editor";
 @use "./../features/forms/components/search-input";
 @use "./../features/forms/components/search-filters-form";
 @use "./../features/controlled-modals/message-importer";
 @use "./../features/layouts/components/admin/modal-create-address";
+@use "./../features/layouts/components/admin/modal-compose-signature";
 @use "./../features/forms/components/combobox";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-labels/components/label-form-modal/components/color-palette-field";
+@use "./../features/layouts/components/admin/signatures-view";
+
+// Blocknote custom blocks and components
+@use "./../features/blocknote/blocknote-view-field";
+@use "./../features/blocknote/inline-template-variable";
 
 // Application views
 @use "./../pages";

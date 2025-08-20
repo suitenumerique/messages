@@ -41,7 +41,9 @@ class MailHelper {
      * then render HTML ready for email through react-email.
      */
     static async markdownToHtml(markdown: string) {
-        return renderToString(<Markdown>{markdown}</Markdown>);
+        return renderToString(<Markdown>{markdown}</Markdown>)
+            .replace(/(^<div data-id="react-email-markdown">|<\/div>$)/g, '')
+            .trim();
     }
 
     /**

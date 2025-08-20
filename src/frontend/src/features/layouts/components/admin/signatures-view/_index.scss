@@ -1,0 +1,6 @@
+.admin-data-grid .c__datagrid__table__container th,
+.admin-data-grid .c__datagrid__table__container td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

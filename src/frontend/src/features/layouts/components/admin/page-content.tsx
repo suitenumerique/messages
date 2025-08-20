@@ -1,14 +1,15 @@
-import { useTranslation } from "react-i18next";
-import { usePagination } from "@openfun/cunningham-react";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
-import { AdminMailboxDataGrid } from "./mailbox-data-grid";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { PropsWithChildren } from "react"
+import { useTranslation } from "react-i18next";
 
-type AdminDomainPageContentProps = {
-    pagination: ReturnType<typeof usePagination>;
-}
+type AdminPageContentProps = PropsWithChildren;
 
-export const AdminDomainPageContent = ({ pagination }: AdminDomainPageContentProps) => {
+/**
+ * Generic admin page content component
+ * which check if a selected mail domain is set before rendering children
+ */
+export const AdminPageContent = ({ children }: AdminPageContentProps) => {
     const { t } = useTranslation();
     const { selectedMailDomain, isLoading } = useAdminMailDomain();
 
@@ -28,5 +29,5 @@ export const AdminDomainPageContent = ({ pagination }: AdminDomainPageContentPro
       );
     }
 
-    return <AdminMailboxDataGrid domain={selectedMailDomain} pagination={pagination} />;
-  }
+    return children;
+}

@@ -9,6 +9,7 @@ import {
 } from "react-resizable-panels";
 import { DropdownMenuOption,LeftPanel } from "@gouvfr-lasuite/ui-kit";
 import { useControllableState } from "../hooks/useControllableState";
+import { Toaster } from "@/features/ui/components/toaster";
 export type MainLayoutProps = {
   icon?: React.ReactNode;
   leftPanelContent?: React.ReactNode;
@@ -130,6 +131,7 @@ export const AppLayout = ({
           </Panel>
         </PanelGroup>
       </div>
+      <Toaster />
     </div>
   );
 };

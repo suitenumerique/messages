@@ -3,7 +3,6 @@ import { createContext, PropsWithChildren, useContext, useState } from "react";
 import AuthenticatedView from "./authenticated-view";
 import { MailboxProvider, useMailboxContext } from "@/features/providers/mailbox";
 import { NoMailbox } from "./no-mailbox";
-import { Toaster } from "@/features/ui/components/toaster";
 import { SentBoxProvider } from "@/features/providers/sent-box";
 import { LeftPanel } from "./left-panel";
 import { ModalStoreProvider } from "@/features/providers/modal-store";
@@ -15,7 +14,6 @@ export const MainLayout = ({ children }: PropsWithChildren) => {
                 <SentBoxProvider>
                     <ModalStoreProvider>
                         <MainLayoutContent>{children}</MainLayoutContent>
-                        <Toaster />
                     </ModalStoreProvider>
                 </SentBoxProvider>
             </MailboxProvider>

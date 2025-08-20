@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Attachment, DraftMessageRequestRequest, Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
-import MessageEditor from "@/features/forms/components/message-editor";
+import { MessageComposer } from "@/features/forms/components/message-composer";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import MailHelper from "@/features/utils/mail-helper";
 import { RhfInput, RhfSelect } from "../react-hook-form";
@@ -55,9 +55,9 @@ const messageFormSchema = z.object({
     cc: emailArraySchema.optional(),
     bcc: emailArraySchema.optional(),
     subject: z.string().trim(),
-    messageEditorHtml: z.string().optional().readonly(),
-    messageEditorText: z.string().optional().readonly(),
-    messageEditorDraft: z.string().optional().readonly(),
+    messageHtmlBody: z.string().optional().readonly(),
+    messageTextBody: z.string().optional().readonly(),
+    messageDraftBody: z.string().optional().readonly(),
     attachments: z.array(attachmentSchema).optional(),
     driveAttachments: z.array(driveAttachmentSchema).optional(),
 });
@@ -153,9 +153,9 @@ export const MessageForm = ({
             cc: draft?.cc?.map(contact => contact.email) ?? [],
             bcc: draft?.bcc?.map(contact => contact.email) ?? [],
             subject: getDefaultSubject(),
-            messageEditorDraft: draftBody,
-            messageEditorHtml: undefined,
-            messageEditorText: undefined,
+            messageDraftBody: draftBody,
+            messageHtmlBody: undefined,
+            messageTextBody: undefined,
             attachments: getDefaultAttachments(),
             driveAttachments: draftDriveAttachments,
         }
@@ -169,9 +169,9 @@ export const MessageForm = ({
         defaultValues: formDefaultValues,
     });
 
-    const messageEditorDraft = useWatch({
+    const messageDraftBody = useWatch({
         control: form.control,
-        name: "messageEditorDraft",
+        name: "messageDraftBody",
     }) || "";
 
     const attachments = useWatch({
@@ -198,8 +198,8 @@ export const MessageForm = ({
     }, [draft, driveAttachments]);
 
     const showAttachmentsForgetAlert = useMemo(() => {
-        return MailHelper.areAttachmentsMentionedInDraft(messageEditorDraft) && attachments.length === 0 && driveAttachments.length === 0;
-    }, [messageEditorDraft, attachments, driveAttachments]);
+        return MailHelper.areAttachmentsMentionedInDraft(messageDraftBody) && attachments.length === 0 && driveAttachments.length === 0;
+    }, [messageDraftBody, attachments, driveAttachments]);
 
     const messageMutation = useSendCreate({
         mutation: {
@@ -303,7 +303,7 @@ export const MessageForm = ({
                     || data.to.length > 0
                     || (data.cc?.length ?? 0) > 0
                     || (data.bcc?.length ?? 0) > 0
-                    || (data.messageEditorText?.length ?? 0) > 0
+                    || (data.messageTextBody?.length ?? 0) > 0
                     || (data.attachments?.length ?? 0) > 0
                     || (data.driveAttachments?.length ?? 0) > 0
                 )
@@ -318,7 +318,7 @@ export const MessageForm = ({
             subject: data.subject,
             senderId: data.from,
             parentId: parentMessage?.id,
-            draftBody: MailHelper.attachDriveAttachmentsToDraft(data.messageEditorDraft, data.driveAttachments),
+            draftBody: MailHelper.attachDriveAttachmentsToDraft(data.messageDraftBody, data.driveAttachments),
             attachments: data.attachments,
         }
         let response;
@@ -392,8 +392,8 @@ export const MessageForm = ({
             data: {
                 messageId: draft.id,
                 senderId: data.from,
-                htmlBody: MailHelper.attachDriveAttachmentsToHtmlBody(data.messageEditorHtml, data.driveAttachments),
-                textBody: MailHelper.attachDriveAttachmentsToTextBody(data.messageEditorText, data.driveAttachments),
+                htmlBody: MailHelper.attachDriveAttachmentsToHtmlBody(data.messageHtmlBody, data.driveAttachments),
+                textBody: MailHelper.attachDriveAttachmentsToTextBody(data.messageTextBody, data.driveAttachments),
             }
         });
     };
@@ -537,11 +537,12 @@ export const MessageForm = ({
                     </div>
 
                 <div className="form-field-row">
-                    <MessageEditor
-                        defaultValue={form.getValues('messageEditorDraft')}
+                    <MessageComposer
+                        mailboxId={defaultSenderId}
+                        defaultValue={form.getValues('messageDraftBody')}
                         fullWidth
-                        state={form.formState.errors?.messageEditorDraft ? "error" : "default"}
-                        text={form.formState.errors?.messageEditorDraft?.message}
+                        state={form.formState.errors?.messageDraftBody ? "error" : "default"}
+                        text={form.formState.errors?.messageDraftBody?.message}
                         quotedMessage={mode !== "new" ? parentMessage : undefined}
                         disabled={!canWriteMessages}
                     />
