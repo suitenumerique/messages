@@ -94,7 +94,7 @@ export const ThreadView = () => {
                 }
             });
             debouncedMarkAsRead();
-        }, { threshold: 0.95, root: rootRef.current, rootMargin: "0px 40px 0px 0px" });
+        }, { threshold: 0.3, root: rootRef.current, rootMargin: "0px 40px 0px 0px" });
 
         unreadMessageIds.forEach(id => {
             const el = unreadRefs.current[id];
