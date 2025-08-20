@@ -1,7 +1,6 @@
 import pytest
 import logging
 import socket
-import socks
 import time
 import smtplib
 from email.mime.text import MIMEText
@@ -66,3 +65,5 @@ def test_smtp_connection_via_proxy(smtp_client_via_proxy, mock_smtp_server):
     logger.info(f"Proxy SMTP connection info: {connection_info}")
 
     assert connection_info["peer_host"] != "127.0.0.1", "Proxy SMTP connection should not be direct"
+
+# TODO: stress test with https://pypi.org/project/pytest-run-parallel/ ?

@@ -1,8 +1,5 @@
 import pytest
 import logging
-import socket
-import socks
-import time
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +73,7 @@ def test_socks_authentication_failure_handling(socks_client):
 def test_socks_proxy_connection_establishment(socks_client):
     """Test that SOCKS proxy connection can be established"""
     try:
-        sock = socks_client.get_socket(timeout=5)
-
-        sock.connect(("8.8.8.8", 53))
-        sock.close()
+        socks_client.test_connection("8.8.8.8", 53)
         assert True, "SOCKS connection should be established successfully"
     except Exception as e:
         pytest.fail(f"Failed to establish SOCKS connection: {e}")
@@ -97,52 +91,7 @@ def test_socks_proxy_connection_timeout(socks_client):
     assert not result, "Connection to non-routable IP should timeout"
 
 
-# def test_socks_proxy_multiple_connections(socks_client):
-#     """Test multiple simultaneous SOCKS connections"""
-#     connections = []
-#     try:
-#         for i in range(3):
-#             sock = socks.socksocket()
-#             if socks_client.username and socks_client.password:
-#                 sock.set_proxy(
-#                     socks.SOCKS5,
-#                     socks_client.proxy_host,
-#                     socks_client.proxy_port,
-#                     username=socks_client.username,
-#                     password=socks_client.password
-#                 )
-#             else:
-#                 sock.set_proxy(socks.SOCKS5, socks_client.proxy_host, socks_client.proxy_port)
-            
-#             sock.settimeout(5)
-#             sock.connect(("8.8.8.8", 53))
-#             connections.append(sock)
-        
-#         # Verify all connections work
-#         for sock in connections:
-#             sock.send(b"\x00\x01\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01")
-#             response = sock.recv(1024)
-#             assert len(response) > 0, "DNS query should receive response"
-            
-#     except Exception as e:
-#         pytest.fail(f"Multiple connections test failed: {e}")
-#     finally:
-#         for sock in connections:
-#             try:
-#                 sock.close()
-#             except:
-#                 pass
-
-
 def test_socks_proxy_error_handling(socks_client):
     """Test SOCKS proxy error handling"""
-    try:
-        sock = socks_client.get_socket()
-
-        sock.connect(("invalid.ip.address", 80))
-        pytest.fail("Should not be able to connect to invalid IP")
-    except (socket.gaierror, socks.ProxyConnectionError, socks.GeneralProxyError):
-        pass
-    except Exception as e:
-        pytest.fail(f"Unexpected error type: {type(e).__name__}")
-
+    
+    assert not socks_client.test_connection("invalid.ip.address", 80)

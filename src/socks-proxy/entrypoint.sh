@@ -6,10 +6,7 @@ if [ -z "${PROXY_USERS}" ]; then
   exit 1
 fi
 
-if [ -z "${PROXY_EXTERNAL}" ]; then
-  echo "Error: PROXY_EXTERNAL env var is not set (should be the outgoing address or interface)"
-  exit 1
-fi
+PROXY_EXTERNAL=${PROXY_EXTERNAL:-"eth0"}
 
 # Create unix users for each entry of PROXY_USERS
 IFS=',' read -ra USERS <<< "$PROXY_USERS"

@@ -4,8 +4,9 @@ import time
 import logging
 import os
 import socket
-import socks
 import subprocess
+import ssl
+import struct
 from aiosmtpd.controller import Controller
 from aiosmtpd.handlers import Message
 from email.parser import BytesParser
@@ -140,6 +141,77 @@ class MockSMTPServer:
     def get_messages(self):
         return self.message_store.get_messages()
 
+def create_proxied_connection(proxy_host, proxy_port, target_host, target_port, proxy_username=None, proxy_password=None, timeout=5, proxy_tls=False):
+
+    has_auth = proxy_username is not None and proxy_password is not None
+
+    raw_sock = socket.create_connection((proxy_host, proxy_port))
+
+    # This is the reason we reimplement PySocks here: to be able to wrap the socket in TLS
+    if proxy_tls:
+        tls_sock = ssl.wrap_socket(raw_sock)
+    else:
+        tls_sock = raw_sock
+
+    if type(timeout) in {int, float}:
+        tls_sock.settimeout(timeout)
+
+    # --- SOCKS5 handshake ---
+    auth_bit = b'\x00' if not has_auth else b'\x02'
+    tls_sock.sendall(b'\x05\x01'+auth_bit)  # version 5, 1 auth method, auth bit
+    resp = tls_sock.recv(2)
+    if resp[0] != 0x05:
+        raise Exception("SOCKS5 server does not support version 5")
+    if has_auth and resp[1] != 0x02:
+        raise Exception("SOCKS5 server does not support auth")
+    elif not has_auth and resp[1] != 0x00:
+        raise Exception("SOCKS5 server does not support anon")
+
+    if has_auth:
+        # Send authentication
+        tls_sock.sendall(b"\x01" + 
+            chr(len(proxy_username)).encode() + 
+            proxy_username.encode('utf-8') +
+            chr(len(proxy_password)).encode() + 
+            proxy_password.encode('utf-8')
+        )
+        resp = tls_sock.recv(2)
+        if resp[0] != 0x01:
+            raise Exception("SOCKS5 server sent bad data after auth")
+        if resp[1] != 0x00:
+            raise Exception("SOCKS5 authentication failed")
+
+    # SOCKS5 connect request (IPv4 resolved locally)
+    addr = socket.gethostbyname(target_host)
+    port_bytes = struct.pack(">H", target_port)
+    request = b'\x05\x01\x00\x01' + socket.inet_aton(addr) + port_bytes
+    tls_sock.sendall(request)
+    resp = tls_sock.recv(3)
+    if resp[0] != 0x05:
+        raise Exception("SOCKS5 server sent bad data after connect")
+    if resp[1] != 0x00:
+        raise Exception("SOCKS5 connection failed")
+
+    # Parse response address and port
+    atyp = tls_sock.recv(1)
+    if atyp == b"\x01":
+        remote_addr = socket.inet_ntoa(tls_sock.recv(4))
+    elif atyp == b"\x03":
+        length = tls_sock.recv(1)
+        remote_addr = tls_sock.recv(ord(length))
+    elif atyp == b"\x04":
+        remote_addr = socket.inet_ntop(socket.AF_INET6, tls_sock.recv(16))
+    else:
+        raise Exception("SOCKS5 proxy server sent invalid addr data")
+
+    remote_port = struct.unpack(">H", tls_sock.recv(2))[0]
+
+    # Now we can return the socker properly connected through the proxy
+    return tls_sock, remote_addr, remote_port
+
+def create_proxied_socket(*args, **kwargs):
+    return create_proxied_connection(*args, **kwargs)[0]
+
 
 class SOCKSClient:
     """SOCKS client for testing"""
@@ -149,28 +221,18 @@ class SOCKSClient:
         self.username = username
         self.password = password
 
-    def get_socket(self, timeout=5):
-
-        sock = socks.socksocket()
-        if self.username and self.password:
-            sock.set_proxy(
-                socks.SOCKS5,
-                self.proxy_host,
-                self.proxy_port,
-                username=self.username,
-                password=self.password
-            )
-        else:
-            sock.set_proxy(socks.SOCKS5, self.proxy_host, self.proxy_port)
-        sock.settimeout(timeout)
-
-        return sock
-
     def test_connection(self, target_host, target_port, timeout=5):
         try:
-            sock = self.get_socket(timeout)
-            sock.connect((target_host, target_port))
-            sock.close()
+            create_proxied_socket(
+                self.proxy_host,
+                self.proxy_port,
+                target_host,
+                target_port,
+                self.username,
+                self.password,
+                timeout,
+                False
+            )
             return True
         except Exception:
             return False
@@ -205,32 +267,6 @@ def socks_client_proxy2():
     )
 
 
-class SMTPClient:
-    """SMTP client for testing"""
-    def __init__(self, host="localhost", port=2525):
-        self.host = host
-        self.port = port
-
-    def get_client(self, max_retries=1, base_class=smtplib.SMTP, proxy_config=None):
-        for attempt in range(max_retries):
-            try:
-                client = base_class(self.host, self.port)
-                if proxy_config:
-                    client.set_proxy(
-                        proxy_config.host,
-                        proxy_config.port,
-                        proxy_config.username,
-                        proxy_config.password
-                    )
-                client.set_debuglevel(2)
-                client.ehlo()
-                return client
-            except:
-                if attempt == max_retries - 1:
-                    raise
-                time.sleep(1)
-
-
 @pytest.fixture
 def smtp_client_direct():
     client = smtplib.SMTP("localhost", 2525)
@@ -257,11 +293,22 @@ class ProxySMTP(smtplib.SMTP):
             raise ValueError('Non-blocking socket (timeout=0) is not supported')
         if self.debuglevel > 0:
             self._print_debug('connect: to', (host, port), self.source_address)
-        sock = self.socks_client.get_socket()
-        if self.source_address:
-            sock.bind(self.source_address)
-        sock.connect((host, port))
-        return sock
+
+        return create_proxied_socket(
+            self.socks_client.proxy_host,
+            self.socks_client.proxy_port,
+            host,
+            port,
+            self.socks_client.username,
+            self.socks_client.password,
+            timeout,
+            False
+        )
+        # sock = self.socks_client.get_socket()
+        # if self.source_address:
+        #     sock.bind(self.source_address)
+        # sock.connect((host, port))
+        # return sock
 
 
 @pytest.fixture
@@ -269,7 +316,6 @@ def smtp_client_via_proxy(socks_client):
     # Create SMTP client that connects through SOCKS proxy to the container's IP
 
     container_ip = get_container_ip()
-    sock = socks_client.get_socket()
     print(f"Container IP: {container_ip}")
 
     client = ProxySMTP(container_ip, 2525, socks_client=socks_client)
