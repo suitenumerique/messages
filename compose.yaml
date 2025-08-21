@@ -111,11 +111,11 @@ services:
         restart: true
       redis:
         condition: service_started
-      mta-out:
-        condition: service_started
       opensearch:
         condition: service_healthy
       keycloak:
+        condition: service_started
+      mailcatcher:
         condition: service_started
 
       # createbuckets:
@@ -319,7 +319,7 @@ services:
       - env.d/development/mta-out.local
     environment:
       - EXEC_CMD=true
-      - MTA_OUT_HOST=localhost:587
+      - MTA_OUT_SMTP_HOST=localhost:587
       - MTA_OUT_SMTP_USERNAME=user
       - MTA_OUT_SMTP_PASSWORD=pass
       - SMTP_RELAY_HOST=localhost:2525

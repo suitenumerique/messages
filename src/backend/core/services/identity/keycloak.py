@@ -70,6 +70,8 @@ def sync_maildomain_to_keycloak_group(maildomain: MailDomain):
         # Add custom attributes
         if maildomain.custom_attributes:
             for key, value in maildomain.custom_attributes.items():
+                if key.startswith("_"):
+                    continue
                 # Ensure values are lists (Keycloak requirement)
                 if isinstance(value, list):
                     group_attributes[key] = value

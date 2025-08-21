@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Get environment variables
-MTA_OUT_HOST = os.getenv("MTA_OUT_HOST")
+MTA_OUT_SMTP_HOST = os.getenv("MTA_OUT_SMTP_HOST")
 MTA_OUT_SMTP_USERNAME = os.getenv("MTA_OUT_SMTP_USERNAME")
 MTA_OUT_SMTP_PASSWORD = os.getenv("MTA_OUT_SMTP_PASSWORD")
 
@@ -144,7 +144,9 @@ def smtp_client():
     for attempt in range(max_retries):
         try:
             # First check if SMTP connection can be established
-            client = smtplib.SMTP(MTA_OUT_HOST.split(":")[0], int(MTA_OUT_HOST.split(":")[1]))
+            client = smtplib.SMTP(
+                MTA_OUT_SMTP_HOST.split(":")[0], int(MTA_OUT_SMTP_HOST.split(":")[1])
+            )
             client.ehlo()
             client.starttls()
             client.ehlo()

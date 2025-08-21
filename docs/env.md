@@ -79,10 +79,10 @@ The application uses a new environment file structure with `.defaults` and `.loc
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `MTA_OUT_HOST` | `mta-out:587` | Outbound SMTP server host | Required |
-| `MTA_OUT_SMTP_USERNAME` | `user` | Outbound SMTP username | Optional |
-| `MTA_OUT_SMTP_PASSWORD` | `pass` | Outbound SMTP password | Optional |
-| `MTA_OUT_SMTP_USE_TLS` | `True` | Use TLS for outbound SMTP | Optional |
+| `MTA_OUT_MODE` | `direct` | Outbound MTA mode ('direct' or 'relay') | Required |
+| `MTA_OUT_SMTP_HOST` | `mta-out:587` | Outbound SMTP server host for relay mode | Required |
+| `MTA_OUT_SMTP_USERNAME` | `user` | Outbound SMTP username for relay mode | Optional |
+| `MTA_OUT_SMTP_PASSWORD` | `pass` | Outbound SMTP password for relay mode | Optional |
 | `MDA_API_SECRET` | `my-shared-secret-mda` | Shared secret for MDA API | Required |
 | `MDA_API_BASE_URL` | `http://backend-dev:8000/api/v1.0/mta/` | Base URL for MDA API | Dev |
 

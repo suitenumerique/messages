@@ -3,7 +3,9 @@
 
 import json
 import random
+import socket
 import time
+from unittest.mock import MagicMock, patch
 
 from django.test import override_settings
 from django.urls import reverse
@@ -75,16 +77,39 @@ test_private_key, test_public_key = generate_dkim_key(key_size=1024)
 class TestE2EMessageOutboundFlow:
     """Test the outbound flow: API -> MDA -> Mailcatcher -> Verification."""
 
+    @override_settings(MTA_OUT_MODE="direct", MTA_OUT_DIRECT_PORT=1025)
+    @patch("core.mda.outbound_mta.dns.resolver.resolve")
+    def test_draft_send_receive_verify_direct(
+        self, mock_resolve, mailbox, sender_contact, authenticated_user
+    ):
+        """Test sending with mailcatcher as a MX server using direct SMTP"""
+        mailcatcher_ip = socket.gethostbyname("mailcatcher")
+
+        def resolve_return_value(domain, record_type):
+            return {
+                "external-test.com MX": [
+                    MagicMock(preference=10, exchange="mx1.external-test.com"),
+                ],
+                "mx1.external-test.com A": [
+                    mailcatcher_ip,
+                ],
+            }[domain + " " + record_type]
+
+        mock_resolve.side_effect = resolve_return_value
+
+        self._test(mailbox, sender_contact, authenticated_user)
+
     @override_settings(
-        # Ensure MTA-OUT is configured to point to Mailcatcher
-        MTA_OUT_HOST="mailcatcher:1025",
-        MTA_OUT_SMTP_USERNAME=None,
-        MTA_OUT_SMTP_PASSWORD=None,
-        MTA_OUT_SMTP_USE_TLS=False,
+        MTA_OUT_MODE="relay",
+        MTA_OUT_SMTP_HOST="mailcatcher:1025",
     )
-    def test_draft_send_receive_verify(
+    def test_draft_send_receive_verify_relay(
         self, mailbox, sender_contact, authenticated_user
     ):
+        """Test sending with mailcatcher as an SMTP relay"""
+        self._test(mailbox, sender_contact, authenticated_user)
+
+    def _test(self, mailbox, sender_contact, authenticated_user):
         """Test creating a draft, sending it, receiving via mailcatcher, and verifying content/DKIM."""
         # --- Setup --- #
         # Create and configure DKIM key for the domain

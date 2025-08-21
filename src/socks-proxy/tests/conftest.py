@@ -156,7 +156,7 @@ def create_proxied_connection(proxy_host, proxy_port, target_host, target_port, 
     if type(timeout) in {int, float}:
         tls_sock.settimeout(timeout)
 
-    # --- SOCKS5 handshake ---
+    # SOCKS5 handshake
     auth_bit = b'\x00' if not has_auth else b'\x02'
     tls_sock.sendall(b'\x05\x01'+auth_bit)  # version 5, 1 auth method, auth bit
     resp = tls_sock.recv(2)
@@ -167,8 +167,8 @@ def create_proxied_connection(proxy_host, proxy_port, target_host, target_port, 
     elif not has_auth and resp[1] != 0x00:
         raise Exception("SOCKS5 server does not support anon")
 
+    # Send authentication if needed
     if has_auth:
-        # Send authentication
         tls_sock.sendall(b"\x01" + 
             chr(len(proxy_username)).encode() + 
             proxy_username.encode('utf-8') +
@@ -181,7 +181,7 @@ def create_proxied_connection(proxy_host, proxy_port, target_host, target_port, 
         if resp[1] != 0x00:
             raise Exception("SOCKS5 authentication failed")
 
-    # SOCKS5 connect request (IPv4 resolved locally)
+    # SOCKS5 connect request (IPv4 is resolved locally)
     addr = socket.gethostbyname(target_host)
     port_bytes = struct.pack(">H", target_port)
     request = b'\x05\x01\x00\x01' + socket.inet_aton(addr) + port_bytes
@@ -206,7 +206,7 @@ def create_proxied_connection(proxy_host, proxy_port, target_host, target_port, 
 
     remote_port = struct.unpack(">H", tls_sock.recv(2))[0]
 
-    # Now we can return the socker properly connected through the proxy
+    # Now we can return the socket properly connected through the proxy
     return tls_sock, remote_addr, remote_port
 
 def create_proxied_socket(*args, **kwargs):

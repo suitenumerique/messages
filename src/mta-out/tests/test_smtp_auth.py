@@ -8,8 +8,8 @@ logger = logging.getLogger(__name__)
 # Get environment variables
 MTA_OUT_SMTP_USERNAME = os.getenv("MTA_OUT_SMTP_USERNAME")
 MTA_OUT_SMTP_PASSWORD = os.getenv("MTA_OUT_SMTP_PASSWORD")
-MTA_OUT_HOSTNAME = os.getenv("MTA_OUT_HOST").split(":")[0]
-MTA_OUT_PORT = int(os.getenv("MTA_OUT_HOST").split(":")[1])
+MTA_OUT_HOSTNAME = os.getenv("MTA_OUT_SMTP_HOST").split(":")[0]
+MTA_OUT_PORT = int(os.getenv("MTA_OUT_SMTP_HOST").split(":")[1])
 
 
 def test_smtp_authentication_success(smtp_client):

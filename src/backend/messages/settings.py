@@ -152,19 +152,33 @@ class Base(Configuration):
         },
     }
 
-    # MDA/MTA settings
+    # MDA settings
     MDA_API_SECRET = values.Value(
         "default-mda-api-secret", environ_name="MDA_API_SECRET", environ_prefix=None
     )
-    MTA_OUT_HOST = values.Value(None, environ_name="MTA_OUT_HOST", environ_prefix=None)
+
+    # MTA settings
+
+    # "direct" or "relay"
+    MTA_OUT_MODE = values.Value(
+        "direct", environ_name="MTA_OUT_MODE", environ_prefix=None
+    )
+    # List of proxies for the direct outbound MTA
+    MTA_OUT_PROXIES = values.ListValue(
+        [], environ_name="MTA_OUT_PROXIES", environ_prefix=None
+    )
+    # To be overridden in tests
+    MTA_OUT_DIRECT_PORT = 25
+
+    # SMTP settings for external SMTP servers, if MTA_OUT_MODE="external"
+    MTA_OUT_SMTP_HOST = values.Value(
+        None, environ_name="MTA_OUT_SMTP_HOST", environ_prefix=None
+    )
     MTA_OUT_SMTP_USERNAME = values.Value(
         None, environ_name="MTA_OUT_SMTP_USERNAME", environ_prefix=None
     )
     MTA_OUT_SMTP_PASSWORD = values.Value(
         None, environ_name="MTA_OUT_SMTP_PASSWORD", environ_prefix=None
-    )
-    MTA_OUT_SMTP_USE_TLS = values.BooleanValue(
-        default=True, environ_name="MTA_OUT_SMTP_USE_TLS", environ_prefix=None
     )
 
     # Test domain settings
