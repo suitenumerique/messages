@@ -74,7 +74,7 @@ create-env-files: \
 	env.d/development/frontend.local \
 	env.d/development/mta-in.local \
 	env.d/development/mta-out.local \
-	env.d/development/mta-out-proxy.local
+	env.d/development/socks-proxy.local
 .PHONY: create-env-files
 
 bootstrap: ## Prepare the project for local development

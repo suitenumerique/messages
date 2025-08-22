@@ -49,6 +49,7 @@ services:
     image: maildev/maildev:2.2.1
     ports:
       - "8904:1080"
+      - "8917:1025"
 
   # minio:
   #   user: ${DOCKER_USER:-1000}
@@ -327,13 +328,13 @@ services:
     volumes:
       - ./src/mta-out:/app
 
-  mta-out-proxy:
+  socks-proxy:
     build:
       context: src/socks-proxy
       target: runtime
     env_file:
-      - env.d/development/mta-out-proxy.defaults
-      - env.d/development/mta-out-proxy.local
+      - env.d/development/socks-proxy.defaults
+      - env.d/development/socks-proxy.local
     ports:
       - "8916:1080"
 
@@ -343,10 +344,10 @@ services:
     build:
       context: src/socks-proxy/tests
     environment:
-      - SOCKS_PROXY1=user1:pwd1@mta-out-proxy:1080
-      - SOCKS_PROXY2=user2:pwd2@mta-out-proxy:1080
+      - SOCKS_PROXY1=user1:pwd1@socks-proxy:1080
+      - SOCKS_PROXY2=user2:pwd2@socks-proxy:1080
     depends_on:
-      mta-out-proxy:
+      socks-proxy:
         condition: service_started
 
   mta-out-poetry:

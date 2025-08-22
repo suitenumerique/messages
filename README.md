@@ -139,6 +139,8 @@ When running the project, the following services are available:
 | **Redis** | 8913 | Cache and message broker | No auth required |
 | **OpenSearch** | 8914 | Search engine | No auth required |
 | **OpenSearch PA** | 8915 | Performance analyzer | No auth required |
+| **SOCKS Proxy** | 8916 | SOCKS5 proxy | `user1` / `pwd1` |
+| **Mailcatcher (SMTP)** | 8917 | SMTP server | No auth required |
 
 
 ### OpenAPI client
@@ -181,10 +183,13 @@ make start
 # Send a test message to the MTA-in, which will relay it to the Django MDA.
 # The domain must be MESSAGES_TESTDOMAIN (default is example.local) if you want the mailbox created automatically.
 # You can then read it on the frontend at http://localhost:8900/ (login as user1/user1) and reply to it there.
-# The replies will then be sent through the MTA-out to the mailcatcher on http://localhost:8904/
+# The replies will then be sent to the mailcatcher on http://localhost:8904/
 swaks --to=user1@example.local --server localhost:8910
 
-# Send a message manually to the MTA-out, which will then relay it to mailcatcher on http://localhost:8904/
+# Send a test message to the mailcatcher, then read it on http://localhost:8904/
+swaks --to=user1@example.local --server localhost:8917
+
+# Send a test message to the MTA-out, which will then relay it to mailcatcher on http://localhost:8904/
 swaks -tls --to=test@example.external --server localhost:8911 --auth-user user --auth-password=pass
 
 ```
