@@ -224,15 +224,21 @@ class Base(Configuration):
     )
 
     MESSAGES_SELFCHECK_PROMETHEUS_METRICS_ENABLED = values.BooleanValue(
-        default=False, environ_name="MESSAGES_SELFCHECK_PROMETHEUS_METRICS_ENABLED"
+        default=False,
+        environ_name="MESSAGES_SELFCHECK_PROMETHEUS_METRICS_ENABLED",
+        environ_prefix=None,
     )
 
     MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PUSHGATEWAY_URL = values.Value(
-        None, environ_name="MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PUSHGATEWAY_URL"
+        None,
+        environ_name="MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PUSHGATEWAY_URL",
+        environ_prefix=None,
     )
 
     MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PREFIX = values.Value(
-        "", environ_name="MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PREFIX"
+        "",
+        environ_name="MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PREFIX",
+        environ_prefix=None,
     )
 
     # Blob compression settings

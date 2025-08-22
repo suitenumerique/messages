@@ -99,7 +99,7 @@ class Command(BaseCommand):
         # Display results
         if result["success"]:
             self.stdout.write(self.style.SUCCESS("✓ Selfcheck completed successfully!"))
-
+            metrics.mark_success()
             self.stdout.write("")
             self.stdout.write("Timings:")
             if result["send_time"] is not None:
@@ -113,5 +113,6 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.ERROR(f"✗ Selfcheck failed: {result['error']}")
             )
+            metrics.mark_failure()
             metrics.send_metrics()
             sys.exit(1)
