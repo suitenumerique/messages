@@ -14,6 +14,9 @@ class CoreConfig(AppConfig):
     def ready(self):
         """Register signal handlers when the app is ready."""
         # Import signal handlers to register them
+        from prometheus_client.core import REGISTRY
+        from .metrics import CustomDBMetricsCollector
+        REGISTRY.register(CustomDBMetricsCollector())
 
         # pylint: disable=unused-import, import-outside-toplevel
         import core.signals  # noqa
