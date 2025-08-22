@@ -89,11 +89,11 @@ The selfcheck results can be integrated with monitoring systems by:
 
 By setting `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_ENABLED` to `True` as well as setting `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PUSHGATEWAY_URL` to your [prometheus pushgateway](https://github.com/prometheus/pushgateway)'s url, the job will push the following metrics:
 
-- `self_check_start_time`: Start timestamp of the self check
-- `self_check_end_time`: End timestamp of the self check
-- `self_check_success`: 1 if the self check succeeded, 0 if it failed
-- `self_check_send_duration_seconds`: Time taken to send the test message (seconds), only on succesful send
-- `self_check_reception_duration_seconds`: Time taken to receive the test message (seconds), only on succesful reception
+- `selfcheck_start_time`: Start timestamp of the self check
+- `selfcheck_end_time`: End timestamp of the self check
+- `selfcheck_success`: 1 if the self check succeeded, 0 if it failed
+- `selfcheck_send_duration_seconds`: Time taken to send the test message (seconds), only on succesful send
+- `selfcheck_reception_duration_seconds`: Time taken to receive the test message (seconds), only on succesful reception
 
 All metric names can be prefixed using the `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PREFIX` environment variable.
 
