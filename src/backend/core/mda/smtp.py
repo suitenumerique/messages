@@ -49,7 +49,9 @@ def create_proxied_connection(
 
     # This is the reason we reimplement PySocks here: to be able to wrap the socket in TLS
     if proxy_tls:
-        tls_sock = ssl.create_default_context().wrap_socket(raw_sock)
+        tls_sock = ssl.create_default_context().wrap_socket(
+            raw_sock, server_hostname=proxy_host
+        )
     else:
         tls_sock = raw_sock
 

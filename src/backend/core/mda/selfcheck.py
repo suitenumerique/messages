@@ -234,6 +234,9 @@ def run_selfcheck() -> Dict[str, Any]:
     to_email = settings.MESSAGES_SELFCHECK_TO
     secret = f"{settings.MESSAGES_SELFCHECK_SECRET}/{secrets.token_hex(8)}"
 
+    received_message = None
+    message = None
+
     # Don't do anything if FROM is empty
     if not from_email:
         logger.info("MESSAGES_SELFCHECK_FROM is empty, skipping selfcheck")
@@ -316,11 +319,10 @@ that the mail delivery pipeline is working correctly.</p>
         logger.error("Selfcheck failed: %s", e)
 
     finally:
-        if "message" in locals():
+        if message:
             _cleanup_test_data(message)
-        if "received_message" in locals():
-            if received_message.thread:
-                _cleanup_test_data(received_message)
+        if received_message:
+            _cleanup_test_data(received_message)
         logger.info("Cleanup completed")
 
     return result

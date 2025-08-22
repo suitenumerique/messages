@@ -132,7 +132,7 @@ def delete_message_from_index(sender, instance, **kwargs):
         es.delete(
             index=MESSAGE_INDEX,
             id=str(instance.id),
-            ignore=[404],  # Ignore if document doesn't exist
+            ignore=[404],  # Ignore if document doesn't exist or is already deleted
         )
 
     # pylint: disable=broad-exception-caught
@@ -166,7 +166,8 @@ def delete_thread_from_index(sender, instance, **kwargs):
         es.delete_by_query(
             index=MESSAGE_INDEX,
             body={"query": {"term": {"thread_id": str(instance.id)}}},
-            ignore=[404],  # Ignore if no documents match
+            ignore=[404, 409],  # Ignore if no documents match
+            conflicts="proceed",
         )
     # pylint: disable=broad-exception-caught
     except Exception as e:
