@@ -24,7 +24,6 @@ requires-python = ">=3.13,<4.0"
 
 # Note: after changing this list you must re-run `make back-poetry-lock`
 dependencies = [
-    "boto3==1.36.7",
     "celery[redis]==5.5.2",
     "cryptography==45.0.5",
     "dj-database-url==2.3.0",
@@ -38,7 +37,7 @@ dependencies = [
     "django-filter==24.3",
     "django-parler==2.3",
     "django-redis==5.4.0",
-    "django-storages[s3]==1.14.4",
+    "django-storages==1.14.6",
     "django-timezone-field==7.1",
     "djangorestframework==3.15.2",
     "dkimpy==1.1.8",
@@ -58,7 +57,7 @@ dependencies = [
     "python-magic==0.4.27",
     "pyzstd==0.17.0",
     "redis==5.2.1",
-    "requests==2.32.4",
+    "requests==2.32.5",
     "sentry-sdk[django]==2.27.0",
     "url-normalize==1.4.3",
     "whitenoise==6.8.2",
@@ -76,6 +75,7 @@ dev = [
     "drf-spectacular-sidecar==2024.12.1",
     "flower==2.0.1",
     "pip-audit==2.9.0",
+    "pipdeptree==2.28.0",
     "pylint-django==2.6.1",
     "pylint==3.3.4",
     "pytest-cov==6.0.0",

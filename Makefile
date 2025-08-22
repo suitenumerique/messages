@@ -304,6 +304,11 @@ back-poetry-lock: ## lock the dependencies
 	make pip-audit
 .PHONY: back-poetry-lock
 
+back-poetry-update-indirect: ## update indirect dependencies
+	rm src/backend/poetry.lock
+	make back-poetry-lock
+.PHONY: back-poetry-update
+
 back-poetry-check: ## check the dependencies
 	@$(COMPOSE) run --rm --build backend-poetry poetry check
 .PHONY: back-poetry-check
@@ -311,6 +316,10 @@ back-poetry-check: ## check the dependencies
 back-poetry-outdated: ## show outdated dependencies
 	@$(COMPOSE) run --rm --build backend-poetry poetry show --outdated
 .PHONY: back-poetry-outdated
+
+back-poetry-tree: ## show dependencies as a tree
+	@$(COMPOSE) run --rm --build backend-dev pipdeptree
+.PHONY: back-poetry-tree
 
 pip-audit: ## check the dependencies
 	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp --build backend-dev pip-audit
