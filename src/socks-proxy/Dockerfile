@@ -26,7 +26,5 @@ COPY --from=base /usr/local/sbin/sockd /usr/local/sbin/sockd
 
 COPY --chmod=0755 entrypoint.sh /entrypoint.sh
 
-EXPOSE 1080
-
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/usr/local/sbin/sockd"]
