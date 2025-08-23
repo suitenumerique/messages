@@ -94,7 +94,6 @@ def select_smtp_proxy() -> Dict[str, Any]:
             "proxy_port": parsed.port,
             "proxy_username": parsed.username,
             "proxy_password": parsed.password,
-            "proxy_tls": parsed.scheme == "socks5s",
             "sender_hostname": parsed.hostname,
         }
     return {}

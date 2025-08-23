@@ -7,6 +7,7 @@ import socket
 import subprocess
 import ssl
 import struct
+import socks
 from aiosmtpd.controller import Controller
 from aiosmtpd.handlers import Message
 from email.parser import BytesParser
@@ -141,77 +142,16 @@ class MockSMTPServer:
     def get_messages(self):
         return self.message_store.get_messages()
 
-def create_proxied_connection(proxy_host, proxy_port, target_host, target_port, proxy_username=None, proxy_password=None, timeout=5, proxy_tls=False):
 
-    has_auth = proxy_username is not None and proxy_password is not None
-
-    raw_sock = socket.create_connection((proxy_host, proxy_port))
-
-    # This is the reason we reimplement PySocks here: to be able to wrap the socket in TLS
-    if proxy_tls:
-        tls_sock = ssl.wrap_socket(raw_sock)
-    else:
-        tls_sock = raw_sock
-
+def create_proxied_socket(proxy_host, proxy_port, target_host, target_port, username=None, password=None, timeout=5):
+    """Create a socket connected through a SOCKS proxy"""
+    proxy = socks.socksocket()
     if type(timeout) in {int, float}:
-        tls_sock.settimeout(timeout)
-
-    # SOCKS5 handshake
-    auth_bit = b'\x00' if not has_auth else b'\x02'
-    tls_sock.sendall(b'\x05\x01'+auth_bit)  # version 5, 1 auth method, auth bit
-    resp = tls_sock.recv(2)
-    if resp[0] != 0x05:
-        raise Exception("SOCKS5 server does not support version 5")
-    if has_auth and resp[1] != 0x02:
-        raise Exception("SOCKS5 server does not support auth")
-    elif not has_auth and resp[1] != 0x00:
-        raise Exception("SOCKS5 server does not support anon")
-
-    # Send authentication if needed
-    if has_auth:
-        tls_sock.sendall(b"\x01" + 
-            chr(len(proxy_username)).encode() + 
-            proxy_username.encode('utf-8') +
-            chr(len(proxy_password)).encode() + 
-            proxy_password.encode('utf-8')
-        )
-        resp = tls_sock.recv(2)
-        if resp[0] != 0x01:
-            raise Exception("SOCKS5 server sent bad data after auth")
-        if resp[1] != 0x00:
-            raise Exception("SOCKS5 authentication failed")
-
-    # SOCKS5 connect request (IPv4 is resolved locally)
-    addr = socket.gethostbyname(target_host)
-    port_bytes = struct.pack(">H", target_port)
-    request = b'\x05\x01\x00\x01' + socket.inet_aton(addr) + port_bytes
-    tls_sock.sendall(request)
-    resp = tls_sock.recv(3)
-    if resp[0] != 0x05:
-        raise Exception("SOCKS5 server sent bad data after connect")
-    if resp[1] != 0x00:
-        raise Exception("SOCKS5 connection failed")
-
-    # Parse response address and port
-    atyp = tls_sock.recv(1)
-    if atyp == b"\x01":
-        remote_addr = socket.inet_ntoa(tls_sock.recv(4))
-    elif atyp == b"\x03":
-        length = tls_sock.recv(1)
-        remote_addr = tls_sock.recv(ord(length))
-    elif atyp == b"\x04":
-        remote_addr = socket.inet_ntop(socket.AF_INET6, tls_sock.recv(16))
-    else:
-        raise Exception("SOCKS5 proxy server sent invalid addr data")
-
-    remote_port = struct.unpack(">H", tls_sock.recv(2))[0]
-
-    # Now we can return the socket properly connected through the proxy
-    return tls_sock, remote_addr, remote_port
-
-def create_proxied_socket(*args, **kwargs):
-    return create_proxied_connection(*args, **kwargs)[0]
-
+        proxy.settimeout(timeout)
+    proxy.set_proxy(socks.PROXY_TYPE_SOCKS5, proxy_host, proxy_port, rdns=False, username=username, password=password)
+    proxy.connect((target_host, target_port))
+    
+    return proxy
 
 class SOCKSClient:
     """SOCKS client for testing"""
@@ -230,8 +170,7 @@ class SOCKSClient:
                 target_port,
                 self.username,
                 self.password,
-                timeout,
-                False
+                timeout
             )
             return True
         except Exception:
@@ -301,14 +240,8 @@ class ProxySMTP(smtplib.SMTP):
             port,
             self.socks_client.username,
             self.socks_client.password,
-            timeout,
-            False
+            timeout
         )
-        # sock = self.socks_client.get_socket()
-        # if self.source_address:
-        #     sock.bind(self.source_address)
-        # sock.connect((host, port))
-        # return sock
 
 
 @pytest.fixture

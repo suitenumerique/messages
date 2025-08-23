@@ -125,7 +125,7 @@ class TestSendOutboundMessage:
     @patch("core.mda.outbound_mta.send_smtp_mail")
     @override_settings(
         MTA_OUT_MODE="direct",
-        MTA_OUT_PROXIES=["socks5s://proxyuser:proxyuser@smtp.proxy:1080"],
+        MTA_OUT_PROXIES=["socks5://proxyuser:proxyuser@smtp.proxy:1080"],
         OPENSEARCH_INDEX_THREADS=False,
     )
     def test_outbound_send_direct(self, mock_smtp_send, mock_resolve, draft_message):
@@ -201,7 +201,6 @@ class TestSendOutboundMessage:
             proxy_port=1080,
             proxy_username="proxyuser",
             proxy_password="proxyuser",
-            proxy_tls=True,
             sender_hostname="smtp.proxy",
         )
 
@@ -215,7 +214,6 @@ class TestSendOutboundMessage:
             proxy_port=1080,
             proxy_username="proxyuser",
             proxy_password="proxyuser",
-            proxy_tls=True,
             sender_hostname="smtp.proxy",
         )
 

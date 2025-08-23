@@ -87,7 +87,7 @@ def test_socks_proxy_connection_refused(socks_client):
 
 def test_socks_proxy_connection_timeout(socks_client):
     """Test SOCKS proxy timeout behavior"""
-    result = socks_client.test_connection("192.0.2.1", 80, timeout=1)
+    result = socks_client.test_connection("192.0.0.0", 80, timeout=1)
     assert not result, "Connection to non-routable IP should timeout"
 
 

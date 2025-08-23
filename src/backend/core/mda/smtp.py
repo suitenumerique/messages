@@ -2,145 +2,48 @@
 
 import logging
 import smtplib
-import socket
-import ssl
-import struct
 from typing import Any, Dict, List, Optional
+
+import socks
 
 logger = logging.getLogger(__name__)
 
 
-class ProxyError(Exception):
-    """Exception raised when SOCKS5 proxy operations fail."""
-
-
-def create_proxied_connection(
+def create_proxied_socket(
     proxy_host,
     proxy_port,
     target_host,
     target_port,
-    proxy_username=None,
-    proxy_password=None,
-    timeout=5,
-    proxy_tls=False,
+    username=None,
+    password=None,
+    timeout=None,
 ):
-    """
-    Create a SOCKS5 proxy connection to a target host.
-
-    Args:
-        proxy_host: SOCKS5 proxy hostname
-        proxy_port: SOCKS5 proxy port
-        target_host: Target hostname to connect to
-        target_port: Target port to connect to
-        proxy_username: SOCKS5 proxy username (optional)
-        proxy_password: SOCKS5 proxy password (optional)
-        timeout: Connection timeout in seconds
-        proxy_tls: Whether to wrap the proxy connection in TLS
-
-    Returns:
-        Tuple of (socket, remote_addr, remote_port)
-
-    Raises:
-        ProxyError: If the proxy connection fails
-    """
-    has_auth = proxy_username is not None and proxy_password is not None
-
-    raw_sock = socket.create_connection((proxy_host, proxy_port))
-
-    # This is the reason we reimplement PySocks here: to be able to wrap the socket in TLS
-    if proxy_tls:
-        tls_sock = ssl.create_default_context().wrap_socket(
-            raw_sock, server_hostname=proxy_host
-        )
-    else:
-        tls_sock = raw_sock
-
+    """Create a socket connected through a SOCKS proxy"""
+    proxy = socks.socksocket()
     if type(timeout) in {int, float}:
-        tls_sock.settimeout(timeout)
+        proxy.settimeout(timeout)
+    proxy.set_proxy(
+        socks.PROXY_TYPE_SOCKS5,
+        proxy_host,
+        proxy_port,
+        rdns=False,
+        username=username,
+        password=password,
+    )
+    proxy.connect((target_host, target_port))
 
-    # SOCKS5 handshake
-    auth_bit = b"\x00" if not has_auth else b"\x02"
-    tls_sock.sendall(b"\x05\x01" + auth_bit)  # version 5, 1 auth method, auth bit
-    resp = tls_sock.recv(2)
-    if resp[0] != 0x05:
-        raise ProxyError("SOCKS5 server does not support version 5")
-    if has_auth and resp[1] != 0x02:
-        raise ProxyError("SOCKS5 server does not support auth")
-    if not has_auth and resp[1] != 0x00:
-        raise ProxyError("SOCKS5 server does not support anon")
-
-    # Send authentication if needed
-    if has_auth:
-        tls_sock.sendall(
-            b"\x01"
-            + chr(len(proxy_username)).encode()
-            + proxy_username.encode("utf-8")
-            + chr(len(proxy_password)).encode()
-            + proxy_password.encode("utf-8")
-        )
-        resp = tls_sock.recv(2)
-        if resp[0] != 0x01:
-            raise ProxyError("SOCKS5 server sent bad data after auth")
-        if resp[1] != 0x00:
-            raise ProxyError("SOCKS5 authentication failed")
-
-    # SOCKS5 connect request (IPv4 is resolved locally)
-    addr = socket.gethostbyname(target_host)
-    port_bytes = struct.pack(">H", target_port)
-    request = b"\x05\x01\x00\x01" + socket.inet_aton(addr) + port_bytes
-    tls_sock.sendall(request)
-    resp = tls_sock.recv(3)
-    if resp[0] != 0x05:
-        raise ProxyError("SOCKS5 server sent bad data after connect")
-    if resp[1] != 0x00:
-        raise ProxyError("SOCKS5 connection failed")
-
-    # Parse response address and port
-    atyp = tls_sock.recv(1)
-    if atyp == b"\x01":
-        remote_addr = socket.inet_ntoa(tls_sock.recv(4))
-    elif atyp == b"\x03":
-        length = tls_sock.recv(1)
-        remote_addr = tls_sock.recv(ord(length))
-    elif atyp == b"\x04":
-        remote_addr = socket.inet_ntop(socket.AF_INET6, tls_sock.recv(16))
-    else:
-        raise ProxyError("SOCKS5 proxy server sent invalid addr data")
-
-    remote_port = struct.unpack(">H", tls_sock.recv(2))[0]
-
-    # Now we can return the socket properly connected through the proxy
-    return tls_sock, remote_addr, remote_port
-
-
-def create_proxied_socket(*args, **kwargs):
-    """
-    Create a SOCKS5 proxy socket connection.
-
-    Args:
-        *args: Arguments passed to create_proxied_connection
-        **kwargs: Keyword arguments passed to create_proxied_connection
-
-    Returns:
-        Socket connection through the proxy
-    """
-    return create_proxied_connection(*args, **kwargs)[0]
+    return proxy
 
 
 class ProxySMTP(smtplib.SMTP):
-    """SMTP client that connects through a SOCKS5 proxy."""
+    """SMTP client that connects through a SOCKS5 proxy with support for nested SSL."""
 
     def __init__(self, host, port, *args, **kwargs):
-        if "proxy_host" in kwargs:
-            self.proxy_host = kwargs.pop("proxy_host")
-        if "proxy_port" in kwargs:
-            self.proxy_port = kwargs.pop("proxy_port")
-        if "proxy_username" in kwargs:
-            self.proxy_username = kwargs.pop("proxy_username")
-        if "proxy_password" in kwargs:
-            self.proxy_password = kwargs.pop("proxy_password")
-        if "proxy_tls" in kwargs:
-            self.proxy_tls = kwargs.pop("proxy_tls")
+        self.proxy_host = kwargs.pop("proxy_host", None)
+        self.proxy_port = kwargs.pop("proxy_port", None)
+        self.proxy_username = kwargs.pop("proxy_username", None)
+        self.proxy_password = kwargs.pop("proxy_password", None)
+
         super().__init__(host, port, *args, **kwargs)
 
     def _get_socket(self, host, port, timeout):
@@ -158,8 +61,6 @@ class ProxySMTP(smtplib.SMTP):
         if self.proxy_host is None:
             return super()._get_socket(host, port, timeout)
 
-        # This makes it simpler for SMTP_SSL to use the SMTP connect code
-        # and just alter the socket connection bit.
         if timeout is not None and not timeout:
             raise ValueError("Non-blocking socket (timeout=0) is not supported")
         if self.debuglevel > 0:
@@ -173,7 +74,6 @@ class ProxySMTP(smtplib.SMTP):
             self.proxy_username,
             self.proxy_password,
             timeout,
-            self.proxy_tls,
         )
 
 
@@ -191,7 +91,6 @@ def send_smtp_mail(
     proxy_port: Optional[int] = None,
     proxy_username: Optional[str] = None,
     proxy_password: Optional[str] = None,
-    proxy_tls: bool = False,
     sender_hostname: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
@@ -210,7 +109,6 @@ def send_smtp_mail(
         proxy_port: SOCKS5 proxy port
         proxy_username: SOCKS5 proxy username
         proxy_password: SOCKS5 proxy password
-        proxy_tls: Whether to wrap the proxy connection in TLS
         sender_hostname: Local hostname to use for SMTP EHLO/HELO
 
     Returns:
@@ -226,7 +124,6 @@ def send_smtp_mail(
             proxy_port=proxy_port,
             proxy_username=proxy_username,
             proxy_password=proxy_password,
-            proxy_tls=proxy_tls,
             local_hostname=sender_hostname,
         ) as client:
             (code, msg) = client.connect(smtp_host, smtp_port)
@@ -280,8 +177,8 @@ def send_smtp_mail(
                         "error": smtp_response[recipient_email],
                         "delivered": False,
                     }
-    except (smtplib.SMTPException, OSError, ProxyError) as e:
-        logger.error("SMTP error sending message: %s", e)
+    except (smtplib.SMTPException, OSError) as e:
+        logger.error("SMTP error sending message: %s", e, exc_info=True)
         for email in recipient_emails:
             statuses[email] = {"error": str(e), "delivered": False}
     return statuses

@@ -54,7 +54,7 @@ def flat_to_nested(items):
 
 #     s3_client = default_storage.connection.meta.client
 #     # pylint: disable=protected-access
-#     credentials = s3_client._request_signer._credentials  # noqa: SLF001
+#     credentials = s3_client._request_signer._credentials
 #     frozen_credentials = credentials.get_frozen_credentials()
 #     region = s3_client.meta.region_name
 #     auth = botocore.auth.S3SigV4Auth(frozen_credentials, "s3", region)

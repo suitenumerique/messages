@@ -4,9 +4,11 @@ import sys
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
+
 from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
 
 from core.mda.selfcheck import run_selfcheck
+
 
 class SelfCheckMetricsBase(object):
     """Dummy class that should be subclassed for different metrics backends."""
@@ -41,11 +43,31 @@ class SelfCheckPrometheusMetrics(SelfCheckMetricsBase):
         if settings.MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PUSHGATEWAY_URL is None:
             raise ValueError("Prometheus push gateway URL is not set.")
         self.registry = CollectorRegistry()
-        self.start_time = Gauge(f'{prefix}selfcheck_start_time', 'Start timestamp of the self check', registry=self.registry)
-        self.end_time = Gauge(f'{prefix}selfcheck_end_time', 'End timestamp of the self check', registry=self.registry)
-        self.success = Gauge(f'{prefix}selfcheck_success', 'Success of the self check', registry=self.registry)
-        self.send_duration = Gauge(f'{prefix}selfcheck_send_duration_seconds', 'Send duration of the self check', registry=self.registry)
-        self.reception_duration = Gauge(f'{prefix}selfcheck_reception_duration_seconds', 'Receptions duration of the self check', registry=self.registry)
+        self.start_time = Gauge(
+            f"{prefix}selfcheck_start_time",
+            "Start timestamp of the self check",
+            registry=self.registry,
+        )
+        self.end_time = Gauge(
+            f"{prefix}selfcheck_end_time",
+            "End timestamp of the self check",
+            registry=self.registry,
+        )
+        self.success = Gauge(
+            f"{prefix}selfcheck_success",
+            "Success of the self check",
+            registry=self.registry,
+        )
+        self.send_duration = Gauge(
+            f"{prefix}selfcheck_send_duration_seconds",
+            "Send duration of the self check",
+            registry=self.registry,
+        )
+        self.reception_duration = Gauge(
+            f"{prefix}selfcheck_reception_duration_seconds",
+            "Receptions duration of the self check",
+            registry=self.registry,
+        )
 
     def mark_start(self):
         self.start_time.set_to_current_time()
@@ -66,7 +88,11 @@ class SelfCheckPrometheusMetrics(SelfCheckMetricsBase):
         self.reception_duration.set(reception_time)
 
     def send_metrics(self):
-        return push_to_gateway(settings.MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PUSHGATEWAY_URL, job='selfcheck', registry=self.registry)
+        return push_to_gateway(
+            settings.MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PUSHGATEWAY_URL,
+            job="selfcheck",
+            registry=self.registry,
+        )
 
 
 class Command(BaseCommand):
@@ -81,7 +107,11 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         """Execute the command."""
 
-        metrics = SelfCheckPrometheusMetrics() if settings.MESSAGES_SELFCHECK_PROMETHEUS_METRICS_ENABLED else SelfCheckMetricsBase()
+        metrics = (
+            SelfCheckPrometheusMetrics()
+            if settings.MESSAGES_SELFCHECK_PROMETHEUS_METRICS_ENABLED
+            else SelfCheckMetricsBase()
+        )
 
         self.stdout.write("Starting selfcheck...")
         self.stdout.write(f"FROM: {settings.MESSAGES_SELFCHECK_FROM}")

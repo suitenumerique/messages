@@ -316,7 +316,7 @@ that the mail delivery pipeline is working correctly.</p>
     except Exception as e:  # pylint: disable=broad-exception-caught
         result["success"] = False
         result["error"] = str(e)
-        logger.error("Selfcheck failed: %s", e)
+        logger.error("Selfcheck failed: %s", e, exc_info=True)
 
     finally:
         if message:

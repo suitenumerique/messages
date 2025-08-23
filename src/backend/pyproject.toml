@@ -53,6 +53,7 @@ dependencies = [
     "openai==1.93.0",
     "psycopg[binary]==3.2.4",
     "PyJWT==2.10.1",
+    "PySocks==1.7.1",
     "python-keycloak==5.5.1",
     "python-magic==0.4.27",
     "pyzstd==0.17.0",
