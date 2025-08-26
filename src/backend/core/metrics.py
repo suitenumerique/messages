@@ -29,14 +29,18 @@ class CustomDBMetricsCollector:
         )
         status_count_map = {row['delivery_status']: row['count'] for row in messages_statuses_count}
 
+        gauge = GaugeMetricFamily(
+            "message_status_count",
+            "Number of messages by delivery status",
+            labels=["status"]
+        )
+
         for status in MessageDeliveryStatusChoices:
             label = status.label
             count = status_count_map.get(status.value, 0)
-            yield GaugeMetricFamily(
-                f"message_{label}_count",
-                f"Number of messages with status {label}",
-                value=count
-            )
+            gauge.add_metric([label], count)
+
+        yield gauge
 
     def get_attachments_count(self):
         """
