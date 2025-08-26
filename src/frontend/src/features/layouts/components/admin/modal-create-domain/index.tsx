@@ -3,12 +3,16 @@ import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next';
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { FormProvider, useForm } from 'react-hook-form';
-import { MailDomainAdminWrite, MailDomainAdminWriteRequest, useMaildomainsCreate } from '@/features/api/gen';
+import { FieldErrors, FormProvider, useForm } from 'react-hook-form';
+import { MailDomainAdminWrite, useMaildomainsCreate } from '@/features/api/gen';
 import { Banner } from '@/features/ui/components/banner';
 import { RhfInput } from '@/features/forms/components/react-hook-form';
 import { RhfCheckbox } from '@/features/forms/components/react-hook-form/rhf-checkbox';
-
+import { useConfig } from '@/features/providers/config';
+import { convertJsonSchemaToZod } from '@/features/forms/components/zod-json-schema-serializer';
+import { JSONSchema } from 'zod/v4/core';
+import { ItemJsonSchema } from '@/features/forms/components/zod-json-schema-serializer';
+import { RhfJsonSchemaField } from '@/features/forms/components/react-hook-form/rhf-json-schema-field';
 
 type ModalCreateAddressProps = {
   isOpen: boolean;
@@ -21,23 +25,27 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
   const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const { SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN } = useConfig();
   const { mutateAsync: createDomain } = useMaildomainsCreate();
 
   const createDomainSchema = z.object({
       name: z.string().min(1, { error: "create_domain_modal.form.errors.name_required" }),
       oidc_autojoin: z.boolean(),
       identity_sync: z.boolean(),
+      ...convertJsonSchemaToZod(SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN as JSONSchema.Schema)
   })
 
   type CreateDomainFormData = z.infer<typeof createDomainSchema>;
 
-
+  const customAttributes = SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN?.properties ?? {};
   const form = useForm<CreateDomainFormData>({
     resolver: zodResolver(createDomainSchema),
     defaultValues: {
       name: '',
       oidc_autojoin: false,
       identity_sync: false,
+      ...Object.fromEntries(Object.entries(customAttributes).map(([name, schema]) => ([name, schema.default ?? '']))),
     },
   });
 
@@ -50,12 +58,25 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
     onClose();
   };
 
+  const getFieldError = (fieldName: keyof FieldErrors<CreateDomainFormData>) => {
+      const errors = form.formState.errors as FieldErrors<CreateDomainFormData>;
+      const error = errors?.[fieldName];
+      return error?.message ? t(error.message as string) : undefined;
+  }
+
   const onSubmit = async (data: CreateDomainFormData) => {
     setError(null);
     setIsSubmitting(true);
     try {
-      const payload: MailDomainAdminWriteRequest = data;
-      const response = await createDomain({data: payload});
+      const customAttributeKeys = Object.keys(SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN?.properties ?? {});
+      const response = await createDomain({data: {
+        name: data.name,
+        oidc_autojoin: data.oidc_autojoin,
+        identity_sync: data.identity_sync,
+        custom_attributes: Object.fromEntries(
+          Object.entries(data).filter(([key]) => customAttributeKeys.includes(key))
+        )
+      }});
       onCreate(response.data);
       handleClose();
 
@@ -82,10 +103,18 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
               </Banner>
             )}
             <div className="form-field-row">
-              <RhfInput name="name" label={t('create_domain_modal.form.labels.name')} required/>
+              <RhfInput
+                name="name"
+                label={t('create_domain_modal.form.labels.name')}
+                text={getFieldError('name')}
+              />
             </div>
             <div className="form-field-row">
-              <RhfCheckbox name="oidc_autojoin" label={t('create_domain_modal.form.labels.oidc_autojoin')} type="checkbox"/>
+              <RhfCheckbox
+                name="oidc_autojoin"
+                label={t('create_domain_modal.form.labels.oidc_autojoin')}
+                type="checkbox"
+              />
             </div>
             <div className="form-field-row">
               <RhfCheckbox
@@ -94,6 +123,19 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
                 type="checkbox"
               />
             </div>
+            {
+              Object.entries(SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN?.properties ?? {}).map(([name, schema]: [string, ItemJsonSchema]) => (
+                <div className="form-field-row" key={`json-schema-field-${name}`}>
+                  <RhfJsonSchemaField
+                    schema={schema}
+                    state={getFieldError(name as keyof CreateDomainFormData) ? "error" : "default"} // TODO: handle errors
+                    text={getFieldError(name as keyof CreateDomainFormData)} // TODO: handle errors
+                    name={name}
+                  />
+                </div>
+              ))
+            }
+
             <div className="form-actions">
               <Button
                 type="submit"

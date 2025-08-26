@@ -25,4 +25,6 @@ export interface MailDomainAdminWrite {
   oidc_autojoin?: boolean;
   /** Sync mailboxes to an identity provider. */
   identity_sync?: boolean;
+  /** Metadata to sync to the maildomain group in the identity provider. */
+  custom_attributes?: unknown;
 }

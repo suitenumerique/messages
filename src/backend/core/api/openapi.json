@@ -4411,6 +4411,9 @@
                     "identity_sync": {
                         "type": "boolean",
                         "description": "Sync mailboxes to an identity provider."
+                    },
+                    "custom_attributes": {
+                        "description": "Metadata to sync to the maildomain group in the identity provider."
                     }
                 },
                 "required": [
@@ -4437,6 +4440,9 @@
                     "identity_sync": {
                         "type": "boolean",
                         "description": "Sync mailboxes to an identity provider."
+                    },
+                    "custom_attributes": {
+                        "description": "Metadata to sync to the maildomain group in the identity provider."
                     }
                 },
                 "required": [

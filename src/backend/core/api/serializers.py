@@ -813,7 +813,7 @@ class MailDomainAdminWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.MailDomain
-        fields = ["id", "name", "created_at", "updated_at", "oidc_autojoin", "identity_sync"]
+        fields = ["id", "name", "created_at", "updated_at", "oidc_autojoin", "identity_sync", "custom_attributes"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 class MailboxAccessNestedUserSerializer(serializers.ModelSerializer):
