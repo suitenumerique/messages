@@ -146,7 +146,7 @@ status: ## an alias for "docker compose ps"
 .PHONY: status
 
 stop: ## stop all development services
-	@$(COMPOSE) stop
+	@$(COMPOSE) --profile "*" stop
 .PHONY: stop
 
 restart: ## restart all development services
