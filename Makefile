@@ -134,11 +134,11 @@ logs: ## display all services logs (follow mode)
 .PHONY: logs
 
 start: ## start all development services
-	@$(COMPOSE) up --force-recreate --build -d frontend-dev backend-dev celery-dev mta-in
+	@$(COMPOSE) up --force-recreate --build -d frontend-dev backend-dev celery-dev mta-in --wait
 .PHONY: start
 
 start-minimal: ## start minimal services (backend, frontend, keycloak and DB)
-	@$(COMPOSE) up --force-recreate --build -d backend-db frontend-dev keycloak
+	@$(COMPOSE) up --force-recreate --build -d backend-db frontend-dev keycloak --wait
 .PHONY: start-minimal
 
 status: ## an alias for "docker compose ps"

@@ -100,6 +100,10 @@ services:
     volumes:
       - ./src/backend:/app
       - ./data/static:/data/static
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1.0/"]
+      retries: 3
+      interval: 3s
     depends_on:
       postgresql:
         condition: service_healthy
@@ -135,11 +139,15 @@ services:
     volumes:
       - ./src/backend:/app
       - ./data/static:/data/static
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1.0/"]
+      retries: 3
+      interval: 3s
     depends_on:
       postgresql:
         condition: service_healthy
         restart: true
-  
+
   backend-poetry:
     profiles:
       - tools

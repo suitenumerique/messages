@@ -98,6 +98,14 @@ COPY --from=base-with-deps-dev /venv /venv
 # ENV DB_HOST=postgresql \
 #     DB_PORT=5432
 
+# Switch to root to install packages
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Switch back to the unprivileged user
+USER ${DOCKER_USER}
+
 # Run django development server
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 
