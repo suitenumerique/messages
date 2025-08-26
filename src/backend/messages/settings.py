@@ -608,6 +608,9 @@ class Base(Configuration):
     )
 
     ENABLE_PROMETHEUS = values.BooleanValue(default=True)
+    if ENABLE_PROMETHEUS:
+        MIDDLEWARE += ["core.middlewares.BasicAuthMiddleware"]
+        PROMETHEUS_API_KEY = values.Value(None, environ_name="PROMETHEUS_API_KEY", environ_prefix=None)
 
     # AI
     AI_API_KEY = values.Value(None, environ_name="AI_API_KEY", environ_prefix=None)
