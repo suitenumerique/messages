@@ -206,6 +206,13 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `LOGGING_LEVEL_LOGGERS_APP` | `INFO` | Application logger level | Optional |
 | `LOGGING_LEVEL_HANDLERS_CONSOLE` | `INFO` | Console handler level | Optional |
 
+### Prometheus
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `ENABLE_PROMETHEUS` | `True` | Enable prometheus monitoring | Optional |
+| `PROMETHEUS_API_KEY` | None | Protects /metrics route with provided Bearer token, if not passed, disables auth | Optional |
+
 ## API Configuration
 
 | Variable | Default | Description | Required |
