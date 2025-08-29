@@ -101,9 +101,10 @@ services:
       - ./src/backend:/app
       - ./data/static:/data/static
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/v1.0/healthz/"]
-      retries: 3
+      test: ["CMD", "curl", "-fsS", "--max-time", "2", "http://localhost:8000/v1.0/healthz/"]
       interval: 3s
+      retries: 3
+      start_period: 10s
     depends_on:
       postgresql:
         condition: service_healthy
@@ -140,9 +141,10 @@ services:
       - ./src/backend:/app
       - ./data/static:/data/static
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/v1.0/healthz/"]
-      retries: 3
+      test: ["CMD", "curl", "-fsS", "--max-time", "2", "http://localhost:8000/v1.0/healthz/"]
       interval: 3s
+      retries: 3
+      start_period: 10s
     depends_on:
       postgresql:
         condition: service_healthy

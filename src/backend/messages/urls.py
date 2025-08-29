@@ -16,7 +16,11 @@ from drf_spectacular.views import (
 urlpatterns = [
     path(settings.ADMIN_URL, admin.site.urls),
     path("", include("core.urls")),
-    path(f"{settings.API_VERSION}/healthz/", lambda _: HttpResponse("OK"), name="healthcheck"),
+    path(
+        f"{settings.API_VERSION}/healthz/",
+        lambda _: HttpResponse("OK"),
+        name="healthcheck",
+    ),
 ]
 
 if settings.DEBUG:
