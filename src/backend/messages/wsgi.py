@@ -12,6 +12,7 @@ import os
 from configurations.wsgi import get_wsgi_application
 
 # Remove access logs for healthcheck route
+# pylint: disable=all
 try:
     import django.core.servers.basehttp
 
@@ -25,6 +26,7 @@ try:
     django.core.servers.basehttp.WSGIRequestHandler = QuietWSGIRequestHandler
 except ImportError:
     pass
+# pylint: enable=all
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "messages.settings")
 os.environ.setdefault("DJANGO_CONFIGURATION", "Development")
