@@ -307,8 +307,7 @@ back-poetry-lock: ## lock the dependencies
 back-poetry-update-indirect: ## update indirect dependencies
 	rm src/backend/poetry.lock
 	make back-poetry-lock
-.PHONY: back-poetry-update
-
+.PHONY: back-poetry-update-indirect
 back-poetry-check: ## check the dependencies
 	@$(COMPOSE) run --rm --build backend-poetry poetry check
 .PHONY: back-poetry-check
