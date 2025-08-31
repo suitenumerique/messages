@@ -87,7 +87,8 @@ dev = [
     "pytest-repeat==0.9.4",
     "pytest-xdist==3.6.1",
     "responses==0.25.6",
-    "ruff==0.9.3"
+    "ruff==0.9.3",
+    "prometheus-client (>=0.22.1,<0.23.0)"
 ]
 
 [tool.poetry]
