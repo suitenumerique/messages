@@ -58,5 +58,6 @@ if settings.ENABLE_PROMETHEUS:
         path(
             "",
             include("django_prometheus.urls"),
+            name="prometheus-metrics"
         ),
     ]
