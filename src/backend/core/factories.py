@@ -215,3 +215,37 @@ class LabelFactory(factory.django.DjangoModelFactory):
         if isinstance(extracted, (list, tuple)):
             for thread in extracted:
                 self.threads.add(thread)
+
+
+class BlobFactory(factory.django.DjangoModelFactory):
+    """A factory to random blobs for testing purposes."""
+
+    class Meta:
+        model = models.Blob
+
+    raw_content = factory.LazyAttribute(lambda o: b"Blob content")
+    content_type = factory.LazyAttribute(lambda o: "application/octet-stream")
+    size = factory.LazyAttribute(lambda o: len(o.raw_content))
+    mailbox = factory.SubFactory(MailboxFactory)
+
+
+class AttachmentFactory(factory.django.DjangoModelFactory):
+    """A factory to random attachments for testing purposes."""
+
+    class Meta:
+        model = models.Attachment
+
+    mailbox = factory.SubFactory(MailboxFactory)
+    name = factory.Sequence(lambda n: f"attachment{n}.txt")
+    blob_size = 1500
+    @factory.lazy_attribute
+    def blob(self):
+        raw_content = b"x" * self.blob_size
+        return BlobFactory(mailbox=self.mailbox, size=self.blob_size, raw_content=raw_content)
+
+    @classmethod
+    def _adjust_kwargs(cls, **kwargs):
+        # Remove blob_size from kwargs before passing to model
+        kwargs = dict(kwargs)
+        kwargs.pop('blob_size', None)
+        return kwargs

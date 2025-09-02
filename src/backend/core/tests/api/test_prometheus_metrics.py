@@ -3,7 +3,7 @@ from django.urls import reverse
 
 from prometheus_client.parser import text_string_to_metric_families
 
-from core.factories import MessageRecipientFactory
+from core.factories import AttachmentFactory, MessageRecipientFactory
 from core.enums import MessageDeliveryStatusChoices
 
 @pytest.fixture
@@ -24,7 +24,6 @@ def messages_for_count():
             MessageRecipientFactory(
                 delivery_status=status
             )
-
 
 class TestPrometheusMetrics:
     @pytest.mark.django_db
@@ -93,7 +92,7 @@ class TestPrometheusMetrics:
             assert visited is True
 
     @pytest.mark.django_db
-    def test_get_attachements_count_zero(self, api_client, settings, url):
+    def test_get_attachments_count_zero(self, api_client, settings, url):
         settings.PROMETHEUS_API_KEY = "test_api_key"
         response = api_client.get(url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}")
 
@@ -101,3 +100,52 @@ class TestPrometheusMetrics:
             for sample in family.samples:
                 if sample.name == "attachment_count":
                     assert sample.value == 0
+
+
+    @pytest.mark.parametrize("attachment_count", [0, 1, 10])
+    @pytest.mark.django_db
+    def test_get_attachments_count(self, api_client, settings, url, attachment_count):
+        [AttachmentFactory() for _ in range(attachment_count)]
+
+        settings.PROMETHEUS_API_KEY = "test_api_key"
+        response = api_client.get(url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}")
+
+        for family in text_string_to_metric_families(response.content.decode('utf-8')):
+            for sample in family.samples:
+                if sample.name == "attachment_count":
+                    assert sample.value == attachment_count
+
+    @pytest.mark.django_db
+    def test_get_attachments_size_no_attachment(self, api_client, settings, url):
+        settings.PROMETHEUS_API_KEY = "test_api_key"
+        response = api_client.get(url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}")
+
+        for family in text_string_to_metric_families(response.content.decode('utf-8')):
+            for sample in family.samples:
+                if sample.name == "attachments_total_size_bytes":
+                    assert sample.value == 0
+
+    @pytest.mark.parametrize("blob_size", [0, 150, 1000])
+    @pytest.mark.django_db
+    def test_get_attachments_size_one_attachment(self, api_client, settings, url, blob_size):
+        AttachmentFactory(blob_size=blob_size)
+        settings.PROMETHEUS_API_KEY = "test_api_key"
+        response = api_client.get(url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}")
+
+        for family in text_string_to_metric_families(response.content.decode('utf-8')):
+            for sample in family.samples:
+                if sample.name == "attachments_total_size_bytes":
+                    assert sample.value == blob_size
+
+    @pytest.mark.parametrize("blobs_size", [[0,0], [0, 150, 1000], [1, 2, 3, 4, 5]])
+    @pytest.mark.django_db
+    def test_get_attachments_size_multiple_attachments(self, api_client, settings, url, blobs_size):
+        [AttachmentFactory(blob_size=blob_size) for blob_size in blobs_size]
+        settings.PROMETHEUS_API_KEY = "test_api_key"
+        response = api_client.get(url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}")
+
+        for family in text_string_to_metric_families(response.content.decode('utf-8')):
+            for sample in family.samples:
+                if sample.name == "attachments_total_size_bytes":
+                    assert sample.value == sum(blobs_size)
+
