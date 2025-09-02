@@ -225,7 +225,8 @@ test: \
   back-test \
   front-test \
   mta-in-test \
-  mta-out-test
+  mta-out-test \
+  socks-proxy-test
 .PHONY: test
 
 back-test: ## run back-end tests

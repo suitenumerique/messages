@@ -92,8 +92,8 @@ By setting `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_ENABLED` to `True` as well as 
 - `selfcheck_start_time`: Start timestamp of the self check
 - `selfcheck_end_time`: End timestamp of the self check
 - `selfcheck_success`: 1 if the self check succeeded, 0 if it failed
-- `selfcheck_send_duration_seconds`: Time taken to send the test message (seconds), only on succesful send
-- `selfcheck_reception_duration_seconds`: Time taken to receive the test message (seconds), only on succesful reception
+- `selfcheck_send_duration_seconds`: Time taken to send the test message (seconds), only on successful send
+- `selfcheck_reception_duration_seconds`: Time taken to receive the test message (seconds), only on successful reception
 
 All metric names can be prefixed using the `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PREFIX` environment variable.
 

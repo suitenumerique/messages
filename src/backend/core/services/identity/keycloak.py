@@ -64,12 +64,12 @@ def sync_maildomain_to_keycloak_group(maildomain: MailDomain):
         group_attributes = {
             "maildomain_id": [str(maildomain.id)],
             "maildomain_name": [maildomain.name],
-            **(maildomain.custom_attributes or {}),
         }
 
         # Add custom attributes
         if maildomain.custom_attributes:
             for key, value in maildomain.custom_attributes.items():
+                # Do not send keys starting with _ to Keycloak
                 if key.startswith("_"):
                     continue
                 # Ensure values are lists (Keycloak requirement)
@@ -155,8 +155,16 @@ def sync_mailbox_to_keycloak_user(mailbox: Mailbox):
             "maildomain_id": [str(mailbox.domain.id)],
             "local_part": [mailbox.local_part],
             "domain_name": [mailbox.domain.name],
-            **user_custom_attributes,
         }
+
+        for key, value in user_custom_attributes.items():
+            # Do not send keys starting with _ to Keycloak
+            if key.startswith("_"):
+                continue
+            if isinstance(value, list):
+                user_attributes[key] = value
+            else:
+                user_attributes[key] = [str(value)]
 
         # Get contact name if available
         first_name = ""
@@ -196,7 +204,8 @@ def sync_mailbox_to_keycloak_user(mailbox: Mailbox):
             logger.info("Created Keycloak user %s for Mailbox %s", username, mailbox)
 
         # Add user to maildomain group
-        group_name = f"maildomain-{mailbox.domain.name}"
+        group_path = f"{settings.KEYCLOAK_GROUP_PATH_PREFIX}{mailbox.domain.name}"
+        group_name = group_path.rsplit("/", maxsplit=1)[-1]
         groups = keycloak_admin.get_groups({"search": group_name})
 
         for group in groups:

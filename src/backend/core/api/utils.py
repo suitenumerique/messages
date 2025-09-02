@@ -1,7 +1,5 @@
 """Util to generate S3 authorization headers for object storage access control"""
 
-from django.conf import settings
-from django.core.files.storage import default_storage
 
 # import botocore
 
@@ -63,25 +61,25 @@ def flat_to_nested(items):
 #     return request
 
 
-def generate_upload_policy(item):
-    """
-    Generate a S3 upload policy for a given item.
-    """
+# def generate_upload_policy(item):
+#     """
+#     Generate a S3 upload policy for a given item.
+#     """
 
-    # Generate a unique key for the item
-    key = f"{item.key_base}/{item.filename}"
+#     # Generate a unique key for the item
+#     key = f"{item.key_base}/{item.filename}"
 
-    # Generate the policy
-    s3_client = default_storage.connection.meta.client
-    policy = s3_client.generate_presigned_post(
-        default_storage.bucket_name,
-        key,
-        Fields={"acl": "private"},
-        Conditions=[
-            {"acl": "private"},
-            ["content-length-range", 0, settings.ITEM_FILE_MAX_SIZE],
-        ],
-        ExpiresIn=settings.AWS_S3_UPLOAD_POLICY_EXPIRATION,
-    )
+#     # Generate the policy
+#     s3_client = default_storage.connection.meta.client
+#     policy = s3_client.generate_presigned_post(
+#         default_storage.bucket_name,
+#         key,
+#         Fields={"acl": "private"},
+#         Conditions=[
+#             {"acl": "private"},
+#             ["content-length-range", 0, settings.ITEM_FILE_MAX_SIZE],
+#         ],
+#         ExpiresIn=settings.AWS_S3_UPLOAD_POLICY_EXPIRATION,
+#     )
 
-    return policy
+#     return policy

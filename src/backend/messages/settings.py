@@ -170,7 +170,7 @@ class Base(Configuration):
     # To be overridden in tests
     MTA_OUT_DIRECT_PORT = 25
 
-    # SMTP settings for external SMTP servers, if MTA_OUT_MODE="external"
+    # SMTP settings for external SMTP servers, if MTA_OUT_MODE="relay"
     MTA_OUT_SMTP_HOST = values.Value(
         None, environ_name="MTA_OUT_SMTP_HOST", environ_prefix=None
     )

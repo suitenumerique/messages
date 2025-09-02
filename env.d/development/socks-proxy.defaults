@@ -1,4 +1,5 @@
 PROXY_USERS="user1:pwd1,user2:pwd2"
 
 # This should fit most local development environments with Docker.
+# Do NOT reuse these credentials in production.
 PROXY_SOURCE_IP_WHITELIST="127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"

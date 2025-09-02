@@ -45,7 +45,10 @@ logger = logging.getLogger(__name__)
                 help_text="Mailbox ID to use as sender",
             ),
             "subject": drf_serializers.CharField(
-                required=True, help_text="Subject of the message"
+                required=False,
+                allow_blank=True,
+                allow_null=True,
+                help_text="Subject of the message (optional; empty or null allowed)",
             ),
             "draftBody": drf_serializers.CharField(
                 required=False,

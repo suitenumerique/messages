@@ -1,8 +1,5 @@
-import pytest
 import logging
-import socket
 import time
-import smtplib
 from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)

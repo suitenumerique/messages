@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ -z "${PROXY_USERS}" ]; then
+if [ -z "${PROXY_USERS:-}" ]; then
   echo "Error: PROXY_USERS env var is not set (format: user1:pass1,user2:pass2)"
   exit 1
 fi
@@ -56,7 +56,7 @@ socks pass {
   to: 0.0.0.0/0
   protocol: tcp
   socksmethod: username
-  command: bind connect
+  command: connect
   log: connect error
 }
 "
@@ -64,5 +64,6 @@ done
 
 # Replace the placeholder with the generated configuration
 echo "$DANTE_CONFIG" > /etc/sockd.conf
+chmod 0600 /etc/sockd.conf
 
 exec "$@"

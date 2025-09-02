@@ -245,7 +245,7 @@ def update_draft(
                     )
 
                     if created:
-                        logger.info(
+                        logger.debug(
                             "Created new attachment %s for blob %s",
                             attachment.id,
                             blob_id,
@@ -286,7 +286,7 @@ def update_draft(
 
     # Save message and thread if changes were made
     if len(updated_fields) > 0 and message.pk:  # Only save if message exists
-        logger.info("Saving message %s with fields %s", message.id, updated_fields)
+        logger.debug("Saving message %s with fields %s", message.id, updated_fields)
         message.save(update_fields=updated_fields + ["updated_at"])
     if len(thread_updated_fields) > 0 and message.thread.pk:  # Check thread exists
         message.thread.save(update_fields=thread_updated_fields + ["updated_at"])

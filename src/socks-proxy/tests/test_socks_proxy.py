@@ -1,9 +1,6 @@
 import pytest
-import logging
 
-logger = logging.getLogger(__name__)
-
-from .conftest import SOCKSClient, PROXY1_CONFIG
+from .conftest import SOCKSClient
 
 
 # Authentication Tests
@@ -72,11 +69,7 @@ def test_socks_authentication_failure_handling(socks_client):
 # Connection Tests
 def test_socks_proxy_connection_establishment(socks_client):
     """Test that SOCKS proxy connection can be established"""
-    try:
-        socks_client.test_connection("8.8.8.8", 53)
-        assert True, "SOCKS connection should be established successfully"
-    except Exception as e:
-        pytest.fail(f"Failed to establish SOCKS connection: {e}")
+    assert socks_client.test_connection("8.8.8.8", 53), "SOCKS connection should be established successfully"
 
 
 def test_socks_proxy_connection_refused(socks_client):

@@ -83,15 +83,10 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `MTA_OUT_SMTP_HOST` | `mta-out:587` | Outbound SMTP server host for relay mode | Required |
 | `MTA_OUT_SMTP_USERNAME` | `user` | Outbound SMTP username for relay mode | Optional |
 | `MTA_OUT_SMTP_PASSWORD` | `pass` | Outbound SMTP password for relay mode | Optional |
+| `MTA_OUT_PROXIES` | `[]` | List of SOCKS proxy URLs (randomly chosen when non-empty; used in direct mode) | Optional |
+| `MTA_OUT_DIRECT_PORT` | `25` | TCP port for direct mode on remote MX servers | Optional |
 | `MDA_API_SECRET` | `my-shared-secret-mda` | Shared secret for MDA API | Required |
 | `MDA_API_BASE_URL` | `http://backend-dev:8000/api/v1.0/mta/` | Base URL for MDA API | Dev |
-
-### MTA-Out Specific
-| Variable | Default | Description | Required |
-|----------|---------|-------------|----------|
-| `SMTP_RELAY_HOST` | `mailcatcher:1025` | SMTP relay server | Dev |
-| `SMTP_USERNAME` | `user` | SMTP authentication username | Dev |
-| `SMTP_PASSWORD` | `pass` | SMTP authentication password | Dev |
 
 ### Email Domain Configuration
 

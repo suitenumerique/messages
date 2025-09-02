@@ -237,9 +237,11 @@ def run_selfcheck() -> Dict[str, Any]:
     received_message = None
     message = None
 
-    # Don't do anything if FROM is empty
-    if not from_email:
-        logger.info("MESSAGES_SELFCHECK_FROM is empty, skipping selfcheck")
+    # Don't do anything if FROM or TO is empty
+    if not from_email or not to_email:
+        logger.info(
+            "MESSAGES_SELFCHECK_FROM or MESSAGES_SELFCHECK_TO is empty, skipping selfcheck"
+        )
         return result
 
     logger.info("Starting selfcheck: %s -> %s", from_email, to_email)

@@ -65,7 +65,7 @@ class SelfCheckPrometheusMetrics(SelfCheckMetricsBase):
         )
         self.reception_duration = Gauge(
             f"{prefix}selfcheck_reception_duration_seconds",
-            "Receptions duration of the self check",
+            "Reception duration of the self check",
             registry=self.registry,
         )
 
