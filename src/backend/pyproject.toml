@@ -43,7 +43,6 @@ dependencies = [
     "djangorestframework==3.15.2",
     "dkimpy==1.1.8",
     "dnspython==2.7.0",
-    "dockerflow==2024.4.2",
     "drf_spectacular==0.28.0",
     "opensearch-py==2.8.0",
     "factory_boy==3.3.1",

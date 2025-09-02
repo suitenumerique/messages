@@ -547,8 +547,6 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
-    ENABLE_DOCKERFLOW = values.BooleanValue(default=True)
-
     # AI
     AI_API_KEY = values.Value(None, environ_name="AI_API_KEY", environ_prefix=None)
     AI_BASE_URL = values.Value(None, environ_name="AI_BASE_URL", environ_prefix=None)
@@ -617,14 +615,6 @@ class Base(Configuration):
         "sdk_url": "/sdk",
         "api_url": "/api/v1.0",
     }
-
-    # pylint: disable=invalid-name
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Add dockerflow if ENABLE_DOCKERFLOW is True
-        if self.ENABLE_DOCKERFLOW:
-            self.INSTALLED_APPS += ["dockerflow.django"]
-            self.MIDDLEWARE += ["dockerflow.django.middleware.DockerflowMiddleware"]
 
     # pylint: disable=invalid-name
     @property
