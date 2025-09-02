@@ -18,7 +18,7 @@ try:
     class QuietWSGIRequestHandler(django.core.servers.basehttp.WSGIRequestHandler):
         def log_message(self, format, *args):
             path = getattr(self, "path", "")
-            if path.endswith("/healthz") or path.endswith("/healthz/"):
+            if path.strip("/") == "healthz":
                 return
             super().log_message(format, *args)
     django.core.servers.basehttp.WSGIRequestHandler = QuietWSGIRequestHandler

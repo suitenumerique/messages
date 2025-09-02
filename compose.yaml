@@ -101,7 +101,7 @@ services:
       - ./src/backend:/app
       - ./data/static:/data/static
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "--max-time", "2", "http://localhost:8000/v1.0/healthz/"]
+      test: ["CMD", "curl", "-fsS", "--max-time", "2", "http://localhost:8000/healthz/"]
       interval: 3s
       retries: 3
       start_period: 10s
@@ -141,7 +141,7 @@ services:
       - ./src/backend:/app
       - ./data/static:/data/static
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "--max-time", "2", "http://localhost:8000/v1.0/healthz/"]
+      test: ["CMD", "curl", "-fsS", "--max-time", "2", "http://localhost:8000/healthz/"]
       interval: 3s
       retries: 3
       start_period: 10s

@@ -17,7 +17,7 @@ urlpatterns = [
     path(settings.ADMIN_URL, admin.site.urls),
     path("", include("core.urls")),
     path(
-        f"{settings.API_VERSION}/healthz/",
+        "healthz/",
         lambda _: HttpResponse("OK"),
         name="healthcheck",
     ),
