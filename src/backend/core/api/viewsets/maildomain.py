@@ -35,7 +35,7 @@ from core.services.identity.keycloak import reset_keycloak_user_password
 
 
 class AdminMailDomainViewSet(
-    mixins.ListModelMixin, viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.CreateModelMixin
+    mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet
 ):
     """
     ViewSet for listing MailDomains the user administers.
@@ -49,13 +49,13 @@ class AdminMailDomainViewSet(
     ]
 
     def get_permissions(self):
-        if self.action in ["create"]:
-            self.permission_classes = [core_permissions.IsSuperUser]
+        if self.action == "create":
+            return [core_permissions.IsSuperUser()]
         return super().get_permissions()
 
     def get_serializer_class(self):
         """Select serializer based on action."""
-        if self.action in ["create", "update", "partial_update"]:
+        if self.action == "create":
             return core_serializers.MailDomainAdminWriteSerializer
         return super().get_serializer_class()
 
