@@ -608,9 +608,7 @@ class Base(Configuration):
     )
 
     ENABLE_PROMETHEUS = values.BooleanValue(
-        default=True,
-        environ_name="ENABLE_PROMETHEUS",
-        environ_prefix=None
+        default=True, environ_name="ENABLE_PROMETHEUS", environ_prefix=None
     )
 
     PROMETHEUS_API_KEY = values.Value(
