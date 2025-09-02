@@ -107,8 +107,22 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
                 name="name"
                 label={t('create_domain_modal.form.labels.name')}
                 text={getFieldError('name')}
+                fullWidth
               />
             </div>
+            {
+              Object.entries(SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN?.properties ?? {}).map(([name, schema]: [string, ItemJsonSchema]) => (
+                <div className="form-field-row" key={`json-schema-field-${name}`}>
+                  <RhfJsonSchemaField
+                    schema={schema}
+                    state={getFieldError(name as keyof CreateDomainFormData) ? "error" : "default"} // TODO: handle errors
+                    text={getFieldError(name as keyof CreateDomainFormData)} // TODO: handle errors
+                    name={name}
+                    fullWidth
+                  />
+                </div>
+              ))
+            }
             <div className="form-field-row">
               <RhfCheckbox
                 name="oidc_autojoin"
@@ -123,18 +137,6 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
                 type="checkbox"
               />
             </div>
-            {
-              Object.entries(SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN?.properties ?? {}).map(([name, schema]: [string, ItemJsonSchema]) => (
-                <div className="form-field-row" key={`json-schema-field-${name}`}>
-                  <RhfJsonSchemaField
-                    schema={schema}
-                    state={getFieldError(name as keyof CreateDomainFormData) ? "error" : "default"} // TODO: handle errors
-                    text={getFieldError(name as keyof CreateDomainFormData)} // TODO: handle errors
-                    name={name}
-                  />
-                </div>
-              ))
-            }
 
             <div className="form-actions">
               <Button

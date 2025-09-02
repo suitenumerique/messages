@@ -843,7 +843,7 @@
         }
       },
       "create_domain_modal": {
-        "title": "Ajouter un domaine",
+        "title": "Ajout d'un domaine",
         "form": {
           "labels": {
             "name": "Nom",
