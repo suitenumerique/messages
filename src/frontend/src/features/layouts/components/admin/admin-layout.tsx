@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { AdminMailDomainProvider, useAdminMailDomain } from "@/features/providers/admin-maildomain";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import ErrorPage from "next/error";
+import { Toaster } from "@/features/ui/components/toaster";
 
 type AdminLayoutProps = {
   children: React.ReactNode;
@@ -122,6 +123,7 @@ export function AdminLayout(props: AdminLayoutProps) {
       >
         <AdminMailDomainProvider>
           <AdminLayoutContent {...props} />
+          <Toaster />
         </AdminMailDomainProvider>
       </AppLayout>
   );

@@ -11,7 +11,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import { Banner } from "@/features/ui/components/banner";
 import { CreateDomainAction } from "@/features/layouts/components/admin/domains-view/create-domain-action";
 import { useQueryClient } from "@tanstack/react-query";
-import { addToast, Toaster, ToasterItem } from "@/features/ui/components/toaster";
+import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 
 type AdminDataGridProps = {
   pagination: ReturnType<typeof usePagination>;
@@ -124,7 +124,6 @@ export default function AdminPage() {
   return (
     <AdminLayout actions={<CreateDomainAction onCreate={handleCreateDomain} />}>
       <AdminPageContent />
-      <Toaster />
     </AdminLayout>
   );
 }
