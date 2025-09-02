@@ -1,0 +1,7 @@
+postfix = postfix_settings
+[postfix_settings]
+ssl_conf = postfix_ssl_settings
+[postfix_ssl_settings]
+system_default = baseline_postfix_settings
+[baseline_postfix_settings]
+Groups = *X25519MLKEM768 / *X25519:X448 / P-256:P-384:P-521:ffdhe2048:ffdhe3072

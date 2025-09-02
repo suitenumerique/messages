@@ -215,6 +215,19 @@ class TestDraftWithAttachments:
         assert len(response.data["attachments"]) == 1
         assert response.data["attachments"][0]["blobId"] == str(blob.id)
 
+        # Check we can delete the draft
+        response = client.delete(reverse("messages-detail", kwargs={"id": draft_id}))
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        # Check the draft is deleted
+        assert models.Message.objects.count() == 0
+
+        # Check the attachment is deleted
+        assert models.Attachment.objects.count() == 0
+
+        # Check the blob is deleted
+        assert models.Blob.objects.count() == 0
+
     def test_add_attachment_to_existing_draft_and_send(
         self, api_client, user_mailbox, blob
     ):

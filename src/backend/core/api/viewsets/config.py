@@ -76,7 +76,7 @@ class ConfigView(drf.views.APIView):
                         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN": {
                             "type": "object",
                             "readOnly": True,
-                        }
+                        },
                     },
                     "required": [
                         "ENVIRONMENT",

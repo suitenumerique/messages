@@ -4,7 +4,7 @@
 import logging
 
 from django.conf import settings
-from django.db.models.signals import post_delete, post_save
+from django.db.models.signals import post_delete, post_save, pre_delete
 from django.dispatch import receiver
 
 from core import models
@@ -159,3 +159,23 @@ def delete_thread_from_index(sender, instance, **kwargs):
             instance.id,
             e,
         )
+
+
+@receiver(pre_delete, sender=models.Message)
+def delete_orphan_draft_attachments(sender, instance, **kwargs):
+    """Remove orphan attachments after a draft message is deleted."""
+
+    # Get all attachments that are not used by any other message
+    if instance.is_draft:
+        attachments = models.Attachment.objects.filter(messages=instance)
+
+        for attachment in attachments:
+            if attachment.messages.count() == 1:
+                attachment.blob.delete()  # this will cascade delete the attachment
+
+        if instance.draft_blob:
+            instance.draft_blob.delete()
+
+    if instance.blob:
+        if instance.blob.messages.count() == 1:
+            instance.blob.delete()
