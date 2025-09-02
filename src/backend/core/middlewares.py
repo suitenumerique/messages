@@ -10,7 +10,8 @@ class PrometheusAuthMiddleware:
         if request.path.endswith("/prometheus/metrics"):
             if (
                 settings.PROMETHEUS_API_KEY
-                and request.headers.get("Authorization") != f"Bearer {settings.PROMETHEUS_API_KEY}"
+                and request.headers.get("Authorization")
+                != f"Bearer {settings.PROMETHEUS_API_KEY}"
             ):
                 return HttpResponse("Unauthorized", status=401)
 

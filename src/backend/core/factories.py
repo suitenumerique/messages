@@ -3,6 +3,8 @@
 Core application factories
 """
 
+import hashlib
+
 from django.conf import settings
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
@@ -238,14 +240,18 @@ class AttachmentFactory(factory.django.DjangoModelFactory):
     mailbox = factory.SubFactory(MailboxFactory)
     name = factory.Sequence(lambda n: f"attachment{n}.txt")
     blob_size = 1500
+    sha256 = factory.LazyAttribute(lambda o: hashlib.sha256(o.raw_content).digest())
+
     @factory.lazy_attribute
     def blob(self):
         raw_content = b"x" * self.blob_size
-        return BlobFactory(mailbox=self.mailbox, size=self.blob_size, raw_content=raw_content)
+        return BlobFactory(
+            mailbox=self.mailbox, size=self.blob_size, raw_content=raw_content
+        )
 
     @classmethod
     def _adjust_kwargs(cls, **kwargs):
         # Remove blob_size from kwargs before passing to model
         kwargs = dict(kwargs)
-        kwargs.pop('blob_size', None)
+        kwargs.pop("blob_size", None)
         return kwargs

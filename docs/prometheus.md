@@ -8,7 +8,7 @@ Custom metrics are collected from the database using Django ORM and are availabl
 
 ### Message Status Counts
 
-This metric is exported with labels correponding to each possible message delivery status.
+This metric is exported with labels corresponding to each possible message delivery status.
 
 **Metric:**
 ```
