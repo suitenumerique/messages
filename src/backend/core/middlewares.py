@@ -8,10 +8,9 @@ class PrometheusAuthMiddleware:
 
     def __call__(self, request):
         if request.path.endswith("/prometheus/metrics"):
-            expected_api_key = f"Bearer {settings.PROMETHEUS_API_KEY}"
             if (
                 settings.PROMETHEUS_API_KEY
-                and request.headers.get("Authorization") != expected_api_key
+                and request.headers.get("Authorization") != f"Bearer {settings.PROMETHEUS_API_KEY}"
             ):
                 return HttpResponse("Unauthorized", status=401)
 
