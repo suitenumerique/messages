@@ -1,6 +1,6 @@
 # Exported Prometheus Metrics
 
-This service exposes the following custom Prometheus metrics via the `/metrics` endpoint, in addition to all metrics exported via [django-prometheus](https://github.com/django-commons/django-prometheus).
+This service exposes the following custom Prometheus metrics via the `api/v1.0/prometheus/metrics` endpoint, in addition to all metrics exported via [django-prometheus](https://github.com/django-commons/django-prometheus).
 
 Custom metrics are collected from the database using Django ORM and are available when the application is running.
 

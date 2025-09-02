@@ -56,7 +56,7 @@ if settings.USE_SWAGGER or settings.DEBUG:
 if settings.ENABLE_PROMETHEUS:
     urlpatterns += [
         path(
-            "",
+            f"api/{settings.API_VERSION}/prometheus/",
             include("django_prometheus.urls"),
             name="prometheus-metrics"
         ),

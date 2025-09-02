@@ -15,7 +15,7 @@ from .enums import MessageDeliveryStatusChoices
 from .models import Attachment, MessageRecipient
 
 
-class CustomDBMetricsCollector:
+class CustomDBPrometheusMetricsCollector:
     """
     Prometheus collector for custom database metrics.
     """
@@ -26,7 +26,6 @@ class CustomDBMetricsCollector:
         with the count of messages for that status. If no messages exist for a status,
         the count is 0.
         """
-        print(MessageDeliveryStatusChoices.SENT.label)
         messages_statuses_count = MessageRecipient.objects.values(
             "delivery_status"
         ).annotate(count=models.Count("id"))

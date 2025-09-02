@@ -609,7 +609,7 @@ class Base(Configuration):
 
     ENABLE_PROMETHEUS = values.BooleanValue(default=True)
     if ENABLE_PROMETHEUS:
-        MIDDLEWARE += ["core.middlewares.BasicAuthMiddleware"]
+        MIDDLEWARE += ["core.middlewares.PrometheusAuthMiddleware"]
         PROMETHEUS_API_KEY = values.Value(
             None, environ_name="PROMETHEUS_API_KEY", environ_prefix=None
         )

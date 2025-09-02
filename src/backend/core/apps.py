@@ -16,9 +16,9 @@ class CoreConfig(AppConfig):
     def ready(self):
         """Register signal handlers and prometheus collector when the app is ready."""
         # pylint: disable=unused-import, import-outside-toplevel
-        from .metrics import CustomDBMetricsCollector
+        from .metrics import CustomDBPrometheusMetricsCollector
 
-        REGISTRY.register(CustomDBMetricsCollector())
+        REGISTRY.register(CustomDBPrometheusMetricsCollector())
 
         # Import signal handlers to register them
         # pylint: disable=unused-import, import-outside-toplevel
