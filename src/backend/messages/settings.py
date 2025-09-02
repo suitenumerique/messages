@@ -607,12 +607,15 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
-    ENABLE_PROMETHEUS = values.BooleanValue(default=True)
-    if ENABLE_PROMETHEUS:
-        MIDDLEWARE += ["core.middlewares.PrometheusAuthMiddleware"]
-        PROMETHEUS_API_KEY = values.Value(
-            None, environ_name="PROMETHEUS_API_KEY", environ_prefix=None
-        )
+    ENABLE_PROMETHEUS = values.BooleanValue(
+        default=True,
+        environ_name="ENABLE_PROMETHEUS",
+        environ_prefix=None
+    )
+
+    PROMETHEUS_API_KEY = values.Value(
+        None, environ_name="PROMETHEUS_API_KEY", environ_prefix=None
+    )
 
     # AI
     AI_API_KEY = values.Value(None, environ_name="AI_API_KEY", environ_prefix=None)
@@ -686,10 +689,10 @@ class Base(Configuration):
     # pylint: disable=invalid-name
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
         if self.ENABLE_PROMETHEUS:
             self.INSTALLED_APPS += ["django_prometheus"]
             self.MIDDLEWARE = [
+                "core.middlewares.PrometheusAuthMiddleware",
                 "django_prometheus.middleware.PrometheusBeforeMiddleware",
                 *self.MIDDLEWARE,
                 "django_prometheus.middleware.PrometheusAfterMiddleware",
