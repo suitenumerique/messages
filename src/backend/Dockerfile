@@ -1,8 +1,8 @@
 # https://hub.docker.com/_/python
-FROM python:3.13.5-slim-bookworm AS base
+FROM python:3.13.7-slim-trixie AS base
 
 # Bump this to force an update of the apt repositories
-ENV MIN_UPDATE_DATE="2025-07-14"
+ENV MIN_UPDATE_DATE="2025-09-02"
 
 RUN apt-get update && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV POETRY_NO_INTERACTION=1
 ENV POETRY_VIRTUALENVS_CREATE=0
 ENV POETRY_VIRTUALENVS_OPTIONS_NO_PIP=1
-ENV POETRY_VERSION=2.1.3
+ENV POETRY_VERSION=2.1.4
 
 RUN python -m pip install poetry==${POETRY_VERSION}
 

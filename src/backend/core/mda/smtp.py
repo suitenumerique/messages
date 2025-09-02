@@ -112,79 +112,134 @@ def send_smtp_mail(
         sender_hostname: Local hostname to use for SMTP EHLO/HELO
 
     Returns:
-        Dict mapping recipient emails to delivery status or error
+        Dict mapping recipient emails to delivery status with retry flag:
+        {
+            "recipient@example.com": {
+                "delivered": bool,
+                "error": str (if not delivered),
+                "retry": bool (whether to retry if not delivered)
+            }
+        }
     """
     statuses = {}
+
+    def error_for_all_recipients(error: str, retry: bool) -> Dict[str, Any]:
+        return {
+            email: {"delivered": False, "error": error, "retry": retry}
+            for email in recipient_emails
+        }
+
+    client = ProxySMTP(
+        host=None,
+        port=None,
+        timeout=timeout,
+        proxy_host=proxy_host,
+        proxy_port=proxy_port,
+        proxy_username=proxy_username,
+        proxy_password=proxy_password,
+        local_hostname=sender_hostname,
+    )
+
+    def _quit():
+        """Close the connection, sending a QUIT command to be polite but ignoring any errors"""
+        try:
+            client.quit()
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.debug("SMTP: QUIT failed %s", e)
+
     try:
-        with ProxySMTP(
-            host=None,
-            port=None,
-            timeout=timeout,
-            proxy_host=proxy_host,
-            proxy_port=proxy_port,
-            proxy_username=proxy_username,
-            proxy_password=proxy_password,
-            local_hostname=sender_hostname,
-        ) as client:
-            (code, msg) = client.connect(smtp_host, smtp_port)
-            if code != 220:
-                client.close()
-                raise smtplib.SMTPConnectError(code, str(msg))
+        (code, msg) = client.connect(smtp_host, smtp_port)
+        if code != 220:
+            _quit()
+            return error_for_all_recipients(f"Connection failed: {code} {msg}", True)
 
-            logger.debug("SMTP: connected to %s:%s (%s)", smtp_host, smtp_port, msg)
+        logger.debug("SMTP: connected to %s:%s (%s)", smtp_host, smtp_port, msg)
 
-            (code, msg) = client.ehlo(sender_hostname)
+        (code, msg) = client.ehlo(sender_hostname)
+        logger.debug("SMTP: EHLO response: %s %s", code, msg)
 
-            logger.debug("SMTP: EHLO response: %s %s", code, msg)
-
+        if not 200 <= code <= 299:
+            (code, msg) = client.helo(sender_hostname)
+            logger.debug("SMTP: HELO response: %s %s", code, msg)
             if not 200 <= code <= 299:
-                (code, msg) = client.helo(sender_hostname)
-                logger.debug("SMTP: HELO response: %s %s", code, msg)
-                if not 200 <= code <= 299:
-                    client.close()
-                    raise smtplib.SMTPHeloError(code, str(msg))
+                _quit()
+                return error_for_all_recipients(f"HELO failed: {code} {msg}", True)
 
-            if client.has_extn("starttls"):
-                (code, msg) = client.starttls()
-                logger.debug("SMTP: STARTTLS response: %s %s", code, msg)
-                if not 200 <= code <= 299:
-                    client.close()
-                    raise smtplib.SMTPNotSupportedError(code, str(msg))
+        if client.has_extn("starttls"):
+            (code, msg) = client.starttls()
+            logger.debug("SMTP: STARTTLS response: %s %s", code, msg)
+            if not 200 <= code <= 299:
+                _quit()
+                return error_for_all_recipients(f"STARTTLS failed: {code} {msg}", True)
 
-                # Restart the SMTP session now that we're in TLS mode
-                (code, msg) = client.ehlo(sender_hostname)
-                logger.debug("SMTP: EHLO2 response: %s %s", code, msg)
-                if not 200 <= code <= 299:
-                    client.close()
-                    raise smtplib.SMTPHeloError(code, str(msg))
+            # Restart the SMTP session now that we're in TLS mode
+            (code, msg) = client.ehlo(sender_hostname)
+            logger.debug("SMTP: EHLO2 response: %s %s", code, msg)
+            if not 200 <= code <= 299:
+                _quit()
+                return error_for_all_recipients(
+                    f"EHLO after STARTTLS failed: {code} {msg}", True
+                )
 
-            if smtp_username and smtp_password:
-                try:
-                    client.login(smtp_username, smtp_password)
-                except smtplib.SMTPAuthenticationError as auth_err:
-                    logger.error("SMTP auth failed for user '%s': %s", smtp_username, auth_err, exc_info=True)
-                    for email in recipient_emails:
-                        statuses[email] = {"error": f"auth_failed: {auth_err}", "delivered": False}
-                    return statuses
+        if smtp_username and smtp_password:
+            try:
+                client.login(smtp_username, smtp_password)
+            except smtplib.SMTPAuthenticationError as auth_err:
+                _quit()
+                logger.error(
+                    "SMTP auth failed for user '%s': %s",
+                    smtp_username,
+                    auth_err,
+                    exc_info=True,
+                )
+                return error_for_all_recipients(f"Auth failed: {auth_err}", True)
 
-            smtp_response = client.sendmail(
-                envelope_from, recipient_emails, message_content
-            )
-            logger.info(
-                "Sent message via SMTP to %s. Response: %s",
-                recipient_emails,
-                smtp_response,
-            )
-            for recipient_email in recipient_emails:
-                if recipient_email not in smtp_response:
-                    statuses[recipient_email] = {"delivered": True}
-                else:
-                    statuses[recipient_email] = {
-                        "error": smtp_response[recipient_email],
-                        "delivered": False,
-                    }
-    except (smtplib.SMTPException, OSError) as e:
-        logger.error("SMTP error sending message: %s", e, exc_info=True)
-        for email in recipient_emails:
-            statuses[email] = {"error": str(e), "delivered": False}
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        return error_for_all_recipients(str(e), True)
+
+    # At this stage, we now have a connected, valid SMTP session.
+    # Start trying to deliver the message.
+
+    try:
+        recipient_errors = client.sendmail(
+            envelope_from, recipient_emails, message_content
+        )
+    except smtplib.SMTPSenderRefused as e:
+        return error_for_all_recipients(
+            f"Sender refused: {e.smtp_code} {e.smtp_error}", 400 <= e.smtp_code <= 499
+        )
+    except smtplib.SMTPDataError as e:
+        return error_for_all_recipients(
+            f"Data error: {e.smtp_code} {e.smtp_error}", 400 <= e.smtp_code <= 499
+        )
+    except smtplib.SMTPRecipientsRefused as e:
+        for recipient, code_msg in e.recipients.items():
+            statuses[recipient] = {
+                "delivered": False,
+                "error": f"Recipient refused: {code_msg[0]} {code_msg[1]}",  # (code, msg)
+                "retry": 400 <= code_msg[0] <= 499,
+            }
+            return statuses
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        return error_for_all_recipients(str(e), True)
+
+    _quit()
+
+    logger.info(
+        "Sent message via SMTP to %s. Response: %s",
+        recipient_emails,
+        recipient_errors,
+    )
+
+    for recipient_email in recipient_emails:
+        if recipient_email not in recipient_errors:
+            statuses[recipient_email] = {"delivered": True}
+        else:
+            code_msg = recipient_errors[recipient_email]
+            statuses[recipient_email] = {
+                "delivered": False,
+                "error": f"Recipient refused: {code_msg[0]} {code_msg[1]}",  # (code, msg)
+                "retry": 400 <= code_msg[0] <= 499,
+            }
+
     return statuses
