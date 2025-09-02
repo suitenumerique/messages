@@ -417,6 +417,11 @@
           "created_at": "Created at",
           "updated_at": "Updated at"
         },
+        "actions": {
+          "manage_access": "Manage access",
+          "new_domain": "New domain"
+        },
+        "creation_success": "The domain <strong>{{domain}}</strong> has been created successfully.",
         "loading": "Loading maildomains...",
         "loading_error": "An error occurred while loading maildomains."
       },
