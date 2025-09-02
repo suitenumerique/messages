@@ -89,7 +89,7 @@ export const HeaderRight = () => {
       <UserMenu
         user={user ? {
           full_name: user.full_name ?? undefined,
-          email: user.email!
+          email: user.email || ""
         } : null}
         logout={logout}
         footerAction={

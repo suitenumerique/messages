@@ -23,7 +23,7 @@
     Roadmap
   </a> - <a href="#getting-started-">
     Getting started
-  </a> - <a href="mailto:sylvain.zimmer@beta.gouv.fr">
+  </a> - <a href="mailto:contact@suite.anct.gouv.fr">
     Reach out
   </a>
 </p>
@@ -218,4 +218,4 @@ If you intend to make pull requests, see [CONTRIBUTING](https://github.com/suite
 
 Messages is currently led by the French [ANCT](https://anct.gouv.fr/) for use in [La Suite territoriale](https://suiteterritoriale.anct.gouv.fr/).
 
-We are welcoming new partners and contributors to join us in this effort! So please [get in touch](mailto:sylvain.zimmer@beta.gouv.fr) if you want to help!
+We are welcoming new partners and contributors to join us in this effort! So please [get in touch](mailto:contact@suite.anct.gouv.fr) if you want to help!

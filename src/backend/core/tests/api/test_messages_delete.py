@@ -160,6 +160,9 @@ class TestMessagesDelete:
     )
     def test_delete_message_success(self, mailbox_role):
         """Test delete message."""
+
+        assert models.Blob.objects.count() == 0
+
         authenticated_user = factories.UserFactory()
         mailbox = factories.MailboxFactory()
         thread = factories.ThreadFactory()
@@ -168,13 +171,19 @@ class TestMessagesDelete:
             thread=thread,
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
-        message = factories.MessageFactory(subject="Test message", thread=thread)
-        message2 = factories.MessageFactory(subject="Test message 2", thread=thread)
+        message = factories.MessageFactory(
+            subject="Test message", thread=thread, raw_mime=b"raw email content"
+        )
+        message2 = factories.MessageFactory(
+            subject="Test message 2", thread=thread, raw_mime=b"raw email content 2"
+        )
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
             role=mailbox_role,
         )
+
+        assert models.Blob.objects.count() == 2
 
         # check thread stats before delete
         thread.refresh_from_db()
@@ -191,6 +200,8 @@ class TestMessagesDelete:
         # check thread stats was updated after message was deleted
         thread.refresh_from_db()
         assert thread.has_messages is True
+
+        assert models.Blob.objects.count() == 1
 
     @pytest.mark.parametrize(
         "mailbox_role",

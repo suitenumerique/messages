@@ -1091,12 +1091,12 @@ class Message(BaseModel):
         related_name="messages",
     )
 
-    draft_blob = models.ForeignKey(
+    draft_blob = models.OneToOneField(
         "Blob",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="drafts",
+        related_name="draft",
     )
 
     # Internal cache for parsed data

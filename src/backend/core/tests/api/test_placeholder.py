@@ -123,7 +123,6 @@ class TestPlaceholderView:
         assert data["is_elected"] == "Est élu"
         assert data["full_name"] == "Nom complet"
 
-
         # Test that fallback language handling works correctly.
         response = api_client.get(url, HTTP_ACCEPT_LANGUAGE="de-de")
         assert response.status_code == status.HTTP_200_OK

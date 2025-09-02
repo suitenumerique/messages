@@ -1,5 +1,5 @@
 # https://hub.docker.com/_/python
-FROM python:3.13.5-slim-bookworm AS base
+FROM python:3.13.7-slim-trixie AS base
 
 # Bump this to force an update of the apt repositories
 ENV MIN_UPDATE_DATE="2025-07-14"

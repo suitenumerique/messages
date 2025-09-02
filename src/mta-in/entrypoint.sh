@@ -18,6 +18,23 @@ if [ "${ENABLE_PROXY_PROTOCOL:-false}" = "haproxy" ]; then
   echo "postscreen_upstream_proxy_protocol = haproxy" >> /etc/postfix/main.cf
 fi
 
+if [ ! -z "${STARTTLS_CHAIN_FILES}" ]; then
+  cat >> /etc/postfix/main.cf <<_EOF
+# STARTTLS
+tlsproxy_tls_security_level = may
+tlsproxy_tls_chain_files = ${STARTTLS_CHAIN_FILES}
+smtpd_tls_security_level = may
+smtpd_tls_chain_files = ${STARTTLS_CHAIN_FILES}
+smtpd_tls_session_cache_database = btree:\${data_directory}/smtpd_scache
+
+# Post-quantum TLS (opportunistic)
+tls_eecdh_auto_curves =
+tls_ffdhe_auto_groups =
+tls_config_file = \${config_directory}/openssl.cnf
+tls_config_name = postfix
+_EOF
+fi
+
 echo "Verifying Postfix configuration..."
 #postconf -M  # Print active services
 #postconf -m  # Print supported map types
@@ -82,14 +99,14 @@ while true; do
         kill $POSTFIX_PID 2>/dev/null || true
         exit 1
     fi
-    
+
     # Check if Postfix process is still running
     if ! kill -0 $POSTFIX_PID 2>/dev/null; then
         echo "ERROR: Postfix process died, exiting container"
         kill $MILTER_PID 2>/dev/null || true
         exit 1
     fi
-    
+
     sleep 5
 done
 
