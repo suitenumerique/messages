@@ -14,13 +14,13 @@ import { JSONSchema } from 'zod/v4/core';
 import { ItemJsonSchema } from '@/features/forms/components/zod-json-schema-serializer';
 import { RhfJsonSchemaField } from '@/features/forms/components/react-hook-form/rhf-json-schema-field';
 
-type ModalCreateAddressProps = {
+type ModalCreateDomainProps = {
   isOpen: boolean;
   onClose: () => void;
   onCreate: (createdDomain: MailDomainAdminWrite) => void;
 }
 
-export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddressProps) => {
+export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateDomainProps) => {
 
   const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
@@ -60,9 +60,9 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
     onClose();
   };
 
-  const getFieldError = (fieldName: keyof FieldErrors<CreateDomainFormData>) => {
+  const getFieldError = (fieldName: keyof CreateDomainFormData) => {
       const errors = form.formState.errors as FieldErrors<CreateDomainFormData>;
-      const error = errors?.[fieldName];
+      const error = errors?.[fieldName as keyof typeof errors];
       return error?.message ? t(error.message as string) : undefined;
   }
 
@@ -117,7 +117,6 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
                 <div className="form-field-row" key={`json-schema-field-${name}`}>
                   <RhfJsonSchemaField
                     schema={schema}
-                    state={getFieldError(name as keyof CreateDomainFormData) ? "error" : "default"}
                     text={getFieldError(name as keyof CreateDomainFormData)}
                     name={name}
                     fullWidth

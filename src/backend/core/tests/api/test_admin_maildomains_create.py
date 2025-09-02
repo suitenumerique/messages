@@ -70,6 +70,7 @@ class TestAdminMailDomainsCreate:
         assert not models.MailDomain.objects.filter(name="unauthorized-user-domain.com").exists()
 
     def test_create_mail_domain_invalid_name(self, api_client, domain_superuser_user):
+        """Test creating a mail domain with an invalid name."""
         api_client.force_authenticate(user=domain_superuser_user)
         # Uppercase and trailing dash should be rejected by model validator
         data = {"name": "Bad-Domain-.COM"}
@@ -78,6 +79,7 @@ class TestAdminMailDomainsCreate:
         assert not models.MailDomain.objects.filter(name__iexact="bad-domain-.com").exists()
 
     def test_create_mail_domain_duplicate_name(self, api_client, domain_superuser_user):
+        """Test creating a mail domain with a duplicate name."""
         api_client.force_authenticate(user=domain_superuser_user)
         models.MailDomain.objects.create(name="dup.com")
         response = api_client.post(self.CREATE_DOMAIN_URL, {"name": "dup.com"}, format="json")

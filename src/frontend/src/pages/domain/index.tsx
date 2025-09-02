@@ -111,12 +111,13 @@ export default function AdminPage() {
   const handleCreateDomain = (domain: MailDomainAdminWrite) => {
     queryClient.invalidateQueries({
       queryKey: getMaildomainsListQueryOptions().queryKey,
+      exact: false,
     });
     addToast(
       <ToasterItem>
         <Trans i18nKey="admin_maildomains_list.creation_success" values={{ domain: domain.name }} components={{ strong: <strong /> }} />
       </ToasterItem>, {
-        toastId: "create-domain-success",
+        toastId: `create-domain-success:${domain.id}`,
       }
     )
   };
