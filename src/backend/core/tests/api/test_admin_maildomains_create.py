@@ -43,6 +43,11 @@ class TestAdminMailDomainsCreate:
         response = api_client.post(url, data, format="json")
         assert response.status_code == status.HTTP_201_CREATED
         assert models.MailDomain.objects.filter(name="super-user-domain.com").exists()
+        payload = response.json()
+        assert payload["name"] == "super-user-domain.com"
+        assert "id" in payload
+        assert payload["oidc_autojoin"] is False
+        assert payload["identity_sync"] is False
 
     def test_create_mail_domain_as_admin(self, api_client, domain_admin_user):
         """Test creating a mail domain as an admin user."""
@@ -63,3 +68,17 @@ class TestAdminMailDomainsCreate:
         response = api_client.post(url, data, format="json")
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert not models.MailDomain.objects.filter(name="unauthorized-user-domain.com").exists()
+
+    def test_create_mail_domain_invalid_name(self, api_client, domain_superuser_user):
+        api_client.force_authenticate(user=domain_superuser_user)
+        # Uppercase and trailing dash should be rejected by model validator
+        data = {"name": "Bad-Domain-.COM"}
+        response = api_client.post(self.CREATE_DOMAIN_URL, data, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert not models.MailDomain.objects.filter(name__iexact="bad-domain-.com").exists()
+
+    def test_create_mail_domain_duplicate_name(self, api_client, domain_superuser_user):
+        api_client.force_authenticate(user=domain_superuser_user)
+        models.MailDomain.objects.create(name="dup.com")
+        response = api_client.post(self.CREATE_DOMAIN_URL, {"name": "dup.com"}, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
