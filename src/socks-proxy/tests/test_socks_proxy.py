@@ -87,4 +87,4 @@ def test_socks_proxy_connection_timeout(socks_client):
 def test_socks_proxy_error_handling(socks_client):
     """Test SOCKS proxy error handling"""
     
-    assert not socks_client.test_connection("invalid.ip.address", 80)
+    assert not socks_client.test_connection("nonexistent.invalid", 80)

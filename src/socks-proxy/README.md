@@ -10,10 +10,10 @@ This service provides a SOCKS5 proxy server that can be used for routing SMTP tr
 
 ### Components
 
-- **Dante SOCKS Server** - Custom-built from source (v1.4.4)
-- **User Authentication** - Username/password based authentication
-- **Docker Containerization** - Multi-stage build for optimized runtime
-- **Comprehensive Testing** - Full test suite with mock SMTP server
+- **Dante SOCKS Server** — Built from source (v1.4.4)
+- **Authentication** — Username/password (RFC 1929) over SOCKS5 (RFC 1928)
+- **Dockerized** — Multi-stage build for a minimal runtime image
+- **Tests** — Full suite with a mock SMTP server
 
 ## Configuration
 

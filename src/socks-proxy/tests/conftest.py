@@ -163,7 +163,7 @@ class SOCKSClient:
 
     def test_connection(self, target_host, target_port, timeout=5):
         try:
-            create_proxied_socket(
+            sock = create_proxied_socket(
                 self.proxy_host,
                 self.proxy_port,
                 target_host,
@@ -172,6 +172,7 @@ class SOCKSClient:
                 self.password,
                 timeout
             )
+            sock.close()
             return True
         except Exception:
             return False

@@ -26,7 +26,7 @@ def create_proxied_socket(
         socks.PROXY_TYPE_SOCKS5,
         proxy_host,
         proxy_port,
-        rdns=False,
+        rdns=False,  # we are fine with local hostname resolution
         username=username,
         password=password,
     )
@@ -159,7 +159,13 @@ def send_smtp_mail(
                     raise smtplib.SMTPHeloError(code, str(msg))
 
             if smtp_username and smtp_password:
-                client.login(smtp_username, smtp_password)
+                try:
+                    client.login(smtp_username, smtp_password)
+                except smtplib.SMTPAuthenticationError as auth_err:
+                    logger.error("SMTP auth failed for user '%s': %s", smtp_username, auth_err, exc_info=True)
+                    for email in recipient_emails:
+                        statuses[email] = {"error": f"auth_failed: {auth_err}", "delivered": False}
+                    return statuses
 
             smtp_response = client.sendmail(
                 envelope_from, recipient_emails, message_content

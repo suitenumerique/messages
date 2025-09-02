@@ -6,8 +6,6 @@ if [ -z "${PROXY_USERS:-}" ]; then
   exit 1
 fi
 
-PROXY_EXTERNAL=${PROXY_EXTERNAL:-"eth0"}
-
 # Create unix users for each entry of PROXY_USERS
 IFS=',' read -ra USERS <<< "$PROXY_USERS"
 for entry in "${USERS[@]}"; do
@@ -26,8 +24,8 @@ logoutput: stdout
 errorlog: stderr
 debug: ${PROXY_DEBUG_LEVEL:-0}
 
-internal: ${PROXY_INTERNAL:-"0.0.0.0"} port = ${PROXY_INTERNAL_PORT:-"1080"}
-external: ${PROXY_EXTERNAL}
+internal: ${PROXY_INTERNAL:-0.0.0.0} port = ${PROXY_INTERNAL_PORT:-1080}
+external: ${PROXY_EXTERNAL:-eth0}
 
 # Use password-file method
 socksmethod: username
@@ -35,10 +33,7 @@ user.privileged: root
 user.notprivileged: nobody
 "
 
-# Replace the placeholder with multiple client pass and pass sections for each IP range
-PROXY_SOURCE_IP_WHITELIST=${PROXY_SOURCE_IP_WHITELIST:-"0.0.0.0/0"}
-
-IFS=',' read -ra IP_RANGES <<< "$PROXY_SOURCE_IP_WHITELIST"
+IFS=',' read -ra IP_RANGES <<< "${PROXY_SOURCE_IP_WHITELIST:-0.0.0.0/0}"
 for ip_range in "${IP_RANGES[@]}"; do
     # Trim whitespace
     ip_range=$(echo "$ip_range" | xargs)

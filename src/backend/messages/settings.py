@@ -154,7 +154,7 @@ class Base(Configuration):
 
     # MDA settings
     MDA_API_SECRET = values.Value(
-        "default-mda-api-secret", environ_name="MDA_API_SECRET", environ_prefix=None
+        "my-shared-secret-mda", environ_name="MDA_API_SECRET", environ_prefix=None
     )
 
     # MTA settings
@@ -167,8 +167,9 @@ class Base(Configuration):
     MTA_OUT_PROXIES = values.ListValue(
         [], environ_name="MTA_OUT_PROXIES", environ_prefix=None
     )
-    # To be overridden in tests
-    MTA_OUT_DIRECT_PORT = 25
+    MTA_OUT_DIRECT_PORT = values.PositiveIntegerValue(
+        25, environ_name="MTA_OUT_DIRECT_PORT", environ_prefix=None
+    )
 
     # SMTP settings for external SMTP servers, if MTA_OUT_MODE="relay"
     MTA_OUT_SMTP_HOST = values.Value(
