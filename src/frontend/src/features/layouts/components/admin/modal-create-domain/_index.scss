@@ -1,13 +1,5 @@
 .modal-create-domain {
-  display: flex;
-  flex-direction: column;
-  gap: var(--c--theme--spacings--base);
-  padding: var(--c--theme--spacings--base);
-
   .form-field-row {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
     margin-bottom: var(--c--theme--spacings--s);
   }
 }
