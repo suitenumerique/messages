@@ -382,7 +382,8 @@
             "name": "Domain name..."
           },
           "errors": {
-            "name_required": "Name is required."
+            "name_required": "Name is required.",
+            "name_invalid": "Name must be a valid domain name."
           }
         },
         "api_errors": {
@@ -859,7 +860,8 @@
             "name": "Nom du domaine..."
           },
           "errors": {
-            "name_required": "Le nom est requis."
+            "name_required": "Le nom est requis.",
+            "name_invalid": "Le nom doit être un nom de domaine valide."
           }
         },
         "api_errors": {

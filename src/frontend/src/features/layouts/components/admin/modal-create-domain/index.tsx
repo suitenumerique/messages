@@ -30,7 +30,9 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
   const { mutateAsync: createDomain } = useMaildomainsCreate();
 
   const createDomainSchema = z.object({
-      name: z.string().min(1, { error: "create_domain_modal.form.errors.name_required" }),
+      name: z.string()
+      .min(1, { error: "create_domain_modal.form.errors.name_required" })
+      .regex(/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/, { message: "create_domain_modal.form.errors.name_invalid" }),
       oidc_autojoin: z.boolean(),
       identity_sync: z.boolean(),
       ...convertJsonSchemaToZod(SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN as JSONSchema.Schema)
@@ -115,8 +117,8 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateAddr
                 <div className="form-field-row" key={`json-schema-field-${name}`}>
                   <RhfJsonSchemaField
                     schema={schema}
-                    state={getFieldError(name as keyof CreateDomainFormData) ? "error" : "default"} // TODO: handle errors
-                    text={getFieldError(name as keyof CreateDomainFormData)} // TODO: handle errors
+                    state={getFieldError(name as keyof CreateDomainFormData) ? "error" : "default"}
+                    text={getFieldError(name as keyof CreateDomainFormData)}
                     name={name}
                     fullWidth
                   />
