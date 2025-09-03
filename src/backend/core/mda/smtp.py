@@ -2,7 +2,7 @@
 
 import logging
 import smtplib
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import socks
 
@@ -82,7 +82,7 @@ def send_smtp_mail(
     smtp_host: str,
     smtp_port: int,
     envelope_from: str,
-    recipient_emails: List[str],
+    recipient_emails: set[str],
     message_content: bytes,
     smtp_username: Optional[str] = None,
     smtp_password: Optional[str] = None,
@@ -100,7 +100,7 @@ def send_smtp_mail(
         smtp_host: SMTP server hostname
         smtp_port: SMTP server port
         envelope_from: Sender email address
-        recipient_emails: List of recipient email addresses
+        recipient_emails: Set of recipient email addresses
         message_content: Raw email message (bytes)
         smtp_username: SMTP username (optional)
         smtp_password: SMTP password (optional)
@@ -192,9 +192,10 @@ def send_smtp_mail(
                     auth_err,
                     exc_info=True,
                 )
-                return error_for_all_recipients(f"Auth failed: {auth_err}", True)
+                return error_for_all_recipients("SMTP auth failed", True)
 
     except Exception as e:  # pylint: disable=broad-exception-caught
+        _quit()
         return error_for_all_recipients(str(e), True)
 
     # At this stage, we now have a connected, valid SMTP session.
@@ -213,14 +214,16 @@ def send_smtp_mail(
             f"Data error: {e.smtp_code} {e.smtp_error}", 400 <= e.smtp_code <= 499
         )
     except smtplib.SMTPRecipientsRefused as e:
+        _quit()
         for recipient, code_msg in e.recipients.items():
             statuses[recipient] = {
                 "delivered": False,
                 "error": f"Recipient refused: {code_msg[0]} {code_msg[1]}",  # (code, msg)
                 "retry": 400 <= code_msg[0] <= 499,
             }
-            return statuses
+        return statuses
     except Exception as e:  # pylint: disable=broad-exception-caught
+        _quit()
         return error_for_all_recipients(str(e), True)
 
     _quit()

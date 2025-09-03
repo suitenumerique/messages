@@ -361,11 +361,14 @@ class TestApiDraftAndSendMessage:
         """Test sending a draft message when the delivery service fails."""
 
         mock_send_outbound_message.side_effect = lambda recipient_emails, message: {
-            recipient_email: {
+            recipient_email: {"delivered": False, "error": "Custom error message"}
+            if recipient_email == "fail@external.com"
+            else {
                 "delivered": False,
                 "error": "Custom error message",
+                "retry": True,
             }
-            if recipient_email == "fail@external.com"
+            if recipient_email == "retry@external.com"
             else {
                 "delivered": True,
                 "error": None,
@@ -388,7 +391,11 @@ class TestApiDraftAndSendMessage:
                 "senderId": mailbox.id,
                 "subject": subject,
                 "draftBody": "test content",
-                "to": ["fail@external.com", "success@external.com"],
+                "to": [
+                    "fail@external.com",
+                    "retry@external.com",
+                    "success@external.com",
+                ],
             },
             format="json",
         )
@@ -415,10 +422,17 @@ class TestApiDraftAndSendMessage:
 
         fail_recipient = db_message.recipients.get(contact__email="fail@external.com")
         assert (
-            fail_recipient.delivery_status == enums.MessageDeliveryStatusChoices.RETRY
+            fail_recipient.delivery_status == enums.MessageDeliveryStatusChoices.FAILED
         )
-        assert fail_recipient.retry_at is not None
-        assert fail_recipient.retry_count == 1
+        assert fail_recipient.retry_at is None
+        assert fail_recipient.retry_count == 0
+
+        retry_recipient = db_message.recipients.get(contact__email="retry@external.com")
+        assert (
+            fail_recipient.delivery_status == enums.MessageDeliveryStatusChoices.FAILED
+        )
+        assert retry_recipient.retry_at is not None
+        assert retry_recipient.retry_count == 1
 
         success_recipient = db_message.recipients.get(
             contact__email="success@external.com"

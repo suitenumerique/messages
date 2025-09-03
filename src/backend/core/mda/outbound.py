@@ -10,7 +10,7 @@ from django.utils import timezone
 from core import models
 from core.enums import MessageDeliveryStatusChoices
 from core.mda.inbound import check_local_recipient, deliver_inbound_message
-from core.mda.outbound_mta import send_message_via_mx
+from core.mda.outbound_direct import send_message_via_mx
 from core.mda.rfc5322 import (
     compose_email,
     create_forward_message,
@@ -221,6 +221,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
         delivered: bool,
         internal: bool,
         error: Optional[str] = None,
+        retry: Optional[bool] = False,
     ) -> None:
         if delivered:
             # TODO also update message.updated_at?
@@ -234,7 +235,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
             envelope_to[recipient_email].save(
                 update_fields=["delivered_at", "delivery_message", "delivery_status"]
             )
-        elif envelope_to[recipient_email].retry_count < len(RETRY_INTERVALS):
+        elif retry and envelope_to[recipient_email].retry_count < len(RETRY_INTERVALS):
             envelope_to[recipient_email].retry_at = (
                 timezone.now()
                 + RETRY_INTERVALS[envelope_to[recipient_email].retry_count]
@@ -261,7 +262,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                 update_fields=["delivery_status", "delivery_message"]
             )
 
-    external_recipients = []
+    external_recipients = set()
     for recipient_email in envelope_to:
         if (
             check_local_recipient(recipient_email, create_if_missing=True)
@@ -276,21 +277,25 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                 logger.error(
                     "Failed to deliver internal message to %s: %s", recipient_email, e
                 )
-                _mark_delivered(recipient_email, False, True, str(e))
+                _mark_delivered(recipient_email, False, True, str(e), False)
 
         else:
-            external_recipients.append(recipient_email)
+            external_recipients.add(recipient_email)
 
-    if len(external_recipients) > 0:
+    if external_recipients:
         statuses = send_outbound_message(external_recipients, message)
         for recipient_email, status in statuses.items():
             _mark_delivered(
-                recipient_email, status["delivered"], False, status.get("error")
+                recipient_email,
+                status["delivered"],
+                False,
+                status.get("error"),
+                status.get("retry", False),
             )
 
 
 def send_outbound_message(
-    recipient_emails: list[str], message: models.Message
+    recipient_emails: set[str], message: models.Message
 ) -> dict[str, Any]:
     """Send an existing Message object via MTA out (SMTP) or direct MX if not configured."""
 
@@ -309,7 +314,19 @@ def send_outbound_message(
 
     if mta_out_mode == "direct":
         # Use direct MX delivery
-        return send_message_via_mx(message)
+        envelope_from = message.sender.email
+
+        # Get all recipients that need delivery
+        envelope_to = {
+            recipient.contact.email: recipient
+            for recipient in message.recipients.select_related("contact").all()
+            if recipient.delivery_status in {None, MessageDeliveryStatusChoices.RETRY}
+            and (recipient.retry_at is None or recipient.retry_at <= timezone.now())
+        }
+
+        mime_data = message.blob.get_content()
+
+        return send_message_via_mx(envelope_from, envelope_to, mime_data)
 
     if mta_out_mode == "relay":
         mta_out_smtp_host = (

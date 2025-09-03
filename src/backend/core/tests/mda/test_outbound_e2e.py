@@ -78,7 +78,7 @@ class TestE2EMessageOutboundFlow:
     """Test the outbound flow: API -> MDA -> Mailcatcher -> Verification."""
 
     @override_settings(MTA_OUT_MODE="direct", MTA_OUT_DIRECT_PORT=1025)
-    @patch("core.mda.outbound_mta.dns.resolver.resolve")
+    @patch("core.mda.outbound_direct.dns.resolver.resolve")
     def test_draft_send_receive_verify_direct(
         self, mock_resolve, mailbox, sender_contact, authenticated_user
     ):

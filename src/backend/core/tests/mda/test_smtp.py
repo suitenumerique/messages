@@ -192,7 +192,7 @@ class TestSMTPClient:
 
     def test_successful_delivery(self, mock_smtp_server):
         """Test successful delivery to all recipients."""
-        recipients = ["user1@example.com", "user2@example.com"]
+        recipients = {"user1@example.com", "user2@example.com"}
         message = b"Subject: Test\n\nHello World!"
 
         result = send_smtp_mail(
@@ -227,12 +227,12 @@ class TestSMTPClient:
             # Give the server a moment to start
             time.sleep(0.1)
 
-            recipients = [
+            recipients = {
                 "user1@example.com",
                 "user2@example.com",
                 "user3@example.com",
                 "USer1@example.com",
-            ]
+            }
             message = b"Subject: Test\n\nHello World!"
 
             result = send_smtp_mail(
@@ -270,7 +270,7 @@ class TestSMTPClient:
 
     def test_connection_refused(self):
         """Test handling of connection refused error."""
-        recipients = ["user1@example.com"]
+        recipients = {"user1@example.com"}
         message = b"Subject: Test\n\nHello World!"
 
         result = send_smtp_mail(
@@ -289,7 +289,7 @@ class TestSMTPClient:
 
     def test_proxy_parameters(self):
         """Test that proxy parameters are passed correctly."""
-        recipients = ["user1@example.com"]
+        recipients = {"user1@example.com"}
         message = b"Subject: Test\n\nHello World!"
 
         # Test with proxy parameters
@@ -322,7 +322,7 @@ class TestSMTPClient:
             # Give the server a moment to start
             time.sleep(0.1)
 
-            recipients = ["user1@example.com"]
+            recipients = {"user1@example.com"}
             message = b"Subject: Test\n\nHello World!"
 
             result = send_smtp_mail(
@@ -356,7 +356,7 @@ class TestSMTPClient:
             # Give the server a moment to start
             time.sleep(0.1)
 
-            recipients = ["user1@example.com"]
+            recipients = {"user1@example.com"}
             message = b"Subject: Test\n\nHello World!"
 
             result = send_smtp_mail(
