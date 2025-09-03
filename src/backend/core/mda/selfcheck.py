@@ -42,7 +42,7 @@ def create_and_send_draft(
         to_emails: List of recipient email addresses
         subject: Subject of the message
         text_body: Plain text body of the message
-        html_body: HTML body of the message (optional)
+        html_body: HTML body of the message
         cc_emails: List of CC recipient emails (optional)
         bcc_emails: List of BCC recipient emails (optional)
         parent_id: Optional message ID to reply to
