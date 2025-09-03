@@ -55,33 +55,36 @@ class MixedResponseSMTPHandler:
                     if not data:
                         break
 
-                    command = data.decode("utf-8").strip().upper()
+                    raw = data.decode("utf-8", errors="ignore").strip()
+                    verb, _, rest = raw.partition(" ")
+                    command = verb.upper()
 
-                    if command.startswith("EHLO") or command.startswith("HELO"):
+                    if command in {"EHLO", "HELO"}:
                         client_socket.send(b"250 OK\r\n")
-                    elif command.startswith("MAIL FROM:"):
+                    elif command == "MAIL" and rest.upper().startswith("FROM:"):
+                        rest = rest[5:].strip()
                         if self.mail_from_response:
                             code, message = self.mail_from_response
                             response = f"{code} {message}\r\n".encode("utf-8")
                             client_socket.send(response)
                         else:
                             client_socket.send(b"250 OK\r\n")
-                    elif command.startswith("RCPT TO:"):
+                    elif command == "RCPT" and rest.upper().startswith("TO:"):
+                        rest = rest[3:].strip()
                         # Extract email from RCPT TO command
                         email = (
-                            command.split("<")[1].split(">")[0]
-                            if "<" in command
-                            else command.split(":")[1].strip()
+                            rest.split("<")[1].split(">")[0]
+                            if "<" in rest
+                            else rest.split(":")[1].strip()
                         )
-                        email_lower = (
-                            email.lower()
-                        )  # Convert to lowercase for comparison
-                        logger.info("RCPT TO: %s (checking %s)", email, email_lower)
+                        logger.info("RCPT TO: %s", email)
 
-                        if email_lower in self.recipient_responses:
-                            code, message = self.recipient_responses[email_lower]
+                        if email in self.recipient_responses:
+                            code, message = self.recipient_responses[email]
                             response = f"{code} {message}\r\n".encode("utf-8")
-                            logger.info("Sending error response: %s %s", code, message)
+                            logger.info(
+                                "Sending specific response: %s %s", code, message
+                            )
                             client_socket.send(response)
                         else:
                             logger.info("Sending success response for %s", email)
@@ -112,7 +115,7 @@ class MixedResponseSMTPHandler:
                 client_socket.close()
 
         # Start server thread
-        def server_thread():
+        def _server_thread():
             while self.running:
                 try:
                     client_socket, _ = self.server_socket.accept()
@@ -123,7 +126,7 @@ class MixedResponseSMTPHandler:
                     logger.debug("SMTP handler error: %s", e)
                     break
 
-        self.server_thread = threading.Thread(target=server_thread)
+        self.server_thread = threading.Thread(target=_server_thread)
         self.server_thread.daemon = True
         self.server_thread.start()
 
@@ -132,6 +135,8 @@ class MixedResponseSMTPHandler:
         self.running = False
         if self.server_socket:
             self.server_socket.close()
+        if self.server_thread and self.server_thread.is_alive():
+            self.server_thread.join(timeout=1.0)
 
 
 class MockSMTPServer:
@@ -213,13 +218,21 @@ class TestSMTPClient:
         smtp_handler.configure_recipient_response(
             "user3@example.com", 550, "Permanent failure"
         )
+        smtp_handler.configure_recipient_response(
+            "USer1@example.com", 521, "Permanent failure"
+        )
         smtp_handler.start()
 
         try:
             # Give the server a moment to start
             time.sleep(0.1)
 
-            recipients = ["user1@example.com", "user2@example.com", "user3@example.com"]
+            recipients = [
+                "user1@example.com",
+                "user2@example.com",
+                "user3@example.com",
+                "USer1@example.com",
+            ]
             message = b"Subject: Test\n\nHello World!"
 
             result = send_smtp_mail(
@@ -232,7 +245,7 @@ class TestSMTPClient:
             )
 
             # Verify the results
-            assert len(result) == 3
+            assert len(result) == 4
 
             # user1 should succeed (not in the recipients_refused dict)
             assert result["user1@example.com"]["delivered"] is True
@@ -246,6 +259,11 @@ class TestSMTPClient:
             assert result["user3@example.com"]["delivered"] is False
             assert "Permanent failure" in result["user3@example.com"]["error"]
             assert result["user3@example.com"]["retry"] is False
+
+            # USer1 (uppercase) should fail with permanent error (retry=False)
+            assert result["USer1@example.com"]["delivered"] is False
+            assert "Permanent failure" in result["USer1@example.com"]["error"]
+            assert result["USer1@example.com"]["retry"] is False
 
         finally:
             smtp_handler.stop()
