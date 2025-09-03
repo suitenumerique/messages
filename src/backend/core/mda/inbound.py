@@ -478,7 +478,7 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
         )  # Validate email format
 
         sender_contact, created = models.Contact.objects.get_or_create(
-            email__iexact=sender_email,
+            email=sender_email,
             mailbox=mailbox,  # Associate contact with the recipient mailbox
             defaults={
                 "name": sender_name or sender_email.split("@")[0],
@@ -501,7 +501,7 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
         sender_email = f"invalid-sender@{mailbox.domain.name}"
         sender_name = "Invalid Sender Address"
         sender_contact, _ = models.Contact.objects.get_or_create(
-            email__iexact=sender_email,
+            email=sender_email,
             mailbox=mailbox,
             defaults={"name": sender_name, "email": sender_email},
         )
@@ -604,7 +604,7 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
                     exclude=["mailbox", "name"]
                 )  # Validate
                 recipient_contact, created = models.Contact.objects.get_or_create(
-                    email__iexact=email,
+                    email=email,
                     mailbox=mailbox,  # Associate contact with the recipient mailbox
                     defaults={"name": name or email.split("@")[0], "email": email},
                 )

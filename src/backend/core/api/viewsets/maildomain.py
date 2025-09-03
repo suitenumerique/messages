@@ -215,9 +215,7 @@ class AdminMailDomainMailboxViewSet(
             )
 
         # --- Uniqueness Validation ---
-        if models.Mailbox.objects.filter(
-            domain=domain, local_part__iexact=local_part
-        ).exists():
+        if models.Mailbox.objects.filter(domain=domain, local_part=local_part).exists():
             return Response(
                 {
                     "local_part": [

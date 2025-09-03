@@ -57,7 +57,7 @@ def fixture_sender_contact(mailbox, authenticated_user):
     mailbox_email = f"{mailbox.local_part}@{mailbox.domain.name}"
     contact, _ = models.Contact.objects.get_or_create(
         mailbox=mailbox,
-        email__iexact=mailbox_email,
+        email=mailbox_email,
         defaults={
             "email": mailbox_email,
             "name": authenticated_user.full_name

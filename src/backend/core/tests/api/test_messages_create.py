@@ -574,6 +574,72 @@ class TestApiDraftAndSendMessage:
 
         assert update_response.status_code == status.HTTP_403_FORBIDDEN
 
+    def test_draft_message_with_empty_body(
+        self, mailbox, authenticated_user, draft_detail_url
+    ):
+        """Test create draft message with empty body."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        draft_response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "test",
+                "draftBody": "",
+                "to": ["pierre@external.com"],
+            },
+            format="json",
+        )
+
+        assert draft_response.status_code == status.HTTP_201_CREATED
+        draft_message_id = draft_response.data["id"]
+
+        # Verify the message was created with empty subject
+        draft_message = models.Message.objects.get(id=draft_message_id)
+        assert draft_message.subject == "test"
+        assert draft_message.is_draft is True
+        assert draft_message.draft_blob is None
+
+        # We can then add a body
+        update_response = client.put(
+            draft_detail_url(draft_message.id),
+            {
+                "senderId": mailbox.id,
+                "draftBody": "Test content",
+            },
+            format="json",
+        )
+        assert update_response.status_code == status.HTTP_200_OK
+
+        draft_message = models.Message.objects.get(id=draft_message_id)
+        assert draft_message.subject == "test"
+        assert draft_message.is_draft is True
+        assert draft_message.draft_blob is not None
+        assert draft_message.draft_blob.get_content() == b"Test content"
+
+        # ... and remove it
+        update_response = client.put(
+            draft_detail_url(draft_message.id),
+            {
+                "senderId": mailbox.id,
+                "draftBody": "",
+            },
+            format="json",
+        )
+        assert update_response.status_code == status.HTTP_200_OK
+
+        draft_message = models.Message.objects.get(id=draft_message_id)
+        assert draft_message.subject == "test"
+        assert draft_message.is_draft is True
+        assert draft_message.draft_blob is None
+
     def test_draft_message_with_empty_subject(self, mailbox, authenticated_user):
         """Test create draft message with empty subject."""
         factories.MailboxAccessFactory(
@@ -589,7 +655,7 @@ class TestApiDraftAndSendMessage:
             reverse("draft-message"),
             {
                 "senderId": mailbox.id,
-                "subject": "",  # Empty subject should be allowed
+                "subject": "",
                 "draftBody": "Test content",
                 "to": ["pierre@external.com"],
             },

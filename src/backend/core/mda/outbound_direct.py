@@ -41,7 +41,7 @@ def resolve_mx_records(domain: str) -> List[Tuple[int, str]]:
         logger.warning("Domain %s has no nameservers", domain)
     except (dns.resolver.NXDOMAIN, dns.resolver.YXDOMAIN):
         logger.warning("Domain %s does not exist or is too long", domain)
-    except dns.resolver.LifetimeError:
+    except dns.resolver.LifetimeTimeout:
         logger.warning("DNS resolution timeout for %s", domain)
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error resolving MX for %s: %s", domain, e)

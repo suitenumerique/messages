@@ -2,8 +2,6 @@
 
 import os
 
-from django.conf import settings
-
 from celery import Celery
 from configurations.importer import install
 
@@ -12,6 +10,9 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "messages.settings")
 os.environ.setdefault("DJANGO_CONFIGURATION", "Development")
 
 install(check_options=True)
+
+# Must be imported after install()
+from django.conf import settings  # pylint: disable=wrong-import-position
 
 app = Celery("messages")
 

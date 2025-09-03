@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def create_draft(
     mailbox: models.Mailbox,
-    subject: str,
+    subject: str = "",
     draft_body: str = "",
     parent_id: Optional[str] = None,
     to_emails: Optional[list] = None,
@@ -47,7 +47,7 @@ def create_draft(
     # Get or create sender contact
     mailbox_email = f"{mailbox.local_part}@{mailbox.domain.name}"
     sender_contact, _ = models.Contact.objects.get_or_create(
-        email__iexact=mailbox_email,
+        email=mailbox_email,
         mailbox=mailbox,
         defaults={
             "email": mailbox_email,
@@ -94,9 +94,11 @@ def create_draft(
         is_draft=True,
         is_sender=True,
         draft_blob=mailbox.create_blob(
-            content=(draft_body or "").encode("utf-8"),
+            content=draft_body.encode("utf-8"),
             content_type="application/json",
-        ),
+        )
+        if draft_body
+        else None,
     )
     message.save()
 
@@ -176,7 +178,7 @@ def update_draft(
             emails = update_data.get(recipient_type) or []
             for email in emails:
                 contact, _ = models.Contact.objects.get_or_create(
-                    email__iexact=email,
+                    email=email,
                     mailbox=mailbox,
                     defaults={
                         "email": email,
@@ -196,12 +198,14 @@ def update_draft(
         try:
             if message.draft_blob:
                 message.draft_blob.delete()
+            message.draft_blob = None
         except models.Blob.DoesNotExist:
             pass
-        message.draft_blob = mailbox.create_blob(
-            content=(update_data.get("draftBody") or "").encode("utf-8"),
-            content_type="application/json",
-        )
+        if update_data["draftBody"]:
+            message.draft_blob = mailbox.create_blob(
+                content=update_data["draftBody"].encode("utf-8"),
+                content_type="application/json",
+            )
         updated_fields.append("draft_blob")
 
     # Update attachments if provided
@@ -238,6 +242,13 @@ def update_draft(
 
                     # Try to get the blob
                     blob = models.Blob.objects.get(id=blob_id)
+                    if blob.mailbox != mailbox:
+                        logger.warning(
+                            "Blob %s is not associated with mailbox %s",
+                            blob_id,
+                            mailbox.id,
+                        )
+                        continue
 
                     # Create an attachment for this blob if it doesn't exist
                     attachment, created = models.Attachment.objects.get_or_create(

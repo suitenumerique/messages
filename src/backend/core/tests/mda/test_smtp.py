@@ -12,6 +12,7 @@ from core.mda.smtp import send_smtp_mail
 logger = logging.getLogger(__name__)
 
 
+# pylint: disable=too-many-instance-attributes
 class MixedResponseSMTPHandler:
     """Custom SMTP handler that returns different responses for different recipients."""
 

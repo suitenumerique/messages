@@ -163,7 +163,7 @@ class DraftMessageView(APIView):
     POST /api/v1.0/draft/ with expected data:
         - parentId: str (optional, message id if reply, None if first message)
         - senderId: str (mailbox id of the sender)
-        - subject: str
+        - subject: str (optional)
         - draftBody: str (optional)
         - to: list[str] (optional)
         - cc: list[str] (optional)
