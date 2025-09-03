@@ -37,11 +37,15 @@ class MTAJWTAuthentication(authentication.BaseAuthentication):
             # Extract and validate JWT
             jwt_token = auth_header.split(" ")[1]
             payload = jwt.decode(
-                jwt_token, settings.MDA_API_SECRET, algorithms=["HS256"]
+                jwt_token,
+                settings.MDA_API_SECRET,
+                algorithms=["HS256"],
+                options={
+                    "require": ["exp"],
+                    "verify_exp": True,
+                    "verify_signature": True,
+                },
             )
-
-            if not payload.get("exp"):
-                raise jwt.InvalidTokenError("Missing expiration time")
 
             # Validate email hash if there's a body
             if request.body:
@@ -53,7 +57,7 @@ class MTAJWTAuthentication(authentication.BaseAuthentication):
             return (service_account, payload)
 
         except (jwt.ExpiredSignatureError, jwt.InvalidTokenError) as e:
-            raise drf.exceptions.AuthenticationFailed(str(e)) from e
+            raise drf.exceptions.AuthenticationFailed("Invalid token") from e
         except (IndexError, KeyError) as e:
             # Handle cases where header is malformed or payload is missing keys
             raise drf.exceptions.AuthenticationFailed(

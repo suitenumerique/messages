@@ -198,7 +198,7 @@ class TestSendOutboundMessage:
 
         mock_smtp_send.side_effect = smtp_return_value
 
-        def resolve_return_value(domain, record_type):
+        def resolve_return_value(domain, record_type, **kwargs):
             lookup_data = {
                 ("example.com", "MX"): [
                     MagicMock(preference=10, exchange="mx1.example.com"),
@@ -311,12 +311,12 @@ class TestSendOutboundMessage:
     ):
         """Test sending via direct connection with no MX records."""
 
-        def resolve_return_value(domain, record_type):
+        def resolve_return_value(domain, record_type, **kwargs):
             # Without MX records, we should retry on the A record
             if domain == "example2.com" and record_type == "MX":
                 raise dns.resolver.NoAnswer()
-            return {"example.com MX": [], "example2.com A": ["1.2.0.8"]}[
-                domain + " " + record_type
+            return {("example.com", "MX"): [], ("example2.com", "A"): ["1.2.0.8"]}[
+                (domain, record_type)
             ]
 
         mock_resolve.side_effect = resolve_return_value

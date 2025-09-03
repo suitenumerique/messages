@@ -85,15 +85,15 @@ class TestE2EMessageOutboundFlow:
         """Test sending with mailcatcher as a MX server using direct SMTP"""
         mailcatcher_ip = socket.gethostbyname("mailcatcher")
 
-        def resolve_return_value(domain, record_type):
+        def resolve_return_value(domain, record_type, **kwargs):
             return {
-                "external-test.com MX": [
+                ("external-test.com", "MX"): [
                     MagicMock(preference=10, exchange="mx1.external-test.com"),
                 ],
-                "mx1.external-test.com A": [
+                ("mx1.external-test.com", "A"): [
                     mailcatcher_ip,
                 ],
-            }[domain + " " + record_type]
+            }[(domain, record_type)]
 
         mock_resolve.side_effect = resolve_return_value
 

@@ -2,6 +2,7 @@
 
 import logging
 import smtplib
+import ssl
 from typing import Any, Dict, Optional
 
 import socks
@@ -166,7 +167,12 @@ def send_smtp_mail(
                 return error_for_all_recipients(f"HELO failed: {code} {msg}", True)
 
         if client.has_extn("starttls"):
-            (code, msg) = client.starttls()
+            # smtplib.SMTP.starttls() doesn't validate certificates by default!
+            # https://github.com/python/cpython/issues/91826
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = True
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+            (code, msg) = client.starttls(context=ssl_context)
             logger.debug("SMTP: STARTTLS response: %s %s", code, msg)
             if not 200 <= code <= 299:
                 _quit()

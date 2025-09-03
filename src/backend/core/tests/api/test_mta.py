@@ -98,6 +98,21 @@ def fixture_valid_jwt_token():
     return _get_jwt_token
 
 
+@pytest.fixture(name="jwt_token_without_exp")
+def fixture_jwt_token_without_exp():
+    """Return a valid JWT token for the sample email without exp."""
+
+    def _get_jwt_token(body, metadata):
+        body_hash = hashlib.sha256(body).hexdigest()
+        payload = {
+            "body_hash": body_hash,
+            **metadata,
+        }
+        return jwt.encode(payload, settings.MDA_API_SECRET, algorithm="HS256")
+
+    return _get_jwt_token
+
+
 @pytest.mark.django_db
 class TestMTAInboundEmail:
     """Test the MTA inbound email endpoint."""
@@ -288,6 +303,18 @@ class TestMTAInboundEmail:
             data=sample_email,
             content_type="message/rfc822",
             HTTP_AUTHORIZATION="Bearer invalid_token",
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_invalid_jwt_token_without_exp(
+        self, api_client: APIClient, sample_email, jwt_token_without_exp
+    ):
+        """Test that submitting with an invalid JWT token fails."""
+        response = api_client.post(
+            "/api/v1.0/mta/inbound-email/",
+            data=sample_email,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {jwt_token_without_exp(sample_email, {'original_recipients': ['recipient@example.com']})}",
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
