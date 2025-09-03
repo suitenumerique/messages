@@ -19,6 +19,7 @@ class MixedResponseSMTPHandler:
         self.recipient_responses = {}
         self.mail_from_response = None  # Configure MAIL FROM response
         self.data_response = None  # Configure DATA command response
+        self.ehlo_sleep = None  # Configure EHLO timeout
         self.server_socket = None
         self.server_thread = None
         self.running = False
@@ -35,6 +36,10 @@ class MixedResponseSMTPHandler:
     def configure_data_response(self, code: int, message: str):
         """Configure response for DATA command."""
         self.data_response = (code, message)
+
+    def configure_ehlo_sleep(self, sleep_time: int):
+        """Configure EHLO sleep time."""
+        self.ehlo_sleep = sleep_time
 
     def start(self):
         """Start the SMTP server."""
@@ -60,6 +65,8 @@ class MixedResponseSMTPHandler:
                     command = verb.upper()
 
                     if command in {"EHLO", "HELO"}:
+                        if self.ehlo_sleep:
+                            time.sleep(self.ehlo_sleep)
                         client_socket.send(b"250 OK\r\n")
                     elif command == "MAIL" and rest.upper().startswith("FROM:"):
                         rest = rest[5:].strip()
@@ -207,6 +214,38 @@ class TestSMTPClient:
         assert len(result) == 2
         for recipient in recipients:
             assert result[recipient]["delivered"] is True
+
+    def test_timeout_delivery(self):
+        """Test delivery to all recipients with timeout."""
+
+        smtp_handler = MixedResponseSMTPHandler()
+        smtp_handler.configure_ehlo_sleep(10)
+        smtp_handler.start()
+
+        start_time = time.time()
+
+        try:
+            recipients = {"user1@example.com", "user2@example.com"}
+            message = b"Subject: Test\n\nHello World!"
+
+            result = send_smtp_mail(
+                smtp_host="127.0.0.1",
+                smtp_port=smtp_handler.port,
+                envelope_from="sender@example.com",
+                recipient_emails=recipients,
+                message_content=message,
+                timeout=1,
+            )
+
+            assert len(result) == 2
+            for recipient in recipients:
+                assert result[recipient]["delivered"] is False
+                assert result[recipient]["retry"] is True
+
+            assert time.time() - start_time < 2
+
+        finally:
+            smtp_handler.stop()
 
     def test_mixed_recipient_responses(self):
         """Test mixed delivery scenarios using a real SMTP server that returns different responses."""

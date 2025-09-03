@@ -25,7 +25,7 @@ def resolve_mx_records(domain: str) -> List[Tuple[int, str]]:
     Falls back to A record if no MX is found.
     """
     try:
-        answers = dns.resolver.resolve(domain, "MX")
+        answers = dns.resolver.resolve(domain, "MX", lifetime=10)
         mx_records = sorted(
             [(r.preference, str(r.exchange).rstrip(".")) for r in answers],
             key=lambda x: x[0],
@@ -39,8 +39,10 @@ def resolve_mx_records(domain: str) -> List[Tuple[int, str]]:
         return [(10, domain)]
     except dns.resolver.NoNameservers:
         logger.warning("Domain %s has no nameservers", domain)
-    except dns.resolver.NXDOMAIN:
-        logger.warning("Domain %s does not exist", domain)
+    except (dns.resolver.NXDOMAIN, dns.resolver.YXDOMAIN):
+        logger.warning("Domain %s does not exist or is too long", domain)
+    except dns.resolver.LifetimeError:
+        logger.warning("DNS resolution timeout for %s", domain)
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error resolving MX for %s: %s", domain, e)
 
@@ -53,7 +55,7 @@ def resolve_hostname_ip(hostname: str) -> Optional[str]:
     Resolve a hostname to its first A record IP address, with a direct DNS query
     """
     try:
-        answers = dns.resolver.resolve(hostname, "A")
+        answers = dns.resolver.resolve(hostname, "A", lifetime=10)
         for r in answers:
             return str(r)
     except Exception as e:  # pylint: disable=broad-exception-caught
