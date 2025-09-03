@@ -429,7 +429,7 @@ class TestApiDraftAndSendMessage:
 
         retry_recipient = db_message.recipients.get(contact__email="retry@external.com")
         assert (
-            fail_recipient.delivery_status == enums.MessageDeliveryStatusChoices.FAILED
+            retry_recipient.delivery_status == enums.MessageDeliveryStatusChoices.RETRY
         )
         assert retry_recipient.retry_at is not None
         assert retry_recipient.retry_count == 1

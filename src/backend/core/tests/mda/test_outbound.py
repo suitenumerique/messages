@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, call, patch
 
 from django.test import override_settings
 
+import dns.resolver
 import pytest
 
 from core import enums, factories, models
@@ -198,32 +199,25 @@ class TestSendOutboundMessage:
         mock_smtp_send.side_effect = smtp_return_value
 
         def resolve_return_value(domain, record_type):
-            return {
-                "example.com MX": [
+            lookup_data = {
+                ("example.com", "MX"): [
                     MagicMock(preference=10, exchange="mx1.example.com"),
                     MagicMock(preference=15, exchange="mx1-5.example.com"),
                     MagicMock(preference=20, exchange="mx2.example.com"),
                     MagicMock(preference=30, exchange="mx3.example.com"),
                 ],
-                "example2.com MX": [
+                ("example2.com", "MX"): [
                     MagicMock(preference=10, exchange="mx1.example2.com"),
                     MagicMock(preference=20, exchange="mx2.example2.com"),
                 ],
-                "mx1.example.com A": [
-                    "1.1.0.9",
-                ],
-                "mx2.example.com A": [
-                    "1.2.0.9",
-                ],
-                "mx3.example.com A": None,
-                "mx1-5.example.com A": None,
-                "mx1.example2.com A": [
-                    "2.1.0.9",
-                ],
-                "mx2.example2.com A": [
-                    "2.2.0.9",
-                ],
-            }[domain + " " + record_type]
+                ("mx1.example.com", "A"): ["1.1.0.9"],
+                ("mx2.example.com", "A"): ["1.2.0.9"],
+                ("mx3.example.com", "A"): None,
+                ("mx1-5.example.com", "A"): None,
+                ("mx1.example2.com", "A"): ["2.1.0.9"],
+                ("mx2.example2.com", "A"): ["2.2.0.9"],
+            }
+            return lookup_data.get((domain, record_type))
 
         mock_resolve.side_effect = resolve_return_value
 
@@ -310,7 +304,6 @@ class TestSendOutboundMessage:
     @patch("core.mda.outbound_direct.send_smtp_mail")
     @override_settings(
         MTA_OUT_MODE="direct",
-        MTA_OUT_PROXIES=["socks5://proxyuser:proxyuser@smtp.proxy:1080"],
         OPENSEARCH_INDEX_THREADS=False,
     )
     def test_outbound_send_direct_no_mx(
@@ -319,15 +312,33 @@ class TestSendOutboundMessage:
         """Test sending via direct connection with no MX records."""
 
         def resolve_return_value(domain, record_type):
-            return {"example.com MX": [], "example2.com MX": None}[
+            # Without MX records, we should retry on the A record
+            if domain == "example2.com" and record_type == "MX":
+                raise dns.resolver.NoAnswer()
+            return {"example.com MX": [], "example2.com A": ["1.2.0.8"]}[
                 domain + " " + record_type
             ]
 
         mock_resolve.side_effect = resolve_return_value
 
+        def smtp_return_value(*args, **kwargs):
+            if kwargs["recipient_emails"] == {"bcc@example2.com"}:
+                return {
+                    "bcc@example2.com": {"delivered": True},
+                }
+            raise ValueError("Should not be called")
+
+        mock_smtp_send.side_effect = smtp_return_value
+
         outbound.send_message(draft_message)
 
-        mock_smtp_send.assert_not_called()
+        mock_smtp_send.assert_called_once_with(
+            smtp_host="1.2.0.8",
+            smtp_port=25,
+            envelope_from=draft_message.sender.email,
+            recipient_emails={"bcc@example2.com"},
+            message_content=draft_message.blob.get_content(),
+        )
 
         # Check message object updated
         draft_message.refresh_from_db()
@@ -338,5 +349,12 @@ class TestSendOutboundMessage:
             draft_message.recipients.filter(
                 delivery_status=enums.MessageDeliveryStatusChoices.RETRY,
             ).count()
-            == 4
+            == 3
+        )
+        assert (
+            draft_message.recipients.filter(
+                contact__email="bcc@example2.com",
+                delivery_status=enums.MessageDeliveryStatusChoices.SENT,
+            ).count()
+            == 1
         )

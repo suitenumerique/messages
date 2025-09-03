@@ -283,30 +283,32 @@ def send_message(message: models.Message, force_mta_out: bool = False):
             external_recipients.add(recipient_email)
 
     if external_recipients:
-        statuses = send_outbound_message(external_recipients, message)
-        for recipient_email, status in statuses.items():
-            _mark_delivered(
-                recipient_email,
-                status["delivered"],
-                False,
-                status.get("error"),
-                status.get("retry", False),
-            )
+        try:
+            statuses = send_outbound_message(external_recipients, message)
+            for recipient_email, status in statuses.items():
+                _mark_delivered(
+                    recipient_email,
+                    status["delivered"],
+                    False,
+                    status.get("error"),
+                    status.get("retry", False),
+                )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Failed to send outbound message: %s", e, exc_info=True)
+            for recipient_email in external_recipients:
+                _mark_delivered(
+                    recipient_email,
+                    False,
+                    False,
+                    "Internal error while delivering",
+                    True,
+                )
 
 
 def send_outbound_message(
     recipient_emails: set[str], message: models.Message
 ) -> dict[str, Any]:
     """Send an existing Message object via MTA out (SMTP) or direct MX if not configured."""
-
-    def _global_error(error: str) -> dict[str, Any]:
-        return {
-            email: {
-                "error": error,
-                "delivered": False,
-            }
-            for email in recipient_emails
-        }
 
     custom_attributes = message.sender.mailbox.domain.custom_attributes or {}
 

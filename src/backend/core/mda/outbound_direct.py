@@ -32,20 +32,19 @@ def resolve_mx_records(domain: str) -> List[Tuple[int, str]]:
         )
         if mx_records:
             return mx_records
-    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers):
+    except dns.resolver.NoAnswer:
         logger.warning("No MX records for %s, falling back to A record.", domain)
+
+        # Fallback to A record
+        return [(10, domain)]
+    except dns.resolver.NoNameservers:
+        logger.warning("Domain %s has no nameservers", domain)
+    except dns.resolver.NXDOMAIN:
+        logger.warning("Domain %s does not exist", domain)
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error resolving MX for %s: %s", domain, e)
-        return []
 
-    # Fallback to A record
-    try:
-        answers = dns.resolver.resolve(domain, "A")
-        return [(0, str(r)) for r in answers]
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error("Error resolving A record for %s: %s", domain, e)
-        return []
-
+    # This will trigger a retry for all recipients
     return []
 
 
@@ -69,7 +68,12 @@ def group_recipients_by_mx(recipients: List[str]) -> Dict[str, Dict[str, Any]]:
     """
     domain_map = {}
     for email in recipients:
-        domain = email.split("@")[-1]
+        # Validate email format and extract domain
+        parts = email.split("@")
+        if len(parts) != 2 or not parts[1].strip():
+            logger.error("Invalid email format while MX grouping: %s", email)
+            continue
+        domain = parts[1].lower().strip()
         if domain not in domain_map:
             domain_map[domain] = {
                 "mx_records": resolve_mx_records(domain),

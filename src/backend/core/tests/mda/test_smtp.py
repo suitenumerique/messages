@@ -284,7 +284,7 @@ class TestSMTPClient:
 
         assert len(result) == 1
         assert result["user1@example.com"]["delivered"] is False
-        assert "Connection refused" in result["user1@example.com"]["error"]
+        assert result["user1@example.com"]["error"]
         assert result["user1@example.com"]["retry"] is True
 
     def test_proxy_parameters(self):

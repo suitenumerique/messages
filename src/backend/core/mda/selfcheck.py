@@ -26,7 +26,7 @@ def create_and_send_draft(
     to_emails: list,
     subject: str,
     text_body: str,
-    html_body: str = None,
+    html_body: str,
     cc_emails: list = None,
     bcc_emails: list = None,
     parent_id: Optional[str] = None,
