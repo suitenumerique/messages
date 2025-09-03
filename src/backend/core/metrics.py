@@ -10,9 +10,12 @@ from django.apps import apps
 from django.db import models
 
 from prometheus_client.core import GaugeMetricFamily
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from .enums import MessageDeliveryStatusChoices
-from .models import Attachment, MessageRecipient
+from .models import Attachment, MailboxAccess, MessageRecipient
 
 
 class CustomDBPrometheusMetricsCollector:
@@ -83,3 +86,41 @@ class CustomDBPrometheusMetricsCollector:
         yield from self.get_messages_with_status()
         yield from self.get_attachments_count()
         yield from self.get_attachments_total_size()
+        yield from self.get_total_users()
+
+
+class MailDomainUsersMetricsApiView(APIView):
+    """
+    API view to expose MailDomain Users custom metrics
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []  # Disable any authentication
+
+    def get(self, request, *args, **kwargs):
+        """
+        Handle GET requests for the metrics API endpoint.
+        """
+        # Get all mailboxaccesses
+        siret_to_users = {}
+        mailbox_accesses = MailboxAccess.objects.select_related("mailbox__domain").all()
+        for mailbox_access in mailbox_accesses:
+            siret = mailbox_access.mailbox.domain.custom_attributes["siret"]
+            if siret not in siret_to_users:
+                siret_to_users[siret] = []
+            siret_to_users[siret].append(mailbox_access.user.id.hex)
+        metrics = []
+
+        for siret, user_ids in siret_to_users.items():
+            metrics.append(
+                {
+                    "siret": siret,
+                    "metrics": {
+                        "tu": len(set(user_ids)),
+                        "yau": "TBD",
+                        "mau": "TBD",
+                        "wau": "TBD",
+                    },
+                }
+            )
+        return Response({"count": len(metrics), "results": metrics})

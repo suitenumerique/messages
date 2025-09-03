@@ -7,6 +7,7 @@ export * from "./import/import";
 export * from "./labels/labels";
 export * from "./mailboxes/mailboxes";
 export * from "./mailbox-accesses/mailbox-accesses";
+export * from "./maildomain-users/maildomain-users";
 export * from "./maildomains/maildomains";
 export * from "./admin-maildomain-user/admin-maildomain-user";
 export * from "./mta/mta";

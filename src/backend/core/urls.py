@@ -30,6 +30,7 @@ from core.api.viewsets.thread import ThreadViewSet
 from core.api.viewsets.thread_access import ThreadAccessViewSet
 from core.api.viewsets.user import UserViewSet
 from core.authentication.urls import urlpatterns as oidc_urls
+from core.metrics import MailDomainUsersMetricsApiView
 
 # - Main endpoints
 router = DefaultRouter()
@@ -138,3 +139,21 @@ urlpatterns = [
         name="placeholders",
     ),
 ]
+
+if settings.ENABLE_PROMETHEUS:
+    urlpatterns += [
+        path(
+            f"api/{settings.API_VERSION}/prometheus/",
+            include("django_prometheus.urls"),
+            name="prometheus-metrics",
+        ),
+    ]
+
+if settings.ENABLE_MAILDOMAIN_USERS_METRICS:
+    urlpatterns += [
+        path(
+            f"api/{settings.API_VERSION}/maildomain_users/metrics/",
+            MailDomainUsersMetricsApiView.as_view(),
+            name="maildomain-users-metrics",
+        ),
+    ]

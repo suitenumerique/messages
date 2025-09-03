@@ -615,6 +615,16 @@ class Base(Configuration):
         None, environ_name="PROMETHEUS_API_KEY", environ_prefix=None
     )
 
+    ENABLE_MAILDOMAIN_USERS_METRICS = values.BooleanValue(
+        default=True,
+        environ_name="ENABLE_MAILDOMAIN_USERS_METRICS",
+        environ_prefix=None,
+    )
+
+    MAILDOMAIN_USER_METRICS_API_KEY = values.Value(
+        None, environ_name="MAILDOMAIN_USER_METRICS_API_KEY", environ_prefix=None
+    )
+
     # AI
     AI_API_KEY = values.Value(None, environ_name="AI_API_KEY", environ_prefix=None)
     AI_BASE_URL = values.Value(None, environ_name="AI_BASE_URL", environ_prefix=None)
@@ -690,10 +700,13 @@ class Base(Configuration):
         if self.ENABLE_PROMETHEUS:
             self.INSTALLED_APPS += ["django_prometheus"]
             self.MIDDLEWARE = [
-                "core.middlewares.PrometheusAuthMiddleware",
                 "django_prometheus.middleware.PrometheusBeforeMiddleware",
                 *self.MIDDLEWARE,
                 "django_prometheus.middleware.PrometheusAfterMiddleware",
+            ]
+        if self.ENABLE_PROMETHEUS or self.ENABLE_MAILDOMAIN_USERS_METRICS:
+            self.MIDDLEWARE += [
+                "core.middlewares.AuthMiddleware",
             ]
 
     # pylint: disable=invalid-name
