@@ -210,8 +210,8 @@ The application uses a new environment file structure with `.defaults` and `.loc
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `ENABLE_PROMETHEUS` | `True` | Enable prometheus monitoring | Optional |
-| `PROMETHEUS_API_KEY` | None | Protects /metrics route with provided Bearer token, if not passed, disables auth | Optional |
+| `ENABLE_PROMETHEUS` | `True` | Enable Prometheus monitoring | Optional |
+| `PROMETHEUS_API_KEY` | None | Protects the metrics route with provided Bearer token, if not passed, endpoint is public | Optional |
 
 ## API Configuration
 

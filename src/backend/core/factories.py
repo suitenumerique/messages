@@ -238,10 +238,10 @@ class AttachmentFactory(factory.django.DjangoModelFactory):
     mailbox = factory.SubFactory(MailboxFactory)
     name = factory.Sequence(lambda n: f"attachment{n}.txt")
     blob_size = 1500
-    sha256 = factory.LazyAttribute(lambda o: hashlib.sha256(o.raw_content).digest())
 
     @factory.lazy_attribute
     def blob(self):
+        """Create a blob with specified size for the attachment."""
         raw_content = b"x" * self.blob_size
         return BlobFactory(
             mailbox=self.mailbox, size=self.blob_size, raw_content=raw_content
@@ -249,6 +249,9 @@ class AttachmentFactory(factory.django.DjangoModelFactory):
 
     @classmethod
     def _adjust_kwargs(cls, **kwargs):
+        """
+        Adjust the keyword arguments before passing them to the model.
+        """
         # Remove blob_size from kwargs before passing to model
         kwargs = dict(kwargs)
         kwargs.pop("blob_size", None)
