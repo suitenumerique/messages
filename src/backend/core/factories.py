@@ -3,8 +3,6 @@
 Core application factories
 """
 
-import hashlib
-
 from django.conf import settings
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
