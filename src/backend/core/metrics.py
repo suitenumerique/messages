@@ -6,8 +6,11 @@ This module defines a collector that exposes database-related metrics
 to Prometheus via the /metrics endpoint.
 """
 
+from datetime import timedelta
+
 from django.apps import apps
 from django.db import models
+from django.utils import timezone
 
 from prometheus_client.core import GaugeMetricFamily
 from rest_framework.permissions import AllowAny
@@ -101,25 +104,55 @@ class MailDomainUsersMetricsApiView(APIView):
         Handle GET requests for the metrics API endpoint.
         """
         # Get all mailboxaccesses
-        siret_to_users = {}
+        siret_to_users_and_mailboxes = {}
         mailbox_accesses = MailboxAccess.objects.select_related("mailbox__domain").all()
         for mailbox_access in mailbox_accesses:
-            siret = mailbox_access.mailbox.domain.custom_attributes["siret"]
-            if siret not in siret_to_users:
-                siret_to_users[siret] = []
-            siret_to_users[siret].append(mailbox_access.user.id.hex)
+            siret = mailbox_access.mailbox.domain.custom_attributes.get("siret")
+            if siret is None:
+                continue
+            if siret not in siret_to_users_and_mailboxes:
+                siret_to_users_and_mailboxes[siret] = {"users": [], "mailboxes": []}
+            siret_to_users_and_mailboxes[siret]["users"].append(
+                mailbox_access.user.id.hex
+            )
+            siret_to_users_and_mailboxes[siret]["mailboxes"].append(
+                mailbox_access.mailbox.id.hex
+            )
         metrics = []
 
-        for siret, user_ids in siret_to_users.items():
+        for siret, users_and_mailboxes in siret_to_users_and_mailboxes.items():
+            unique_user_ids = set(users_and_mailboxes["users"])
+            yau = []
+            mau = []
+            wau = []
+            for user_id in unique_user_ids:
+                last_access = (
+                    MailboxAccess.objects.filter(
+                        mailbox__in=users_and_mailboxes["mailboxes"],
+                        user_id=user_id,
+                    )
+                    .aggregate(models.Max("accessed_at"))
+                    .get("accessed_at__max")
+                )
+
+                if last_access:
+                    if last_access >= timezone.now() - timedelta(days=365):
+                        yau.append(user_id)
+                    if last_access >= timezone.now() - timedelta(days=30):
+                        mau.append(user_id)
+                    if last_access >= timezone.now() - timedelta(days=7):
+                        wau.append(user_id)
+
             metrics.append(
                 {
                     "siret": siret,
                     "metrics": {
-                        "tu": len(set(user_ids)),
-                        "yau": "TBD",
-                        "mau": "TBD",
-                        "wau": "TBD",
+                        "tu": len(unique_user_ids),
+                        "yau": len(yau),
+                        "mau": len(mau),
+                        "wau": len(wau),
                     },
                 }
             )
+
         return Response({"count": len(metrics), "results": metrics})
