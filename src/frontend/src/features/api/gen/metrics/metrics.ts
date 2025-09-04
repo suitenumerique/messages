@@ -25,28 +25,28 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 /**
  * Handle GET requests for the metrics API endpoint.
  */
-export type maildomainUsersMetricsRetrieveResponse200 = {
+export type metricsMaildomainUsersRetrieveResponse200 = {
   data: void;
   status: 200;
 };
 
-export type maildomainUsersMetricsRetrieveResponseComposite =
-  maildomainUsersMetricsRetrieveResponse200;
+export type metricsMaildomainUsersRetrieveResponseComposite =
+  metricsMaildomainUsersRetrieveResponse200;
 
-export type maildomainUsersMetricsRetrieveResponse =
-  maildomainUsersMetricsRetrieveResponseComposite & {
+export type metricsMaildomainUsersRetrieveResponse =
+  metricsMaildomainUsersRetrieveResponseComposite & {
     headers: Headers;
   };
 
-export const getMaildomainUsersMetricsRetrieveUrl = () => {
-  return `/api/v1.0/maildomain_users/metrics/`;
+export const getMetricsMaildomainUsersRetrieveUrl = () => {
+  return `/api/v1.0/metrics/maildomain_users/`;
 };
 
-export const maildomainUsersMetricsRetrieve = async (
+export const metricsMaildomainUsersRetrieve = async (
   options?: RequestInit,
-): Promise<maildomainUsersMetricsRetrieveResponse> => {
-  return fetchAPI<maildomainUsersMetricsRetrieveResponse>(
-    getMaildomainUsersMetricsRetrieveUrl(),
+): Promise<metricsMaildomainUsersRetrieveResponse> => {
+  return fetchAPI<metricsMaildomainUsersRetrieveResponse>(
+    getMetricsMaildomainUsersRetrieveUrl(),
     {
       ...options,
       method: "GET",
@@ -54,17 +54,17 @@ export const maildomainUsersMetricsRetrieve = async (
   );
 };
 
-export const getMaildomainUsersMetricsRetrieveQueryKey = () => {
-  return [`/api/v1.0/maildomain_users/metrics/`] as const;
+export const getMetricsMaildomainUsersRetrieveQueryKey = () => {
+  return [`/api/v1.0/metrics/maildomain_users/`] as const;
 };
 
-export const getMaildomainUsersMetricsRetrieveQueryOptions = <
-  TData = Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>,
+export const getMetricsMaildomainUsersRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>,
   TError = unknown,
 >(options?: {
   query?: Partial<
     UseQueryOptions<
-      Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>,
+      Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>,
       TError,
       TData
     >
@@ -74,42 +74,42 @@ export const getMaildomainUsersMetricsRetrieveQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getMaildomainUsersMetricsRetrieveQueryKey();
+    queryOptions?.queryKey ?? getMetricsMaildomainUsersRetrieveQueryKey();
 
   const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>
+    Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>
   > = ({ signal }) =>
-    maildomainUsersMetricsRetrieve({ signal, ...requestOptions });
+    metricsMaildomainUsersRetrieve({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>,
+    Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>,
     TError,
     TData
   > & { queryKey: DataTag<QueryKey, TData, TError> };
 };
 
-export type MaildomainUsersMetricsRetrieveQueryResult = NonNullable<
-  Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>
+export type MetricsMaildomainUsersRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>
 >;
-export type MaildomainUsersMetricsRetrieveQueryError = unknown;
+export type MetricsMaildomainUsersRetrieveQueryError = unknown;
 
-export function useMaildomainUsersMetricsRetrieve<
-  TData = Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>,
+export function useMetricsMaildomainUsersRetrieve<
+  TData = Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>,
   TError = unknown,
 >(
   options: {
     query: Partial<
       UseQueryOptions<
-        Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>,
+        Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>,
         TError,
         TData
       >
     > &
       Pick<
         DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>,
+          Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>,
           TError,
-          Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>
+          Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>
         >,
         "initialData"
       >;
@@ -119,23 +119,23 @@ export function useMaildomainUsersMetricsRetrieve<
 ): DefinedUseQueryResult<TData, TError> & {
   queryKey: DataTag<QueryKey, TData, TError>;
 };
-export function useMaildomainUsersMetricsRetrieve<
-  TData = Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>,
+export function useMetricsMaildomainUsersRetrieve<
+  TData = Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>,
   TError = unknown,
 >(
   options?: {
     query?: Partial<
       UseQueryOptions<
-        Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>,
+        Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>,
         TError,
         TData
       >
     > &
       Pick<
         UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>,
+          Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>,
           TError,
-          Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>
+          Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>
         >,
         "initialData"
       >;
@@ -145,14 +145,14 @@ export function useMaildomainUsersMetricsRetrieve<
 ): UseQueryResult<TData, TError> & {
   queryKey: DataTag<QueryKey, TData, TError>;
 };
-export function useMaildomainUsersMetricsRetrieve<
-  TData = Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>,
+export function useMetricsMaildomainUsersRetrieve<
+  TData = Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>,
   TError = unknown,
 >(
   options?: {
     query?: Partial<
       UseQueryOptions<
-        Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>,
+        Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>,
         TError,
         TData
       >
@@ -164,14 +164,14 @@ export function useMaildomainUsersMetricsRetrieve<
   queryKey: DataTag<QueryKey, TData, TError>;
 };
 
-export function useMaildomainUsersMetricsRetrieve<
-  TData = Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>,
+export function useMetricsMaildomainUsersRetrieve<
+  TData = Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>,
   TError = unknown,
 >(
   options?: {
     query?: Partial<
       UseQueryOptions<
-        Awaited<ReturnType<typeof maildomainUsersMetricsRetrieve>>,
+        Awaited<ReturnType<typeof metricsMaildomainUsersRetrieve>>,
         TError,
         TData
       >
@@ -182,7 +182,7 @@ export function useMaildomainUsersMetricsRetrieve<
 ): UseQueryResult<TData, TError> & {
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
-  const queryOptions = getMaildomainUsersMetricsRetrieveQueryOptions(options);
+  const queryOptions = getMetricsMaildomainUsersRetrieveQueryOptions(options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<
     TData,

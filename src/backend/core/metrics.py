@@ -12,7 +12,13 @@ from django.apps import apps
 from django.db import models
 from django.utils import timezone
 
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    extend_schema,
+)
 from prometheus_client.core import GaugeMetricFamily
+from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -99,28 +105,60 @@ class MailDomainUsersMetricsApiView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []  # Disable any authentication
 
-    def get(self, request, *args, **kwargs):
+    @extend_schema(
+        tags=["metrics"],
+        parameters=[
+            OpenApiParameter(
+                name="group_by_maildomain_custom_attribute",
+                type=str,
+                location=OpenApiParameter.PATH,
+                description="Custom attribute key to group maildomains by.",
+                required=True,
+            ),
+            OpenApiExample(
+                "Query Parameter Example",
+                value={"group_by_maildomain_custom_attribute": "siret"},
+                description="Example of the required query parameter to group by a custom attribute.",
+                request_only=True,
+                response_only=False,
+            ),
+        ],
+    )
+    @action(detail=True, methods=["get"])
+    def get(self, request):
         """
         Handle GET requests for the metrics API endpoint.
         """
-        # Get all mailboxaccesses
-        siret_to_users_and_mailboxes = {}
+        group_by_key = request.query_params.get("group_by_maildomain_custom_attribute")
+
+        if not group_by_key:
+            return Response(
+                {
+                    "error": "Missing required query parameter: group_by_maildomain_custom_attribute"
+                },
+                status=400,
+            )
+
+        group_by_to_users_and_mailboxes = {}
         mailbox_accesses = MailboxAccess.objects.select_related("mailbox__domain").all()
         for mailbox_access in mailbox_accesses:
-            siret = mailbox_access.mailbox.domain.custom_attributes.get("siret")
-            if siret is None:
+            group_by = mailbox_access.mailbox.domain.custom_attributes.get(group_by_key)
+            if group_by is None:
                 continue
-            if siret not in siret_to_users_and_mailboxes:
-                siret_to_users_and_mailboxes[siret] = {"users": [], "mailboxes": []}
-            siret_to_users_and_mailboxes[siret]["users"].append(
+            if group_by not in group_by_to_users_and_mailboxes:
+                group_by_to_users_and_mailboxes[group_by] = {
+                    "users": [],
+                    "mailboxes": [],
+                }
+            group_by_to_users_and_mailboxes[group_by]["users"].append(
                 mailbox_access.user.id.hex
             )
-            siret_to_users_and_mailboxes[siret]["mailboxes"].append(
+            group_by_to_users_and_mailboxes[group_by]["mailboxes"].append(
                 mailbox_access.mailbox.id.hex
             )
         metrics = []
 
-        for siret, users_and_mailboxes in siret_to_users_and_mailboxes.items():
+        for group_by, users_and_mailboxes in group_by_to_users_and_mailboxes.items():
             unique_user_ids = set(users_and_mailboxes["users"])
             yau = []
             mau = []
@@ -145,7 +183,7 @@ class MailDomainUsersMetricsApiView(APIView):
 
             metrics.append(
                 {
-                    "siret": siret,
+                    group_by_key: group_by,
                     "metrics": {
                         "tu": len(unique_user_ids),
                         "yau": len(yau),

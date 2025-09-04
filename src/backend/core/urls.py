@@ -152,7 +152,7 @@ if settings.ENABLE_PROMETHEUS:
 if settings.ENABLE_MAILDOMAIN_USERS_METRICS:
     urlpatterns += [
         path(
-            f"api/{settings.API_VERSION}/maildomain_users/metrics/",
+            f"api/{settings.API_VERSION}/metrics/maildomain_users/",
             MailDomainUsersMetricsApiView.as_view(),
             name="maildomain-users-metrics",
         ),

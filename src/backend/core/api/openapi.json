@@ -2335,23 +2335,6 @@
                 }
             }
         },
-        "/api/v1.0/maildomain_users/metrics/": {
-            "get": {
-                "operationId": "maildomain_users_metrics_retrieve",
-                "description": "Handle GET requests for the metrics API endpoint.",
-                "tags": [
-                    "maildomain_users"
-                ],
-                "security": [
-                    {}
-                ],
-                "responses": {
-                    "200": {
-                        "description": "No response body"
-                    }
-                }
-            }
-        },
         "/api/v1.0/maildomains/": {
             "get": {
                 "operationId": "maildomains_list",
@@ -2922,6 +2905,34 @@
                 ],
                 "responses": {
                     "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/metrics/maildomain_users/": {
+            "get": {
+                "operationId": "metrics_maildomain_users_retrieve",
+                "description": "Handle GET requests for the metrics API endpoint.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "group_by_maildomain_custom_attribute",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Custom attribute key to group maildomains by.",
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "security": [
+                    {}
+                ],
+                "responses": {
+                    "200": {
                         "description": "No response body"
                     }
                 }
