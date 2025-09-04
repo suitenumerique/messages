@@ -36,6 +36,7 @@ dependencies = [
     "django-fernet-encrypted-fields==0.3.0",
     "django-filter==24.3",
     "django-parler==2.3",
+    "django-prometheus==2.4.1",
     "django-redis==5.4.0",
     "django-storages==1.14.6",
     "django-timezone-field==7.1",
