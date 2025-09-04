@@ -86,7 +86,6 @@ class CustomDBPrometheusMetricsCollector:
         yield from self.get_messages_with_status()
         yield from self.get_attachments_count()
         yield from self.get_attachments_total_size()
-        yield from self.get_total_users()
 
 
 class MailDomainUsersMetricsApiView(APIView):

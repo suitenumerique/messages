@@ -6,6 +6,7 @@ Declare and configure the models for the messages core application
 import base64
 import hashlib
 import uuid
+from datetime import timedelta
 from logging import getLogger
 from typing import Any, Dict, List, Optional
 
@@ -613,10 +614,19 @@ class MailboxAccess(BaseModel):
     def __str__(self):
         return f"Access to {self.mailbox} for {self.user} with {self.role} role"
 
-    def mark_accessed(self):
-        """Update the accessed_at timestamp to now."""
-        self.accessed_at = timezone.now()
-        self.save(update_fields=["accessed_at"])
+    def mark_accessed(self, only_if_older_than_minutes: int = 60):
+        """
+        Update the accessed_at timestamp to now if older than the specified minutes.
+
+        Args:
+            only_if_older_than_minutes: Only update if the last access was older than this many minutes.
+                Defaults to 60 minutes to avoid excessive updates.
+        """
+        if self.accessed_at is None or self.accessed_at < timezone.now() - timedelta(
+            minutes=only_if_older_than_minutes
+        ):
+            self.accessed_at = timezone.now()
+            self.save(update_fields=["accessed_at"])
 
 
 class Thread(BaseModel):

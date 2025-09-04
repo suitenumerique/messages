@@ -943,26 +943,39 @@ class TestThreadListAPI:
         response = api_client.get(url, {"mailbox_id": str(mailbox.id)})
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_list_should_update_mailbox_access_accessed_at(self, api_client, url):
-        """Test listing threads when user has no mailbox access."""
-        # Test filtering by mailbox that user doesn't have access to
+    def test_list_should_not_update_mailbox_access_accessed_after_30_minutes(
+        self, api_client, url
+    ):
+        """Test listing threads should not update accessed_at if last access was less than 60 minutes ago."""
         user = UserFactory()
         api_client.force_authenticate(user=user)
         mailbox = MailboxFactory(users_read=[user])
-        assert MailboxAccess.objects.get(user=user, mailbox=mailbox).accessed_at is None
+        MailboxAccess.objects.filter(user=user, mailbox=mailbox).update(
+            accessed_at=timezone.now() - timedelta(minutes=30)
+        )
+
+        api_client.get(url, {"mailbox_id": str(mailbox.id)})
+        access_datetime1 = MailboxAccess.objects.get(
+            user=user, mailbox=mailbox
+        ).accessed_at
+        assert (timezone.now() - access_datetime1) > timedelta(minutes=30)
+
+    def test_list_should_update_mailbox_access_accessed_after_more_than_60_minutes(
+        self, api_client, url
+    ):
+        """Test listing threads should not update accessed_at if last access was less than 60 minutes ago."""
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+        mailbox = MailboxFactory(users_read=[user])
+        MailboxAccess.objects.filter(user=user, mailbox=mailbox).update(
+            accessed_at=timezone.now() - timedelta(minutes=61)
+        )
 
         api_client.get(url, {"mailbox_id": str(mailbox.id)})
         access_datetime1 = MailboxAccess.objects.get(
             user=user, mailbox=mailbox
         ).accessed_at
         assert (timezone.now() - access_datetime1) < timedelta(seconds=1)
-
-        api_client.get(url, {"mailbox_id": str(mailbox.id)})
-        access_datetime2 = MailboxAccess.objects.get(
-            user=user, mailbox=mailbox
-        ).accessed_at
-        assert (timezone.now() - access_datetime2) < timedelta(seconds=1)
-        assert access_datetime2 > access_datetime1
 
     def test_list_for_other_user_should_update_mailbox_access_accessed_at(
         self, api_client, url
