@@ -13,6 +13,7 @@
     justify-content: space-between;
     position: relative;
     width: 100%;
+    --label-toggle-size: 1.5rem;
 }
 
 .label-item__column {
@@ -26,7 +27,37 @@
 .label-item__column:first-child {
     flex: 1;
     min-width: 0;
+    /* Reserve space for toggle (RTL-safe) */
+    padding-inline-start: var(--label-toggle-size);
 }
+
+.label-item__toggle {
+    background-color: transparent;
+    border: thin solid transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    padding: 0;
+    margin: 0;
+    font-size: 1rem;
+    /* Ensure overall box fits the reserved inline space */
+    box-sizing: border-box;
+    color: var(--c--theme--colors--greyscale-600);
+    /* Position the toggle button absolutely to not affect text alignment */
+    position: absolute;
+    inset-inline-start: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: var(--label-toggle-size);
+    height: var(--label-toggle-size);
+}
+
+.label-item__toggle:focus-visible {
+    outline: 2px solid var(--c--theme--colors--primary-500);
+    outline-offset: 2px;
+  }
 
 .label-item__column:last-child {
     justify-content: flex-end;
@@ -43,21 +74,6 @@
 .label-item--active {
     background-color: var(--c--theme--colors--greyscale-100);
     font-weight: 600;
-}
-
-.label-item__toggle {
-    background-color: transparent;
-    border: thin solid transparent;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 3px;
-    padding: 0;
-    margin: 0;
-    font-size: 1rem;
-    padding: 0.1rem;
-    color: var(--c--theme--colors--greyscale-600);
 }
 
 .label-item__toggle:disabled {
