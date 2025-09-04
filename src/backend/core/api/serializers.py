@@ -808,13 +808,23 @@ class MailDomainAdminSerializer(AbilitiesModelSerializer):
         """Return the abilities for the mail domain."""
         return super().get_abilities(instance)
 
+
 class MailDomainAdminWriteSerializer(serializers.ModelSerializer):
     """Serialize mail domains for creating / editing admin view."""
 
     class Meta:
         model = models.MailDomain
-        fields = ["id", "name", "created_at", "updated_at", "oidc_autojoin", "identity_sync", "custom_attributes"]
+        fields = [
+            "id",
+            "name",
+            "created_at",
+            "updated_at",
+            "oidc_autojoin",
+            "identity_sync",
+            "custom_attributes",
+        ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
 
 class MailboxAccessNestedUserSerializer(serializers.ModelSerializer):
     """

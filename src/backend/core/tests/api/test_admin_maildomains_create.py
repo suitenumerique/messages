@@ -57,7 +57,9 @@ class TestAdminMailDomainsCreate:
 
         response = api_client.post(url, data, format="json")
         assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert not models.MailDomain.objects.filter(name="unauthorized-admin-domain.com").exists()
+        assert not models.MailDomain.objects.filter(
+            name="unauthorized-admin-domain.com"
+        ).exists()
 
     def test_create_mail_domain_as_non_admin(self, api_client, other_user):
         """Test creating a mail domain as a non-admin user."""
@@ -67,7 +69,9 @@ class TestAdminMailDomainsCreate:
 
         response = api_client.post(url, data, format="json")
         assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert not models.MailDomain.objects.filter(name="unauthorized-user-domain.com").exists()
+        assert not models.MailDomain.objects.filter(
+            name="unauthorized-user-domain.com"
+        ).exists()
 
     def test_create_mail_domain_invalid_name(self, api_client, domain_superuser_user):
         """Test creating a mail domain with an invalid name."""
@@ -76,11 +80,15 @@ class TestAdminMailDomainsCreate:
         data = {"name": "Bad-Domain-.COM"}
         response = api_client.post(self.CREATE_DOMAIN_URL, data, format="json")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert not models.MailDomain.objects.filter(name__iexact="bad-domain-.com").exists()
+        assert not models.MailDomain.objects.filter(
+            name__iexact="bad-domain-.com"
+        ).exists()
 
     def test_create_mail_domain_duplicate_name(self, api_client, domain_superuser_user):
         """Test creating a mail domain with a duplicate name."""
         api_client.force_authenticate(user=domain_superuser_user)
         models.MailDomain.objects.create(name="dup.com")
-        response = api_client.post(self.CREATE_DOMAIN_URL, {"name": "dup.com"}, format="json")
+        response = api_client.post(
+            self.CREATE_DOMAIN_URL, {"name": "dup.com"}, format="json"
+        )
         assert response.status_code == status.HTTP_400_BAD_REQUEST

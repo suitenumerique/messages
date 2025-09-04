@@ -15,12 +15,14 @@ from configurations.wsgi import get_wsgi_application
 # Suppress access logs for healthcheck route
 try:
     import django.core.servers.basehttp
+
     class QuietWSGIRequestHandler(django.core.servers.basehttp.WSGIRequestHandler):
         def log_message(self, format, *args):
             path = getattr(self, "path", "")
             if path.strip("/") == "healthz":
                 return
             super().log_message(format, *args)
+
     django.core.servers.basehttp.WSGIRequestHandler = QuietWSGIRequestHandler
 except ImportError:
     pass

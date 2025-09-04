@@ -153,6 +153,7 @@ class TestMessagesDelete:
     @pytest.mark.parametrize(
         "mailbox_role",
         [
+            enums.MailboxRoleChoices.VIEWER,
             enums.MailboxRoleChoices.ADMIN,
             enums.MailboxRoleChoices.EDITOR,
             enums.MailboxRoleChoices.SENDER,
@@ -171,22 +172,12 @@ class TestMessagesDelete:
             thread=thread,
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
-<<<<<<< HEAD
         message = factories.MessageFactory(
             subject="Test message", thread=thread, raw_mime=b"raw email content"
         )
         message2 = factories.MessageFactory(
             subject="Test message 2", thread=thread, raw_mime=b"raw email content 2"
         )
-=======
-        message = factories.MessageFactory(subject="Test message", thread=thread)
-        message_blob = mailbox.create_blob(b"test", "text/plain")
-        message_draft_blob = mailbox.create_blob(b"test", "text/plain")
-        message.blob = message_blob
-        message.draft_blob = message_draft_blob
-        message.save()
-        message2 = factories.MessageFactory(subject="Test message 2", thread=thread)
->>>>>>> 997eb9b (🐛(selfcheck) fix selfcheck after tests, cleanup message blobs after delete)
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=authenticated_user,
@@ -203,51 +194,6 @@ class TestMessagesDelete:
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
         response = client.delete(reverse("messages-detail", kwargs={"id": message.id}))
-        assert response.status_code == status.HTTP_204_NO_CONTENT
-        assert not models.Message.objects.filter(id=message.id).exists()
-        assert models.Message.objects.filter(id=message2.id).exists()
-        assert models.Thread.objects.filter(id=message.thread.id).exists()
-        # check thread stats was updated after message was deleted
-        thread.refresh_from_db()
-        assert thread.has_messages is True
-
-<<<<<<< HEAD
-        assert models.Blob.objects.count() == 1
-=======
-        assert not models.Blob.objects.filter(id=message_blob.id).exists()
-        assert not models.Blob.objects.filter(id=message_draft_blob.id).exists()
-
-        # TODO: check attachments blobs are deleted
->>>>>>> 997eb9b (🐛(selfcheck) fix selfcheck after tests, cleanup message blobs after delete)
-
-    @pytest.mark.parametrize(
-        "mailbox_role",
-        [
-            enums.MailboxRoleChoices.VIEWER,
-            enums.MailboxRoleChoices.ADMIN,
-            enums.MailboxRoleChoices.EDITOR,
-            enums.MailboxRoleChoices.SENDER,
-        ],
-    )
-    def test_delete_last_message_of_thread_success(self, mailbox_role):
-        """Test delete last message of thread."""
-        authenticated_user = factories.UserFactory()
-        mailbox = factories.MailboxFactory()
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=authenticated_user,
-            role=mailbox_role,
-        )
-        thread = factories.ThreadFactory()
-        factories.ThreadAccessFactory(
-            mailbox=mailbox,
-            thread=thread,
-            role=enums.ThreadAccessRoleChoices.EDITOR,
-        )
-        client = APIClient()
-        client.force_authenticate(user=authenticated_user)
-        message = factories.MessageFactory(subject="Test message", thread=thread)
-        response = client.delete(reverse("messages-detail", kwargs={"id": message.id}))
 
         if mailbox_role == enums.MailboxRoleChoices.VIEWER:
             assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -256,4 +202,25 @@ class TestMessagesDelete:
         else:
             assert response.status_code == status.HTTP_204_NO_CONTENT
             assert not models.Message.objects.filter(id=message.id).exists()
-            assert not models.Thread.objects.filter(id=message.thread.id).exists()
+            assert models.Message.objects.filter(id=message2.id).exists()
+            assert models.Thread.objects.filter(id=message.thread.id).exists()
+            # check thread stats was updated after message was deleted
+            thread.refresh_from_db()
+            assert thread.has_messages is True
+
+            assert models.Blob.objects.count() == 1
+
+        # Then delete the second message
+        response = client.delete(reverse("messages-detail", kwargs={"id": message2.id}))
+        if mailbox_role == enums.MailboxRoleChoices.VIEWER:
+            assert response.status_code == status.HTTP_403_FORBIDDEN
+            assert models.Message.objects.filter(id=message2.id).exists()
+            assert models.Thread.objects.filter(id=message.thread.id).exists()
+        else:
+            assert response.status_code == status.HTTP_204_NO_CONTENT
+            assert not models.Message.objects.filter(id=message2.id).exists()
+            assert models.Thread.objects.count() == 0
+
+            assert models.Blob.objects.count() == 0
+
+            assert models.ThreadAccess.objects.count() == 0

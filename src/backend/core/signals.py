@@ -104,7 +104,7 @@ def index_thread_post_save(sender, instance, created, **kwargs):
         )
 
 
-@receiver(post_delete, sender=models.Message)
+@receiver(pre_delete, sender=models.Message)
 def delete_message_blobs(sender, instance, **kwargs):
     """Delete the blobs associated with a message."""
     if instance.blob:
@@ -190,9 +190,9 @@ def delete_orphan_draft_attachments(sender, instance, **kwargs):
             if attachment.messages.count() == 1:
                 attachment.blob.delete()  # this will cascade delete the attachment
 
-        if instance.draft_blob:
+        if instance.draft_blob and instance.draft_blob.pk:
             instance.draft_blob.delete()
 
-    if instance.blob:
+    if instance.blob and instance.blob.pk:
         if instance.blob.messages.count() == 1:
             instance.blob.delete()

@@ -310,11 +310,15 @@ class TestMTAInboundEmail:
         self, api_client: APIClient, sample_email, jwt_token_without_exp
     ):
         """Test that submitting with an invalid JWT token fails."""
+
+        http_token = jwt_token_without_exp(
+            sample_email, {"original_recipients": ["recipient@example.com"]}
+        )
         response = api_client.post(
             "/api/v1.0/mta/inbound-email/",
             data=sample_email,
             content_type="message/rfc822",
-            HTTP_AUTHORIZATION=f"Bearer {jwt_token_without_exp(sample_email, {'original_recipients': ['recipient@example.com']})}",
+            HTTP_AUTHORIZATION=f"Bearer {http_token}",
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 

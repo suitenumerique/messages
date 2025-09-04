@@ -57,6 +57,7 @@ class MessageViewSet(
         message = self.get_object()
         thread = message.thread
         if thread.messages.count() == 1:
+            # Deleting the thread will cascade delete the message
             thread.delete()
         else:
             message.delete()
