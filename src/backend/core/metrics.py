@@ -105,15 +105,46 @@ class MailDomainUsersMetricsApiView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []  # Disable any authentication
 
+    def _get_metrics_from_users_and_mailboxes(
+        self, users_and_mailboxes: dict[str, list[str]]
+    ) -> dict:
+        unique_user_ids = set(users_and_mailboxes["users"])
+        yau = []
+        mau = []
+        wau = []
+        for user_id in unique_user_ids:
+            last_access = (
+                MailboxAccess.objects.filter(
+                    mailbox__in=users_and_mailboxes["mailboxes"],
+                    user_id=user_id,
+                )
+                .aggregate(models.Max("accessed_at"))
+                .get("accessed_at__max")
+            )
+
+            if last_access:
+                if last_access >= timezone.now() - timedelta(days=365):
+                    yau.append(user_id)
+                if last_access >= timezone.now() - timedelta(days=30):
+                    mau.append(user_id)
+                if last_access >= timezone.now() - timedelta(days=7):
+                    wau.append(user_id)
+        return {
+            "tu": len(unique_user_ids),
+            "yau": len(yau),
+            "mau": len(mau),
+            "wau": len(wau),
+        }
+
     @extend_schema(
         tags=["metrics"],
         parameters=[
             OpenApiParameter(
                 name="group_by_maildomain_custom_attribute",
                 type=str,
-                location=OpenApiParameter.PATH,
+                location=OpenApiParameter.QUERY,
                 description="Custom attribute key to group maildomains by.",
-                required=True,
+                required=False,
             ),
             OpenApiExample(
                 "Query Parameter Example",
@@ -132,12 +163,18 @@ class MailDomainUsersMetricsApiView(APIView):
         group_by_key = request.query_params.get("group_by_maildomain_custom_attribute")
 
         if not group_by_key:
-            return Response(
-                {
-                    "error": "Missing required query parameter: group_by_maildomain_custom_attribute"
-                },
-                status=400,
+            mailboxes_accesses = (
+                MailboxAccess.objects.select_related("mailbox")
+                .select_related("user")
+                .all()
             )
+            metrics = self._get_metrics_from_users_and_mailboxes(
+                {
+                    "users": [ma.user.id.hex for ma in mailboxes_accesses],
+                    "mailboxes": [ma.mailbox.id.hex for ma in mailboxes_accesses],
+                }
+            )
+            return Response({"results": metrics})
 
         group_by_to_users_and_mailboxes = {}
         mailbox_accesses = MailboxAccess.objects.select_related("mailbox__domain").all()
@@ -159,37 +196,12 @@ class MailDomainUsersMetricsApiView(APIView):
         metrics = []
 
         for group_by, users_and_mailboxes in group_by_to_users_and_mailboxes.items():
-            unique_user_ids = set(users_and_mailboxes["users"])
-            yau = []
-            mau = []
-            wau = []
-            for user_id in unique_user_ids:
-                last_access = (
-                    MailboxAccess.objects.filter(
-                        mailbox__in=users_and_mailboxes["mailboxes"],
-                        user_id=user_id,
-                    )
-                    .aggregate(models.Max("accessed_at"))
-                    .get("accessed_at__max")
-                )
-
-                if last_access:
-                    if last_access >= timezone.now() - timedelta(days=365):
-                        yau.append(user_id)
-                    if last_access >= timezone.now() - timedelta(days=30):
-                        mau.append(user_id)
-                    if last_access >= timezone.now() - timedelta(days=7):
-                        wau.append(user_id)
-
             metrics.append(
                 {
                     group_by_key: group_by,
-                    "metrics": {
-                        "tu": len(unique_user_ids),
-                        "yau": len(yau),
-                        "mau": len(mau),
-                        "wau": len(wau),
-                    },
+                    "metrics": self._get_metrics_from_users_and_mailboxes(
+                        users_and_mailboxes
+                    ),
                 }
             )
 
