@@ -1,8 +1,11 @@
 """Tests for the MailboxAccessViewSet API endpoint (nested under mailboxes)."""
 # pylint: disable=unused-argument
 
+from datetime import timedelta
+
 from django.contrib.auth.models import AnonymousUser
 from django.urls import reverse
+from django.utils import timezone
 
 import pytest
 from rest_framework import status
@@ -531,3 +534,23 @@ class TestMailboxAccessViewSet:
         assert "user_details" in access_data
         user_details = access_data["user_details"]
         assert "abilities" not in user_details
+
+    def test_mailbox_access_accessed_at_null_by_default(
+        self,
+        access_m1d1_alpha,
+    ):
+        """Test that mailbox access 'accessed_at' is null by default."""
+
+        assert access_m1d1_alpha.accessed_at is None
+
+    def test_mailbox_access_mark_accessed_updates_accessed_at(
+        self,
+        access_m1d1_alpha,
+    ):
+        """Test that marking mailbox access as accessed updates 'accessed_at'."""
+        assert access_m1d1_alpha.accessed_at is None
+
+        access_m1d1_alpha.mark_accessed()
+
+        assert access_m1d1_alpha.accessed_at is not None
+        assert timezone.now() - access_m1d1_alpha.accessed_at < timedelta(seconds=5)

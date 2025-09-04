@@ -1,5 +1,7 @@
 """Tests for the Thread API list endpoint."""
 
+from datetime import timedelta
+
 from django.urls import reverse
 from django.utils import timezone
 
@@ -18,6 +20,7 @@ from core.factories import (
     ThreadFactory,
     UserFactory,
 )
+from core.models import MailboxAccess
 
 pytestmark = pytest.mark.django_db
 
@@ -939,3 +942,41 @@ class TestThreadListAPI:
         api_client.force_authenticate(user=user)
         response = api_client.get(url, {"mailbox_id": str(mailbox.id)})
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_list_should_update_mailbox_access_accessed_at(self, api_client, url):
+        """Test listing threads when user has no mailbox access."""
+        # Test filtering by mailbox that user doesn't have access to
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+        mailbox = MailboxFactory(users_read=[user])
+        assert MailboxAccess.objects.get(user=user, mailbox=mailbox).accessed_at is None
+
+        api_client.get(url, {"mailbox_id": str(mailbox.id)})
+        access_datetime1 = MailboxAccess.objects.get(
+            user=user, mailbox=mailbox
+        ).accessed_at
+        assert (timezone.now() - access_datetime1) < timedelta(seconds=1)
+
+        api_client.get(url, {"mailbox_id": str(mailbox.id)})
+        access_datetime2 = MailboxAccess.objects.get(
+            user=user, mailbox=mailbox
+        ).accessed_at
+        assert (timezone.now() - access_datetime2) < timedelta(seconds=1)
+        assert access_datetime2 > access_datetime1
+
+    def test_list_for_other_user_should_update_mailbox_access_accessed_at(
+        self, api_client, url
+    ):
+        """Test listing threads when user has no mailbox access."""
+        # Test filtering by mailbox that user doesn't have access to
+        user1 = UserFactory()
+        user2 = UserFactory()
+        api_client.force_authenticate(user=user1)
+        mailbox = MailboxFactory(users_read=[user1])
+        mailbox = MailboxFactory(users_read=[user2])
+
+        api_client.get(url, {"mailbox_id": str(mailbox.id)})
+
+        assert (
+            MailboxAccess.objects.get(user=user2, mailbox=mailbox).accessed_at is None
+        )

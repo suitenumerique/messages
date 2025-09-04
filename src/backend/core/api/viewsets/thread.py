@@ -356,10 +356,17 @@ class ThreadViewSet(
         """List threads with optional search functionality."""
         search_query = request.query_params.get("search", "").strip()
 
+        mailbox_id = request.query_params.get("mailbox_id")
+        if mailbox_id:
+            mailbox_access = models.MailboxAccess.objects.filter(
+                mailbox=mailbox_id, user=request.user
+            ).first()
+            if mailbox_access:
+                mailbox_access.mark_accessed()
+
         # If search is provided and OpenSearch is available, use it
         if search_query and len(settings.OPENSEARCH_HOSTS[0]) > 0:
             # Get the mailbox_id for filtering
-            mailbox_id = request.query_params.get("mailbox_id")
 
             # Build filters from query parameters
             # TODO: refactor as thread filters are not the same as message filters (has_messages, has_active)
