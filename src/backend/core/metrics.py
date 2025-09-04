@@ -174,7 +174,7 @@ class MailDomainUsersMetricsApiView(APIView):
                     "mailboxes": [ma.mailbox.id.hex for ma in mailboxes_accesses],
                 }
             )
-            return Response({"results": metrics})
+            return Response({"results": {"metrics": metrics}})
 
         group_by_to_users_and_mailboxes = {}
         mailbox_accesses = MailboxAccess.objects.select_related("mailbox__domain").all()

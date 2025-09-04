@@ -2,6 +2,7 @@
 
 from django.conf import settings
 from django.http import HttpResponse
+from django.urls import reverse
 
 
 class AuthMiddleware:
@@ -12,16 +13,18 @@ class AuthMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
+    def _paths_match(self, path1: str, path2: str) -> bool:
+        return path1.rstrip("/") == path2.rstrip("/")
+
     def __call__(self, request):
-        normalized_path = request.path.rstrip("/")
-        if normalized_path.endswith("/prometheus/metrics"):
+        if self._paths_match(request.path, reverse("prometheus-django-metrics")):
             if (
                 settings.PROMETHEUS_API_KEY
                 and request.headers.get("Authorization")
                 != f"Bearer {settings.PROMETHEUS_API_KEY}"
             ):
                 return HttpResponse("Unauthorized", status=401)
-        elif normalized_path.endswith("/maildomain_users/metrics"):
+        elif self._paths_match(request.path, reverse("maildomain-users-metrics")):
             if (
                 settings.MAILDOMAIN_USER_METRICS_API_KEY
                 and request.headers.get("Authorization")
