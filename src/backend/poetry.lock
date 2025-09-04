@@ -3558,9 +3558,9 @@ files = [
 brotli = ["brotli"]
 
 [extras]
-dev = ["django-extensions", "drf-spectacular-sidecar", "flower", "pip-audit", "pipdeptree", "prometheus-client", "pylint", "pylint-django", "pytest", "pytest-cov", "pytest-django", "pytest-icdiff", "pytest-repeat", "pytest-xdist", "responses", "ruff"]
+dev = ["django-extensions", "drf-spectacular-sidecar", "flower", "pip-audit", "pipdeptree", "pylint", "pylint-django", "pytest", "pytest-cov", "pytest-django", "pytest-icdiff", "pytest-repeat", "pytest-xdist", "responses", "ruff"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0"
-content-hash = "05be5fb36cded93adfeef3a2889a39282d159873be825a776ab608354e348928"
+content-hash = "ced1bc89461f209d7494200a3588b66759efc44593d3be4c6a5cb22ea707e140"
