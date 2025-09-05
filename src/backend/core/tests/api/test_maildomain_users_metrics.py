@@ -26,15 +26,7 @@ def check_results_for_key(
     custom_attribute_value: str = None,
 ):
     """
-    Check that the results dictionary contains the expected keys and values.
-
-    Args:
-        results (dict|list): The results dictionary or list to check.
-        expected (dict): A dictionary of expected keys and their corresponding expected values.
-        key (str): The key to look for in the results dictionary, if empty checks at the top level.
-
-    Raises:
-        AssertionError: If any of the expected keys are missing or if their values do not match the expected values.
+    Assert that the metrics in results match expected values, optionally for a specific custom attribute group.
     """
 
     if custom_attribute_key is None:
@@ -66,23 +58,14 @@ def check_results_for_key(
 @pytest.fixture
 def url():
     """
-    Fixture to return the URL for the Prometheus metrics endpoint.
-
-    Returns:
-        str: The URL for the Prometheus metrics endpoint.
+    Returns the URL for the maildomain users metrics endpoint.
     """
     return reverse("maildomain-users-metrics")
 
 @pytest.fixture
 def url_with_siret_query_param(url):
     """
-    Fixture to return the URL for the Prometheus metrics endpoint with the SIRET query parameter.
-
-    Args:
-        url (str): The base URL for the Prometheus metrics endpoint.
-
-    Returns:
-        str: The URL for the Prometheus metrics endpoint with the SIRET query parameter.
+    Returns the metrics endpoint URL with the SIRET query parameter.
     """
     return f"{url}?group_by_maildomain_custom_attribute=siret"
 
@@ -90,26 +73,12 @@ def url_with_siret_query_param(url):
 @pytest.fixture
 def correctly_configured_header(settings):
     """
-    Fixture to return the authentication header for the maildomain user metrics endpoint.
-
-    Args:
-        settings: The Django settings object.
-
-    Returns:
-        dict: A dictionary containing the authentication header.
+    Returns the authentication header for the metrics endpoint.
     """
     return {"HTTP_AUTHORIZATION": f"Bearer {settings.MAILDOMAIN_USER_METRICS_API_KEY}"}
 
-def create_domain_with_mailboxes(mailbox_counts: int = 1):
-    """Create a maildomain with the given siret"""
-    siret = randint(10000000000000, 99999999999999)
-    domain = MailDomainFactory(custom_attributes={"siret": siret})
-    mbs = MailboxFactory.create_batch(mailbox_counts, mail_domain=domain)
-    return mbs, siret
-
-
 def grant_access_to_mailbox_accessed_at(mailbox, user, accessed_at: timezone = None):
-    """Grant access to the given mailboxes to the given users"""
+    """Grant access to a mailbox for a user, optionally setting accessed_at."""
     mba = MailboxAccessFactory(mailbox=mailbox, user=user)
     if accessed_at:
         mba.accessed_at = accessed_at
@@ -128,8 +97,8 @@ def grant_access_to_mailbox_accessed_at(mailbox, user, accessed_at: timezone = N
 #       {"users": []},
 #   ]
 # }]
-def create_models_from_config(config)->list[MailboxAccess]:
-    """Create maildomains, mailboxes and mailbox accesses from the given config"""
+def create_models_from_config(config) -> list[MailboxAccess]:
+    """Create maildomains, mailboxes, and accesses from a config structure."""
     accesses = []
     for domain_config in config:
         if "siret" in domain_config:
@@ -147,20 +116,16 @@ def create_models_from_config(config)->list[MailboxAccess]:
 
 class TestMailDomainUsersMetrics:
     """
-    Test suite for the Prometheus metrics endpoint.
-
-    This class contains tests to verify authentication, message status metrics,
-    attachment count metrics, and attachment size metrics as reported by the
-    Prometheus /metrics endpoint.
+    Tests for the maildomain users metrics endpoint.
     """
 
     @pytest.fixture(autouse=True)
     def configure_settings(self):
-        """Run before each test"""
+        """Reload URLs before each test"""
         self.reload_urls()
 
     def reload_urls(self):
-        """Reload the Django URL router"""
+        """Reload Django URL router"""
         clear_url_caches()
         if "messages.urls" in sys.modules:
             reload(sys.modules["messages.urls"])
@@ -170,16 +135,14 @@ class TestMailDomainUsersMetrics:
 
     @pytest.mark.django_db
     def test_metrics_endpoint_requires_auth(
-        self, api_client, settings, url, correctly_configured_header
+        self, api_client, url, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint requires authentication.
+        Requires valid API key for access.
 
         Asserts that requests without or with invalid authentication are rejected (401),
         and requests with the correct API key are accepted (200).
         """
-        settings.MAILDOMAIN_USER_METRICS_API_KEY = "test_api_key"
-
         # Test without authentication
         response = api_client.get(url)
         assert response.status_code == 401
@@ -190,16 +153,16 @@ class TestMailDomainUsersMetrics:
 
         # Test with authentication
         response = api_client.get(
-            url, HTTP_AUTHORIZATION=f"Bearer {settings.MAILDOMAIN_USER_METRICS_API_KEY}"
+            url, **correctly_configured_header
         )
         assert response.status_code == 200
 
     @pytest.mark.django_db
-    def test_metrics_endpoint_should_return_general_stats_without_query_params_with_no_user(
-        self, api_client, settings, url, correctly_configured_header
+    def test_no_group_no_users(
+        self, api_client, url, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint returns general stats when no query params are provided.
+        Returns zero stats when no users exist.
 
         Asserts that the response contains overall user and mailbox counts.
         """
@@ -218,11 +181,11 @@ class TestMailDomainUsersMetrics:
         )
 
     @pytest.mark.django_db
-    def test_metrics_endpoint_should_return_general_stats_without_query_params_with_users_no_access(
-        self, api_client, settings, url, correctly_configured_header
+    def test_no_group_users_no_access(
+        self, api_client, url, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint returns general stats when no query params are provided.
+        Returns zero active users if users never accessed mailboxes.
 
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
@@ -244,11 +207,11 @@ class TestMailDomainUsersMetrics:
         )
 
     @pytest.mark.django_db
-    def test_metrics_endpoint_should_return_general_stats_without_query_params_with_users_access(
-        self, api_client, settings, url, correctly_configured_header
+    def test_no_group_users_access(
+        self, api_client, url, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint returns general stats when no query params are provided.
+        Returns all users as active if all accessed recently.
 
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
@@ -273,11 +236,11 @@ class TestMailDomainUsersMetrics:
         )
 
     @pytest.mark.django_db
-    def test_metrics_endpoint_should_return_general_stats_without_query_params_with_users_older_access(
-        self, api_client, settings, url, correctly_configured_header
+    def test_no_group_users_old_access(
+        self, api_client, url, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint returns general stats when no query params are provided.
+        Correctly counts users by last access time.
 
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
@@ -318,11 +281,11 @@ class TestMailDomainUsersMetrics:
 
 
     @pytest.mark.django_db
-    def test_metrics_endpoint_should_return_specific_stats_but_no_data(
-        self, api_client, settings, url_with_siret_query_param, correctly_configured_header
+    def test_group_no_data(
+        self, api_client, url_with_siret_query_param, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint returns general stats when no query params are provided.
+        Returns no results when grouping and no data exists.
 
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
@@ -330,7 +293,7 @@ class TestMailDomainUsersMetrics:
 
         # Create mailbox accesses for users
         response = api_client.get(
-            url_with_siret_query_param
+            url_with_siret_query_param,
             **correctly_configured_header,
         )
         assert response.status_code == 200
@@ -339,11 +302,11 @@ class TestMailDomainUsersMetrics:
 
 
     @pytest.mark.django_db
-    def test_metrics_endpoint_should_return_specific_stats_with_one_access(
-        self, api_client, settings, url, correctly_configured_header
+    def test_group_one_access(
+        self, api_client, url_with_siret_query_param, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint returns general stats when no query params are provided.
+        Groups stats for one user with no access.
 
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
@@ -359,7 +322,7 @@ class TestMailDomainUsersMetrics:
         }])
 
         response = api_client.get(
-            url_with_siret_query_param
+            url_with_siret_query_param,
             **correctly_configured_header,
         )
         check_results_for_key(
@@ -375,11 +338,11 @@ class TestMailDomainUsersMetrics:
         )
 
     @pytest.mark.django_db
-    def test_metrics_endpoint_should_return_specific_stats_with_multiple_accesses_one_domain_one_user(
-        self, api_client, settings, url, correctly_configured_header
+    def test_group_multi_access_one_domain_one_user(
+        self, api_client, url, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint returns general stats when no query params are provided.
+        Groups stats for one user with two mailboxes in one domain.
 
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
@@ -446,11 +409,11 @@ class TestMailDomainUsersMetrics:
         )
 
     @pytest.mark.django_db
-    def test_metrics_endpoint_should_return_specific_stats_with_multiple_accesses_multiple_domains_one_user(
-        self, api_client, settings, url, correctly_configured_header
+    def test_group_multi_access_multi_domain_one_user(
+        self, api_client, url, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint returns general stats when no query params are provided.
+        Groups stats for one user with mailboxes in two domains.
 
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
@@ -513,11 +476,11 @@ class TestMailDomainUsersMetrics:
         )
 
     @pytest.mark.django_db
-    def test_metrics_endpoint_should_return_specific_stats_with_multiple_accesses_one_domain_one_mailbox_multiple_users(
-        self, api_client, settings, url, correctly_configured_header
+    def test_group_multi_access_one_domain_one_mailbox_multi_users(
+        self, api_client, url, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint returns general stats when no query params are provided.
+        Groups stats for two users with access to the same mailbox in one domain.
 
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
@@ -529,7 +492,7 @@ class TestMailDomainUsersMetrics:
             "siret": siret,
             "mailboxes": [
                 {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=365)},
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=363)},
                     {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=1)},
                 ]},
             ],
@@ -557,11 +520,11 @@ class TestMailDomainUsersMetrics:
         )
 
     @pytest.mark.django_db
-    def test_metrics_endpoint_should_return_specific_stats_with_multiple_accesses_one_domain_multiple_mailbox_multiple_users(
-        self, api_client, settings, url, correctly_configured_header
+    def test_group_multi_access_one_domain_multi_mailbox_multi_users(
+        self, api_client, url, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint returns general stats when no query params are provided.
+        Groups stats for five users and three mailboxes in one domain.
 
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
@@ -609,11 +572,11 @@ class TestMailDomainUsersMetrics:
         )
 
     @pytest.mark.django_db
-    def test_metrics_endpoint_should_return_specific_stats_just_before_day_cutoff(
-        self, api_client, settings, url, correctly_configured_header
+    def test_group_just_before_cutoff(
+        self, api_client, url, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint returns general stats when no query params are provided.
+        Groups stats for users accessed just before yearly, monthly, weekly cutoffs.
 
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
@@ -663,11 +626,11 @@ class TestMailDomainUsersMetrics:
         )
 
     @pytest.mark.django_db
-    def test_metrics_endpoint_should_return_specific_stats_with_exact_days(
-        self, api_client, settings, url, correctly_configured_header
+    def test_group_exact_cutoff(
+        self, api_client, url, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint returns general stats when no query params are provided.
+        Groups stats for users accessed exactly at yearly, monthly, weekly cutoffs.
 
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
@@ -718,11 +681,11 @@ class TestMailDomainUsersMetrics:
         )
 
     @pytest.mark.django_db
-    def test_metrics_endpoint_should_not_count_uneven_custom_attributes(
-        self, api_client, settings, url, correctly_configured_header
+    def test_group_missing_custom_attr(
+        self, api_client, url, correctly_configured_header
     ):
         """
-        Test that the metrics endpoint returns general stats when no query params are provided.
+        Domains missing the custom attribute are not included in grouped results.
 
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
