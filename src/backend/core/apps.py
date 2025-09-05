@@ -3,8 +3,6 @@
 from django.apps import AppConfig
 from django.utils.translation import gettext_lazy as _
 
-from prometheus_client.core import REGISTRY
-
 
 class CoreConfig(AppConfig):
     """Configuration class for the messages core app."""
@@ -16,9 +14,14 @@ class CoreConfig(AppConfig):
     def ready(self):
         """Register signal handlers and prometheus collector when the app is ready."""
         # pylint: disable=unused-import, import-outside-toplevel
-        from .metrics import CustomDBPrometheusMetricsCollector
+        from django.conf import settings
 
-        REGISTRY.register(CustomDBPrometheusMetricsCollector())
+        if settings.ENABLE_PROMETHEUS:
+            from prometheus_client.core import REGISTRY
+
+            from .metrics import CustomDBPrometheusMetricsCollector
+
+            REGISTRY.register(CustomDBPrometheusMetricsCollector())
 
         # Import signal handlers to register them
         # pylint: disable=unused-import, import-outside-toplevel

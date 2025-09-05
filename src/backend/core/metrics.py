@@ -46,26 +46,28 @@ class CustomDBPrometheusMetricsCollector:
 
         yield gauge
 
-    def get_attachments_count(self):
+    def get_draft_attachments_count(self):
         """
-        Yields a GaugeMetricFamily with the total number of attachments.
+        Yields a GaugeMetricFamily with the total number of draft attachments.
         """
         attachments_count = Attachment.objects.count()
         yield GaugeMetricFamily(
-            "attachment_count", "Number of attachments", value=attachments_count
+            "draft_attachment_count",
+            "Number of draft attachments",
+            value=attachments_count,
         )
 
-    def get_attachments_total_size(self):
+    def get_draft_attachments_total_size(self):
         """
-        Yields a GaugeMetricFamily with the total size (in bytes) of all attachments.
+        Yields a GaugeMetricFamily with the total size (in bytes) of all draft attachments.
         """
         total_size = (
             Attachment.objects.aggregate(models.Sum("blob__size"))["blob__size__sum"]
             or 0
         )
         yield GaugeMetricFamily(
-            "attachments_total_size_bytes",
-            "Total size of all attachments in bytes",
+            "draft_attachments_total_size_bytes",
+            "Total size of all draft attachments in bytes",
             value=total_size,
         )
 
@@ -81,5 +83,5 @@ class CustomDBPrometheusMetricsCollector:
             return
 
         yield from self.get_messages_with_status()
-        yield from self.get_attachments_count()
-        yield from self.get_attachments_total_size()
+        yield from self.get_draft_attachments_count()
+        yield from self.get_draft_attachments_total_size()

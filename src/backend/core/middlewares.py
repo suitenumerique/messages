@@ -1,5 +1,7 @@
 """Custom Django middlewares"""
 
+from secrets import compare_digest
+
 from django.conf import settings
 from django.http import HttpResponse
 
@@ -13,12 +15,12 @@ class PrometheusAuthMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if request.path.endswith("/prometheus/metrics"):
-            if (
-                settings.PROMETHEUS_API_KEY
-                and request.headers.get("Authorization")
-                != f"Bearer {settings.PROMETHEUS_API_KEY}"
-            ):
-                return HttpResponse("Unauthorized", status=401)
+        if request.path.startswith(f"/api/{settings.API_VERSION}/prometheus"):
+            if settings.PROMETHEUS_API_KEY:
+                if not compare_digest(
+                    request.headers.get("Authorization") or "",
+                    f"Bearer {settings.PROMETHEUS_API_KEY}",
+                ):
+                    return HttpResponse("Unauthorized", status=401)
 
         return self.get_response(request)
