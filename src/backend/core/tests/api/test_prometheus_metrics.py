@@ -92,7 +92,6 @@ class TestPrometheusMetrics:
         """
 
         self.reload_urls()
-
         # Test with authentication
         response = api_client.get(
             url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}"

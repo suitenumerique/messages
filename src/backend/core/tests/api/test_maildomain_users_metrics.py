@@ -1,9 +1,10 @@
-"""Tests for the Prometheus metrics endpoint."""
+"""Tests for the Maildomain users metrics endpoint."""
 # pylint: disable=redefined-outer-name, unused-argument,
 
 import sys
 from importlib import import_module, reload
 
+from django.test import override_settings
 from django.urls import clear_url_caches, reverse
 from django.utils import timezone
 
@@ -134,6 +135,30 @@ class TestMailDomainUsersMetrics:
             reload(sys.modules["messages.urls"])
         else:
             import_module("messages.urls")
+
+    @override_settings(ENABLE_MAILDOMAIN_USERS_METRICS=False)
+    @pytest.mark.django_db
+    def test_metrics_endpoint_disabled(self, api_client, settings, url, correctly_configured_header):
+        """
+        Test that the metrics endpoint is disabled when ENABLE_MAILDOMAIN_USERS_METRICS is False.
+
+        Asserts that requests are rejected (404).
+        """
+
+        self.reload_urls()
+        # Test with authentication
+        response = api_client.get(
+            url, **correctly_configured_header
+        )
+        print(response.json())
+        assert response.status_code == 404
+
+        # Test with authentication
+        response = api_client.get(
+            url
+        )
+        assert response.status_code == 404
+
 
     @pytest.mark.django_db
     def test_metrics_endpoint_requires_auth(

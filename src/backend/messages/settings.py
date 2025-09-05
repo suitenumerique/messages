@@ -694,11 +694,13 @@ class Base(Configuration):
         if self.ENABLE_PROMETHEUS:
             self.INSTALLED_APPS += ["django_prometheus"]
             self.MIDDLEWARE = [
-                "core.middlewares.AuthMiddleware",
                 "django_prometheus.middleware.PrometheusBeforeMiddleware",
                 *self.MIDDLEWARE,
                 "django_prometheus.middleware.PrometheusAfterMiddleware",
             ]
+
+        if self.ENABLE_MAILDOMAIN_USERS_METRICS or self.ENABLE_PROMETHEUS:
+            self.MIDDLEWARE.append("core.middlewares.AuthMiddleware"),
 
     # pylint: disable=invalid-name
     @property
