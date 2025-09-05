@@ -794,6 +794,7 @@ class Development(Base):
     SESSION_COOKIE_NAME = "st_messages_sessionid"
 
     ENABLE_PROMETHEUS = True
+    ENABLE_MAILDOMAIN_USERS_METRICS = True
     PROMETHEUS_API_KEY = "local_api_key"
 
     USE_SWAGGER = True
@@ -860,6 +861,7 @@ class Test(Base):
     SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN = {}
 
     ENABLE_PROMETHEUS = True
+    ENABLE_MAILDOMAIN_USERS_METRICS = True
     PROMETHEUS_API_KEY = "test_api_key"
 
     # pylint: disable=invalid-name

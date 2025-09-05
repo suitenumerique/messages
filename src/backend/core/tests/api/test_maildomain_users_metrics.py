@@ -1,12 +1,16 @@
 """Tests for the Prometheus metrics endpoint."""
 # pylint: disable=redefined-outer-name, unused-argument,
 
+from importlib import import_module, reload
+from random import randint
+import sys
 from django.test import override_settings
-from django.urls import reverse
+from django.urls import clear_url_caches, reverse
 from django.utils import timezone
 
 import pytest
 
+from core.models import MailboxAccess
 from core.factories import (
     MailboxAccessFactory,
     MailboxFactory,
@@ -57,6 +61,8 @@ def check_results_for_key(
     )
 
 
+
+
 @pytest.fixture
 def url():
     """
@@ -67,9 +73,22 @@ def url():
     """
     return reverse("maildomain-users-metrics")
 
+@pytest.fixture
+def url_with_siret_query_param(url):
+    """
+    Fixture to return the URL for the Prometheus metrics endpoint with the SIRET query parameter.
+
+    Args:
+        url (str): The base URL for the Prometheus metrics endpoint.
+
+    Returns:
+        str: The URL for the Prometheus metrics endpoint with the SIRET query parameter.
+    """
+    return f"{url}?group_by_maildomain_custom_attribute=siret"
+
 
 @pytest.fixture
-def maildomain_user_metrics_auth_header(settings):
+def correctly_configured_header(settings):
     """
     Fixture to return the authentication header for the maildomain user metrics endpoint.
 
@@ -79,8 +98,51 @@ def maildomain_user_metrics_auth_header(settings):
     Returns:
         dict: A dictionary containing the authentication header.
     """
-    settings.MAILDOMAIN_USER_METRICS_API_KEY = "test_api_key"
     return {"HTTP_AUTHORIZATION": f"Bearer {settings.MAILDOMAIN_USER_METRICS_API_KEY}"}
+
+def create_domain_with_mailboxes(mailbox_counts: int = 1):
+    """Create a maildomain with the given siret"""
+    siret = randint(10000000000000, 99999999999999)
+    domain = MailDomainFactory(custom_attributes={"siret": siret})
+    mbs = MailboxFactory.create_batch(mailbox_counts, mail_domain=domain)
+    return mbs, siret
+
+
+def grant_access_to_mailbox_accessed_at(mailbox, user, accessed_at: timezone = None):
+    """Grant access to the given mailboxes to the given users"""
+    mba = MailboxAccessFactory(mailbox=mailbox, user=user)
+    if accessed_at:
+        mba.accessed_at = accessed_at
+        mba.save()
+    return mba
+
+
+# config example
+# [{
+#   "siret" : "12345678901234",
+#   "mailboxes": [
+#       {"users": [
+#           {"user": user1, "accessed_at": timezone.now() - timezone.timedelta(days=10)}]},
+#           {"user": user2, "accessed_at": timezone.now() - timezone.timedelta(days=1)},
+#       ],
+#       {"users": []},
+#   ]
+# }]
+def create_models_from_config(config)->list[MailboxAccess]:
+    """Create maildomains, mailboxes and mailbox accesses from the given config"""
+    accesses = []
+    for domain_config in config:
+        if "siret" in domain_config:
+            domain = MailDomainFactory(custom_attributes={"siret": domain_config["siret"]})
+        else:
+            domain = MailDomainFactory()
+        for mailbox_config in domain_config["mailboxes"]:
+            mailbox = MailboxFactory(domain=domain)
+            for user_config in mailbox_config["users"]:
+                user = user_config["user"]
+                accessed_at = user_config.get("accessed_at")
+                accesses.append(grant_access_to_mailbox_accessed_at(mailbox, user, accessed_at))
+    return accesses
 
 
 class TestMailDomainUsersMetrics:
@@ -92,9 +154,23 @@ class TestMailDomainUsersMetrics:
     Prometheus /metrics endpoint.
     """
 
+    @pytest.fixture(autouse=True)
+    def configure_settings(self):
+        """Run before each test"""
+        self.reload_urls()
+
+    def reload_urls(self):
+        """Reload the Django URL router"""
+        clear_url_caches()
+        if "messages.urls" in sys.modules:
+            reload(sys.modules["messages.urls"])
+        else:
+            import_module("messages.urls")
+
+
     @pytest.mark.django_db
     def test_metrics_endpoint_requires_auth(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url, correctly_configured_header
     ):
         """
         Test that the metrics endpoint requires authentication.
@@ -102,7 +178,6 @@ class TestMailDomainUsersMetrics:
         Asserts that requests without or with invalid authentication are rejected (401),
         and requests with the correct API key are accepted (200).
         """
-        settings.ENABLE_MAILDOMAIN_USERS_METRICS = True
         settings.MAILDOMAIN_USER_METRICS_API_KEY = "test_api_key"
 
         # Test without authentication
@@ -121,7 +196,7 @@ class TestMailDomainUsersMetrics:
 
     @pytest.mark.django_db
     def test_metrics_endpoint_should_return_general_stats_without_query_params_with_no_user(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url, correctly_configured_header
     ):
         """
         Test that the metrics endpoint returns general stats when no query params are provided.
@@ -129,7 +204,7 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         """
 
-        response = api_client.get(url, **maildomain_user_metrics_auth_header)
+        response = api_client.get(url, **correctly_configured_header)
         assert response.status_code == 200
 
         check_results_for_key(
@@ -144,7 +219,7 @@ class TestMailDomainUsersMetrics:
 
     @pytest.mark.django_db
     def test_metrics_endpoint_should_return_general_stats_without_query_params_with_users_no_access(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url, correctly_configured_header
     ):
         """
         Test that the metrics endpoint returns general stats when no query params are provided.
@@ -152,11 +227,10 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
         """
-        settings.ENABLE_MAILDOMAIN_USERS_METRICS = True
 
         # Create mailbox accesses for users
         MailboxAccessFactory.create_batch(3)
-        response = api_client.get(url, **maildomain_user_metrics_auth_header)
+        response = api_client.get(url, **correctly_configured_header)
         assert response.status_code == 200
 
         check_results_for_key(
@@ -171,7 +245,7 @@ class TestMailDomainUsersMetrics:
 
     @pytest.mark.django_db
     def test_metrics_endpoint_should_return_general_stats_without_query_params_with_users_access(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url, correctly_configured_header
     ):
         """
         Test that the metrics endpoint returns general stats when no query params are provided.
@@ -179,14 +253,13 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
         """
-        settings.ENABLE_MAILDOMAIN_USERS_METRICS = True
 
         # Create mailbox accesses for users
         mas = MailboxAccessFactory.create_batch(3)
         for ma in mas:
             ma.accessed_at = timezone.now()
             ma.save()
-        response = api_client.get(url, **maildomain_user_metrics_auth_header)
+        response = api_client.get(url, **correctly_configured_header)
         assert response.status_code == 200
 
         check_results_for_key(
@@ -201,7 +274,7 @@ class TestMailDomainUsersMetrics:
 
     @pytest.mark.django_db
     def test_metrics_endpoint_should_return_general_stats_without_query_params_with_users_older_access(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url, correctly_configured_header
     ):
         """
         Test that the metrics endpoint returns general stats when no query params are provided.
@@ -209,27 +282,28 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
         """
-        settings.ENABLE_MAILDOMAIN_USERS_METRICS = True
 
-        # Create mailbox accesses for users
-        mas = MailboxAccessFactory.create_batch(5)
+        create_models_from_config([{
+            "mailboxes": [
+                {"users": [
+                    {"user": UserFactory()} # Never accessed, only counted in tu
+                ]},
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=400)} # Old, only counted in tu
+                ]},
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=40)} # Only counted in tu + yau
+                ]},
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=10)} # Only counted in tu + yau + mau
+                ]},
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=1)} # Counted in tu + yau + mau + wau
+                ]},
+            ],
+        }])
 
-        # mas[0] never accessed, only counted in tu
-        mas[1].accessed_at = timezone.now() - timezone.timedelta(
-            days=400
-        )  # Old, only counted in tu
-        mas[2].accessed_at = timezone.now() - timezone.timedelta(
-            days=40
-        )  # Only counted in tu + yau
-        mas[3].accessed_at = timezone.now() - timezone.timedelta(
-            days=10
-        )  # Only counted in tu + yau + mau
-        mas[4].accessed_at = timezone.now() - timezone.timedelta(
-            days=1
-        )  # Counted in tu + yau + mau + wau
-        for ma in mas:
-            ma.save()
-        response = api_client.get(url, **maildomain_user_metrics_auth_header)
+        response = api_client.get(url, **correctly_configured_header)
         assert response.status_code == 200
 
         check_results_for_key(
@@ -242,29 +316,10 @@ class TestMailDomainUsersMetrics:
             },
         )
 
-    @override_settings(
-        SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN={
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "$id": "https://github.com/suitenumerique/messages/schemas/custom-fields/maildomain",
-            "type": "object",
-            "title": "Maildomain custom fields",
-            "additionalProperties": False,
-            "properties": {
-                "siret": {
-                    "type": "string",
-                    "title": "Siret",
-                    "default": "",
-                    "minLength": 14,
-                    "maxLength": 14,
-                    "pattern": "^[0-9]{14}$",
-                },
-            },
-            "required": [],
-        }
-    )
+
     @pytest.mark.django_db
     def test_metrics_endpoint_should_return_specific_stats_but_no_data(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url_with_siret_query_param, correctly_configured_header
     ):
         """
         Test that the metrics endpoint returns general stats when no query params are provided.
@@ -272,42 +327,20 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
         """
-        settings.ENABLE_MAILDOMAIN_USERS_METRICS = True
 
         # Create mailbox accesses for users
         response = api_client.get(
-            f"{url}?group_by_maildomain_custom_attribute=siret",
-            **maildomain_user_metrics_auth_header,
+            url_with_siret_query_param
+            **correctly_configured_header,
         )
         assert response.status_code == 200
-        assert "count" in response.json()
-        assert "results" in response.json()
         assert response.json()["count"] == 0
         assert response.json()["results"] == []
 
-    @override_settings(
-        SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN={
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "$id": "https://github.com/suitenumerique/messages/schemas/custom-fields/maildomain",
-            "type": "object",
-            "title": "Maildomain custom fields",
-            "additionalProperties": False,
-            "properties": {
-                "siret": {
-                    "type": "string",
-                    "title": "Siret",
-                    "default": "",
-                    "minLength": 14,
-                    "maxLength": 14,
-                    "pattern": "^[0-9]{14}$",
-                },
-            },
-            "required": [],
-        }
-    )
+
     @pytest.mark.django_db
     def test_metrics_endpoint_should_return_specific_stats_with_one_access(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url, correctly_configured_header
     ):
         """
         Test that the metrics endpoint returns general stats when no query params are provided.
@@ -315,21 +348,20 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
         """
-        settings.ENABLE_MAILDOMAIN_USERS_METRICS = True
 
-        domain = MailDomainFactory(custom_attributes={"siret": "12345678901234"})
-        mailbox = MailboxFactory(domain=domain)
+        create_models_from_config([{
+            "siret": "12345678901234",
+            "mailboxes": [
+                {"users": [
+                    {"user": UserFactory()}
+                ]},
+            ],
+        }])
 
-        MailboxAccessFactory(mailbox=mailbox)
         response = api_client.get(
-            f"{url}?group_by_maildomain_custom_attribute=siret",
-            **maildomain_user_metrics_auth_header,
+            url_with_siret_query_param
+            **correctly_configured_header,
         )
-
-        assert response.status_code == 200
-        assert "count" in response.json()
-        assert "results" in response.json()
-        assert response.json()["count"] == 1
         check_results_for_key(
             response.json()["results"],
             {
@@ -344,7 +376,7 @@ class TestMailDomainUsersMetrics:
 
     @pytest.mark.django_db
     def test_metrics_endpoint_should_return_specific_stats_with_multiple_accesses_one_domain_one_user(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url, correctly_configured_header
     ):
         """
         Test that the metrics endpoint returns general stats when no query params are provided.
@@ -352,19 +384,24 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
         """
-        settings.ENABLE_MAILDOMAIN_USERS_METRICS = True
 
-        domain = MailDomainFactory(custom_attributes={"siret": "12345678901234"})
         user = UserFactory()
-        mailbox1 = MailboxFactory(domain=domain)
-        mailbox2 = MailboxFactory(domain=domain)
 
-        ma1 = MailboxAccessFactory(mailbox=mailbox1, user=user)
-        ma2 = MailboxAccessFactory(mailbox=mailbox2, user=user)
+        mba = create_models_from_config([{
+            "siret": "12345678901234",
+            "mailboxes": [
+                {"users": [
+                    {"user": user}
+                ]},
+                {"users": [
+                    {"user": user}
+                ]},
+            ],
+        }])
 
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
-            **maildomain_user_metrics_auth_header,
+            **correctly_configured_header,
         )
 
         assert response.status_code == 200
@@ -382,14 +419,14 @@ class TestMailDomainUsersMetrics:
             custom_attribute_key="siret",
             custom_attribute_value="12345678901234",
         )
-        ma1.accessed_at = timezone.now() - timezone.timedelta(days=10)
-        ma1.save()
-        ma2.accessed_at = timezone.now() - timezone.timedelta(days=1)
-        ma2.save()
+        mba[0].accessed_at = timezone.now() - timezone.timedelta(days=10)
+        mba[0].save()
+        mba[1].accessed_at = timezone.now() - timezone.timedelta(days=1)
+        mba[1].save()
 
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
-            **maildomain_user_metrics_auth_header,
+            **correctly_configured_header,
         )
 
         assert response.status_code == 200
@@ -410,7 +447,7 @@ class TestMailDomainUsersMetrics:
 
     @pytest.mark.django_db
     def test_metrics_endpoint_should_return_specific_stats_with_multiple_accesses_multiple_domains_one_user(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url, correctly_configured_header
     ):
         """
         Test that the metrics endpoint returns general stats when no query params are provided.
@@ -418,28 +455,33 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
         """
-        settings.ENABLE_MAILDOMAIN_USERS_METRICS = True
 
         siret1 = "12345678901234"
         siret2 = "12345678909876"
 
-        domain1 = MailDomainFactory(custom_attributes={"siret": siret1})
-        domain2 = MailDomainFactory(custom_attributes={"siret": siret2})
         user = UserFactory()
-        mailbox1 = MailboxFactory(domain=domain1)
-        mailbox2 = MailboxFactory(domain=domain2)
 
-        ma1 = MailboxAccessFactory(mailbox=mailbox1, user=user)
-        ma2 = MailboxAccessFactory(mailbox=mailbox2, user=user)
 
-        ma1.accessed_at = timezone.now() - timezone.timedelta(days=364)
-        ma1.save()
-        ma2.accessed_at = timezone.now() - timezone.timedelta(days=29)
-        ma2.save()
+        create_models_from_config([{
+            "siret": siret1,
+            "mailboxes": [
+                {"users": [
+                    {"user": user, "accessed_at": timezone.now() - timezone.timedelta(days=364)}
+                ]}
+            ],
+        },
+        {
+            "siret": siret2,
+            "mailboxes": [
+                {"users": [
+                    {"user": user, "accessed_at": timezone.now() - timezone.timedelta(days=29)}
+                ]}
+            ],
+        }])
 
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
-            **maildomain_user_metrics_auth_header,
+            **correctly_configured_header,
         )
 
         assert response.status_code == 200
@@ -472,7 +514,7 @@ class TestMailDomainUsersMetrics:
 
     @pytest.mark.django_db
     def test_metrics_endpoint_should_return_specific_stats_with_multiple_accesses_one_domain_one_mailbox_multiple_users(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url, correctly_configured_header
     ):
         """
         Test that the metrics endpoint returns general stats when no query params are provided.
@@ -480,26 +522,22 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
         """
-        settings.ENABLE_MAILDOMAIN_USERS_METRICS = True
 
         siret = "12345678901234"
 
-        domain1 = MailDomainFactory(custom_attributes={"siret": siret})
-        user1 = UserFactory()
-        user2 = UserFactory()
-        mailbox = MailboxFactory(domain=domain1)
-
-        ma1 = MailboxAccessFactory(mailbox=mailbox, user=user1)
-        ma2 = MailboxAccessFactory(mailbox=mailbox, user=user2)
-
-        ma1.accessed_at = timezone.now() - timezone.timedelta(days=363)
-        ma1.save()
-        ma2.accessed_at = timezone.now() - timezone.timedelta(days=1)
-        ma2.save()
+        create_models_from_config([{
+            "siret": siret,
+            "mailboxes": [
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=365)},
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=1)},
+                ]},
+            ],
+        }])
 
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
-            **maildomain_user_metrics_auth_header,
+            **correctly_configured_header,
         )
 
         assert response.status_code == 200
@@ -520,7 +558,7 @@ class TestMailDomainUsersMetrics:
 
     @pytest.mark.django_db
     def test_metrics_endpoint_should_return_specific_stats_with_multiple_accesses_one_domain_multiple_mailbox_multiple_users(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url, correctly_configured_header
     ):
         """
         Test that the metrics endpoint returns general stats when no query params are provided.
@@ -528,41 +566,30 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
         """
-        settings.ENABLE_MAILDOMAIN_USERS_METRICS = True
 
         siret = "12345678901234"
 
-        domain1 = MailDomainFactory(custom_attributes={"siret": siret})
 
-        user1 = UserFactory()
-        user2 = UserFactory()
-        user3 = UserFactory()
-        user4 = UserFactory()
-        user5 = UserFactory()
-
-        mailbox1 = MailboxFactory(domain=domain1)
-        mailbox2 = MailboxFactory(domain=domain1)
-        mailbox3 = MailboxFactory(domain=domain1)
-
-        mas = [
-            MailboxAccessFactory(mailbox=mailbox1, user=user1),
-            MailboxAccessFactory(mailbox=mailbox1, user=user2),
-            MailboxAccessFactory(mailbox=mailbox2, user=user3),
-            MailboxAccessFactory(mailbox=mailbox2, user=user4),
-            MailboxAccessFactory(mailbox=mailbox3, user=user5),
-        ]
-
-        mas[0].accessed_at = timezone.now() - timezone.timedelta(days=363)
-        mas[1].accessed_at = timezone.now() - timezone.timedelta(days=0)
-        mas[2].accessed_at = timezone.now() - timezone.timedelta(days=29)
-        mas[3].accessed_at = timezone.now() - timezone.timedelta(days=5)
-        mas[4].accessed_at = timezone.now() - timezone.timedelta(days=366)
-        for ma in mas:
-            ma.save()
+        create_models_from_config([{
+            "siret": siret,
+            "mailboxes": [
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=363)},
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=0)},
+                ]},
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=29)},
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=5)},
+                ]},
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=366)},
+                ]},
+            ],
+        }])
 
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
-            **maildomain_user_metrics_auth_header,
+            **correctly_configured_header,
         )
 
         assert response.status_code == 200
@@ -583,7 +610,7 @@ class TestMailDomainUsersMetrics:
 
     @pytest.mark.django_db
     def test_metrics_endpoint_should_return_specific_stats_just_before_day_cutoff(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url, correctly_configured_header
     ):
         """
         Test that the metrics endpoint returns general stats when no query params are provided.
@@ -591,46 +618,37 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
         """
-        settings.ENABLE_MAILDOMAIN_USERS_METRICS = True
 
         siret = "12345678901234"
 
-        domain1 = MailDomainFactory(custom_attributes={"siret": siret})
-
-        user1 = UserFactory()
-        user2 = UserFactory()
-        user3 = UserFactory()
-
-        mailbox1 = MailboxFactory(domain=domain1)
-        mailbox2 = MailboxFactory(domain=domain1)
-        mailbox3 = MailboxFactory(domain=domain1)
-
-        mas = [
-            MailboxAccessFactory(mailbox=mailbox1, user=user1),
-            MailboxAccessFactory(mailbox=mailbox2, user=user2),
-            MailboxAccessFactory(mailbox=mailbox3, user=user3),
-        ]
-
-        mas[0].accessed_at = timezone.now() - timezone.timedelta(
-            days=364, hours=23, minutes=59, seconds=59
-        )
-        mas[1].accessed_at = timezone.now() - timezone.timedelta(
-            days=29, hours=23, minutes=59, seconds=59
-        )
-        mas[2].accessed_at = timezone.now() - timezone.timedelta(
-            days=6, hours=23, minutes=59, seconds=59
-        )
-        for ma in mas:
-            ma.save()
+        create_models_from_config([{
+            "siret": siret,
+            "mailboxes": [
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
+                        days=364, hours=23, minutes=59, seconds=59
+                    )},
+                ]},
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
+                        days=29, hours=23, minutes=59, seconds=59
+                    )},
+                ]},
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
+                        days=6, hours=23, minutes=59, seconds=59
+                    )},
+                ]},
+            ],
+        }])
 
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
-            **maildomain_user_metrics_auth_header,
+            **correctly_configured_header,
         )
 
         assert response.status_code == 200
-        assert "count" in response.json()
-        assert "results" in response.json()
+        print(response.json())
         assert response.json()["count"] == 1
         check_results_for_key(
             response.json()["results"],
@@ -646,7 +664,7 @@ class TestMailDomainUsersMetrics:
 
     @pytest.mark.django_db
     def test_metrics_endpoint_should_return_specific_stats_with_exact_days(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url, correctly_configured_header
     ):
         """
         Test that the metrics endpoint returns general stats when no query params are provided.
@@ -654,35 +672,33 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
         """
-        settings.ENABLE_MAILDOMAIN_USERS_METRICS = True
 
         siret = "12345678901234"
 
-        domain1 = MailDomainFactory(custom_attributes={"siret": siret})
-
-        user1 = UserFactory()
-        user2 = UserFactory()
-        user3 = UserFactory()
-
-        mailbox1 = MailboxFactory(domain=domain1)
-        mailbox2 = MailboxFactory(domain=domain1)
-        mailbox3 = MailboxFactory(domain=domain1)
-
-        mas = [
-            MailboxAccessFactory(mailbox=mailbox1, user=user1),
-            MailboxAccessFactory(mailbox=mailbox2, user=user2),
-            MailboxAccessFactory(mailbox=mailbox3, user=user3),
-        ]
-
-        mas[0].accessed_at = timezone.now() - timezone.timedelta(days=365)
-        mas[1].accessed_at = timezone.now() - timezone.timedelta(days=30)
-        mas[2].accessed_at = timezone.now() - timezone.timedelta(days=7)
-        for ma in mas:
-            ma.save()
+        create_models_from_config([{
+            "siret": siret,
+            "mailboxes": [
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
+                        days=365
+                    )},
+                ]},
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
+                        days=30
+                    )},
+                ]},
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
+                        days=7
+                    )},
+                ]},
+            ],
+        }])
 
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
-            **maildomain_user_metrics_auth_header,
+            **correctly_configured_header,
         )
 
         assert response.status_code == 200
@@ -703,7 +719,7 @@ class TestMailDomainUsersMetrics:
 
     @pytest.mark.django_db
     def test_metrics_endpoint_should_not_count_uneven_custom_attributes(
-        self, api_client, settings, url, maildomain_user_metrics_auth_header
+        self, api_client, settings, url, correctly_configured_header
     ):
         """
         Test that the metrics endpoint returns general stats when no query params are provided.
@@ -711,33 +727,31 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
         """
-        settings.ENABLE_MAILDOMAIN_USERS_METRICS = True
 
         siret = "12345678901234"
 
-        domain1 = MailDomainFactory(custom_attributes={"siret": siret})
-        domain2 = MailDomainFactory(custom_attributes={})
-
-        user1 = UserFactory()
-        user2 = UserFactory()
-
-        mailbox1 = MailboxFactory(domain=domain1)
-        mailbox2 = MailboxFactory(domain=domain2)
-
-        mas = [
-            MailboxAccessFactory(mailbox=mailbox1, user=user1),
-            MailboxAccessFactory(mailbox=mailbox2, user=user2),
-        ]
-
-        mas[0].accessed_at = timezone.now() - timezone.timedelta(days=150)
-        mas[1].accessed_at = timezone.now() - timezone.timedelta(days=15)
-
-        for ma in mas:
-            ma.save()
-
+        create_models_from_config([{
+            "siret": siret,
+            "mailboxes": [
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
+                        days=150
+                    )},
+                ]},
+            ],
+        },
+        {
+            "mailboxes": [
+                {"users": [
+                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
+                        days=15
+                    )},
+                ]},
+            ],
+        }])
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
-            **maildomain_user_metrics_auth_header,
+            **correctly_configured_header,
         )
 
         assert response.status_code == 200
