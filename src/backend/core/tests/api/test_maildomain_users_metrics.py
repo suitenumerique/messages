@@ -1,22 +1,21 @@
 """Tests for the Prometheus metrics endpoint."""
 # pylint: disable=redefined-outer-name, unused-argument,
 
-from importlib import import_module, reload
-from random import randint
 import sys
-from django.test import override_settings
+from importlib import import_module, reload
+
 from django.urls import clear_url_caches, reverse
 from django.utils import timezone
 
 import pytest
 
-from core.models import MailboxAccess
 from core.factories import (
     MailboxAccessFactory,
     MailboxFactory,
     MailDomainFactory,
     UserFactory,
 )
+from core.models import MailboxAccess
 
 
 def check_results_for_key(
@@ -53,14 +52,13 @@ def check_results_for_key(
     )
 
 
-
-
 @pytest.fixture
 def url():
     """
     Returns the URL for the maildomain users metrics endpoint.
     """
     return reverse("maildomain-users-metrics")
+
 
 @pytest.fixture
 def url_with_siret_query_param(url):
@@ -76,6 +74,7 @@ def correctly_configured_header(settings):
     Returns the authentication header for the metrics endpoint.
     """
     return {"HTTP_AUTHORIZATION": f"Bearer {settings.MAILDOMAIN_USER_METRICS_API_KEY}"}
+
 
 def grant_access_to_mailbox_accessed_at(mailbox, user, accessed_at: timezone = None):
     """Grant access to a mailbox for a user, optionally setting accessed_at."""
@@ -102,7 +101,9 @@ def create_models_from_config(config) -> list[MailboxAccess]:
     accesses = []
     for domain_config in config:
         if "siret" in domain_config:
-            domain = MailDomainFactory(custom_attributes={"siret": domain_config["siret"]})
+            domain = MailDomainFactory(
+                custom_attributes={"siret": domain_config["siret"]}
+            )
         else:
             domain = MailDomainFactory()
         for mailbox_config in domain_config["mailboxes"]:
@@ -110,7 +111,9 @@ def create_models_from_config(config) -> list[MailboxAccess]:
             for user_config in mailbox_config["users"]:
                 user = user_config["user"]
                 accessed_at = user_config.get("accessed_at")
-                accesses.append(grant_access_to_mailbox_accessed_at(mailbox, user, accessed_at))
+                accesses.append(
+                    grant_access_to_mailbox_accessed_at(mailbox, user, accessed_at)
+                )
     return accesses
 
 
@@ -132,7 +135,6 @@ class TestMailDomainUsersMetrics:
         else:
             import_module("messages.urls")
 
-
     @pytest.mark.django_db
     def test_metrics_endpoint_requires_auth(
         self, api_client, url, correctly_configured_header
@@ -152,15 +154,11 @@ class TestMailDomainUsersMetrics:
         assert response.status_code == 401
 
         # Test with authentication
-        response = api_client.get(
-            url, **correctly_configured_header
-        )
+        response = api_client.get(url, **correctly_configured_header)
         assert response.status_code == 200
 
     @pytest.mark.django_db
-    def test_no_group_no_users(
-        self, api_client, url, correctly_configured_header
-    ):
+    def test_no_group_no_users(self, api_client, url, correctly_configured_header):
         """
         Returns zero stats when no users exist.
 
@@ -207,9 +205,7 @@ class TestMailDomainUsersMetrics:
         )
 
     @pytest.mark.django_db
-    def test_no_group_users_access(
-        self, api_client, url, correctly_configured_header
-    ):
+    def test_no_group_users_access(self, api_client, url, correctly_configured_header):
         """
         Returns all users as active if all accessed recently.
 
@@ -246,25 +242,57 @@ class TestMailDomainUsersMetrics:
         Asserts that without accessing any mailbox, active user counts are zero.
         """
 
-        create_models_from_config([{
-            "mailboxes": [
-                {"users": [
-                    {"user": UserFactory()} # Never accessed, only counted in tu
-                ]},
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=400)} # Old, only counted in tu
-                ]},
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=40)} # Only counted in tu + yau
-                ]},
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=10)} # Only counted in tu + yau + mau
-                ]},
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=1)} # Counted in tu + yau + mau + wau
-                ]},
-            ],
-        }])
+        create_models_from_config(
+            [
+                {
+                    "mailboxes": [
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory()
+                                }  # Never accessed, only counted in tu
+                            ]
+                        },
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=400),
+                                }  # Old, only counted in tu
+                            ]
+                        },
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=40),
+                                }  # Only counted in tu + yau
+                            ]
+                        },
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=10),
+                                }  # Only counted in tu + yau + mau
+                            ]
+                        },
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=1),
+                                }  # Counted in tu + yau + mau + wau
+                            ]
+                        },
+                    ],
+                }
+            ]
+        )
 
         response = api_client.get(url, **correctly_configured_header)
         assert response.status_code == 200
@@ -278,7 +306,6 @@ class TestMailDomainUsersMetrics:
                 "wau": 1,  # Weekly active users
             },
         )
-
 
     @pytest.mark.django_db
     def test_group_no_data(
@@ -300,7 +327,6 @@ class TestMailDomainUsersMetrics:
         assert response.json()["count"] == 0
         assert response.json()["results"] == []
 
-
     @pytest.mark.django_db
     def test_group_one_access(
         self, api_client, url_with_siret_query_param, correctly_configured_header
@@ -312,14 +338,16 @@ class TestMailDomainUsersMetrics:
         Asserts that without accessing any mailbox, active user counts are zero.
         """
 
-        create_models_from_config([{
-            "siret": "12345678901234",
-            "mailboxes": [
-                {"users": [
-                    {"user": UserFactory()}
-                ]},
-            ],
-        }])
+        create_models_from_config(
+            [
+                {
+                    "siret": "12345678901234",
+                    "mailboxes": [
+                        {"users": [{"user": UserFactory()}]},
+                    ],
+                }
+            ]
+        )
 
         response = api_client.get(
             url_with_siret_query_param,
@@ -350,17 +378,17 @@ class TestMailDomainUsersMetrics:
 
         user = UserFactory()
 
-        mba = create_models_from_config([{
-            "siret": "12345678901234",
-            "mailboxes": [
-                {"users": [
-                    {"user": user}
-                ]},
-                {"users": [
-                    {"user": user}
-                ]},
-            ],
-        }])
+        mba = create_models_from_config(
+            [
+                {
+                    "siret": "12345678901234",
+                    "mailboxes": [
+                        {"users": [{"user": user}]},
+                        {"users": [{"user": user}]},
+                    ],
+                }
+            ]
+        )
 
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
@@ -424,23 +452,38 @@ class TestMailDomainUsersMetrics:
 
         user = UserFactory()
 
-
-        create_models_from_config([{
-            "siret": siret1,
-            "mailboxes": [
-                {"users": [
-                    {"user": user, "accessed_at": timezone.now() - timezone.timedelta(days=364)}
-                ]}
-            ],
-        },
-        {
-            "siret": siret2,
-            "mailboxes": [
-                {"users": [
-                    {"user": user, "accessed_at": timezone.now() - timezone.timedelta(days=29)}
-                ]}
-            ],
-        }])
+        create_models_from_config(
+            [
+                {
+                    "siret": siret1,
+                    "mailboxes": [
+                        {
+                            "users": [
+                                {
+                                    "user": user,
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=364),
+                                }
+                            ]
+                        }
+                    ],
+                },
+                {
+                    "siret": siret2,
+                    "mailboxes": [
+                        {
+                            "users": [
+                                {
+                                    "user": user,
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=29),
+                                }
+                            ]
+                        }
+                    ],
+                },
+            ]
+        )
 
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
@@ -488,15 +531,29 @@ class TestMailDomainUsersMetrics:
 
         siret = "12345678901234"
 
-        create_models_from_config([{
-            "siret": siret,
-            "mailboxes": [
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=363)},
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=1)},
-                ]},
-            ],
-        }])
+        create_models_from_config(
+            [
+                {
+                    "siret": siret,
+                    "mailboxes": [
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=363),
+                                },
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=1),
+                                },
+                            ]
+                        },
+                    ],
+                }
+            ]
+        )
 
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
@@ -532,23 +589,52 @@ class TestMailDomainUsersMetrics:
 
         siret = "12345678901234"
 
-
-        create_models_from_config([{
-            "siret": siret,
-            "mailboxes": [
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=363)},
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=0)},
-                ]},
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=29)},
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=5)},
-                ]},
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(days=366)},
-                ]},
-            ],
-        }])
+        create_models_from_config(
+            [
+                {
+                    "siret": siret,
+                    "mailboxes": [
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=363),
+                                },
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=0),
+                                },
+                            ]
+                        },
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=29),
+                                },
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=5),
+                                },
+                            ]
+                        },
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=366),
+                                },
+                            ]
+                        },
+                    ],
+                }
+            ]
+        )
 
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
@@ -584,26 +670,48 @@ class TestMailDomainUsersMetrics:
 
         siret = "12345678901234"
 
-        create_models_from_config([{
-            "siret": siret,
-            "mailboxes": [
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
-                        days=364, hours=23, minutes=59, seconds=59
-                    )},
-                ]},
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
-                        days=29, hours=23, minutes=59, seconds=59
-                    )},
-                ]},
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
-                        days=6, hours=23, minutes=59, seconds=59
-                    )},
-                ]},
-            ],
-        }])
+        create_models_from_config(
+            [
+                {
+                    "siret": siret,
+                    "mailboxes": [
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(
+                                        days=364, hours=23, minutes=59, seconds=59
+                                    ),
+                                },
+                            ]
+                        },
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(
+                                        days=29, hours=23, minutes=59, seconds=59
+                                    ),
+                                },
+                            ]
+                        },
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(
+                                        days=6, hours=23, minutes=59, seconds=59
+                                    ),
+                                },
+                            ]
+                        },
+                    ],
+                }
+            ]
+        )
 
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
@@ -611,7 +719,6 @@ class TestMailDomainUsersMetrics:
         )
 
         assert response.status_code == 200
-        print(response.json())
         assert response.json()["count"] == 1
         check_results_for_key(
             response.json()["results"],
@@ -626,9 +733,7 @@ class TestMailDomainUsersMetrics:
         )
 
     @pytest.mark.django_db
-    def test_group_exact_cutoff(
-        self, api_client, url, correctly_configured_header
-    ):
+    def test_group_exact_cutoff(self, api_client, url, correctly_configured_header):
         """
         Groups stats for users accessed exactly at yearly, monthly, weekly cutoffs.
 
@@ -638,26 +743,42 @@ class TestMailDomainUsersMetrics:
 
         siret = "12345678901234"
 
-        create_models_from_config([{
-            "siret": siret,
-            "mailboxes": [
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
-                        days=365
-                    )},
-                ]},
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
-                        days=30
-                    )},
-                ]},
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
-                        days=7
-                    )},
-                ]},
-            ],
-        }])
+        create_models_from_config(
+            [
+                {
+                    "siret": siret,
+                    "mailboxes": [
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=365),
+                                },
+                            ]
+                        },
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=30),
+                                },
+                            ]
+                        },
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=7),
+                                },
+                            ]
+                        },
+                    ],
+                }
+            ]
+        )
 
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
@@ -693,25 +814,37 @@ class TestMailDomainUsersMetrics:
 
         siret = "12345678901234"
 
-        create_models_from_config([{
-            "siret": siret,
-            "mailboxes": [
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
-                        days=150
-                    )},
-                ]},
-            ],
-        },
-        {
-            "mailboxes": [
-                {"users": [
-                    {"user": UserFactory(), "accessed_at": timezone.now() - timezone.timedelta(
-                        days=15
-                    )},
-                ]},
-            ],
-        }])
+        create_models_from_config(
+            [
+                {
+                    "siret": siret,
+                    "mailboxes": [
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=150),
+                                },
+                            ]
+                        },
+                    ],
+                },
+                {
+                    "mailboxes": [
+                        {
+                            "users": [
+                                {
+                                    "user": UserFactory(),
+                                    "accessed_at": timezone.now()
+                                    - timezone.timedelta(days=15),
+                                },
+                            ]
+                        },
+                    ],
+                },
+            ]
+        )
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
             **correctly_configured_header,

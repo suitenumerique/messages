@@ -13,8 +13,6 @@ from django.db import models
 from django.utils import timezone
 
 from drf_spectacular.utils import (
-    OpenApiExample,
-    OpenApiParameter,
     extend_schema,
 )
 from prometheus_client.core import GaugeMetricFamily
