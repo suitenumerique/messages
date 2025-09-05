@@ -700,7 +700,6 @@ class Base(Configuration):
                 "django_prometheus.middleware.PrometheusAfterMiddleware",
             ]
 
-
     # pylint: disable=invalid-name
     @property
     def ENVIRONMENT(self):

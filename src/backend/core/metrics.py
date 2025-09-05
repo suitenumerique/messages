@@ -25,13 +25,6 @@ from rest_framework.views import APIView
 
 from .enums import MessageDeliveryStatusChoices
 from .models import Attachment, MailboxAccess, MessageRecipient
-from django.apps import apps
-from django.db import models
-
-from prometheus_client.core import GaugeMetricFamily
-
-from .enums import MessageDeliveryStatusChoices
-from .models import Attachment, MessageRecipient
 
 
 class CustomDBPrometheusMetricsCollector:

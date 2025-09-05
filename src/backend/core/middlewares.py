@@ -1,11 +1,10 @@
 """Custom Django middlewares"""
 
-
 from secrets import compare_digest
 
-from django.urls import reverse
 from django.conf import settings
 from django.http import HttpResponse
+from django.urls import reverse
 
 
 class AuthMiddleware:
@@ -23,10 +22,10 @@ class AuthMiddleware:
         if self._paths_match(request.path, reverse("prometheus-django-metrics")):
             if settings.PROMETHEUS_API_KEY:
                 if not compare_digest(
-                        request.headers.get("Authorization") or "",
-                        f"Bearer {settings.PROMETHEUS_API_KEY}",
-                    ):
-                        return HttpResponse("Unauthorized", status=401)
+                    request.headers.get("Authorization") or "",
+                    f"Bearer {settings.PROMETHEUS_API_KEY}",
+                ):
+                    return HttpResponse("Unauthorized", status=401)
         elif self._paths_match(request.path, reverse("maildomain-users-metrics")):
             if settings.MAILDOMAIN_USER_METRICS_API_KEY:
                 if not compare_digest(
