@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import secrets
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -50,7 +51,7 @@ class MTAJWTAuthentication(authentication.BaseAuthentication):
             # Validate email hash if there's a body
             if request.body:
                 body_hash = hashlib.sha256(request.body).hexdigest()
-                if body_hash != payload["body_hash"]:
+                if not secrets.compare_digest(body_hash, payload["body_hash"]):
                     raise jwt.InvalidTokenError("Invalid email hash")
 
             service_account = User()

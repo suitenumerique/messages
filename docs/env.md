@@ -210,16 +210,8 @@ The application uses a new environment file structure with `.defaults` and `.loc
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `ENABLE_PROMETHEUS` | `True` | Enable Prometheus monitoring | Optional |
-| `PROMETHEUS_API_KEY` | None | Protects the metrics route with provided Bearer token, if not passed, endpoint is public | Optional |
-
-## API Configuration
-
-| Variable | Default | Description | Required |
-|----------|---------|-------------|----------|
-| `API_USERS_LIST_LIMIT` | `5` | Default limit for user list API | Optional |
-| `API_USERS_LIST_THROTTLE_RATE_SUSTAINED` | `180/hour` | Sustained throttle rate | Optional |
-| `API_USERS_LIST_THROTTLE_RATE_BURST` | `30/minute` | Burst throttle rate | Optional |
+| `ENABLE_PROMETHEUS` | `False` | Enable Prometheus monitoring | Optional |
+| `PROMETHEUS_API_KEY` | None | Bearer token required to access metrics. If unset, the endpoint is public. Set this in production. | Optional |
 
 ### OpenAPI Schema
 

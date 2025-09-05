@@ -1,7 +1,11 @@
 """Tests for the Prometheus metrics endpoint."""
-# pylint: disable=redefined-outer-name, unused-argument,
+# pylint: disable=redefined-outer-name, unused-argument
 
-from django.urls import reverse
+import sys
+from importlib import import_module, reload
+
+from django.test import override_settings
+from django.urls import clear_url_caches, reverse
 
 import pytest
 from prometheus_client.parser import text_string_to_metric_families
@@ -21,23 +25,16 @@ def url():
     return reverse("prometheus-django-metrics")
 
 
-@pytest.fixture
-def messages_for_count():
-    """
-    Fixture to create test messages with each delivery statuses.
-
-    Creates a number of MessageRecipient instances for each delivery status
-    defined in MessageDeliveryStatusChoices.
-    """
-    statuses_to_count = {
-        MessageDeliveryStatusChoices.SENT: 1,
-        MessageDeliveryStatusChoices.INTERNAL: 2,
-        MessageDeliveryStatusChoices.FAILED: 3,
-        MessageDeliveryStatusChoices.RETRY: 4,
-    }
-    for status, count in statuses_to_count.items():
-        for _ in range(count):
-            MessageRecipientFactory(delivery_status=status)
+def response_to_metrics_dict(response, with_label=None):
+    """Convert a response to a dictionary of metrics"""
+    d = {}
+    for family in text_string_to_metric_families(response.content.decode("utf-8")):
+        for sample in family.samples:
+            if with_label:
+                d[(sample.name, sample.labels.get(with_label))] = sample.value
+            else:
+                d[sample.name] = sample.value
+    return d
 
 
 class TestPrometheusMetrics:
@@ -49,6 +46,19 @@ class TestPrometheusMetrics:
     Prometheus /metrics endpoint.
     """
 
+    @pytest.fixture(autouse=True)
+    def configure_settings(self):
+        """Run before each test"""
+        self.reload_urls()
+
+    def reload_urls(self):
+        """Reload the Django URL router"""
+        clear_url_caches()
+        if "messages.urls" in sys.modules:
+            reload(sys.modules["messages.urls"])
+        else:
+            import_module("messages.urls")
+
     @pytest.mark.django_db
     def test_metrics_endpoint_requires_auth(self, api_client, settings, url):
         """
@@ -57,8 +67,6 @@ class TestPrometheusMetrics:
         Asserts that requests without or with invalid authentication are rejected (401),
         and requests with the correct API key are accepted (200).
         """
-        settings.ENABLE_PROMETHEUS = True
-        settings.PROMETHEUS_API_KEY = "test_api_key"
 
         # Test without authentication
         response = api_client.get(url)
@@ -74,6 +82,23 @@ class TestPrometheusMetrics:
         )
         assert response.status_code == 200
 
+    @override_settings(ENABLE_PROMETHEUS=False)
+    @pytest.mark.django_db
+    def test_metrics_endpoint_prometheus_disabled(self, api_client, settings, url):
+        """
+        Test that the metrics endpoint is disabled when ENABLE_PROMETHEUS is False.
+
+        Asserts that requests are rejected (404).
+        """
+
+        self.reload_urls()
+
+        # Test with authentication
+        response = api_client.get(
+            url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}"
+        )
+        assert response.status_code == 404
+
     @pytest.mark.django_db
     def test_get_messages_with_status_count_zero(self, api_client, settings, url):
         """
@@ -81,94 +106,72 @@ class TestPrometheusMetrics:
 
         Asserts that all message status counts are reported as zero.
         """
-        settings.PROMETHEUS_API_KEY = "test_api_key"
         response = api_client.get(
             url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}"
         )
-        status_visited = {
-            MessageDeliveryStatusChoices.SENT.label: False,
-            MessageDeliveryStatusChoices.INTERNAL.label: False,
-            MessageDeliveryStatusChoices.FAILED.label: False,
-            MessageDeliveryStatusChoices.RETRY.label: False,
-        }
-        for family in text_string_to_metric_families(response.content.decode("utf-8")):
-            for sample in family.samples:
-                if sample.name == "message_status_count":
-                    status_visited[sample.labels["status"]] = True
-                    assert sample.value == 0
 
-        for visited in status_visited.values():
-            assert visited is True
+        metrics = response_to_metrics_dict(response, with_label="status")
+
+        assert (
+            metrics[("message_status_count", MessageDeliveryStatusChoices.SENT.label)]
+            == 0
+        )
+        assert (
+            metrics[
+                ("message_status_count", MessageDeliveryStatusChoices.INTERNAL.label)
+            ]
+            == 0
+        )
+        assert (
+            metrics[("message_status_count", MessageDeliveryStatusChoices.FAILED.label)]
+            == 0
+        )
+        assert (
+            metrics[("message_status_count", MessageDeliveryStatusChoices.RETRY.label)]
+            == 0
+        )
 
     @pytest.mark.django_db
-    def test_get_messages_with_status_count(
-        self, api_client, settings, url, messages_for_count
-    ):
+    def test_get_messages_with_status_count(self, api_client, settings, url):
         """
         Test that message status metrics reflect the correct count for each status.
 
         Asserts that the metrics endpoint reports the correct count for each
         MessageDeliveryStatusChoices value.
         """
-        settings.PROMETHEUS_API_KEY = "test_api_key"
+
+        statuses_to_count = {
+            MessageDeliveryStatusChoices.SENT: 1,
+            MessageDeliveryStatusChoices.INTERNAL: 2,
+            MessageDeliveryStatusChoices.FAILED: 3,
+            MessageDeliveryStatusChoices.RETRY: 4,
+        }
+        for status, count in statuses_to_count.items():
+            MessageRecipientFactory.create_batch(size=count, delivery_status=status)
+
         response = api_client.get(
             url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}"
         )
 
-        status_visited = {
-            MessageDeliveryStatusChoices.SENT.label: False,
-            MessageDeliveryStatusChoices.INTERNAL.label: False,
-            MessageDeliveryStatusChoices.FAILED.label: False,
-            MessageDeliveryStatusChoices.RETRY.label: False,
-        }
+        metrics = response_to_metrics_dict(response, with_label="status")
 
-        for family in text_string_to_metric_families(response.content.decode("utf-8")):
-            for sample in family.samples:
-                if sample.name == "message_status_count":
-                    status_visited[sample.labels["status"]] = True
-                    if (
-                        sample.labels["status"]
-                        == MessageDeliveryStatusChoices.SENT.label
-                    ):
-                        assert sample.value == 1
-                    elif (
-                        sample.labels["status"]
-                        == MessageDeliveryStatusChoices.INTERNAL.label
-                    ):
-                        assert sample.value == 2
-                    elif (
-                        sample.labels["status"]
-                        == MessageDeliveryStatusChoices.FAILED.label
-                    ):
-                        assert sample.value == 3
-                    elif (
-                        sample.labels["status"]
-                        == MessageDeliveryStatusChoices.RETRY.label
-                    ):
-                        assert sample.value == 4
-                    else:
-                        raise AssertionError(
-                            f"Unexpected status label: {sample.labels['status']}"
-                        )
-        for visited in status_visited.values():
-            assert visited is True
+        for status, count in statuses_to_count.items():
+            assert metrics[("message_status_count", status.label)] == count
 
     @pytest.mark.django_db
     def test_get_attachments_count_zero(self, api_client, settings, url):
         """
         Test that the attachment count metric is zero when there are no attachments.
 
-        Asserts that the 'attachment_count' metric is reported as zero.
+        Asserts that the 'draft_attachment_count' metric is reported as zero.
         """
-        settings.PROMETHEUS_API_KEY = "test_api_key"
         response = api_client.get(
             url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}"
         )
 
-        for family in text_string_to_metric_families(response.content.decode("utf-8")):
-            for sample in family.samples:
-                if sample.name == "attachment_count":
-                    assert sample.value == 0
+        metrics = response_to_metrics_dict(response)
+
+        assert metrics[("draft_attachment_count")] == 0
 
     @pytest.mark.parametrize("attachment_count", [0, 1, 10])
     @pytest.mark.django_db
@@ -179,36 +182,34 @@ class TestPrometheusMetrics:
         Args:
             attachment_count (int): The number of attachments to create.
 
-        Asserts that the 'attachment_count' metric equals the number of created attachments.
+        Asserts that the 'draft_attachment_count' metric equals the number of created attachments.
         """
-        _ = [AttachmentFactory() for _ in range(attachment_count)]
 
-        settings.PROMETHEUS_API_KEY = "test_api_key"
+        AttachmentFactory.create_batch(size=attachment_count)
+
         response = api_client.get(
             url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}"
         )
 
-        for family in text_string_to_metric_families(response.content.decode("utf-8")):
-            for sample in family.samples:
-                if sample.name == "attachment_count":
-                    assert sample.value == attachment_count
+        metrics = response_to_metrics_dict(response)
+
+        assert metrics[("draft_attachment_count")] == attachment_count
 
     @pytest.mark.django_db
     def test_get_attachments_size_no_attachment(self, api_client, settings, url):
         """
         Test that the total attachment size metric is zero when there are no attachments.
 
-        Asserts that the 'attachments_total_size_bytes' metric is reported as zero.
+        Asserts that the 'draft_attachments_total_size_bytes' metric is reported as zero.
         """
-        settings.PROMETHEUS_API_KEY = "test_api_key"
+
         response = api_client.get(
             url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}"
         )
 
-        for family in text_string_to_metric_families(response.content.decode("utf-8")):
-            for sample in family.samples:
-                if sample.name == "attachments_total_size_bytes":
-                    assert sample.value == 0
+        metrics = response_to_metrics_dict(response)
+
+        assert metrics[("draft_attachments_total_size_bytes")] == 0
 
     @pytest.mark.parametrize("blob_size", [0, 150, 1000])
     @pytest.mark.django_db
@@ -221,23 +222,22 @@ class TestPrometheusMetrics:
         Args:
             blob_size (int): The size of the blob to create.
 
-        Asserts that the 'attachments_total_size_bytes' metric equals the blob size.
+        Asserts that the 'draft_attachments_total_size_bytes' metric equals the blob size.
         """
         AttachmentFactory(blob_size=blob_size)
-        settings.PROMETHEUS_API_KEY = "test_api_key"
+
         response = api_client.get(
             url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}"
         )
 
-        for family in text_string_to_metric_families(response.content.decode("utf-8")):
-            for sample in family.samples:
-                if sample.name == "attachments_total_size_bytes":
-                    assert sample.value == blob_size
+        metrics = response_to_metrics_dict(response)
 
-    @pytest.mark.parametrize("blobs_size", [[0, 0], [0, 150, 1000], [1, 2, 3, 4, 5]])
+        assert metrics[("draft_attachments_total_size_bytes")] == blob_size
+
+    @pytest.mark.parametrize("blob_sizes", [[0, 0], [0, 150, 1000], [1, 2, 3, 4, 5]])
     @pytest.mark.django_db
     def test_get_attachments_size_multiple_attachments(
-        self, api_client, settings, url, blobs_size
+        self, api_client, settings, url, blob_sizes
     ):
         """
         Test that the total attachment size metric matches the sum of multiple attachments.
@@ -245,15 +245,15 @@ class TestPrometheusMetrics:
         Args:
             blobs_size (list): List of blob sizes to create.
 
-        Asserts that the 'attachments_total_size_bytes' metric equals the sum of blob sizes.
+        Asserts that the 'draft_attachments_total_size_bytes' metric equals the sum of blob sizes.
         """
-        _ = [AttachmentFactory(blob_size=blob_size) for blob_size in blobs_size]
-        settings.PROMETHEUS_API_KEY = "test_api_key"
+        for blob_size in blob_sizes:
+            AttachmentFactory(blob_size=blob_size)
+
         response = api_client.get(
             url, HTTP_AUTHORIZATION=f"Bearer {settings.PROMETHEUS_API_KEY}"
         )
 
-        for family in text_string_to_metric_families(response.content.decode("utf-8")):
-            for sample in family.samples:
-                if sample.name == "attachments_total_size_bytes":
-                    assert sample.value == sum(blobs_size)
+        metrics = response_to_metrics_dict(response)
+
+        assert metrics[("draft_attachments_total_size_bytes")] == sum(blob_sizes)

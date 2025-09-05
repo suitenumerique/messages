@@ -4092,8 +4092,8 @@
                     },
                     "subject": {
                         "type": "string",
-                        "minLength": 1,
-                        "description": "Subject of the message"
+                        "nullable": true,
+                        "description": "Subject of the message (optional; empty or null allowed)"
                     },
                     "draftBody": {
                         "type": "string",
@@ -4136,8 +4136,7 @@
                     }
                 },
                 "required": [
-                    "senderId",
-                    "subject"
+                    "senderId"
                 ]
             },
             "FlagEnum": {

@@ -21,10 +21,10 @@ export interface DraftMessageRequestRequest {
   /** Mailbox ID to use as sender */
   senderId: string;
   /**
-   * Subject of the message
-   * @minLength 1
+   * Subject of the message (optional; empty or null allowed)
+   * @nullable
    */
-  subject: string;
+  subject?: string | null;
   /** Content of the draft message as arbitrary text (usually JSON) */
   draftBody?: string;
   /** List of recipient email addresses */

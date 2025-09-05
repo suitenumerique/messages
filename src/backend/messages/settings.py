@@ -608,7 +608,7 @@ class Base(Configuration):
     )
 
     ENABLE_PROMETHEUS = values.BooleanValue(
-        default=True, environ_name="ENABLE_PROMETHEUS", environ_prefix=None
+        default=False, environ_name="ENABLE_PROMETHEUS", environ_prefix=None
     )
 
     PROMETHEUS_API_KEY = values.Value(
@@ -616,7 +616,7 @@ class Base(Configuration):
     )
 
     ENABLE_MAILDOMAIN_USERS_METRICS = values.BooleanValue(
-        default=True,
+        default=False,
         environ_name="ENABLE_MAILDOMAIN_USERS_METRICS",
         environ_prefix=None,
     )
@@ -676,12 +676,6 @@ class Base(Configuration):
         },
     }
 
-    API_USERS_LIST_LIMIT = values.PositiveIntegerValue(
-        default=5,
-        environ_name="API_USERS_LIST_LIMIT",
-        environ_prefix=None,
-    )
-
     # External services
     # Settings related to the interoperability with external services
     # that messages is able to use
@@ -700,14 +694,12 @@ class Base(Configuration):
         if self.ENABLE_PROMETHEUS:
             self.INSTALLED_APPS += ["django_prometheus"]
             self.MIDDLEWARE = [
+                "core.middlewares.AuthMiddleware",
                 "django_prometheus.middleware.PrometheusBeforeMiddleware",
                 *self.MIDDLEWARE,
                 "django_prometheus.middleware.PrometheusAfterMiddleware",
             ]
-        if self.ENABLE_PROMETHEUS or self.ENABLE_MAILDOMAIN_USERS_METRICS:
-            self.MIDDLEWARE += [
-                "core.middlewares.AuthMiddleware",
-            ]
+
 
     # pylint: disable=invalid-name
     @property
@@ -802,6 +794,9 @@ class Development(Base):
 
     SESSION_COOKIE_NAME = "st_messages_sessionid"
 
+    ENABLE_PROMETHEUS = True
+    PROMETHEUS_API_KEY = "local_api_key"
+
     USE_SWAGGER = True
     SESSION_CACHE_ALIAS = "session"
     CACHES = {
@@ -864,6 +859,9 @@ class Test(Base):
 
     SCHEMA_CUSTOM_ATTRIBUTES_USER = {}
     SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN = {}
+
+    ENABLE_PROMETHEUS = True
+    PROMETHEUS_API_KEY = "test_api_key"
 
     # pylint: disable=invalid-name
     def __init__(self):
