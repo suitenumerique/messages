@@ -71,7 +71,6 @@ export * from "./message";
 export * from "./message_html_body_item";
 export * from "./message_text_body_item";
 export * from "./messages_list_params";
-export * from "./metrics_maildomain_users_retrieve_params";
 export * from "./paginated_mail_domain_admin_list";
 export * from "./paginated_mailbox_access_read_list";
 export * from "./paginated_mailbox_admin_list";

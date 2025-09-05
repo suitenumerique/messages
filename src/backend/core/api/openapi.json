@@ -2910,33 +2910,6 @@
                 }
             }
         },
-        "/api/v1.0/metrics/maildomain_users/": {
-            "get": {
-                "operationId": "metrics_maildomain_users_retrieve",
-                "description": "Handle GET requests for the metrics API endpoint.",
-                "parameters": [
-                    {
-                        "in": "query",
-                        "name": "group_by_maildomain_custom_attribute",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "description": "Custom attribute key to group maildomains by."
-                    }
-                ],
-                "tags": [
-                    "metrics"
-                ],
-                "security": [
-                    {}
-                ],
-                "responses": {
-                    "200": {
-                        "description": "No response body"
-                    }
-                }
-            }
-        },
         "/api/v1.0/mta/check-recipients/": {
             "post": {
                 "operationId": "mta_check_recipients_create",
