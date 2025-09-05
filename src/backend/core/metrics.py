@@ -138,25 +138,7 @@ class MailDomainUsersMetricsApiView(APIView):
             "wau": len(wau),
         }
 
-    @extend_schema(
-        tags=["metrics"],
-        parameters=[
-            OpenApiParameter(
-                name="group_by_maildomain_custom_attribute",
-                type=str,
-                location=OpenApiParameter.QUERY,
-                description="Custom attribute key to group maildomains by.",
-                required=False,
-            ),
-            OpenApiExample(
-                "Query Parameter Example",
-                value={"group_by_maildomain_custom_attribute": "siret"},
-                description="Example of the required query parameter to group by a custom attribute.",
-                request_only=True,
-                response_only=False,
-            ),
-        ],
-    )
+    @extend_schema(exclude=True)
     @action(detail=True, methods=["get"])
     def get(self, request):
         """
