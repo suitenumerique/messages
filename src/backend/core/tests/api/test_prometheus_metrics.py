@@ -86,10 +86,9 @@ class TestPrometheusMetrics:
     @pytest.mark.django_db
     def test_metrics_endpoint_prometheus_disabled(self, api_client, settings, url):
         """
-        Test that the metrics endpoint requires authentication.
+        Test that the metrics endpoint is disabled when ENABLE_PROMETHEUS is False.
 
-        Asserts that requests without or with invalid authentication are rejected (401),
-        and requests with the correct API key are accepted (200).
+        Asserts that requests are rejected (404).
         """
 
         self.reload_urls()
