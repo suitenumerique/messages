@@ -54,6 +54,10 @@ class TestPrometheusMetrics:
     def reload_urls(self):
         """Reload the Django URL router"""
         clear_url_caches()
+        if "core.urls" in sys.modules:
+            reload(sys.modules["core.urls"])
+        else:
+            import_module("core.urls")
         if "messages.urls" in sys.modules:
             reload(sys.modules["messages.urls"])
         else:

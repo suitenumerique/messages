@@ -1,5 +1,8 @@
 """Permission handlers for the messages core app."""
 
+from secrets import compare_digest
+
+from django.conf import settings
 from django.core import exceptions
 
 from rest_framework import permissions
@@ -436,3 +439,13 @@ class IsMailboxAdmin(permissions.BasePermission):
         ).exists()
 
         return is_domain_admin
+
+
+class HasMetricsApiKey(permissions.BasePermission):
+    """Allows access only to users with the metrics API key."""
+
+    def has_permission(self, request, view):
+        return compare_digest(
+            request.headers.get("Authorization") or "",
+            f"Bearer {settings.METRICS_API_KEY}",
+        )

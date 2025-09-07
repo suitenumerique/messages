@@ -615,14 +615,8 @@ class Base(Configuration):
         None, environ_name="PROMETHEUS_API_KEY", environ_prefix=None
     )
 
-    ENABLE_MAILDOMAIN_USERS_METRICS = values.BooleanValue(
-        default=False,
-        environ_name="ENABLE_MAILDOMAIN_USERS_METRICS",
-        environ_prefix=None,
-    )
-
-    MAILDOMAIN_USER_METRICS_API_KEY = values.Value(
-        None, environ_name="MAILDOMAIN_USER_METRICS_API_KEY", environ_prefix=None
+    METRICS_API_KEY = values.Value(
+        None, environ_name="METRICS_API_KEY", environ_prefix=None
     )
 
     # AI
@@ -694,13 +688,11 @@ class Base(Configuration):
         if self.ENABLE_PROMETHEUS:
             self.INSTALLED_APPS += ["django_prometheus"]
             self.MIDDLEWARE = [
+                "core.middlewares.PrometheusAuthMiddleware",
                 "django_prometheus.middleware.PrometheusBeforeMiddleware",
                 *self.MIDDLEWARE,
                 "django_prometheus.middleware.PrometheusAfterMiddleware",
             ]
-
-        if self.ENABLE_MAILDOMAIN_USERS_METRICS or self.ENABLE_PROMETHEUS:
-            self.MIDDLEWARE.append("core.middlewares.AuthMiddleware"),
 
     # pylint: disable=invalid-name
     @property
@@ -796,7 +788,6 @@ class Development(Base):
     SESSION_COOKIE_NAME = "st_messages_sessionid"
 
     ENABLE_PROMETHEUS = True
-    ENABLE_MAILDOMAIN_USERS_METRICS = True
     PROMETHEUS_API_KEY = "local_api_key"
 
     USE_SWAGGER = True
@@ -863,7 +854,6 @@ class Test(Base):
     SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN = {}
 
     ENABLE_PROMETHEUS = True
-    ENABLE_MAILDOMAIN_USERS_METRICS = True
     PROMETHEUS_API_KEY = "test_api_key"
 
     # pylint: disable=invalid-name

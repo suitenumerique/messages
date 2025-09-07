@@ -1,11 +1,7 @@
 """Tests for the Maildomain users metrics endpoint."""
 # pylint: disable=redefined-outer-name, unused-argument,
 
-import sys
-from importlib import import_module, reload
-
-from django.test import override_settings
-from django.urls import clear_url_caches, reverse
+from django.urls import reverse
 from django.utils import timezone
 
 import pytest
@@ -16,24 +12,18 @@ from core.factories import (
     MailDomainFactory,
     UserFactory,
 )
-from core.models import MailboxAccess
+from core.models import MailboxAccess, MailDomain
 
 
 def check_results_for_key(
     results: dict | list,
     expected: dict[str, int],
-    custom_attribute_key: str = None,
-    custom_attribute_value: str = None,
+    group_key: str,
+    group_value: str,
 ):
     """
     Assert that the metrics in results match expected values, optionally for a specific custom attribute group.
     """
-
-    if custom_attribute_key is None:
-        for expected_key, expected_value in expected.items():
-            assert expected_key in results["metrics"], f"Missing key: {expected_key}"
-            assert results["metrics"][expected_key] == expected_value
-        return
 
     if not isinstance(results, list):
         raise ValueError(
@@ -41,16 +31,17 @@ def check_results_for_key(
         )
 
     for result in results:
-        if result[custom_attribute_key] == custom_attribute_value:
+        if result[group_key] == group_value:
             for expected_key, expected_value in expected.items():
-                assert expected_key in result["metrics"], (
-                    f"Missing key: {expected_key} in result with key: {custom_attribute_key}"
-                )
-                assert result["metrics"][expected_key] == expected_value
+                if expected_value > 0:
+                    assert expected_key in result["metrics"], (
+                        f"Missing key: {expected_key} in result with key: {group_key}"
+                    )
+                    assert result["metrics"][expected_key] == expected_value
+                else:
+                    assert not result["metrics"].get(expected_key)
             return
-    raise KeyError(
-        f"No result found with key: {custom_attribute_key} {custom_attribute_value}"
-    )
+    raise KeyError(f"No result found with key: {group_key} {group_value}")
 
 
 @pytest.fixture
@@ -74,7 +65,7 @@ def correctly_configured_header(settings):
     """
     Returns the authentication header for the metrics endpoint.
     """
-    return {"HTTP_AUTHORIZATION": f"Bearer {settings.MAILDOMAIN_USER_METRICS_API_KEY}"}
+    return {"HTTP_AUTHORIZATION": f"Bearer {settings.METRICS_API_KEY}"}
 
 
 def grant_access_to_mailbox_accessed_at(mailbox, user, accessed_at: timezone = None):
@@ -97,14 +88,18 @@ def grant_access_to_mailbox_accessed_at(mailbox, user, accessed_at: timezone = N
 #       {"users": []},
 #   ]
 # }]
-def create_models_from_config(config) -> list[MailboxAccess]:
+def create_models_from_config(config, maildomain=None) -> list[MailboxAccess]:
     """Create maildomains, mailboxes, and accesses from a config structure."""
     accesses = []
     for domain_config in config:
-        if "siret" in domain_config:
+        if maildomain:
+            domain = maildomain
+        elif "siret" in domain_config:
             domain = MailDomainFactory(
                 custom_attributes={"siret": domain_config["siret"]}
             )
+        elif "name" in domain_config:
+            domain = MailDomainFactory(name=domain_config["name"])
         else:
             domain = MailDomainFactory()
         for mailbox_config in domain_config["mailboxes"]:
@@ -123,43 +118,6 @@ class TestMailDomainUsersMetrics:
     Tests for the maildomain users metrics endpoint.
     """
 
-    @pytest.fixture(autouse=True)
-    def configure_settings(self):
-        """Reload URLs before each test"""
-        self.reload_urls()
-
-    def reload_urls(self):
-        """Reload Django URL router"""
-        clear_url_caches()
-        if "messages.urls" in sys.modules:
-            reload(sys.modules["messages.urls"])
-        else:
-            import_module("messages.urls")
-
-    @override_settings(ENABLE_MAILDOMAIN_USERS_METRICS=False)
-    @pytest.mark.django_db
-    def test_metrics_endpoint_disabled(self, api_client, settings, url, correctly_configured_header):
-        """
-        Test that the metrics endpoint is disabled when ENABLE_MAILDOMAIN_USERS_METRICS is False.
-
-        Asserts that requests are rejected (404).
-        """
-
-        self.reload_urls()
-        # Test with authentication
-        response = api_client.get(
-            url, **correctly_configured_header
-        )
-        print(response.json())
-        assert response.status_code == 404
-
-        # Test with authentication
-        response = api_client.get(
-            url
-        )
-        assert response.status_code == 404
-
-
     @pytest.mark.django_db
     def test_metrics_endpoint_requires_auth(
         self, api_client, url, correctly_configured_header
@@ -172,11 +130,11 @@ class TestMailDomainUsersMetrics:
         """
         # Test without authentication
         response = api_client.get(url)
-        assert response.status_code == 401
+        assert response.status_code == 403
 
         # Test with invalid authentication
         response = api_client.get(url, HTTP_AUTHORIZATION="Bearer invalid_token")
-        assert response.status_code == 401
+        assert response.status_code == 403
 
         # Test with authentication
         response = api_client.get(url, **correctly_configured_header)
@@ -193,15 +151,7 @@ class TestMailDomainUsersMetrics:
         response = api_client.get(url, **correctly_configured_header)
         assert response.status_code == 200
 
-        check_results_for_key(
-            response.json()["results"],
-            {
-                "tu": 0,
-                "yau": 0,
-                "mau": 0,
-                "wau": 0,
-            },
-        )
+        assert response.json() == {"count": 0, "results": []}
 
     @pytest.mark.django_db
     def test_no_group_users_no_access(
@@ -214,8 +164,11 @@ class TestMailDomainUsersMetrics:
         Asserts that without accessing any mailbox, active user counts are zero.
         """
 
-        # Create mailbox accesses for users
-        MailboxAccessFactory.create_batch(3)
+        # Create a specific domain
+        domain = MailDomainFactory(name="example.com")
+
+        # Create mailbox accesses for users with the specific domain
+        MailboxAccessFactory.create_batch(3, mailbox__domain=domain)
         response = api_client.get(url, **correctly_configured_header)
         assert response.status_code == 200
 
@@ -227,6 +180,8 @@ class TestMailDomainUsersMetrics:
                 "mau": 0,  # Monthly active users
                 "wau": 0,  # Weekly active users
             },
+            group_key="domain",
+            group_value="example.com",
         )
 
     @pytest.mark.django_db
@@ -238,8 +193,11 @@ class TestMailDomainUsersMetrics:
         Asserts that without accessing any mailbox, active user counts are zero.
         """
 
-        # Create mailbox accesses for users
-        mas = MailboxAccessFactory.create_batch(3)
+        # Create a specific domain
+        domain = MailDomainFactory(name="example.com")
+
+        # Create mailbox accesses for users with the specific domain
+        mas = MailboxAccessFactory.create_batch(3, mailbox__domain=domain)
         for ma in mas:
             ma.accessed_at = timezone.now()
             ma.save()
@@ -254,6 +212,8 @@ class TestMailDomainUsersMetrics:
                 "mau": 3,  # Monthly active users
                 "wau": 3,  # Weekly active users
             },
+            group_key="domain",
+            group_value="example.com",
         )
 
     @pytest.mark.django_db
@@ -266,6 +226,8 @@ class TestMailDomainUsersMetrics:
         Asserts that the response contains overall user and mailbox counts.
         Asserts that without accessing any mailbox, active user counts are zero.
         """
+
+        domain = MailDomainFactory(name="example.com")
 
         create_models_from_config(
             [
@@ -316,7 +278,8 @@ class TestMailDomainUsersMetrics:
                         },
                     ],
                 }
-            ]
+            ],
+            maildomain=domain,
         )
 
         response = api_client.get(url, **correctly_configured_header)
@@ -330,6 +293,8 @@ class TestMailDomainUsersMetrics:
                 "mau": 2,  # Monthly active users
                 "wau": 1,  # Weekly active users
             },
+            group_key="domain",
+            group_value="example.com",
         )
 
     @pytest.mark.django_db
@@ -386,8 +351,8 @@ class TestMailDomainUsersMetrics:
                 "mau": 0,  # Monthly active users
                 "wau": 0,  # Weekly active users
             },
-            custom_attribute_key="siret",
-            custom_attribute_value="12345678901234",
+            group_key="siret",
+            group_value="12345678901234",
         )
 
     @pytest.mark.django_db
@@ -432,8 +397,8 @@ class TestMailDomainUsersMetrics:
                 "mau": 0,  # Monthly active users
                 "wau": 0,  # Weekly active users
             },
-            custom_attribute_key="siret",
-            custom_attribute_value="12345678901234",
+            group_key="siret",
+            group_value="12345678901234",
         )
         mba[0].accessed_at = timezone.now() - timezone.timedelta(days=10)
         mba[0].save()
@@ -457,8 +422,8 @@ class TestMailDomainUsersMetrics:
                 "mau": 1,  # Monthly active users
                 "wau": 1,  # Weekly active users
             },
-            custom_attribute_key="siret",
-            custom_attribute_value="12345678901234",
+            group_key="siret",
+            group_value="12345678901234",
         )
 
     @pytest.mark.django_db
@@ -527,8 +492,8 @@ class TestMailDomainUsersMetrics:
                 "mau": 0,  # Monthly active users
                 "wau": 0,  # Weekly active users
             },
-            custom_attribute_key="siret",
-            custom_attribute_value=siret1,
+            group_key="siret",
+            group_value=siret1,
         )
 
         check_results_for_key(
@@ -539,8 +504,8 @@ class TestMailDomainUsersMetrics:
                 "mau": 1,  # Monthly active users
                 "wau": 0,  # Weekly active users
             },
-            custom_attribute_key="siret",
-            custom_attribute_value=siret2,
+            group_key="siret",
+            group_value=siret2,
         )
 
     @pytest.mark.django_db
@@ -597,8 +562,8 @@ class TestMailDomainUsersMetrics:
                 "mau": 1,  # Monthly active users
                 "wau": 1,  # Weekly active users
             },
-            custom_attribute_key="siret",
-            custom_attribute_value=siret,
+            group_key="siret",
+            group_value=siret,
         )
 
     @pytest.mark.django_db
@@ -678,8 +643,8 @@ class TestMailDomainUsersMetrics:
                 "mau": 3,  # Monthly active users
                 "wau": 2,  # Weekly active users
             },
-            custom_attribute_key="siret",
-            custom_attribute_value=siret,
+            group_key="siret",
+            group_value=siret,
         )
 
     @pytest.mark.django_db
@@ -753,8 +718,8 @@ class TestMailDomainUsersMetrics:
                 "mau": 2,  # Monthly active users
                 "wau": 1,  # Weekly active users
             },
-            custom_attribute_key="siret",
-            custom_attribute_value=siret,
+            group_key="siret",
+            group_value=siret,
         )
 
     @pytest.mark.django_db
@@ -822,8 +787,8 @@ class TestMailDomainUsersMetrics:
                 "mau": 1,  # Monthly active users
                 "wau": 0,  # Weekly active users
             },
-            custom_attribute_key="siret",
-            custom_attribute_value=siret,
+            group_key="siret",
+            group_value=siret,
         )
 
     @pytest.mark.django_db
@@ -870,6 +835,10 @@ class TestMailDomainUsersMetrics:
                 },
             ]
         )
+
+        assert MailDomain.objects.count() == 2
+        assert MailDomain.objects.filter(custom_attributes__siret=siret).count() == 1
+
         response = api_client.get(
             f"{url}?group_by_maildomain_custom_attribute=siret",
             **correctly_configured_header,
@@ -878,7 +847,7 @@ class TestMailDomainUsersMetrics:
         assert response.status_code == 200
         assert "count" in response.json()
         assert "results" in response.json()
-        assert response.json()["count"] == 1
+        assert response.json()["count"] == 2
         check_results_for_key(
             response.json()["results"],
             {
@@ -887,6 +856,18 @@ class TestMailDomainUsersMetrics:
                 "mau": 0,  # Monthly active users
                 "wau": 0,  # Weekly active users
             },
-            custom_attribute_key="siret",
-            custom_attribute_value=siret,
+            group_key="siret",
+            group_value=siret,
+        )
+
+        check_results_for_key(
+            response.json()["results"],
+            {
+                "tu": 1,  # Total unique users
+                "yau": 1,  # Yearly active users
+                "mau": 1,  # Monthly active users
+                "wau": 0,  # Weekly active users
+            },
+            group_key="siret",
+            group_value=None,
         )
