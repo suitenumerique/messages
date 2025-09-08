@@ -125,7 +125,7 @@ class TestMailDomainUsersMetrics:
         """
         Requires valid API key for access.
 
-        Asserts that requests without or with invalid authentication are rejected (401),
+        Asserts that requests without or with invalid authentication are rejected (403),
         and requests with the correct API key are accepted (200).
         """
         # Test without authentication

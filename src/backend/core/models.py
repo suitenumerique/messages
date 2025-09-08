@@ -603,7 +603,9 @@ class MailboxAccess(BaseModel):
         default=MailboxRoleChoices.VIEWER,
     )
 
-    accessed_at = models.DateTimeField(_("accessed at"), null=True, blank=True)
+    accessed_at = models.DateTimeField(
+        _("accessed at"), null=True, blank=True, db_index=True
+    )
 
     class Meta:
         db_table = "messages_mailboxaccess"

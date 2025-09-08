@@ -21,6 +21,9 @@ LOGGING_LEVEL_LOGGERS_APP=INFO
 ENABLE_PROMETHEUS=0
 PROMETHEUS_API_KEY=ExamplePrometheusApiKey
 
+# Metrics
+METRICS_API_KEY=ExampleMetricsApiKey
+
 # Python
 PYTHONPATH=/app
 
