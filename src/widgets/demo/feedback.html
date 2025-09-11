@@ -33,12 +33,14 @@
     </style>
   </head>
   <body>
+    <a href="/">Back to index</a>
     <h1>Feedback Widget Demo</h1>
     <script type="module" src="../src/widgets/feedback/main.ts" defer></script>
     <script>
       window._stmsg_widget = window._stmsg_widget || [];
       _stmsg_widget.push(["feedback", "init", {
-        "title": "Do you have any feedback?"
+        "title": "Do you have any feedback?",
+        "api": "http://localhost:8905/demo/api.json?"
       }]);
     </script>
   </body>

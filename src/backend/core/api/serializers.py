@@ -9,7 +9,6 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from core import models
-from core.channels import list_channel_types
 
 class IntegerChoicesField(serializers.ChoiceField):
     """
@@ -1176,10 +1175,10 @@ class ChannelSerializer(AbilitiesModelSerializer):
             )
         
         # Validate that the channel type exists
-        if channel_type:
-            if channel_type not in list_channel_types().keys():
-                raise serializers.ValidationError(
-                    f"Invalid channel type"
-                )
+        # if channel_type:
+        #     if channel_type not in list_channel_types().keys():
+        #         raise serializers.ValidationError(
+        #             f"Invalid channel type"
+        #         )
         
         return data

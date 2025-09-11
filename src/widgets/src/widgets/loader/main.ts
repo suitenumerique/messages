@@ -1,41 +1,64 @@
 import styles from './styles.css?inline'
 import { createShadowWidget } from '../../shared/shadow-dom'
 import icon from './icon.svg?raw'
-import { injectScript, installHook } from '../../shared/script'
+import { injectScript, installHook, getLoaded, setLoaded } from '../../shared/script'
 
 const widgetName = "loader";
-const widgetPrefix = `stmsg-widget-${widgetName}`;
+const namespace = `stmsg-widget`;
 
-document.addEventListener(`${widgetPrefix}-init`, (e) => {
+// The init event is sent from the embedding code
+document.addEventListener(`${namespace}-${widgetName}-init`, (e) => {
 
     const args = (e as CustomEvent).detail || {};
 
     const htmlContent = `<div><button type="button" aria-label="${(args.label || 'Load widget').replace(/"/g, '\\"')}">${icon}</button></div>`;
 
     // Create shadow DOM widget
-    const shadowRoot = createShadowWidget(widgetPrefix, htmlContent, styles)
+    const shadowRoot = createShadowWidget(widgetName, htmlContent, styles)
     
     if (shadowRoot) {
         const btn = shadowRoot.querySelector<HTMLButtonElement>('button')!
     
+        // TODO timeout? error?
         btn.addEventListener('click', () => {
-            // Add loading state
+    
+            const targetWidget = args.widget || 'feedback';
+            const targetPrefix = `${namespace}-${targetWidget}-`;
+
+            if (btn.classList.contains('opened')) {
+                document.dispatchEvent(new CustomEvent(`${targetPrefix}close`));
+                return;
+            }
+
+            // Add loading state to the UI
             btn.classList.add('loading')
     
-            const targetWidget = args.load?.widget || 'feedback';
-    
-            // TODO timeout? error?
-            // TODO: close again on click
-            // TODO: allow open again after close
-            // TODO: change icon when opened
-            document.addEventListener(`stmsg-widget-${targetWidget}-loaded`, () => {
-                btn.classList.remove('loading')
-                window._stmsg_widget.push([targetWidget, "init", args.load]);
+            document.addEventListener(`${targetPrefix}closed`, () => {
+                btn.classList.remove('opened')
             })
-            injectScript(args.load.url);
+            document.addEventListener(`${targetPrefix}opened`, () => {
+                btn.classList.add('opened')
+            })
+
+            const loadedCallback = () => {
+                btn.classList.remove('loading')
+                window._stmsg_widget.push([targetWidget, "init", args.params]);
+            }
+
+            if (getLoaded(targetWidget) === 2) {
+                loadedCallback();
+            } else {
+                document.addEventListener(`${targetPrefix}loaded`, loadedCallback);
+                // If it isn't even loading, we need to inject the script
+                if (!getLoaded(targetWidget)) {
+                    injectScript(args.script);
+                    setLoaded(targetWidget, 1);
+                }
+            }
+
         })
     }
     
 });
 
-installHook(widgetPrefix);
+installHook(widgetName, namespace);

@@ -9,8 +9,8 @@ This MTA container is based on standard technologies such as Postfix with a cust
 It is battle-tested with a complete Python test suite.
 
 After receiving an email through SMTP, it processes each message synchronously during the SMTP session using a custom Postfix milter that:
- - Validates each recipient with a REST API call to `{env.MDA_API_BASE_URL}/check-recipients` during the RCPT TO command
- - Delivers the complete message via REST API call to `{env.MDA_API_BASE_URL}/inbound-email` during the DATA command
+ - Validates each recipient with a REST API call to `{env.MDA_API_BASE_URL}/inbound/mta/check/` during the RCPT TO command
+ - Delivers the complete message via REST API call to `{env.MDA_API_BASE_URL}/inbound/mta/deliver/` during the DATA command
  - Either accepts (discards from queue) or rejects the SMTP session based on delivery results
 
 This architecture ensures true synchronous delivery - delivery failures cause immediate SMTP session rejection, and successful deliveries prevent the message from entering the Postfix queue.

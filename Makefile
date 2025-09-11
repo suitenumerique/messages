@@ -68,11 +68,8 @@ create-env-files: \
 	env.d/development/frontend.local \
 	env.d/development/mta-in.local \
 	env.d/development/mta-out.local \
-<<<<<<< HEAD
 	env.d/development/socks-proxy.local
-=======
 	env.d/development/widgets.local
->>>>>>> d2e0fa3 (✨(channels) add multipe inbound channels & alpha frontend widgets)
 .PHONY: create-env-files
 
 bootstrap: ## Prepare the project for local development
@@ -116,6 +113,7 @@ update:  ## Update the project with latest changes
 	@$(MAKE) collectstatic
 	@$(MAKE) migrate
 	@$(MAKE) front-install-frozen
+	@$(MAKE) widgets-install
 	# @$(MAKE) back-i18n-compile
 .PHONY: update
 
@@ -479,6 +477,10 @@ widgets-build: ## build the widgets
 widgets-shell: ## open a shell in the widgets container
 	$(COMPOSE) run --build --rm widgets-dev /bin/sh
 .PHONY: widgets-shell
+
+widgets-start: ## start the widgets container
+	$(COMPOSE) up --force-recreate --build -d widgets-dev --wait
+.PHONY: widgets-start
 
 
 api-update: ## Update the OpenAPI schema then frontend API client

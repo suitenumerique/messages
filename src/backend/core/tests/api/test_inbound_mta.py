@@ -1,4 +1,4 @@
-"""Tests for Inbound API endpoints (replacing MTA API endpoints)."""
+"""Tests for MTA API endpoints."""
 
 # pylint: disable=too-many-positional-arguments
 
@@ -98,15 +98,27 @@ def fixture_valid_jwt_token():
     return _get_jwt_token
 
 
+@pytest.fixture(name="jwt_token_without_exp")
+def fixture_jwt_token_without_exp():
+    """Return a valid JWT token for the sample email without exp."""
 
+    def _get_jwt_token(body, metadata):
+        body_hash = hashlib.sha256(body).hexdigest()
+        payload = {
+            "body_hash": body_hash,
+            **metadata,
+        }
+        return jwt.encode(payload, settings.MDA_API_SECRET, algorithm="HS256")
+
+    return _get_jwt_token
 
 
 @pytest.mark.django_db
-class TestInboundEmailDelivery:
-    """Test the inbound email delivery endpoint."""
+class TestMTAInboundEmail:
+    """Test the MTA inbound email endpoint."""
 
-    @patch("core.channels.mta.deliver_inbound_message")
-    @patch("core.channels.mta.parse_email_message")
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email_message")
     @pytest.mark.django_db
     def test_valid_email_submission(
         self,
@@ -152,8 +164,8 @@ class TestInboundEmailDelivery:
         assert first_call_args[1]["subject"] == "Test Email"
         assert second_call_args[1]["subject"] == "Test Email"
 
-    @patch("core.channels.mta.deliver_inbound_message")
-    @patch("core.channels.mta.parse_email_message")
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email_message")
     def test_email_parse_failure(
         self,
         mock_parse,
@@ -180,8 +192,8 @@ class TestInboundEmailDelivery:
         mock_parse.assert_called_once_with(sample_email)
         mock_deliver.assert_not_called()  # Delivery should not be attempted
 
-    @patch("core.channels.mta.deliver_inbound_message")
-    @patch("core.channels.mta.parse_email_message")
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email_message")
     def test_delivery_partial_failure(
         self,
         mock_parse,
@@ -222,8 +234,8 @@ class TestInboundEmailDelivery:
         mock_parse.assert_called_once_with(sample_email)
         assert mock_deliver.call_count == 2  # Called for both recipients
 
-    @patch("core.channels.mta.deliver_inbound_message")
-    @patch("core.channels.mta.parse_email_message")
+    @patch("core.api.viewsets.inbound.mta.deliver_inbound_message")
+    @patch("core.api.viewsets.inbound.mta.parse_email_message")
     def test_delivery_total_failure(
         self,
         mock_parse,
@@ -258,7 +270,7 @@ class TestInboundEmailDelivery:
             "results": expected_results,
         }
         mock_parse.assert_called_once_with(sample_email)
-        assert mock_deliver.call_count == 2  # Called for both recipients
+        assert mock_deliver.call_count == 2  # Called for both
 
     def test_invalid_content_type(
         self, api_client: APIClient, sample_email, valid_jwt_token
@@ -294,6 +306,22 @@ class TestInboundEmailDelivery:
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    def test_invalid_jwt_token_without_exp(
+        self, api_client: APIClient, sample_email, jwt_token_without_exp
+    ):
+        """Test that submitting with an invalid JWT token fails."""
+
+        http_token = jwt_token_without_exp(
+            sample_email, {"original_recipients": ["recipient@example.com"]}
+        )
+        response = api_client.post(
+            "/api/v1.0/inbound/mta/deliver/",
+            data=sample_email,
+            content_type="message/rfc822",
+            HTTP_AUTHORIZATION=f"Bearer {http_token}",
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
     def test_mismatched_body_hash(
         self, api_client: APIClient, sample_email, valid_jwt_token
     ):
@@ -310,8 +338,8 @@ class TestInboundEmailDelivery:
 
 
 @pytest.mark.django_db
-class TestInboundCheckRecipients:
-    """Test the inbound check recipients endpoint."""
+class TestMTACheckRecipients:
+    """Test the MTA check recipients endpoint."""
 
     @override_settings(MESSAGES_TESTDOMAIN="testdomain.com")
     def test_check_recipients(self, api_client, valid_jwt_token):
@@ -321,15 +349,17 @@ class TestInboundCheckRecipients:
         maildomain = models.MailDomain.objects.create(name="validdomain.com")
         models.Mailbox.objects.create(local_part="recipient", domain=maildomain)
 
-        addresses = [
-            "recipient@validdomain.com",
-            "recipient@testdomain.com",
-            "recipient@invaliddomain.com",
-            "recipient@not.validdomain.com",
-            "recipient@sub.testdomain.com",
-        ]
-
-        body = json.dumps({"addresses": addresses}).encode("utf-8")
+        body = json.dumps(
+            {
+                "addresses": [
+                    "recipient@validdomain.com",
+                    "recipient@testdomain.com",
+                    "recipient@invaliddomain.com",
+                    "recipient@not.validdomain.com",
+                    "recipient@sub.testdomain.com",
+                ]
+            }
+        ).encode("utf-8")
         token = valid_jwt_token(body, {})
 
         response = api_client.post(

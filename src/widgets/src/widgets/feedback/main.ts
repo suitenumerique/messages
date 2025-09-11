@@ -4,9 +4,9 @@ import { installHook } from '../../shared/script'
 import { submitFeedback } from './submit'
 
 const widgetName = "feedback";
-const widgetPrefix = `stmsg-widget-${widgetName}`;
+const namespace = `stmsg-widget`;
 
-document.addEventListener(`${widgetPrefix}-init`, (e) => {
+document.addEventListener(`${namespace}-${widgetName}-init`, (e) => {
 
   const args = (e as CustomEvent).detail || {};
   const title = args.title || 'Feedback';
@@ -31,29 +31,33 @@ document.addEventListener(`${widgetPrefix}-init`, (e) => {
   `
 
   // Create shadow DOM widget
-  const shadowRoot = createShadowWidget(widgetPrefix, htmlContent, styles)
+  const shadowRoot = createShadowWidget(widgetName, htmlContent, styles);
+  document.dispatchEvent(new CustomEvent(`${namespace}-${widgetName}-opened`));
 
-  if (shadowRoot) {
-    const submitBtn = shadowRoot.querySelector<HTMLButtonElement>('#submit')!
-    const feedbackText = shadowRoot.querySelector<HTMLTextAreaElement>('#feedback-text')!
-    const statusDiv = shadowRoot.querySelector<HTMLDivElement>('#status')!
-    const closeBtn = shadowRoot.querySelector<HTMLButtonElement>('#close')!
+  const submitBtn = shadowRoot.querySelector<HTMLButtonElement>('#submit')!
+  const feedbackText = shadowRoot.querySelector<HTMLTextAreaElement>('#feedback-text')!
+  const statusDiv = shadowRoot.querySelector<HTMLDivElement>('#status')!
+  const closeBtn = shadowRoot.querySelector<HTMLButtonElement>('#close')!
 
-    submitBtn.addEventListener('click', () => {
-      const feedback = feedbackText.value.trim()
-      if (feedback) {
-        statusDiv.innerHTML = '<span class="success">Thank you for your feedback!</span>'
-        feedbackText.value = ''
-        submitFeedback(feedback, args.api)
-      } else {
-        statusDiv.innerHTML = '<span class="error">Please enter some feedback.</span>'
-      }
-    })
+  submitBtn.addEventListener('click', () => {
+    const feedback = feedbackText.value.trim()
+    if (feedback) {
+      statusDiv.innerHTML = '<span class="success">Thank you for your feedback!</span>'
+      feedbackText.value = ''
+      submitFeedback(feedback, args.api)
+    } else {
+      statusDiv.innerHTML = '<span class="error">Please enter some feedback.</span>'
+    }
+  });
 
-    closeBtn.addEventListener('click', () => {
-      shadowRoot.host.remove();
-    })
-  } 
+  const closeWidget = () => {
+    shadowRoot.host.remove();
+    document.dispatchEvent(new CustomEvent(`${namespace}-${widgetName}-closed`));
+  }
+
+  closeBtn.addEventListener('click', closeWidget);
+  document.addEventListener(`${namespace}-${widgetName}-close`, closeWidget);
+
 });
 
-installHook(widgetPrefix);
+installHook(widgetName, namespace);

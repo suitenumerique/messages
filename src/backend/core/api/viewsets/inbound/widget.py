@@ -12,6 +12,9 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
+from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth.models import User
 
 from core import models
@@ -81,13 +84,22 @@ class WidgetAuthentication(BaseAuthentication):
         return 'API-Key realm="Widget"'
 
 
-class WidgetChannel:
+class InboundWidgetViewSet(viewsets.GenericViewSet):
     """Handles incoming messages from web widgets."""
     
     # Channel metadata
     CHANNEL_TYPE = "widget"
-    DESCRIPTION = "Web widgets and forms"
-    
+    CHANNEL_DESCRIPTION = "Web widgets and forms"
+
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [WidgetAuthentication]
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="check",
+        url_name="inbound-widget-check"
+    )
     def check(self, request):
         """Generate a temporary token for widget delivery."""
         try:
@@ -126,10 +138,12 @@ class WidgetChannel:
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    def get_authentication_classes(self):
-        """Return authentication classes for widget channel."""
-        return [WidgetAuthentication]
-    
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="deliver",
+        url_name="inbound-widget-deliver"
+    )
     def deliver(self, request):
         """Handle incoming widget message."""
         try:
@@ -183,7 +197,26 @@ class WidgetChannel:
                 sender_name, sender_email, subject, message_text, mailbox
             )
             
-            # TODO: use internal MDA to deliver
+            # Parse the email content to create a proper message
+            try:
+                parsed_email = parse_email_message(email_content.encode('utf-8'))
+            except Exception as e:
+                logger.error("Failed to parse widget email content: %s", str(e))
+                return Response(
+                    {"detail": "Failed to process message content"}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            # Create the message using the parsed email
+            message = models.Message.objects.create(
+                mailbox=mailbox,
+                sender_contact=sender_contact,
+                subject=subject,
+                content=message_text,
+                raw_content=email_content,
+                is_draft=False,
+                is_read=False
+            )
 
             logger.info(
                 "Successfully created message from widget for channel %s, sender: %s",

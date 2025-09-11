@@ -53,6 +53,19 @@ button.loading svg {
     display: none;
 }
 
+button.opened svg {
+  display:none;
+}
+
+button.opened::after {
+  content: '×';
+  font-size: 50px;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }

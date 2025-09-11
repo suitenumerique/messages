@@ -31,6 +31,7 @@
     </style>
   </head>
   <body>
+    <a href="/">Back to index</a>
     <h1>Loader Widget Demo</h1>
 
     <button onclick="document.documentElement.style.backgroundColor = '#000'">Make background dark</button>
@@ -40,12 +41,12 @@
     <script>
       window._stmsg_widget = window._stmsg_widget || [];
       _stmsg_widget.push(["loader", "init", {
-        "load": {
-          "widget": "feedback",
-          "url": "../src/widgets/feedback/main.ts",
+        "params": {
           "title": "Do you have any feedback?",
           "api": "http://localhost:8905/demo/api.json?"
         },
+        "script": "../src/widgets/feedback/main.ts",
+        "widget": "feedback",
         "label": "Feedback Widget"
       }]);
     </script>

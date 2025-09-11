@@ -2,6 +2,7 @@
 
 import logging
 import secrets
+import hashlib
 from typing import Dict, Any, Optional
 
 from django.conf import settings
@@ -15,6 +16,10 @@ from rest_framework import status
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.auth.models import User
+import jwt
+from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +61,7 @@ class MTAJWTAuthentication(BaseAuthentication):
             return (service_account, payload)
 
         except (jwt.ExpiredSignatureError, jwt.InvalidTokenError) as e:
-            raise drf.exceptions.AuthenticationFailed("Invalid token") from e
+            raise AuthenticationFailed("Invalid token") from e
         except (IndexError, KeyError) as e:
             raise AuthenticationFailed(
                 "Invalid token header or payload"
@@ -67,17 +72,23 @@ class MTAJWTAuthentication(BaseAuthentication):
         return 'Bearer realm="MTA"'
 
 
-class MTAChannel:
+
+class InboundMTAViewSet(viewsets.GenericViewSet):
     """Handles incoming email messages from MTA (Mail Transfer Agent)."""
     
     # Channel metadata
     CHANNEL_TYPE = "mta"
-    DESCRIPTION = "Mail Transfer Agent (email)"
-    
-    def get_authentication_classes(self):
-        """Return authentication classes for MTA channel."""
-        return [MTAJWTAuthentication]
-    
+    CHANNEL_DESCRIPTION = "Mail Transfer Agent (email)"
+
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [MTAJWTAuthentication]
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="check",
+        url_name="inbound-mta-check"
+    )
     def check(self, request):
         """Check recipients exist."""
         data = request.data
@@ -90,6 +101,12 @@ class MTAChannel:
         results = {address: check_local_recipient(address, create_if_missing=False) for address in addresses}
         return Response(results)
 
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="deliver",
+        url_name="inbound-mta-deliver"
+    )
     def deliver(self, request):
         """Handle incoming raw email (message/rfc822) from MTA."""
 

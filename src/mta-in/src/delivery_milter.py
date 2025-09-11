@@ -63,7 +63,7 @@ class DeliveryMilter(Milter.Base):
         try:
             # Check if recipient exists via MDA API
             status_code, response = mda_api_call(
-                "check-recipients/",
+                "inbound/mta/check/",
                 "application/json",
                 json.dumps({"addresses": [clean_to]}).encode("utf-8"),
                 {},
@@ -122,7 +122,7 @@ class DeliveryMilter(Milter.Base):
 
             # Perform synchronous delivery via MDA API
             status_code, response = mda_api_call(
-                "inbound-email/",
+                "inbound/mta/deliver/",
                 "message/rfc822",
                 message_content,
                 {

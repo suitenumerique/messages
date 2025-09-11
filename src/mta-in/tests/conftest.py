@@ -67,7 +67,7 @@ class MockAPIServer:
 
             return await call_next(request)
 
-        @self.app.post("/api/mail/inbound-email/")
+        @self.app.post("/api/mail/inbound/mta/deliver/")
         async def receive_mail(request: Request):
             logger.info("Email received by API!")
 
@@ -93,7 +93,7 @@ class MockAPIServer:
             self.received_emails.append(email_data)
             return {"status": "ok"}
 
-        @self.app.post("/api/mail/check-recipients/")
+        @self.app.post("/api/mail/inbound/mta/check/")
         async def check_recipient(request: Request):
             logger.info("Recipient check received")
             data = await request.json()

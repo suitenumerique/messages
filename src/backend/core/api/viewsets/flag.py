@@ -21,7 +21,7 @@ from .. import permissions
 ALLOWED_FLAGS = ["unread", "starred", "trashed"]
 
 
-class ChangeFlagViewSet(APIView):
+class ChangeFlagView(APIView):
     """ViewSet for changing flags on messages or threads."""
 
     permission_classes = [permissions.IsAllowedToAccess]
