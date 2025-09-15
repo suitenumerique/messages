@@ -287,7 +287,9 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
 
     // Invalidate the threads query to refresh the threads list when the unread messages count changes
     useEffect(() => {
-        if ((previousUnreadMessagesCount ?? 0) > (selectedMailbox?.count_unread_messages ?? 0)) {
+        if (!selectedMailbox) return;
+        if ((previousUnreadMessagesCount ?? 0) !== (selectedMailbox.count_unread_messages)) {
+            invalidateThreadsStats();
             queryClient.invalidateQueries({ queryKey: ['threads', selectedMailbox?.id] });
         }
     }, [selectedMailbox?.count_unread_messages]);
