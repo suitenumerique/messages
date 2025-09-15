@@ -850,6 +850,7 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
     accesses = MailboxAccessNestedUserSerializer(
         many=True, read_only=True
     )  # accesses is the related_name
+    can_reset_password = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = models.Mailbox
@@ -862,6 +863,7 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
             "accesses",  # List of users and their roles
             "created_at",
             "updated_at",
+            "can_reset_password",
         ]
         read_only_fields = fields
 

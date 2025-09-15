@@ -111,6 +111,7 @@ def fixture_access_mailbox1_user2(mailbox1_domain1, user_for_access2):
     )
 
 
+# pylint: disable=too-many-public-methods
 class TestAdminMailDomainMailboxViewSet:
     """Tests for the AdminMailDomainMailboxViewSet."""
 
@@ -125,6 +126,13 @@ class TestAdminMailDomainMailboxViewSet:
         """Generate URL for mailbox detail in a specific domain."""
         return reverse(
             "admin-maildomains-mailbox-detail",
+            kwargs={"maildomain_pk": maildomain_pk, "pk": mailbox_pk},
+        )
+
+    def reset_password_url(self, maildomain_pk, mailbox_pk):
+        """Generate URL for reset-password action on a mailbox in a specific domain."""
+        return reverse(
+            "admin-maildomains-mailbox-reset-password",
             kwargs={"maildomain_pk": maildomain_pk, "pk": mailbox_pk},
         )
 
@@ -306,7 +314,7 @@ class TestAdminMailDomainMailboxViewSet:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "local_part" in response.data
 
-    @patch("core.api.viewsets.maildomain.reset_keycloak_user_password")
+    @patch("core.services.identity.keycloak.reset_keycloak_user_password")
     @override_settings(IDENTITY_PROVIDER="keycloak")
     def test_admin_maildomains_mailbox_create_personal_without_maildomain_identity_sync(
         self,
@@ -337,7 +345,7 @@ class TestAdminMailDomainMailboxViewSet:
         # Verify Keycloak password reset was not called
         mock_reset_password.assert_not_called()
 
-    @patch("core.api.viewsets.maildomain.reset_keycloak_user_password")
+    @patch("core.services.identity.keycloak.reset_keycloak_user_password")
     @override_settings(IDENTITY_PROVIDER="other_provider")
     def test_admin_maildomains_mailbox_create_personal_without_keycloak_identity_provider(
         self,
@@ -395,7 +403,7 @@ class TestAdminMailDomainMailboxViewSet:
 
     @patch("core.signals.sync_mailbox_to_keycloak_user")
     @patch("core.signals.sync_maildomain_to_keycloak_group")
-    @patch("core.api.viewsets.maildomain.reset_keycloak_user_password")
+    @patch("core.services.identity.keycloak.reset_keycloak_user_password")
     @override_settings(IDENTITY_PROVIDER="keycloak")
     def test_admin_maildomains_mailbox_create_personal_user_creation_and_access(
         self,
@@ -619,3 +627,128 @@ class TestAdminMailDomainMailboxViewSet:
         assert "user" in access_data
         user_data = access_data["user"]
         assert "abilities" not in user_data
+
+    @pytest.mark.parametrize("identity_provider", ["other", None, ""])
+    def test_admin_maildomains_mailbox_reset_password_returns_404_when_identity_provider_is_not_keycloak(
+        self,
+        identity_provider,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """
+        If no identity provider is not configured or different than keycloak,
+        reset password endpoint should return 404.
+        """
+        api_client.force_authenticate(user=domain_admin_user)
+
+        url = self.reset_password_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        with override_settings(IDENTITY_PROVIDER=identity_provider):
+            response = api_client.patch(url)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.data["error"] == "Identity provider is not Keycloak."
+
+    def test_admin_maildomains_mailbox_reset_password_returns_400_when_mailbox_not_eligible(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """
+        If identity provider is keycloak but mailbox password is not allowed,
+        reset password endpoint should return 400.
+        """
+        api_client.force_authenticate(user=domain_admin_user)
+
+        # IDP is keycloak but domain identity sync disabled -> cannot reset
+        mail_domain1.identity_sync = False
+        mail_domain1.save()
+
+        url = self.reset_password_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        with override_settings(IDENTITY_PROVIDER="keycloak"):
+            response = api_client.patch(url)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Cannot reset password for this mailbox" in response.data["error"]
+
+    @patch("core.models.Mailbox.reset_password")
+    def test_admin_maildomains_mailbox_reset_password_success(
+        self,
+        mock_reset,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """
+        If mailbox password reset is allowed,
+        reset password endpoint should return 200 response with the new password.
+        """
+        api_client.force_authenticate(user=domain_admin_user)
+
+        # Make the mailbox eligible
+        mail_domain1.identity_sync = True
+        mail_domain1.save()
+        mock_reset.return_value = "temporary-password-xyz"
+
+        url = self.reset_password_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        with override_settings(IDENTITY_PROVIDER="keycloak"):
+            response = api_client.patch(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == {"one_time_password": "temporary-password-xyz"}
+        mock_reset.assert_called_once()
+
+    @patch("core.models.Mailbox.reset_password", side_effect=Exception("boom"))
+    def test_admin_maildomains_mailbox_reset_password_internal_error(
+        self,
+        _mock_reset,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """
+        If mailbox password reset fails,
+        reset password endpoint should return 500 response with the error.
+        """
+        api_client.force_authenticate(user=domain_admin_user)
+
+        mail_domain1.identity_sync = True
+        mail_domain1.save()
+
+        url = self.reset_password_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        with override_settings(IDENTITY_PROVIDER="keycloak"):
+            response = api_client.patch(url)
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert response.data["error"] == "boom"
+
+    def test_admin_maildomains_mailbox_reset_password_forbidden_when_not_domain_admin(
+        self,
+        api_client,
+        other_user,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """
+        If user is not a domain admin, reset password endpoint should return 403.
+        """
+        api_client.force_authenticate(user=other_user)
+
+        url = self.reset_password_url(mail_domain1.pk, mailbox1_domain1.pk)
+        with override_settings(IDENTITY_PROVIDER="keycloak"):
+            response = api_client.patch(url)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN

@@ -1,5 +1,7 @@
 """Admin ViewSets for MailDomain and Mailbox management."""
 
+from logging import getLogger
+
 from django.conf import settings
 from django.db import transaction
 from django.db.models import F, Q
@@ -31,7 +33,8 @@ from core import models
 from core.api import permissions as core_permissions
 from core.api import serializers as core_serializers
 from core.services.dns.check import check_dns_records
-from core.services.identity.keycloak import reset_keycloak_user_password
+
+logger = getLogger(__name__)
 
 
 class AdminMailDomainViewSet(
@@ -305,15 +308,71 @@ class AdminMailDomainMailboxViewSet(
 
         # This is a somewhat hacky bypass of abstractions, but for now
         # we need to return a one time password synchronously
-        if (
-            mailbox_type == "personal"
-            and settings.IDENTITY_PROVIDER == "keycloak"
-            and domain.identity_sync
-        ):
-            mailbox_password = reset_keycloak_user_password(email)
+        if mailbox.can_reset_password:
+            mailbox_password = mailbox.reset_password()
             payload["one_time_password"] = mailbox_password
 
         return Response(payload, status=status.HTTP_201_CREATED, headers=headers)
+
+    @extend_schema(
+        description="Reset the Keycloak password for a specific mailbox.",
+        responses={
+            200: inline_serializer(
+                name="ResetPasswordResponse",
+                fields={"one_time_password": drf_serializers.CharField()},
+            ),
+            400: inline_serializer(
+                name="ResetPasswordError",
+                fields={"error": drf_serializers.CharField()},
+            ),
+            404: inline_serializer(
+                name="ResetPasswordNotFound",
+                fields={"error": drf_serializers.CharField()},
+            ),
+            500: inline_serializer(
+                name="ResetPasswordInternalServerError",
+                fields={"error": drf_serializers.CharField()},
+            ),
+        },
+    )
+    @action(detail=True, methods=["patch"], url_path="reset-password")
+    def reset_password(self, request, *args, **kwargs):
+        """
+        Reset the Keycloak password for a specific mailbox.
+        """
+
+        if not settings.IDENTITY_PROVIDER == "keycloak":
+            return Response(
+                {"error": "Identity provider is not Keycloak."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        mailbox = self.get_object()
+
+        if not mailbox.can_reset_password:
+            return Response(
+                {
+                    "error": (
+                        "Cannot reset password for this mailbox. "
+                        "Mail domain identity sync is not enabled or the mailbox is not a personal mailbox."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            mailbox_password = mailbox.reset_password()
+        # pylint: disable=broad-exception-caught
+        except Exception as e:
+            logger.error("Error resetting password for mailbox %s: %s", mailbox, e)
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response(
+            {"one_time_password": mailbox_password}, status=status.HTTP_200_OK
+        )
 
 
 class AdminMailDomainUserViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):

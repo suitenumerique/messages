@@ -2682,6 +2682,83 @@
                 }
             }
         },
+        "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/{id}/reset-password/": {
+            "patch": {
+                "operationId": "maildomains_mailboxes_reset_password_partial_update",
+                "description": "Reset the Keycloak password for a specific mailbox.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ResetPasswordResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ResetPasswordError"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ResetPasswordNotFound"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ResetPasswordInternalServerError"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/maildomains/{maildomain_pk}/users/": {
             "get": {
                 "operationId": "maildomains_users_list",
@@ -4733,11 +4810,16 @@
                         "readOnly": true,
                         "title": "Updated on",
                         "description": "date and time at which a record was last updated"
+                    },
+                    "can_reset_password": {
+                        "type": "boolean",
+                        "readOnly": true
                     }
                 },
                 "required": [
                     "accesses",
                     "alias_of",
+                    "can_reset_password",
                     "created_at",
                     "domain_name",
                     "id",
@@ -4797,6 +4879,10 @@
                         "title": "Updated on",
                         "description": "date and time at which a record was last updated"
                     },
+                    "can_reset_password": {
+                        "type": "boolean",
+                        "readOnly": true
+                    },
                     "one_time_password": {
                         "type": "string",
                         "nullable": true,
@@ -4807,6 +4893,7 @@
                 "required": [
                     "accesses",
                     "alias_of",
+                    "can_reset_password",
                     "created_at",
                     "domain_name",
                     "id",
@@ -5310,6 +5397,50 @@
                         "$ref": "#/components/schemas/ThreadAccessRoleChoices"
                     }
                 }
+            },
+            "ResetPasswordError": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "error"
+                ]
+            },
+            "ResetPasswordInternalServerError": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "error"
+                ]
+            },
+            "ResetPasswordNotFound": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "error"
+                ]
+            },
+            "ResetPasswordResponse": {
+                "type": "object",
+                "properties": {
+                    "one_time_password": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "one_time_password"
+                ]
             },
             "SendMessageRequestRequest": {
                 "type": "object",

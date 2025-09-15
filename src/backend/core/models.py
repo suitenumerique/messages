@@ -449,6 +449,28 @@ class Mailbox(BaseModel):
         return f"{self.local_part}@{self.domain.name}"
 
     @property
+    def can_reset_password(self) -> bool:
+        """Return True if the mailbox user's password can be reset."""
+        return (
+            self.is_identity
+            and settings.IDENTITY_PROVIDER == "keycloak"
+            and self.domain.identity_sync
+        )
+
+    def reset_password(self):
+        """Reset the mailbox user's password."""
+        if self.can_reset_password is False:
+            return None
+
+        email = str(self)
+        # Local import to avoid circular dependency with identity services
+        from core.services.identity.keycloak import (  # pylint: disable=import-outside-toplevel
+            reset_keycloak_user_password,
+        )
+
+        return reset_keycloak_user_password(email)
+
+    @property
     def threads_viewer(self):
         """Return queryset of threads where the mailbox has at least viewer access."""
         return Thread.objects.filter(

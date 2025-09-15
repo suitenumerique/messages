@@ -9,7 +9,6 @@ from django.utils.html import escape, format_html
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
-from core.services.identity.keycloak import reset_keycloak_user_password
 from core.services.importer import ImportService
 
 from . import models
@@ -30,8 +29,7 @@ def reset_keycloak_password_action(_, request, queryset):
             continue
 
         try:
-            username = str(mailbox)  # email format
-            new_password = reset_keycloak_user_password(username)
+            new_password = mailbox.reset_password()
             messages.success(
                 request,
                 f"Password reset for {mailbox}. New temporary password: {new_password}",

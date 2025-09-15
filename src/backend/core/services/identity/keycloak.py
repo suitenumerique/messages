@@ -37,7 +37,7 @@ def get_keycloak_admin_client():
     return keycloak_admin
 
 
-def sync_maildomain_to_keycloak_group(maildomain: MailDomain):
+def sync_maildomain_to_keycloak_group(maildomain):
     """
     Sync a MailDomain to Keycloak as a group.
     Creates the group if it doesn't exist and updates its attributes.
@@ -121,7 +121,7 @@ def sync_maildomain_to_keycloak_group(maildomain: MailDomain):
         raise
 
 
-def sync_mailbox_to_keycloak_user(mailbox: Mailbox):
+def sync_mailbox_to_keycloak_user(mailbox):
     """
     Sync a Mailbox to Keycloak as a user in its maildomain group.
     Creates the user if it doesn't exist and adds them to the appropriate group.
