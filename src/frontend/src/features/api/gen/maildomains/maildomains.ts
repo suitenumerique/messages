@@ -33,6 +33,10 @@ import type {
   MaildomainsMailboxesListParams,
   PaginatedMailDomainAdminList,
   PaginatedMailboxAdminList,
+  ResetPasswordError,
+  ResetPasswordInternalServerError,
+  ResetPasswordNotFound,
+  ResetPasswordResponse,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -1197,6 +1201,151 @@ export const useMaildomainsMailboxesDestroy = <
 > => {
   const mutationOptions =
     getMaildomainsMailboxesDestroyMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Reset the Keycloak password for a specific mailbox.
+ */
+export type maildomainsMailboxesResetPasswordPartialUpdateResponse200 = {
+  data: ResetPasswordResponse;
+  status: 200;
+};
+
+export type maildomainsMailboxesResetPasswordPartialUpdateResponse400 = {
+  data: ResetPasswordError;
+  status: 400;
+};
+
+export type maildomainsMailboxesResetPasswordPartialUpdateResponse404 = {
+  data: ResetPasswordNotFound;
+  status: 404;
+};
+
+export type maildomainsMailboxesResetPasswordPartialUpdateResponse500 = {
+  data: ResetPasswordInternalServerError;
+  status: 500;
+};
+
+export type maildomainsMailboxesResetPasswordPartialUpdateResponseComposite =
+  | maildomainsMailboxesResetPasswordPartialUpdateResponse200
+  | maildomainsMailboxesResetPasswordPartialUpdateResponse400
+  | maildomainsMailboxesResetPasswordPartialUpdateResponse404
+  | maildomainsMailboxesResetPasswordPartialUpdateResponse500;
+
+export type maildomainsMailboxesResetPasswordPartialUpdateResponse =
+  maildomainsMailboxesResetPasswordPartialUpdateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMaildomainsMailboxesResetPasswordPartialUpdateUrl = (
+  maildomainPk: string,
+  id: string,
+) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/mailboxes/${id}/reset-password/`;
+};
+
+export const maildomainsMailboxesResetPasswordPartialUpdate = async (
+  maildomainPk: string,
+  id: string,
+  options?: RequestInit,
+): Promise<maildomainsMailboxesResetPasswordPartialUpdateResponse> => {
+  return fetchAPI<maildomainsMailboxesResetPasswordPartialUpdateResponse>(
+    getMaildomainsMailboxesResetPasswordPartialUpdateUrl(maildomainPk, id),
+    {
+      ...options,
+      method: "PATCH",
+    },
+  );
+};
+
+export const getMaildomainsMailboxesResetPasswordPartialUpdateMutationOptions =
+  <
+    TError =
+      | ResetPasswordError
+      | ResetPasswordNotFound
+      | ResetPasswordInternalServerError,
+    TContext = unknown,
+  >(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof maildomainsMailboxesResetPasswordPartialUpdate>
+      >,
+      TError,
+      { maildomainPk: string; id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  }): UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsMailboxesResetPasswordPartialUpdate>>,
+    TError,
+    { maildomainPk: string; id: string },
+    TContext
+  > => {
+    const mutationKey = ["maildomainsMailboxesResetPasswordPartialUpdate"];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof maildomainsMailboxesResetPasswordPartialUpdate>
+      >,
+      { maildomainPk: string; id: string }
+    > = (props) => {
+      const { maildomainPk, id } = props ?? {};
+
+      return maildomainsMailboxesResetPasswordPartialUpdate(
+        maildomainPk,
+        id,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type MaildomainsMailboxesResetPasswordPartialUpdateMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof maildomainsMailboxesResetPasswordPartialUpdate>>
+  >;
+
+export type MaildomainsMailboxesResetPasswordPartialUpdateMutationError =
+  | ResetPasswordError
+  | ResetPasswordNotFound
+  | ResetPasswordInternalServerError;
+
+export const useMaildomainsMailboxesResetPasswordPartialUpdate = <
+  TError =
+    | ResetPasswordError
+    | ResetPasswordNotFound
+    | ResetPasswordInternalServerError,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof maildomainsMailboxesResetPasswordPartialUpdate>
+      >,
+      TError,
+      { maildomainPk: string; id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsMailboxesResetPasswordPartialUpdate>>,
+  TError,
+  { maildomainPk: string; id: string },
+  TContext
+> => {
+  const mutationOptions =
+    getMaildomainsMailboxesResetPasswordPartialUpdateMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };

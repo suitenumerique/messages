@@ -27,4 +27,5 @@ export interface MailboxAdmin {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
+  readonly can_reset_password: boolean;
 }

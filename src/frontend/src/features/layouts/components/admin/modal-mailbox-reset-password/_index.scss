@@ -1,0 +1,33 @@
+.modal-mailbox-reset-password {
+  // padding-inline: var(--c--theme--spacings--base);
+  padding-block: var(--c--theme--spacings--md) 0;
+
+  & > section {
+    &.modal-mailbox-reset-password__success {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--c--theme--spacings--md);
+      padding: var(--c--theme--spacings--md) var(--c--theme--spacings--base);
+
+      & > footer > button {
+          min-width: 200px;
+          justify-content: center;
+      }
+    }
+
+    &.modal-mailbox-reset-password__idle {
+      display: flex;
+      flex-direction: column;
+      gap: var(--c--theme--spacings--md);
+
+      & > footer {
+        margin-top: var(--c--theme--spacings--sm);
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--c--theme--spacings--base);
+      }
+    }
+  }
+}

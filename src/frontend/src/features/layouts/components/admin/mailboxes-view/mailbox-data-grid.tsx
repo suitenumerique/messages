@@ -1,11 +1,12 @@
 import { MailboxAdmin, MailDomainAdmin, useMaildomainsMailboxesList } from "@/features/api/gen";
-import { ModalMailboxManageAccesses } from "@/features/layouts/components/admin/modal-manage-accesses";
+import { ModalMailboxManageAccesses } from "@/features/layouts/components/admin/modal-mailbox-manage-accesses";
 import { Banner } from "@/features/ui/components/banner";
 import useAbility, { Abilities } from "@/hooks/use-ability";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenu, Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button, DataGrid, usePagination } from "@openfun/cunningham-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import ModalMailboxResetPassword from "../modal-mailbox-reset-password";
 
 type AdminUserDataGridProps = {
     domain: MailDomainAdmin;
@@ -17,9 +18,11 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
     const { data: mailboxesData, isLoading, error, refetch: refetchMailboxes } = useMaildomainsMailboxesList(domain.id, { page: pagination.page });
     const mailboxes = mailboxesData?.data.results || [];
     const [editedMailbox, setEditedMailbox] = useState<MailboxAdmin | null>(null);
+    const [editAction, setEditAction] = useState<'edit' | 'resetPassword' | null>(null);
     const canManageMailboxes = useAbility(Abilities.CAN_MANAGE_MAILDOMAIN_MAILBOXES, domain);
     const handleCloseEditUserModal = (refetch: boolean = false) => {
         setEditedMailbox(null);
+        setEditAction(null);
         if (refetch) {
             refetchMailboxes();
         }
@@ -78,20 +81,17 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
         ...(canManageMailboxes ? [{
             id: "actions",
             headerName: t("admin_maildomains_details.datagrid_headers.actions"),
-            size: 133,
-            renderCell: ({ row }: { row: MailboxAdmin }) => (
-                <>
-                    <Button
-                        color="secondary"
-                        size="small"
-                        onClick={() => {
-                            setEditedMailbox(row);
-                        }}
-                    >
-                        {t('admin_maildomains_details.actions.manage_accesses')}
-                    </Button>
-                </>
-            ),
+            size: 160,
+            renderCell: ({ row }: { row: MailboxAdmin }) => <ActionsRow
+                onEdit={() => {
+                    setEditAction('edit');
+                    setEditedMailbox(row);
+                }}
+                onResetPassword={row.can_reset_password ? (() => {
+                    setEditAction('resetPassword')
+                    setEditedMailbox(row);
+                }) : undefined}
+            />,
         }] : []),
     ];
 
@@ -137,15 +137,67 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
                 enableSorting={false}
                 onSortModelChange={() => undefined}
             />
-            {canManageMailboxes && (
-                <ModalMailboxManageAccesses
-                    isOpen={!!editedMailbox}
-                    onClose={handleCloseEditUserModal}
-                    mailbox={editedMailbox}
-                    domainId={domain.id}
-                    onAccessChange={refetchMailboxes}
-                />
+            {canManageMailboxes && editedMailbox && (
+                <>
+                    <ModalMailboxManageAccesses
+                        isOpen={editAction === 'edit'}
+                        onClose={handleCloseEditUserModal}
+                        mailbox={editedMailbox}
+                        domainId={domain.id}
+                        onAccessChange={refetchMailboxes}
+                    />
+                    <ModalMailboxResetPassword
+                        isOpen={editAction === 'resetPassword'}
+                        onClose={handleCloseEditUserModal}
+                        mailbox={editedMailbox}
+                        domainId={domain.id}
+                    />
+                </>
             )}
+        </div>
+    );
+}
+
+type ActionsRowProps = {
+    onEdit: () => void;
+    onResetPassword?: () => void;
+};
+
+const ActionsRow = ({ onEdit, onResetPassword }: ActionsRowProps) => {
+    const [isMoreActionsOpen, setMoreActionsOpen] = useState<boolean>(false);
+    const { t } = useTranslation();
+
+    return (
+        <div className="flex-row" style={{ gap: "var(--c--theme--spacings--2xs)" }}>
+            <Button
+                color="secondary"
+                size="nano"
+                onClick={onEdit}
+                style={{ paddingInline: "var(--c--theme--spacings--xs)" }}
+            >
+                {t('admin_maildomains_details.actions.manage_accesses')}
+            </Button>
+            {onResetPassword &&
+                <DropdownMenu
+                    isOpen={isMoreActionsOpen}
+                    onOpenChange={setMoreActionsOpen}
+                    options={[
+                        {
+                            label: t('admin_maildomains_details.actions.reset_password'),
+                            callback: onResetPassword,
+                        },
+                    ]}
+                >
+                    <Button
+                        color="secondary"
+                        size="nano"
+                        onClick={() => setMoreActionsOpen(true)}
+                    >
+                        <Icon name="more_vert" size={IconSize.SMALL} />
+                        <span className="c__offscreen">{t('admin_maildomains_details.actions.more')}</span>
+                    </Button>
+                </DropdownMenu>
+            }
         </div>
     );
 }

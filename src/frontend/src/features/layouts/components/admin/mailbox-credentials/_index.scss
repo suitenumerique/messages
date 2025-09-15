@@ -1,0 +1,42 @@
+.admin-mailbox-credentials {
+  display: flex;
+  flex-direction: column;
+  gap: var(--c--theme--spacings--base);
+
+  &__content {
+    width: 100%;
+    background: linear-gradient(
+      to bottom right,
+      var(--c--theme--colors--primary-50),
+      var(--c--theme--colors--primary-100)
+    );
+    border: 2px solid var(--c--theme--colors--primary-200);
+    border-radius: 4px;
+    padding: var(--c--theme--spacings--md);
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+
+    dt {
+      font-weight: 600;
+      color: var(--c--theme--colors--primary-800);
+      font-size: var(--c--theme--font-sizes--s);
+      margin-bottom: var(--c--theme--spacings--xs);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    dd {
+      margin-bottom: var(--c--theme--spacings--base);
+      padding: var(--c--theme--spacings--s);
+      background-color: white;
+      border: 1px solid var(--c--theme--colors--greyscale-200);
+      border-radius: var(--c--theme--border-radius--s);
+      font-family: monospace;
+      font-size: var(--c--theme--font-sizes--m);
+      font-weight: 600;
+      color: var(--c--theme--colors--greyscale-900);
+      word-break: break-all;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+  }
+}

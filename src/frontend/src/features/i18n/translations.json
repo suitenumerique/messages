@@ -370,6 +370,15 @@
           "default": "An error occurred while creating the address."
         }
       },
+      "reset_password_modal": {
+        "modal_title": "Reset password of {{mailbox}}",
+        "idle__title": "Are you sure you want to reset the password?",
+        "idle__description": "This action cannot be undone and the user will need the new password to access its mailbox.",
+        "cta": "Reset password",
+        "success__title": "Password reset successfully!",
+        "success__description": "Share the new credentials to the user.",
+        "error": "An error occurred while resetting the password."
+      },
       "create_domain_modal": {
         "title": "Add a domain",
         "form": {
@@ -448,7 +457,9 @@
         },
         "actions": {
           "manage_accesses": "Manage accesses",
-          "new_address": "New address"
+          "new_address": "New address",
+          "reset_password": "Reset password",
+          "more": "More"
         },
         "loading": "Loading addresses..."
       },
@@ -848,6 +859,15 @@
           "default": "Une erreur est survenue lors de la création de l'adresse."
         }
       },
+      "reset_password_modal": {
+        "modal_title": "Réinitialiser le mot de passe de {{mailbox}}",
+        "idle__title": "Etes-vous sûr de vouloir réinitialiser le mot de passe ?",
+        "idle__description": "Cette action est irréversible et l'utilisateur devra utiliser le nouveau mot de passe pour pouvoir accéder à sa boîte aux lettres.",
+        "cta": "Réinitialiser le mot de passe",
+        "error": "Une erreur est survenue lors de la réinitialisation du mot de passe.",
+        "success__title": "Mot de passe réinitialisé avec succès !",
+        "success__description": "Transmettez les nouveaux identifiants à l'utilisateur."
+      },
       "create_domain_modal": {
         "title": "Ajout d'un domaine",
         "form": {
@@ -926,7 +946,9 @@
         },
         "actions": {
           "manage_accesses": "Gérer les accès",
-          "new_address": "Nouvelle adresse"
+          "new_address": "Nouvelle adresse",
+          "reset_password": "Réinitialiser le mot de passe",
+          "more": "Plus"
         },
         "loading": "Chargement des adresses..."
       },

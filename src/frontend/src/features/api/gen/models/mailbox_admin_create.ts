@@ -28,6 +28,7 @@ export interface MailboxAdminCreate {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
+  readonly can_reset_password: boolean;
   /**
    * Fake method just to make the OpenAPI schema valid.
    * @nullable
