@@ -2,11 +2,11 @@ import styles from './styles.css?inline'
 import { createShadowWidget } from '../../shared/shadow-dom'
 import { installHook } from '../../shared/script'
 import { submitFeedback } from './submit'
+import { listenEvent, triggerEvent } from '../../shared/events'
 
 const widgetName = "feedback";
-const namespace = `stmsg-widget`;
 
-document.addEventListener(`${namespace}-${widgetName}-init`, (e) => {
+listenEvent(widgetName, 'init', null, false, (e) => {
 
   const args = (e as CustomEvent).detail || {};
   const title = args.title || 'Feedback';
@@ -32,8 +32,9 @@ document.addEventListener(`${namespace}-${widgetName}-init`, (e) => {
 
   // Create shadow DOM widget
   const shadowRoot = createShadowWidget(widgetName, htmlContent, styles);
-  document.dispatchEvent(new CustomEvent(`${namespace}-${widgetName}-opened`));
 
+  triggerEvent(widgetName, 'opened');
+  
   const submitBtn = shadowRoot.querySelector<HTMLButtonElement>('#submit')!
   const feedbackText = shadowRoot.querySelector<HTMLTextAreaElement>('#feedback-text')!
   const statusDiv = shadowRoot.querySelector<HTMLDivElement>('#status')!
@@ -52,12 +53,11 @@ document.addEventListener(`${namespace}-${widgetName}-init`, (e) => {
 
   const closeWidget = () => {
     shadowRoot.host.remove();
-    document.dispatchEvent(new CustomEvent(`${namespace}-${widgetName}-closed`));
+    triggerEvent(widgetName, 'closed');
   }
 
   closeBtn.addEventListener('click', closeWidget);
-  document.addEventListener(`${namespace}-${widgetName}-close`, closeWidget);
-
+  listenEvent(widgetName, 'close', null, false, closeWidget);
 });
 
-installHook(widgetName, namespace);
+installHook(widgetName);

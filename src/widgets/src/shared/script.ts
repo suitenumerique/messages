@@ -1,3 +1,5 @@
+import { triggerEvent } from './events';
+
 type WidgetEvent = [string, string, any];
 
 type EventArray = Array<WidgetEvent> & { _loaded?: Record<string, number> };
@@ -16,7 +18,7 @@ export const setLoaded = (widgetName: string, status: number) => {
 }
 
 // Replace the push method of the _stmsg_widget array used for communication between the widget and the page
-export const installHook = (widgetName: string, namespace: string) => {
+export const installHook = (widgetName: string) => {
     
     if (!window._stmsg_widget) {
         window._stmsg_widget = [] as EventArray;
@@ -36,8 +38,7 @@ export const installHook = (widgetName: string, namespace: string) => {
         W.push = (elt: WidgetEvent): number => {
             // If the target widget is loaded, fire the event
             if (getLoaded(elt[0]) === 2) {
-                const event = new CustomEvent(`${namespace}-${elt[0]}-${elt[1]}`, { detail: elt[2] });
-                document.dispatchEvent(event);
+                triggerEvent(elt[0], elt[1], elt[2]);
             // If not, actually add to the queue
             } else {
                 W[W.length] = elt;
@@ -53,7 +54,7 @@ export const installHook = (widgetName: string, namespace: string) => {
     }
 
     // Finally, fire an event to signal that we are loaded
-    document.dispatchEvent(new CustomEvent(`${namespace}-${widgetName}-loaded`));
+    triggerEvent(widgetName, 'loaded');
 
 }
 

@@ -2,12 +2,12 @@ import styles from './styles.css?inline'
 import { createShadowWidget } from '../../shared/shadow-dom'
 import icon from './icon.svg?raw'
 import { injectScript, installHook, getLoaded, setLoaded } from '../../shared/script'
+import { triggerEvent, listenEvent } from '../../shared/events'
 
 const widgetName = "loader";
-const namespace = `stmsg-widget`;
 
 // The init event is sent from the embedding code
-document.addEventListener(`${namespace}-${widgetName}-init`, (e) => {
+listenEvent(widgetName, 'init', null, false, (e) => {
 
     const args = (e as CustomEvent).detail || {};
 
@@ -23,20 +23,19 @@ document.addEventListener(`${namespace}-${widgetName}-init`, (e) => {
         btn.addEventListener('click', () => {
     
             const targetWidget = args.widget || 'feedback';
-            const targetPrefix = `${namespace}-${targetWidget}-`;
 
             if (btn.classList.contains('opened')) {
-                document.dispatchEvent(new CustomEvent(`${targetPrefix}close`));
+                triggerEvent(targetWidget, 'close');
                 return;
             }
 
             // Add loading state to the UI
             btn.classList.add('loading')
     
-            document.addEventListener(`${targetPrefix}closed`, () => {
+            listenEvent(targetWidget, 'closed', null, false, () => {
                 btn.classList.remove('opened')
             })
-            document.addEventListener(`${targetPrefix}opened`, () => {
+            listenEvent(targetWidget, 'opened', null, false, () => {
                 btn.classList.add('opened')
             })
 
@@ -48,7 +47,7 @@ document.addEventListener(`${namespace}-${widgetName}-init`, (e) => {
             if (getLoaded(targetWidget) === 2) {
                 loadedCallback();
             } else {
-                document.addEventListener(`${targetPrefix}loaded`, loadedCallback);
+                listenEvent(targetWidget, 'loaded', null, true, loadedCallback);
                 // If it isn't even loading, we need to inject the script
                 if (!getLoaded(targetWidget)) {
                     injectScript(args.script);
@@ -61,4 +60,4 @@ document.addEventListener(`${namespace}-${widgetName}-init`, (e) => {
     
 });
 
-installHook(widgetName, namespace);
+installHook(widgetName);
