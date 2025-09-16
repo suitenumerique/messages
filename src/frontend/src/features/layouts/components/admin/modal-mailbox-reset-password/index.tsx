@@ -60,7 +60,7 @@ const ModalMailboxResetPassword = ({ isOpen, onClose, mailbox, domainId }: Modal
                         }
                         <footer>
                             <Button
-                                color="tertiary"
+                                color="secondary"
                                 onClick={onClose}
                                 disabled={isPending}
                                 icon={isPending && <Spinner />}

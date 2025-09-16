@@ -461,7 +461,12 @@
           "reset_password": "Reset password",
           "more": "More"
         },
-        "loading": "Loading addresses..."
+        "loading": "Loading addresses...",
+        "delete_modal": {
+          "title": "Delete mailbox {{mailbox}}",
+          "message": "Are you sure you want to delete this mailbox? This action is irreversible!",
+          "success": "Mailbox {{mailbox}} has been deleted successfully."
+        }
       },
       "admin_maildomains_dns": {
         "explanation": "These DNS records must be configured on the domain <strong>{{domain}}</strong> for the mail system to work properly. If you don't know how to update them, please contact your technical service provider or system administrator.",
@@ -950,7 +955,12 @@
           "reset_password": "Réinitialiser le mot de passe",
           "more": "Plus"
         },
-        "loading": "Chargement des adresses..."
+        "loading": "Chargement des adresses...",
+        "delete_modal": {
+          "title": "Supprimer la boîte aux lettres {{mailbox}}",
+          "message": "Voulez-vous vraiment supprimer cette boîte aux lettres ? Cette action est irréversible!",
+          "success": "La boîte aux lettres {{mailbox}} a été supprimée avec succès."
+        }
       },
       "admin_maildomains_dns": {
         "explanation": "Ces enregistrements DNS doivent être configurés sur le domaine <strong>{{domain}}</strong> pour que le système de messagerie fonctionne correctement. Si vous ne savez pas comment les mettre à jour, contactez votre prestataire technique ou votre administrateur système.",

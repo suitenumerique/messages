@@ -1,12 +1,13 @@
-import { MailboxAdmin, MailDomainAdmin, useMaildomainsMailboxesList } from "@/features/api/gen";
+import { MailboxAdmin, MailDomainAdmin, useMaildomainsMailboxesDestroy, useMaildomainsMailboxesList } from "@/features/api/gen";
 import { ModalMailboxManageAccesses } from "@/features/layouts/components/admin/modal-mailbox-manage-accesses";
 import { Banner } from "@/features/ui/components/banner";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { DropdownMenu, Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, DataGrid, usePagination } from "@openfun/cunningham-react";
+import { Button, DataGrid, useModals, usePagination } from "@openfun/cunningham-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ModalMailboxResetPassword from "../modal-mailbox-reset-password";
+import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 
 type AdminUserDataGridProps = {
     domain: MailDomainAdmin;
@@ -20,12 +21,47 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
     const [editedMailbox, setEditedMailbox] = useState<MailboxAdmin | null>(null);
     const [editAction, setEditAction] = useState<'edit' | 'resetPassword' | null>(null);
     const canManageMailboxes = useAbility(Abilities.CAN_MANAGE_MAILDOMAIN_MAILBOXES, domain);
+    const deleteMailboxMutation = useMaildomainsMailboxesDestroy();
+    const modals = useModals();
+
     const handleCloseEditUserModal = (refetch: boolean = false) => {
         setEditedMailbox(null);
         setEditAction(null);
         if (refetch) {
             refetchMailboxes();
         }
+    }
+
+    const handleResetPassword = (mailbox: MailboxAdmin) => {
+        setEditAction('resetPassword');
+        setEditedMailbox(mailbox);
+    }
+
+    const handleManageAccess = (mailbox: MailboxAdmin) => {
+        setEditAction('edit');
+        setEditedMailbox(mailbox);
+    }
+
+    const handleDelete = async (mailbox: MailboxAdmin) => {
+        const email = `${mailbox.local_part}@${mailbox.domain_name}`;
+        const decision = await modals.deleteConfirmationModal({
+            title: <span className="label-item__delete-modal__title">{t('admin_maildomains_details.delete_modal.title', { mailbox: email })}</span>,
+            children: <span className="label-item__delete-modal__message">{t('admin_maildomains_details.delete_modal.message')}</span>,
+          });
+
+          if (decision === 'delete') {
+            deleteMailboxMutation.mutate({ maildomainPk: domain.id, id: mailbox.id }, {
+              onSuccess: () => {
+                refetchMailboxes();
+                addToast(
+                    <ToasterItem type="error">
+                        <Icon name="delete" size={IconSize.SMALL} />
+                        <span>{t('admin_maildomains_details.delete_modal.success', { mailbox: email })}</span>
+                    </ToasterItem>
+                );
+              },
+            })
+          }
     }
 
     const columns = [
@@ -83,14 +119,9 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
             headerName: t("admin_maildomains_details.datagrid_headers.actions"),
             size: 160,
             renderCell: ({ row }: { row: MailboxAdmin }) => <ActionsRow
-                onEdit={() => {
-                    setEditAction('edit');
-                    setEditedMailbox(row);
-                }}
-                onResetPassword={row.can_reset_password ? (() => {
-                    setEditAction('resetPassword')
-                    setEditedMailbox(row);
-                }) : undefined}
+                onManageAccess={() => handleManageAccess(row)}
+                onResetPassword={row.can_reset_password ? () => handleResetPassword(row) : undefined}
+                onDelete={() => handleDelete(row)}
             />,
         }] : []),
     ];
@@ -159,11 +190,12 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
 }
 
 type ActionsRowProps = {
-    onEdit: () => void;
+    onManageAccess: () => void;
     onResetPassword?: () => void;
+    onDelete: () => void;
 };
 
-const ActionsRow = ({ onEdit, onResetPassword }: ActionsRowProps) => {
+const ActionsRow = ({ onManageAccess, onResetPassword, onDelete }: ActionsRowProps) => {
     const [isMoreActionsOpen, setMoreActionsOpen] = useState<boolean>(false);
     const { t } = useTranslation();
 
@@ -172,32 +204,38 @@ const ActionsRow = ({ onEdit, onResetPassword }: ActionsRowProps) => {
             <Button
                 color="secondary"
                 size="nano"
-                onClick={onEdit}
+                onClick={onManageAccess}
                 style={{ paddingInline: "var(--c--theme--spacings--xs)" }}
             >
                 {t('admin_maildomains_details.actions.manage_accesses')}
             </Button>
-            {onResetPassword &&
-                <DropdownMenu
-                    isOpen={isMoreActionsOpen}
-                    onOpenChange={setMoreActionsOpen}
-                    options={[
-                        {
-                            label: t('admin_maildomains_details.actions.reset_password'),
-                            callback: onResetPassword,
-                        },
-                    ]}
+            <DropdownMenu
+                isOpen={isMoreActionsOpen}
+                onOpenChange={setMoreActionsOpen}
+                options={[
+                    ...(onResetPassword ? [{
+                        icon: <Icon name="lock" size={IconSize.SMALL} />,
+                        label: t('admin_maildomains_details.actions.reset_password'),
+                        callback: onResetPassword,
+                        showSeparator: true,
+                    },
+                    ] : []),
+                    {
+                        label: t('actions.delete'),
+                        icon: <Icon name="delete" size={IconSize.SMALL} />,
+                        callback: onDelete,
+                    }
+                ]}
+            >
+                <Button
+                    color="secondary"
+                    size="nano"
+                    onClick={() => setMoreActionsOpen(true)}
                 >
-                    <Button
-                        color="secondary"
-                        size="nano"
-                        onClick={() => setMoreActionsOpen(true)}
-                    >
-                        <Icon name="more_vert" size={IconSize.SMALL} />
-                        <span className="c__offscreen">{t('admin_maildomains_details.actions.more')}</span>
-                    </Button>
-                </DropdownMenu>
-            }
-        </div>
+                    <Icon name="more_vert" size={IconSize.SMALL} />
+                    <span className="c__offscreen">{t('admin_maildomains_details.actions.more')}</span>
+                </Button>
+            </DropdownMenu>
+        </div >
     );
 }
