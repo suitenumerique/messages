@@ -1,6 +1,7 @@
 """Test suite of AdminMailDomainMailboxViewSet."""
 # pylint: disable=unused-argument
 
+import uuid
 from unittest.mock import patch
 
 from django.test import override_settings
@@ -208,6 +209,72 @@ class TestAdminMailDomainMailboxViewSet:
         url = self.mailboxes_url(mail_domain1.pk)
         response = api_client.get(url)
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_admin_maildomains_mailbox_delete_success(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+        access_mailbox1_user1,
+        access_mailbox1_user2,
+    ):
+        """Delete endpoint should return 204 if user is a maildomain admin."""
+        api_client.force_authenticate(user=domain_admin_user)
+
+        url = self.mailbox_detail_url(mail_domain1.pk, mailbox1_domain1.pk)
+        response = api_client.delete(url)
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert models.Mailbox.objects.filter(pk=mailbox1_domain1.pk).exists() is False
+        # Related accesses must be deleted by cascade
+        assert (
+            models.MailboxAccess.objects.filter(mailbox_id=mailbox1_domain1.pk).count()
+            == 0
+        )
+
+    def test_admin_maildomains_mailbox_delete_unauthenticated(
+        self, api_client, mail_domain1, mailbox1_domain1
+    ):
+        """Delete endpoint should return 401 if user is not authenticated."""
+        url = self.mailbox_detail_url(mail_domain1.pk, mailbox1_domain1.pk)
+        response = api_client.delete(url)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_admin_maildomains_mailbox_delete_forbidden_not_admin(
+        self, api_client, other_user, mail_domain1, mailbox1_domain1
+    ):
+        """Delete endpoint should return 403 if user is not a maildomain admin."""
+        api_client.force_authenticate(user=other_user)
+        url = self.mailbox_detail_url(mail_domain1.pk, mailbox1_domain1.pk)
+        response = api_client.delete(url)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_admin_maildomains_mailbox_delete_not_found_in_other_domain(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mail_domain2,
+        mailbox1_domain2,
+    ):
+        """Delete endpoint should return 404 if mailbox is not in the domain."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailbox_detail_url(mail_domain1.pk, mailbox1_domain2.pk)
+        response = api_client.delete(url)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_admin_maildomains_mailbox_delete_not_found_unknown_mailbox(
+        self, api_client, domain_admin_user, domain_admin_access1, mail_domain1
+    ):
+        """Delete endpoint should return 404 if mailbox does not exist."""
+        api_client.force_authenticate(user=domain_admin_user)
+        random_pk = uuid.uuid4()
+        url = self.mailbox_detail_url(mail_domain1.pk, random_pk)
+        response = api_client.delete(url)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_admin_maildomains_mailbox_list_for_domain_unauthenticated(
         self, api_client, mail_domain1
