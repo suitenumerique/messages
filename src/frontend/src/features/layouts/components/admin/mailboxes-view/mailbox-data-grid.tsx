@@ -94,7 +94,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
         {
             id: "email",
             headerName: t("admin_maildomains_details.datagrid_headers.email"),
-            renderCell: ({ row }: { row: MailboxAdmin }) => `${row.local_part}@${row.domain_name}`,
+            renderCell: ({ row }: { row: MailboxAdmin }) => MailboxHelper.toString(row) ,
         },
         {
             id: "accesses",

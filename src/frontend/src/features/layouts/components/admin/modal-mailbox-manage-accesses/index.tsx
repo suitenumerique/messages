@@ -2,6 +2,7 @@ import { ShareModal } from "@gouvfr-lasuite/ui-kit";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MailboxAccessNestedUser, MailboxRoleChoices, MailboxAdmin, useMailboxesAccessesCreate, useMailboxesAccessesDestroy, useMailboxesAccessesUpdate, useMaildomainsUsersList, UserWithoutAbilities } from "@/features/api/gen";
+import MailboxHelper from "@/features/utils/mailbox-helper";
 
 type ModalMailboxManageAccessesProps = {
     domainId: string;
@@ -78,7 +79,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
 
     return (
         <ShareModal<UserWithoutAbilities, UserWithoutAbilities, MailboxAccessNestedUser>
-            modalTitle={t('manage_accesses_modal.title', { mailbox: mailbox.local_part + "@" + mailbox.domain_name })}
+            modalTitle={t('manage_accesses_modal.title', { mailbox: MailboxHelper.toString(mailbox) })}
             isOpen={isOpen}
             loading={searchUsersQuery.isLoading}
             canUpdate={true}

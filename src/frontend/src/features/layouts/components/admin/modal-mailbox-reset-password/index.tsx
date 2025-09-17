@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import AdminMailboxCredentials from "../mailbox-credentials";
 import { ResetPasswordResponse } from "@/features/api/gen/models/reset_password_response";
 import { Banner } from "@/features/ui/components/banner";
+import MailboxHelper from "@/features/utils/mailbox-helper";
 
 type ModalMailboxResetPasswordProps = {
     isOpen: boolean;
@@ -44,7 +45,7 @@ const ModalMailboxResetPassword = ({ isOpen, onClose, mailbox, domainId }: Modal
     return (
         <Modal
             isOpen={isOpen}
-            title={t('reset_password_modal.modal_title', { mailbox: mailbox.local_part + "@" + mailbox.domain_name })}
+            title={t('reset_password_modal.modal_title', { mailbox: MailboxHelper.toString(mailbox) })}
             size={ModalSize.MEDIUM}
             onClose={onClose}
         >

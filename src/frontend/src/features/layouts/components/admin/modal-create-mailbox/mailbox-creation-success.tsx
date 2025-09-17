@@ -4,6 +4,7 @@ import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import { Button } from "@openfun/cunningham-react";
 import { Trans, useTranslation } from "react-i18next";
 import AdminMailboxCredentials from "../mailbox-credentials";
+import MailboxHelper from "@/features/utils/mailbox-helper";
 
 type MailboxCreationSuccessProps = {
     type: "personal" | "shared" | "redirect";
@@ -13,7 +14,7 @@ type MailboxCreationSuccessProps = {
 
 export const MailboxCreationSuccess = ({ type, mailbox, onClose }: MailboxCreationSuccessProps) => {
     const { t } = useTranslation();
-    const mailboxAddress = mailbox.local_part + "@" + mailbox.domain_name;
+    const mailboxAddress = MailboxHelper.toString(mailbox);
 
     return (
         <div className="modal-create-address-success">

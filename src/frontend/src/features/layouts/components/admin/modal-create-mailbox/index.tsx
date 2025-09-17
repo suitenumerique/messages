@@ -18,6 +18,7 @@ import { RhfJsonSchemaField } from "@/features/forms/components/react-hook-form/
 import { convertJsonSchemaToZod, ItemJsonSchema } from "@/features/forms/components/zod-json-schema-serializer";
 import { useConfig } from "@/features/providers/config";
 import { JSONSchema } from "zod/v4/core";
+import MailboxHelper from "@/features/utils/mailbox-helper";
 
 export const MODAL_CREATE_ADDRESS_ID = "modal-create-address";
 
@@ -202,7 +203,7 @@ export const ModalCreateMailbox = ({ isOpen, onClose, onCreate }: ModalCreateMai
       } else if (data.type === "redirect") {
         // Find target mailbox for alias creation
         const targetMailbox = mailboxes.find(mb =>
-          `${mb.local_part}@${mb.domain_name}` === data.target_email
+          MailboxHelper.toString(mb) === data.target_email
         );
         payload.alias_of = targetMailbox?.id;
       }

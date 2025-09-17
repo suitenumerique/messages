@@ -1,5 +1,6 @@
 import { MailboxAdminCreate } from "@/features/api/gen/models/mailbox_admin_create";
 import { Banner } from "@/features/ui/components/banner";
+import MailboxHelper from "@/features/utils/mailbox-helper";
 import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import { Button } from "@openfun/cunningham-react";
 import { useMemo, useState } from "react";
@@ -10,12 +11,11 @@ type AdminMailboxCredentialsProps = {
 }
 const AdminMailboxCredentials = ({ mailbox }: AdminMailboxCredentialsProps) => {
     const { t } = useTranslation();
-    const mailboxAddress = mailbox.local_part + "@" + mailbox.domain_name;
     const [clipboardState, setClipboardState] = useState<'idle' | 'copied' | 'error'>('idle');
 
     const credentialText = useMemo(() => {
         if (!mailbox.one_time_password) return '';
-        return t('create_mailbox_modal.success.credential_text', { id: mailboxAddress, password: mailbox.one_time_password });
+        return t('create_mailbox_modal.success.credential_text', { id: MailboxHelper.toString(mailbox), password: mailbox.one_time_password });
     }, [mailbox]);
 
     const handleCopyToClipboard = async () => {
@@ -34,7 +34,7 @@ const AdminMailboxCredentials = ({ mailbox }: AdminMailboxCredentialsProps) => {
             <div className="admin-mailbox-credentials__content">
                 <dl>
                     <dt>{t('create_mailbox_modal.success.credential_identity')}</dt>
-                    <dd>{mailbox.local_part}@{mailbox.domain_name}</dd>
+                    <dd>{MailboxHelper.toString(mailbox)}</dd>
                     <dt>{t('create_mailbox_modal.success.credential_password')}</dt>
                     <dd>{mailbox.one_time_password}</dd>
                 </dl>
