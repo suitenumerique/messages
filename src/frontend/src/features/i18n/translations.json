@@ -315,7 +315,7 @@
         "refresh_success": "Summary refreshed!",
         "refresh_error": "Failed to refresh summary."
       },
-      "create_address_modal": {
+      "create_mailbox_modal": {
         "title": "Create a new address @{{domain}}",
         "success": {
           "personal": "The personal mailbox <strong>{{mailbox}}</strong> has been created successfully.",
@@ -809,7 +809,7 @@
         "refresh_success": "Résumé mis à jour !",
         "refresh_error": "Erreur lors de la mise à jour du résumé."
       },
-      "create_address_modal": {
+      "create_mailbox_modal": {
         "title": "Création d'une nouvelle adresse @{{domain}}",
         "tabs": {
           "personal": "Créer une nouvelle boîte personnelle",

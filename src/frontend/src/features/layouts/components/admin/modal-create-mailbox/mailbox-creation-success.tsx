@@ -23,24 +23,24 @@ export const MailboxCreationSuccess = ({ type, mailbox, onClose }: MailboxCreati
                 </div>
                 {
                   type === "redirect" && (
-                    <p><Trans i18nKey="create_address_modal.success.redirect" values={{mailbox:mailboxAddress}}/></p>
+                    <p><Trans i18nKey="create_mailbox_address.success.redirect" values={{mailbox:mailboxAddress}}/></p>
                   )
                 }
                 {
                   type === "shared" && (
-                    <p><Trans i18nKey="create_address_modal.success.shared" values={{mailbox:mailboxAddress}}/></p>
+                    <p><Trans i18nKey="create_mailbox_address.success.shared" values={{mailbox:mailboxAddress}}/></p>
                   )
                 }
                 {
                   type === "personal" && (
                     <>
-                      <p><Trans i18nKey="create_address_modal.success.personal" values={{mailbox:mailboxAddress}}/></p>
+                      <p><Trans i18nKey="create_mailbox_address.success.personal" values={{mailbox:mailboxAddress}}/></p>
                       {
                         mailbox.one_time_password ? (
                           <AdminMailboxCredentials mailbox={mailbox} />
                       ) : (
                         <Banner type="warning" icon={<Icon name="info" type={IconType.OUTLINED} />}>
-                          {t('create_address_modal.success.credential_info')}
+                          {t('create_mailbox_address.success.credential_info')}
                         </Banner>
                       )}
                     </>

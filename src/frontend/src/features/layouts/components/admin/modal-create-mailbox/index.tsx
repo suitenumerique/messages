@@ -34,13 +34,13 @@ const slugify = (text: string): string => {
     .replace(/-+/g, '-') // Replace multiple hyphens with single
     .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
 };
-type ModalCreateAddressProps = {
+type ModalCreateMailboxProps = {
   isOpen: boolean;
   onClose: () => void;
   onCreate: () => void;
 }
 
-export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAddressProps) => {
+export const ModalCreateMailbox = ({ isOpen, onClose, onCreate }: ModalCreateMailboxProps) => {
   const { t } = useTranslation();
   const router = useRouter();
   const domainId = router.query.maildomainId as string;
@@ -60,35 +60,35 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
   const [createdMailbox, setCreatedMailbox] = useState<MailboxAdminCreate | null>(null);
   const { SCHEMA_CUSTOM_ATTRIBUTES_USER } = useConfig();
 
-  const createAddressSchema = z.discriminatedUnion("type", [
+  const createMailboxSchema = z.discriminatedUnion("type", [
     z.object({
       type: z.literal("personal"),
-      first_name: z.string().min(1, { error: "create_address_modal.form.errors.first_name_required" }),
-      last_name: z.string().min(1, { error: "create_address_modal.form.errors.last_name_required" }),
+      first_name: z.string().min(1, { error: "create_mailbox_modal.form.errors.first_name_required" }),
+      last_name: z.string().min(1, { error: "create_mailbox_modal.form.errors.last_name_required" }),
       prefix: z.string()
-        .min(1, { error: "create_address_modal.form.errors.prefix_required" })
-        .regex(/^[a-zA-Z0-9_.-]+$/, { error: "create_address_modal.form.errors.prefix_invalid" }),
-      confirmation_accepted: z.boolean().refine(val => val === true, { error: "create_address_modal.form.errors.confirmation_required" }),
+        .min(1, { error: "create_mailbox_modal.form.errors.prefix_required" })
+        .regex(/^[a-zA-Z0-9_.-]+$/, { error: "create_mailbox_modal.form.errors.prefix_invalid" }),
+      confirmation_accepted: z.boolean().refine(val => val === true, { error: "create_mailbox_modal.form.errors.confirmation_required" }),
       ...convertJsonSchemaToZod(SCHEMA_CUSTOM_ATTRIBUTES_USER as JSONSchema.Schema),
     }),
     z.object({
       type: z.literal("shared"),
-      name: z.string().min(1, { error: "create_address_modal.form.errors.name_required" }),
+      name: z.string().min(1, { error: "create_mailbox_modal.form.errors.name_required" }),
       prefix: z.string()
-        .min(1, { error: "create_address_modal.form.errors.prefix_required" })
-        .regex(/^[a-zA-Z0-9_.-]+$/, { error: "create_address_modal.form.errors.prefix_invalid" }),
+        .min(1, { error: "create_mailbox_modal.form.errors.prefix_required" })
+        .regex(/^[a-zA-Z0-9_.-]+$/, { error: "create_mailbox_modal.form.errors.prefix_invalid" }),
     }),
     z.object({
       type: z.literal("redirect"),
       prefix: z.string()
-        .min(1, { error: "create_address_modal.form.errors.prefix_required" })
-        .regex(/^[a-zA-Z0-9_.-]+$/, { error: "create_address_modal.form.errors.prefix_invalid" }),
-      target_email: z.email({ error: "create_address_modal.form.errors.target_email_invalid" }),
+        .min(1, { error: "create_mailbox_modal.form.errors.prefix_required" })
+        .regex(/^[a-zA-Z0-9_.-]+$/, { error: "create_mailbox_modal.form.errors.prefix_invalid" }),
+      target_email: z.email({ error: "create_mailbox_modal.form.errors.target_email_invalid" }),
     }),
   ]);
-  type CreateAddressFormData = z.infer<typeof createAddressSchema>;
+  type CreateMailboxFormData = z.infer<typeof createMailboxSchema>;
 
-  const getDefaultValues = (type: MailboxType): CreateAddressFormData => {
+  const getDefaultValues = (type: MailboxType): CreateMailboxFormData => {
     if (type === "personal") {
       const customAttributes = SCHEMA_CUSTOM_ATTRIBUTES_USER?.properties ?? {};
       return {
@@ -114,8 +114,8 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
     }
   }
 
-  const form = useForm<CreateAddressFormData>({
-    resolver: zodResolver(createAddressSchema),
+  const form = useForm<CreateMailboxFormData>({
+    resolver: zodResolver(createMailboxSchema),
     defaultValues: getDefaultValues(activeTab),
   });
 
@@ -129,7 +129,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
     if (prefixManuallyChanged || prefixHasFocus) return;
 
     if (activeTab === "personal" && watchedValues.type === "personal") {
-      const personalData = watchedValues as Extract<CreateAddressFormData, { type: "personal" }>;
+      const personalData = watchedValues as Extract<CreateMailboxFormData, { type: "personal" }>;
       const firstName = personalData.first_name?.trim();
       const lastName = personalData.last_name?.trim();
 
@@ -148,7 +148,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
         }
       }
     } else if (activeTab === "shared" && watchedValues.type === "shared") {
-      const sharedData = watchedValues as Extract<CreateAddressFormData, { type: "shared" }>;
+      const sharedData = watchedValues as Extract<CreateMailboxFormData, { type: "shared" }>;
       const name = sharedData.name?.trim();
       if (name) {
         const autoPrefix = slugify(name);
@@ -178,7 +178,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
     reset(defaultValues);
   };
 
-  const onSubmit = async (data: CreateAddressFormData) => {
+  const onSubmit = async (data: CreateMailboxFormData) => {
     setError(null);
     setIsSubmitting(true);
     try {
@@ -212,9 +212,9 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
       onCreate();
     } catch (error: unknown) {
       if (error instanceof APIError && error.data.local_part) {
-        setError("create_address_modal.api_errors.prefix_exists");
+        setError("create_mailbox_modal.api_errors.prefix_exists");
       } else {
-        setError("create_address_modal.api_errors.default");
+        setError("create_mailbox_modal.api_errors.default");
       }
     } finally {
       setIsSubmitting(false);
@@ -231,8 +231,8 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
 
   const getFieldError = <
     Type extends MailboxType,
-    Errors extends MailboxTypeErrors<CreateAddressFormData, Type
-  > = MailboxTypeErrors<CreateAddressFormData, Type>>(fieldName: keyof Errors) => {
+    Errors extends MailboxTypeErrors<CreateMailboxFormData, Type
+  > = MailboxTypeErrors<CreateMailboxFormData, Type>>(fieldName: keyof Errors) => {
       const errors = form.formState.errors as Errors;
       const error = errors?.[fieldName];
       return error?.message ? t(error.message as string) : undefined;
@@ -241,7 +241,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
   return (
     <Modal
       isOpen={isOpen}
-      title={t('create_address_modal.title', { domain: domainName })}
+      title={t('create_mailbox_modal.title', { domain: domainName })}
       size={ModalSize.LARGE}
       onClose={handleClose}
     >
@@ -256,14 +256,14 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
             className={clsx('modal-tab', {'modal-tab--active': activeTab === "personal"})}
             onClick={() => handleTabChange("personal")}
           >
-            {t('create_address_modal.tabs.personal')}
+            {t('create_mailbox_modal.tabs.personal')}
           </button>
           <button
             type="button"
             className={clsx('modal-tab', {'modal-tab--active': activeTab === "shared"})}
             onClick={() => handleTabChange("shared")}
           >
-            {t('create_address_modal.tabs.shared')}
+            {t('create_mailbox_modal.tabs.shared')}
           </button>
           <button
             disabled
@@ -271,7 +271,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
             className={clsx('modal-tab', {'modal-tab--active': activeTab === "redirect"})}
             onClick={() => handleTabChange("redirect")}
           >
-            {t('create_address_modal.tabs.redirect')}
+            {t('create_mailbox_modal.tabs.redirect')}
           </button>
         </div>
 
@@ -288,7 +288,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
               <>
                 <div className="form-field-row name-row">
                   <RhfInput
-                    label={t('create_address_modal.form.labels.first_name')}
+                    label={t('create_mailbox_modal.form.labels.first_name')}
                     text={getFieldError<"personal">('first_name')}
                     name="first_name"
                     className="name-input"
@@ -299,7 +299,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
                     }}
                   />
                   <RhfInput
-                    label={t('create_address_modal.form.labels.last_name')}
+                    label={t('create_mailbox_modal.form.labels.last_name')}
                     text={getFieldError<"personal">('last_name')}
                     name="last_name"
                     className="name-input"
@@ -308,7 +308,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
 
                 <div className="form-field-row address-row">
                   <RhfInput
-                    label={t('create_address_modal.form.labels.address')}
+                    label={t('create_mailbox_modal.form.labels.address')}
                     text={getFieldError<"personal">('prefix')}
                     name="prefix"
                     fullWidth
@@ -327,8 +327,8 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
                       <div className="form-field-row" key={`json-schema-field-${name}`}>
                         <RhfJsonSchemaField
                           schema={schema}
-                          state={getFieldError<"personal">(name as keyof MailboxTypeErrors<CreateAddressFormData, 'personal'> ) ? "error" : "default"}
-                          text={getFieldError<"personal">(name as keyof MailboxTypeErrors<CreateAddressFormData, 'personal'>)}
+                          state={getFieldError<"personal">(name as keyof MailboxTypeErrors<CreateMailboxFormData, 'personal'> ) ? "error" : "default"}
+                          text={getFieldError<"personal">(name as keyof MailboxTypeErrors<CreateMailboxFormData, 'personal'>)}
                           name={name}
                           fullWidth
                         />
@@ -338,7 +338,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
 
                 <div className="form-field-row">
                   <RhfCheckbox
-                    label={t('create_address_modal.form.labels.confirmation_accepted')}
+                    label={t('create_mailbox_modal.form.labels.confirmation_accepted')}
                     state={getFieldError<"personal">('confirmation_accepted') ? "error" : "default"}
                     text={getFieldError<"personal">('confirmation_accepted')}
                     name="confirmation_accepted"
@@ -353,7 +353,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
               <>
                 <div className="form-field-row">
                   <RhfInput
-                    label={t('create_address_modal.form.labels.name')}
+                    label={t('create_mailbox_modal.form.labels.name')}
                     text={getFieldError<"shared">('name')}
                     name="name"
                     fullWidth
@@ -367,7 +367,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
 
                 <div className="form-field-row address-row">
                   <RhfInput
-                    label={t('create_address_modal.form.labels.address')}
+                    label={t('create_mailbox_modal.form.labels.address')}
                     text={getFieldError<"shared">('prefix')}
                     name="prefix"
                     fullWidth
@@ -388,7 +388,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
               <>
                 <div className="form-field-row address-row">
                   <RhfInput
-                    label={t('create_address_modal.form.labels.address')}
+                    label={t('create_mailbox_modal.form.labels.address')}
                     name="prefix"
                     text={getFieldError<"redirect">('prefix')}
                     fullWidth
@@ -409,7 +409,7 @@ export const ModalCreateAddress = ({ isOpen, onClose, onCreate }: ModalCreateAdd
 
                 <div className="form-field-row">
                   <RhfInput
-                    label={t('create_address_modal.form.labels.target_email')}
+                    label={t('create_mailbox_modal.form.labels.target_email')}
                     text={getFieldError<"redirect">('target_email')}
                     name="target_email"
                     type="email"

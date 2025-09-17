@@ -15,7 +15,7 @@ const AdminMailboxCredentials = ({ mailbox }: AdminMailboxCredentialsProps) => {
 
     const credentialText = useMemo(() => {
         if (!mailbox.one_time_password) return '';
-        return t('create_address_modal.success.credential_text', { id: mailboxAddress, password: mailbox.one_time_password });
+        return t('create_mailbox_modal.success.credential_text', { id: mailboxAddress, password: mailbox.one_time_password });
     }, [mailbox]);
 
     const handleCopyToClipboard = async () => {
@@ -33,9 +33,9 @@ const AdminMailboxCredentials = ({ mailbox }: AdminMailboxCredentialsProps) => {
         <div className="admin-mailbox-credentials">
             <div className="admin-mailbox-credentials__content">
                 <dl>
-                    <dt>{t('create_address_modal.success.credential_identity')}</dt>
+                    <dt>{t('create_mailbox_modal.success.credential_identity')}</dt>
                     <dd>{mailbox.local_part}@{mailbox.domain_name}</dd>
-                    <dt>{t('create_address_modal.success.credential_password')}</dt>
+                    <dt>{t('create_mailbox_modal.success.credential_password')}</dt>
                     <dd>{mailbox.one_time_password}</dd>
                 </dl>
                 <Button
@@ -43,13 +43,13 @@ const AdminMailboxCredentials = ({ mailbox }: AdminMailboxCredentialsProps) => {
                     icon={<Icon name={clipboardState === 'copied' ? "check" : clipboardState === 'error' ? "close" : "content_copy"} />}
                     onClick={handleCopyToClipboard}
                 >
-                    {clipboardState === 'idle' && t('create_address_modal.success.copy_to_clipboard')}
-                    {clipboardState === 'copied' && t('create_address_modal.success.credentials_copied')}
-                    {clipboardState === 'error' && t('create_address_modal.success.credentials_copy_error')}
+                    {clipboardState === 'idle' && t('create_mailbox_modal.success.copy_to_clipboard')}
+                    {clipboardState === 'copied' && t('create_mailbox_modal.success.credentials_copied')}
+                    {clipboardState === 'error' && t('create_mailbox_modal.success.credentials_copy_error')}
                 </Button>
             </div>
             <Banner type="warning" icon={<Icon name="info" type={IconType.OUTLINED} />}>
-                {t('create_address_modal.success.shared_password_info')}
+                {t('create_mailbox_modal.success.shared_password_info')}
             </Banner>
         </div>
     )
