@@ -370,6 +370,25 @@
           "default": "An error occurred while creating the address."
         }
       },
+      "edit_mailbox_modal": {
+        "title": "Edit {{mailbox}} address",
+        "toast": {
+          "success": "The address has been updated!"
+        },
+        "form": {
+          "labels": {
+            "full_name": "Full name"
+          }
+        },
+        "tabs": {
+          "personal": "Personal mailbox",
+          "shared": "Shared mailbox",
+          "redirect": "Simple redirect (Coming soon)"
+        },
+        "api_errors": {
+          "default": "An error occurred while updating the address."
+        }
+      },
       "reset_password_modal": {
         "modal_title": "Reset password of {{mailbox}}",
         "idle__title": "Are you sure you want to reset the password?",
@@ -862,6 +881,25 @@
         "api_errors": {
           "prefix_exists": "Une adresse avec ce préfixe existe déjà dans ce domaine.",
           "default": "Une erreur est survenue lors de la création de l'adresse."
+        }
+      },
+      "edit_mailbox_modal": {
+        "title": "Modifier l'adresse {{mailbox}}",
+        "toast": {
+          "success": "L'adresse a été mise à jour !"
+        },
+        "form": {
+          "labels": {
+            "full_name": "Nom complet"
+          }
+        },
+        "tabs": {
+          "personal": "Boîte personnelle",
+          "shared": "Boîte partagée",
+          "redirect": "Redirection simple (Bientôt disponible)"
+        },
+        "api_errors": {
+          "default": "Une erreur est survenue lors de la mise à jour de l'adresse."
         }
       },
       "reset_password_modal": {

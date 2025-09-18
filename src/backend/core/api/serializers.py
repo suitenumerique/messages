@@ -1,6 +1,8 @@
 """Client serializers for the messages core app."""
+# pylint: disable=too-many-lines
 
 from django.db.models import Count, Exists, OuterRef, Q
+from django.utils.translation import gettext_lazy as _
 
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -137,9 +139,11 @@ class AbilitiesModelSerializer(serializers.ModelSerializer):
 class UserSerializer(AbilitiesModelSerializer):
     """Serialize users."""
 
+    custom_attributes = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = models.User
-        fields = ["id", "email", "full_name"]
+        fields = ["id", "email", "full_name", "custom_attributes"]
         read_only_fields = fields
 
     @extend_schema_field(
@@ -156,6 +160,10 @@ class UserSerializer(AbilitiesModelSerializer):
     def get_abilities(self, instance):
         """Get abilities for the instance."""
         return super().get_abilities(instance)
+
+    def get_custom_attributes(self, instance) -> dict:
+        """Get custom attributes for the instance."""
+        return instance.custom_attributes
 
 
 class UserWithAbilitiesSerializer(UserSerializer):
@@ -851,6 +859,10 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
         many=True, read_only=True
     )  # accesses is the related_name
     can_reset_password = serializers.BooleanField(read_only=True)
+    contact = ContactSerializer(read_only=True)
+    alias_of = serializers.PrimaryKeyRelatedField(
+        required=False, allow_null=True, queryset=models.Mailbox.objects.none()
+    )
 
     class Meta:
         model = models.Mailbox
@@ -864,8 +876,157 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "can_reset_password",
+            "contact",
         ]
-        read_only_fields = fields
+        read_only_fields = [
+            "id",
+            "domain_name",
+            "is_identity",
+            "accesses",  # List of users and their roles
+            "created_at",
+            "updated_at",
+            "can_reset_password",
+            "contact",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if self.context.get("domain"):
+            # Lookup in domain mailboxes that are not an alias
+            # We must do that here to define a finer grain queryset to lookup
+            self.fields["alias_of"].queryset = models.Mailbox.objects.filter(
+                domain=self.context.get("domain"), alias_of__isnull=True
+            )
+
+    def validate(self, attrs):
+        """Validate the domain of the mailbox."""
+        if not self.context.get("domain"):
+            raise serializers.ValidationError(
+                "Domain is required in serializer context."
+            )
+
+        return super().validate(attrs)
+
+    def validate_local_part(self, value):
+        """Validate the local part of the mailbox."""
+        if models.Mailbox.objects.filter(
+            domain=self.context.get("domain"), local_part=value
+        ).exists():
+            raise serializers.ValidationError(
+                _("An mailbox with this local part already exists in this domain.")
+            )
+        return value
+
+    def create(self, validated_data):
+        """Perform the create action."""
+        domain = self.context.get("domain")
+        metadata = self.context.get("metadata", {})
+        mailbox_type = metadata.get("type")
+
+        mailbox = models.Mailbox.objects.create(
+            domain=domain,
+            local_part=validated_data.get("local_part"),
+            alias_of=validated_data.get("alias_of"),
+            is_identity=mailbox_type == "personal",
+        )
+
+        if mailbox_type == "personal":
+            email = str(mailbox)
+            first_name = metadata.get("first_name")
+            last_name = metadata.get("last_name")
+            custom_attributes = metadata.get("custom_attributes", {})
+            user, created = models.User.objects.get_or_create(
+                email=email,
+                defaults={
+                    "custom_attributes": custom_attributes,
+                    "full_name": f"{first_name} {last_name}",
+                    "password": "?",
+                },
+            )
+
+            if not created and custom_attributes:
+                user.custom_attributes = custom_attributes
+                user.save()
+
+            models.MailboxAccess.objects.create(
+                mailbox=mailbox,
+                user=user,
+                role=models.MailboxRoleChoices.ADMIN,
+            )
+
+            contact, _ = models.Contact.objects.get_or_create(
+                email=email,
+                mailbox=mailbox,
+                defaults={"name": f"{first_name} {last_name}"},
+            )
+            mailbox.contact = contact
+            mailbox.save()
+
+        elif mailbox_type == "shared":
+            email = str(mailbox)
+            name = metadata.get("name")
+            contact, _ = models.Contact.objects.get_or_create(
+                email=email,
+                mailbox=mailbox,
+                defaults={"name": name},
+            )
+            mailbox.contact = contact
+            mailbox.save()
+
+        return mailbox
+
+    def update(self, instance, validated_data):
+        """Perform the update action."""
+        # Do not allow to update some mailbox fields
+        validated_data.pop("local_part", None)
+        validated_data.pop("alias_of", None)
+        validated_data.pop("is_identity", None)
+
+        metadata = self.context.get("metadata", {})
+        updated = False
+
+        if instance.is_identity is True:
+            user_updated_fields = {}
+            contact_updated_fields = {}
+
+            if full_name := metadata.get("full_name"):
+                user_updated_fields["full_name"] = full_name
+                contact_updated_fields["name"] = full_name
+            if custom_attributes := metadata.get("custom_attributes"):
+                user_updated_fields["custom_attributes"] = custom_attributes
+
+            if user_updated_fields:
+                owner = models.User.objects.filter(
+                    email=str(instance), mailbox_accesses__mailbox=instance
+                ).first()
+                # Use save here to enforce data validation on custom_attributes
+                if owner:
+                    for key, value in user_updated_fields.items():
+                        setattr(owner, key, value)
+                    owner.save(update_fields=list(user_updated_fields.keys()))
+                    updated = True
+
+            if contact_updated_fields:
+                contact = models.Contact.objects.filter(pk=instance.contact_id)
+                contact.update(**contact_updated_fields)
+                updated = True
+
+        else:
+            contact_updated_fields = {}
+
+            if name := metadata.get("name"):
+                contact_updated_fields["name"] = name
+
+            if contact_updated_fields:
+                contact = models.Contact.objects.filter(pk=instance.contact_id)
+                contact.update(**contact_updated_fields)
+                updated = True
+
+        if updated:
+            instance.refresh_from_db()
+
+        return instance
 
 
 class MailboxAdminCreateSerializer(MailboxAdminSerializer):

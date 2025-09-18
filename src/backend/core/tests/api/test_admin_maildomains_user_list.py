@@ -424,7 +424,12 @@ class TestAdminMaildomainsUserList:
 
         # Check that all expected fields are present
         for user_data in response.data:
-            assert set(user_data.keys()) == {"id", "email", "full_name"}
+            assert set(user_data.keys()) == {
+                "id",
+                "email",
+                "full_name",
+                "custom_attributes",
+            }
 
     def test_admin_maildomains_user_list_serializer_null_fields(self, api_client):
         """Test that null fields are handled correctly in the serializer."""

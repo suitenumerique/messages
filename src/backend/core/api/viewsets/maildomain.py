@@ -6,9 +6,6 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import F, Q
 from django.shortcuts import get_object_or_404
-from django.utils.translation import (
-    gettext_lazy as _t,
-)  # For user-facing error messages
 
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -142,7 +139,6 @@ class AdminMailDomainViewSet(
 class AdminMailDomainMailboxViewSet(
     mixins.CreateModelMixin,
     mixins.RetrieveModelMixin,
-    mixins.UpdateModelMixin,
     mixins.DestroyModelMixin,
     mixins.ListModelMixin,
     viewsets.GenericViewSet,
@@ -194,7 +190,7 @@ class AdminMailDomainMailboxViewSet(
             },
         ),
         responses={
-            200: OpenApiResponse(
+            201: OpenApiResponse(
                 response=core_serializers.MailboxAdminCreateSerializer(),
                 description=(
                     "The new mailbox with one extra field `one_time_password` "
@@ -209,101 +205,13 @@ class AdminMailDomainMailboxViewSet(
         domain = get_object_or_404(models.MailDomain, pk=maildomain_pk)
         metadata = request.data.get("metadata", {})
 
-        mailbox_type = metadata.get("type")
-        local_part = request.data.get("local_part")
-        alias_of_id = request.data.get("alias_of")
-
-        # --- Validation for local_part ---
-        if not local_part:
-            return Response(
-                {"local_part": [_t("This field may not be blank.")]},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # --- Uniqueness Validation ---
-        if models.Mailbox.objects.filter(domain=domain, local_part=local_part).exists():
-            return Response(
-                {
-                    "local_part": [
-                        _t(
-                            "A mailbox with this local part already exists in this domain."
-                        )
-                    ]
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        alias_of = None
-        if alias_of_id:
-            try:
-                alias_of = models.Mailbox.objects.get(pk=alias_of_id, domain=domain)
-            except models.Mailbox.DoesNotExist:
-                return Response(
-                    {
-                        "alias_of": [
-                            _t(
-                                "Invalid mailbox ID for alias, or mailbox not in the same domain."
-                            )
-                        ]
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            if alias_of.alias_of is not None:  # Prevent chaining aliases for now
-                return Response(
-                    {"alias_of": [_t("Cannot create an alias of an existing alias.")]},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
         # --- Create Mailbox ---
         # Will validate local_part format via the model's validator
-        mailbox = models.Mailbox.objects.create(
-            domain=domain,
-            local_part=local_part,
-            alias_of=alias_of,
-            is_identity=(mailbox_type == "personal"),
+        serializer = self.get_serializer(
+            data=request.data, context={"domain": domain, "metadata": metadata}
         )
-
-        # --- Create user and mailbox access if type is personal ---
-        if mailbox_type == "personal":
-            email = f"{local_part}@{domain.name}"
-            first_name = metadata.get("first_name")
-            last_name = metadata.get("last_name")
-            custom_attributes = metadata.get("custom_attributes", {})
-            user, _created = models.User.objects.get_or_create(
-                email=email,
-                custom_attributes=custom_attributes,
-                defaults={
-                    "full_name": f"{first_name} {last_name}",
-                    "password": "?",
-                },
-            )
-            models.MailboxAccess.objects.create(
-                mailbox=mailbox,
-                user=user,
-                role=models.MailboxRoleChoices.ADMIN,
-            )
-
-            contact, _ = models.Contact.objects.get_or_create(
-                email=email,
-                mailbox=mailbox,
-                defaults={"name": f"{first_name} {last_name}"},
-            )
-            mailbox.contact = contact
-            mailbox.save()
-
-        elif mailbox_type == "shared":
-            email = f"{local_part}@{domain.name}"
-            name = metadata.get("name")
-            contact, _ = models.Contact.objects.get_or_create(
-                email=email,
-                mailbox=mailbox,
-                defaults={"name": name},
-            )
-            mailbox.contact = contact
-            mailbox.save()
-
-        serializer = self.get_serializer(mailbox)
-        headers = self.get_success_headers(serializer.data)
+        serializer.is_valid(raise_exception=True)
+        mailbox = serializer.save()
         payload = serializer.data
 
         # This is a somewhat hacky bypass of abstractions, but for now
@@ -312,10 +220,59 @@ class AdminMailDomainMailboxViewSet(
             mailbox_password = mailbox.reset_password()
             payload["one_time_password"] = mailbox_password
 
-        return Response(payload, status=status.HTTP_201_CREATED, headers=headers)
+        return Response(payload, status=status.HTTP_201_CREATED)
 
     @extend_schema(
+        description="Partially update a mailbox in a specific maildomain.",
+        request=inline_serializer(
+            name="MailboxAdminPartialUpdatePayload",
+            fields={
+                "metadata": inline_serializer(
+                    name="MailboxAdminUpdateMetadata",
+                    fields={
+                        "full_name": drf_serializers.CharField(
+                            required=False, allow_blank=True
+                        ),
+                        "name": drf_serializers.CharField(
+                            required=False, allow_blank=True
+                        ),
+                        "custom_attributes": drf_serializers.JSONField(required=False),
+                    },
+                ),
+            },
+        ),
+        responses={
+            200: OpenApiResponse(
+                response=core_serializers.MailboxAdminSerializer(),
+                description="The updated mailbox.",
+            ),
+        },
+    )
+    @transaction.atomic
+    def partial_update(self, request, *args, **kwargs):
+        """Partial update a mailbox in a specific maildomain."""
+        mailbox = self.get_object()
+        metadata = request.data.get("metadata", {})
+
+        serializer = self.get_serializer(
+            partial=True,
+            instance=mailbox,
+            data=request.data,
+            context={"domain": mailbox.domain, "metadata": metadata},
+        )
+        serializer.is_valid(raise_exception=True)
+        mailbox = serializer.save()
+        payload = serializer.data
+
+        return Response(payload, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        operation_id="maildomains_mailboxes_reset_password",
         description="Reset the Keycloak password for a specific mailbox.",
+        request=inline_serializer(
+            name="MailboxAdminResetPasswordPayload",
+            fields={},
+        ),
         responses={
             200: inline_serializer(
                 name="ResetPasswordResponse",

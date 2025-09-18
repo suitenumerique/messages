@@ -1,5 +1,5 @@
 """Test suite of AdminMailDomainMailboxViewSet."""
-# pylint: disable=unused-argument
+# pylint: disable=unused-argument, too-many-lines
 
 import uuid
 from unittest.mock import patch
@@ -68,20 +68,41 @@ def fixture_domain_admin_access2(domain_admin_user, mail_domain2):
 
 @pytest.fixture(name="mailbox1_domain1")
 def fixture_mailbox1_domain1(mail_domain1):
-    """Create the first mailbox in mail_domain1."""
-    return factories.MailboxFactory(domain=mail_domain1, local_part="box1")
+    """Create the first mailbox (personal) in mail_domain1."""
+    return factories.MailboxFactory(
+        domain=mail_domain1,
+        local_part="box1",
+        is_identity=True,
+        contact=factories.ContactFactory(
+            email=f"box1@{mail_domain1.name}", name="Box 1"
+        ),
+        users_admin=[factories.UserFactory(email=f"box1@{mail_domain1.name}")],
+    )
 
 
 @pytest.fixture(name="mailbox2_domain1")
 def fixture_mailbox2_domain1(mail_domain1):
-    """Create the second mailbox in mail_domain1."""
-    return factories.MailboxFactory(domain=mail_domain1, local_part="box2")
+    """Create the second mailbox (shared) in mail_domain1."""
+    return factories.MailboxFactory(
+        domain=mail_domain1,
+        local_part="box2",
+        is_identity=False,
+        contact=factories.ContactFactory(
+            email=f"box2@{mail_domain1.name}", name="Box 2"
+        ),
+    )
 
 
 @pytest.fixture(name="mailbox1_domain2")
 def fixture_mailbox1_domain2(mail_domain2):
     """Create a mailbox in mail_domain2."""
-    return factories.MailboxFactory(domain=mail_domain2, local_part="boxA")
+    return factories.MailboxFactory(
+        domain=mail_domain2,
+        local_part="boxA",
+        contact=factories.ContactFactory(
+            email=f"boxA@{mail_domain2.name}", name="Box A"
+        ),
+    )
 
 
 @pytest.fixture(name="user_for_access1")
@@ -167,7 +188,7 @@ class TestAdminMailDomainMailboxViewSet:
         assert mb1_data is not None
         assert mb1_data["local_part"] == mailbox1_domain1.local_part
         assert mb1_data["domain_name"] == mail_domain1.name
-        assert len(mb1_data["accesses"]) == 2
+        assert len(mb1_data["accesses"]) == 3
 
         user1_access_data = next(
             (
@@ -209,6 +230,152 @@ class TestAdminMailDomainMailboxViewSet:
         url = self.mailboxes_url(mail_domain1.pk)
         response = api_client.get(url)
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_admin_maildomains_mailbox_list_for_domain_unauthenticated(
+        self, api_client, mail_domain1
+    ):
+        """Test that unauthenticated requests to list mailboxes are rejected."""
+        url = self.mailboxes_url(mail_domain1.pk)
+        response = api_client.get(url)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    # --- EXCLUDE ABILITIES Tests ---
+    def test_admin_maildomains_mailbox_list_excludes_abilities_from_nested_users(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+        mailbox2_domain1,
+        access_mailbox1_user1,
+        access_mailbox1_user2,
+        user_for_access1,
+        user_for_access2,
+    ):
+        """Test that mailbox admin list endpoint excludes abilities from nested users."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+        response = api_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "results" in response.data
+        assert len(response.data["results"]) == 2
+
+        # Find mailbox1_domain1 data for detailed check
+        mb1_data = next(
+            (
+                item
+                for item in response.data["results"]
+                if item["id"] == str(mailbox1_domain1.pk)
+            ),
+            None,
+        )
+        assert mb1_data is not None
+        assert "accesses" in mb1_data
+        assert len(mb1_data["accesses"]) == 3
+
+        # Verify that all nested users do NOT contain abilities
+        for access_data in mb1_data["accesses"]:
+            assert "user" in access_data
+            user_data = access_data["user"]
+            assert "abilities" not in user_data
+            assert "id" in user_data
+            assert "email" in user_data
+            assert "full_name" in user_data
+            assert "custom_attributes" in user_data
+
+        # Also check mailbox2_domain1 (should have 0 accesses)
+        mb2_data = next(
+            (
+                item
+                for item in response.data["results"]
+                if item["id"] == str(mailbox2_domain1.pk)
+            ),
+            None,
+        )
+        assert mb2_data is not None
+        assert "accesses" in mb2_data
+        assert len(mb2_data["accesses"]) == 0
+
+    def test_admin_maildomains_mailbox_retrieve_excludes_abilities_from_nested_users(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+        access_mailbox1_user1,
+        access_mailbox1_user2,
+        user_for_access1,
+        user_for_access2,
+    ):
+        """Test that mailbox admin retrieve endpoint excludes abilities from nested users."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailbox_detail_url(mail_domain1.pk, mailbox1_domain1.pk)
+        response = api_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "accesses" in response.data
+        assert len(response.data["accesses"]) == 3
+
+        # Verify that all nested users do NOT contain abilities
+        for access_data in response.data["accesses"]:
+            assert "user" in access_data
+            user_data = access_data["user"]
+            assert "abilities" not in user_data
+            assert "id" in user_data
+            assert "email" in user_data
+            assert "full_name" in user_data
+            assert "custom_attributes" in user_data
+
+    def test_admin_maildomains_mailbox_excludes_abilities_with_superuser(
+        self,
+        api_client,
+        mail_domain1,
+        mailbox1_domain1,
+        mailbox2_domain1,
+        access_mailbox1_user1,
+        user_for_access1,
+    ):
+        """Test that mailbox admin excludes abilities even when accessed by superuser."""
+        # Create a superuser and give them access to the maildomain
+        superuser = factories.UserFactory(is_superuser=True, is_staff=True)
+
+        # Give superuser access to the maildomain
+        models.MailDomainAccess.objects.create(
+            maildomain=mail_domain1,
+            user=superuser,
+            role=models.MailDomainAccessRoleChoices.ADMIN,
+        )
+
+        api_client.force_authenticate(user=superuser)
+
+        url = self.mailboxes_url(mail_domain1.pk)
+        response = api_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "results" in response.data
+        assert len(response.data["results"]) == 2  # Both mailboxes in the domain
+
+        # Find mailbox1_domain1 data for detailed check
+        mb1_data = next(
+            (
+                item
+                for item in response.data["results"]
+                if item["id"] == str(mailbox1_domain1.pk)
+            ),
+            None,
+        )
+        assert mb1_data is not None
+        assert "accesses" in mb1_data
+        assert len(mb1_data["accesses"]) == 2
+
+        # Verify that nested users do NOT contain abilities, even for superuser
+        access_data = mb1_data["accesses"][0]
+        assert "user" in access_data
+        user_data = access_data["user"]
+        assert "abilities" not in user_data
 
     def test_admin_maildomains_mailbox_delete_success(
         self,
@@ -276,14 +443,6 @@ class TestAdminMailDomainMailboxViewSet:
         response = api_client.delete(url)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_admin_maildomains_mailbox_list_for_domain_unauthenticated(
-        self, api_client, mail_domain1
-    ):
-        """Test that unauthenticated requests to list mailboxes are rejected."""
-        url = self.mailboxes_url(mail_domain1.pk)
-        response = api_client.get(url)
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
     @override_settings(
         SCHEMA_CUSTOM_ATTRIBUTES_USER={
             "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -332,6 +491,7 @@ class TestAdminMailDomainMailboxViewSet:
         domain_admin_user,
         domain_admin_access1,
         mail_domain1,
+        mailbox1_domain1,
     ):
         """Test that domain admins can create mailboxes in domains they administer."""
         api_client.force_authenticate(user=domain_admin_user)
@@ -559,141 +719,164 @@ class TestAdminMailDomainMailboxViewSet:
         mailbox_access = models.MailboxAccess.objects.get(mailbox=mailbox, user=user)
         assert mailbox_access.role == MailboxRoleChoices.ADMIN
 
-    # --- EXCLUDE ABILITIES Tests ---
-    def test_admin_maildomains_mailbox_list_excludes_abilities_from_nested_users(
+    def test_admin_maildomains_mailbox_put_not_allowed(
         self,
         api_client,
         domain_admin_user,
         domain_admin_access1,
         mail_domain1,
         mailbox1_domain1,
-        mailbox2_domain1,
-        access_mailbox1_user1,
-        access_mailbox1_user2,
-        user_for_access1,
-        user_for_access2,
     ):
-        """Test that mailbox admin list endpoint excludes abilities from nested users."""
-        api_client.force_authenticate(user=domain_admin_user)
-        url = self.mailboxes_url(mail_domain1.pk)
-        response = api_client.get(url)
-
-        assert response.status_code == status.HTTP_200_OK
-        assert "results" in response.data
-        assert len(response.data["results"]) == 2
-
-        # Find mailbox1_domain1 data for detailed check
-        mb1_data = next(
-            (
-                item
-                for item in response.data["results"]
-                if item["id"] == str(mailbox1_domain1.pk)
-            ),
-            None,
-        )
-        assert mb1_data is not None
-        assert "accesses" in mb1_data
-        assert len(mb1_data["accesses"]) == 2
-
-        # Verify that all nested users do NOT contain abilities
-        for access_data in mb1_data["accesses"]:
-            assert "user" in access_data
-            user_data = access_data["user"]
-            assert "abilities" not in user_data
-            assert "id" in user_data
-            assert "email" in user_data
-            assert "full_name" in user_data
-
-        # Also check mailbox2_domain1 (should have 0 accesses)
-        mb2_data = next(
-            (
-                item
-                for item in response.data["results"]
-                if item["id"] == str(mailbox2_domain1.pk)
-            ),
-            None,
-        )
-        assert mb2_data is not None
-        assert "accesses" in mb2_data
-        assert len(mb2_data["accesses"]) == 0
-
-    def test_admin_maildomains_mailbox_retrieve_excludes_abilities_from_nested_users(
-        self,
-        api_client,
-        domain_admin_user,
-        domain_admin_access1,
-        mail_domain1,
-        mailbox1_domain1,
-        access_mailbox1_user1,
-        access_mailbox1_user2,
-        user_for_access1,
-        user_for_access2,
-    ):
-        """Test that mailbox admin retrieve endpoint excludes abilities from nested users."""
+        """The PUT method should not be allowed to update a mailbox"""
         api_client.force_authenticate(user=domain_admin_user)
         url = self.mailbox_detail_url(mail_domain1.pk, mailbox1_domain1.pk)
-        response = api_client.get(url)
+        response = api_client.put(url, data={"local_part": "newuser"})
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
 
+    def test_admin_maildomains_mailbox_partial_update_personal_success(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """PATCH should update personal mailbox owner and contact names/custom attributes."""
+
+        api_client.force_authenticate(user=domain_admin_user)
+        patch_url = self.mailbox_detail_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        patch_payload = {
+            "metadata": {
+                "full_name": "Jane D.",
+                "custom_attributes": {"department": "IT"},
+            }
+        }
+        patch_response = api_client.patch(patch_url, data=patch_payload, format="json")
+        assert patch_response.status_code == status.HTTP_200_OK
+
+        # Verify DB changes (Owner user and contact should be updated)
+        user = models.User.objects.get(email=str(mailbox1_domain1))
+        assert user.full_name == "Jane D."
+        assert user.custom_attributes == {"department": "IT"}
+
+        mailbox1_domain1.refresh_from_db()
+        assert mailbox1_domain1.contact is not None
+        assert mailbox1_domain1.contact.name == "Jane D."
+
+    def test_admin_maildomains_mailbox_partial_update_protected_fields(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+        mailbox2_domain1,
+    ):
+        """
+        Partial update should not update mailbox protected fields
+        (mainly local_part, alias_of, is_identity).
+        """
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailbox_detail_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        data = {
+            "local_part": "newuser",
+            "alias_of": str(mailbox2_domain1.id),
+            "is_identity": False,
+        }
+        response = api_client.patch(url, data=data, format="json")
         assert response.status_code == status.HTTP_200_OK
-        assert "accesses" in response.data
-        assert len(response.data["accesses"]) == 2
 
-        # Verify that all nested users do NOT contain abilities
-        for access_data in response.data["accesses"]:
-            assert "user" in access_data
-            user_data = access_data["user"]
-            assert "abilities" not in user_data
-            assert "id" in user_data
-            assert "email" in user_data
-            assert "full_name" in user_data
+        mailbox1_domain1.refresh_from_db()
+        # Protected fields should not have been updated
+        assert mailbox1_domain1.local_part == "box1"
+        assert mailbox1_domain1.alias_of is None
+        assert mailbox1_domain1.is_identity is True
 
-    def test_admin_maildomains_mailbox_excludes_abilities_with_superuser(
+    def test_admin_maildomains_mailbox_partial_update_shared_success(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+        mailbox2_domain1,
+    ):
+        """PATCH should update shared mailbox contact name only."""
+        api_client.force_authenticate(user=domain_admin_user)
+
+        patch_url = self.mailbox_detail_url(mail_domain1.pk, mailbox2_domain1.pk)
+
+        patch_payload = {"metadata": {"name": "Helpdesk"}}
+        patch_response = api_client.patch(patch_url, data=patch_payload, format="json")
+        assert patch_response.status_code == status.HTTP_200_OK
+
+        mailbox2_domain1.refresh_from_db()
+        assert mailbox2_domain1.contact.name == "Helpdesk"
+
+    def test_admin_maildomains_mailbox_partial_update_forbidden_not_admin(
+        self,
+        api_client,
+        other_user,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """PATCH should return 403 if user is not a maildomain admin."""
+        api_client.force_authenticate(user=other_user)
+        url = self.mailbox_detail_url(mail_domain1.pk, mailbox1_domain1.pk)
+        response = api_client.patch(
+            url, data={"metadata": {"name": "New"}}, format="json"
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_admin_maildomains_mailbox_partial_update_unauthenticated(
         self,
         api_client,
         mail_domain1,
         mailbox1_domain1,
-        mailbox2_domain1,
-        access_mailbox1_user1,
-        user_for_access1,
     ):
-        """Test that mailbox admin excludes abilities even when accessed by superuser."""
-        # Create a superuser and give them access to the maildomain
-        superuser = factories.UserFactory(is_superuser=True, is_staff=True)
-
-        # Give superuser access to the maildomain
-        models.MailDomainAccess.objects.create(
-            maildomain=mail_domain1,
-            user=superuser,
-            role=models.MailDomainAccessRoleChoices.ADMIN,
+        """PATCH should return 401 if unauthenticated."""
+        url = self.mailbox_detail_url(mail_domain1.pk, mailbox1_domain1.pk)
+        response = api_client.patch(
+            url, data={"metadata": {"name": "New"}}, format="json"
         )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-        api_client.force_authenticate(user=superuser)
-
-        url = self.mailboxes_url(mail_domain1.pk)
-        response = api_client.get(url)
-
-        assert response.status_code == status.HTTP_200_OK
-        assert "results" in response.data
-        assert len(response.data["results"]) == 2  # Both mailboxes in the domain
-
-        # Find mailbox1_domain1 data for detailed check
-        mb1_data = next(
-            (
-                item
-                for item in response.data["results"]
-                if item["id"] == str(mailbox1_domain1.pk)
-            ),
-            None,
+    def test_admin_maildomains_mailbox_partial_update_not_found(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mail_domain2,
+        mailbox1_domain2,
+    ):
+        """PATCH should return 404 if mailbox does not exist."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailbox_detail_url(mail_domain1.pk, uuid.uuid4())
+        response = api_client.patch(
+            url, data={"metadata": {"name": "New"}}, format="json"
         )
-        assert mb1_data is not None
-        assert "accesses" in mb1_data
-        assert len(mb1_data["accesses"]) == 1
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
-        # Verify that nested users do NOT contain abilities, even for superuser
-        access_data = mb1_data["accesses"][0]
-        assert "user" in access_data
-        user_data = access_data["user"]
-        assert "abilities" not in user_data
+    def test_admin_maildomains_mailbox_partial_update_not_found_in_other_domain(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mail_domain2,
+        mailbox1_domain2,
+    ):
+        """PATCH should return 404 if mailbox belongs to another domain."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailbox_detail_url(mail_domain1.pk, mailbox1_domain2.pk)
+        response = api_client.patch(
+            url, data={"metadata": {"name": "New"}}, format="json"
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     @pytest.mark.parametrize("identity_provider", ["other", None, ""])
     def test_admin_maildomains_mailbox_reset_password_returns_404_when_identity_provider_is_not_keycloak(

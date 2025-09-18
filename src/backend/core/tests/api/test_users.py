@@ -39,6 +39,7 @@ def test_api_users_retrieve_me_authenticated():
         "id": str(user.id),
         "email": user.email,
         "full_name": user.full_name,
+        "custom_attributes": user.custom_attributes,
         "abilities": {
             "create_maildomains": False,
             "view_maildomains": False,

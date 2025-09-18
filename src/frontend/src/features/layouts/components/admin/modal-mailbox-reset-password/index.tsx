@@ -1,4 +1,4 @@
-import { useMaildomainsMailboxesResetPasswordPartialUpdate } from "@/features/api/gen/maildomains/maildomains";
+import { useMaildomainsMailboxesResetPassword } from "@/features/api/gen/maildomains/maildomains";
 import { MailboxAdmin } from "@/features/api/gen/models/mailbox_admin";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button, Modal, ModalSize } from "@openfun/cunningham-react";
@@ -20,7 +20,7 @@ const ModalMailboxResetPassword = ({ isOpen, onClose, mailbox, domainId }: Modal
     const { t } = useTranslation();
     const [state, setState] = useState<"idle" | "success" | "error">("idle");
     const [oneTimePassword, setOneTimePassword] = useState<string | null>(null);
-    const { mutateAsync: resetPassword, isPending } = useMaildomainsMailboxesResetPasswordPartialUpdate();
+    const { mutateAsync: resetPassword, isPending } = useMaildomainsMailboxesResetPassword();
     const onResetPassword = async () => {
         try {
             const response = await resetPassword({ maildomainPk: domainId, id: mailbox.id });

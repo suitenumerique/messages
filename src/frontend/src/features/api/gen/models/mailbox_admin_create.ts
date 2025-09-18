@@ -6,6 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 import type { MailboxAccessNestedUser } from "./mailbox_access_nested_user";
+import type { Contact } from "./contact";
 
 /**
  * Serialize Mailbox details for create admin endpoint, including users with access and
@@ -22,13 +23,14 @@ export interface MailboxAdminCreate {
    * primary key for the record as UUID
    * @nullable
    */
-  readonly alias_of: string | null;
+  alias_of?: string | null;
   readonly accesses: readonly MailboxAccessNestedUser[];
   /** date and time at which a record was created */
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
   readonly can_reset_password: boolean;
+  readonly contact: Contact;
   /**
    * Fake method just to make the OpenAPI schema valid.
    * @nullable

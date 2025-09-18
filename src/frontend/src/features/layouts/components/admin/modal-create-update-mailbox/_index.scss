@@ -26,6 +26,11 @@
       align-items: center;
       justify-content: center;
 
+      &:disabled {
+        cursor: default;
+        pointer-events: none;
+      }
+
       &:hover {
         border-color: var(--c--theme--colors--primary-400);
         background: var(--c--theme--colors--primary-50);

@@ -2494,7 +2494,7 @@
                     }
                 ],
                 "responses": {
-                    "200": {
+                    "201": {
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -2553,54 +2553,9 @@
                     }
                 }
             },
-            "put": {
-                "operationId": "maildomains_mailboxes_update",
-                "description": "ViewSet for managing Mailboxes within a specific MailDomain.\nNested under /maildomains/{maildomain_pk}/mailboxes/\nPermissions are checked by IsMailDomainAdmin for the maildomain_pk.\n\nThis viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).\nThat other one is for listing the mailboxes a user has access to in regular app use.\nThis one is for managing mailboxes within a specific maildomain in the admin interface.",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "id",
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "primary key for the record as UUID"
-                        },
-                        "required": true
-                    },
-                    {
-                        "in": "path",
-                        "name": "maildomain_pk",
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid"
-                        },
-                        "required": true
-                    }
-                ],
-                "tags": [
-                    "maildomains"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/MailboxAdmin"
-                                }
-                            }
-                        },
-                        "description": ""
-                    }
-                }
-            },
             "patch": {
                 "operationId": "maildomains_mailboxes_partial_update",
-                "description": "ViewSet for managing Mailboxes within a specific MailDomain.\nNested under /maildomains/{maildomain_pk}/mailboxes/\nPermissions are checked by IsMailDomainAdmin for the maildomain_pk.\n\nThis viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).\nThat other one is for listing the mailboxes a user has access to in regular app use.\nThis one is for managing mailboxes within a specific maildomain in the admin interface.",
+                "description": "Partially update a mailbox in a specific maildomain.",
                 "parameters": [
                     {
                         "in": "path",
@@ -2625,6 +2580,20 @@
                 "tags": [
                     "maildomains"
                 ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMailboxAdminPartialUpdatePayloadRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMailboxAdminPartialUpdatePayloadRequest"
+                            }
+                        }
+                    }
+                },
                 "security": [
                     {
                         "cookieAuth": []
@@ -2639,7 +2608,7 @@
                                 }
                             }
                         },
-                        "description": ""
+                        "description": "The updated mailbox."
                     }
                 }
             },
@@ -2684,7 +2653,7 @@
         },
         "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/{id}/reset-password/": {
             "patch": {
-                "operationId": "maildomains_mailboxes_reset_password_partial_update",
+                "operationId": "maildomains_mailboxes_reset_password",
                 "description": "Reset the Keycloak password for a specific mailbox.",
                 "parameters": [
                     {
@@ -4772,7 +4741,8 @@
                     },
                     "local_part": {
                         "type": "string",
-                        "readOnly": true
+                        "pattern": "^[a-zA-Z0-9_.-]+$",
+                        "maxLength": 64
                     },
                     "domain_name": {
                         "type": "string",
@@ -4787,7 +4757,6 @@
                         "type": "string",
                         "format": "uuid",
                         "description": "primary key for the record as UUID",
-                        "readOnly": true,
                         "nullable": true
                     },
                     "accesses": {
@@ -4814,12 +4783,20 @@
                     "can_reset_password": {
                         "type": "boolean",
                         "readOnly": true
+                    },
+                    "contact": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/Contact"
+                            }
+                        ],
+                        "readOnly": true
                     }
                 },
                 "required": [
                     "accesses",
-                    "alias_of",
                     "can_reset_password",
+                    "contact",
                     "created_at",
                     "domain_name",
                     "id",
@@ -4855,7 +4832,6 @@
                         "type": "string",
                         "format": "uuid",
                         "description": "primary key for the record as UUID",
-                        "readOnly": true,
                         "nullable": true
                     },
                     "accesses": {
@@ -4883,6 +4859,14 @@
                         "type": "boolean",
                         "readOnly": true
                     },
+                    "contact": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/Contact"
+                            }
+                        ],
+                        "readOnly": true
+                    },
                     "one_time_password": {
                         "type": "string",
                         "nullable": true,
@@ -4892,8 +4876,8 @@
                 },
                 "required": [
                     "accesses",
-                    "alias_of",
                     "can_reset_password",
+                    "contact",
                     "created_at",
                     "domain_name",
                     "id",
@@ -4943,6 +4927,18 @@
                     "local_part",
                     "metadata"
                 ]
+            },
+            "MailboxAdminUpdateMetadataRequest": {
+                "type": "object",
+                "properties": {
+                    "full_name": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "custom_attributes": {}
+                }
             },
             "MailboxLight": {
                 "type": "object",
@@ -5376,6 +5372,14 @@
                     },
                     "role": {
                         "$ref": "#/components/schemas/MailboxRoleChoices"
+                    }
+                }
+            },
+            "PatchedMailboxAdminPartialUpdatePayloadRequest": {
+                "type": "object",
+                "properties": {
+                    "metadata": {
+                        "$ref": "#/components/schemas/MailboxAdminUpdateMetadataRequest"
                     }
                 }
             },
@@ -5886,6 +5890,12 @@
                         "readOnly": true,
                         "nullable": true
                     },
+                    "custom_attributes": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "description": "Get custom attributes for the instance.",
+                        "readOnly": true
+                    },
                     "abilities": {
                         "type": "object",
                         "description": "Instance permissions and capabilities",
@@ -5908,6 +5918,7 @@
                 },
                 "required": [
                     "abilities",
+                    "custom_attributes",
                     "email",
                     "full_name",
                     "id"
@@ -5934,9 +5945,16 @@
                         "type": "string",
                         "readOnly": true,
                         "nullable": true
+                    },
+                    "custom_attributes": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "description": "Get custom attributes for the instance.",
+                        "readOnly": true
                     }
                 },
                 "required": [
+                    "custom_attributes",
                     "email",
                     "full_name",
                     "id"

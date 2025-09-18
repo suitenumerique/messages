@@ -8,10 +8,18 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ModalMailboxResetPassword from "../modal-mailbox-reset-password";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
+import { ModalCreateOrUpdateMailbox } from "../modal-create-update-mailbox";
+import MailboxHelper from "@/features/utils/mailbox-helper";
 
 type AdminUserDataGridProps = {
     domain: MailDomainAdmin;
     pagination: ReturnType<typeof usePagination>;
+}
+
+enum MailboxEditAction {
+    UPDATE = 'update',
+    RESET_PASSWORD = 'resetPassword',
+    MANAGE_ACCESS = 'manageAccess',
 }
 
 export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridProps) => {
@@ -19,7 +27,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
     const { data: mailboxesData, isLoading, error, refetch: refetchMailboxes } = useMaildomainsMailboxesList(domain.id, { page: pagination.page });
     const mailboxes = mailboxesData?.data.results || [];
     const [editedMailbox, setEditedMailbox] = useState<MailboxAdmin | null>(null);
-    const [editAction, setEditAction] = useState<'edit' | 'resetPassword' | null>(null);
+    const [editAction, setEditAction] = useState<MailboxEditAction | null>(null);
     const canManageMailboxes = useAbility(Abilities.CAN_MANAGE_MAILDOMAIN_MAILBOXES, domain);
     const deleteMailboxMutation = useMaildomainsMailboxesDestroy();
     const modals = useModals();
@@ -33,17 +41,22 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
     }
 
     const handleResetPassword = (mailbox: MailboxAdmin) => {
-        setEditAction('resetPassword');
+        setEditAction(MailboxEditAction.RESET_PASSWORD);
         setEditedMailbox(mailbox);
     }
 
     const handleManageAccess = (mailbox: MailboxAdmin) => {
-        setEditAction('edit');
+        setEditAction(MailboxEditAction.MANAGE_ACCESS);
+        setEditedMailbox(mailbox);
+    }
+
+    const handleUpdate = (mailbox: MailboxAdmin) => {
+        setEditAction(MailboxEditAction.UPDATE);
         setEditedMailbox(mailbox);
     }
 
     const handleDelete = async (mailbox: MailboxAdmin) => {
-        const email = `${mailbox.local_part}@${mailbox.domain_name}`;
+        const email = MailboxHelper.toString(mailbox);
         const decision = await modals.deleteConfirmationModal({
             title: <span className="label-item__delete-modal__title">{t('admin_maildomains_details.delete_modal.title', { mailbox: email })}</span>,
             children: <span className="label-item__delete-modal__message">{t('admin_maildomains_details.delete_modal.message')}</span>,
@@ -122,6 +135,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
                 onManageAccess={() => handleManageAccess(row)}
                 onResetPassword={row.can_reset_password ? () => handleResetPassword(row) : undefined}
                 onDelete={() => handleDelete(row)}
+                onUpdate={() => handleUpdate(row)}
             />,
         }] : []),
     ];
@@ -170,15 +184,21 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
             />
             {canManageMailboxes && editedMailbox && (
                 <>
+                    <ModalCreateOrUpdateMailbox
+                        isOpen={editAction === MailboxEditAction.UPDATE}
+                        mailbox={editedMailbox}
+                        onClose={handleCloseEditUserModal}
+                        onSuccess={refetchMailboxes}
+                    />
                     <ModalMailboxManageAccesses
-                        isOpen={editAction === 'edit'}
+                        isOpen={editAction === MailboxEditAction.MANAGE_ACCESS}
                         onClose={handleCloseEditUserModal}
                         mailbox={editedMailbox}
                         domainId={domain.id}
                         onAccessChange={refetchMailboxes}
                     />
                     <ModalMailboxResetPassword
-                        isOpen={editAction === 'resetPassword'}
+                        isOpen={editAction === MailboxEditAction.RESET_PASSWORD}
                         onClose={handleCloseEditUserModal}
                         mailbox={editedMailbox}
                         domainId={domain.id}
@@ -193,9 +213,10 @@ type ActionsRowProps = {
     onManageAccess: () => void;
     onResetPassword?: () => void;
     onDelete: () => void;
+    onUpdate: () => void;
 };
 
-const ActionsRow = ({ onManageAccess, onResetPassword, onDelete }: ActionsRowProps) => {
+const ActionsRow = ({ onManageAccess, onResetPassword, onDelete, onUpdate }: ActionsRowProps) => {
     const [isMoreActionsOpen, setMoreActionsOpen] = useState<boolean>(false);
     const { t } = useTranslation();
 
@@ -213,6 +234,12 @@ const ActionsRow = ({ onManageAccess, onResetPassword, onDelete }: ActionsRowPro
                 isOpen={isMoreActionsOpen}
                 onOpenChange={setMoreActionsOpen}
                 options={[
+                    {
+                        label: t('actions.edit'),
+                        icon: <Icon name="edit" size={IconSize.SMALL} />,
+                        callback: onUpdate,
+                        showSeparator: !onResetPassword,
+                    },
                     ...(onResetPassword ? [{
                         icon: <Icon name="lock" size={IconSize.SMALL} />,
                         label: t('admin_maildomains_details.actions.reset_password'),

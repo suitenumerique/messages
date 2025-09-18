@@ -46,7 +46,7 @@
 @use "./../features/forms/components/search-filters-form";
 @use "./../features/controlled-modals/message-importer";
 @use "./../features/layouts/components/admin/mailbox-credentials";
-@use "./../features/layouts/components/admin/modal-create-mailbox";
+@use "./../features/layouts/components/admin/modal-create-update-mailbox";
 @use "./../features/layouts/components/admin/modal-create-domain";
 @use "./../features/layouts/components/admin/modal-mailbox-reset-password";
 @use "./../features/forms/components/combobox";

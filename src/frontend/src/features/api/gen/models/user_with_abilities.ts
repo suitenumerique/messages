@@ -5,6 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { UserWithAbilitiesCustomAttributes } from "./user_with_abilities_custom_attributes";
 import type { UserWithAbilitiesAbilities } from "./user_with_abilities_abilities";
 
 /**
@@ -18,6 +19,8 @@ export interface UserWithAbilities {
   readonly email: string | null;
   /** @nullable */
   readonly full_name: string | null;
+  /** Get custom attributes for the instance. */
+  readonly custom_attributes: UserWithAbilitiesCustomAttributes;
   /** Instance permissions and capabilities */
   readonly abilities: UserWithAbilitiesAbilities;
 }

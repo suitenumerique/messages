@@ -33,6 +33,7 @@ import type {
   MaildomainsMailboxesListParams,
   PaginatedMailDomainAdminList,
   PaginatedMailboxAdminList,
+  PatchedMailboxAdminPartialUpdatePayloadRequest,
   ResetPasswordError,
   ResetPasswordInternalServerError,
   ResetPasswordNotFound,
@@ -556,13 +557,13 @@ export function useMaildomainsMailboxesList<
 /**
  * Create new mailbox in a specific maildomain.
  */
-export type maildomainsMailboxesCreateResponse200 = {
+export type maildomainsMailboxesCreateResponse201 = {
   data: MailboxAdminCreate;
-  status: 200;
+  status: 201;
 };
 
 export type maildomainsMailboxesCreateResponseComposite =
-  maildomainsMailboxesCreateResponse200;
+  maildomainsMailboxesCreateResponse201;
 
 export type maildomainsMailboxesCreateResponse =
   maildomainsMailboxesCreateResponseComposite & {
@@ -870,124 +871,7 @@ export function useMaildomainsMailboxesRetrieve<
 }
 
 /**
- * ViewSet for managing Mailboxes within a specific MailDomain.
-Nested under /maildomains/{maildomain_pk}/mailboxes/
-Permissions are checked by IsMailDomainAdmin for the maildomain_pk.
-
-This viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).
-That other one is for listing the mailboxes a user has access to in regular app use.
-This one is for managing mailboxes within a specific maildomain in the admin interface.
- */
-export type maildomainsMailboxesUpdateResponse200 = {
-  data: MailboxAdmin;
-  status: 200;
-};
-
-export type maildomainsMailboxesUpdateResponseComposite =
-  maildomainsMailboxesUpdateResponse200;
-
-export type maildomainsMailboxesUpdateResponse =
-  maildomainsMailboxesUpdateResponseComposite & {
-    headers: Headers;
-  };
-
-export const getMaildomainsMailboxesUpdateUrl = (
-  maildomainPk: string,
-  id: string,
-) => {
-  return `/api/v1.0/maildomains/${maildomainPk}/mailboxes/${id}/`;
-};
-
-export const maildomainsMailboxesUpdate = async (
-  maildomainPk: string,
-  id: string,
-  options?: RequestInit,
-): Promise<maildomainsMailboxesUpdateResponse> => {
-  return fetchAPI<maildomainsMailboxesUpdateResponse>(
-    getMaildomainsMailboxesUpdateUrl(maildomainPk, id),
-    {
-      ...options,
-      method: "PUT",
-    },
-  );
-};
-
-export const getMaildomainsMailboxesUpdateMutationOptions = <
-  TError = unknown,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof maildomainsMailboxesUpdate>>,
-    TError,
-    { maildomainPk: string; id: string },
-    TContext
-  >;
-  request?: SecondParameter<typeof fetchAPI>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof maildomainsMailboxesUpdate>>,
-  TError,
-  { maildomainPk: string; id: string },
-  TContext
-> => {
-  const mutationKey = ["maildomainsMailboxesUpdate"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof maildomainsMailboxesUpdate>>,
-    { maildomainPk: string; id: string }
-  > = (props) => {
-    const { maildomainPk, id } = props ?? {};
-
-    return maildomainsMailboxesUpdate(maildomainPk, id, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type MaildomainsMailboxesUpdateMutationResult = NonNullable<
-  Awaited<ReturnType<typeof maildomainsMailboxesUpdate>>
->;
-
-export type MaildomainsMailboxesUpdateMutationError = unknown;
-
-export const useMaildomainsMailboxesUpdate = <
-  TError = unknown,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof maildomainsMailboxesUpdate>>,
-      TError,
-      { maildomainPk: string; id: string },
-      TContext
-    >;
-    request?: SecondParameter<typeof fetchAPI>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof maildomainsMailboxesUpdate>>,
-  TError,
-  { maildomainPk: string; id: string },
-  TContext
-> => {
-  const mutationOptions = getMaildomainsMailboxesUpdateMutationOptions(options);
-
-  return useMutation(mutationOptions, queryClient);
-};
-/**
- * ViewSet for managing Mailboxes within a specific MailDomain.
-Nested under /maildomains/{maildomain_pk}/mailboxes/
-Permissions are checked by IsMailDomainAdmin for the maildomain_pk.
-
-This viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).
-That other one is for listing the mailboxes a user has access to in regular app use.
-This one is for managing mailboxes within a specific maildomain in the admin interface.
+ * Partially update a mailbox in a specific maildomain.
  */
 export type maildomainsMailboxesPartialUpdateResponse200 = {
   data: MailboxAdmin;
@@ -1012,6 +896,7 @@ export const getMaildomainsMailboxesPartialUpdateUrl = (
 export const maildomainsMailboxesPartialUpdate = async (
   maildomainPk: string,
   id: string,
+  patchedMailboxAdminPartialUpdatePayloadRequest: PatchedMailboxAdminPartialUpdatePayloadRequest,
   options?: RequestInit,
 ): Promise<maildomainsMailboxesPartialUpdateResponse> => {
   return fetchAPI<maildomainsMailboxesPartialUpdateResponse>(
@@ -1019,6 +904,8 @@ export const maildomainsMailboxesPartialUpdate = async (
     {
       ...options,
       method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(patchedMailboxAdminPartialUpdatePayloadRequest),
     },
   );
 };
@@ -1030,14 +917,22 @@ export const getMaildomainsMailboxesPartialUpdateMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof maildomainsMailboxesPartialUpdate>>,
     TError,
-    { maildomainPk: string; id: string },
+    {
+      maildomainPk: string;
+      id: string;
+      data: PatchedMailboxAdminPartialUpdatePayloadRequest;
+    },
     TContext
   >;
   request?: SecondParameter<typeof fetchAPI>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof maildomainsMailboxesPartialUpdate>>,
   TError,
-  { maildomainPk: string; id: string },
+  {
+    maildomainPk: string;
+    id: string;
+    data: PatchedMailboxAdminPartialUpdatePayloadRequest;
+  },
   TContext
 > => {
   const mutationKey = ["maildomainsMailboxesPartialUpdate"];
@@ -1051,11 +946,20 @@ export const getMaildomainsMailboxesPartialUpdateMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof maildomainsMailboxesPartialUpdate>>,
-    { maildomainPk: string; id: string }
+    {
+      maildomainPk: string;
+      id: string;
+      data: PatchedMailboxAdminPartialUpdatePayloadRequest;
+    }
   > = (props) => {
-    const { maildomainPk, id } = props ?? {};
+    const { maildomainPk, id, data } = props ?? {};
 
-    return maildomainsMailboxesPartialUpdate(maildomainPk, id, requestOptions);
+    return maildomainsMailboxesPartialUpdate(
+      maildomainPk,
+      id,
+      data,
+      requestOptions,
+    );
   };
 
   return { mutationFn, ...mutationOptions };
@@ -1064,7 +968,8 @@ export const getMaildomainsMailboxesPartialUpdateMutationOptions = <
 export type MaildomainsMailboxesPartialUpdateMutationResult = NonNullable<
   Awaited<ReturnType<typeof maildomainsMailboxesPartialUpdate>>
 >;
-
+export type MaildomainsMailboxesPartialUpdateMutationBody =
+  PatchedMailboxAdminPartialUpdatePayloadRequest;
 export type MaildomainsMailboxesPartialUpdateMutationError = unknown;
 
 export const useMaildomainsMailboxesPartialUpdate = <
@@ -1075,7 +980,11 @@ export const useMaildomainsMailboxesPartialUpdate = <
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof maildomainsMailboxesPartialUpdate>>,
       TError,
-      { maildomainPk: string; id: string },
+      {
+        maildomainPk: string;
+        id: string;
+        data: PatchedMailboxAdminPartialUpdatePayloadRequest;
+      },
       TContext
     >;
     request?: SecondParameter<typeof fetchAPI>;
@@ -1084,7 +993,11 @@ export const useMaildomainsMailboxesPartialUpdate = <
 ): UseMutationResult<
   Awaited<ReturnType<typeof maildomainsMailboxesPartialUpdate>>,
   TError,
-  { maildomainPk: string; id: string },
+  {
+    maildomainPk: string;
+    id: string;
+    data: PatchedMailboxAdminPartialUpdatePayloadRequest;
+  },
   TContext
 > => {
   const mutationOptions =
@@ -1207,51 +1120,51 @@ export const useMaildomainsMailboxesDestroy = <
 /**
  * Reset the Keycloak password for a specific mailbox.
  */
-export type maildomainsMailboxesResetPasswordPartialUpdateResponse200 = {
+export type maildomainsMailboxesResetPasswordResponse200 = {
   data: ResetPasswordResponse;
   status: 200;
 };
 
-export type maildomainsMailboxesResetPasswordPartialUpdateResponse400 = {
+export type maildomainsMailboxesResetPasswordResponse400 = {
   data: ResetPasswordError;
   status: 400;
 };
 
-export type maildomainsMailboxesResetPasswordPartialUpdateResponse404 = {
+export type maildomainsMailboxesResetPasswordResponse404 = {
   data: ResetPasswordNotFound;
   status: 404;
 };
 
-export type maildomainsMailboxesResetPasswordPartialUpdateResponse500 = {
+export type maildomainsMailboxesResetPasswordResponse500 = {
   data: ResetPasswordInternalServerError;
   status: 500;
 };
 
-export type maildomainsMailboxesResetPasswordPartialUpdateResponseComposite =
-  | maildomainsMailboxesResetPasswordPartialUpdateResponse200
-  | maildomainsMailboxesResetPasswordPartialUpdateResponse400
-  | maildomainsMailboxesResetPasswordPartialUpdateResponse404
-  | maildomainsMailboxesResetPasswordPartialUpdateResponse500;
+export type maildomainsMailboxesResetPasswordResponseComposite =
+  | maildomainsMailboxesResetPasswordResponse200
+  | maildomainsMailboxesResetPasswordResponse400
+  | maildomainsMailboxesResetPasswordResponse404
+  | maildomainsMailboxesResetPasswordResponse500;
 
-export type maildomainsMailboxesResetPasswordPartialUpdateResponse =
-  maildomainsMailboxesResetPasswordPartialUpdateResponseComposite & {
+export type maildomainsMailboxesResetPasswordResponse =
+  maildomainsMailboxesResetPasswordResponseComposite & {
     headers: Headers;
   };
 
-export const getMaildomainsMailboxesResetPasswordPartialUpdateUrl = (
+export const getMaildomainsMailboxesResetPasswordUrl = (
   maildomainPk: string,
   id: string,
 ) => {
   return `/api/v1.0/maildomains/${maildomainPk}/mailboxes/${id}/reset-password/`;
 };
 
-export const maildomainsMailboxesResetPasswordPartialUpdate = async (
+export const maildomainsMailboxesResetPassword = async (
   maildomainPk: string,
   id: string,
   options?: RequestInit,
-): Promise<maildomainsMailboxesResetPasswordPartialUpdateResponse> => {
-  return fetchAPI<maildomainsMailboxesResetPasswordPartialUpdateResponse>(
-    getMaildomainsMailboxesResetPasswordPartialUpdateUrl(maildomainPk, id),
+): Promise<maildomainsMailboxesResetPasswordResponse> => {
+  return fetchAPI<maildomainsMailboxesResetPasswordResponse>(
+    getMaildomainsMailboxesResetPasswordUrl(maildomainPk, id),
     {
       ...options,
       method: "PATCH",
@@ -1259,67 +1172,57 @@ export const maildomainsMailboxesResetPasswordPartialUpdate = async (
   );
 };
 
-export const getMaildomainsMailboxesResetPasswordPartialUpdateMutationOptions =
-  <
-    TError =
-      | ResetPasswordError
-      | ResetPasswordNotFound
-      | ResetPasswordInternalServerError,
-    TContext = unknown,
-  >(options?: {
-    mutation?: UseMutationOptions<
-      Awaited<
-        ReturnType<typeof maildomainsMailboxesResetPasswordPartialUpdate>
-      >,
-      TError,
-      { maildomainPk: string; id: string },
-      TContext
-    >;
-    request?: SecondParameter<typeof fetchAPI>;
-  }): UseMutationOptions<
-    Awaited<ReturnType<typeof maildomainsMailboxesResetPasswordPartialUpdate>>,
+export const getMaildomainsMailboxesResetPasswordMutationOptions = <
+  TError =
+    | ResetPasswordError
+    | ResetPasswordNotFound
+    | ResetPasswordInternalServerError,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsMailboxesResetPassword>>,
     TError,
     { maildomainPk: string; id: string },
     TContext
-  > => {
-    const mutationKey = ["maildomainsMailboxesResetPasswordPartialUpdate"];
-    const { mutation: mutationOptions, request: requestOptions } = options
-      ? options.mutation &&
-        "mutationKey" in options.mutation &&
-        options.mutation.mutationKey
-        ? options
-        : { ...options, mutation: { ...options.mutation, mutationKey } }
-      : { mutation: { mutationKey }, request: undefined };
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsMailboxesResetPassword>>,
+  TError,
+  { maildomainPk: string; id: string },
+  TContext
+> => {
+  const mutationKey = ["maildomainsMailboxesResetPassword"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
 
-    const mutationFn: MutationFunction<
-      Awaited<
-        ReturnType<typeof maildomainsMailboxesResetPasswordPartialUpdate>
-      >,
-      { maildomainPk: string; id: string }
-    > = (props) => {
-      const { maildomainPk, id } = props ?? {};
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsMailboxesResetPassword>>,
+    { maildomainPk: string; id: string }
+  > = (props) => {
+    const { maildomainPk, id } = props ?? {};
 
-      return maildomainsMailboxesResetPasswordPartialUpdate(
-        maildomainPk,
-        id,
-        requestOptions,
-      );
-    };
-
-    return { mutationFn, ...mutationOptions };
+    return maildomainsMailboxesResetPassword(maildomainPk, id, requestOptions);
   };
 
-export type MaildomainsMailboxesResetPasswordPartialUpdateMutationResult =
-  NonNullable<
-    Awaited<ReturnType<typeof maildomainsMailboxesResetPasswordPartialUpdate>>
-  >;
+  return { mutationFn, ...mutationOptions };
+};
 
-export type MaildomainsMailboxesResetPasswordPartialUpdateMutationError =
+export type MaildomainsMailboxesResetPasswordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsMailboxesResetPassword>>
+>;
+
+export type MaildomainsMailboxesResetPasswordMutationError =
   | ResetPasswordError
   | ResetPasswordNotFound
   | ResetPasswordInternalServerError;
 
-export const useMaildomainsMailboxesResetPasswordPartialUpdate = <
+export const useMaildomainsMailboxesResetPassword = <
   TError =
     | ResetPasswordError
     | ResetPasswordNotFound
@@ -1328,9 +1231,7 @@ export const useMaildomainsMailboxesResetPasswordPartialUpdate = <
 >(
   options?: {
     mutation?: UseMutationOptions<
-      Awaited<
-        ReturnType<typeof maildomainsMailboxesResetPasswordPartialUpdate>
-      >,
+      Awaited<ReturnType<typeof maildomainsMailboxesResetPassword>>,
       TError,
       { maildomainPk: string; id: string },
       TContext
@@ -1339,13 +1240,13 @@ export const useMaildomainsMailboxesResetPasswordPartialUpdate = <
   },
   queryClient?: QueryClient,
 ): UseMutationResult<
-  Awaited<ReturnType<typeof maildomainsMailboxesResetPasswordPartialUpdate>>,
+  Awaited<ReturnType<typeof maildomainsMailboxesResetPassword>>,
   TError,
   { maildomainPk: string; id: string },
   TContext
 > => {
   const mutationOptions =
-    getMaildomainsMailboxesResetPasswordPartialUpdateMutationOptions(options);
+    getMaildomainsMailboxesResetPasswordMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };

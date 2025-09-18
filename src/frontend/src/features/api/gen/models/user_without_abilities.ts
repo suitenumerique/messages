@@ -5,6 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { UserWithoutAbilitiesCustomAttributes } from "./user_without_abilities_custom_attributes";
 
 /**
  * Serialize users without abilities.
@@ -17,4 +18,6 @@ export interface UserWithoutAbilities {
   readonly email: string | null;
   /** @nullable */
   readonly full_name: string | null;
+  /** Get custom attributes for the instance. */
+  readonly custom_attributes: UserWithoutAbilitiesCustomAttributes;
 }
