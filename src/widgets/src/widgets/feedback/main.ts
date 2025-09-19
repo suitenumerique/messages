@@ -6,29 +6,63 @@ import { listenEvent, triggerEvent } from '../../shared/events'
 
 const widgetName = "feedback";
 
-listenEvent(widgetName, 'init', null, false, (e) => {
+type ConfigData = {
+  captcha: boolean;
+  title: string;
+  placeholder: string;
+  submitText: string;
+  successText: string;
+  emptyText: string;
+};
 
-  const args = (e as CustomEvent).detail || {};
-  const title = args.title || 'Feedback';
+type ConfigResponse = {
+  success: boolean;
+  detail?: string;
+  captcha: boolean;
+  config: ConfigData;
+};
+
+listenEvent(widgetName, 'init', null, false, async (args) => {
 
   if (!args.api) {
     console.error("Feedback widget requires an API URL");
     return;
   }
 
-  const htmlContent = `
-    <div class="wrapper">
-      <div class="header">
-        <span>${title}</span>
-        <button class="close-btn" id="close">×</button>
-      </div>
-      <div class="content">
-        <textarea id="feedback-text" placeholder="Share your feedback..."></textarea>
-        <button type="submit" id="submit">Send Feedback</button>
-        <div id="status" class="status"></div>
-      </div>
-    </div>
-  `
+  let configData: ConfigData | undefined;
+  try {
+    const config = await fetch(`${args.api}config`, {
+      'headers': {
+        'X-Channel-ID': args.channel
+      }
+    });
+    const configResponse = await config.json() as ConfigResponse;
+    if (!configResponse.success) throw new Error(configResponse.detail || 'Unknown error');
+    if (configResponse.captcha) throw new Error('Captcha is not supported yet');
+    configData = configResponse.config;
+  } catch (error) {
+    console.error("Error fetching config", error);
+    triggerEvent(widgetName, 'closed');
+    return;
+  }
+
+  const title = args.title || configData?.title || 'Feedback';
+  const placeholder = args.placeholder || configData?.placeholder || 'Share your feedback...';
+  const submitText = args.submitText || configData?.submitText || 'Send Feedback';
+  const successText = args.successText || configData?.successText || 'Thank you for your feedback!';
+  const emptyText = args.emptyText || configData?.emptyText || 'Please enter some feedback.';
+
+  const htmlContent = `<div class="wrapper">` +
+      `<div class="header">` +
+        `<span>${title}</span>` +
+        `<button class="close-btn" id="close">×</button>` +
+      `</div>` +
+      `<div class="content">` +
+        `<textarea id="feedback-text" placeholder="${placeholder}"></textarea>` +
+        `<button type="submit" id="submit">${submitText}</button>` +
+        `<div id="status" class="status"></div>` +
+      `</div>` +
+    `</div>`;
 
   // Create shadow DOM widget
   const shadowRoot = createShadowWidget(widgetName, htmlContent, styles);
@@ -40,14 +74,26 @@ listenEvent(widgetName, 'init', null, false, (e) => {
   const statusDiv = shadowRoot.querySelector<HTMLDivElement>('#status')!
   const closeBtn = shadowRoot.querySelector<HTMLButtonElement>('#close')!
 
-  submitBtn.addEventListener('click', () => {
+  submitBtn.addEventListener('click', async () => {
     const feedback = feedbackText.value.trim()
-    if (feedback) {
-      statusDiv.innerHTML = '<span class="success">Thank you for your feedback!</span>'
+    try {
+      if (!feedback) throw new Error(emptyText);
+    
+      const ret = await fetch(`${args.api}deliver`, {
+        'method': 'POST',
+        'headers': {
+          'Content-Type': 'application/json'
+        },
+        'body': JSON.stringify({ feedback })
+      });
+      const retData = await ret.json();
+      
+      if (!retData.success) throw new Error(retData.detail || 'Unknown error');
+  
+      statusDiv.innerHTML = `<span class="success">${successText}</span>`
       feedbackText.value = ''
-      submitFeedback(feedback, args.api)
-    } else {
-      statusDiv.innerHTML = '<span class="error">Please enter some feedback.</span>'
+    } catch (error) {
+      statusDiv.innerHTML = `<span class="error">${error instanceof Error ? error.message : 'Unknown error'}</span>`
     }
   });
 

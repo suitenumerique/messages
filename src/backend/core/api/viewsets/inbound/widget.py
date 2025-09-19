@@ -97,11 +97,11 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
     @action(
         detail=False,
         methods=["post"],
-        url_path="check",
-        url_name="inbound-widget-check"
+        url_path="config",
+        url_name="inbound-widget-config"
     )
-    def check(self, request):
-        """Generate a temporary token for widget delivery."""
+    def config(self, request):
+        """Return the configuration for the widget."""
         try:
             data = request.data
             
