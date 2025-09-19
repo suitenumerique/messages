@@ -194,7 +194,7 @@ swaks -tls --to=test@example.external --server localhost:8911 --auth-user user -
 
 # You can also send emails using Messages itself instead of the frontend
 make back-shell
-MTA_OUT_MODE=relay MTA_OUT_RELAY_HOST=localhost:8917 python manage.py send_mail --to=user1@example.local --subject="Test" --body="Hello World"
+MTA_OUT_MODE=relay MTA_OUT_RELAY_HOST=mailcatcher:1025 python manage.py send_mail --to=user1@example.local --subject="Test" --body="Hello World"
 
 ```
 
