@@ -711,16 +711,9 @@ class Base(Configuration):
             logger.warning(
                 "MTA_OUT_SMTP_HOST is deprecated, use MTA_OUT_RELAY_HOST instead"
             )
-            self.MTA_OUT_RELAY_HOST = values.Value(
-                None, environ_name="MTA_OUT_SMTP_HOST", environ_prefix=None
-            )
-            self.MTA_OUT_RELAY_USERNAME = values.Value(
-                None, environ_name="MTA_OUT_SMTP_USERNAME", environ_prefix=None
-            )
-            self.MTA_OUT_RELAY_PASSWORD = values.Value(
-                None, environ_name="MTA_OUT_SMTP_PASSWORD", environ_prefix=None
-            )
-
+            self.MTA_OUT_RELAY_HOST = os.environ.get("MTA_OUT_SMTP_HOST")
+            self.MTA_OUT_RELAY_USERNAME = os.environ.get("MTA_OUT_SMTP_USERNAME")
+            self.MTA_OUT_RELAY_PASSWORD = os.environ.get("MTA_OUT_SMTP_PASSWORD")
     # pylint: disable=invalid-name
     @property
     def ENVIRONMENT(self):
