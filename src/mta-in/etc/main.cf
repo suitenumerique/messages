@@ -1,9 +1,6 @@
 # General config
 compatibility_level=3.6
 
-# Identity
-myhostname = localhost
-myorigin = localhost
 inet_interfaces = all
 inet_protocols = ipv4
 

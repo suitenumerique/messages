@@ -12,6 +12,9 @@ cp -r /app/etc/* /etc/postfix/
 
 # Postfix configuration from environment variables
 echo >> /etc/postfix/main.cf
+[[ -n "${MYHOSTNAME}" ]] && echo "myhostname = ${MYHOSTNAME}" >> /etc/postfix/main.cf
+[[ -n "${MYORIGIN}" ]] && echo "myorigin = ${MYORIGIN}" >> /etc/postfix/main.cf
+[[ -n "${MYDOMAIN}" ]] && echo "mydomain = ${MYDOMAIN}" >> /etc/postfix/main.cf
 echo "message_size_limit=${MESSAGE_SIZE_LIMIT:-10240000}" >> /etc/postfix/main.cf
 
 if [ "${ENABLE_PROXY_PROTOCOL:-false}" = "haproxy" ]; then
