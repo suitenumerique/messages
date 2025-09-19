@@ -527,7 +527,7 @@ def compose_email(
         message_str = msg_part.to_string()
 
         # Flanker doesn't enforce line length limits or CRLF conversion
-        # so we have to re-encode the message here to say RFC compliant
+        # so we have to re-encode the message here to stay RFC compliant
         msg = message_from_string(message_str)
         out = BytesIO()
         gen = BytesGenerator(out, policy=email_policy_smtp.clone(max_line_length=76))
