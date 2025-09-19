@@ -89,8 +89,8 @@ def select_smtp_proxy() -> Dict[str, Any]:
     """
     Select an SMTP proxy to use for sending messages.
     """
-    if len(settings.MTA_OUT_PROXIES) > 0:
-        proxy = random.choice(settings.MTA_OUT_PROXIES)  # noqa: S311
+    if len(settings.MTA_OUT_DIRECT_PROXIES) > 0:
+        proxy = random.choice(settings.MTA_OUT_DIRECT_PROXIES)  # noqa: S311
         parsed = urlparse(proxy)
         return {
             "proxy_host": parsed.hostname,
@@ -102,7 +102,7 @@ def select_smtp_proxy() -> Dict[str, Any]:
     return {}
 
 
-def send_message_via_mx(envelope_from, envelope_to, mime_data) -> Dict[str, Any]:
+def send_message_via_mx(envelope_from, recipient_emails, mime_data) -> Dict[str, Any]:
     """
     Send a message to external recipients by resolving MX and delivering via SMTP.
     Implements MX fallback logic: tries each MX in priority order, retrying failed
@@ -111,7 +111,7 @@ def send_message_via_mx(envelope_from, envelope_to, mime_data) -> Dict[str, Any]
     """
 
     final_statuses = {}
-    domain_groups = group_recipients_by_mx(list(envelope_to.keys()))
+    domain_groups = group_recipients_by_mx(recipient_emails)
 
     for domain, domain_info in domain_groups.items():
         mx_records = domain_info["mx_records"]

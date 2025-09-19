@@ -71,10 +71,10 @@ class TestSendOutboundMessage:
     @patch("core.mda.outbound.send_smtp_mail")  # Mock SMTP client
     @override_settings(
         MTA_OUT_MODE="relay",
-        MTA_OUT_SMTP_HOST="smtp.test:1025",
+        MTA_OUT_RELAY_HOST="smtp.test:1025",
         # Ensure other auth settings are None for this test
-        MTA_OUT_SMTP_USERNAME="smtp_user",
-        MTA_OUT_SMTP_PASSWORD="smtp_pass",
+        MTA_OUT_RELAY_USERNAME="smtp_user",
+        MTA_OUT_RELAY_PASSWORD="smtp_pass",
         OPENSEARCH_INDEX_THREADS=False,
     )
     def test_outbound_send_relay(self, mock_smtp_send, draft_message):
@@ -149,7 +149,7 @@ class TestSendOutboundMessage:
     @patch("core.mda.outbound_direct.send_smtp_mail")
     @override_settings(
         MTA_OUT_MODE="direct",
-        MTA_OUT_PROXIES=["socks5://proxyuser:proxyuser@smtp.proxy:1080"],
+        MTA_OUT_DIRECT_PROXIES=["socks5://proxyuser:proxyuser@smtp.proxy:1080"],
         OPENSEARCH_INDEX_THREADS=False,
     )
     def test_outbound_send_direct(self, mock_smtp_send, mock_resolve, draft_message):

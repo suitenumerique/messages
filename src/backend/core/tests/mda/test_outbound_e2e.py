@@ -101,7 +101,7 @@ class TestE2EMessageOutboundFlow:
 
     @override_settings(
         MTA_OUT_MODE="relay",
-        MTA_OUT_SMTP_HOST="mailcatcher:1025",
+        MTA_OUT_RELAY_HOST="mailcatcher:1025",
     )
     def test_draft_send_receive_verify_relay(
         self, mailbox, sender_contact, authenticated_user

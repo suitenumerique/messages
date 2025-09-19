@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.1/ref/settings/
 """
 
+import logging
 import os
 import tomllib
 from socket import gethostbyname, gethostname
@@ -22,6 +23,8 @@ from configurations import Configuration, values
 from sentry_sdk.integrations.django import DjangoIntegration
 
 from core.utils import JSONValue
+
+logger = logging.getLogger(__name__)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -163,23 +166,30 @@ class Base(Configuration):
     MTA_OUT_MODE = values.Value(
         "direct", environ_name="MTA_OUT_MODE", environ_prefix=None
     )
-    # List of proxies for the direct outbound MTA
-    MTA_OUT_PROXIES = values.ListValue(
-        [], environ_name="MTA_OUT_PROXIES", environ_prefix=None
+
+    # SMTP settings for the direct outbound MTA
+    MTA_OUT_DIRECT_PROXIES = values.ListValue(
+        [], environ_name="MTA_OUT_DIRECT_PROXIES", environ_prefix=None
     )
     MTA_OUT_DIRECT_PORT = values.PositiveIntegerValue(
         25, environ_name="MTA_OUT_DIRECT_PORT", environ_prefix=None
     )
 
     # SMTP settings for external SMTP servers, if MTA_OUT_MODE="relay"
-    MTA_OUT_SMTP_HOST = values.Value(
-        None, environ_name="MTA_OUT_SMTP_HOST", environ_prefix=None
+    MTA_OUT_RELAY_HOST = values.Value(
+        None, environ_name="MTA_OUT_RELAY_HOST", environ_prefix=None
     )
-    MTA_OUT_SMTP_USERNAME = values.Value(
-        None, environ_name="MTA_OUT_SMTP_USERNAME", environ_prefix=None
+    MTA_OUT_RELAY_USERNAME = values.Value(
+        None, environ_name="MTA_OUT_RELAY_USERNAME", environ_prefix=None
     )
-    MTA_OUT_SMTP_PASSWORD = values.Value(
-        None, environ_name="MTA_OUT_SMTP_PASSWORD", environ_prefix=None
+    MTA_OUT_RELAY_PASSWORD = values.Value(
+        None, environ_name="MTA_OUT_RELAY_PASSWORD", environ_prefix=None
+    )
+
+    # SMTP settings for both modes
+    # We support a subset of https://www.postfix.org/postconf.5.html#smtp_tls_security_level
+    MTA_OUT_SMTP_TLS_SECURITY_LEVEL = values.Value(
+        "may", environ_name="MTA_OUT_SMTP_TLS_SECURITY_LEVEL", environ_prefix=None
     )
 
     # Test domain settings
@@ -697,6 +707,19 @@ class Base(Configuration):
                 *self.MIDDLEWARE,
                 "django_prometheus.middleware.PrometheusAfterMiddleware",
             ]
+        if os.environ.get("MTA_OUT_SMTP_HOST") and not self.MTA_OUT_RELAY_HOST:
+            logger.warning(
+                "MTA_OUT_SMTP_HOST is deprecated, use MTA_OUT_RELAY_HOST instead"
+            )
+            self.MTA_OUT_RELAY_HOST = values.Value(
+                None, environ_name="MTA_OUT_SMTP_HOST", environ_prefix=None
+            )
+            self.MTA_OUT_RELAY_USERNAME = values.Value(
+                None, environ_name="MTA_OUT_SMTP_USERNAME", environ_prefix=None
+            )
+            self.MTA_OUT_RELAY_PASSWORD = values.Value(
+                None, environ_name="MTA_OUT_SMTP_PASSWORD", environ_prefix=None
+            )
 
     # pylint: disable=invalid-name
     @property

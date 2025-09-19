@@ -12,7 +12,11 @@ import binascii
 import datetime
 import html
 import logging
+from email import message_from_string
+from email.generator import BytesGenerator
+from email.policy import SMTP as email_policy_smtp
 from email.utils import format_datetime, parsedate_to_datetime
+from io import BytesIO
 from typing import Any, Dict, List, Optional
 
 from django.utils import timezone
@@ -522,10 +526,16 @@ def compose_email(
         # Convert the top-level part to string
         message_str = msg_part.to_string()
 
-        # Convert string to bytes using UTF-8
-        message_bytes = message_str.encode("utf-8")
+        # Flanker doesn't enforce line length limits or CRLF conversion
+        # so we have to re-encode the message here to say RFC compliant
+        msg = message_from_string(message_str)
+        out = BytesIO()
+        gen = BytesGenerator(out, policy=email_policy_smtp.clone(max_line_length=76))
+        gen.flatten(msg)
+        message_bytes = out.getvalue()
 
         return message_bytes
+
     except mime_errors.MimeError as e:
         # Catch flanker specific errors during composition/string conversion
         logger.error(
@@ -606,24 +616,24 @@ def _embed_original_message(
         to_display = format_address_list(orig_to)
         cc_display = format_address_list(orig_cc) if orig_cc else ""
 
-        header_text = "\n\n---------- Forwarded message ----------\n"
+        header_text = "\r\n\r\n---------- Forwarded message ----------\r\n"
         if from_display:
-            header_text += f"From: {from_display}\n"
+            header_text += f"From: {from_display}\r\n"
         if to_display:
-            header_text += f"To: {to_display}\n"
+            header_text += f"To: {to_display}\r\n"
         if cc_display:
-            header_text += f"Cc: {cc_display}\n"
-        header_text += f"Subject: {orig_subject}\n"
-        header_text += f"Date: {date_str}\n\n"
+            header_text += f"Cc: {cc_display}\r\n"
+        header_text += f"Subject: {orig_subject}\r\n"
+        header_text += f"Date: {date_str}\r\n\r\n"
     else:
         # Reply format
         from_display = format_address(
             orig_from.get("name", ""), orig_from.get("email", "")
         )
         if from_display:
-            header_text = f"\n\nOn {date_str}, {from_display} wrote:\n"
+            header_text = f"\r\n\r\nOn {date_str}, {from_display} wrote:\r\n"
         else:
-            header_text = f"\n\nOn {date_str}, someone wrote:\n"
+            header_text = f"\r\n\r\nOn {date_str}, someone wrote:\r\n"
 
     # Create the text body with original message
     text_body = f"{new_text}{header_text}"
@@ -647,7 +657,9 @@ def _embed_original_message(
                 text_body += orig_text
             else:
                 # For replies, quote each line
-                quoted_text = "\n".join([f"> {line}" for line in orig_text.split("\n")])
+                quoted_text = "\r\n".join(
+                    [f"> {line}" for line in orig_text.split("\r\n")]
+                )
                 text_body += quoted_text
 
     # Create HTML content

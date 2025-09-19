@@ -192,6 +192,10 @@ swaks --to=user1@example.local --server localhost:8917
 # Send a test message to the MTA-out, which will then relay it to mailcatcher on http://localhost:8904/
 swaks -tls --to=test@example.external --server localhost:8911 --auth-user user --auth-password=pass
 
+# You can also send emails using Messages itself instead of the frontend
+make back-shell
+MTA_OUT_MODE=relay MTA_OUT_RELAY_HOST=localhost:8917 python manage.py send_mail --to=user1@example.local --subject="Test" --body="Hello World"
+
 ```
 
 > ⚠️ Most residential ISPs block the outgoing port 25, so you might not be able to send emails to outside

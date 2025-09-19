@@ -310,37 +310,39 @@ def send_outbound_message(
 ) -> dict[str, Any]:
     """Send an existing Message object via MTA out (SMTP) or direct MX if not configured."""
 
-    custom_attributes = message.sender.mailbox.domain.custom_attributes or {}
+    return send_outbound_email(
+        recipient_emails,
+        message.sender.email,
+        message.blob.get_content(),
+        message.sender.mailbox.domain.custom_attributes or {},
+    )
+
+
+def send_outbound_email(
+    recipient_emails: set[str],
+    envelope_from: str,
+    mime_data: bytes,
+    custom_attributes: dict[str, Any],
+) -> dict[str, Any]:
+    """Send an existing email via MTA out (SMTP) or direct MX if not configured."""
 
     mta_out_mode = custom_attributes.get("_mta_out_mode") or settings.MTA_OUT_MODE
 
+    # Use direct MX delivery
     if mta_out_mode == "direct":
-        # Use direct MX delivery
-        envelope_from = message.sender.email
-
-        # Get all recipients that need delivery
-        envelope_to = {
-            recipient.contact.email: recipient
-            for recipient in message.recipients.select_related("contact").all()
-            if recipient.delivery_status in {None, MessageDeliveryStatusChoices.RETRY}
-            and (recipient.retry_at is None or recipient.retry_at <= timezone.now())
-        }
-
-        mime_data = message.blob.get_content()
-
-        return send_message_via_mx(envelope_from, envelope_to, mime_data)
+        return send_message_via_mx(envelope_from, recipient_emails, mime_data)
 
     if mta_out_mode == "relay":
         mta_out_smtp_host = (
-            custom_attributes.get("_mta_out_smtp_host") or settings.MTA_OUT_SMTP_HOST
+            custom_attributes.get("_mta_out_smtp_host") or settings.MTA_OUT_RELAY_HOST
         )
         mta_out_smtp_username = (
             custom_attributes.get("_mta_out_smtp_username")
-            or settings.MTA_OUT_SMTP_USERNAME
+            or settings.MTA_OUT_RELAY_USERNAME
         )
         mta_out_smtp_password = (
             custom_attributes.get("_mta_out_smtp_password")
-            or settings.MTA_OUT_SMTP_PASSWORD
+            or settings.MTA_OUT_RELAY_PASSWORD
         )
 
         statuses = send_smtp_mail(
@@ -350,9 +352,9 @@ def send_outbound_message(
                 if ":" in mta_out_smtp_host
                 else 587
             ),
-            envelope_from=message.sender.email,
+            envelope_from=envelope_from,
             recipient_emails=recipient_emails,
-            message_content=message.blob.get_content(),
+            message_content=mime_data,
             smtp_username=mta_out_smtp_username,
             smtp_password=mta_out_smtp_password,
         )

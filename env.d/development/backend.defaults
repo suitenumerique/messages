@@ -75,7 +75,7 @@ FRONTEND_THEME=dsfr
 MESSAGES_TESTDOMAIN=example.local
 MESSAGES_TESTDOMAIN_MAPPING_BASEDOMAIN=example.com
 MTA_OUT_MODE=relay
-MTA_OUT_SMTP_HOST=mailcatcher:1025
+MTA_OUT_RELAY_HOST=mailcatcher:1025
 MDA_API_SECRET=my-shared-secret-mda
 SALT_KEY=ThisIsAnExampleSaltForDevPurposeOnly
 

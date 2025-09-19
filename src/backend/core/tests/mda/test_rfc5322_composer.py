@@ -158,8 +158,8 @@ class TestEmailComposition:
             "from": [{"name": "John Doe", "email": "john@example.com"}],
             "to": [{"name": "Jane Smith", "email": "jane@example.com"}],
             "subject": "Hello",
-            "textBody": ["This is the plain text version"],
-            "htmlBody": ["<h1>Hello</h1><p>This is the HTML version</p>"],
+            "textBody": ["This is the plain text version.\nIt also tests CRLF."],
+            "htmlBody": ["<h1>Hello</h1>\n<p>This is the HTML version</p>"],
         }
 
         result_bytes = compose_email(jmap_data)
@@ -188,6 +188,10 @@ class TestEmailComposition:
             html_part.get_content_charset() or "utf-8"
         )
         assert "<h1>Hello</h1>" in html_payload
+
+        assert not re.search(r"(?<!\r)\n", result_bytes.decode("utf-8")), (
+            "We don't want LF without CRLF in the body"
+        )
 
     def test_compose_with_attachment(self):
         """Test composing an email with an attachment."""
@@ -229,6 +233,27 @@ class TestEmailComposition:
         assert attachment_part.get_content_type() == "text/plain"
         # Content-Disposition should be attachment
         assert "attachment" in attachment_part.get("Content-Disposition", "")
+
+    def test_compose_with_long_strings(self):
+        """Test composing an email with long strings."""
+        jmap_data = {
+            "from": [{"name": "John Doe", "email": "john@example.com"}],
+            "to": [{"name": "Jane Smith", "email": "jane@example.com"}],
+            "subject": "Email with Attachment" * 100,
+            "textBody": ["Email with attachment " * 100],
+            "attachments": [
+                {
+                    "name": "test - very long" * 100 + ".txt",
+                    "type": "text/plain",
+                    "content": "SGVsbG8gV29ybGQ=",  # Base64 for "Hello World"
+                }
+            ],
+        }
+
+        result_bytes = compose_email(jmap_data)
+
+        lines = result_bytes.decode("utf-8").split("\r\n")
+        assert max(len(line) for line in lines) < 78
 
     def test_compose_with_multiple_recipients(self):
         """Test composing an email with multiple recipients."""
@@ -667,7 +692,7 @@ class TestReplyGeneration:
                 {
                     "partId": "text-1",
                     "type": "text/plain",
-                    "content": "This is the original message.",
+                    "content": "This is the original message.\nIt also tests CRLF.",
                 }
             ],
             "date": datetime(2023, 5, 15, 14, 30, 0, tzinfo=timezone.utc),
@@ -687,6 +712,13 @@ class TestReplyGeneration:
         assert "On Mon, 15 May 2023 14:30:00" in reply["textBody"][0]["content"]
         assert "Original Sender" in reply["textBody"][0]["content"]
         assert "> This is the original message." in reply["textBody"][0]["content"]
+
+        reply["from"] = {"name": "New Sender", "email": "new@example.com"}
+
+        raw_mime = compose_email(reply)
+        assert not re.search(r"(?<!\r)\n", raw_mime.decode("utf-8")), (
+            "We don't want LF without CRLF in the text body"
+        )
 
     def test_create_reply_with_html(self):
         """Test creating a reply with HTML content."""
@@ -831,7 +863,7 @@ class TestReplyGeneration:
     def test_reply_with_long_original(self):
         """Test replying to a long email, ensuring proper quoting."""
         # Create a long message with multiple paragraphs
-        long_text = "\n\n".join(
+        long_text = "\r\n\r\n".join(
             [f"This is paragraph {i} of the original message." for i in range(1, 6)]
         )
 
