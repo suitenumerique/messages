@@ -194,5 +194,5 @@ class Command(BaseCommand):
                 )
                 if status.get("retry", False):
                     self.stdout.write(
-                        f"✗ Temporary failure - would be retried. Error : {error_msg}"
+                        f"✗ Temporary failure - would be retried. Error: {error_msg}"
                     )
