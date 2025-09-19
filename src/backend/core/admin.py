@@ -541,8 +541,10 @@ class BlobAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "mailbox",
+        "maildomain",
         "content_type",
         "size",
+        "size_compressed",
         "compression",
         "created_at",
     )

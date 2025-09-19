@@ -1261,6 +1261,7 @@ class BlobManager(models.Manager):
             content_type=content_type,
             compression=compression,
             raw_content=compressed_content,
+            size_compressed=len(compressed_content),
             **kwargs,
         )
 
@@ -1295,7 +1296,9 @@ class Blob(BaseModel):
     size = models.PositiveIntegerField(
         _("file size"), help_text=_("Size of the blob in bytes")
     )
-
+    size_compressed = models.PositiveIntegerField(
+        _("compressed size"), help_text=_("Size of the compressed blob in bytes")
+    )
     content_type = models.CharField(
         _("content type"), max_length=127, help_text=_("MIME type of the blob")
     )
