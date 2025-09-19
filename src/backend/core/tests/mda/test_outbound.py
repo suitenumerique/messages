@@ -1,8 +1,11 @@
 """Tests for the core.mda.outbound module."""
 
+import threading
+import time
 from unittest.mock import MagicMock, call, patch
 
-from django.test import override_settings
+from django.core.cache import cache
+from django.test import TransactionTestCase, override_settings
 
 import dns.resolver
 import pytest
@@ -362,3 +365,156 @@ class TestSendOutboundMessage:
             ).count()
             == 1
         )
+
+
+class TestSendMessageRedisLock(TransactionTestCase):
+    """Unit tests for the Redis lock functionality in send_message function."""
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+        self.sender_contact = factories.ContactFactory(email="sender@sendtest.com")
+        self.mailbox = self.sender_contact.mailbox
+        self.thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=self.mailbox,
+            thread=self.thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        self.message = factories.MessageFactory(
+            thread=self.thread,
+            sender=self.sender_contact,
+            is_draft=False,
+            subject="Test Lock",
+        )
+        # Create a blob with the raw MIME content
+        blob = self.mailbox.create_blob(
+            content=b"From: sender@sendtest.com\nTo: to@example.com\nSubject: Test Lock\n\nTest body",
+            content_type="message/rfc822",
+        )
+        self.message.blob = blob
+        self.message.save()
+        # Add recipients
+        to_contact = factories.ContactFactory(
+            mailbox=self.mailbox, email="to@example.external"
+        )
+        factories.MessageRecipientFactory(
+            message=self.message,
+            contact=to_contact,
+            type=models.MessageRecipientTypeChoices.TO,
+        )
+
+    def test_redis_lock_prevents_double_send_concurrent(self):
+        """Test that Redis lock prevents multiple workers from sending the same message concurrently."""
+        # Clear any existing locks
+        cache.clear()
+
+        # Track which workers actually called the outbound function
+        outbound_calls = []
+        call_lock = threading.Lock()
+
+        def send_message_worker(worker_id, message):
+            """Worker function that tries to send the message."""
+            nonlocal outbound_calls
+
+            with patch("core.mda.outbound.send_outbound_message") as mock_send_outbound:
+
+                def mock_send_with_delay(*args, **kwargs):
+                    time.sleep(1)  # Simulate actual email sending time
+                    with call_lock:
+                        outbound_calls.append(worker_id)
+                    return {"to@example.external": {"delivered": True, "error": None}}
+
+                mock_send_outbound.side_effect = mock_send_with_delay
+
+                outbound.send_message(message, force_mta_out=True)
+
+        # Start two concurrent workers
+        thread1 = threading.Thread(target=send_message_worker, args=(1, self.message))
+        thread1.start()
+
+        time.sleep(0.5)
+
+        thread2 = threading.Thread(target=send_message_worker, args=(2, self.message))
+        thread2.start()
+
+        # Wait for both threads to complete
+        thread1.join()
+        thread2.join()
+
+        # Verify only one worker actually called the outbound function
+        assert len(outbound_calls) == 1, (
+            f"Expected 1 outbound call, got {len(outbound_calls)}: {outbound_calls}"
+        )
+
+        # Verify the message was processed
+        self.message.refresh_from_db()
+        assert self.message.sent_at is not None
+
+    def test_redis_lock_released_after_success(self):
+        """Test that Redis lock is released after successful message sending."""
+        # Clear any existing locks
+        cache.clear()
+
+        # Mock the outbound delivery
+        with patch("core.mda.outbound.send_outbound_message") as mock_send_outbound:
+            mock_send_outbound.return_value = {
+                "to@example.com": {"delivered": True, "error": None}
+            }
+
+            # Send the message
+            outbound.send_message(self.message, force_mta_out=True)
+
+            # Verify the lock was released by checking we can acquire it again
+            lock_key = f"send_message_lock:{self.message.id}"
+            assert cache.add(
+                lock_key, "test", 60
+            )  # Should succeed if lock was released
+
+            # Clean up
+            cache.delete(lock_key)
+
+    def test_redis_lock_released_after_exception(self):
+        """Test that Redis lock is released even when an exception occurs."""
+        # Clear any existing locks
+        cache.clear()
+
+        # Mock send_outbound_message to raise an exception
+        with patch("core.mda.outbound.send_outbound_message") as mock_send_outbound:
+            mock_send_outbound.side_effect = Exception("Test exception")
+
+            # Send the message (exception was raised and caught)
+            outbound.send_message(self.message, force_mta_out=True)
+
+            # Verify the lock was still released
+            lock_key = f"send_message_lock:{self.message.id}"
+            assert cache.add(
+                lock_key, "test", 60
+            )  # Should succeed if lock was released
+
+            # Clean up
+            cache.delete(lock_key)
+
+    def test_redis_lock_timeout_prevents_deadlock(self):
+        """Test that Redis lock has a timeout to prevent deadlocks."""
+        # Clear any existing locks
+        cache.clear()
+
+        # Manually set a lock to simulate a stuck worker
+        lock_key = f"send_message_lock:{self.message.id}"
+        cache.set(lock_key, "stuck_worker", 1)  # 1 second timeout
+
+        # Wait for the lock to expire
+        time.sleep(1.1)
+
+        # Now the message should be processable again
+        with patch("core.mda.outbound.send_outbound_message") as mock_send_outbound:
+            mock_send_outbound.return_value = {
+                "to@example.com": {"delivered": True, "error": None}
+            }
+
+            outbound.send_message(self.message, force_mta_out=True)
+
+            # Verify the message was processed
+            self.message.refresh_from_db()
+            assert self.message.sent_at is not None

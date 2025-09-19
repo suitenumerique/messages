@@ -5,6 +5,7 @@ import logging
 from typing import Any, Optional
 
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 
 from core import models
@@ -199,110 +200,134 @@ def send_message(message: models.Message, force_mta_out: bool = False):
     This part is called asynchronously from the celery worker.
     """
 
-    message.sent_at = timezone.now()
-    message.save(update_fields=["sent_at"])
+    # Create a unique lock key for this message to prevent double sends
+    lock_key = f"send_message_lock:{message.id}"
+    lock_timeout = 1800  # 30 minutes timeout for the lock
 
-    mime_data = parse_email_message(message.blob.get_content())
+    # Try to acquire the lock
+    if not cache.add(lock_key, "locked", lock_timeout):
+        logger.warning(
+            "Message %s is already being sent by another worker, skipping duplicate send",
+            message.id,
+        )
+        return
 
-    # Include all recipients in the envelope that have not been delivered yet, including BCC
-    envelope_to = {
-        recipient.contact.email: recipient
-        for recipient in message.recipients.select_related("contact").all()
-        if recipient.delivery_status
-        in {
-            None,
-            MessageDeliveryStatusChoices.RETRY,
+    try:
+        message.sent_at = timezone.now()
+        message.save(update_fields=["sent_at"])
+
+        mime_data = parse_email_message(message.blob.get_content())
+
+        # Include all recipients in the envelope that have not been delivered yet, including BCC
+        envelope_to = {
+            recipient.contact.email: recipient
+            for recipient in message.recipients.select_related("contact").all()
+            if recipient.delivery_status
+            in {
+                None,
+                MessageDeliveryStatusChoices.RETRY,
+            }
+            and (recipient.retry_at is None or recipient.retry_at <= timezone.now())
         }
-        and (recipient.retry_at is None or recipient.retry_at <= timezone.now())
-    }
 
-    def _mark_delivered(
-        recipient_email: str,
-        delivered: bool,
-        internal: bool,
-        error: Optional[str] = None,
-        retry: Optional[bool] = False,
-    ) -> None:
-        if delivered:
-            # TODO also update message.updated_at?
-            envelope_to[recipient_email].delivered_at = timezone.now()
-            envelope_to[recipient_email].delivery_message = None
-            envelope_to[recipient_email].delivery_status = (
-                MessageDeliveryStatusChoices.INTERNAL
-                if internal
-                else MessageDeliveryStatusChoices.SENT
-            )
-            envelope_to[recipient_email].save(
-                update_fields=["delivered_at", "delivery_message", "delivery_status"]
-            )
-        elif retry and envelope_to[recipient_email].retry_count < len(RETRY_INTERVALS):
-            envelope_to[recipient_email].retry_at = (
-                timezone.now()
-                + RETRY_INTERVALS[envelope_to[recipient_email].retry_count]
-            )
-            envelope_to[recipient_email].retry_count += 1
-            envelope_to[
-                recipient_email
-            ].delivery_status = MessageDeliveryStatusChoices.RETRY
-            envelope_to[recipient_email].delivery_message = error
-            envelope_to[recipient_email].save(
-                update_fields=[
-                    "retry_at",
-                    "retry_count",
-                    "delivery_status",
-                    "delivery_message",
-                ]
-            )
-        else:
-            envelope_to[
-                recipient_email
-            ].delivery_status = MessageDeliveryStatusChoices.FAILED
-            envelope_to[recipient_email].delivery_message = error
-            envelope_to[recipient_email].save(
-                update_fields=["delivery_status", "delivery_message"]
-            )
+        def _mark_delivered(
+            recipient_email: str,
+            delivered: bool,
+            internal: bool,
+            error: Optional[str] = None,
+            retry: Optional[bool] = False,
+        ) -> None:
+            if delivered:
+                # TODO also update message.updated_at?
+                envelope_to[recipient_email].delivered_at = timezone.now()
+                envelope_to[recipient_email].delivery_message = None
+                envelope_to[recipient_email].delivery_status = (
+                    MessageDeliveryStatusChoices.INTERNAL
+                    if internal
+                    else MessageDeliveryStatusChoices.SENT
+                )
+                envelope_to[recipient_email].save(
+                    update_fields=[
+                        "delivered_at",
+                        "delivery_message",
+                        "delivery_status",
+                    ]
+                )
+            elif retry and envelope_to[recipient_email].retry_count < len(
+                RETRY_INTERVALS
+            ):
+                envelope_to[recipient_email].retry_at = (
+                    timezone.now()
+                    + RETRY_INTERVALS[envelope_to[recipient_email].retry_count]
+                )
+                envelope_to[recipient_email].retry_count += 1
+                envelope_to[
+                    recipient_email
+                ].delivery_status = MessageDeliveryStatusChoices.RETRY
+                envelope_to[recipient_email].delivery_message = error
+                envelope_to[recipient_email].save(
+                    update_fields=[
+                        "retry_at",
+                        "retry_count",
+                        "delivery_status",
+                        "delivery_message",
+                    ]
+                )
+            else:
+                envelope_to[
+                    recipient_email
+                ].delivery_status = MessageDeliveryStatusChoices.FAILED
+                envelope_to[recipient_email].delivery_message = error
+                envelope_to[recipient_email].save(
+                    update_fields=["delivery_status", "delivery_message"]
+                )
 
-    external_recipients = set()
-    for recipient_email in envelope_to:
-        if (
-            check_local_recipient(recipient_email, create_if_missing=True)
-            and not force_mta_out
-        ):
+        external_recipients = set()
+        for recipient_email in envelope_to:
+            if (
+                check_local_recipient(recipient_email, create_if_missing=True)
+                and not force_mta_out
+            ):
+                try:
+                    delivered = deliver_inbound_message(
+                        recipient_email, mime_data, message.blob.get_content()
+                    )
+                    _mark_delivered(recipient_email, delivered, True)
+                except Exception as e:
+                    logger.error(
+                        "Failed to deliver internal message to %s: %s",
+                        recipient_email,
+                        e,
+                    )
+                    _mark_delivered(recipient_email, False, True, str(e), False)
+
+            else:
+                external_recipients.add(recipient_email)
+
+        if external_recipients:
             try:
-                delivered = deliver_inbound_message(
-                    recipient_email, mime_data, message.blob.get_content()
-                )
-                _mark_delivered(recipient_email, delivered, True)
-            except Exception as e:
-                logger.error(
-                    "Failed to deliver internal message to %s: %s", recipient_email, e
-                )
-                _mark_delivered(recipient_email, False, True, str(e), False)
-
-        else:
-            external_recipients.add(recipient_email)
-
-    if external_recipients:
-        try:
-            statuses = send_outbound_message(external_recipients, message)
-            for recipient_email, status in statuses.items():
-                _mark_delivered(
-                    recipient_email,
-                    status["delivered"],
-                    False,
-                    status.get("error"),
-                    status.get("retry", False),
-                )
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.error("Failed to send outbound message: %s", e, exc_info=True)
-            for recipient_email in external_recipients:
-                _mark_delivered(
-                    recipient_email,
-                    False,
-                    False,
-                    "Internal error while delivering",
-                    True,
-                )
+                statuses = send_outbound_message(external_recipients, message)
+                for recipient_email, status in statuses.items():
+                    _mark_delivered(
+                        recipient_email,
+                        status["delivered"],
+                        False,
+                        status.get("error"),
+                        status.get("retry", False),
+                    )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.error("Failed to send outbound message: %s", e, exc_info=True)
+                for recipient_email in external_recipients:
+                    _mark_delivered(
+                        recipient_email,
+                        False,
+                        False,
+                        "Internal error while delivering",
+                        True,
+                    )
+    finally:
+        # Always release the lock when done
+        cache.delete(lock_key)
 
 
 def send_outbound_message(
