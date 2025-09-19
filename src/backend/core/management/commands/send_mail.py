@@ -6,9 +6,9 @@ Usage examples:
     # Send a simple email (works without any mailboxes)
     python manage.py send_mail --to recipient@example.com --subject "Test" --body "Hello World"
     
-    # Send with custom sender and log level
+    # Send with custom sender
     python manage.py send_mail --to recipient@example.com --subject "Test" --body "Hello World" \
-        --from sender@mydomain.com --log-level DEBUG
+        --from sender@mydomain.com
     
     # Dry run to see what would be sent
     python manage.py send_mail --to recipient@example.com --subject "Test" --body "Hello World" --dry-run
@@ -21,12 +21,13 @@ import uuid
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.core.validators import validate_email
-from django.utils import timezone
 
 from core import models
 from core.mda.outbound import send_outbound_email
 from core.mda.rfc5322 import compose_email
 from core.mda.signing import sign_message_dkim
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -58,24 +59,12 @@ class Command(BaseCommand):
             dest="from_email",
         )
         parser.add_argument(
-            "--log-level",
-            type=str,
-            choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-            default="INFO",
-            help="Logging level (default: INFO)",
-        )
-        parser.add_argument(
             "--dry-run",
             action="store_true",
             help="Show what would be sent without actually sending the email",
         )
 
     def handle(self, *args, **options):
-        # Configure logging
-        log_level = getattr(logging, options["log_level"].upper())
-        logging.basicConfig(level=log_level)
-        logger = logging.getLogger(__name__)
-
         to_email = options["to"]
         subject = options["subject"]
         body = options["body"]
@@ -131,7 +120,6 @@ class Command(BaseCommand):
         # Generate MIME content
         mime_data = {
             "from": [{"name": from_name, "email": from_email}],
-            "date": timezone.now().strftime("%a, %d %b %Y %H:%M:%S %z"),
             "to": [{"name": to_email.split("@")[0], "email": to_email}],
             "cc": [],
             "subject": subject,

@@ -707,6 +707,7 @@ class Base(Configuration):
                 *self.MIDDLEWARE,
                 "django_prometheus.middleware.PrometheusAfterMiddleware",
             ]
+
         if os.environ.get("MTA_OUT_SMTP_HOST") and not self.MTA_OUT_RELAY_HOST:
             logger.warning(
                 "MTA_OUT_SMTP_HOST is deprecated, use MTA_OUT_RELAY_HOST instead"
@@ -714,6 +715,12 @@ class Base(Configuration):
             self.MTA_OUT_RELAY_HOST = os.environ.get("MTA_OUT_SMTP_HOST")
             self.MTA_OUT_RELAY_USERNAME = os.environ.get("MTA_OUT_SMTP_USERNAME")
             self.MTA_OUT_RELAY_PASSWORD = os.environ.get("MTA_OUT_SMTP_PASSWORD")
+
+        if self.MTA_OUT_SMTP_TLS_SECURITY_LEVEL not in {"none", "may", "encrypt"}:
+            raise ValueError(
+                f"Invalid MTA_OUT_SMTP_TLS_SECURITY_LEVEL: {self.MTA_OUT_SMTP_TLS_SECURITY_LEVEL}"
+            )
+
     # pylint: disable=invalid-name
     @property
     def ENVIRONMENT(self):

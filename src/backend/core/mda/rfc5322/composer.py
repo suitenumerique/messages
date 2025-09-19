@@ -658,7 +658,7 @@ def _embed_original_message(
             else:
                 # For replies, quote each line
                 quoted_text = "\r\n".join(
-                    [f"> {line}" for line in orig_text.split("\r\n")]
+                    [f"> {line}" for line in orig_text.splitlines()]
                 )
                 text_body += quoted_text
 
