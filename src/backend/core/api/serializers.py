@@ -338,7 +338,7 @@ class ReadOnlyMessageTemplateSerializer(serializers.ModelSerializer):
         try:
             content = json.loads(obj.blob.get_content().decode("utf-8"))
             raw_body = content.get("raw")
-            return json.dumps(raw_body) if raw_body is not None else None
+            return json.dumps(raw_body, separators=(',', ':')) if raw_body is not None else None
         except (json.JSONDecodeError, AttributeError):
             return None
 
@@ -1265,7 +1265,8 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
                 pass
 
             content = json.dumps(
-                {"html": html_body, "text": text_body, "raw": raw_body}
+                {"html": html_body, "text": text_body, "raw": raw_body},
+                separators=(',', ':')
             )
             # content is changed to bytes
             blob = models.Blob.objects.create_blob(
@@ -1328,7 +1329,7 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
                 # Create new blob
 
                 blob = models.Blob.objects.create_blob(
-                    content=json.dumps(content).encode("utf-8"),
+                    content=json.dumps(content, separators=(',', ':')).encode("utf-8"),
                     content_type="application/json",
                     maildomain=self.instance.maildomain
                     if self.instance.maildomain
