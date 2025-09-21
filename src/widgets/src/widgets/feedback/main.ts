@@ -1,7 +1,6 @@
 import styles from './styles.css?inline'
 import { createShadowWidget } from '../../shared/shadow-dom'
 import { installHook } from '../../shared/script'
-import { submitFeedback } from './submit'
 import { listenEvent, triggerEvent } from '../../shared/events'
 
 const widgetName = "feedback";
@@ -10,9 +9,9 @@ type ConfigData = {
   captcha: boolean;
   title: string;
   placeholder: string;
+  emailPlaceholder: string;
   submitText: string;
   successText: string;
-  emptyText: string;
 };
 
 type ConfigResponse = {
@@ -31,7 +30,7 @@ listenEvent(widgetName, 'init', null, false, async (args) => {
 
   let configData: ConfigData | undefined;
   try {
-    const config = await fetch(`${args.api}config`, {
+    const config = await fetch(`${args.api}config/`, {
       'headers': {
         'X-Channel-ID': args.channel
       }
@@ -48,20 +47,21 @@ listenEvent(widgetName, 'init', null, false, async (args) => {
 
   const title = args.title || configData?.title || 'Feedback';
   const placeholder = args.placeholder || configData?.placeholder || 'Share your feedback...';
+  const emailPlaceholder = args.emailPlaceholder || configData?.emailPlaceholder || 'Your email...';
   const submitText = args.submitText || configData?.submitText || 'Send Feedback';
   const successText = args.successText || configData?.successText || 'Thank you for your feedback!';
-  const emptyText = args.emptyText || configData?.emptyText || 'Please enter some feedback.';
 
   const htmlContent = `<div class="wrapper">` +
       `<div class="header">` +
         `<span>${title}</span>` +
         `<button class="close-btn" id="close">×</button>` +
       `</div>` +
-      `<div class="content">` +
-        `<textarea id="feedback-text" placeholder="${placeholder}"></textarea>` +
+      `<form class="content">` +
+        `<textarea id="feedback-text" autocomplete="off" required placeholder="${placeholder}"></textarea>` +
+        `<input type="email" id="email" autocomplete="email" required placeholder="${emailPlaceholder}">` +
         `<button type="submit" id="submit">${submitText}</button>` +
         `<div id="status" class="status"></div>` +
-      `</div>` +
+      `</form>` +
     `</div>`;
 
   // Create shadow DOM widget
@@ -73,25 +73,44 @@ listenEvent(widgetName, 'init', null, false, async (args) => {
   const feedbackText = shadowRoot.querySelector<HTMLTextAreaElement>('#feedback-text')!
   const statusDiv = shadowRoot.querySelector<HTMLDivElement>('#status')!
   const closeBtn = shadowRoot.querySelector<HTMLButtonElement>('#close')!
+  const emailInput = shadowRoot.querySelector<HTMLInputElement>('#email')!
+  const form = shadowRoot.querySelector<HTMLFormElement>('form')!
 
-  submitBtn.addEventListener('click', async () => {
-    const feedback = feedbackText.value.trim()
+  if (args.email) {
+    emailInput.remove();
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const message = feedbackText.value.trim()
+    const email = args.email || emailInput.value.trim();
     try {
-      if (!feedback) throw new Error(emptyText);
+      if (!message) {
+        feedbackText.focus();
+        throw new Error("Missing value");
+      }
+      if (!email) {
+        emailInput.focus();
+        throw new Error("Missing value");
+      }
     
-      const ret = await fetch(`${args.api}deliver`, {
+      const ret = await fetch(`${args.api}deliver/`, {
         'method': 'POST',
         'headers': {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Channel-ID': args.channel
         },
-        'body': JSON.stringify({ feedback })
+        'body': JSON.stringify({ textBody: message, email })
       });
       const retData = await ret.json();
       
       if (!retData.success) throw new Error(retData.detail || 'Unknown error');
   
       statusDiv.innerHTML = `<span class="success">${successText}</span>`
-      feedbackText.value = ''
+      feedbackText.remove();
+      emailInput.remove();
+      submitBtn.remove();
+      
     } catch (error) {
       statusDiv.innerHTML = `<span class="error">${error instanceof Error ? error.message : 'Unknown error'}</span>`
     }

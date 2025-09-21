@@ -10,6 +10,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from core import models
 
+
 class IntegerChoicesField(serializers.ChoiceField):
     """
     Custom field to handle IntegerChoices that accepts string labels for input
@@ -1157,28 +1158,20 @@ class ChannelSerializer(AbilitiesModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
-    def validate(self, data):
+    def validate(self, attrs):
         """Validate channel data."""
-        mailbox = data.get("mailbox")
-        maildomain = data.get("maildomain")
-        channel_type = data.get("type")
-        
+        mailbox = attrs.get("mailbox")
+        maildomain = attrs.get("maildomain")
+
         # Validate that either mailbox or maildomain is set, but not both
         if not mailbox and not maildomain:
             raise serializers.ValidationError(
                 "Either mailbox or maildomain must be specified."
             )
-        
+
         if mailbox and maildomain:
             raise serializers.ValidationError(
                 "Cannot specify both mailbox and maildomain."
             )
-        
-        # Validate that the channel type exists
-        # if channel_type:
-        #     if channel_type not in list_channel_types().keys():
-        #         raise serializers.ValidationError(
-        #             f"Invalid channel type"
-        #         )
-        
-        return data
+
+        return attrs

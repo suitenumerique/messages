@@ -517,6 +517,13 @@
       },
       "posthog": {
         "cta": "Give feedback"
+      },
+      "feedback_widget": {
+        "title": "Do you have any feedback?",
+        "placeholder": "Share your feedback here...",
+        "email_placeholder": "Your email...",
+        "submit_text": "Send Feedback",
+        "success_text": "Thank you for your feedback!"
       }
     }
   },
@@ -1031,6 +1038,13 @@
       },
       "posthog": {
         "cta": "Faire un retour"
+      },
+      "feedback_widget": {
+        "title": "Faire un retour",
+        "placeholder": "Partagez votre retour...",
+        "email_placeholder": "Votre email...",
+        "submit_text": "Envoyer le retour",
+        "success_text": "Merci pour votre retour!"
       }
     }
   }

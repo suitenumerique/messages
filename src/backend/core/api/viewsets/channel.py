@@ -1,12 +1,9 @@
 """Admin ViewSet for Channel management."""
 
-from django.db.models import F, Q
-from django.shortcuts import get_object_or_404
+from django.db.models import Q
 
 from drf_spectacular.utils import extend_schema
-from rest_framework import mixins, status, viewsets
-from rest_framework.decorators import action
-from rest_framework.response import Response
+from rest_framework import mixins, viewsets
 
 from core import models
 from core.api import permissions as core_permissions
@@ -40,7 +37,17 @@ class AdminChannelViewSet(
             return models.Channel.objects.all().order_by("-created_at")
 
         # Only mailbox admins can access channels
-        return models.Channel.objects.filter(
-            Q(mailbox__accesses__user=user, mailbox__accesses__role=models.MailboxRoleChoices.ADMIN) | 
-            Q(maildomain__accesses__user=user, maildomain__accesses__role=models.MailDomainAccessRoleChoices.ADMIN)
-        ).distinct().order_by("-created_at")
+        return (
+            models.Channel.objects.filter(
+                Q(
+                    mailbox__accesses__user=user,
+                    mailbox__accesses__role=models.MailboxRoleChoices.ADMIN,
+                )
+                | Q(
+                    maildomain__accesses__user=user,
+                    maildomain__accesses__role=models.MailDomainAccessRoleChoices.ADMIN,
+                )
+            )
+            .distinct()
+            .order_by("-created_at")
+        )

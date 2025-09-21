@@ -1,25 +1,22 @@
 """MTA channel implementation for handling email delivery."""
 
+import hashlib
 import logging
 import secrets
-import hashlib
-from typing import Dict, Any, Optional
 
 from django.conf import settings
-from django.core.exceptions import ValidationError
+
+import jwt
+from rest_framework import status, viewsets
+from rest_framework.authentication import BaseAuthentication
+from rest_framework.decorators import action
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from core import models
 from core.mda.inbound import check_local_recipient, deliver_inbound_message
 from core.mda.rfc5322 import EmailParseError, parse_email_message
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.authentication import BaseAuthentication
-from rest_framework.exceptions import AuthenticationFailed
-from django.contrib.auth.models import User
-import jwt
-from rest_framework import viewsets
-from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 
 logger = logging.getLogger(__name__)
 
@@ -57,25 +54,22 @@ class MTAJWTAuthentication(BaseAuthentication):
                 if not secrets.compare_digest(body_hash, payload["body_hash"]):
                     raise jwt.InvalidTokenError("Invalid email hash")
 
-            service_account = User()
+            service_account = models.User()
             return (service_account, payload)
 
         except (jwt.ExpiredSignatureError, jwt.InvalidTokenError) as e:
             raise AuthenticationFailed("Invalid token") from e
         except (IndexError, KeyError) as e:
-            raise AuthenticationFailed(
-                "Invalid token header or payload"
-            ) from e
+            raise AuthenticationFailed("Invalid token header or payload") from e
 
     def authenticate_header(self, request):
         """Return the header to be used in the WWW-Authenticate response header."""
         return 'Bearer realm="MTA"'
 
 
-
 class InboundMTAViewSet(viewsets.GenericViewSet):
     """Handles incoming email messages from MTA (Mail Transfer Agent)."""
-    
+
     # Channel metadata
     CHANNEL_TYPE = "mta"
     CHANNEL_DESCRIPTION = "Mail Transfer Agent (email)"
@@ -84,10 +78,7 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
     authentication_classes = [MTAJWTAuthentication]
 
     @action(
-        detail=False,
-        methods=["post"],
-        url_path="check",
-        url_name="inbound-mta-check"
+        detail=False, methods=["post"], url_path="check", url_name="inbound-mta-check"
     )
     def check(self, request):
         """Check recipients exist."""
@@ -98,14 +89,17 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
                 {"detail": "Missing addresses"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        results = {address: check_local_recipient(address, create_if_missing=False) for address in addresses}
+        results = {
+            address: check_local_recipient(address, create_if_missing=False)
+            for address in addresses
+        }
         return Response(results)
 
     @action(
         detail=False,
         methods=["post"],
         url_path="deliver",
-        url_name="inbound-mta-deliver"
+        url_name="inbound-mta-deliver",
     )
     def deliver(self, request):
         """Handle incoming raw email (message/rfc822) from MTA."""
@@ -218,4 +212,3 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
         # All deliveries successful
         logger.info("All %d deliveries successful for inbound email.", success_count)
         return Response({"status": "ok", "delivered": success_count})
- 

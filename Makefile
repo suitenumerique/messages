@@ -482,6 +482,14 @@ widgets-start: ## start the widgets container
 	$(COMPOSE) up --force-recreate --build -d widgets-dev --wait
 .PHONY: widgets-start
 
+widgets-deploy: ## deploy the widgets to an S3 bucket
+	@## Error if the env vars MESSAGES_WIDGETS_S3_PATH is not set
+	@if [ -z "$$MESSAGES_WIDGETS_S3_PATH" ]; then \
+		echo "Error: MESSAGES_WIDGETS_S3_PATH is not set"; \
+		exit 1; \
+	fi; \
+	docker run --rm -ti -v .aws:/root/.aws -v `pwd`/src/widgets/dist:/aws amazon/aws-cli s3 cp --acl public-read --recursive . s3://$(MESSAGES_WIDGETS_S3_PATH)
+.PHONY: widgets-deploy
 
 api-update: ## Update the OpenAPI schema then frontend API client
 api-update: \

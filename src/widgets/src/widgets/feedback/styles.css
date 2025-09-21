@@ -51,6 +51,15 @@
   gap: 12px;
 }
 
+#email {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
 textarea {
   flex: 1;
   border: 1px solid #e0e0e0;
@@ -88,6 +97,8 @@ button[type="submit"]:hover {
 
 .success {
   color: #28a745;
+  display:table;
+  margin:50px auto;
 }
 
 .error {

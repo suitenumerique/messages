@@ -59,10 +59,10 @@ export const installHook = (widgetName: string) => {
 }
 
 // Loads another widget from the same directory
-export const injectScript = (url: string) => {
+export const injectScript = (url: string, type: string = "") => {
     const newScript = document.createElement('script');
     newScript.src = url;
-    newScript.type = 'module';
+    newScript.type = type;
     newScript.defer = true;
     document.body.appendChild(newScript);
 }

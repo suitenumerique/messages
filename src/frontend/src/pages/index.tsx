@@ -5,6 +5,7 @@ import { MainLayout } from "@/features/layouts/components/main";
 import { LanguagePicker } from "@/features/layouts/components/main/language-picker";
 import { AppLayout } from "@/features/layouts/components/main/layout";
 import { LeftPanel } from "@/features/layouts/components/main/left-panel";
+import { FeedbackWidget } from "@/features/ui/components/feedback-widget";
 
 export default function HomePage() {
 
@@ -35,6 +36,7 @@ export default function HomePage() {
         </HomeGutter>
         <Footer />
       </div>
+      <FeedbackWidget />
       </AppLayout>
   );
 }

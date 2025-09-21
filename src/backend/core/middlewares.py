@@ -1,9 +1,13 @@
-"""Custom Django middlewares"""
+"""
+Custom middleware for the messages application.
+"""
 
 from secrets import compare_digest
 
 from django.conf import settings
 from django.http import HttpResponse
+
+from corsheaders.middleware import CorsMiddleware
 
 
 class PrometheusAuthMiddleware:
@@ -24,3 +28,70 @@ class PrometheusAuthMiddleware:
                     return HttpResponse("Unauthorized", status=401)
 
         return self.get_response(request)
+
+
+class CustomCorsMiddleware(CorsMiddleware):
+    """
+    Custom CORS middleware that allows all origins for specific API paths.
+
+    This middleware extends the default CORS middleware to allow all origins
+    for paths matching /api/{version}/inbound/widget/* while maintaining the
+    existing CORS configuration for all other paths.
+    """
+
+    def _get_cors_headers_for_widget_api(self, request):
+        """
+        Get CORS headers for widget API requests - allows all origins, headers, and methods.
+
+        Args:
+            request: The Django request object
+
+        Returns:
+            dict: CORS headers for widget API
+        """
+        origin = request.META.get("HTTP_ORIGIN", "*")
+
+        headers = {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+        }
+
+        # Add preflight headers for OPTIONS requests
+        if request.method == "OPTIONS":
+            headers.update(
+                {
+                    "Access-Control-Allow-Methods": "*",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Max-Age": "86400",  # 24 hours
+                }
+            )
+
+        return headers
+
+    def __call__(self, request):
+        """
+        Process the request and response with custom CORS handling for widget API.
+        """
+
+        if request.path.startswith(f"/api/{settings.API_VERSION}/inbound/widget/"):
+            # Handle CORS for widget API requests manually
+            if request.method == "OPTIONS":
+                # Handle preflight requests
+                headers = self._get_cors_headers_for_widget_api(request)
+                response = HttpResponse(status=200)
+                for header, value in headers.items():
+                    response[header] = value
+                return response
+
+            # Process the request normally
+            response = self.get_response(request)
+
+            # Add CORS headers to the response
+            headers = self._get_cors_headers_for_widget_api(request)
+            for header, value in headers.items():
+                response[header] = value
+
+            return response
+
+        # Use default CORS behavior for all other paths
+        return super().__call__(request)

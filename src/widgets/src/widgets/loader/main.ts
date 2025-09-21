@@ -7,9 +7,7 @@ import { triggerEvent, listenEvent } from '../../shared/events'
 const widgetName = "loader";
 
 // The init event is sent from the embedding code
-listenEvent(widgetName, 'init', null, false, (e) => {
-
-    const args = (e as CustomEvent).detail || {};
+listenEvent(widgetName, 'init', null, false, (args) => {
 
     const htmlContent = `<div><button type="button" aria-label="${(args.label || 'Load widget').replace(/"/g, '\\"')}">${icon}</button></div>`;
 
@@ -50,7 +48,7 @@ listenEvent(widgetName, 'init', null, false, (e) => {
                 listenEvent(targetWidget, 'loaded', null, true, loadedCallback);
                 // If it isn't even loading, we need to inject the script
                 if (!getLoaded(targetWidget)) {
-                    injectScript(args.script);
+                    injectScript(args.script, args.scriptType || "");
                     setLoaded(targetWidget, 1);
                 }
             }

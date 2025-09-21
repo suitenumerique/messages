@@ -1,6 +1,8 @@
 import { Html, Head, Main, NextScript } from "next/document";
 import { useTranslation } from "react-i18next";
 
+
+
 export default function Document() {
   const { t } = useTranslation();
 
@@ -72,6 +74,13 @@ export default function Document() {
         <Main />
         <NextScript />
         <div id="portal-drag-preview" />
+        {process.env.FRONTEND_INJECT_JS && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: process.env.FRONTEND_INJECT_JS,
+            }}
+          />
+        )}
       </body>
     </Html>
   );

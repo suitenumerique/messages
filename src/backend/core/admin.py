@@ -191,19 +191,20 @@ class ChannelAdmin(admin.ModelAdmin):
     list_filter = ("type", "created_at")
     search_fields = ("name", "type")
     readonly_fields = ("created_at", "updated_at")
-    
+
     fieldsets = (
-        (None, {
-            "fields": ("name", "type", "settings")
-        }),
-        ("Target", {
-            "fields": ("mailbox", "maildomain"),
-            "description": "Specify either a mailbox or maildomain, but not both."
-        }),
-        ("Timestamps", {
-            "fields": ("created_at", "updated_at"),
-            "classes": ("collapse",)
-        }),
+        (None, {"fields": ("name", "type", "settings")}),
+        (
+            "Target",
+            {
+                "fields": ("mailbox", "maildomain"),
+                "description": "Specify either a mailbox or maildomain, but not both.",
+            },
+        ),
+        (
+            "Timestamps",
+            {"fields": ("created_at", "updated_at"), "classes": ("collapse",)},
+        ),
     )
 
 

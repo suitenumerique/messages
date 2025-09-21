@@ -10,6 +10,10 @@
         margin: 20px;
         background: #f5f5f5;
       }
+      * {
+        color: #666;
+        text-align: center;
+      }
       h1 {
         color: #333;
         text-align: center;
@@ -35,6 +39,7 @@
   <body>
     <a href="/">Back to index</a>
     <h1>Feedback Widget Demo</h1>
+    
     <script type="module" src="../src/widgets/feedback/main.ts" defer></script>
     <script>
       window._stmsg_widget = window._stmsg_widget || [];
@@ -44,5 +49,17 @@
         "channel": "xyz-xyz-xyz"
       }]);
     </script>
+
+    <button onclick='_stmsg_widget.push(["feedback", "close"]);'>Close</button>
+
+    <button onclick='
+      _stmsg_widget.push(["feedback", "init", {
+        "email": "test@test.com",
+        "title": "Do you have any feedback?",
+        "api": "http://localhost:8905/demo/api.json?",
+        "channel": "xyz-xyz-xyz"
+      }]);
+    '>Re-init with email</button>
+    
   </body>
 </html> 

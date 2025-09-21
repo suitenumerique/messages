@@ -6,11 +6,14 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from core.api.viewsets.blob import BlobViewSet
+from core.api.viewsets.channel import AdminChannelViewSet
 from core.api.viewsets.config import ConfigView
 from core.api.viewsets.contacts import ContactViewSet
 from core.api.viewsets.draft import DraftMessageView
 from core.api.viewsets.flag import ChangeFlagView
 from core.api.viewsets.import_message import ImportViewSet
+from core.api.viewsets.inbound.mta import InboundMTAViewSet
+from core.api.viewsets.inbound.widget import InboundWidgetViewSet
 from core.api.viewsets.label import LabelViewSet
 from core.api.viewsets.mailbox import MailboxViewSet
 from core.api.viewsets.mailbox_access import MailboxAccessViewSet
@@ -29,11 +32,7 @@ from core.api.viewsets.task import TaskDetailView
 from core.api.viewsets.thread import ThreadViewSet
 from core.api.viewsets.thread_access import ThreadAccessViewSet
 from core.api.viewsets.user import UserViewSet
-from core.api.viewsets.channel import AdminChannelViewSet
 from core.authentication.urls import urlpatterns as oidc_urls
-
-from core.api.viewsets.inbound.mta import InboundMTAViewSet
-from core.api.viewsets.inbound.widget import InboundWidgetViewSet
 
 # - Main endpoints
 router = DefaultRouter()
@@ -74,9 +73,7 @@ maildomain_nested_router.register(
 
 # Router for /inbound/
 inbound_nested_router = DefaultRouter()
-inbound_nested_router.register(
-    r"mta", InboundMTAViewSet, basename="inbound-mta"
-)
+inbound_nested_router.register(r"mta", InboundMTAViewSet, basename="inbound-mta")
 inbound_nested_router.register(
     r"widget", InboundWidgetViewSet, basename="inbound-widget"
 )
@@ -156,6 +153,18 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/metrics/maildomain_users/",
         MailDomainUsersMetricsApiView.as_view(),
         name="maildomain-users-metrics",
+    ),
+    # Alias for MTA check endpoint
+    path(
+        f"api/{settings.API_VERSION}/mta/check-recipients/",
+        InboundMTAViewSet.as_view({"post": "check"}),
+        name="mta-check-recipients",
+    ),
+    # Alias for MTA deliver endpoint
+    path(
+        f"api/{settings.API_VERSION}/mta/inbound-email/",
+        InboundMTAViewSet.as_view({"post": "deliver"}),
+        name="mta-inbound-email",
     ),
 ]
 
