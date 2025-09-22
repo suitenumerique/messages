@@ -6,7 +6,6 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from core.api.viewsets.blob import BlobViewSet
-from core.api.viewsets.channel import AdminChannelViewSet
 from core.api.viewsets.config import ConfigView
 from core.api.viewsets.contacts import ContactViewSet
 from core.api.viewsets.draft import DraftMessageView
@@ -44,7 +43,6 @@ router.register("threads", ThreadViewSet, basename="threads")
 router.register("labels", LabelViewSet, basename="labels")
 router.register("mailboxes", MailboxViewSet, basename="mailboxes")
 router.register("maildomains", AdminMailDomainViewSet, basename="admin-maildomains")
-router.register("channels", AdminChannelViewSet, basename="admin-channels")
 
 # Router for /threads/{thread_id}/accesses/
 thread_access_nested_router = DefaultRouter()
