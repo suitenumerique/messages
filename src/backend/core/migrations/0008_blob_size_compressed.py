@@ -3,14 +3,6 @@
 from django.db import migrations, models
 
 
-def set_size_compressed(apps, schema_editor):
-    Blob = apps.get_model('core', 'Blob')
-    for blob in Blob.objects.only("id", "raw_content", "size_compressed"):
-        if not blob.size_compressed:
-            blob.size_compressed = len(blob.raw_content)
-            blob.save(update_fields=["size_compressed"])
-
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -24,5 +16,4 @@ class Migration(migrations.Migration):
             field=models.PositiveIntegerField(default=0, help_text='Size of the compressed blob in bytes', verbose_name='compressed size'),
             preserve_default=False,
         ),
-        migrations.RunPython(set_size_compressed),
     ]

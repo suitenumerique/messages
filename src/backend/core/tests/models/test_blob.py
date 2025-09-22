@@ -1,8 +1,9 @@
 """Tests for blob compression functionality."""
-import pytest
-from django.conf import settings
 
-from core import factories, enums
+
+import pytest
+
+from core import enums, factories
 
 
 @pytest.mark.django_db
@@ -23,7 +24,9 @@ class TestBlobCompression:
 
         # Check sizes
         assert blob.size == len(content)  # Original size
-        assert blob.size_compressed == len(content)  # Should be the same as no compression
+        assert blob.size_compressed == len(
+            content
+        )  # Should be the same as no compression
         assert blob.compression == enums.CompressionTypeChoices.NONE
         assert blob.get_content() == content  # Content should be unchanged
 
@@ -43,7 +46,9 @@ class TestBlobCompression:
         assert blob.size == len(content)  # Original size
         assert blob.size_compressed < len(content)  # Compressed size should be smaller
         assert blob.compression == enums.CompressionTypeChoices.ZSTD
-        assert blob.get_content() == content  # Decompressed content should match original
+        assert (
+            blob.get_content() == content
+        )  # Decompressed content should match original
 
     def test_blob_compression_empty_content(self):
         """Test blob creation with empty content."""
@@ -71,5 +76,7 @@ class TestBlobCompression:
 
         # Verify compression ratio is significant
         compression_ratio = blob.size_compressed / blob.size
-        assert compression_ratio < 0.1  # Should compress to less than 10% of original size
+        assert (
+            compression_ratio < 0.1
+        )  # Should compress to less than 10% of original size
         assert blob.get_content() == content  # Verify data integrity
