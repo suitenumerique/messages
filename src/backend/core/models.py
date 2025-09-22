@@ -455,7 +455,7 @@ class Channel(BaseModel):
         constraints = [
             models.CheckConstraint(
                 check=(
-                    models.Q(mailbox__isnull=False) | models.Q(maildomain__isnull=False)
+                    models.Q(mailbox__isnull=False) ^ models.Q(maildomain__isnull=False)
                 ),
                 name="channel_has_target",
             ),

@@ -1,5 +1,5 @@
 // Shared utility for creating shadow DOM widgets
-export function createShadowWidget(widgetName: string, htmlContent: string, cssContent: string): ShadowRoot {
+export function createShadowWidget(widgetName: string, htmlContent: string, cssContent: string): HTMLDivElement {
   const id = `stmsg-widget-${widgetName}-shadow`;
   // Check if widget already exists
   const existingWidget = document.getElementById(id);
@@ -26,8 +26,5 @@ export function createShadowWidget(widgetName: string, htmlContent: string, cssC
   shadow.appendChild(style);
   shadow.appendChild(content);
   
-  // Append container to document body
-  document.body.appendChild(container);
-
-  return shadow;
+  return container;
 }

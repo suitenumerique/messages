@@ -61,5 +61,25 @@
       }]);
     '>Re-init with email</button>
     
+    <br/><br/>
+
+    <button onclick='
+      _stmsg_widget.push(["feedback", "init", {
+        "email": "test@test.com",
+        "title": "Do you have any feedback?",
+        "api": "/error",
+        "channel": "xyz-xyz-xyz"
+      }]);
+    '>Re-init with loading error</button>
+    
+    <button onclick='
+      _stmsg_widget.push(["feedback", "init", {
+        "email": "test@test.com",
+        "title": "Do you have any feedback?",
+        "api": "http://localhost:8905/demo/api-error.json?",
+        "channel": "xyz-xyz-xyz"
+      }]);
+    '>Re-init with submit error</button>
+    
   </body>
 </html> 

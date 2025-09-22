@@ -57,7 +57,6 @@
   padding: 12px;
   font-family: inherit;
   font-size: 14px;
-  outline: none;
 }
 
 textarea {
@@ -68,11 +67,6 @@ textarea {
   font-family: inherit;
   font-size: 14px;
   resize: none;
-  outline: none;
-}
-
-textarea:focus {
-  border-color: #000091;
 }
 
 button[type="submit"] {

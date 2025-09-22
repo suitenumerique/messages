@@ -11,10 +11,10 @@ from rest_framework import status, viewsets
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.decorators import action
 from rest_framework.exceptions import AuthenticationFailed
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core import models
+from core.api.permissions import IsAuthenticated
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import compose_email
 
@@ -39,8 +39,7 @@ class WidgetAuthentication(BaseAuthentication):
         except models.Channel.DoesNotExist as e:
             raise AuthenticationFailed("Invalid channel_id") from e
 
-        service_account = models.User()
-        return (service_account, {"channel": channel})
+        return (None, {"channel": channel})
 
 
 class InboundWidgetViewSet(viewsets.GenericViewSet):
@@ -84,7 +83,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         auth_data = request.auth
         channel = auth_data["channel"]
 
-        unverified_sender_email = data.get("email", "Unknown")
+        unverified_sender_email = data.get("email")
         message_text = data.get("textBody", "")
 
         if not unverified_sender_email:
@@ -112,6 +111,12 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
                 {"detail": "No mailbox configured for this channel"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+        if mailbox.contact and mailbox.contact.exists():
+            target_email = mailbox.contact.email
+            target_name = mailbox.contact.name
+        else:
+            target_email = str(mailbox)
+            target_name = str(mailbox)
 
         default_sender_email = (
             channel.settings.get("default_sender_email") or "widget@noreply.invalid"
@@ -128,17 +133,19 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             or "The following message was received from a widget:"
         )
 
+        escaped_email = html_escape(unverified_sender_email)
         signature = [
             (
                 "Sender",
-                f"<a href='mailto:{unverified_sender_email}'>{unverified_sender_email}</a> (❌ Unverified)",
+                f"<a href='mailto:{escaped_email}'>{escaped_email}</a> (❌ Unverified)",
             ),
             ("IP", request.META.get("REMOTE_ADDR")),  # TODO geoip
             (
                 "Page",
                 (
-                    f"<a href='{request.META.get('HTTP_REFERER')}' target='_blank' rel='noopener noreferrer'>"
-                    + f"{request.META.get('HTTP_REFERER')}</a>"
+                    f"<a href='{html_escape(request.META.get('HTTP_REFERER'))}'"
+                    + " target='_blank' rel='noopener noreferrer'>"
+                    + f"{html_escape(request.META.get('HTTP_REFERER'))}</a>"
                 ),
             ),
         ]
@@ -155,14 +162,20 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         parsed_email = {
             "subject": f"Message from {unverified_sender_email}",
             "from": {"name": sender_name, "email": sender_email},
-            "to": [{"name": mailbox.contact.name, "email": mailbox.contact.email}],
+            "to": [{"name": target_name, "email": target_email}],
             "date": timezone.now(),
             "htmlBody": [{"content": message_text}],
         }
 
-        deliver_inbound_message(
-            mailbox.contact.email, parsed_email, compose_email(parsed_email)
+        delivered = deliver_inbound_message(
+            target_email, parsed_email, compose_email(parsed_email)
         )
+
+        if not delivered:
+            return Response(
+                {"detail": "Failed to deliver message"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         logger.info(
             "Successfully created message from widget for channel %s, sender: %s",

@@ -12,6 +12,7 @@ type ConfigData = {
   emailPlaceholder: string;
   submitText: string;
   successText: string;
+  submitUrl: string;
 };
 
 type ConfigResponse = {
@@ -53,22 +54,22 @@ listenEvent(widgetName, 'init', null, false, async (args) => {
 
   const htmlContent = `<div class="wrapper">` +
       `<div class="header">` +
-        `<span>${title}</span>` +
+        `<span id="title"></span>` +
         `<button class="close-btn" id="close">×</button>` +
       `</div>` +
       `<form class="content">` +
-        `<textarea id="feedback-text" autocomplete="off" required placeholder="${placeholder}"></textarea>` +
-        `<input type="email" id="email" autocomplete="email" required placeholder="${emailPlaceholder}">` +
-        `<button type="submit" id="submit">${submitText}</button>` +
+        `<textarea id="feedback-text" autocomplete="off" required></textarea>` +
+        `<input type="email" id="email" autocomplete="email" required>` +
+        `<button type="submit" id="submit"></button>` +
         `<div id="status" class="status"></div>` +
       `</form>` +
     `</div>`;
 
   // Create shadow DOM widget
-  const shadowRoot = createShadowWidget(widgetName, htmlContent, styles);
-
-  triggerEvent(widgetName, 'opened');
+  const shadowContainer = createShadowWidget(widgetName, htmlContent, styles);
+  const shadowRoot = shadowContainer.shadowRoot!;
   
+  const titleSpan = shadowRoot.querySelector<HTMLSpanElement>('#title')!
   const submitBtn = shadowRoot.querySelector<HTMLButtonElement>('#submit')!
   const feedbackText = shadowRoot.querySelector<HTMLTextAreaElement>('#feedback-text')!
   const statusDiv = shadowRoot.querySelector<HTMLDivElement>('#status')!
@@ -76,8 +77,22 @@ listenEvent(widgetName, 'init', null, false, async (args) => {
   const emailInput = shadowRoot.querySelector<HTMLInputElement>('#email')!
   const form = shadowRoot.querySelector<HTMLFormElement>('form')!
 
+  titleSpan.textContent = title;
+  feedbackText.placeholder = placeholder;
+  emailInput.placeholder = emailPlaceholder;
+  submitBtn.textContent = submitText;
+
   if (args.email) {
     emailInput.remove();
+  }
+
+  const setStatus = (status: string, success: boolean) => {
+    statusDiv.innerHTML = '';
+    const statusSpan = document.createElement('span');
+    statusSpan.classList.add('status');
+    statusSpan.classList.add(success ? 'success' : 'error');
+    statusSpan.textContent = status;
+    statusDiv.appendChild(statusSpan);
   }
 
   form.addEventListener('submit', async (e) => {
@@ -94,7 +109,7 @@ listenEvent(widgetName, 'init', null, false, async (args) => {
         throw new Error("Missing value");
       }
     
-      const ret = await fetch(`${args.api}deliver/`, {
+      const ret = await fetch(configData.submitUrl || `${args.api}deliver/`, {
         'method': 'POST',
         'headers': {
           'Content-Type': 'application/json',
@@ -102,17 +117,23 @@ listenEvent(widgetName, 'init', null, false, async (args) => {
         },
         'body': JSON.stringify({ textBody: message, email })
       });
-      const retData = await ret.json();
+      let retData;
+      try {
+        retData = await ret.json();
+      } catch (error) {
+        throw new Error('Invalid response from server');
+      }
       
       if (!retData.success) throw new Error(retData.detail || 'Unknown error');
   
-      statusDiv.innerHTML = `<span class="success">${successText}</span>`
+      setStatus(successText, true);
+
       feedbackText.remove();
       emailInput.remove();
       submitBtn.remove();
       
     } catch (error) {
-      statusDiv.innerHTML = `<span class="error">${error instanceof Error ? error.message : 'Unknown error'}</span>`
+      setStatus(error instanceof Error ? error.message : 'Unknown error', false);
     }
   });
 
@@ -123,6 +144,11 @@ listenEvent(widgetName, 'init', null, false, async (args) => {
 
   closeBtn.addEventListener('click', closeWidget);
   listenEvent(widgetName, 'close', null, false, closeWidget);
+
+  document.body.appendChild(shadowContainer);
+
+  triggerEvent(widgetName, 'opened');
+  
 });
 
 installHook(widgetName);

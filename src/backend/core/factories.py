@@ -256,3 +256,15 @@ class AttachmentFactory(factory.django.DjangoModelFactory):
         kwargs = dict(kwargs)
         kwargs.pop("blob_size", None)
         return kwargs
+
+
+class ChannelFactory(factory.django.DjangoModelFactory):
+    """A factory to create channels for testing purposes."""
+
+    class Meta:
+        model = models.Channel
+
+    name = factory.Sequence(lambda n: f"Test Channel {n}")
+    type = factory.fuzzy.FuzzyChoice(["widget", "mta"])
+    settings = factory.Dict({"config": {"enabled": True}})
+    mailbox = factory.SubFactory(MailboxFactory)

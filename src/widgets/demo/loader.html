@@ -35,13 +35,28 @@
     <button onclick="document.documentElement.style.backgroundColor = '#000'">Make background dark</button>
     <button onclick="document.documentElement.style.backgroundColor = '#fff'">Make background light</button>
 
+    <button onclick='
+      _stmsg_widget.push(["loader", "init", {
+        "params": {
+          "title": "Do you have any feedback?",
+          "api": "http://localhost:8905/demo/api.json?",
+          "channel": "xyz-xyz-xyz"
+        },
+        "script": "/error",
+        "scriptType": "module",
+        "widget": "feedback",
+        "label": "Feedback Widget"
+      }]);
+    '>Re-init with loading error</button>
+    
     <script type="module" src="../src/widgets/loader/main.ts" defer></script>
     <script>
       window._stmsg_widget = window._stmsg_widget || [];
       _stmsg_widget.push(["loader", "init", {
         "params": {
           "title": "Do you have any feedback?",
-          "api": "http://localhost:8905/demo/api.json?"
+          "api": "http://localhost:8905/demo/api.json?",
+          "channel": "xyz-xyz-xyz"
         },
         "script": "../src/widgets/feedback/main.ts",
         "scriptType": "module",

@@ -53,15 +53,16 @@ class CustomCorsMiddleware(CorsMiddleware):
 
         headers = {
             "Access-Control-Allow-Origin": origin,
-            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Credentials": "false",
+            "Vary": "Origin, Content-Type, X-Channel-ID",
         }
 
         # Add preflight headers for OPTIONS requests
         if request.method == "OPTIONS":
             headers.update(
                 {
-                    "Access-Control-Allow-Methods": "*",
-                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, X-Channel-ID",
                     "Access-Control-Max-Age": "86400",  # 24 hours
                 }
             )
