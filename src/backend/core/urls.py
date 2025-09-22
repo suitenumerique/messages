@@ -21,6 +21,7 @@ from core.api.viewsets.maildomain import (
     AdminMailDomainUserViewSet,
     AdminMailDomainViewSet,
 )
+from core.api.viewsets.maildomain_access import MaildomainAccessViewSet
 from core.api.viewsets.message import MessageViewSet
 from core.api.viewsets.metrics import MailDomainUsersMetricsApiView
 from core.api.viewsets.mta import MTAViewSet
@@ -56,17 +57,23 @@ mailbox_access_nested_router.register(
     r"accesses", MailboxAccessViewSet, basename="mailboxaccess"
 )
 
-# Router for /maildomains/{maildomain_id}/mailboxes/
-mailbox_management_nested_router = DefaultRouter()
-mailbox_management_nested_router.register(
+# Router for /maildomains/{maildomain_id}/**/
+maildomain_nested_router = DefaultRouter()
+# Register /maildomains/{maildomain_id}/mailboxes/
+maildomain_nested_router.register(
     r"mailboxes",
     AdminMailDomainMailboxViewSet,
     basename="admin-maildomains-mailbox",
 )
-mailbox_management_nested_router.register(
+# Register /maildomains/{maildomain_pk}/users/
+maildomain_nested_router.register(
     r"users",
     AdminMailDomainUserViewSet,
     basename="admin-maildomains-user",
+)
+# Register /maildomains/{maildomain_pk}/accesses/
+maildomain_nested_router.register(
+    r"accesses", MaildomainAccessViewSet, basename="admin-maildomains-access"
 )
 
 urlpatterns = [
@@ -89,9 +96,7 @@ urlpatterns = [
                 ),
                 path(
                     "maildomains/<uuid:maildomain_pk>/",
-                    include(
-                        mailbox_management_nested_router.urls
-                    ),  # Includes /maildomains/{id}/mailboxes/, # Includes /maildomains/{id}/users/
+                    include(maildomain_nested_router.urls),
                 ),
                 *oidc_urls,
             ]

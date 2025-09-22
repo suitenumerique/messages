@@ -2411,6 +2411,177 @@
                 }
             }
         },
+        "/api/v1.0/maildomains/{maildomain_pk}/accesses/": {
+            "get": {
+                "operationId": "maildomains_accesses_list",
+                "description": "ViewSet for managing MaildomainAccess records for a specific Maildomain.\nAccess is allowed if the user is maildomain admin or a super user.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomain-accesses"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/MaildomainAccessRead"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "maildomains_accesses_create",
+                "description": "ViewSet for managing MaildomainAccess records for a specific Maildomain.\nAccess is allowed if the user is maildomain admin or a super user.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomain-accesses"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MaildomainAccessWriteRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MaildomainAccessWriteRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MaildomainAccessWrite"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/maildomains/{maildomain_pk}/accesses/{id}/": {
+            "get": {
+                "operationId": "maildomains_accesses_retrieve",
+                "description": "ViewSet for managing MaildomainAccess records for a specific Maildomain.\nAccess is allowed if the user is maildomain admin or a super user.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomain-accesses"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MaildomainAccessRead"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "maildomains_accesses_destroy",
+                "description": "ViewSet for managing MaildomainAccess records for a specific Maildomain.\nAccess is allowed if the user is maildomain admin or a super user.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomain-accesses"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
         "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/": {
             "get": {
                 "operationId": "maildomains_mailboxes_list",
@@ -4334,6 +4505,12 @@
                     "name"
                 ]
             },
+            "MailDomainAccessRoleChoices": {
+                "type": "string",
+                "enum": [
+                    "admin"
+                ]
+            },
             "MailDomainAdmin": {
                 "type": "object",
                 "description": "Serialize mail domains for admin view.",
@@ -4972,6 +5149,114 @@
                     "editor",
                     "sender",
                     "admin"
+                ]
+            },
+            "MaildomainAccessRead": {
+                "type": "object",
+                "description": "Serialize maildomain access information for read operations with nested user details.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "user": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/UserWithoutAbilities"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "role": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/MailDomainAccessRoleChoices"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "role",
+                    "updated_at",
+                    "user"
+                ]
+            },
+            "MaildomainAccessWrite": {
+                "type": "object",
+                "description": "Serializer for creating and updating maildomain access records.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "user": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "User ID (UUID) or email address"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/MailDomainAccessRoleChoices"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "role",
+                    "updated_at",
+                    "user"
+                ]
+            },
+            "MaildomainAccessWriteRequest": {
+                "type": "object",
+                "description": "Serializer for creating and updating maildomain access records.",
+                "properties": {
+                    "user": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "User ID (UUID) or email address"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/MailDomainAccessRoleChoices"
+                    }
+                },
+                "required": [
+                    "role",
+                    "user"
                 ]
             },
             "Message": {
@@ -5907,11 +6192,16 @@
                             "create_maildomains": {
                                 "type": "boolean",
                                 "description": "Can create maildomains"
+                            },
+                            "manage_maildomain_accesses": {
+                                "type": "boolean",
+                                "description": "Can manage maildomain accesses"
                             }
                         },
                         "required": [
                             "view_maildomains",
-                            "create_maildomains"
+                            "create_maildomains",
+                            "manage_maildomain_accesses"
                         ],
                         "readOnly": true
                     }

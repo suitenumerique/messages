@@ -350,7 +350,7 @@ class AdminMailDomainUserViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
         Get all users having an access to a mailbox or an admin access to the maildomain.
         """
         maildomain_pk = self.kwargs.get("maildomain_pk")
-        # Get all users with an email ending with maildomain.name or with an admin access to the maildomain
+
         return (
             models.User.objects.filter(
                 Q(mailbox_accesses__mailbox__domain_id=maildomain_pk)

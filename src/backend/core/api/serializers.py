@@ -817,6 +817,50 @@ class MailDomainAdminSerializer(AbilitiesModelSerializer):
         return super().get_abilities(instance)
 
 
+class MaildomainAccessReadSerializer(serializers.ModelSerializer):
+    """
+    Serialize maildomain access information for read operations with nested user details.
+    """
+
+    user = UserWithoutAbilitiesSerializer(read_only=True)
+    role = IntegerChoicesField(
+        choices_class=models.MailDomainAccessRoleChoices, read_only=True
+    )
+
+    class Meta:
+        model = models.MailDomainAccess
+        fields = ["id", "user", "role", "created_at", "updated_at"]
+        read_only_fields = fields
+
+
+class MaildomainAccessWriteSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating and updating maildomain access records.
+    """
+
+    role = IntegerChoicesField(choices_class=models.MailDomainAccessRoleChoices)
+    user = UserField(
+        queryset=models.User.objects.all(), help_text="User ID (UUID) or email address"
+    )
+
+    class Meta:
+        model = models.MailDomainAccess
+        fields = ["id", "user", "role", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        """Additional validation that applies to the whole object."""
+        if self.instance and "user" in attrs and attrs["user"] != self.instance.user:
+            raise serializers.ValidationError(
+                {
+                    "user": [
+                        "Cannot change the user of an existing maildomain access record. Delete and create a new one."
+                    ]
+                }
+            )
+        return attrs
+
+
 class MailDomainAdminWriteSerializer(serializers.ModelSerializer):
     """Serialize mail domains for creating / editing admin view."""
 

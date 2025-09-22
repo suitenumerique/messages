@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { DataGrid, usePagination } from "@openfun/cunningham-react";
+import { useEffect, useState } from "react";
+import { Button, DataGrid, usePagination } from "@openfun/cunningham-react";
 import { useRouter } from "next/router";
 import { Trans, useTranslation } from "react-i18next";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
@@ -12,15 +12,23 @@ import { Banner } from "@/features/ui/components/banner";
 import { CreateDomainAction } from "@/features/layouts/components/admin/domains-view/create-domain-action";
 import { useQueryClient } from "@tanstack/react-query";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
+import { ModalMaildomainManageAccesses } from "@/features/layouts/components/admin/modal-maildomain-manage-accesses";
 
 type AdminDataGridProps = {
   pagination: ReturnType<typeof usePagination>;
   domains: MailDomainAdmin[];
 }
 
+enum MailDomainEditAction {
+  MANAGE_ACCESS = 'manageAccess',
+}
+
 function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
   const router = useRouter();
   const { t, i18n } = useTranslation();
+  const canManageMaildomainAccesses = useAbility(Abilities.CAN_MANAGE_SOME_MAILDOMAIN_ACCESSES);
+  const [editedDomain, setEditedDomain] = useState<MailDomainAdmin | null>(null);
+  const [editAction, setEditAction] = useState<MailDomainEditAction | null>(null);
   const columns = [
     {
       id: "name",
@@ -44,6 +52,19 @@ function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
       headerName: t("admin_maildomains_list.datagrid_headers.updated_at"),
       renderCell: ({ row }: { row: MailDomainAdmin }) => new Date(row.updated_at).toLocaleDateString(i18n.resolvedLanguage),
     },
+    ...(canManageMaildomainAccesses ? [{
+      id: "actions",
+      size: 130,
+      headerName: t("admin_maildomains_list.datagrid_headers.actions"),
+      renderCell: ({ row }: { row: MailDomainAdmin }) => (
+        <ActionsCell
+          domain={row}
+          onManageAccess={() => {
+            setEditAction(MailDomainEditAction.MANAGE_ACCESS)
+            setEditedDomain(row)
+          }} />
+      )
+    }] : []),
   ];
 
   return (
@@ -55,6 +76,16 @@ function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
         enableSorting={false}
         onSortModelChange={() => undefined}
       />
+      {canManageMaildomainAccesses && editedDomain && (
+        <ModalMaildomainManageAccesses
+          domain={editedDomain!}
+          isOpen={!!editedDomain && editAction === MailDomainEditAction.MANAGE_ACCESS}
+          onClose={() => {
+            setEditedDomain(null)
+            setEditAction(null)
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -64,7 +95,8 @@ const AdminPageContent = () => {
   const { t } = useTranslation();
   const { mailDomains, isLoading, error, pagination } = useAdminMailDomain();
   const canCreateMaildomain = useAbility(Abilities.CAN_CREATE_MAILDOMAINS);
-  const shouldRedirect = !canCreateMaildomain && !isLoading && mailDomains.length === 1;
+  const canManageMaildomainAccesses = useAbility(Abilities.CAN_MANAGE_SOME_MAILDOMAIN_ACCESSES);
+  const shouldRedirect = !canCreateMaildomain && !canManageMaildomainAccesses && !isLoading && mailDomains.length === 1;
 
   /**
    * Auto-navigate to first domain if there's only one and the
@@ -72,22 +104,22 @@ const AdminPageContent = () => {
    */
   useEffect(() => {
     if (shouldRedirect) {
-        router.replace(`/domain/${mailDomains[0].id}`);
+      router.replace(`/domain/${mailDomains[0].id}`);
     }
   }, [router, shouldRedirect]);
 
   if (isLoading || shouldRedirect) {
     return (
-        <div className="admin-page__loading">
-          <Spinner />
-        </div>
+      <div className="admin-page__loading">
+        <Spinner />
+      </div>
     )
   }
 
   if (error) {
     return (
       <Banner type="error">
-          {t("admin_maildomains_list.loading_error")}
+        {t("admin_maildomains_list.loading_error")}
       </Banner>
     );
   }
@@ -117,8 +149,8 @@ export default function AdminPage() {
       <ToasterItem>
         <Trans i18nKey="admin_maildomains_list.creation_success" values={{ domain: domain.name }} components={{ strong: <strong /> }} />
       </ToasterItem>, {
-        toastId: `create-domain-success:${domain.id}`,
-      }
+      toastId: `create-domain-success:${domain.id}`,
+    }
     )
   };
 
@@ -127,4 +159,18 @@ export default function AdminPage() {
       <AdminPageContent />
     </AdminLayout>
   );
+}
+
+const ActionsCell = ({ domain, onManageAccess }: { domain: MailDomainAdmin, onManageAccess: () => void }) => {
+  const { t } = useTranslation();
+  const canManageAccesses = useAbility(Abilities.CAN_MANAGE_MAILDOMAIN_ACCESSES, domain);
+  if (!canManageAccesses) return null;
+
+  return (
+    <Button
+      size="nano"
+      color="secondary"
+      onClick={onManageAccess}
+    >{t("admin_maildomains_list.actions.manage_access")}</Button>
+  )
 }

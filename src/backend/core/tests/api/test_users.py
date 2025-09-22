@@ -43,6 +43,7 @@ def test_api_users_retrieve_me_authenticated():
         "abilities": {
             "create_maildomains": False,
             "view_maildomains": False,
+            "manage_maildomain_accesses": False,
         },
     }
 
@@ -61,6 +62,7 @@ def test_api_users_retrieve_me_with_abilities_regular_user():
     abilities = data["abilities"]
     assert abilities["create_maildomains"] is False
     assert abilities["view_maildomains"] is False
+    assert abilities["manage_maildomain_accesses"] is False
 
 
 def test_api_users_retrieve_me_with_abilities_user_with_access():
@@ -85,6 +87,7 @@ def test_api_users_retrieve_me_with_abilities_user_with_access():
     abilities = data["abilities"]
     assert abilities["create_maildomains"] is False
     assert abilities["view_maildomains"] is True
+    assert abilities["manage_maildomain_accesses"] is True
 
 
 def test_api_users_retrieve_me_with_abilities_superuser_staff():
@@ -101,6 +104,7 @@ def test_api_users_retrieve_me_with_abilities_superuser_staff():
     abilities = data["abilities"]
     assert abilities["create_maildomains"] is True
     assert abilities["view_maildomains"] is True
+    assert abilities["manage_maildomain_accesses"] is True
 
 
 def test_api_users_retrieve_me_with_abilities_superuser_not_staff():
@@ -117,6 +121,7 @@ def test_api_users_retrieve_me_with_abilities_superuser_not_staff():
     abilities = data["abilities"]
     assert abilities["create_maildomains"] is True
     assert abilities["view_maildomains"] is True
+    assert abilities["manage_maildomain_accesses"] is True
 
 
 def test_api_users_retrieve_me_with_abilities_staff_not_superuser():
@@ -133,6 +138,7 @@ def test_api_users_retrieve_me_with_abilities_staff_not_superuser():
     abilities = data["abilities"]
     assert abilities["create_maildomains"] is False
     assert abilities["view_maildomains"] is False
+    assert abilities["manage_maildomain_accesses"] is False
 
 
 def test_api_users_retrieve_me_with_abilities_superuser_staff_with_access():
@@ -157,6 +163,7 @@ def test_api_users_retrieve_me_with_abilities_superuser_staff_with_access():
     abilities = data["abilities"]
     assert abilities["create_maildomains"] is True
     assert abilities["view_maildomains"] is True
+    assert abilities["manage_maildomain_accesses"] is True
 
 
 def test_users_me_endpoint_includes_abilities_by_default():

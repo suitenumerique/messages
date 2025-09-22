@@ -419,7 +419,7 @@
         }
       },
       "manage_accesses_modal": {
-        "title": "Manage accesses",
+        "title": "Manage {{entity}} accesses",
         "roles": {
           "admin": "Administrateur",
           "editor": "Editor",
@@ -444,10 +444,11 @@
         "datagrid_headers": {
           "name": "Domain",
           "created_at": "Created at",
-          "updated_at": "Updated at"
+          "updated_at": "Updated at",
+          "actions": "Actions"
         },
         "actions": {
-          "manage_access": "Manage access",
+          "manage_access": "Manage accesses",
           "new_domain": "New domain"
         },
         "creation_success": "The domain <strong>{{domain}}</strong> has been created successfully.",
@@ -932,7 +933,7 @@
         }
       },
       "manage_accesses_modal": {
-        "title": "Gérer les accès à {{mailbox}}",
+        "title": "Gérer les accès à {{entity}}",
         "roles": {
           "admin": "Administrateur",
           "editor": "Éditeur",
@@ -957,7 +958,8 @@
         "datagrid_headers": {
           "name": "Domaine",
           "created_at": "Créé le",
-          "updated_at": "Modifié le"
+          "updated_at": "Modifié le",
+          "actions": "Actions"
         },
         "actions": {
           "manage_access": "Gérer les accès",

@@ -14,4 +14,6 @@ export type UserWithAbilitiesAbilities = {
   readonly view_maildomains: boolean;
   /** Can create maildomains */
   readonly create_maildomains: boolean;
+  /** Can manage maildomain accesses */
+  readonly manage_maildomain_accesses: boolean;
 };

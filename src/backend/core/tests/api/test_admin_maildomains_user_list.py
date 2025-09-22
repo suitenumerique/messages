@@ -56,13 +56,20 @@ class TestAdminMaildomainsUserList:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_admin_maildomains_user_list_allowed_domain_admin(self, api_client):
-        """Test that domain admins can access the endpoint."""
+        """
+        Test that domain admins can access the endpoint.
+        """
         domain = factories.MailDomainFactory(name="sardine.local")
         admin_user = factories.UserFactory(email="admin@sardine.local")
         factories.MailDomainAccessFactory(
             maildomain=domain,
             user=admin_user,
             role=enums.MailDomainAccessRoleChoices.ADMIN,
+        )
+        mailbox_user = factories.UserFactory(email="mailbox_user@sardine.local")
+        factories.MailboxAccessFactory(
+            mailbox__domain=domain,
+            user=mailbox_user,
         )
 
         url = reverse(
@@ -71,6 +78,9 @@ class TestAdminMaildomainsUserList:
         api_client.force_authenticate(user=admin_user)
         response = api_client.get(url)
         assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 2
+        for user in response.data:
+            assert user["email"] in [admin_user.email, mailbox_user.email]
 
     def test_admin_maildomains_user_list_basic(self, api_client):
         """

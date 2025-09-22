@@ -8,6 +8,7 @@ export * from "./labels/labels";
 export * from "./mailboxes/mailboxes";
 export * from "./mailbox-accesses/mailbox-accesses";
 export * from "./maildomains/maildomains";
+export * from "./maildomain-accesses/maildomain-accesses";
 export * from "./admin-maildomain-user/admin-maildomain-user";
 export * from "./mta/mta";
 export * from "./placeholders/placeholders";

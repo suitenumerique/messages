@@ -142,7 +142,7 @@ class TestMailboxAccessViewSet:
         )
 
     # --- LIST Tests ---
-    def test_list_as_super_user_for_managed_mailbox(
+    def test_admin_maildomain_mailbox_list_as_super_user_for_managed_mailbox(
         self,
         api_client,
         super_user,
@@ -165,7 +165,7 @@ class TestMailboxAccessViewSet:
         }
         assert response.data["count"] == 2
 
-    def test_list_as_domain_admin_for_managed_mailbox(
+    def test_admin_maildomain_mailbox_list_as_domain_admin_for_managed_mailbox(
         self,
         api_client,
         domain_admin_user,
@@ -189,7 +189,7 @@ class TestMailboxAccessViewSet:
         }
         assert response.data["count"] == 2
 
-    def test_list_as_mailbox_admin_for_their_mailbox(
+    def test_admin_maildomain_mailbox_list_as_mailbox_admin_for_their_mailbox(
         self,
         api_client,
         domain_admin_user,
@@ -221,7 +221,7 @@ class TestMailboxAccessViewSet:
         }
         assert response.data["count"] == 3
 
-    def test_list_as_mailbox_admin_for_other_mailbox_forbidden(
+    def test_admin_maildomain_mailbox_list_as_mailbox_admin_for_other_mailbox_forbidden(
         self, api_client, mailbox1_admin_user, mailbox2_domain1
     ):
         """Mailbox admin should NOT see accesses for a mailbox they don't administer."""
@@ -229,7 +229,7 @@ class TestMailboxAccessViewSet:
         response = api_client.get(self.list_create_url(mailbox_id=mailbox2_domain1.pk))
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_list_as_regular_user_forbidden(
+    def test_admin_maildomain_mailbox_list_as_regular_user_forbidden(
         self, api_client, regular_user, mailbox1_domain1
     ):
         """Regular users should not be able to list mailbox accesses."""
@@ -237,7 +237,9 @@ class TestMailboxAccessViewSet:
         response = api_client.get(self.list_create_url(mailbox_id=mailbox1_domain1.pk))
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_list_unauthenticated(self, api_client, mailbox1_domain1):
+    def test_admin_maildomain_mailbox_list_unauthenticated(
+        self, api_client, mailbox1_domain1
+    ):
         """Unauthenticated requests to list mailbox accesses should be rejected."""
         response = api_client.get(self.list_create_url(mailbox_id=mailbox1_domain1.pk))
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -246,7 +248,7 @@ class TestMailboxAccessViewSet:
     @pytest.mark.parametrize(
         "admin_type", ["domain_admin", "mailbox_admin", "super_user"]
     )
-    def test_create_access_success(
+    def test_admin_maildomain_mailbox_create_access_success(
         self,
         api_client,
         admin_type,
@@ -307,7 +309,7 @@ class TestMailboxAccessViewSet:
             mailbox=mailbox1_domain1, user=user_alpha, role=MailboxRoleChoices.EDITOR
         ).exists()
 
-    def test_create_access_by_mailbox_admin_for_unmanaged_mailbox_forbidden(
+    def test_admin_maildomain_mailbox_create_access_by_mailbox_admin_for_unmanaged_mailbox_forbidden(
         self, api_client, mailbox1_admin_user, mailbox1_domain2, user_beta
     ):
         """Mailbox admin should not be able to create accesses for unmanaged mailboxes."""
@@ -318,7 +320,7 @@ class TestMailboxAccessViewSet:
         )  # Attempt on mailbox1_domain2
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_create_access_by_domain_admin_for_unmanaged_domain_mailbox_forbidden(
+    def test_admin_maildomain_mailbox_create_access_by_domain_admin_for_unmanaged_domain_mailbox_forbidden(
         self, api_client, domain_admin_user, mailbox1_domain2, user_beta
     ):
         """Domain admin should not be able to create accesses for mailboxes in unmanaged domains."""
@@ -333,7 +335,7 @@ class TestMailboxAccessViewSet:
     @pytest.mark.parametrize(
         "admin_type", ["domain_admin", "mailbox_admin", "super_user"]
     )
-    def test_retrieve_access_success(
+    def test_admin_maildomain_mailbox_retrieve_access_success(
         self,
         api_client,
         admin_type,
@@ -359,7 +361,7 @@ class TestMailboxAccessViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["id"] == str(access_m1d1_alpha.pk)
 
-    def test_retrieve_access_for_wrong_mailbox_forbidden(
+    def test_admin_maildomain_mailbox_retrieve_access_for_wrong_mailbox_forbidden(
         self,
         api_client,
         domain_admin_user,
@@ -379,7 +381,7 @@ class TestMailboxAccessViewSet:
     @pytest.mark.parametrize(
         "admin_type", ["domain_admin", "mailbox_admin", "super_user"]
     )
-    def test_update_access_role_success(
+    def test_admin_maildomain_mailbox_update_access_role_success(
         self,
         admin_type,
         api_client,
@@ -427,7 +429,7 @@ class TestMailboxAccessViewSet:
     @pytest.mark.parametrize(
         "admin_type", ["domain_admin", "mailbox_admin", "super_user"]
     )
-    def test_delete_access_success(
+    def test_admin_maildomain_mailbox_delete_access_success(
         self,
         api_client,
         admin_type,
@@ -454,7 +456,7 @@ class TestMailboxAccessViewSet:
         assert not models.MailboxAccess.objects.filter(pk=access_m1d1_alpha.pk).exists()
 
     # --- EXCLUDE ABILITIES Tests ---
-    def test_list_mailbox_access_excludes_abilities_from_nested_users(
+    def test_admin_maildomain_mailbox_list_mailbox_access_excludes_abilities_from_nested_users(
         self,
         api_client,
         domain_admin_user,
@@ -479,7 +481,7 @@ class TestMailboxAccessViewSet:
             assert "email" in user_details
             assert "full_name" in user_details
 
-    def test_retrieve_mailbox_access_excludes_abilities_from_nested_user(
+    def test_admin_maildomain_mailbox_retrieve_mailbox_access_excludes_abilities_from_nested_user(
         self,
         api_client,
         domain_admin_user,
@@ -502,7 +504,7 @@ class TestMailboxAccessViewSet:
         assert "email" in user_details
         assert "full_name" in user_details
 
-    def test_mailbox_access_excludes_abilities_with_superuser(
+    def test_admin_maildomain_mailbox_mailbox_access_excludes_abilities_with_superuser(
         self,
         api_client,
         domain_admin_user,
@@ -535,7 +537,7 @@ class TestMailboxAccessViewSet:
         user_details = access_data["user_details"]
         assert "abilities" not in user_details
 
-    def test_mailbox_access_accessed_at_null_by_default(
+    def test_admin_maildomain_mailbox_mailbox_access_accessed_at_null_by_default(
         self,
         access_m1d1_alpha,
     ):
@@ -543,7 +545,7 @@ class TestMailboxAccessViewSet:
 
         assert access_m1d1_alpha.accessed_at is None
 
-    def test_mailbox_access_mark_accessed_updates_accessed_at(
+    def test_admin_maildomain_mailbox_mailbox_access_mark_accessed_updates_accessed_at(
         self,
         access_m1d1_alpha,
     ):
