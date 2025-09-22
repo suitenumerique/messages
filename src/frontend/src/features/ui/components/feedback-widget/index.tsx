@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
 interface FeedbackWidgetProps {
-  title?: string;
   apiUrl?: string;
   widgetPath?: string;
   widget?: string;

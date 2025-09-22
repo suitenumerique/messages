@@ -232,7 +232,8 @@ services:
     profiles:
       - frontend-tools
     build:
-      dockerfile: ./src/frontend/Dockerfile
+      context: ./src/frontend
+      dockerfile: Dockerfile
     volumes:
       - ./src/backend/core/api/openapi.json:/home/backend/core/api/openapi.json
       - ./src/frontend/:/home/frontend/
@@ -243,7 +244,8 @@ services:
       - frontend-tools
     platform: linux/amd64
     build:
-      dockerfile: ./src/frontend/Dockerfile
+      context: ./src/frontend
+      dockerfile: Dockerfile
     volumes:
       - ./src/backend/core/api/openapi.json:/home/backend/core/api/openapi.json
       - ./src/frontend/:/home/frontend/

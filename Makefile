@@ -68,7 +68,7 @@ create-env-files: \
 	env.d/development/frontend.local \
 	env.d/development/mta-in.local \
 	env.d/development/mta-out.local \
-	env.d/development/socks-proxy.local
+	env.d/development/socks-proxy.local \
 	env.d/development/widgets.local
 .PHONY: create-env-files
 
@@ -416,30 +416,30 @@ help:
 .PHONY: help
 
 front-shell: ## open a shell in the frontend container
-	@$(COMPOSE) run --rm frontend-tools /bin/sh
+	@$(COMPOSE) run --rm --build frontend-tools /bin/sh
 .PHONY: front-shell
 
 # Front
 front-install: ## install the frontend locally
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
-	$(COMPOSE) run --rm frontend-tools npm install $${args:-${1}}
+	$(COMPOSE) run --rm --build frontend-tools npm install $${args:-${1}}
 .PHONY: front-install
 
 front-install-frozen: ## install the frontend locally, following the frozen lockfile
 	@echo "Installing frontend dependencies, this might take a few minutes..."
-	@$(COMPOSE) run --rm frontend-tools npm ci
+	@$(COMPOSE) run --rm --build frontend-tools npm ci
 .PHONY: front-install-frozen
 
 front-install-frozen-amd64: ## install the frontend locally, following the frozen lockfile
-	@$(COMPOSE) run --rm frontend-tools-amd64 npm ci
+	@$(COMPOSE) run --rm --build frontend-tools-amd64 npm ci
 .PHONY: front-install-frozen-amd64
 
 front-build: ## build the frontend locally
-	@$(COMPOSE) run --rm frontend-tools npm run build
+	@$(COMPOSE) run --rm --build frontend-tools npm run build
 .PHONY: front-build
 
 front-i18n-extract: ## Extract the frontend translation inside a json to be used for crowdin
-	@$(COMPOSE) run --rm frontend-tools npm run i18n:extract
+	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:extract
 .PHONY: front-i18n-extract
 
 front-i18n-generate: ## Generate the frontend json files used for crowdin
@@ -448,7 +448,7 @@ front-i18n-generate: ## Generate the frontend json files used for crowdin
 .PHONY: front-i18n-generate
 
 front-i18n-compile: ## Format the crowin json files used deploy to the apps
-	@$(COMPOSE) run --rm frontend-tools npm run i18n:deploy
+	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:deploy
 .PHONY: front-i18n-compile
 
 back-api-update: ## Update the OpenAPI schema
@@ -456,7 +456,7 @@ back-api-update: ## Update the OpenAPI schema
 .PHONY: back-api-update
 
 front-api-update: ## Update the frontend API client
-	@$(COMPOSE) run --rm frontend-tools npm run api:update
+	@$(COMPOSE) run --rm --build frontend-tools npm run api:update
 .PHONY: front-api-update
 
 # Widgets

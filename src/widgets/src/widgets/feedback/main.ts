@@ -23,8 +23,8 @@ type ConfigResponse = {
 
 listenEvent(widgetName, 'init', null, false, async (args) => {
 
-  if (!args.api) {
-    console.error("Feedback widget requires an API URL");
+  if (!args.api || !args.channel) {
+    console.error("Feedback widget requires an API URL and a channel ID");
     return;
   }
 

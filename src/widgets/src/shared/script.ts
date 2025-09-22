@@ -35,16 +35,18 @@ export const installHook = (widgetName: string) => {
 
     if (getLoaded(widgetName) !== 2) {
         // Replace the push method of the _stmsg_widget array used for communication between the widget and the page
-        W.push = (elt: WidgetEvent): number => {
-            // If the target widget is loaded, fire the event
-            if (getLoaded(elt[0]) === 2) {
-                triggerEvent(elt[0], elt[1], elt[2]);
-            // If not, actually add to the queue
-            } else {
-                W[W.length] = elt;
+        W.push = ((...elts: WidgetEvent[]): number => {
+            for (const elt of elts) {
+                // If the target widget is loaded, fire the event
+                if (getLoaded(elt[0]) === 2) {
+                    triggerEvent(elt[0], elt[1], elt[2]);
+                } else {
+                    W[W.length] = elt;
+                }
             }
             return W.length;
-        }
+        }) as typeof Array.prototype.push;
+        
         setLoaded(widgetName, 2);
 
         // Empty the existing array and re-push all events that were received before the hook was installed

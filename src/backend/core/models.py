@@ -452,6 +452,14 @@ class Channel(BaseModel):
         verbose_name = _("channel")
         verbose_name_plural = _("channels")
         ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(mailbox__isnull=False) | models.Q(maildomain__isnull=False)
+                ),
+                name="channel_has_target",
+            ),
+        ]
 
     def __str__(self):
         return self.name

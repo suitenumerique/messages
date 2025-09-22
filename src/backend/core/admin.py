@@ -191,6 +191,7 @@ class ChannelAdmin(admin.ModelAdmin):
     list_filter = ("type", "created_at")
     search_fields = ("name", "type")
     readonly_fields = ("created_at", "updated_at")
+    autocomplete_fields = ("mailbox", "maildomain")
 
     fieldsets = (
         (None, {"fields": ("name", "type", "settings")}),
