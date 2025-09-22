@@ -17,6 +17,7 @@ from django.contrib.auth.base_user import AbstractBaseUser
 from django.core import validators
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
+from django.db.models import Case, Q, When
 from django.utils import timezone
 from django.utils.html import escape
 from django.utils.text import slugify
@@ -629,6 +630,88 @@ class Mailbox(BaseModel):
             MailboxAbilities.CAN_SEND_MESSAGES: can_send,
             MailboxAbilities.CAN_MANAGE_LABELS: can_modify,
         }
+
+    def get_validated_signature(self, signature_id: str, user: User):
+        """Helper method to validate and retrieve a signature template.
+
+        Args:
+            signature_id: ID of the signature template
+            user: User making the request
+
+        Returns:
+            MessageTemplate if valid and accessible, None otherwise
+        """
+        signature = None
+        # Check for forced signature with mailbox having priority over domain
+        forced_signature = (
+            MessageTemplate.objects.filter(
+                Q(mailbox=self) | Q(maildomain=self.domain),
+                type=MessageTemplateTypeChoices.SIGNATURE,
+                is_forced=True,
+                is_active=True,
+            )
+            .order_by(
+                # mailbox signatures first (mailbox_id not null), then domain signatures
+                Case(
+                    When(mailbox__isnull=False, then=0),
+                    default=1,
+                )
+            )
+            .first()
+        )
+
+        signature = forced_signature if forced_signature else None
+        if not signature and not signature_id:
+            return None
+
+        if not signature and signature_id:
+            try:
+                signature = MessageTemplate.objects.get(
+                    id=signature_id,
+                    type=MessageTemplateTypeChoices.SIGNATURE,
+                    is_active=True,
+                )
+            except MessageTemplate.DoesNotExist:
+                logger.error("Signature template not found with id: %s", signature_id)
+                return None
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.error("Error fetching signature template: %s", str(e))
+                return None
+
+            # Verify signature is in sender scope
+            in_sender_scope = (
+                signature.mailbox_id and signature.mailbox_id == self.id
+            ) or (signature.maildomain_id and signature.maildomain_id == self.domain_id)
+            if not in_sender_scope:
+                logger.warning(
+                    "User %s attempted to use signature %s outside sender scope",
+                    user.id,
+                    signature_id,
+                )
+                return None
+
+            # Verify user has access to the signature template
+            user_has_access = False
+            # Check if user has access through mailbox
+            if signature.mailbox:
+                user_has_access = signature.mailbox.accesses.filter(user=user).exists()
+            # Check if user has access through maildomain
+            elif signature.maildomain:
+                user_has_access = (
+                    signature.maildomain.accesses.filter(user=user).exists()
+                    or signature.maildomain.mailbox_set.filter(
+                        accesses__user=user
+                    ).exists()
+                )
+            if not user_has_access:
+                logger.warning(
+                    "User %s attempted to use unauthorized signature %s",
+                    user.id,
+                    signature_id,
+                )
+                return None
+
+        return signature if signature.is_active else None
 
 
 class MailboxAccess(BaseModel):
@@ -1742,7 +1825,8 @@ class MessageTemplate(BaseModel):
         except (json.JSONDecodeError, AttributeError):
             return None
 
-    def render_template(self, user: User) -> Dict[str, str]:
+    # TODO: add instead of user use contact and user is optional
+    def render_template(self, user: User = None) -> Dict[str, str]:
         """
         Render the template with the given context.
 
