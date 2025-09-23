@@ -65,7 +65,7 @@ class DeliveryMilter(Milter.Base):
             status_code, response = mda_api_call(
                 "check-recipients/",
                 "application/json",
-                json.dumps({"addresses": [clean_to]}, separators=(',', ':')).encode("utf-8"),
+                json.dumps({"addresses": [clean_to]}, separators=(",", ":")).encode("utf-8"),
                 {},
             )
 
