@@ -77,7 +77,10 @@ class UserAbilities(models.TextChoices):
 
     CAN_VIEW_DOMAIN_ADMIN = "view_maildomains", "Can view domain admin"
     CAN_CREATE_MAILDOMAINS = "create_maildomains", "Can create maildomains"
-    CAN_MANAGE_MAILDOMAIN_ACCESSES = "manage_maildomain_accesses", "Can manage maildomain accesses"
+    CAN_MANAGE_MAILDOMAIN_ACCESSES = (
+        "manage_maildomain_accesses",
+        "Can manage maildomain accesses",
+    )
 
 
 class CRUDAbilities(models.TextChoices):

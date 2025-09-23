@@ -18,7 +18,6 @@ from core.api.viewsets.mailbox_access import MailboxAccessViewSet
 # Import the viewsets from the correctly named file
 from core.api.viewsets.maildomain import (
     AdminMailDomainMailboxViewSet,
-    AdminMailDomainUserViewSet,
     AdminMailDomainViewSet,
 )
 from core.api.viewsets.maildomain_access import MaildomainAccessViewSet
@@ -57,19 +56,13 @@ mailbox_access_nested_router.register(
     r"accesses", MailboxAccessViewSet, basename="mailboxaccess"
 )
 
-# Router for /maildomains/{maildomain_id}/**/
+# Router for /maildomains/{maildomain_pk}/**/
 maildomain_nested_router = DefaultRouter()
-# Register /maildomains/{maildomain_id}/mailboxes/
+# Register /maildomains/{maildomain_pk}/mailboxes/
 maildomain_nested_router.register(
     r"mailboxes",
     AdminMailDomainMailboxViewSet,
     basename="admin-maildomains-mailbox",
-)
-# Register /maildomains/{maildomain_pk}/users/
-maildomain_nested_router.register(
-    r"users",
-    AdminMailDomainUserViewSet,
-    basename="admin-maildomains-user",
 )
 # Register /maildomains/{maildomain_pk}/accesses/
 maildomain_nested_router.register(

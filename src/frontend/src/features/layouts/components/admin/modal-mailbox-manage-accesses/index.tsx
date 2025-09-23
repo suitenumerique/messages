@@ -1,7 +1,7 @@
 import { ShareModal } from "@gouvfr-lasuite/ui-kit";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MailboxAccessNestedUser, MailboxRoleChoices, MailboxAdmin, useMailboxesAccessesCreate, useMailboxesAccessesDestroy, useMailboxesAccessesUpdate, useMaildomainsUsersList, UserWithoutAbilities } from "@/features/api/gen";
+import { MailboxAccessNestedUser, MailboxRoleChoices, MailboxAdmin, useMailboxesAccessesCreate, useMailboxesAccessesDestroy, useMailboxesAccessesUpdate, UserWithoutAbilities, useUsersList } from "@/features/api/gen";
 import MailboxHelper from "@/features/utils/mailbox-helper";
 
 type ModalMailboxManageAccessesProps = {
@@ -20,7 +20,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
     const { mutate: deleteMailboxAccess } = useMailboxesAccessesDestroy({ mutation: { onSuccess: onAccessChange } });
     const mailbox_write_roles: MailboxRoleChoices[] = [MailboxRoleChoices.admin, MailboxRoleChoices.editor];
     const hasOnlyOneEditor = (mailbox?.accesses || []).filter((a) => mailbox_write_roles.includes(a.role)).length === 1;
-    const searchUsersQuery = useMaildomainsUsersList(domainId, { q: searchQuery });
+    const searchUsersQuery = useUsersList({ maildomain_pk: domainId, q: searchQuery }, { query: { enabled: !!searchQuery.length } });
 
     const getAccessUser = (user: UserWithoutAbilities) => {
         return {
@@ -75,11 +75,20 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
         }
     });
 
+    const handleSearchUsers = (query: string) => {
+        const q = query.trim();
+        if (q.length >= 3) {
+            setSearchQuery(q);
+        } else if (searchQuery != "") {
+            setSearchQuery("");
+        }
+    }
+
     if (!mailbox) return null;
 
     return (
         <ShareModal<UserWithoutAbilities, UserWithoutAbilities, MailboxAccessNestedUser>
-            modalTitle={t('manage_accesses_modal.title', { mailbox: MailboxHelper.toString(mailbox) })}
+            modalTitle={t('manage_accesses_modal.title', { entity: MailboxHelper.toString(mailbox) })}
             isOpen={isOpen}
             loading={searchUsersQuery.isLoading}
             canUpdate={true}
@@ -89,7 +98,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
             onInviteUser={handleCreateAccesses}
             onUpdateAccess={handleUpdateAccess}
             onDeleteAccess={handleDeleteAccess}
-            onSearchUsers={setSearchQuery}
+            onSearchUsers={handleSearchUsers}
             searchUsersResult={searchResults}
             accesses={normalizedAccesses}
         />

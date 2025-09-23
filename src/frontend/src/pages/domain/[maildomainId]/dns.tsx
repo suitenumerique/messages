@@ -188,13 +188,13 @@ export default function AdminDNSPage() {
   useEffect(() => {
     if (selectedMailDomain && !hasInitialCheck.current && !dnsCheckMutation.isPending) {
       hasInitialCheck.current = true;
-      dnsCheckMutation.mutate({ id: selectedMailDomain.id });
+      dnsCheckMutation.mutate({ maildomainPk: selectedMailDomain.id });
     }
   }, [selectedMailDomain, dnsCheckMutation]);
 
   const handleCheckDNS = () => {
     if (!selectedMailDomain) return;
-    dnsCheckMutation.mutate({ id: selectedMailDomain.id });
+    dnsCheckMutation.mutate({ maildomainPk: selectedMailDomain.id });
   };
 
   if (domainLoading) {
@@ -221,8 +221,8 @@ export default function AdminDNSPage() {
       currentTab="dns"
       actions={
         <>
-          <Button 
-            color="primary" 
+          <Button
+            color="primary"
             onClick={handleCheckDNS}
             disabled={dnsCheckMutation.isPending}
           >
@@ -231,8 +231,8 @@ export default function AdminDNSPage() {
         </>
       }
     >
-      <AdminDNSDataGrid 
-        domain={selectedMailDomain} 
+      <AdminDNSDataGrid
+        domain={selectedMailDomain}
         dnsRecords={dnsRecords}
         isLoading={isChecking}
         error={error}
@@ -240,4 +240,3 @@ export default function AdminDNSPage() {
     </AdminLayout>
   );
 }
-  

@@ -6,9 +6,13 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export type MaildomainsUsersListParams = {
+export type UsersListParams = {
   /**
-   * Search maildomains user by full name, short name or email.
+   * Filter users by maildomain.
+   */
+  maildomain_pk?: string;
+  /**
+   * Search users by full name, short name or email.
    */
   q?: string;
 };

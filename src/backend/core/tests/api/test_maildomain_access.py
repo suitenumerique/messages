@@ -1,7 +1,6 @@
 """Tests for the MailDomainAccessViewSet API endpoint (nested under maildomains)."""
 # pylint: disable=unused-argument
 
-
 from django.contrib.auth.models import AnonymousUser
 from django.urls import reverse
 

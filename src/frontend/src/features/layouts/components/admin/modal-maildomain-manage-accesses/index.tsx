@@ -1,7 +1,7 @@
 import { ShareModal } from "@gouvfr-lasuite/ui-kit";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useMaildomainsUsersList, UserWithoutAbilities, useMaildomainsAccessesCreate, useMaildomainsAccessesDestroy, MailDomainAdmin, useMaildomainsAccessesList, MailDomainAccessRoleChoices, MaildomainAccessRead } from "@/features/api/gen";
+import { UserWithoutAbilities, useMaildomainsAccessesCreate, useMaildomainsAccessesDestroy, MailDomainAdmin, useMaildomainsAccessesList, MailDomainAccessRoleChoices, MaildomainAccessRead, useUsersList } from "@/features/api/gen";
 
 type ModalMaildomainManageAccessesProps = {
     domain: MailDomainAdmin;
@@ -15,7 +15,7 @@ export const ModalMaildomainManageAccesses = ({ domain, isOpen, onClose }: Modal
     const { data: {data: accesses = [] } = {}, isLoading: isLoadingAccesses, refetch: refetchAccesses } = useMaildomainsAccessesList(domain.id);
     const { mutate: createMaildomainAccess } = useMaildomainsAccessesCreate({ mutation: { onSuccess: () => refetchAccesses() } });
     const { mutate: deleteMaildomainAccess } = useMaildomainsAccessesDestroy({ mutation: { onSuccess: () => refetchAccesses() } });
-    const { data: {data: searchUsers = [] } = {}, isLoading: isLoadingSearchUsers } = useMaildomainsUsersList(domain.id, { q: searchQuery });
+    const { data: {data: searchUsers = [] } = {}, isLoading: isLoadingSearchUsers } = useUsersList({ q: searchQuery }, { query: { enabled: !!searchQuery.length } });
 
     const getAccessUser = (user: UserWithoutAbilities) => {
         return {
@@ -59,6 +59,15 @@ export const ModalMaildomainManageAccesses = ({ domain, isOpen, onClose }: Modal
         }
     });
 
+    const handleSearchUsers = (query: string) => {
+        const q = query.trim();
+        if (q.length >= 3) {
+            setSearchQuery(q);
+        } else if (searchQuery != "") {
+            setSearchQuery("");
+        }
+    }
+
     if (!domain) return null;
 
     return (
@@ -73,7 +82,7 @@ export const ModalMaildomainManageAccesses = ({ domain, isOpen, onClose }: Modal
             onInviteUser={handleCreateAccesses}
             onDeleteAccess={handleDeleteAccess}
             searchUsersResult={searchResults}
-            onSearchUsers={setSearchQuery}
+            onSearchUsers={handleSearchUsers}
             accesses={normalizedAccesses}
         />
     )

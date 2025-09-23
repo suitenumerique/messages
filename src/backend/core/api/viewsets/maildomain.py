@@ -4,19 +4,16 @@ from logging import getLogger
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F
 from django.shortcuts import get_object_or_404
 
 from drf_spectacular.utils import (
-    OpenApiParameter,
     OpenApiResponse,
-    OpenApiTypes,
     extend_schema,
     inline_serializer,
 )
 from rest_framework import (
     mixins,
-    response,
     status,
     viewsets,
 )
@@ -43,13 +40,14 @@ class AdminMailDomainViewSet(
     """
     ViewSet for listing MailDomains the user administers.
     Provides a top-level entry for mail domain administration.
-    Endpoint: /maildomains/
+    Endpoint: /maildomains/<maildomain_pk>/
     """
 
     serializer_class = core_serializers.MailDomainAdminSerializer
     permission_classes = [
         core_permissions.IsSuperUser | core_permissions.IsMailDomainAdmin
     ]
+    lookup_url_kwarg = "maildomain_pk"
 
     def get_permissions(self):
         if self.action == "create":
@@ -118,12 +116,12 @@ class AdminMailDomainViewSet(
         },
     )
     @action(detail=True, methods=["post"], url_path="check-dns")
-    def check_dns(self, request, pk=None):
+    def check_dns(self, request, maildomain_pk=None):
         """
         Check DNS records for a specific mail domain.
         Returns the expected DNS records with their current status.
         """
-        maildomain = get_object_or_404(models.MailDomain, pk=pk)
+        maildomain = get_object_or_404(models.MailDomain, pk=maildomain_pk)
 
         # Perform DNS check
         check_results = check_dns_records(maildomain)
@@ -330,64 +328,3 @@ class AdminMailDomainMailboxViewSet(
         return Response(
             {"one_time_password": mailbox_password}, status=status.HTTP_200_OK
         )
-
-
-class AdminMailDomainUserViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
-    """
-    ViewSet for listing users in a specific MailDomain.
-    Nested under /maildomains/{maildomain_pk}/users/
-    Permissions are checked by IsMailDomainAdmin for the maildomain_pk.
-    """
-
-    permission_classes = [
-        core_permissions.IsSuperUser | core_permissions.IsMailDomainAdmin
-    ]
-    serializer_class = core_serializers.UserWithoutAbilitiesSerializer
-    pagination_class = None
-
-    def get_queryset(self):
-        """
-        Get all users having an access to a mailbox or an admin access to the maildomain.
-        """
-        maildomain_pk = self.kwargs.get("maildomain_pk")
-
-        return (
-            models.User.objects.filter(
-                Q(mailbox_accesses__mailbox__domain_id=maildomain_pk)
-                | Q(
-                    maildomain_accesses__maildomain_id=maildomain_pk,
-                    maildomain_accesses__role=models.MailDomainAccessRoleChoices.ADMIN,
-                )
-            )
-            .distinct()
-            .order_by("full_name", "email")
-        )
-
-    @extend_schema(
-        tags=["admin-maildomain-user"],
-        parameters=[
-            OpenApiParameter(
-                name="q",
-                type=OpenApiTypes.STR,
-                location=OpenApiParameter.QUERY,
-                description="Search maildomains user by full name, short name or email.",
-            ),
-        ],
-        responses=core_serializers.UserWithoutAbilitiesSerializer(many=True),
-    )
-    def list(self, request, *args, **kwargs):
-        """
-        Search users by email, first name and last name.
-        """
-        queryset = self.get_queryset()
-
-        if query := request.query_params.get("q", ""):
-            queryset = queryset.filter(
-                Q(email__unaccent__icontains=query)
-                | Q(full_name__unaccent__icontains=query)
-            )
-
-        serializer = core_serializers.UserWithoutAbilitiesSerializer(
-            queryset, many=True
-        )
-        return response.Response(serializer.data)

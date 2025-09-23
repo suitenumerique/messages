@@ -360,7 +360,8 @@ class TestMailDomainAbilitiesAPI:
         """Test that abilities are included in mail domain API response."""
         api_client.force_authenticate(user=domain_admin_user)
         url = reverse(
-            "admin-maildomains-detail", args=[domain_admin_access1.maildomain.id]
+            "admin-maildomains-detail",
+            kwargs={"maildomain_pk": domain_admin_access1.maildomain.id},
         )
         response = api_client.get(url)
 

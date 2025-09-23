@@ -2338,7 +2338,7 @@
         "/api/v1.0/maildomains/": {
             "get": {
                 "operationId": "maildomains_list",
-                "description": "ViewSet for listing MailDomains the user administers.\nProvides a top-level entry for mail domain administration.\nEndpoint: /maildomains/",
+                "description": "ViewSet for listing MailDomains the user administers.\nProvides a top-level entry for mail domain administration.\nEndpoint: /maildomains/<maildomain_pk>/",
                 "parameters": [
                     {
                         "name": "page",
@@ -2373,7 +2373,7 @@
             },
             "post": {
                 "operationId": "maildomains_create",
-                "description": "ViewSet for listing MailDomains the user administers.\nProvides a top-level entry for mail domain administration.\nEndpoint: /maildomains/",
+                "description": "ViewSet for listing MailDomains the user administers.\nProvides a top-level entry for mail domain administration.\nEndpoint: /maildomains/<maildomain_pk>/",
                 "tags": [
                     "maildomains"
                 ],
@@ -2403,6 +2403,44 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/MailDomainAdminWrite"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/maildomains/{maildomain_pk}/": {
+            "get": {
+                "operationId": "maildomains_retrieve",
+                "description": "ViewSet for listing MailDomains the user administers.\nProvides a top-level entry for mail domain administration.\nEndpoint: /maildomains/<maildomain_pk>/",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailDomainAdmin"
                                 }
                             }
                         },
@@ -2578,6 +2616,44 @@
                 "responses": {
                     "204": {
                         "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/maildomains/{maildomain_pk}/check-dns/": {
+            "post": {
+                "operationId": "maildomains_check_dns_create",
+                "description": "Check DNS records for a specific mail domain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DNSCheckResponse"
+                                }
+                            }
+                        },
+                        "description": ""
                     }
                 }
             }
@@ -2891,130 +2967,6 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ResetPasswordInternalServerError"
-                                }
-                            }
-                        },
-                        "description": ""
-                    }
-                }
-            }
-        },
-        "/api/v1.0/maildomains/{maildomain_pk}/users/": {
-            "get": {
-                "operationId": "maildomains_users_list",
-                "description": "Search users by email, first name and last name.",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "maildomain_pk",
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid"
-                        },
-                        "required": true
-                    },
-                    {
-                        "in": "query",
-                        "name": "q",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "description": "Search maildomains user by full name, short name or email."
-                    }
-                ],
-                "tags": [
-                    "admin-maildomain-user"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/components/schemas/UserWithoutAbilities"
-                                    }
-                                }
-                            }
-                        },
-                        "description": ""
-                    }
-                }
-            }
-        },
-        "/api/v1.0/maildomains/{id}/": {
-            "get": {
-                "operationId": "maildomains_retrieve",
-                "description": "ViewSet for listing MailDomains the user administers.\nProvides a top-level entry for mail domain administration.\nEndpoint: /maildomains/",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "id",
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "primary key for the record as UUID"
-                        },
-                        "required": true
-                    }
-                ],
-                "tags": [
-                    "maildomains"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/MailDomainAdmin"
-                                }
-                            }
-                        },
-                        "description": ""
-                    }
-                }
-            }
-        },
-        "/api/v1.0/maildomains/{id}/check-dns/": {
-            "post": {
-                "operationId": "maildomains_check_dns_create",
-                "description": "Check DNS records for a specific mail domain.",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "id",
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "primary key for the record as UUID"
-                        },
-                        "required": true
-                    }
-                ],
-                "tags": [
-                    "maildomains"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/DNSCheckResponse"
                                 }
                             }
                         },
@@ -4052,6 +4004,54 @@
                             }
                         },
                         "description": "Returned if `stats_fields` parameter is missing or contains invalid fields."
+                    }
+                }
+            }
+        },
+        "/api/v1.0/users/": {
+            "get": {
+                "operationId": "users_list",
+                "description": "List users.\nSearch users by email, full name or maildomain.\nA search query of at least 3 characters is required.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter users by maildomain."
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Search users by full name, short name or email."
+                    }
+                ],
+                "tags": [
+                    "admin-users-list"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/UserWithoutAbilities"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
                     }
                 }
             }

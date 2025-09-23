@@ -330,8 +330,7 @@ class IsMailDomainAdmin(permissions.BasePermission):
     Allows access only to users who have ADMIN MailDomainAccess
     to the maildomain specified by 'maildomain_pk' in the URL.
     Used for viewsets nested under a maildomain.
-    If no maildomain_pk is provided, the permission checks if the user
-    is at least an ADMIN of one maildomain.
+    If no maildomain_pk is provided, the permission fails.
     """
 
     message = "You do not have administrative rights for this mail domain."
@@ -345,6 +344,7 @@ class IsMailDomainAdmin(permissions.BasePermission):
             "role": models.MailDomainAccessRoleChoices.ADMIN,
         }
         maildomain_pk = view.kwargs.get("maildomain_pk")
+
         if maildomain_pk:
             qs_filters["maildomain_id"] = maildomain_pk
 

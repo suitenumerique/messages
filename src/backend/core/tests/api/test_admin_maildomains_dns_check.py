@@ -91,7 +91,9 @@ class TestAdminMailDomainDNSCheck:
             "core.api.viewsets.maildomain.check_dns_records",
             return_value=mock_check_results,
         ):
-            url = reverse("admin-maildomains-check-dns", kwargs={"pk": mail_domain.id})
+            url = reverse(
+                "admin-maildomains-check-dns", kwargs={"maildomain_pk": mail_domain.id}
+            )
             response = api_client.post(url)
 
         assert response.status_code == status.HTTP_200_OK
@@ -132,7 +134,9 @@ class TestAdminMailDomainDNSCheck:
     ):
         """Test that users without domain admin access cannot check DNS."""
         api_client.force_authenticate(user=other_user)
-        url = reverse("admin-maildomains-check-dns", kwargs={"pk": mail_domain.id})
+        url = reverse(
+            "admin-maildomains-check-dns", kwargs={"maildomain_pk": mail_domain.id}
+        )
         response = api_client.post(url)
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -143,7 +147,9 @@ class TestAdminMailDomainDNSCheck:
         mail_domain,
     ):
         """Test that unauthenticated requests are rejected."""
-        url = reverse("admin-maildomains-check-dns", kwargs={"pk": mail_domain.id})
+        url = reverse(
+            "admin-maildomains-check-dns", kwargs={"maildomain_pk": mail_domain.id}
+        )
         response = api_client.post(url)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -159,10 +165,12 @@ class TestAdminMailDomainDNSCheck:
 
         # Use a non-existent domain ID
         non_existent_id = "00000000-0000-0000-0000-000000000000"
-        url = reverse("admin-maildomains-check-dns", kwargs={"pk": non_existent_id})
+        url = reverse(
+            "admin-maildomains-check-dns", kwargs={"maildomain_pk": non_existent_id}
+        )
         response = api_client.post(url)
 
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_check_dns_dns_error(
         self,
@@ -179,7 +187,9 @@ class TestAdminMailDomainDNSCheck:
             "core.api.viewsets.maildomain.check_dns_records",
             side_effect=Exception("DNS error"),
         ):
-            url = reverse("admin-maildomains-check-dns", kwargs={"pk": mail_domain.id})
+            url = reverse(
+                "admin-maildomains-check-dns", kwargs={"maildomain_pk": mail_domain.id}
+            )
             # The exception should be raised and not handled by the viewset
             with pytest.raises(Exception, match="DNS error"):
                 api_client.post(url)
@@ -206,7 +216,9 @@ class TestAdminMailDomainDNSCheck:
             "core.api.viewsets.maildomain.check_dns_records",
             return_value=mock_check_results,
         ):
-            url = reverse("admin-maildomains-check-dns", kwargs={"pk": mail_domain.id})
+            url = reverse(
+                "admin-maildomains-check-dns", kwargs={"maildomain_pk": mail_domain.id}
+            )
             response = api_client.post(url)
 
         # Superusers (regardless of staff status) should have access
@@ -222,7 +234,9 @@ class TestAdminMailDomainDNSCheck:
         staff_not_superuser = factories.UserFactory(is_superuser=False, is_staff=True)
         api_client.force_authenticate(user=staff_not_superuser)
 
-        url = reverse("admin-maildomains-check-dns", kwargs={"pk": mail_domain.id})
+        url = reverse(
+            "admin-maildomains-check-dns", kwargs={"maildomain_pk": mail_domain.id}
+        )
         response = api_client.post(url)
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -239,7 +253,9 @@ class TestAdminMailDomainDNSCheck:
 
         # Mock DNS check to return empty results
         with patch("core.api.viewsets.maildomain.check_dns_records", return_value=[]):
-            url = reverse("admin-maildomains-check-dns", kwargs={"pk": mail_domain.id})
+            url = reverse(
+                "admin-maildomains-check-dns", kwargs={"maildomain_pk": mail_domain.id}
+            )
             response = api_client.post(url)
 
         assert response.status_code == status.HTTP_200_OK
@@ -269,7 +285,9 @@ class TestAdminMailDomainDNSCheck:
             "core.api.viewsets.maildomain.check_dns_records",
             return_value=mock_check_results,
         ):
-            url = reverse("admin-maildomains-check-dns", kwargs={"pk": mail_domain.id})
+            url = reverse(
+                "admin-maildomains-check-dns", kwargs={"maildomain_pk": mail_domain.id}
+            )
             response = api_client.post(url)
 
         assert response.status_code == status.HTTP_200_OK

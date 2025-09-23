@@ -47,7 +47,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 /**
  * ViewSet for listing MailDomains the user administers.
 Provides a top-level entry for mail domain administration.
-Endpoint: /maildomains/
+Endpoint: /maildomains/<maildomain_pk>/
  */
 export type maildomainsListResponse200 = {
   data: PaginatedMailDomainAdminList;
@@ -234,7 +234,7 @@ export function useMaildomainsList<
 /**
  * ViewSet for listing MailDomains the user administers.
 Provides a top-level entry for mail domain administration.
-Endpoint: /maildomains/
+Endpoint: /maildomains/<maildomain_pk>/
  */
 export type maildomainsCreateResponse201 = {
   data: MailDomainAdminWrite;
@@ -325,6 +325,297 @@ export const useMaildomainsCreate = <TError = unknown, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getMaildomainsCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * ViewSet for listing MailDomains the user administers.
+Provides a top-level entry for mail domain administration.
+Endpoint: /maildomains/<maildomain_pk>/
+ */
+export type maildomainsRetrieveResponse200 = {
+  data: MailDomainAdmin;
+  status: 200;
+};
+
+export type maildomainsRetrieveResponseComposite =
+  maildomainsRetrieveResponse200;
+
+export type maildomainsRetrieveResponse =
+  maildomainsRetrieveResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMaildomainsRetrieveUrl = (maildomainPk: string) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/`;
+};
+
+export const maildomainsRetrieve = async (
+  maildomainPk: string,
+  options?: RequestInit,
+): Promise<maildomainsRetrieveResponse> => {
+  return fetchAPI<maildomainsRetrieveResponse>(
+    getMaildomainsRetrieveUrl(maildomainPk),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMaildomainsRetrieveQueryKey = (maildomainPk: string) => {
+  return [`/api/v1.0/maildomains/${maildomainPk}/`] as const;
+};
+
+export const getMaildomainsRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getMaildomainsRetrieveQueryKey(maildomainPk);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof maildomainsRetrieve>>
+  > = ({ signal }) =>
+    maildomainsRetrieve(maildomainPk, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!maildomainPk,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof maildomainsRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MaildomainsRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsRetrieve>>
+>;
+export type MaildomainsRetrieveQueryError = unknown;
+
+export function useMaildomainsRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof maildomainsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof maildomainsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMaildomainsRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof maildomainsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof maildomainsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMaildomainsRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMaildomainsRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMaildomainsRetrieveQueryOptions(
+    maildomainPk,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Check DNS records for a specific mail domain.
+ */
+export type maildomainsCheckDnsCreateResponse200 = {
+  data: DNSCheckResponse;
+  status: 200;
+};
+
+export type maildomainsCheckDnsCreateResponseComposite =
+  maildomainsCheckDnsCreateResponse200;
+
+export type maildomainsCheckDnsCreateResponse =
+  maildomainsCheckDnsCreateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMaildomainsCheckDnsCreateUrl = (maildomainPk: string) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/check-dns/`;
+};
+
+export const maildomainsCheckDnsCreate = async (
+  maildomainPk: string,
+  options?: RequestInit,
+): Promise<maildomainsCheckDnsCreateResponse> => {
+  return fetchAPI<maildomainsCheckDnsCreateResponse>(
+    getMaildomainsCheckDnsCreateUrl(maildomainPk),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getMaildomainsCheckDnsCreateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
+    TError,
+    { maildomainPk: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
+  TError,
+  { maildomainPk: string },
+  TContext
+> => {
+  const mutationKey = ["maildomainsCheckDnsCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
+    { maildomainPk: string }
+  > = (props) => {
+    const { maildomainPk } = props ?? {};
+
+    return maildomainsCheckDnsCreate(maildomainPk, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MaildomainsCheckDnsCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>
+>;
+
+export type MaildomainsCheckDnsCreateMutationError = unknown;
+
+export const useMaildomainsCheckDnsCreate = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
+      TError,
+      { maildomainPk: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
+  TError,
+  { maildomainPk: string },
+  TContext
+> => {
+  const mutationOptions = getMaildomainsCheckDnsCreateMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };
@@ -1247,289 +1538,6 @@ export const useMaildomainsMailboxesResetPassword = <
 > => {
   const mutationOptions =
     getMaildomainsMailboxesResetPasswordMutationOptions(options);
-
-  return useMutation(mutationOptions, queryClient);
-};
-/**
- * ViewSet for listing MailDomains the user administers.
-Provides a top-level entry for mail domain administration.
-Endpoint: /maildomains/
- */
-export type maildomainsRetrieveResponse200 = {
-  data: MailDomainAdmin;
-  status: 200;
-};
-
-export type maildomainsRetrieveResponseComposite =
-  maildomainsRetrieveResponse200;
-
-export type maildomainsRetrieveResponse =
-  maildomainsRetrieveResponseComposite & {
-    headers: Headers;
-  };
-
-export const getMaildomainsRetrieveUrl = (id: string) => {
-  return `/api/v1.0/maildomains/${id}/`;
-};
-
-export const maildomainsRetrieve = async (
-  id: string,
-  options?: RequestInit,
-): Promise<maildomainsRetrieveResponse> => {
-  return fetchAPI<maildomainsRetrieveResponse>(getMaildomainsRetrieveUrl(id), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getMaildomainsRetrieveQueryKey = (id: string) => {
-  return [`/api/v1.0/maildomains/${id}/`] as const;
-};
-
-export const getMaildomainsRetrieveQueryOptions = <
-  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
-  TError = unknown,
->(
-  id: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof maildomainsRetrieve>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof fetchAPI>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getMaildomainsRetrieveQueryKey(id);
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof maildomainsRetrieve>>
-  > = ({ signal }) => maildomainsRetrieve(id, { signal, ...requestOptions });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: !!id,
-    ...queryOptions,
-  } as UseQueryOptions<
-    Awaited<ReturnType<typeof maildomainsRetrieve>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
-
-export type MaildomainsRetrieveQueryResult = NonNullable<
-  Awaited<ReturnType<typeof maildomainsRetrieve>>
->;
-export type MaildomainsRetrieveQueryError = unknown;
-
-export function useMaildomainsRetrieve<
-  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
-  TError = unknown,
->(
-  id: string,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof maildomainsRetrieve>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof maildomainsRetrieve>>,
-          TError,
-          Awaited<ReturnType<typeof maildomainsRetrieve>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof fetchAPI>;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useMaildomainsRetrieve<
-  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
-  TError = unknown,
->(
-  id: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof maildomainsRetrieve>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof maildomainsRetrieve>>,
-          TError,
-          Awaited<ReturnType<typeof maildomainsRetrieve>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof fetchAPI>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useMaildomainsRetrieve<
-  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
-  TError = unknown,
->(
-  id: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof maildomainsRetrieve>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof fetchAPI>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-
-export function useMaildomainsRetrieve<
-  TData = Awaited<ReturnType<typeof maildomainsRetrieve>>,
-  TError = unknown,
->(
-  id: string,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof maildomainsRetrieve>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof fetchAPI>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getMaildomainsRetrieveQueryOptions(id, options);
-
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  query.queryKey = queryOptions.queryKey;
-
-  return query;
-}
-
-/**
- * Check DNS records for a specific mail domain.
- */
-export type maildomainsCheckDnsCreateResponse200 = {
-  data: DNSCheckResponse;
-  status: 200;
-};
-
-export type maildomainsCheckDnsCreateResponseComposite =
-  maildomainsCheckDnsCreateResponse200;
-
-export type maildomainsCheckDnsCreateResponse =
-  maildomainsCheckDnsCreateResponseComposite & {
-    headers: Headers;
-  };
-
-export const getMaildomainsCheckDnsCreateUrl = (id: string) => {
-  return `/api/v1.0/maildomains/${id}/check-dns/`;
-};
-
-export const maildomainsCheckDnsCreate = async (
-  id: string,
-  options?: RequestInit,
-): Promise<maildomainsCheckDnsCreateResponse> => {
-  return fetchAPI<maildomainsCheckDnsCreateResponse>(
-    getMaildomainsCheckDnsCreateUrl(id),
-    {
-      ...options,
-      method: "POST",
-    },
-  );
-};
-
-export const getMaildomainsCheckDnsCreateMutationOptions = <
-  TError = unknown,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
-    TError,
-    { id: string },
-    TContext
-  >;
-  request?: SecondParameter<typeof fetchAPI>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
-  TError,
-  { id: string },
-  TContext
-> => {
-  const mutationKey = ["maildomainsCheckDnsCreate"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
-    { id: string }
-  > = (props) => {
-    const { id } = props ?? {};
-
-    return maildomainsCheckDnsCreate(id, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type MaildomainsCheckDnsCreateMutationResult = NonNullable<
-  Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>
->;
-
-export type MaildomainsCheckDnsCreateMutationError = unknown;
-
-export const useMaildomainsCheckDnsCreate = <
-  TError = unknown,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
-      TError,
-      { id: string },
-      TContext
-    >;
-    request?: SecondParameter<typeof fetchAPI>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof maildomainsCheckDnsCreate>>,
-  TError,
-  { id: string },
-  TContext
-> => {
-  const mutationOptions = getMaildomainsCheckDnsCreateMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };
