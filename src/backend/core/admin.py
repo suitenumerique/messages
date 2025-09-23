@@ -355,7 +355,7 @@ class MessageAdmin(admin.ModelAdmin):
     search_fields = ("subject", "sender__name", "sender__email", "mime_id")
     change_list_template = "admin/core/message/change_list.html"
     raw_id_fields = ("thread", "blob", "draft_blob", "parent")
-    autocomplete_fields = ("sender",)
+    autocomplete_fields = ("sender", "signature")
     readonly_fields = ("mime_id", "created_at", "updated_at")
 
     def get_queryset(self, request):
@@ -617,11 +617,12 @@ class MessageTemplateAdmin(admin.ModelAdmin):
     """Admin class for the MessageTemplate model"""
 
     list_display = (
-        "id",
         "name",
         "type",
         "is_forced",
-        "preview_content",
+        "is_active",
+        "mailbox",
+        "maildomain",
         "created_at",
     )
     list_filter = (
@@ -629,15 +630,21 @@ class MessageTemplateAdmin(admin.ModelAdmin):
         "is_forced",
         "created_at",
     )
+    autocomplete_fields = ("mailbox", "maildomain")
     search_fields = ("name",)
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = (
+        "id",
+        "created_at",
+        "updated_at",
+        "preview_content",
+    )
 
     def preview_content(self, obj):
-        """Display a preview of the formatted content."""
+        """Display a full preview of the formatted content in detail view."""
         formatted = obj.get_formatted_content()
         return format_html(
-            '<div style="max-width: 400px; overflow: hidden; text-overflow: ellipsis;">{}</div>',
-            formatted[:100] + "..." if len(formatted) > 100 else formatted,
+            '<div style="max-width: 800px; white-space: pre-wrap;">{}</div>',
+            formatted,
         )
 
     preview_content.short_description = "Content Preview"
