@@ -212,7 +212,7 @@ class TestDraftMessageSignature:
             name="Reply Template",
             html_body="<p>Reply content</p>",
             text_body="Reply content",
-            type=models.MessageTemplateTypeChoices.REPLY,
+            type=enums.MessageTemplateTypeChoices.REPLY,
             mailbox=mailbox_sender,
             is_active=True,
         )

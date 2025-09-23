@@ -6,7 +6,7 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from core import factories, models
+from core import enums, factories, models
 
 pytestmark = pytest.mark.django_db
 
@@ -34,7 +34,7 @@ class TestMessageTemplateRetrieve:
             name="Unauthorized Template",
             html_body="<p>Test content</p>",
             text_body="Test content",
-            type=models.MessageTemplateTypeChoices.REPLY,
+            type=enums.MessageTemplateTypeChoices.REPLY,
             mailbox=mailbox,
         )
         client = APIClient()
@@ -49,7 +49,7 @@ class TestMessageTemplateRetrieve:
             name="No Access Template",
             html_body="<p>Test content</p>",
             text_body="Test content",
-            type=models.MessageTemplateTypeChoices.REPLY,
+            type=enums.MessageTemplateTypeChoices.REPLY,
             mailbox=mailbox,
         )
         client = APIClient()

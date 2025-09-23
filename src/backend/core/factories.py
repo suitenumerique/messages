@@ -12,7 +12,7 @@ from django.utils import timezone
 import factory.fuzzy
 from faker import Faker
 
-from core import models
+from core import enums, models
 
 fake = Faker()
 
@@ -282,7 +282,7 @@ class MessageTemplateFactory(factory.django.DjangoModelFactory):
 
     name = factory.Sequence(lambda n: f"Template {n}")
     type = factory.fuzzy.FuzzyChoice(
-        [choice[0] for choice in models.MessageTemplateTypeChoices.choices]
+        [choice[0] for choice in enums.MessageTemplateTypeChoices.choices]
     )
 
     @classmethod

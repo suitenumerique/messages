@@ -8,7 +8,7 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from core import factories, models
+from core import enums, factories, models
 
 pytestmark = pytest.mark.django_db
 
@@ -208,7 +208,7 @@ class TestMessageTemplateRender:
             name="Placeholder Template",
             html_body="<p>Hello {full_name}!</p>",
             text_body="Hello {full_name}!",
-            type=models.MessageTemplateTypeChoices.REPLY,
+            type=enums.MessageTemplateTypeChoices.REPLY,
             mailbox=mailbox,
         )
 

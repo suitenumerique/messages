@@ -125,14 +125,14 @@ class TestMessageTemplateList:
             name="Reply Template",
             html_body="<p>Reply content</p>",
             text_body="Reply content",
-            type=models.MessageTemplateTypeChoices.REPLY,
+            type=enums.MessageTemplateTypeChoices.REPLY,
             mailbox=mailbox,
         )
         factories.MessageTemplateFactory(
             name="New Message Template",
             html_body="<p>New message content</p>",
             text_body="New message content",
-            type=models.MessageTemplateTypeChoices.NEW_MESSAGE,
+            type=enums.MessageTemplateTypeChoices.NEW_MESSAGE,
             mailbox=mailbox,
         )
 
@@ -200,7 +200,7 @@ class TestMessageTemplateList:
             name="Reply Template",
             html_body="<p>Reply content</p>",
             text_body="Reply content",
-            type=models.MessageTemplateTypeChoices.REPLY,
+            type=enums.MessageTemplateTypeChoices.REPLY,
             mailbox=mailbox,
         )
 
@@ -209,7 +209,7 @@ class TestMessageTemplateList:
             name="New Message Template",
             html_body="<p>New message content</p>",
             text_body="New message content",
-            type=models.MessageTemplateTypeChoices.NEW_MESSAGE,
+            type=enums.MessageTemplateTypeChoices.NEW_MESSAGE,
             mailbox=mailbox,
         )
 
@@ -355,7 +355,7 @@ class TestMessageTemplateList:
             name="Reply Template",
             html_body="<p>Reply content</p>",
             text_body="Reply content",
-            type=models.MessageTemplateTypeChoices.REPLY,
+            type=enums.MessageTemplateTypeChoices.REPLY,
             mailbox=mailbox,
         )
 
@@ -395,7 +395,7 @@ class TestMessageTemplateList:
             name="Active Template",
             html_body="<p>Active content</p>",
             text_body="Active content",
-            type=models.MessageTemplateTypeChoices.REPLY,
+            type=enums.MessageTemplateTypeChoices.REPLY,
             is_active=True,
             mailbox=mailbox,
         )
@@ -437,7 +437,7 @@ class TestMessageTemplateList:
             name="Forced Mailbox Template",
             html_body="<p>Forced mailbox content</p>",
             text_body="Forced mailbox content",
-            type=models.MessageTemplateTypeChoices.REPLY,
+            type=enums.MessageTemplateTypeChoices.REPLY,
             mailbox=mailbox,
             is_forced=True,
         )

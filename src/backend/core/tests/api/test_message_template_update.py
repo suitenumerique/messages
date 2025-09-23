@@ -303,7 +303,7 @@ class TestMessageTemplateUpdate:
             name="Original Template",
             html_body="<p>Original content</p>",
             text_body="Original content",
-            type=models.MessageTemplateTypeChoices.REPLY,
+            type=enums.MessageTemplateTypeChoices.REPLY,
             mailbox=mailbox,
             raw_body=RAW_DATA_STRUCT,
         )
@@ -487,7 +487,7 @@ class TestMessageTemplateUpdate:
             name="First Forced Reply Template",
             html_body="<p>First reply content</p>",
             text_body="First reply content",
-            type=models.MessageTemplateTypeChoices.REPLY,
+            type=enums.MessageTemplateTypeChoices.REPLY,
             mailbox=mailbox,
             is_forced=True,
         )
@@ -497,7 +497,7 @@ class TestMessageTemplateUpdate:
             name="Second Reply Template",
             html_body="<p>Second reply content</p>",
             text_body="Second reply content",
-            type=models.MessageTemplateTypeChoices.REPLY,
+            type=enums.MessageTemplateTypeChoices.REPLY,
             mailbox=mailbox,
             is_forced=False,
         )

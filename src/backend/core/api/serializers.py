@@ -306,7 +306,7 @@ class MailboxLightSerializer(serializers.ModelSerializer):
 class ReadOnlyMessageTemplateSerializer(serializers.ModelSerializer):
     """Serialize message templates for read-only operations."""
 
-    type = IntegerChoicesField(choices_class=models.MessageTemplateTypeChoices)
+    type = IntegerChoicesField(choices_class=enums.MessageTemplateTypeChoices)
     html_body = serializers.SerializerMethodField()
     text_body = serializers.SerializerMethodField()
     raw_body = serializers.SerializerMethodField()
@@ -1163,7 +1163,7 @@ class ImportIMAPSerializer(ImportBaseSerializer):
 class MessageTemplateSerializer(serializers.ModelSerializer):
     """Serialize message templates for POST/PUT/PATCH operations."""
 
-    type = IntegerChoicesField(choices_class=models.MessageTemplateTypeChoices)
+    type = IntegerChoicesField(choices_class=enums.MessageTemplateTypeChoices)
 
     # Write fields for creating/updating relationships
     mailbox_id = serializers.UUIDField(
