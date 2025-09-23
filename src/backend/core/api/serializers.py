@@ -313,38 +313,15 @@ class ReadOnlyMessageTemplateSerializer(serializers.ModelSerializer):
 
     def get_html_body(self, obj) -> str:
         """Get HTML body from blob."""
-        if not obj.blob:
-            return ""
-        try:
-            content = json.loads(obj.blob.get_content().decode("utf-8"))
-            return content.get("html", "")
-        except (json.JSONDecodeError, AttributeError):
-            return ""
+        return obj.html_body
 
     def get_text_body(self, obj) -> str:
         """Get text body from content blob."""
-        if not obj.blob:
-            return ""
-        try:
-            content = json.loads(obj.blob.get_content().decode("utf-8"))
-            return content.get("text", "")
-        except (json.JSONDecodeError, AttributeError):
-            return ""
+        return obj.text_body
 
     def get_raw_body(self, obj) -> str | None:
         """Get raw blob from content blob."""
-        if not obj.blob:
-            return None
-        try:
-            content = json.loads(obj.blob.get_content().decode("utf-8"))
-            raw_body = content.get("raw")
-            return (
-                json.dumps(raw_body, separators=(",", ":"))
-                if raw_body is not None
-                else None
-            )
-        except (json.JSONDecodeError, AttributeError):
-            return None
+        return obj.raw_body
 
     class Meta:
         model = models.MessageTemplate
@@ -1372,45 +1349,16 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
         with transaction.atomic():
             # Update content blob if any content field is provided
             if any(field is not None for field in [html_body, text_body, raw_body]):
-                # Get current content
-                current_content = (
-                    instance.blob.get_content().decode("utf-8")
-                    if instance.blob
-                    else {"html": "", "text": "", "raw": None}
-                )
-
-                # Update with new values, keeping existing values if not provided
-                # Parse raw_body if it's a JSON string
-                try:
-                    raw_body = (
-                        json.loads(raw_body)
-                        if raw_body is not None
-                        else current_content["raw"]
-                    )
-                except json.JSONDecodeError:
-                    raw_body = (
-                        raw_body if raw_body is not None else current_content["raw"]
-                    )
-
-                content = {
-                    "html": html_body
-                    if html_body is not None
-                    else current_content["html"],
-                    "text": text_body
-                    if text_body is not None
-                    else current_content["text"],
-                    "raw": raw_body,
-                }
-
                 # Delete old blob
-                try:
-                    if instance.blob:
-                        instance.blob.delete()
-                except models.Blob.DoesNotExist:
-                    pass
-
+                if instance.blob:
+                    instance.blob.delete()
+                # Create content for new blob
+                content = {
+                    "html": html_body,
+                    "text": text_body,
+                    "raw": json.loads(raw_body) if raw_body else None,
+                }
                 # Create new blob
-
                 blob = models.Blob.objects.create_blob(
                     content=json.dumps(content, separators=(",", ":")).encode("utf-8"),
                     content_type="application/json",
