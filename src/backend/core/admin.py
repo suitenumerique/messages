@@ -663,15 +663,25 @@ class MessageTemplateAdmin(admin.ModelAdmin):
         "id",
         "created_at",
         "updated_at",
-        "preview_content",
+        "raw_body",
+        "text_body",
+        "html_body",
     )
 
-    def preview_content(self, obj):
-        """Display a full preview of the formatted content in detail view."""
-        formatted = obj.get_formatted_content()
-        return format_html(
-            '<div style="max-width: 800px; white-space: pre-wrap;">{}</div>',
-            formatted,
-        )
+    def get_raw_body(self, obj):
+        """Return the raw body of the template."""
+        return obj.raw_body
 
-    preview_content.short_description = "Content Preview"
+    get_raw_body.short_description = "Raw Body"
+
+    def get_text_body(self, obj):
+        """Return the text body of the template."""
+        return obj.text_body
+
+    get_text_body.short_description = "Text Body"
+
+    def get_html_body(self, obj):
+        """Return the html body of the template."""
+        return obj.html_body
+
+    get_html_body.short_description = "HTML Body"

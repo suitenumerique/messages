@@ -1861,13 +1861,3 @@ class MessageTemplate(BaseModel):
             "html_body": rendered_html_body,
             "text_body": rendered_text_body,
         }
-
-    def get_formatted_content(self) -> str:
-        """
-        Get the template content with proper formatting based on type.
-        Mainly used for signatures.
-
-        Returns:
-            Formatted template content
-        """
-        return self.html_body or self.text_body
