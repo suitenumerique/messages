@@ -1748,7 +1748,8 @@ class MessageTemplate(BaseModel):
             return None
         try:
             content = json.loads(self.blob.get_content().decode("utf-8"))
-            return content.get("raw")
+            raw_body = content.get("raw")
+            return json.dumps(raw_body, separators=(",", ":")) if raw_body else None
         except (json.JSONDecodeError, AttributeError):
             return None
 
