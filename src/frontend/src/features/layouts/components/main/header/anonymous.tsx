@@ -1,7 +1,6 @@
 import { HeaderProps, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { Button } from "@openfun/cunningham-react";
 import { useTranslation } from "react-i18next";
-import { PostHogSurveyButton } from "@/features/ui/components/feedback-button";
 import { LanguagePicker } from "../language-picker";
 
 
@@ -30,11 +29,6 @@ export const AnonymousHeader = ({
       </div>
       <div className="c__header__left">
         {leftIcon}
-        {
-          isDesktop && (
-            <PostHogSurveyButton />
-          )
-        }
       </div>
       <div className="c__header__right">
         {isDesktop && (

@@ -147,6 +147,8 @@ listenEvent(widgetName, 'init', null, false, async (args) => {
 
   document.body.appendChild(shadowContainer);
 
+  feedbackText.focus();
+
   triggerEvent(widgetName, 'opened');
   
 });

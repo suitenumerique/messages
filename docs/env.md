@@ -191,14 +191,6 @@ The application uses a new environment file structure with `.defaults` and `.loc
 |----------|---------|-------------|----------|
 | `SENTRY_DSN` | None | Sentry DSN for error tracking | Optional |
 
-### PostHog
-
-| Variable | Default | Description | Required |
-|----------|---------|-------------|----------|
-| `POSTHOG_KEY` | None | PostHog analytics key | Optional |
-| `POSTHOG_HOST` | `https://eu.i.posthog.com` | PostHog analytics host url | Optional |
-| `POSTHOG_SURVEY_ID` | None | PostHog survey id to get feedback from users | Optional |
-
 ### Logging
 
 | Variable | Default | Description | Required |

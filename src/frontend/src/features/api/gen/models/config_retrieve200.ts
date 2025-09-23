@@ -11,12 +11,6 @@ import type { ConfigRetrieve200SCHEMACUSTOMATTRIBUTESMAILDOMAIN } from "./config
 
 export type ConfigRetrieve200 = {
   readonly ENVIRONMENT: string;
-  /** @nullable */
-  readonly POSTHOG_KEY: string | null;
-  /** @nullable */
-  readonly POSTHOG_HOST: string | null;
-  /** @nullable */
-  readonly POSTHOG_SURVEY_ID: string | null;
   readonly LANGUAGES: readonly string[];
   readonly LANGUAGE_CODE: string;
   readonly AI_ENABLED: boolean;

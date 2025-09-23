@@ -480,15 +480,6 @@ class Base(Configuration):
         None, environ_name="FRONTEND_THEME", environ_prefix=None
     )
 
-    # Posthog
-    POSTHOG_KEY = values.Value(None, environ_name="POSTHOG_KEY", environ_prefix=None)
-    POSTHOG_HOST = values.Value(
-        "https://eu.i.posthog.com", environ_name="POSTHOG_HOST", environ_prefix=None
-    )
-    POSTHOG_SURVEY_ID = values.Value(
-        None, environ_name="POSTHOG_SURVEY_ID", environ_prefix=None
-    )
-
     # Celery
     CELERY_BROKER_URL = values.Value(
         "redis://redis:6379", environ_name="CELERY_BROKER_URL", environ_prefix=None

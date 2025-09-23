@@ -38,7 +38,6 @@
     "downshift": "9.0.10",
     "i18next": "25.3.0",
     "next": "15.3.4",
-    "posthog-js": "1.257.0",
     "pretty-bytes": "7.0.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",

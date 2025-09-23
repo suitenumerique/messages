@@ -148,21 +148,6 @@
                                             "type": "string",
                                             "readOnly": true
                                         },
-                                        "POSTHOG_KEY": {
-                                            "type": "string",
-                                            "nullable": true,
-                                            "readOnly": true
-                                        },
-                                        "POSTHOG_HOST": {
-                                            "type": "string",
-                                            "nullable": true,
-                                            "readOnly": true
-                                        },
-                                        "POSTHOG_SURVEY_ID": {
-                                            "type": "string",
-                                            "nullable": true,
-                                            "readOnly": true
-                                        },
                                         "LANGUAGES": {
                                             "type": "array",
                                             "items": {
@@ -216,9 +201,6 @@
                                     },
                                     "required": [
                                         "ENVIRONMENT",
-                                        "POSTHOG_KEY",
-                                        "POSTHOG_HOST",
-                                        "POSTHOG_SURVEY_ID",
                                         "LANGUAGES",
                                         "LANGUAGE_CODE",
                                         "AI_ENABLED",
@@ -1516,6 +1498,62 @@
                     },
                     "404": {
                         "description": "Specified mailbox not found"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/inbound/mta/check/": {
+            "post": {
+                "operationId": "inbound_mta_check_create",
+                "description": "Check recipients exist.",
+                "tags": [
+                    "inbound"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/inbound/mta/deliver/": {
+            "post": {
+                "operationId": "inbound_mta_deliver_create",
+                "description": "Handle incoming raw email (message/rfc822) from MTA.",
+                "tags": [
+                    "inbound"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/inbound/widget/config/": {
+            "get": {
+                "operationId": "inbound_widget_config_retrieve",
+                "description": "Return the configuration for the widget.",
+                "tags": [
+                    "inbound"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/inbound/widget/deliver/": {
+            "post": {
+                "operationId": "inbound_widget_deliver_create",
+                "description": "Handle incoming widget message.",
+                "tags": [
+                    "inbound"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
                     }
                 }
             }
@@ -3082,7 +3120,7 @@
         "/api/v1.0/mta/check-recipients/": {
             "post": {
                 "operationId": "mta_check_recipients_create",
-                "description": "Check if recipient email addresses exist for the MTA.",
+                "description": "Check recipients exist.",
                 "tags": [
                     "mta"
                 ],

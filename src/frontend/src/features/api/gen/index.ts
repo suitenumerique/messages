@@ -4,6 +4,7 @@ export * from "./contacts/contacts";
 export * from "./messages/messages";
 export * from "./flags/flags";
 export * from "./import/import";
+export * from "./inbound/inbound";
 export * from "./labels/labels";
 export * from "./mailboxes/mailboxes";
 export * from "./mailbox-accesses/mailbox-accesses";

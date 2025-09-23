@@ -515,9 +515,6 @@
         "no_records": "No DNS records found",
         "copy": "Copy"
       },
-      "posthog": {
-        "cta": "Give feedback"
-      },
       "feedback_widget": {
         "title": "Do you have any feedback?",
         "placeholder": "Share your feedback here...",
@@ -1035,9 +1032,6 @@
         "checking": "Vérification des enregistrements DNS...",
         "no_records": "Aucun enregistrement DNS trouvé",
         "copy": "Copier"
-      },
-      "posthog": {
-        "cta": "Faire un retour"
       },
       "feedback_widget": {
         "title": "Faire un retour",

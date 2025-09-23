@@ -22,7 +22,6 @@ import Head from "next/head";
 import { useTranslation } from "react-i18next";
 import { Auth } from "@/features/auth";
 import { ConfigProvider } from "@/features/providers/config";
-import { PostHogProvider } from "@/features/providers/posthog";
 
 export type NextPageWithLayout<P = object, IP = P> = NextPage<P, IP> & {
   getLayout?: (page: ReactElement) => ReactNode;
@@ -88,13 +87,11 @@ export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
       <QueryClientProvider client={queryClient}>
         {/* <ReactQueryDevtools initialIsOpen={false} /> */}
         <ConfigProvider>
-          <PostHogProvider>
-            <CunninghamProvider currentLocale={i18n.language}>
-              <Auth>
-                  {getLayout(<Component {...pageProps} />)}
-              </Auth>
-            </CunninghamProvider>
-          </PostHogProvider>
+          <CunninghamProvider currentLocale={i18n.language}>
+            <Auth>
+                {getLayout(<Component {...pageProps} />)}
+            </Auth>
+          </CunninghamProvider>
         </ConfigProvider>
       </QueryClientProvider>
     </>

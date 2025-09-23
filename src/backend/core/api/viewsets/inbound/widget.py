@@ -111,7 +111,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
                 {"detail": "No mailbox configured for this channel"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-        if mailbox.contact and mailbox.contact.exists():
+        if mailbox.contact:
             target_email = mailbox.contact.email
             target_name = mailbox.contact.name
         else:

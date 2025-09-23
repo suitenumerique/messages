@@ -18,7 +18,7 @@ import { fetchAPI } from "../../fetch-api";
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
- * Check if recipient email addresses exist for the MTA.
+ * Check recipients exist.
  */
 export type mtaCheckRecipientsCreateResponse200 = {
   data: void;

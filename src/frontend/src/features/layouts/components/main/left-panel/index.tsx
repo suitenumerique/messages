@@ -1,16 +1,12 @@
 import { useResponsive } from "@gouvfr-lasuite/ui-kit";
-import { usePostHog } from "posthog-js/react";
 import { useAuth } from "@/features/auth";
 import { HeaderRight } from "../header/authenticated";
-import { PostHogSurveyButton } from "@/features/ui/components/feedback-button";
-import { useConfig } from "@/features/providers/config";
+import { SurveyButton } from "@/features/ui/components/feedback-button";
 import { MailboxPanel } from "../../mailbox-panel";
 import { LanguagePicker } from "../language-picker";
 
 export const LeftPanel = ({ hasNoMailbox = true }: { hasNoMailbox?: boolean }) => {
     const { user } = useAuth();
-    const posthog = usePostHog();
-    const config = useConfig();
     const { isTablet } = useResponsive();
 
     if (!isTablet && hasNoMailbox) return null;
@@ -25,9 +21,9 @@ export const LeftPanel = ({ hasNoMailbox = true }: { hasNoMailbox?: boolean }) =
                     {user ? <HeaderRight /> : <LanguagePicker />}
                 </div>
             }
-            {posthog.__loaded && config.POSTHOG_SURVEY_ID && (
+            {process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL && (
                 <div className="left-panel__footer">
-                    <PostHogSurveyButton fullWidth />
+                    <SurveyButton fullWidth />
                 </div>
             )}
         </div>

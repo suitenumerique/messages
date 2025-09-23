@@ -23,21 +23,6 @@ class ConfigView(drf.views.APIView):
                     "type": "object",
                     "properties": {
                         "ENVIRONMENT": {"type": "string", "readOnly": True},
-                        "POSTHOG_KEY": {
-                            "type": "string",
-                            "nullable": True,
-                            "readOnly": True,
-                        },
-                        "POSTHOG_HOST": {
-                            "type": "string",
-                            "nullable": True,
-                            "readOnly": True,
-                        },
-                        "POSTHOG_SURVEY_ID": {
-                            "type": "string",
-                            "nullable": True,
-                            "readOnly": True,
-                        },
                         "LANGUAGES": {
                             "type": "array",
                             "items": {"type": "string"},
@@ -80,9 +65,6 @@ class ConfigView(drf.views.APIView):
                     },
                     "required": [
                         "ENVIRONMENT",
-                        "POSTHOG_KEY",
-                        "POSTHOG_HOST",
-                        "POSTHOG_SURVEY_ID",
                         "LANGUAGES",
                         "LANGUAGE_CODE",
                         "AI_ENABLED",
@@ -103,9 +85,6 @@ class ConfigView(drf.views.APIView):
         """
         array_settings = [
             "ENVIRONMENT",
-            "POSTHOG_KEY",
-            "POSTHOG_HOST",
-            "POSTHOG_SURVEY_ID",
             "LANGUAGES",
             "LANGUAGE_CODE",
             "SCHEMA_CUSTOM_ATTRIBUTES_USER",

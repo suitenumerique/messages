@@ -16,9 +16,6 @@ pytestmark = pytest.mark.django_db
 
 
 @override_settings(
-    POSTHOG_KEY="132456",
-    POSTHOG_HOST="https://test.i.posthog-test.com",
-    POSTHOG_SURVEY_ID="7890",
     LANGUAGES=[["en-us", "English"], ["fr-fr", "French"], ["de-de", "German"]],
     LANGUAGE_CODE="en-us",
     AI_API_KEY=None,
@@ -43,9 +40,6 @@ def test_api_config(is_authenticated):
         "ENVIRONMENT": "test",
         "LANGUAGES": [["en-us", "English"], ["fr-fr", "French"], ["de-de", "German"]],
         "LANGUAGE_CODE": "en-us",
-        "POSTHOG_KEY": "132456",
-        "POSTHOG_HOST": "https://test.i.posthog-test.com",
-        "POSTHOG_SURVEY_ID": "7890",
         "AI_ENABLED": False,
         "AI_FEATURE_SUMMARY_ENABLED": False,
         "AI_FEATURE_AUTOLABELS_ENABLED": False,

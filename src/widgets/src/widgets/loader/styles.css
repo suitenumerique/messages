@@ -18,6 +18,8 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding:0;
+  margin:0;
 }
 
 svg {
@@ -63,12 +65,13 @@ button.opened svg {
 }
 
 button.opened::after {
-  content: '×';
+  content: '+';
   font-size: 50px;
   color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  height:60px;
+  line-height: 60px;
+  font-family: Arial;
+  transform: rotate(45deg);
 }
 
 @keyframes spin {

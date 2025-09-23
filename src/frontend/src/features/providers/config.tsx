@@ -4,9 +4,6 @@ import { PropsWithChildren, createContext, useContext, useMemo } from "react";
 
 const DEFAULT_CONFIG: ConfigRetrieve200 = {
     ENVIRONMENT: "",
-    POSTHOG_KEY: null,
-    POSTHOG_HOST: null,
-    POSTHOG_SURVEY_ID: null,
     LANGUAGES: [],
     LANGUAGE_CODE: "",
     AI_ENABLED: false,

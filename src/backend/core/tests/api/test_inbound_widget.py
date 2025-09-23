@@ -35,6 +35,23 @@ def fixture_channel():
     )
 
 
+@pytest.fixture(name="channel_with_mailbox_contact")
+def fixture_channel_with_mailbox_contact():
+    """Create a test channel with mailbox."""
+    contact = factories.ContactFactory(email="widget@example.com", name="Widget Sender")
+    mailbox = factories.MailboxFactory(contact=contact)
+    return factories.ChannelFactory(
+        type="widget",
+        mailbox=mailbox,
+        settings={
+            "config": {"enabled": True, "theme": "light"},
+            "default_sender_email": "widget@example.com",
+            "default_sender_name": "Widget Sender",
+            "intro_text": "Message from widget:",
+        },
+    )
+
+
 @pytest.fixture(name="channel_without_mailbox")
 def fixture_channel_without_mailbox():
     """Create a test channel without mailbox."""
@@ -160,7 +177,9 @@ class TestInboundWidgetDeliver:
     """Test the deliver endpoint."""
 
     @patch("core.api.viewsets.inbound.widget.deliver_inbound_message")
-    def test_deliver_success(self, mock_deliver, api_client, channel):
+    def test_deliver_success(
+        self, mock_deliver, api_client, channel, channel_with_mailbox_contact
+    ):
         """Test successful message delivery."""
         mock_deliver.return_value = True
 
@@ -169,20 +188,26 @@ class TestInboundWidgetDeliver:
             "textBody": "This is a test message from the widget.",
         }
 
-        response = api_client.post(
-            "/api/v1.0/inbound/widget/deliver/",
-            data=data,
-            HTTP_X_CHANNEL_ID=str(channel.id),
-            HTTP_REFERER="https://example.com/contact",
-        )
+        for _channel in [channel, channel_with_mailbox_contact]:
+            response = api_client.post(
+                "/api/v1.0/inbound/widget/deliver/",
+                data=data,
+                HTTP_X_CHANNEL_ID=str(_channel.id),
+                HTTP_REFERER="https://example.com/contact",
+            )
 
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"success": True}
+            assert response.status_code == status.HTTP_200_OK
+            assert response.json() == {"success": True}
 
-        # Verify deliver_inbound_message was called
-        mock_deliver.assert_called_once()
-        call_args = mock_deliver.call_args[0]
-        assert call_args[0] == str(channel.mailbox)
+            # Verify deliver_inbound_message was called
+            mock_deliver.assert_called_once()
+            call_args = mock_deliver.call_args[0]
+            if _channel.mailbox.contact:
+                assert call_args[0] == str(_channel.mailbox.contact.email)
+            else:
+                assert call_args[0] == str(_channel.mailbox)
+
+            mock_deliver.reset_mock()
 
     def test_deliver_missing_email(self, api_client, channel):
         """Test deliver with missing email."""

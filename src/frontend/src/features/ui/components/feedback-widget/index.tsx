@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useAuth } from "@/features/auth";
 
 interface FeedbackWidgetProps {
   apiUrl?: string;
@@ -15,6 +16,7 @@ export function FeedbackWidget({
   widget = "feedback",
 }: FeedbackWidgetProps) {
   const { t } = useTranslation();
+  const { user } = useAuth();
 
   const title: string = t("feedback_widget.title");
   const placeholder: string = t("feedback_widget.placeholder");
@@ -46,6 +48,8 @@ export function FeedbackWidget({
             emailPlaceholder,
             submitText,
             successText,
+            // Add email parameter if user is logged in
+            ...(user?.email && { email: user.email }),
           },
           script: feedbackScript,
           widget,
@@ -64,7 +68,7 @@ export function FeedbackWidget({
         }
       }
     }
-  }, [title, apiUrl, widgetPath, widget, emailPlaceholder, submitText, successText]);
+  }, [title, apiUrl, widgetPath, widget, emailPlaceholder, submitText, successText, user?.email]);
 
   // This component doesn't render anything visible
   // The widget is injected via the script
