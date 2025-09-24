@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Attachment, DraftMessageRequestRequest, Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
-import { MessageComposer } from "@/features/forms/components/message-composer";
+import { MessageComposer, QuoteType } from "@/features/forms/components/message-composer";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import MailHelper from "@/features/utils/mail-helper";
 import { RhfInput, RhfSelect } from "../react-hook-form";
@@ -82,13 +82,8 @@ export const MessageForm = ({
     const [pendingSubmit, setPendingSubmit] = useState(false);
     const [currentTime, setCurrentTime] = useState(new Date());
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
-    const [isSaving, setIsSaving] = useState(false);
-    const draftRef = useRef<Message | undefined>(draftMessage);
+    const quoteType: QuoteType | undefined = mode !== "new" ? (mode === "forward" ? "forward" : "reply") : undefined;
 
-    // Keep draftRef in sync with draft state
-    useEffect(() => {
-        draftRef.current = draft;
-    }, [draft]);
     const { selectedMailbox, mailboxes, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
     const hideSubjectField = Boolean(parentMessage);
     const defaultSenderId = mailboxes?.find((mailbox) => {
@@ -214,7 +209,6 @@ export const MessageForm = ({
         mutation: {
             onSettled: () => {
                 form.clearErrors();
-                setPendingSubmit(false);
                 toast.dismiss(DRAFT_TOAST_ID);
             },
             onSuccess: async (response) => {
@@ -248,7 +242,10 @@ export const MessageForm = ({
         mutation: { onSuccess: handleDraftMutationSuccess }
     });
 
+
     const deleteMessageMutation = useMessagesDestroy();
+    const isSavingDraft = draftCreateMutation.isPending || draftUpdateMutation.isPending || deleteMessageMutation.isPending;
+    const isSubmittingMessage = pendingSubmit || messageMutation.isPending;
 
     const handleDeleteMessage = (messageId: string) => {
         if(window.confirm(t("message_form.confirm.delete"))) {
@@ -299,80 +296,6 @@ export const MessageForm = ({
             router.replace(`/mailbox/${mailboxId}/thread/${threadId}?has_draft=1`);
         }
     }
-    /**
-     * Update or create a draft message if any field to change.
-     */
-    const saveDraft = async (data: MessageFormFields) => {
-        if (!canWriteMessages) return;
-        
-        // Prevent concurrent saves
-        if (isSaving) {
-            return draftRef.current;
-        }
-        
-        setIsSaving(true);
-        const canSaveDraft = (
-            Object.keys(form.formState.dirtyFields).length > 0
-            && (
-                draft || (
-                    data.subject.length > 0
-                    || data.to.length > 0
-                    || (data.cc?.length ?? 0) > 0
-                    || (data.bcc?.length ?? 0) > 0
-                    || (data.messageTextBody?.length ?? 0) > 0
-                    || (data.attachments?.length ?? 0) > 0
-                    || (data.driveAttachments?.length ?? 0) > 0
-                    || (data.signatureId?.length ?? 0) > 0
-                )
-            )
-        )
-        if (!canSaveDraft) {
-            setIsSaving(false);
-            return draftRef.current;
-        }
-
-        const payload = {
-            to: data.to,
-            cc: data.cc ?? [],
-            bcc: data.bcc ?? [],
-            subject: data.subject,
-            senderId: data.from,
-            parentId: parentMessage?.id,
-            draftBody: MailHelper.attachDriveAttachmentsToDraft(data.messageDraftBody, data.driveAttachments),
-            attachments: data.attachments,
-            signatureId: data.signatureId,
-        }
-        
-        // Use draftRef to get the current draft state
-        const currentDraft = draftRef.current;
-        let response;
-
-        try {
-            if (!currentDraft) {
-                response = await draftCreateMutation.mutateAsync({
-                    data: payload,
-                });
-            } else if (form.formState.dirtyFields.from) {
-                await handleChangeSender(payload);
-                setIsSaving(false);
-                return draftRef.current;
-            } else {
-                response = await draftUpdateMutation.mutateAsync({
-                    messageId: currentDraft.id,
-                    data: payload,
-                });
-            }
-
-            const newDraft = response.data as Message;
-            setDraft(newDraft);
-            setIsSaving(false);
-            return newDraft;
-        } catch (error) {
-            console.error("Error in saveDraft:", error);
-            setIsSaving(false);
-            return currentDraft;
-        }
-    }
 
     /**
      * Auto-save draft every 30 seconds
@@ -397,27 +320,91 @@ export const MessageForm = ({
     };
 
     /**
+     * Update or create a draft message if any field to change.
+     */
+    const saveDraft = async (data: MessageFormFields) => {
+        if (!canWriteMessages || isSavingDraft) return;
+        stopAutoSave();
+
+        const saveDraftNeeded = (
+            Object.keys(form.formState.dirtyFields).length > 0
+            && (
+                draft || (
+                    data.subject.length > 0
+                    || data.to.length > 0
+                    || (data.cc?.length ?? 0) > 0
+                    || (data.bcc?.length ?? 0) > 0
+                    || (data.messageTextBody?.length ?? 0) > 0
+                    || (data.attachments?.length ?? 0) > 0
+                    || (data.driveAttachments?.length ?? 0) > 0
+                    || (data.signatureId?.length ?? 0) > 0
+                )
+            )
+        )
+        if (!saveDraftNeeded) {
+            return;
+        }
+
+        const payload = {
+            to: data.to,
+            cc: data.cc ?? [],
+            bcc: data.bcc ?? [],
+            subject: data.subject,
+            senderId: data.from,
+            parentId: parentMessage?.id,
+            draftBody: MailHelper.attachDriveAttachmentsToDraft(data.messageDraftBody, data.driveAttachments),
+            attachments: data.attachments,
+            signatureId: data.signatureId,
+        }
+
+        let response;
+
+        try {
+            if (!draft) {
+                response = await draftCreateMutation.mutateAsync({
+                    data: payload,
+                });
+            } else if (form.formState.dirtyFields.from) {
+                await handleChangeSender(payload);
+                return;
+            } else {
+                response = await draftUpdateMutation.mutateAsync({
+                    messageId: draft.id,
+                    data: payload,
+                });
+            }
+
+            const newDraft = response.data as Message;
+            setDraft(newDraft);
+            return newDraft;
+        } catch (error) {
+            console.error("Error in saveDraft:", error);
+        } finally {
+            startAutoSave();
+        }
+    }
+
+    /**
      * Send the draft message
      */
     const handleSubmit = async (data: MessageFormFields) => {
         if (!canSendMessages) return;
-        setPendingSubmit(true);
-        stopAutoSave(); // Stop auto-save when submitting
 
         // recipients are optional to save the draft but required to send the message
         // so we have to manually check that at least one recipient is present.
         const hasNoRecipients = data.to.length === 0 && (data.cc?.length ?? 0) === 0 && (data.bcc?.length ?? 0) === 0;
         if (hasNoRecipients) {
-            setPendingSubmit(false);
             form.setError("to", { message: t("message_form.error.min_recipient") });
             return;
         }
+        stopAutoSave(); // Stop auto-save when submitting
 
-        if (isSaving) {
-            // If currently saving, wait and retry submit
-            setTimeout(() => handleSubmit(data), 200);
+        if (isSavingDraft) {
+            // Do not trigger the submit but mark the form as pending for submitting
+            setPendingSubmit(true);
             return;
         }
+        setPendingSubmit(false);
 
         // Only save if there are unsaved changes, otherwise use existing draft
         let draftToSend = draft;
@@ -426,7 +413,6 @@ export const MessageForm = ({
         }
 
         if (!draftToSend) {
-            setPendingSubmit(false);
             return;
         }
 
@@ -465,10 +451,16 @@ export const MessageForm = ({
         startAutoSave();
 
         // Cleanup on unmount
-        return () => {
-            stopAutoSave();
-        };
+        return stopAutoSave;
     }, []);
+
+    // Effect to retriger handleSubmit if the form is pending for submit
+    // and the draft save state is updated to false
+    useEffect(() => {
+        if (pendingSubmit && !isSavingDraft) {
+            handleSubmit(form.getValues());
+        }
+    }, [isSavingDraft]);
 
     // Restart auto-save when form becomes dirty
     useEffect(() => {
@@ -585,10 +577,11 @@ export const MessageForm = ({
                         fullWidth
                         state={form.formState.errors?.messageDraftBody ? "error" : "default"}
                         text={form.formState.errors?.messageDraftBody?.message}
-                        quotedMessage={mode !== "new" ? parentMessage : undefined}
+                        quotedMessage={quoteType ? parentMessage : undefined}
+                        quoteType={quoteType}
                         disabled={!canWriteMessages}
                         draft={draft}
-                        onSaveDraft={() => form.handleSubmit(saveDraft)()}
+                        submitDraft={form.handleSubmit(saveDraft)}
                     />
                 </div>
 
@@ -619,8 +612,8 @@ export const MessageForm = ({
                 <footer className="form-footer">
                     <Button
                         color="primary"
-                        disabled={!canSendMessages || !draft || pendingSubmit}
-                        icon={pendingSubmit ? <Spinner size="sm" /> : undefined}
+                        disabled={!canSendMessages || !draft || isSubmittingMessage}
+                        icon={isSubmittingMessage ? <Spinner size="sm" /> : undefined}
                         type="submit"
                     >
                         {t("actions.send")}

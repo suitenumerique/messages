@@ -57,6 +57,7 @@
 // Blocknote custom blocks and components
 @use "./../features/blocknote/blocknote-view-field";
 @use "./../features/blocknote/inline-template-variable";
+@use "./../features/blocknote/signature-block";
 
 // Application views
 @use "./../pages";

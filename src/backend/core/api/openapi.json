@@ -2362,7 +2362,7 @@
         "/api/v1.0/mailboxes/{mailbox_id}/message-templates/available/": {
             "get": {
                 "operationId": "mailboxes_message_templates_available_list",
-                "description": "ViewSet for getting message templates for a mailbox.",
+                "description": "List message templates.",
                 "parameters": [
                     {
                         "in": "path",
@@ -2372,6 +2372,18 @@
                             "format": "uuid"
                         },
                         "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "type",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "new_message",
+                                "reply",
+                                "signature"
+                            ]
+                        }
                     }
                 ],
                 "tags": [

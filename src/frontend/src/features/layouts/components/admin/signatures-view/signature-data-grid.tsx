@@ -24,7 +24,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
             },
             request: {
                 params: {
-                    type: MessageTemplateTypeChoices.signature.toUpperCase(),
+                    type: MessageTemplateTypeChoices.signature,
                 }
             }
         }

@@ -2,7 +2,7 @@
 
 from django.db.models import Q
 
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiResponse, extend_schema, OpenApiParameter, OpenApiTypes
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -106,3 +106,19 @@ class AvailableMailboxMessageTemplateViewSet(
                 queryset = forced_active_templates
 
         return queryset.distinct()
+
+    @extend_schema(
+        responses=ReadOnlyMessageTemplateSerializer(many=True),
+        description="List message templates.",
+        parameters=[
+            OpenApiParameter(
+                name="type",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                enum=[c[1] for c in MessageTemplateTypeChoices.choices],
+            ),
+        ],
+    )
+    def list(self, request, *args, **kwargs):
+        """List message templates."""
+        return super().list(request, *args, **kwargs)

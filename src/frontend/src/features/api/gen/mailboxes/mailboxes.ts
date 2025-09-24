@@ -21,6 +21,7 @@ import type {
 import type {
   Mailbox,
   MailboxLight,
+  MailboxesMessageTemplatesAvailableListParams,
   MailboxesMessageTemplatesRenderRetrieve200,
   MailboxesSearchListParams,
   ReadOnlyMessageTemplate,
@@ -594,7 +595,7 @@ export function useMailboxesMessageTemplatesRenderRetrieve<
 }
 
 /**
- * ViewSet for getting message templates for a mailbox.
+ * List message templates.
  */
 export type mailboxesMessageTemplatesAvailableListResponse200 = {
   data: ReadOnlyMessageTemplate[];
@@ -611,16 +612,30 @@ export type mailboxesMessageTemplatesAvailableListResponse =
 
 export const getMailboxesMessageTemplatesAvailableListUrl = (
   mailboxId: string,
+  params?: MailboxesMessageTemplatesAvailableListParams,
 ) => {
-  return `/api/v1.0/mailboxes/${mailboxId}/message-templates/available/`;
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1.0/mailboxes/${mailboxId}/message-templates/available/?${stringifiedParams}`
+    : `/api/v1.0/mailboxes/${mailboxId}/message-templates/available/`;
 };
 
 export const mailboxesMessageTemplatesAvailableList = async (
   mailboxId: string,
+  params?: MailboxesMessageTemplatesAvailableListParams,
   options?: RequestInit,
 ): Promise<mailboxesMessageTemplatesAvailableListResponse> => {
   return fetchAPI<mailboxesMessageTemplatesAvailableListResponse>(
-    getMailboxesMessageTemplatesAvailableListUrl(mailboxId),
+    getMailboxesMessageTemplatesAvailableListUrl(mailboxId, params),
     {
       ...options,
       method: "GET",
@@ -630,9 +645,11 @@ export const mailboxesMessageTemplatesAvailableList = async (
 
 export const getMailboxesMessageTemplatesAvailableListQueryKey = (
   mailboxId: string,
+  params?: MailboxesMessageTemplatesAvailableListParams,
 ) => {
   return [
     `/api/v1.0/mailboxes/${mailboxId}/message-templates/available/`,
+    ...(params ? [params] : []),
   ] as const;
 };
 
@@ -641,6 +658,7 @@ export const getMailboxesMessageTemplatesAvailableListQueryOptions = <
   TError = unknown,
 >(
   mailboxId: string,
+  params?: MailboxesMessageTemplatesAvailableListParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -656,12 +674,12 @@ export const getMailboxesMessageTemplatesAvailableListQueryOptions = <
 
   const queryKey =
     queryOptions?.queryKey ??
-    getMailboxesMessageTemplatesAvailableListQueryKey(mailboxId);
+    getMailboxesMessageTemplatesAvailableListQueryKey(mailboxId, params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>
   > = ({ signal }) =>
-    mailboxesMessageTemplatesAvailableList(mailboxId, {
+    mailboxesMessageTemplatesAvailableList(mailboxId, params, {
       signal,
       ...requestOptions,
     });
@@ -688,6 +706,7 @@ export function useMailboxesMessageTemplatesAvailableList<
   TError = unknown,
 >(
   mailboxId: string,
+  params: undefined | MailboxesMessageTemplatesAvailableListParams,
   options: {
     query: Partial<
       UseQueryOptions<
@@ -715,6 +734,7 @@ export function useMailboxesMessageTemplatesAvailableList<
   TError = unknown,
 >(
   mailboxId: string,
+  params?: MailboxesMessageTemplatesAvailableListParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -742,6 +762,7 @@ export function useMailboxesMessageTemplatesAvailableList<
   TError = unknown,
 >(
   mailboxId: string,
+  params?: MailboxesMessageTemplatesAvailableListParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -762,6 +783,7 @@ export function useMailboxesMessageTemplatesAvailableList<
   TError = unknown,
 >(
   mailboxId: string,
+  params?: MailboxesMessageTemplatesAvailableListParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -778,6 +800,7 @@ export function useMailboxesMessageTemplatesAvailableList<
 } {
   const queryOptions = getMailboxesMessageTemplatesAvailableListQueryOptions(
     mailboxId,
+    params,
     options,
   );
 

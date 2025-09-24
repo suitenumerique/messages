@@ -65,6 +65,8 @@ export * from "./mailbox_admin_update_metadata_request";
 export * from "./mailbox_light";
 export * from "./mailbox_role_choices";
 export * from "./mailboxes_accesses_list_params";
+export * from "./mailboxes_message_templates_available_list_params";
+export * from "./mailboxes_message_templates_available_list_type";
 export * from "./mailboxes_message_templates_render_retrieve200";
 export * from "./mailboxes_search_list_params";
 export * from "./maildomain_access_read";
