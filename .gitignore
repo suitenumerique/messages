@@ -49,6 +49,7 @@ src/frontend/out/
 tsconfig.tsbuildinfo
 src/frontend/.config
 src/frontend/.next
+.vite
 
 # Mails
 src/backend/core/templates/mail/
