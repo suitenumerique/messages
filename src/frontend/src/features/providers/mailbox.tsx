@@ -94,9 +94,6 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const router = useRouter();
     const searchParams = useSearchParams();
     const previousSearchParams = usePrevious(searchParams);
-    const hasSearchParamsChanged = useMemo(() => {
-        return previousSearchParams?.toString() !== searchParams.toString();
-    }, [previousSearchParams, searchParams]);
     const mailboxQuery = useMailboxesList({
         query: {
             refetchInterval: 30 * 1000, // 30 seconds
@@ -295,11 +292,15 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     }, [selectedMailbox?.count_unread_messages]);
 
     useEffect(() => {
+        if (previousSearchParams?.toString() === searchParams.toString()) return;
         if (searchParams.get('search') !== previousSearchParams?.get('search')) {
             resetSearchQueryDebounced();
+            unselectThread();
         }
-        unselectThread();
-    }, [hasSearchParamsChanged])
+        else if ((previousSearchParams?.size ?? 0) > 0) {
+            unselectThread();
+        }
+    }, [previousSearchParams!.toString(), searchParams.toString()])
 
     return <MailboxContext.Provider value={context}>{children}</MailboxContext.Provider>
 };

@@ -228,11 +228,15 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
         # if user as access to any maildomain or is superuser, he can view them
         has_access = self.maildomain_accesses.exists()
         is_admin = self.is_superuser
+        is_maildomain_admin = False
+
+        if not is_admin and has_access:
+            is_maildomain_admin = self.maildomain_accesses.filter(role=MailDomainAccessRoleChoices.ADMIN).exists()
 
         return {
             UserAbilities.CAN_VIEW_DOMAIN_ADMIN: has_access or is_admin,
             UserAbilities.CAN_CREATE_MAILDOMAINS: is_admin,
-            UserAbilities.CAN_MANAGE_MAILDOMAIN_ACCESSES: is_admin,
+            UserAbilities.CAN_MANAGE_MAILDOMAIN_ACCESSES: is_maildomain_admin,
         }
 
 

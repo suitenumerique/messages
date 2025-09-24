@@ -6,10 +6,10 @@ import { Chip } from "./chip";
 import { Button, Option } from "@openfun/cunningham-react";
 
 export type ComboBoxProps =  {
-    onInputChange?: (value: string) => void;
+    onInputChange?: (event: { target: { value: string } }) => void;
     value?: string[],
     defaultValue?: string[],
-    onChange?: (value: string[]) => void,
+    onChange?: (event: { target: { value: string[] } }) => void,
     renderChipLabel?: (item: Option) => string,
     valueValidator?: (value: string) => boolean,
 } & Omit<SelectProps, 'value' | 'defaultValue' | 'onChange'>;

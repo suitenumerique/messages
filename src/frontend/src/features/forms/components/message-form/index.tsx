@@ -21,6 +21,7 @@ import { Banner } from "@/features/ui/components/banner";
 import { RhfContactComboBox } from "../react-hook-form/rhf-contact-combobox";
 import { DriveFile } from "./drive-attachment-picker";
 import useAbility, { Abilities } from "@/hooks/use-ability";
+import { MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
 
 export type MessageFormMode = "new" |"reply" | "reply_all" | "forward";
 
@@ -327,6 +328,10 @@ export const MessageForm = ({
             response = await draftCreateMutation.mutateAsync({
                 data: payload,
             });
+            if (mode === "new") {
+                const draftFilters = MAILBOX_FOLDERS.find((folder) => folder.id === "drafts")!.filter;
+                await router.push(`/mailbox/${selectedMailbox?.id}/thread/${response.data.thread_id}?${new URLSearchParams(draftFilters).toString()}`);
+            }
         } else if (form.formState.dirtyFields.from) {
             handleChangeSender(payload);
             return;
@@ -408,9 +413,9 @@ export const MessageForm = ({
     }
 
     useEffect(() => {
-        if (draftMessage) form.setFocus("subject");
-        else form.setFocus("to")
-    }, []);
+        if (draftMessage) form.setFocus("subject", { shouldSelect: true });
+        else form.setFocus("from", { shouldSelect: true });
+    }, [form.setFocus]);
 
     useEffect(() => {
         if (draft) {
@@ -470,6 +475,7 @@ export const MessageForm = ({
             >
                 <div className={clsx("form-field-row", {'form-field-row--hidden': hideFromField})}>
                     <RhfSelect
+                        {...form.register("from")}
                         name="from"
                         options={getMailboxOptions()}
                         label={t("thread_message.from")}
@@ -483,6 +489,7 @@ export const MessageForm = ({
                 </div>
                 <div className="form-field-row">
                     <RhfContactComboBox
+                        {...form.register("to")}
                         name="to"
                         label={t("thread_message.to")}
                         // icon={<span className="material-icons">group</span>}
@@ -499,6 +506,7 @@ export const MessageForm = ({
                 {showCCField && (
                     <div className="form-field-row">
                         <RhfContactComboBox
+                            {...form.register("cc")}
                             name="cc"
                             label={t("thread_message.cc")}
                             // icon={<span className="material-icons">group</span>}
@@ -514,6 +522,7 @@ export const MessageForm = ({
                 {showBCCField && (
                     <div className="form-field-row">
                         <RhfContactComboBox
+                            {...form.register("bcc")}
                             name="bcc"
                             label={t("thread_message.bcc")}
                             // icon={<span className="material-icons">visibility_off</span>}
@@ -528,7 +537,7 @@ export const MessageForm = ({
 
                 <div className={clsx("form-field-row", {'form-field-row--hidden': hideSubjectField})}>
                         <RhfInput
-                            name="subject"
+                            {...form.register("subject")}
                             label={t("thread_message.subject")}
                             text={form.formState.errors.subject && t(form.formState.errors.subject.message as string)}
                             disabled={!canWriteMessages}
@@ -538,6 +547,7 @@ export const MessageForm = ({
 
                 <div className="form-field-row">
                     <MessageEditor
+                        {...form.register("messageEditorDraft")}
                         defaultValue={form.getValues('messageEditorDraft')}
                         fullWidth
                         state={form.formState.errors?.messageEditorDraft ? "error" : "default"}
