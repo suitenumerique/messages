@@ -15,17 +15,18 @@ export function FeedbackWidget({
   const apiUrl = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL;
   const widgetPath = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH;
   const channel = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL;
-  
-  if (!channel || !apiUrl || !widgetPath) return null;
 
   const title: string = t("feedback_widget.title");
   const placeholder: string = t("feedback_widget.placeholder");
   const emailPlaceholder: string = t("feedback_widget.email_placeholder");
   const submitText: string = t("feedback_widget.submit_text");
   const successText: string = t("feedback_widget.success_text");
+  const successText2: string = t("feedback_widget.success_text2");
 
   // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
+    if (!channel || !apiUrl || !widgetPath) return;
+
     // Initialize the widget array if it doesn't exist
     if (typeof window !== "undefined" && widgetPath) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -69,7 +70,7 @@ export function FeedbackWidget({
         }
       }
     }
-  }, [title, apiUrl, widgetPath, widget, emailPlaceholder, submitText, successText, user?.email]);
+  }, [title, channel, apiUrl, widgetPath, widget, emailPlaceholder, submitText, successText, successText2, user?.email]);
 
   // This component doesn't render anything visible
   // The widget is injected via the script
