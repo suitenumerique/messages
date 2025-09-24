@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.utils import timezone
 
+from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.decorators import action
@@ -52,6 +53,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
     permission_classes = [IsAuthenticated]
     authentication_classes = [WidgetAuthentication]
 
+    @extend_schema(exclude=True)
     @action(
         detail=False,
         methods=["get"],
@@ -68,6 +70,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             {"success": True, "config": (channel.settings or {}).get("config") or {}}
         )
 
+    @extend_schema(exclude=True)
     @action(
         detail=False,
         methods=["post"],
@@ -168,7 +171,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         }
 
         delivered = deliver_inbound_message(
-            target_email, parsed_email, compose_email(parsed_email)
+            target_email, parsed_email, compose_email(parsed_email), channel=channel
         )
 
         if not delivered:

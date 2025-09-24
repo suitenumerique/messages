@@ -3,20 +3,20 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/features/auth";
 
 interface FeedbackWidgetProps {
-  apiUrl?: string;
-  widgetPath?: string;
   widget?: string;
-  channel?: string;
 }
 
 export function FeedbackWidget({
-  apiUrl = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL,
-  widgetPath = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH,
-  channel = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL,
   widget = "feedback",
 }: FeedbackWidgetProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
+
+  const apiUrl = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL;
+  const widgetPath = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH;
+  const channel = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL;
+  
+  if (!channel || !apiUrl || !widgetPath) return null;
 
   const title: string = t("feedback_widget.title");
   const placeholder: string = t("feedback_widget.placeholder");
@@ -24,6 +24,7 @@ export function FeedbackWidget({
   const submitText: string = t("feedback_widget.submit_text");
   const successText: string = t("feedback_widget.success_text");
 
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     // Initialize the widget array if it doesn't exist
     if (typeof window !== "undefined" && widgetPath) {

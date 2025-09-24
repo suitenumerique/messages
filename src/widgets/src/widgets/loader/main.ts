@@ -1,9 +1,8 @@
 import styles from './styles.css?inline'
 import { createShadowWidget } from '../../shared/shadow-dom'
 import icon from './icon.svg?raw'
-import { injectScript, installHook, getLoaded, setLoaded } from '../../shared/script'
+import { injectScript, installHook, getLoaded, setLoaded, STATE_LOADED, STATE_LOADING } from '../../shared/script'
 import { triggerEvent, listenEvent } from '../../shared/events'
-
 const widgetName = "loader";
 
 // The init event is sent from the embedding code
@@ -19,13 +18,25 @@ listenEvent(widgetName, 'init', null, false, (args) => {
 
     const btn = shadowRoot.querySelector<HTMLButtonElement>('button')!
 
-    btn.setAttribute('aria-label', String(args.label || 'Load widget'))
+    const ariaOpen = () => {
+        btn.setAttribute('aria-label', String(args.closeLabel || 'Close widget'))
+        btn.setAttribute('aria-expanded', 'true')
+        // TODO: How could we set the aria-controls attribute too, given that we
+        // have no id for the widget? Should we ask for it via an event?
+    }
+    const ariaClose = () => {
+        btn.setAttribute('aria-label', String(args.label || 'Load widget'))
+        btn.setAttribute('aria-expanded', 'false')
+    }
+    ariaClose();
 
     listenEvent(targetWidget, 'closed', null, false, () => {
         btn.classList.remove('opened')
+        ariaClose();
     })
     listenEvent(targetWidget, 'opened', null, false, () => {
         btn.classList.add('opened')
+        ariaOpen();
     })
 
     btn.addEventListener('click', () => {
@@ -48,14 +59,14 @@ listenEvent(widgetName, 'init', null, false, (args) => {
             window._stmsg_widget.push([targetWidget, "init", args.params]);
         }
 
-        if (getLoaded(targetWidget) === 2) {
+        if (getLoaded(targetWidget) === STATE_LOADED) {
             loadedCallback();
         } else {
             listenEvent(targetWidget, 'loaded', null, true, loadedCallback);
             // If it isn't even loading, we need to inject the script
             if (!getLoaded(targetWidget)) {
                 injectScript(args.script, args.scriptType || "");
-                setLoaded(targetWidget, 1);
+                setLoaded(targetWidget, STATE_LOADING);
             }
         }
 

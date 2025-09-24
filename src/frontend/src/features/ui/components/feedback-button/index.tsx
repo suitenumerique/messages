@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next"
 import { useAuth } from "@/features/auth";
 
 /**
- * A button that opens the feedbac
+ * A button that opens the feedback widget
  */
 export const SurveyButton = (props: ButtonProps) => {
   const { t } = useTranslation()
@@ -14,6 +14,8 @@ export const SurveyButton = (props: ButtonProps) => {
   const widgetPath = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH;
   const channel = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL;
   
+  if (!channel || !apiUrl || !widgetPath) return null;
+
   const title: string = t("feedback_widget.title");
   const placeholder: string = t("feedback_widget.placeholder");
   const emailPlaceholder: string = t("feedback_widget.email_placeholder");
@@ -71,7 +73,7 @@ export const SurveyButton = (props: ButtonProps) => {
       title={t("feedback_widget.title")}
       onClick={showWidget}
     >
-      {t("feedback_widget.title")}
+      {t("feedback_widget.shortTitle")}
     </Button>
   )
 }

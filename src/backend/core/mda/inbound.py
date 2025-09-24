@@ -336,6 +336,7 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
     is_import: bool = False,
     imap_labels: Optional[List[str]] = None,
     imap_flags: Optional[List[str]] = None,
+    channel: Optional[models.Channel] = None,
 ) -> bool:  # Return True on success, False on failure
     """Deliver a parsed inbound email message to the correct mailbox and thread.
 
@@ -556,6 +557,7 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
             is_trashed=False,
             is_unread=True,
             has_attachments=len(parsed_email.get("attachments", [])) > 0,
+            channel=channel,
         )
         if is_import:
             # We need to set the created_at field to the date of the message

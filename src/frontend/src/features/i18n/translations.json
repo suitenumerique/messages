@@ -516,11 +516,13 @@
         "copy": "Copy"
       },
       "feedback_widget": {
+        "shortTitle": "Feedback?",
         "title": "Do you have any feedback?",
         "placeholder": "Share your feedback here...",
         "email_placeholder": "Your email...",
         "submit_text": "Send Feedback",
-        "success_text": "Thank you for your feedback!"
+        "success_text": "Thank you for your feedback!",
+        "success_text2": "In case of questions, we'll get back to you soon."
       }
     }
   },
@@ -1034,11 +1036,13 @@
         "copy": "Copier"
       },
       "feedback_widget": {
-        "title": "Faire un retour",
-        "placeholder": "Partagez votre retour...",
-        "email_placeholder": "Votre email...",
-        "submit_text": "Envoyer le retour",
-        "success_text": "Merci pour votre retour!"
+        "shortTitle": "Faire un retour",
+        "title": "Partager un retour ou une question",
+        "placeholder": "Saisir votre message...",
+        "email_placeholder": "Renseigner votre email...",
+        "submit_text": "Envoyer le message",
+        "success_text": "Merci pour votre message.",
+        "success_text2": "En cas de questions, nous vous répondrons dans les meilleurs délais sur l'email renseigné."
       }
     }
   }

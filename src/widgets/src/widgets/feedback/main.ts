@@ -6,20 +6,20 @@ import { listenEvent, triggerEvent } from '../../shared/events'
 const widgetName = "feedback";
 
 type ConfigData = {
-  captcha: boolean;
-  title: string;
-  placeholder: string;
-  emailPlaceholder: string;
-  submitText: string;
-  successText: string;
-  submitUrl: string;
+  title?: string;
+  placeholder?: string;
+  emailPlaceholder?: string;
+  submitText?: string;
+  successText?: string;
+  successText2?: string;
+  submitUrl?: string;
 };
 
 type ConfigResponse = {
-  success: boolean;
+  success?: boolean;
   detail?: string;
-  captcha: boolean;
-  config: ConfigData;
+  captcha?: boolean;
+  config?: ConfigData;
 };
 
 listenEvent(widgetName, 'init', null, false, async (args) => {
@@ -51,17 +51,18 @@ listenEvent(widgetName, 'init', null, false, async (args) => {
   const emailPlaceholder = args.emailPlaceholder || configData?.emailPlaceholder || 'Your email...';
   const submitText = args.submitText || configData?.submitText || 'Send Feedback';
   const successText = args.successText || configData?.successText || 'Thank you for your feedback!';
-
-  const htmlContent = `<div class="wrapper">` +
-      `<div class="header">` +
+  const successText2 = args.successText2 || configData?.successText2;
+  
+  const htmlContent = `<div id="wrapper">` +
+      `<div id="header">` +
         `<span id="title"></span>` +
-        `<button class="close-btn" id="close">×</button>` +
+        `<button id="close" aria-label="Close the feedback widget" tabindex="4">&times;</button>` +
       `</div>` +
-      `<form class="content">` +
-        `<textarea id="feedback-text" autocomplete="off" required></textarea>` +
-        `<input type="email" id="email" autocomplete="email" required>` +
-        `<button type="submit" id="submit"></button>` +
-        `<div id="status" class="status"></div>` +
+      `<form id="content">` +
+        `<textarea id="feedback-text" autocomplete="off" required tabindex="1"></textarea>` +
+        `<input type="email" id="email" autocomplete="email" required tabindex="2">` +
+        `<button type="submit" id="submit" tabindex="3"></button>` +
+        `<div id="status" aria-live="polite" role="status"></div>` +
       `</form>` +
     `</div>`;
 
@@ -88,11 +89,18 @@ listenEvent(widgetName, 'init', null, false, async (args) => {
 
   const setStatus = (status: string, success: boolean) => {
     statusDiv.innerHTML = '';
-    const statusSpan = document.createElement('span');
-    statusSpan.classList.add('status');
+    const statusSpan = document.createElement('div');
+    statusSpan.id = 'statusmsg';
     statusSpan.classList.add(success ? 'success' : 'error');
     statusSpan.textContent = status;
     statusDiv.appendChild(statusSpan);
+    if (successText2) {
+      const statusSpan2 = document.createElement('div');
+      statusSpan2.id = 'statusmsg2';
+      statusSpan2.classList.add('success');
+      statusSpan2.textContent = successText2;
+      statusDiv.appendChild(statusSpan2);
+    }
   }
 
   form.addEventListener('submit', async (e) => {
@@ -109,7 +117,7 @@ listenEvent(widgetName, 'init', null, false, async (args) => {
         throw new Error("Missing value");
       }
     
-      const ret = await fetch(configData.submitUrl || `${args.api}deliver/`, {
+      const ret = await fetch(configData?.submitUrl || `${args.api}deliver/`, {
         'method': 'POST',
         'headers': {
           'Content-Type': 'application/json',

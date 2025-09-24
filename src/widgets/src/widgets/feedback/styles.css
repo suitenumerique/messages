@@ -1,5 +1,5 @@
 /* Widget styles */
-.wrapper {
+#wrapper {
   position: fixed;
   bottom: 100px;
   right: 20px;
@@ -14,7 +14,7 @@
   overflow: hidden;
 }
 
-.header {
+#header {
   background: #000091;
   color: white;
   padding: 16px;
@@ -25,7 +25,7 @@
   justify-content: space-between;
 }
 
-.close-btn {
+#close {
   background: none;
   border: none;
   color: white;
@@ -39,11 +39,11 @@
   justify-content: center;
 }
 
-.close-btn:hover {
+#close:hover {
   opacity: 0.8;
 }
 
-.content {
+#content {
   flex: 1;
   padding: 16px;
   display: flex;
@@ -84,7 +84,7 @@ button[type="submit"]:hover {
   background: #1212ff;
 }
 
-.status {
+#status {
   font-size: 14px;
   font-weight: 500;
 }
@@ -92,9 +92,19 @@ button[type="submit"]:hover {
 .success {
   color: #28a745;
   display:table;
-  margin:50px auto;
+  margin:40px auto;
 }
 
 .error {
   color: #dc3545;
 } 
+
+/* Responsive */
+@media (max-width: 420px) {
+  #wrapper {
+    width: 100%;
+    right:0px;
+    border-radius: 0;
+    bottom:75px;
+  }
+}

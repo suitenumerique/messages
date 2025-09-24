@@ -1502,62 +1502,6 @@
                 }
             }
         },
-        "/api/v1.0/inbound/mta/check/": {
-            "post": {
-                "operationId": "inbound_mta_check_create",
-                "description": "Check recipients exist.",
-                "tags": [
-                    "inbound"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "No response body"
-                    }
-                }
-            }
-        },
-        "/api/v1.0/inbound/mta/deliver/": {
-            "post": {
-                "operationId": "inbound_mta_deliver_create",
-                "description": "Handle incoming raw email (message/rfc822) from MTA.",
-                "tags": [
-                    "inbound"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "No response body"
-                    }
-                }
-            }
-        },
-        "/api/v1.0/inbound/widget/config/": {
-            "get": {
-                "operationId": "inbound_widget_config_retrieve",
-                "description": "Return the configuration for the widget.",
-                "tags": [
-                    "inbound"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "No response body"
-                    }
-                }
-            }
-        },
-        "/api/v1.0/inbound/widget/deliver/": {
-            "post": {
-                "operationId": "inbound_widget_deliver_create",
-                "description": "Handle incoming widget message.",
-                "tags": [
-                    "inbound"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "No response body"
-                    }
-                }
-            }
-        },
         "/api/v1.0/labels/": {
             "get": {
                 "operationId": "labels_list",
@@ -3112,34 +3056,6 @@
                 ],
                 "responses": {
                     "204": {
-                        "description": "No response body"
-                    }
-                }
-            }
-        },
-        "/api/v1.0/mta/check-recipients/": {
-            "post": {
-                "operationId": "mta_check_recipients_create",
-                "description": "Check recipients exist.",
-                "tags": [
-                    "mta"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "No response body"
-                    }
-                }
-            }
-        },
-        "/api/v1.0/mta/inbound-email/": {
-            "post": {
-                "operationId": "mta_inbound_email_create",
-                "description": "Handle incoming raw email (message/rfc822) from MTA.",
-                "tags": [
-                    "mta"
-                ],
-                "responses": {
-                    "200": {
                         "description": "No response body"
                     }
                 }

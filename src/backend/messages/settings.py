@@ -91,6 +91,10 @@ class Base(Configuration):
     SECRET_KEY = values.Value(None)
     SERVER_TO_SERVER_API_TOKENS = values.ListValue([])
 
+    USE_X_FORWARDED_FOR = values.BooleanValue(
+        default=False, environ_name="USE_X_FORWARDED_FOR", environ_prefix=None
+    )
+
     # Application definition
     ROOT_URLCONF = "messages.urls"
     WSGI_APPLICATION = "messages.wsgi.application"
@@ -698,6 +702,9 @@ class Base(Configuration):
                 *self.MIDDLEWARE,
                 "django_prometheus.middleware.PrometheusAfterMiddleware",
             ]
+
+        if self.USE_X_FORWARDED_FOR:
+            self.MIDDLEWARE.insert(0, "core.middlewares.XForwardedForMiddleware")
 
         if os.environ.get("MTA_OUT_SMTP_HOST") and not self.MTA_OUT_RELAY_HOST:
             logger.warning(

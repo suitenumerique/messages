@@ -78,3 +78,21 @@ button.opened::after {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+
+@media (max-width: 420px) {
+  button {
+    width: 40px;
+    height: 40px;
+  }
+  svg {
+    width: 25px;
+    height: 25px;
+  }
+  div {
+    right:15px;
+    bottom:15px;
+  }
+  button.opened::after {
+    font-size: 40px;
+  }
+}

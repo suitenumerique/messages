@@ -380,7 +380,7 @@ class MessageAdmin(admin.ModelAdmin):
     )
     search_fields = ("subject", "sender__name", "sender__email", "mime_id")
     change_list_template = "admin/core/message/change_list.html"
-    raw_id_fields = ("thread", "blob", "draft_blob", "parent")
+    raw_id_fields = ("thread", "blob", "draft_blob", "parent", "channel")
     autocomplete_fields = ("sender",)
     readonly_fields = ("mime_id", "created_at", "updated_at")
 

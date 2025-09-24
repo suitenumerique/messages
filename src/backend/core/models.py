@@ -1186,6 +1186,14 @@ class Message(BaseModel):
 
     mime_id = models.CharField(_("mime id"), max_length=998, null=True, blank=True)
 
+    channel = models.ForeignKey(
+        "Channel",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="messages",
+    )
+
     # Stores the raw MIME message.
     blob = models.ForeignKey(
         "Blob",

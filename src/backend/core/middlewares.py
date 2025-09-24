@@ -96,3 +96,25 @@ class CustomCorsMiddleware(CorsMiddleware):
 
         # Use default CORS behavior for all other paths
         return super().__call__(request)
+
+
+class XForwardedForMiddleware:
+    """
+    Middleware that sets the REMOTE_ADDR from the X-Forwarded-For header if present.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        try:
+            real_ip = request.META["HTTP_X_FORWARDED_FOR"]
+        except KeyError:
+            pass
+        else:
+            # HTTP_X_FORWARDED_FOR can be a comma-separated list of IPs. The
+            # client's IP will be the first one.
+            real_ip = real_ip.split(",")[0].strip()
+            request.META["REMOTE_ADDR"] = real_ip
+
+        return self.get_response(request)

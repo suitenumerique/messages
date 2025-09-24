@@ -7,6 +7,7 @@ import secrets
 from django.conf import settings
 
 import jwt
+from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.decorators import action
@@ -77,6 +78,7 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
     permission_classes = [IsAuthenticated]
     authentication_classes = [MTAJWTAuthentication]
 
+    @extend_schema(exclude=True)
     @action(
         detail=False, methods=["post"], url_path="check", url_name="inbound-mta-check"
     )
@@ -95,6 +97,7 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
         }
         return Response(results)
 
+    @extend_schema(exclude=True)
     @action(
         detail=False,
         methods=["post"],

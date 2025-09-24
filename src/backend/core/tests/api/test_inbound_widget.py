@@ -202,6 +202,8 @@ class TestInboundWidgetDeliver:
             # Verify deliver_inbound_message was called
             mock_deliver.assert_called_once()
             call_args = mock_deliver.call_args[0]
+            call_kwargs = mock_deliver.call_args[1]
+            assert call_kwargs["channel"] == _channel
             if _channel.mailbox.contact:
                 assert call_args[0] == str(_channel.mailbox.contact.email)
             else:
