@@ -241,7 +241,7 @@ front-test: ## run the frontend tests
 
 front-test-amd64: ## run the frontend tests in amd64
 	@$(COMPOSE) run --rm frontend-tools-amd64 npm run test
-.PHONY: front-test
+.PHONY: front-test-amd64
 
 mta-in-test: ## run the mta-in tests
 	@$(COMPOSE) run --build --rm mta-in-test
@@ -447,7 +447,7 @@ front-i18n-generate: ## Generate the frontend json files used for crowdin
 	front-i18n-extract
 .PHONY: front-i18n-generate
 
-front-i18n-compile: ## Format the crowin json files used deploy to the apps
+front-i18n-compile: ## Format the crowdin json files used deploy to the apps
 	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:deploy
 .PHONY: front-i18n-compile
 

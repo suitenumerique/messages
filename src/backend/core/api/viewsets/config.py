@@ -100,6 +100,8 @@ class ConfigView(drf.views.APIView):
         dict_settings["AI_FEATURE_SUMMARY_ENABLED"] = is_ai_summary_enabled()
         dict_settings["AI_FEATURE_AUTOLABELS_ENABLED"] = is_auto_labels_enabled()
 
+        dict_settings["_ip"] = request.META.get("REMOTE_ADDR")
+
         # Drive service
         if base_url := settings.DRIVE_CONFIG.get("base_url"):
             dict_settings.update(

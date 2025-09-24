@@ -45,6 +45,7 @@ def test_api_config(is_authenticated):
         "AI_FEATURE_AUTOLABELS_ENABLED": False,
         "SCHEMA_CUSTOM_ATTRIBUTES_USER": {},
         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN": {},
+        "_ip": "127.0.0.1",
     }
 
 

@@ -6,6 +6,7 @@ from secrets import compare_digest
 
 from django.conf import settings
 from django.http import HttpResponse
+from django.utils.cache import patch_vary_headers
 
 from corsheaders.middleware import CorsMiddleware
 
@@ -74,14 +75,21 @@ class CustomCorsMiddleware(CorsMiddleware):
         Process the request and response with custom CORS handling for widget API.
         """
 
+        def update_headers(response, headers):
+            """Update the response headers with the given headers."""
+            for header, value in headers.items():
+                if header.lower() == "vary":
+                    patch_vary_headers(response, [h.strip() for h in value.split(",")])
+                else:
+                    response[header] = value
+
         if request.path.startswith(f"/api/{settings.API_VERSION}/inbound/widget/"):
             # Handle CORS for widget API requests manually
             if request.method == "OPTIONS":
                 # Handle preflight requests
                 headers = self._get_cors_headers_for_widget_api(request)
                 response = HttpResponse(status=200)
-                for header, value in headers.items():
-                    response[header] = value
+                update_headers(response, headers)
                 return response
 
             # Process the request normally
@@ -89,8 +97,7 @@ class CustomCorsMiddleware(CorsMiddleware):
 
             # Add CORS headers to the response
             headers = self._get_cors_headers_for_widget_api(request)
-            for header, value in headers.items():
-                response[header] = value
+            update_headers(response, headers)
 
             return response
 
@@ -101,6 +108,9 @@ class CustomCorsMiddleware(CorsMiddleware):
 class XForwardedForMiddleware:
     """
     Middleware that sets the REMOTE_ADDR from the X-Forwarded-For header if present.
+
+    Note: This middleware is only enabled if USE_X_FORWARDED_FOR is True (default is False), because
+    it's not safe to use in production if the headers are not trusted (safely overridden by a proxy).
     """
 
     def __init__(self, get_response):
