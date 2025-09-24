@@ -202,6 +202,27 @@ MTA_OUT_MODE=relay MTA_OUT_RELAY_HOST=mailcatcher:1025 python manage.py send_mai
 > ⚠️ Most residential ISPs block the outgoing port 25, so you might not be able to send emails to outside
 > servers from your localhost. This is why the mailcatcher is so useful locally.
 
+### Developing Widgets
+
+We currently develop some embeddable widgets in the `src/widgets` directory in this repository.
+
+```
+$ make widgets-start
+```
+
+This will start the development server at [http://localhost:8905](http://localhost:8905).
+
+You can then build them with:
+
+```
+$ make widgets-build
+```
+
+And deploy them to an S3 bucket, with `.aws/{config|credentials}` files in the root of the repository.
+```
+$ MESSAGES_WIDGETS_S3_PATH=xxx make widgets-deploy
+```
+
 ## Feedback 🙋‍♂️🙋‍♀️
 
 We'd love to hear your thoughts, and hear about your experiments, so come and say hi on [Matrix](https://matrix.to/#/#messages-official:matrix.org).
