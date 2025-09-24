@@ -19,7 +19,7 @@ from core.mda.rfc5322 import (
     parse_email_message,
 )
 from core.mda.signing import sign_message_dkim
-from core.mda.smtp import send_smtp_mail
+from core.mda.smtp import send_smtp_mail, SMTPMailContext
 
 logger = logging.getLogger(__name__)
 
@@ -236,7 +236,36 @@ def send_message(message: models.Message, force_mta_out: bool = False):
             internal: bool,
             error: Optional[str] = None,
             retry: Optional[bool] = False,
+            smtp_context: SMTPMailContext = {}
         ) -> None:
+            custom_attributes = message.sender.mailbox.domain.custom_attributes or {}
+            status = "delivered" if delivered else "failed"
+            if internal:
+                logger.info(
+                    "Message %s status: %s to:%s from:%s via internal delivery",
+                    message.id,
+                    status,
+                    recipient_email,
+                    message.sender.email,
+                )
+            elif custom_attributes.get("_mta_out_mode") or settings.MTA_OUT_MODE == "direct":
+                logger.info(
+                    "Message %s status: %s to:%s from:%s mx:%s via direct MX",
+                    message.id,
+                    status,
+                    recipient_email,
+                    message.sender.email,
+                    smtp_context.get("smtp_hostname"),
+                )
+            else:
+                logger.info(
+                    "Message %s status: %s to:%s from:%s smtp host:%s via SMTP relay",
+                    message.id,
+                    status,
+                    recipient_email,
+                    message.sender.email,
+                    smtp_context.get("smtp_hostname"),
+                )
             if delivered:
                 # TODO also update message.updated_at?
                 envelope_to[recipient_email].delivered_at = timezone.now()
@@ -314,6 +343,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                         False,
                         status.get("error"),
                         status.get("retry", False),
+                        status.get("context", {})
                     )
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.error("Failed to send outbound message: %s", e, exc_info=True)
@@ -324,6 +354,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                         False,
                         "Internal error while delivering",
                         True,
+                        {}
                     )
     finally:
         # Always release the lock when done
