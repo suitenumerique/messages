@@ -50,6 +50,7 @@ export function FeedbackWidget({
             emailPlaceholder,
             submitText,
             successText,
+            successText2,
             // Add email parameter if user is logged in
             ...(user?.email && { email: user.email }),
           },

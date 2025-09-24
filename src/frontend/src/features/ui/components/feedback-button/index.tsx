@@ -21,6 +21,7 @@ export const SurveyButton = (props: ButtonProps) => {
   const emailPlaceholder: string = t("feedback_widget.email_placeholder");
   const submitText: string = t("feedback_widget.submit_text");
   const successText: string = t("feedback_widget.success_text");
+  const successText2: string = t("feedback_widget.success_text2");
 
 
   const showWidget = () => {
@@ -45,6 +46,7 @@ export const SurveyButton = (props: ButtonProps) => {
           emailPlaceholder,
           submitText,
           successText,
+          successText2,
           // Add email parameter if user is logged in
           ...(user?.email && { email: user.email }),
         },
