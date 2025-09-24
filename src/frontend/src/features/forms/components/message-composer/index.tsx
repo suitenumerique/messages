@@ -28,14 +28,17 @@ export type MessageComposerInlineContentSchema = MessageComposerBlockNoteSchema[
 export type MessageComposerStyleSchema = MessageComposerBlockNoteSchema['styleSchema'];
 export type PartialMessageComposerBlockSchema = PartialBlock<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>;
 
+export type QuoteType = "reply" | "forward";
+
 type MessageComposerProps = FieldProps & {
     mailboxId?: string;
     blockNoteOptions?: Partial<MessageComposerBlockNoteSchema>
     defaultValue?: string;
-    quotedMessage?: Message;
     disabled?: boolean;
     draft?: Message;
-    onSaveDraft?: () => void;
+    submitDraft?: () => void;
+    quotedMessage?: Message;
+    quoteType?: QuoteType;
 }
 
 /**
@@ -47,11 +50,12 @@ type MessageComposerProps = FieldProps & {
  * when the editor is blurred. Those inputs must be used in the parent form
  * to retrieve all the content of the message.
  */
-export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quotedMessage, disabled = false, draft, onSaveDraft, ...props }: MessageComposerProps) => {
+
+export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quotedMessage, quoteType, disabled = false, draft, submitDraft, ...props }: MessageComposerProps) => {
     const form = useFormContext();
     const { t, i18n } = useTranslation();
     const { data: { data: activeSignatures = [] } = {}, isLoading: isLoadingSignatures } = useMessageTemplatesList({
-        query: { 
+        query: {
             enabled: !!mailboxId,
             //refetchOnMount: true,
             //refetchOnWindowFocus: true,
@@ -82,7 +86,7 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
             type: "quoted-message",
             content: undefined,
             props: {
-                mode: "forward",
+                mode: quoteType!,
                 messageId: quotedMessage.id,
                 subject: quotedMessage.subject,
                 recipients: quotedMessage.to.map((to) => to.email).join(", "),
@@ -114,69 +118,51 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
         form.setValue("messageDraftBody", JSON.stringify(editor.document), { shouldDirty: true });
         form.setValue("messageTextBody", markdown);
         form.setValue("messageHtmlBody", html);
+
         // Update signatureId
         const signatureBlock = editor.getBlock('signature');
         const signatureId = (signatureBlock?.type === 'signature' ? signatureBlock.props.templateId : null) || null;
-        form.setValue("signatureId", signatureId, { shouldDirty: true });
+        form.setValue("signatureId", signatureId);
 
-    }, [editor, form]);
-                    
-            
+        // If signature block has changed, fire update immediately
+        if (signatureId !== draft?.signature?.id) submitDraft?.();
+    }, [editor, form, submitDraft, draft?.signature?.id]);
 
-    
     /**
      * Process the html and text content of the message when the editor is mounted.
      */
     useEffect(() => {
         if (!editor) return;
-
-        // Update the form with the current signature ID
-        const signatureBlock = editor.getBlock('signature');
-        if (signatureBlock?.type === 'signature') {
-            const signatureId = signatureBlock.props.templateId;
-            form.setValue('signatureId', signatureId, { shouldDirty: true });
-        }
-
-        // Wait for editor to be fully ready before calling handleChange
-        const checkEditorReady = () => {
-            // Check if editor is ready, not headless, and has the required methods
-            if (editor.document && 
-                editor.isEditable !== false && 
-                typeof editor.blocksToMarkdownLossy === 'function' &&
-                editor._tiptapEditor && 
-                !editor._tiptapEditor.isDestroyed) {
-                handleChange();
-            } else {
-                // Retry after a short delay
-                setTimeout(checkEditorReady, 100);
-            }
-        };
-
-        // Start checking after initial delay
-        setTimeout(checkEditorReady, 200);
+        handleChange();
     }, [editor])
 
     /**
      * Add signature to editor after signatures are loaded
      */
     useEffect(() => {
-        if (!editor || isLoadingSignatures || activeSignatures.length === 0) return;
+        if (!editor || isLoadingSignatures) return;
 
         // Check if signature is already in the editor
-        const existingSignature = editor.getBlock('signature');
-        if (existingSignature) {
-            // In case there is a signature block but the templateId does not match an active signature, we remove the block.
-            const isSignatureActive = activeSignatures.findIndex(signature => signature.id === (existingSignature.props as BlockSignatureConfigProps).templateId);
-            if (isSignatureActive === -1) editor.removeBlocks(["signature"]);
+        const signatureBlock = editor.getBlock('signature');
+        if (signatureBlock) {
+            // In case there is a signature block, we remove the block if :
+            // - the templateId does not match an active signature
+            // - the draft signature does not match the signature block.
+            const blockSignatureId = (signatureBlock.props as BlockSignatureConfigProps).templateId;
+            const isSignatureStale = activeSignatures.findIndex(signature => signature.id === blockSignatureId) < 0;
+            const mismatchedSignature = draft?.signature?.id && draft.signature.id !== blockSignatureId;
+            if (isSignatureStale || mismatchedSignature) editor.removeBlocks(["signature"]);
             else return;
         }
 
+        if (activeSignatures.length === 0) return;
+
         let signatureToUse = undefined;
-        
+
         // Priority 1: Draft signature (if exists and is still active)
-        if (draft?.signature?.id && activeSignatures.some(sig => sig.id === draft.signature?.id)) {
+        if (draft?.signature?.id && activeSignatures.some(signature => signature.id === draft.signature!.id)) {
             signatureToUse = draft.signature;
-        } 
+        }
         // Priority 2: Forced signature (if no draft signature)
         else {
             signatureToUse = activeSignatures.find(signature => signature.is_forced);
@@ -196,28 +182,25 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
             };
 
             // Insert blocks after a microtask to avoid flushSync issues
-            setTimeout(() => {
-                // Insert at the end
-                if (editor.document.length === 0) {
-                    editor.insertBlocks([{ type: "paragraph", content: [{ type: "text", text: "", styles: {} }] }], "", "after");
-                }
-                
-                editor.insertBlocks(
-                    [signatureBlock],
-                    editor.document[editor.document.length - 1].id,
-                    "after"
-                );
-                
-                // Set the signatureId in the form
-                form.setValue('signatureId', signatureToUse.id, { shouldDirty: true });
-            }, 0);
+
+            // Insert at the end
+            if (editor.document.length === 0) {
+                editor.insertBlocks([{ type: "paragraph", content: [{ type: "text", text: "", styles: {} }] }], "", "after");
+            }
+
+            editor.insertBlocks(
+                [signatureBlock],
+                editor.document[editor.document.length - 1].id,
+                "after"
+            );
+
+            // Set the signatureId in the form
+            form.setValue('signatureId', signatureToUse.id);
         } else {
             // Set signatureId to undefined after a microtask to avoid flushSync issues
-            setTimeout(() => {
-                form.setValue('signatureId', undefined, { shouldDirty: true });
-            }, 0);
+            form.setValue('signatureId', undefined);
         }
-    }, [editor, isLoadingSignatures, activeSignatures, draft?.signature?.id, mailboxId]);
+    }, [editor, isLoadingSignatures, activeSignatures]);
 
     return (
         <>
@@ -230,17 +213,11 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
                 }}
             >
                 <Toolbar>
-                    <SignatureTemplateSelector 
-                        templates={activeSignatures} 
-                        isLoading={isLoadingSignatures} 
+                    <SignatureTemplateSelector
+                        templates={activeSignatures}
+                        isLoading={isLoadingSignatures}
                         mailboxId={mailboxId}
-                        onSignatureChange={(signatureId) => {
-                            // Update form value and trigger draft save
-                            form.setValue('signatureId', signatureId, { shouldDirty: true });
-                            if (onSaveDraft) {
-                                onSaveDraft();
-                            }
-                        }}
+                        defaultSelected={draft?.signature?.id}
                     />
                 </Toolbar>
             </BlockNoteViewField>

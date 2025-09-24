@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Attachment, DraftMessageRequestRequest, Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
-import { MessageComposer } from "@/features/forms/components/message-composer";
+import { MessageComposer, QuoteType } from "@/features/forms/components/message-composer";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import MailHelper from "@/features/utils/mail-helper";
 import { RhfInput, RhfSelect } from "../react-hook-form";
@@ -84,6 +84,7 @@ export const MessageForm = ({
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const draftRef = useRef<Message | undefined>(draftMessage);
+    const quoteType: QuoteType | undefined = mode !== "new" ? (mode === "forward" ? "forward" : "reply") : undefined;
 
     // Keep draftRef in sync with draft state
     useEffect(() => {
@@ -304,12 +305,12 @@ export const MessageForm = ({
      */
     const saveDraft = async (data: MessageFormFields) => {
         if (!canWriteMessages) return;
-        
+
         // Prevent concurrent saves
         if (isSaving) {
             return draftRef.current;
         }
-        
+
         setIsSaving(true);
         const canSaveDraft = (
             Object.keys(form.formState.dirtyFields).length > 0
@@ -342,7 +343,7 @@ export const MessageForm = ({
             attachments: data.attachments,
             signatureId: data.signatureId,
         }
-        
+
         // Use draftRef to get the current draft state
         const currentDraft = draftRef.current;
         let response;
@@ -502,6 +503,11 @@ export const MessageForm = ({
         }
     }, [showBCCField])
 
+    function isQuote<T>(message: T): message is Exclude<T, undefined> {
+        return quoteType !== undefined;
+
+    }
+
     return (
         <FormProvider {...form}>
             <form
@@ -585,10 +591,11 @@ export const MessageForm = ({
                         fullWidth
                         state={form.formState.errors?.messageDraftBody ? "error" : "default"}
                         text={form.formState.errors?.messageDraftBody?.message}
-                        quotedMessage={mode !== "new" ? parentMessage : undefined}
+                        quotedMessage={quoteType ? parentMessage : undefined}
+                        quoteType={quoteType}
                         disabled={!canWriteMessages}
                         draft={draft}
-                        onSaveDraft={() => form.handleSubmit(saveDraft)()}
+                        submitDraft={form.handleSubmit(saveDraft)}
                     />
                 </div>
 

@@ -168,7 +168,16 @@
         "thread_deleted": "The conversation has been deleted"
       },
       "message_composer": {
-        "start_typing": "Start typing..."
+        "start_typing": "Start typing...",
+        "signature_template_selector": {
+          "forced_signature_tooltips": {
+            "main": "This signature is forced",
+            "secondary": "You cannot modify it."
+          },
+          "forced_signature_label": "Forced signature: {{name}}",
+          "no_signature": "No signature",
+          "signature_label": "Signature: {{name}}"
+        }
       },
       "search": {
         "placeholder": "Search in messages...",
@@ -733,7 +742,16 @@
         "thread_deleted": "La conversation a bien été supprimée."
       },
       "message_composer": {
-        "start_typing": "Commencer à écrire..."
+        "start_typing": "Commencer à écrire...",
+        "signature_template_selector": {
+          "forced_signature_tooltips": {
+            "main": "Cette signature est forcée",
+            "secondary": "Vous ne pouvez pas la modifier."
+          },
+          "forced_signature_label": "Signature forcée : {{name}}",
+          "no_signature": "Aucune signature",
+          "signature_label": "Signature : {{name}}"
+        }
       },
       "search": {
         "placeholder": "Rechercher dans les messages...",

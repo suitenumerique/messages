@@ -4,25 +4,29 @@ import { useState } from "react";
 import { Props } from "@blocknote/core";
 import { ReadOnlyMessageTemplate, useMessageTemplatesRenderRetrieve } from "@/features/api/gen";
 import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
+import { useTranslation } from "react-i18next";
 
 
 type SignatureTemplateSelectorProps = {
     mailboxId?: string;
     templates?: ReadOnlyMessageTemplate[];
+    defaultSelected?: string | null;
     isLoading?: boolean;
-    onSignatureChange?: (signatureId: string | null) => void;
 }
 
 /**
  * A BlockNote toolbar selector which allows the user to select a signature template from
  * all active signatures for a given mailbox.
  */
-export const SignatureTemplateSelector = ({ mailboxId, templates = [], isLoading, onSignatureChange }: SignatureTemplateSelectorProps) => {
+export const SignatureTemplateSelector = ({ mailboxId, templates = [], defaultSelected, isLoading }: SignatureTemplateSelectorProps) => {
     const editor = useBlockNoteEditor<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>();
+    const { t } = useTranslation();
     const Components = useComponentsContext()!;
 
     // Tracks whether the text & background are both blue.
-    const [isSelected, setIsSelected] = useState<string | null>(null);
+    const [isSelected, setIsSelected] = useState<string | null>(defaultSelected ?? null);
+    const forcedTemplate = templates.find(template => template.is_forced);
+    const isForced = !!forcedTemplate;
 
     // Updates state on content or selection change.
     useEditorContentOrSelectionChange(() => {
@@ -42,47 +46,63 @@ export const SignatureTemplateSelector = ({ mailboxId, templates = [], isLoading
         return null;
     }
 
+    if (isForced) {
+        return <Components.FormattingToolbar.Button
+                className="signature-block-selector signature-block-selector--forced"
+                icon={<Icon name="lock" size={IconSize.SMALL} />}
+                mainTooltip={t("message_composer.signature_template_selector.forced_signature_tooltips.main")}
+                secondaryTooltip={t("message_composer.signature_template_selector.forced_signature_tooltips.secondary")}
+            >
+                <div className="signature-block-selector__content">
+                    <Icon name="lock" size={IconSize.SMALL} />
+                    <p>{t('message_composer.signature_template_selector.signature_label', { name:  forcedTemplate.name })}</p>
+                </div>
+            </Components.FormattingToolbar.Button>;
+    }
+
     return (
       <Components.FormattingToolbar.Select
         key={"templateVariableSelector"}
         items={[
           {
-            text: "Signatures",
+            text: t("message_composer.signature_template_selector.no_signature"),
             isSelected: !isSelected,
-            isDisabled: true,
+            isDisabled: false,
             icon: <Icon name="content_copy" size={IconSize.SMALL} />,
-            onClick: () => {}
+            onClick: () => {
+                editor.removeBlocks(["signature"]);
+            },
           },
           ...templates.map((template) => ({
-            text: `Signature : ${template.name}${template.is_forced ? ' (obligatoire)' : ''}`,
+            text: t('message_composer.signature_template_selector.signature_label', { name:  template.name }),
             isSelected: isSelected === template.id,
+            isDisabled: template.is_forced,
             icon: <Icon name={template.is_forced ? "lock" : "content_copy"} size={IconSize.SMALL} />,
             onClick: () => {
                 const signatureBlock = editor.getBlock('signature');
-                
+
                 // If this signature is already selected, check if it can be deselected
                 if (isSelected === template.id) {
                     // If signature is forced, prevent deselection
                     if (template.is_forced) {
                         return; // Do nothing - forced signatures cannot be deselected
                     }
-                    
+
                     // Otherwise, remove it (toggle off)
                     if (signatureBlock) {
                         editor.removeBlocks(["signature"]);
                     }
-                    onSignatureChange?.(null);
                     return;
                 }
-                
+
                 // Otherwise, add or replace the signature
-                const newBlock = { 
-                    id: "signature", 
-                    type: "signature" as const, 
-                    props: { 
-                        templateId: template.id, 
-                        mailboxId: mailboxId 
-                    } 
+                const newBlock = {
+                    id: "signature",
+                    type: "signature" as const,
+                    props: {
+                        templateId: template.id,
+                        mailboxId: mailboxId
+                    }
                 };
 
                 if (signatureBlock) {
@@ -108,7 +128,6 @@ export const SignatureTemplateSelector = ({ mailboxId, templates = [], isLoading
                         "after"
                     );
                 }
-                onSignatureChange?.(template.id);
             }
           })),
         ]}
