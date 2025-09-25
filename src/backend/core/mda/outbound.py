@@ -74,7 +74,9 @@ def prepare_outbound_message(
         message.save(update_fields=["signature"])
     if message.signature and user:
         try:
-            signatures = message.signature.render_template(user=user)
+            signatures = message.signature.render_template(
+                mailbox=mailbox_sender, user=user
+            )
             if signatures:
                 text_body = (
                     text_body + "\n" + signatures["text_body"]

@@ -219,11 +219,13 @@ class MessageTemplateViewSet(viewsets.ModelViewSet):  # pylint: disable=too-many
     @action(detail=True, methods=["get"], url_path="render")
     def render_template(self, request, pk=None):  # pylint: disable=unused-argument
         """Render a template."""
+        # TODO : access should be checked by permission class
+        mailbox = Mailbox.objects.filter(id=request.query_params.get("mailbox_id")).first()
 
         # get template
         template = self.get_object()
         try:
-            rendered = template.render_template(request.user)
+            rendered = template.render_template(mailbox=mailbox, user=request.user)
             return Response(rendered)
         except (KeyError, ValueError, TypeError) as e:
             return Response(

@@ -135,7 +135,7 @@ class TestMessageTemplateRender:
         # Try render of mailbox template
         response = client.get(
             reverse("message-templates-detail", kwargs={"pk": mailbox_template.id})
-            + "render/",
+            + "render/?mailbox_id=" + str(mailbox.id),
         )
         # Every thing should be ok here
         assert response.status_code == status.HTTP_200_OK
@@ -147,7 +147,7 @@ class TestMessageTemplateRender:
         # to a mailbox should have access to the templates of maildomain of mailbox too.
         response = client.get(
             reverse("message-templates-detail", kwargs={"pk": maildomain_template.id})
-            + "render/",
+            + "render/?mailbox_id=" + str(mailbox.id),
         )
         assert response.status_code == status.HTTP_200_OK
         assert "Cordialement, John Doe - Adjointe" in response.data["html_body"]
@@ -167,7 +167,7 @@ class TestMessageTemplateRender:
         client.force_authenticate(user=admin_on_maildomain)
         response = client.get(
             reverse("message-templates-detail", kwargs={"pk": mailbox_template.id})
-            + "render/",
+            + "render/?mailbox_id=" + str(mailbox.id),
         )
         # FIXME: implementation should be fixed
         assert response.status_code == status.HTTP_200_OK

@@ -1827,7 +1827,9 @@ class MessageTemplate(BaseModel):
             return None
 
     # TODO: add instead of user use contact and user is optional
-    def render_template(self, user: User = None) -> Dict[str, str]:
+    def render_template(
+        self, mailbox: Mailbox = None, user: User = None
+    ) -> Dict[str, str]:
         """
         Render the template with the given context.
 
@@ -1838,13 +1840,16 @@ class MessageTemplate(BaseModel):
             Dictionary with 'html_body' and 'text_body' keys containing rendered content
         """
         context = {
-            "full_name": user.full_name or "",
+            "full_name": mailbox.contact.name
+            if mailbox and mailbox.contact
+            else user.full_name or "",
         }
         schema = settings.SCHEMA_CUSTOM_ATTRIBUTES_USER
         schema_properties = schema.get("properties", {})
 
-        for field_key in schema_properties.keys():
-            context[field_key] = user.custom_attributes.get(field_key) or ""
+        if user:
+            for field_key in schema_properties.keys():
+                context[field_key] = user.custom_attributes.get(field_key) or ""
 
         rendered_html_body = self.html_body
         rendered_text_body = self.text_body
