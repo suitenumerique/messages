@@ -328,3 +328,36 @@ class AdminMailDomainMailboxViewSet(
         return Response(
             {"one_time_password": mailbox_password}, status=status.HTTP_200_OK
         )
+
+
+class AdminMailDomainMessageTemplateViewSet(
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.DestroyModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.ListModelMixin,
+    viewsets.GenericViewSet,
+):
+    """ViewSet for managing message templates for a maildomain."""
+
+    permission_classes = [
+        core_permissions.IsSuperUser | core_permissions.IsMailDomainAdmin
+    ]
+    serializer_class = core_serializers.MessageTemplateSerializer
+    pagination_class = None  # Disable pagination
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        """Get queryset for list action with filtering."""
+        queryset = models.MessageTemplate.objects.filter(
+            maildomain_id=self.kwargs.get("maildomain_pk")
+        )
+        return queryset
+
+    def get_serializer_context(self):
+        """Add mailbox_id and maildomain_id to serializer context."""
+        context = super().get_serializer_context()
+        context["maildomain"] = get_object_or_404(
+            models.MailDomain, pk=self.kwargs.get("maildomain_pk")
+        )
+        return context

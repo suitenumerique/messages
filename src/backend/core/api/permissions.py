@@ -354,140 +354,6 @@ class IsMailDomainAdmin(permissions.BasePermission):
     # based on the maildomain_pk.
 
 
-def is_admin_of_mailbox_or_maildomain(user, mailbox, maildomain):
-    """Check if user has ADMIN role on the mailbox, its maildomain, or the specified maildomain.
-
-    Args:
-        user: The user to check permissions for
-        mailbox: Optional mailbox to check admin role (including its domain)
-        maildomain: Optional mail domain to check admin role
-
-    Returns:
-        bool: True if user has ADMIN role on either:
-            - the mailbox directly
-            - the mailbox's domain
-            - the specified maildomain
-    """
-    # First check mailbox admin access
-    if mailbox:
-        # Check direct mailbox access
-        if mailbox.accesses.filter(
-            user=user,
-            role=models.MailboxRoleChoices.ADMIN,
-        ).exists():
-            return True
-
-        # Check access through mailbox's domain
-        if mailbox.domain.accesses.filter(
-            user=user,
-            role=models.MailDomainAccessRoleChoices.ADMIN,
-        ).exists():
-            return True
-
-    # Check specified domain access if provided
-    if (
-        maildomain
-        and maildomain.accesses.filter(
-            user=user,
-            role=models.MailDomainAccessRoleChoices.ADMIN,
-        ).exists()
-    ):
-        return True
-
-    return False
-
-
-class IsAllowedToManageMessageTemplate(permissions.BasePermission):
-    """
-    Permission class for managing message templates.
-
-    This permission checks if the user has the appropriate role to manage
-    message templates for a specific mailbox or maildomain.
-
-    For list actions: requires at least one of mailbox_id or maildomain_id in query params
-    For detail actions: checks if user has access to the template's associated mailbox/domain
-    For create/update/delete: requires ADMIN role on the target mailbox/domain
-    """
-
-    message = "You do not have permission to manage message templates for this mailbox or domain."
-
-    def has_permission(self, request, view):
-        """Check if user has permission to access message template endpoints."""
-        if not request.user or not request.user.is_authenticated:
-            return False
-
-        # Superusers have full access
-        if request.user.is_superuser:
-            return True
-
-        # For list actions, require at least one filter parameter
-        if view.action == "list":
-            mailbox_id = request.query_params.get("mailbox_id")
-            maildomain_id = request.query_params.get("maildomain_id")
-            if not mailbox_id and not maildomain_id:
-                return False
-
-            # Allow access to list action - the ViewSet will filter results based on user permissions
-            # This allows users to see empty lists when they don't have access to the specified mailbox/domain
-            return True
-
-        # For create actions, require appropriate role on target mailbox/domain
-        if view.action == "create":
-            return self._has_create_permission(request)
-
-        # For all other actions (retrieve, update, delete), allow access
-        # The ViewSet will filter the queryset and object-level permissions will be checked
-        return True
-
-    def has_object_permission(self, request, view, obj):
-        """Check if user has permission to access/modify a specific message template."""
-        if not request.user or not request.user.is_authenticated:
-            return False
-
-        # Superusers have full access
-        if request.user.is_superuser:
-            return True
-
-        # For read operations (GET), allow access to all authenticated users
-        # The ViewSet will filter the queryset based on user permissions
-        if request.method in permissions.SAFE_METHODS:
-            return True
-
-        # For write operations (POST, PUT, PATCH, DELETE), require higher roles
-        # Check if user has access to the template through mailbox or domain relationships
-        user = request.user
-
-        # use must have ADMIN access to obj.mailbox or obj.mailbox.domain or obj.maildomain
-        return is_admin_of_mailbox_or_maildomain(user, obj.mailbox, obj.maildomain)
-
-    def _has_create_permission(self, request):
-        """Check if user has permission to create message templates."""
-        user = request.user
-        mailbox_id = request.data.get("mailbox_id")
-        maildomain_id = request.data.get("maildomain_id")
-
-        # At least one of mailbox_id or maildomain_id is required
-        if not mailbox_id and not maildomain_id:
-            return False
-
-        try:
-            # Case 1: mailbox_id is provided user wants to create a template for a specific mailbox
-            mailbox = models.Mailbox.objects.get(id=mailbox_id) if mailbox_id else None
-            # Case 2: maildomain_id is provided user wants to create a template for a specific maildomain
-            maildomain = (
-                models.MailDomain.objects.get(id=maildomain_id)
-                if maildomain_id
-                else None
-            )
-        except (
-            models.Mailbox.DoesNotExist,
-            models.MailDomain.DoesNotExist,
-            ValueError,
-        ):
-            return False
-        return is_admin_of_mailbox_or_maildomain(user, mailbox, maildomain)
-
-
 class IsMailboxAdmin(permissions.BasePermission):
     """
     Allows access if the user has ADMIN MailboxAccess to the specific Mailbox
@@ -583,3 +449,15 @@ class HasMetricsApiKey(permissions.BasePermission):
             request.headers.get("Authorization") or "",
             f"Bearer {settings.METRICS_API_KEY}",
         )
+
+
+class HasAccessToMailbox(IsAuthenticated):
+    """Allows access only to users with the access to the mailbox."""
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+
+        return models.MailboxAccess.objects.filter(
+            user=request.user, mailbox=view.kwargs.get("mailbox_id")
+        ).exists()

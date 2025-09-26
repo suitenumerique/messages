@@ -1220,6 +1220,7 @@ class ChannelSerializer(AbilitiesModelSerializer):
 
         return attrs
 
+
 class MessageTemplateSerializer(serializers.ModelSerializer):
     """Serialize message templates for POST/PUT/PATCH operations."""
 
@@ -1279,41 +1280,11 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """Create template with relationships and ensure atomic content creation."""
-        mailbox_id = validated_data.pop("mailbox_id", None)
-        maildomain_id = validated_data.pop("maildomain_id", None)
         html_body = validated_data.pop("html_body", "")
         text_body = validated_data.pop("text_body", "")
         raw_body = validated_data.pop("raw_body", "")
 
-        if mailbox_id and maildomain_id:
-            # Can't provide both
-            raise serializers.ValidationError(
-                "Only one of mailbox_id or maildomain_id can be provided."
-            )
-        # Exactly one must be provided
-        if not mailbox_id and not maildomain_id:
-            raise serializers.ValidationError(
-                "Either mailbox_id or maildomain_id is required."
-            )
-
-        # Resolve and validate mailbox/maildomain
-        try:
-            mailbox = None
-            maildomain = None
-            if mailbox_id is not None:
-                mailbox = models.Mailbox.objects.get(id=mailbox_id)
-                validated_data["mailbox"] = mailbox
-            if maildomain_id is not None:
-                maildomain = models.MailDomain.objects.get(id=maildomain_id)
-                validated_data["maildomain"] = maildomain
-        except models.Mailbox.DoesNotExist as err:
-            raise serializers.ValidationError(
-                {"mailbox_id": "Mailbox not found"}
-            ) from err
-        except models.MailDomain.DoesNotExist as err:
-            raise serializers.ValidationError(
-                {"maildomain_id": "Maildomain not found"}
-            ) from err
+        validated_data["maildomain"] = self.context["maildomain"]
 
         # Use atomic transaction to ensure all content fields are created together
         with transaction.atomic():
@@ -1332,8 +1303,7 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
             blob = models.Blob.objects.create_blob(
                 content=content.encode("utf-8"),
                 content_type="application/json",
-                mailbox=mailbox,
-                maildomain=maildomain,
+                maildomain=validated_data["maildomain"],
             )
             validated_data["blob"] = blob
             template = super().create(validated_data)

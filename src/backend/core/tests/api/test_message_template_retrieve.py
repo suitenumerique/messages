@@ -39,7 +39,10 @@ class TestMessageTemplateRetrieve:
         )
         client = APIClient()
         response = client.get(
-            reverse("message-templates-detail", kwargs={"pk": reply_template.id})
+            reverse(
+                "mailbox-message-templates-detail",
+                kwargs={"mailbox_id": mailbox.id, "pk": reply_template.id},
+            )
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -56,10 +59,12 @@ class TestMessageTemplateRetrieve:
         client.force_authenticate(user=user)
 
         response = client.get(
-            reverse("message-templates-detail", kwargs={"pk": reply_template.id})
+            reverse(
+                "mailbox-message-templates-detail",
+                kwargs={"mailbox_id": mailbox.id, "pk": reply_template.id},
+            )
         )
-        # FIXME: return 403 instead of 404?????
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_success(self, user, mailbox):
         """Test retrieving a single email template."""
@@ -80,7 +85,10 @@ class TestMessageTemplateRetrieve:
         client.force_authenticate(user=user)
 
         response = client.get(
-            reverse("message-templates-detail", kwargs={"pk": template.id})
+            reverse(
+                "mailbox-message-templates-detail",
+                kwargs={"mailbox_id": mailbox.id, "pk": template.id},
+            )
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.data["id"] == str(template.id)
@@ -99,8 +107,11 @@ class TestMessageTemplateRetrieve:
 
         response = client.get(
             reverse(
-                "message-templates-detail",
-                kwargs={"pk": "00000000-0000-0000-0000-000000000000"},
+                "mailbox-message-templates-detail",
+                kwargs={
+                    "mailbox_id": mailbox.id,
+                    "pk": "00000000-0000-0000-0000-000000000000",
+                },
             )
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -116,6 +127,13 @@ class TestMessageTemplateRetrieve:
     )
     def test_success_with_different_roles(self, user, mailbox, role):
         """Test retrieving templates with different access roles."""
+
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=role,
+        )
+
         template = factories.MessageTemplateFactory(
             name="Role Test Template",
             mailbox=mailbox,
@@ -124,29 +142,11 @@ class TestMessageTemplateRetrieve:
         client = APIClient()
         client.force_authenticate(user=user)
 
-        factories.MailboxAccessFactory(
-            mailbox=mailbox,
-            user=user,
-            role=role,
-        )
         response = client.get(
-            reverse("message-templates-detail", kwargs={"pk": template.id})
-        )
-        assert response.status_code == status.HTTP_200_OK
-        assert response.data["name"] == template.name
-
-        # test for an ADMIN of mailbox domain
-        admin_on_maildomain = factories.UserFactory(
-            full_name="Jane Doee", custom_attributes={"job_title": "Adjointe"}
-        )
-        client.force_authenticate(user=admin_on_maildomain)
-        factories.MailDomainAccessFactory(
-            maildomain=mailbox.domain,
-            user=admin_on_maildomain,
-            role=models.MailDomainAccessRoleChoices.ADMIN,
-        )
-        response = client.get(
-            reverse("message-templates-detail", kwargs={"pk": template.id})
+            reverse(
+                "mailbox-message-templates-detail",
+                kwargs={"mailbox_id": mailbox.id, "pk": template.id},
+            )
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.data["name"] == template.name
