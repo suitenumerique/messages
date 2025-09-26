@@ -250,16 +250,15 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     message.sender.email,
                 )
             elif (
-                custom_attributes.get("_mta_out_mode")
-                or settings.MTA_OUT_MODE == "direct"
-            ):
+                custom_attributes.get("_mta_out_mode") or settings.MTA_OUT_MODE
+            ) == "direct":
                 logger.info(
                     "Message %s status: %s to:%s from:%s mx:%s via direct MX",
                     message.id,
                     status,
                     recipient_email,
                     message.sender.email,
-                    smtp_context.get("smtp_hostname"),
+                    smtp_context.get("smtp_host"),
                 )
             else:
                 logger.info(
@@ -268,7 +267,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     status,
                     recipient_email,
                     message.sender.email,
-                    smtp_context.get("smtp_hostname"),
+                    smtp_context.get("smtp_host"),
                 )
             if delivered:
                 # TODO also update message.updated_at?
@@ -347,7 +346,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                         False,
                         status.get("error"),
                         status.get("retry", False),
-                        status.get("context", {}),
+                        status.get("context"),
                     )
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.error("Failed to send outbound message: %s", e, exc_info=True)
@@ -358,7 +357,6 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                         False,
                         "Internal error while delivering",
                         True,
-                        {},
                     )
     finally:
         # Always release the lock when done

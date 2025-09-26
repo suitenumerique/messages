@@ -37,14 +37,10 @@ def create_proxied_socket(
 
 
 class SMTPMailContext(TypedDict):
-    """Context information about an SMTP mail sending attempt."""
+    """Context information about an SMTP mail sending attempt. Used for logging and debugging."""
     smtp_host: str
     smtp_port: int
-    envelope_from: str
-    recipient_emails: set[str]
-    message_content: bytes
     smtp_username: Optional[str]
-    smtp_password: Optional[str]
     timeout: int = 60
     proxy_host: Optional[str]
     proxy_port: Optional[int]
@@ -150,16 +146,11 @@ def send_smtp_mail(
         return {
             "smtp_host": smtp_host,
             "smtp_port": smtp_port,
-            "envelope_from": envelope_from,
-            "recipient_emails": recipient_emails,
-            "message_content": message_content,
             "smtp_username": smtp_username,
-            "smtp_password": smtp_password,
             "timeout": timeout,
             "proxy_host": proxy_host,
             "proxy_port": proxy_port,
             "proxy_username": proxy_username,
-            "proxy_password": proxy_password,
             "sender_hostname": sender_hostname,
             "smtp_ip": smtp_ip,
             "smtp_tls_security_level": smtp_tls_security_level,
