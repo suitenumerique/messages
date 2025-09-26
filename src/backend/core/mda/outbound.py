@@ -236,7 +236,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
             internal: bool,
             error: Optional[str] = None,
             retry: Optional[bool] = False,
-            smtp_context: SMTPMailContext = None,
+            smtp_context: Optional[SMTPMailContext] = None,
         ) -> None:
             smtp_context = smtp_context or {}
             status = "delivered" if delivered else "failed"
