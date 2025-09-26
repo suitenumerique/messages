@@ -959,6 +959,13 @@ class Production(Base):
         },
     }
 
+    class PrometheusFilter(logging.Filter):
+        """
+        Filter that excludes Access logs to the /prometheus/metrics endpoint
+        """
+        def filter(self, record) -> bool:
+            return record.getMessage().find("/prometheus/metrics") == -1
+    logger.addFilter(PrometheusFilter())
 
 class Feature(Production):
     """
