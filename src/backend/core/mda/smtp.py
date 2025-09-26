@@ -35,7 +35,9 @@ def create_proxied_socket(
 
     return proxy
 
+
 class SMTPMailContext(TypedDict):
+    """Context information about an SMTP mail sending attempt."""
     smtp_host: str
     smtp_port: int
     envelope_from: str
@@ -50,6 +52,7 @@ class SMTPMailContext(TypedDict):
     sender_hostname: Optional[str]
     smtp_ip: Optional[str]
     smtp_tls_security_level: Optional[str]
+
 
 class ProxySMTP(smtplib.SMTP):
     """SMTP client that connects through a SOCKS5 proxy with support for nested SSL."""
@@ -159,12 +162,17 @@ def send_smtp_mail(
             "proxy_password": proxy_password,
             "sender_hostname": sender_hostname,
             "smtp_ip": smtp_ip,
-            "smtp_tls_security_level": smtp_tls_security_level
+            "smtp_tls_security_level": smtp_tls_security_level,
         }
 
     def error_for_all_recipients(error: str, retry: bool) -> Dict[str, Any]:
         return {
-            email: {"delivered": False, "error": error, "retry": retry, "context": get_context()}
+            email: {
+                "delivered": False,
+                "error": error,
+                "retry": retry,
+                "context": get_context(),
+            }
             for email in recipient_emails
         }
 
@@ -303,7 +311,7 @@ def send_smtp_mail(
                 "delivered": False,
                 "error": f"Recipient refused: {code_msg[0]} {code_msg[1]}",  # (code, msg)
                 "retry": 400 <= code_msg[0] <= 499,
-                "context": get_context()
+                "context": get_context(),
             }
         return statuses
     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -327,7 +335,7 @@ def send_smtp_mail(
                 "delivered": False,
                 "error": f"Recipient refused: {code_msg[0]} {code_msg[1]}",  # (code, msg)
                 "retry": 400 <= code_msg[0] <= 499,
-                "context": get_context()
+                "context": get_context(),
             }
 
     return statuses
