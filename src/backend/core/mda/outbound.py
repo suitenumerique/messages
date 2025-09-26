@@ -239,36 +239,18 @@ def send_message(message: models.Message, force_mta_out: bool = False):
             smtp_context: SMTPMailContext = None,
         ) -> None:
             smtp_context = smtp_context or {}
-            custom_attributes = message.sender.mailbox.domain.custom_attributes or {}
             status = "delivered" if delivered else "failed"
-            if internal:
-                logger.info(
-                    "Message %s status: %s to:%s from:%s via internal delivery",
-                    message.id,
-                    status,
-                    recipient_email,
-                    message.sender.email,
-                )
-            elif (
-                custom_attributes.get("_mta_out_mode") or settings.MTA_OUT_MODE
-            ) == "direct":
-                logger.info(
-                    "Message %s status: %s to:%s from:%s mx:%s via direct MX",
-                    message.id,
-                    status,
-                    recipient_email,
-                    message.sender.email,
-                    smtp_context.get("smtp_host"),
-                )
-            else:
-                logger.info(
-                    "Message %s status: %s to:%s from:%s smtp host:%s via SMTP relay",
-                    message.id,
-                    status,
-                    recipient_email,
-                    message.sender.email,
-                    smtp_context.get("smtp_host"),
-                )
+            relay = smtp_context.get("smtp_host") if not internal else "internal"
+
+            logger.info(
+                "module=core.mda.outbound.send_message: message_id=%s to=%s from=%s relay=%s status=%s error=(%s)",
+                message.id,
+                recipient_email,
+                message.sender.email,
+                relay,
+                status,
+                error or "nil",
+            )
             if delivered:
                 # TODO also update message.updated_at?
                 envelope_to[recipient_email].delivered_at = timezone.now()
