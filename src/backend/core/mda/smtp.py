@@ -3,7 +3,7 @@
 import logging
 import smtplib
 import ssl
-from typing import Any, Dict, Optional, TypedDict
+from typing import Any, Dict, Optional
 
 import socks
 
@@ -34,20 +34,6 @@ def create_proxied_socket(
     proxy.connect((target_host, target_port))
 
     return proxy
-
-
-class SMTPMailContext(TypedDict):
-    """Context information about an SMTP mail sending attempt. Used for logging and debugging."""
-    smtp_host: str
-    smtp_port: int
-    smtp_username: Optional[str]
-    timeout: int = 60
-    proxy_host: Optional[str]
-    proxy_port: Optional[int]
-    proxy_username: Optional[str]
-    sender_hostname: Optional[str]
-    smtp_ip: Optional[str]
-    smtp_tls_security_level: Optional[str]
 
 
 class ProxySMTP(smtplib.SMTP):
@@ -142,27 +128,13 @@ def send_smtp_mail(
     """
     statuses = {}
 
-    def get_context() -> SMTPMailContext:
-        return {
-            "smtp_host": smtp_host,
-            "smtp_port": smtp_port,
-            "smtp_username": smtp_username,
-            "timeout": timeout,
-            "proxy_host": proxy_host,
-            "proxy_port": proxy_port,
-            "proxy_username": proxy_username,
-            "sender_hostname": sender_hostname,
-            "smtp_ip": smtp_ip,
-            "smtp_tls_security_level": smtp_tls_security_level,
-        }
-
     def error_for_all_recipients(error: str, retry: bool) -> Dict[str, Any]:
         return {
             email: {
                 "delivered": False,
                 "error": error,
                 "retry": retry,
-                "context": get_context(),
+                "smtp_host": smtp_host,
             }
             for email in recipient_emails
         }
@@ -302,7 +274,7 @@ def send_smtp_mail(
                 "delivered": False,
                 "error": f"Recipient refused: {code_msg[0]} {code_msg[1]}",  # (code, msg)
                 "retry": 400 <= code_msg[0] <= 499,
-                "context": get_context(),
+                "smtp_host": smtp_host,
             }
         return statuses
     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -319,14 +291,14 @@ def send_smtp_mail(
 
     for recipient_email in recipient_emails:
         if recipient_email not in recipient_errors:
-            statuses[recipient_email] = {"delivered": True, "context": get_context()}
+            statuses[recipient_email] = {"delivered": True, "smtp_host": smtp_host}
         else:
             code_msg = recipient_errors[recipient_email]
             statuses[recipient_email] = {
                 "delivered": False,
                 "error": f"Recipient refused: {code_msg[0]} {code_msg[1]}",  # (code, msg)
                 "retry": 400 <= code_msg[0] <= 499,
-                "context": get_context(),
+                "smtp_host": smtp_host,
             }
 
     return statuses
