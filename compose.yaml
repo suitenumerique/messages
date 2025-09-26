@@ -102,7 +102,7 @@ services:
       - ./src/backend:/app
       - ./data/static:/data/static
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/healthz/', timeout=1)"]
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/api/v1.0/healthz/', timeout=1)"]
       interval: 3s
       retries: 3
       start_period: 10s
@@ -142,7 +142,7 @@ services:
       - ./src/backend:/app
       - ./data/static:/data/static
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/healthz/', timeout=1)"]
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/api/v1.0/healthz/', timeout=1)"]
       interval: 3s
       retries: 3
       start_period: 10s
