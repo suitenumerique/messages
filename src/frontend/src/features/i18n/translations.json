@@ -524,6 +524,7 @@
         "submit_text": "Send Feedback",
         "success_text": "Thank you for your feedback!",
         "success_text2": "In case of questions, we'll get back to you soon."
+      },
       "admin_maildomains_signature": {
         "loading": "Loading signatures...",
         "no_signatures": "No signatures found",
@@ -1090,6 +1091,7 @@
         "submit_text": "Envoyer le message",
         "success_text": "Merci pour votre message.",
         "success_text2": "En cas de questions, nous vous répondrons dans les meilleurs délais sur l'email renseigné."
+      },
       "admin_maildomains_signature": {
         "loading": "Chargement des signatures...",
         "no_signatures": "Aucune signature trouvée",
