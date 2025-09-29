@@ -3,7 +3,7 @@ import { Button, Checkbox, Column, DataGrid, useModal, useModals } from "@openfu
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { MailDomainAdmin, MessageTemplateTypeChoices, ReadOnlyMessageTemplate, useMessageTemplatesDestroy, useMessageTemplatesList, useMessageTemplatesPartialUpdate } from "@/features/api/gen";
+import { MailDomainAdmin, MessageTemplate, MessageTemplateTypeChoices, useMaildomainsMessageTemplatesList, useMaildomainsMessageTemplatesDestroy, useMaildomainsMessageTemplatesPartialUpdate } from "@/features/api/gen";
 import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ModalComposeSignature } from "../modal-compose-signature";
@@ -16,22 +16,27 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
     const { t } = useTranslation();
     const modals = useModals();
     const modal = useModal();
-    const { data: { data: signatures = [] } = {}, isLoading, error } = useMessageTemplatesList({
-        request: {
-            params: {
-                type: MessageTemplateTypeChoices.signature,
-                maildomain_id: domain.id,
+    const { data: { data: signatures = [] } = {}, isLoading, error } = useMaildomainsMessageTemplatesList(
+        domain.id,
+        {
+            query: {
+                enabled: !!domain.id,
+            },
+            request: {
+                params: {
+                    type: MessageTemplateTypeChoices.signature.toUpperCase(),
+                }
             }
         }
-    });
-    const { mutateAsync: updateSignature, isPending: isUpdating } = useMessageTemplatesPartialUpdate();
-    const { mutateAsync: deleteSignature, isPending: isDeleting } = useMessageTemplatesDestroy();
-    const [selectedSignature, setSelectedSignature] = useState<ReadOnlyMessageTemplate | undefined>();
+    );
+    const { mutateAsync: updateSignature, isPending: isUpdating } = useMaildomainsMessageTemplatesPartialUpdate();
+    const { mutateAsync: deleteSignature, isPending: isDeleting } = useMaildomainsMessageTemplatesDestroy();
+    const [selectedSignature, setSelectedSignature] = useState<MessageTemplate | undefined>();
     const queryClient = useQueryClient();
     const invalidateMessageTemplates = async () => {
-        await queryClient.invalidateQueries({ queryKey: ["/api/v1.0/message-templates/"], exact: false });
+        await queryClient.invalidateQueries({ queryKey: [`/api/v1.0/maildomains/${domain.id}/message-templates/`], exact: false });
     }
-    const handleModifyRow = (signature: ReadOnlyMessageTemplate) => {
+    const handleModifyRow = (signature: MessageTemplate) => {
         setSelectedSignature(signature);
         modal.open();
     }
@@ -42,13 +47,13 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
             </ToasterItem>,
         );
     }
-    const handleDeleteRow = async (signature: ReadOnlyMessageTemplate) => {
+    const handleDeleteRow = async (signature: MessageTemplate) => {
         const decision = await modals.deleteConfirmationModal({
             title: <span className="c__modal__text--centered">{t('admin_maildomains_signature.compose_modal.delete_modal.title', { signature: signature.name })}</span>,
             children: t('admin_maildomains_signature.compose_modal.delete_modal.message'),
         });
         if (decision === 'delete') {
-            await deleteSignature({ id: signature.id });
+            await deleteSignature({ maildomainPk: domain.id, id: signature.id });
             invalidateMessageTemplates();
             addToast(
                 <ToasterItem type="info">
@@ -57,23 +62,25 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
             );
         }
     }
-    const toggleActive = async (signature: ReadOnlyMessageTemplate) => {
+    const toggleActive = async (signature: MessageTemplate) => {
         await updateSignature({
+            maildomainPk: domain.id,
             id: signature.id,
-            data: { is_active: !signature.is_active, maildomain_id: domain.id },
+            data: { is_active: !signature.is_active },
         });
         invalidateMessageTemplates();
         addUpdateSucceededToast();
     }
-    const toggleDefault = async (signature: ReadOnlyMessageTemplate) => {
+    const toggleDefault = async (signature: MessageTemplate) => {
         await updateSignature({
+            maildomainPk: domain.id,
             id: signature.id,
-            data: { is_forced: !signature.is_forced, maildomain_id: domain.id },
+            data: { is_forced: !signature.is_forced },
         });
         invalidateMessageTemplates();
         addUpdateSucceededToast();
     }
-    const columns: Column<ReadOnlyMessageTemplate>[] = [
+    const columns: Column<MessageTemplate>[] = [
         {
             id: "is_active",
             headerName: t("admin_maildomains_signature.datagrid_headers.is_active"),

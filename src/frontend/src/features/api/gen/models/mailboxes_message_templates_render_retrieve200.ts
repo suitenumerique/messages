@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export type MessageTemplatesRenderRetrieve200 = {
+export type MailboxesMessageTemplatesRenderRetrieve200 = {
   html_body?: string;
   text_body?: string;
 };

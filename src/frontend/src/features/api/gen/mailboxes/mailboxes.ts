@@ -21,7 +21,9 @@ import type {
 import type {
   Mailbox,
   MailboxLight,
+  MailboxesMessageTemplatesRenderRetrieve200,
   MailboxesSearchListParams,
+  ReadOnlyMessageTemplate,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -162,6 +164,622 @@ export function useMailboxesList<
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
   const queryOptions = getMailboxesListQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * ViewSet for retrieving and rendering message templates for a mailbox.
+ */
+export type mailboxesMessageTemplatesRetrieveResponse200 = {
+  data: ReadOnlyMessageTemplate;
+  status: 200;
+};
+
+export type mailboxesMessageTemplatesRetrieveResponseComposite =
+  mailboxesMessageTemplatesRetrieveResponse200;
+
+export type mailboxesMessageTemplatesRetrieveResponse =
+  mailboxesMessageTemplatesRetrieveResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMailboxesMessageTemplatesRetrieveUrl = (
+  mailboxId: string,
+  id: string,
+) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/`;
+};
+
+export const mailboxesMessageTemplatesRetrieve = async (
+  mailboxId: string,
+  id: string,
+  options?: RequestInit,
+): Promise<mailboxesMessageTemplatesRetrieveResponse> => {
+  return fetchAPI<mailboxesMessageTemplatesRetrieveResponse>(
+    getMailboxesMessageTemplatesRetrieveUrl(mailboxId, id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMailboxesMessageTemplatesRetrieveQueryKey = (
+  mailboxId: string,
+  id: string,
+) => {
+  return [`/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/`] as const;
+};
+
+export const getMailboxesMessageTemplatesRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>,
+  TError = unknown,
+>(
+  mailboxId: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getMailboxesMessageTemplatesRetrieveQueryKey(mailboxId, id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>
+  > = ({ signal }) =>
+    mailboxesMessageTemplatesRetrieve(mailboxId, id, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(mailboxId && id),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesMessageTemplatesRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>
+>;
+export type MailboxesMessageTemplatesRetrieveQueryError = unknown;
+
+export function useMailboxesMessageTemplatesRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>,
+  TError = unknown,
+>(
+  mailboxId: string,
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesMessageTemplatesRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>,
+  TError = unknown,
+>(
+  mailboxId: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesMessageTemplatesRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>,
+  TError = unknown,
+>(
+  mailboxId: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMailboxesMessageTemplatesRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>,
+  TError = unknown,
+>(
+  mailboxId: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMailboxesMessageTemplatesRetrieveQueryOptions(
+    mailboxId,
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Render a template with the provided context variables.
+ */
+export type mailboxesMessageTemplatesRenderRetrieveResponse200 = {
+  data: MailboxesMessageTemplatesRenderRetrieve200;
+  status: 200;
+};
+
+export type mailboxesMessageTemplatesRenderRetrieveResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type mailboxesMessageTemplatesRenderRetrieveResponseComposite =
+  | mailboxesMessageTemplatesRenderRetrieveResponse200
+  | mailboxesMessageTemplatesRenderRetrieveResponse404;
+
+export type mailboxesMessageTemplatesRenderRetrieveResponse =
+  mailboxesMessageTemplatesRenderRetrieveResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMailboxesMessageTemplatesRenderRetrieveUrl = (
+  mailboxId: string,
+  id: string,
+) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/render/`;
+};
+
+export const mailboxesMessageTemplatesRenderRetrieve = async (
+  mailboxId: string,
+  id: string,
+  options?: RequestInit,
+): Promise<mailboxesMessageTemplatesRenderRetrieveResponse> => {
+  return fetchAPI<mailboxesMessageTemplatesRenderRetrieveResponse>(
+    getMailboxesMessageTemplatesRenderRetrieveUrl(mailboxId, id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMailboxesMessageTemplatesRenderRetrieveQueryKey = (
+  mailboxId: string,
+  id: string,
+) => {
+  return [
+    `/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/render/`,
+  ] as const;
+};
+
+export const getMailboxesMessageTemplatesRenderRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+  TError = void,
+>(
+  mailboxId: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getMailboxesMessageTemplatesRenderRetrieveQueryKey(mailboxId, id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>
+  > = ({ signal }) =>
+    mailboxesMessageTemplatesRenderRetrieve(mailboxId, id, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(mailboxId && id),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesMessageTemplatesRenderRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>
+>;
+export type MailboxesMessageTemplatesRenderRetrieveQueryError = void;
+
+export function useMailboxesMessageTemplatesRenderRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+  TError = void,
+>(
+  mailboxId: string,
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesMessageTemplatesRenderRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+  TError = void,
+>(
+  mailboxId: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesMessageTemplatesRenderRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+  TError = void,
+>(
+  mailboxId: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMailboxesMessageTemplatesRenderRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+  TError = void,
+>(
+  mailboxId: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMailboxesMessageTemplatesRenderRetrieveQueryOptions(
+    mailboxId,
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * ViewSet for getting message templates for a mailbox.
+ */
+export type mailboxesMessageTemplatesAvailableListResponse200 = {
+  data: ReadOnlyMessageTemplate[];
+  status: 200;
+};
+
+export type mailboxesMessageTemplatesAvailableListResponseComposite =
+  mailboxesMessageTemplatesAvailableListResponse200;
+
+export type mailboxesMessageTemplatesAvailableListResponse =
+  mailboxesMessageTemplatesAvailableListResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMailboxesMessageTemplatesAvailableListUrl = (
+  mailboxId: string,
+) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/message-templates/available/`;
+};
+
+export const mailboxesMessageTemplatesAvailableList = async (
+  mailboxId: string,
+  options?: RequestInit,
+): Promise<mailboxesMessageTemplatesAvailableListResponse> => {
+  return fetchAPI<mailboxesMessageTemplatesAvailableListResponse>(
+    getMailboxesMessageTemplatesAvailableListUrl(mailboxId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMailboxesMessageTemplatesAvailableListQueryKey = (
+  mailboxId: string,
+) => {
+  return [
+    `/api/v1.0/mailboxes/${mailboxId}/message-templates/available/`,
+  ] as const;
+};
+
+export const getMailboxesMessageTemplatesAvailableListQueryOptions = <
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>,
+  TError = unknown,
+>(
+  mailboxId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getMailboxesMessageTemplatesAvailableListQueryKey(mailboxId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>
+  > = ({ signal }) =>
+    mailboxesMessageTemplatesAvailableList(mailboxId, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!mailboxId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesMessageTemplatesAvailableListQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>
+>;
+export type MailboxesMessageTemplatesAvailableListQueryError = unknown;
+
+export function useMailboxesMessageTemplatesAvailableList<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>,
+  TError = unknown,
+>(
+  mailboxId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesMessageTemplatesAvailableList<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>,
+  TError = unknown,
+>(
+  mailboxId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesMessageTemplatesAvailableList<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>,
+  TError = unknown,
+>(
+  mailboxId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMailboxesMessageTemplatesAvailableList<
+  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>,
+  TError = unknown,
+>(
+  mailboxId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesMessageTemplatesAvailableList>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMailboxesMessageTemplatesAvailableListQueryOptions(
+    mailboxId,
+    options,
+  );
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<
     TData,

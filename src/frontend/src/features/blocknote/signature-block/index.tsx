@@ -2,7 +2,7 @@ import { createReactBlockSpec, useBlockNoteEditor, useComponentsContext, useEdit
 import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useState } from "react";
 import { Props } from "@blocknote/core";
-import { ReadOnlyMessageTemplate, useMessageTemplatesRenderRetrieve } from "@/features/api/gen";
+import { ReadOnlyMessageTemplate, useMailboxesMessageTemplatesRenderRetrieve } from "@/features/api/gen";
 import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
 
 
@@ -134,13 +134,15 @@ export const BlockSignature = createReactBlockSpec(
     {
         render: ({ block : { props }}) => {
             // eslint-disable-next-line react-hooks/rules-of-hooks
-            const { data: { data: preview = null } = {}, isLoading } = useMessageTemplatesRenderRetrieve(props.templateId, {
-                request: {
-                    params: {
-                        mailbox_id: props.mailboxId
+            const { data: { data: preview = null } = {}, isLoading } = useMailboxesMessageTemplatesRenderRetrieve(
+                props.mailboxId,
+                props.templateId,
+                {
+                    query: {
+                        enabled: !!props.mailboxId && !!props.templateId,
                     }
                 }
-            });
+            );
 
             if (isLoading) {
                 return <Spinner size="sm" />;

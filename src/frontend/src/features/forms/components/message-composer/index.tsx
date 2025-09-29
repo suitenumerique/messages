@@ -12,7 +12,7 @@ import { Message } from '@/features/api/gen/models/message';
 import { BlockNoteViewField } from '@/features/blocknote/blocknote-view-field';
 import { Toolbar } from '@/features/blocknote/toolbar';
 import { BlockSignature, BlockSignatureConfigProps, SignatureTemplateSelector } from '@/features/blocknote/signature-block';
-import { MessageTemplateTypeChoices, useMessageTemplatesList } from '@/features/api/gen';
+import { MessageTemplateTypeChoices, useMailboxesMessageTemplatesAvailableList } from '@/features/api/gen';
 
 const BLOCKNOTE_SCHEMA = BlockNoteSchema.create({
     blockSpecs: {
@@ -50,20 +50,19 @@ type MessageComposerProps = FieldProps & {
 export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quotedMessage, disabled = false, draft, onSaveDraft, ...props }: MessageComposerProps) => {
     const form = useFormContext();
     const { t, i18n } = useTranslation();
-    const { data: { data: activeSignatures = [] } = {}, isLoading: isLoadingSignatures } = useMessageTemplatesList({
-        query: { 
-            enabled: !!mailboxId,
-            //refetchOnMount: true,
-            //refetchOnWindowFocus: true,
-        },
-        request: {
-            params: {
-                mailbox_id: mailboxId!,
-                type: MessageTemplateTypeChoices.signature,
-                is_active: "true",
-            }
-        },
-    });
+    const { data: { data: activeSignatures = [] } = {}, isLoading: isLoadingSignatures } = useMailboxesMessageTemplatesAvailableList(
+        mailboxId || "",
+        {
+            query: { 
+                enabled: !!mailboxId,
+            },
+            request: {
+                params: {
+                    type: MessageTemplateTypeChoices.signature.toUpperCase(),
+                }
+            },
+        }
+    );
 
 
     /**

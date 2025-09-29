@@ -1,4 +1,4 @@
-import { MailDomainAdmin, MessageTemplateTypeChoices, ReadOnlyMessageTemplate, useMessageTemplatesCreate, useMessageTemplatesUpdate } from "@/features/api/gen";
+import { MailDomainAdmin, MessageTemplate, MessageTemplateTypeChoices, useMaildomainsMessageTemplatesCreate, useMaildomainsMessageTemplatesUpdate } from "@/features/api/gen";
 import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
@@ -17,7 +17,7 @@ import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 type ModalComposeSignatureProps = {
     isOpen: boolean;
     onClose: () => void;
-    signature?: ReadOnlyMessageTemplate;
+    signature?: MessageTemplate;
 }
 
 export const ModalComposeSignature = ({ isOpen, onClose, signature }: ModalComposeSignatureProps) => {
@@ -26,7 +26,7 @@ export const ModalComposeSignature = ({ isOpen, onClose, signature }: ModalCompo
     const domainName = selectedMailDomain?.name || "";
     const queryClient = useQueryClient();
     const invalidateMessageTemplates = async () => {
-        await queryClient.invalidateQueries({ queryKey: ["/api/v1.0/message-templates/"], exact: false });
+        await queryClient.invalidateQueries({ queryKey: [`/api/v1.0/maildomains/${selectedMailDomain?.id}/message-templates/`], exact: false });
     }
 
     const handleSuccess = async () => {
@@ -57,7 +57,7 @@ export const ModalComposeSignature = ({ isOpen, onClose, signature }: ModalCompo
 
 type SignatureComposerFormProps = {
     domain: MailDomainAdmin;
-    defaultValue?: ReadOnlyMessageTemplate;
+    defaultValue?: MessageTemplate;
     onSuccess?: () => void;
 }
 
@@ -85,17 +85,17 @@ const SignatureComposeForm = ({ domain, defaultValue, onSuccess }: SignatureComp
             rawBody: defaultValue?.raw_body ?? undefined,
         }
     });
-    const { mutateAsync: createSignature, isPending } = useMessageTemplatesCreate();
-    const { mutateAsync: updateSignature, isPending: isUpdating } = useMessageTemplatesUpdate();
+    const { mutateAsync: createSignature, isPending } = useMaildomainsMessageTemplatesCreate();
+    const { mutateAsync: updateSignature, isPending: isUpdating } = useMaildomainsMessageTemplatesUpdate();
     const isSubmitting = isPending || isUpdating;
 
     const onSubmit = async (data: SignatureComposerFormData) => {
         try {
             if (defaultValue?.id) {
                 await updateSignature({
+                    maildomainPk: domain.id,
                     id: defaultValue.id,
                     data: {
-                        maildomain_id: domain.id,
                         name: data.name,
                         type: MessageTemplateTypeChoices.signature,
                         is_active: data.is_active,
@@ -107,8 +107,8 @@ const SignatureComposeForm = ({ domain, defaultValue, onSuccess }: SignatureComp
                 });
             } else {
                 await createSignature({
+                    maildomainPk: domain.id,
                     data: {
-                        maildomain_id: domain.id,
                         name: data.name,
                         type: MessageTemplateTypeChoices.signature,
                         is_active: data.is_active,

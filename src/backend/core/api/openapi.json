@@ -2258,6 +2258,147 @@
                 }
             }
         },
+        "/api/v1.0/mailboxes/{mailbox_id}/message-templates/{id}/": {
+            "get": {
+                "operationId": "mailboxes_message_templates_retrieve",
+                "description": "ViewSet for retrieving and rendering message templates for a mailbox.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ReadOnlyMessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/message-templates/{id}/render/": {
+            "get": {
+                "operationId": "mailboxes_message_templates_render_retrieve",
+                "description": "Render a template with the provided context variables.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "html_body": {
+                                            "type": "string"
+                                        },
+                                        "text_body": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Template rendered with provided context"
+                    },
+                    "404": {
+                        "description": "Template not found"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/message-templates/available/": {
+            "get": {
+                "operationId": "mailboxes_message_templates_available_list",
+                "description": "ViewSet for getting message templates for a mailbox.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/ReadOnlyMessageTemplate"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/mailboxes/{id}/": {
             "get": {
                 "operationId": "mailboxes_retrieve",
@@ -2981,10 +3122,10 @@
                 }
             }
         },
-        "/api/v1.0/maildomains/{maildomain_pk}/users/": {
+        "/api/v1.0/maildomains/{maildomain_pk}/message-templates/": {
             "get": {
-                "operationId": "maildomains_users_list",
-                "description": "Search users by email, first name and last name.",
+                "operationId": "maildomains_message_templates_list",
+                "description": "ViewSet for managing message templates for a maildomain.",
                 "parameters": [
                     {
                         "in": "path",
@@ -2994,55 +3135,6 @@
                             "format": "uuid"
                         },
                         "required": true
-                    },
-                    {
-                        "in": "query",
-                        "name": "q",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "description": "Search maildomains user by full name, short name or email."
-                    }
-                ],
-                "tags": [
-                    "admin-maildomain-user"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/components/schemas/UserWithoutAbilities"
-                                    }
-                                }
-                            }
-                        },
-                        "description": ""
-                    }
-                }
-            }
-        },
-        "/api/v1.0/maildomains/{id}/": {
-            "get": {
-                "operationId": "maildomains_retrieve",
-                "description": "ViewSet for listing MailDomains the user administers.\nProvides a top-level entry for mail domain administration.\nEndpoint: /maildomains/",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "id",
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "primary key for the record as UUID"
-                        },
-                        "required": true
                     }
                 ],
                 "tags": [
@@ -3058,73 +3150,9 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/MailDomainAdmin"
-                                }
-                            }
-                        },
-                        "description": ""
-                    }
-                }
-            }
-        },
-        "/api/v1.0/maildomains/{id}/check-dns/": {
-            "post": {
-                "operationId": "maildomains_check_dns_create",
-                "description": "Check DNS records for a specific mail domain.",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "id",
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "primary key for the record as UUID"
-                        },
-                        "required": true
-                    }
-                ],
-                "tags": [
-                    "maildomains"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/DNSCheckResponse"
-                                }
-                            }
-                        },
-                        "description": ""
-                    }
-                }
-            }
-        },
-        "/api/v1.0/message-templates/": {
-            "get": {
-                "operationId": "message_templates_list",
-                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- type: Filter by template type (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_forced: Filter by forced status (true/false) - works with mailbox or maildomain",
-                "tags": [
-                    "message-templates"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/components/schemas/ReadOnlyMessageTemplate"
+                                        "$ref": "#/components/schemas/MessageTemplate"
                                     }
                                 }
                             }
@@ -3134,10 +3162,21 @@
                 }
             },
             "post": {
-                "operationId": "message_templates_create",
-                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- type: Filter by template type (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_forced: Filter by forced status (true/false) - works with mailbox or maildomain",
+                "operationId": "maildomains_message_templates_create",
+                "description": "ViewSet for managing message templates for a maildomain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
                 "tags": [
-                    "message-templates"
+                    "maildomains"
                 ],
                 "requestBody": {
                     "content": {
@@ -3173,22 +3212,33 @@
                 }
             }
         },
-        "/api/v1.0/message-templates/{id}/": {
+        "/api/v1.0/maildomains/{maildomain_pk}/message-templates/{id}/": {
             "get": {
-                "operationId": "message_templates_retrieve",
-                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- type: Filter by template type (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_forced: Filter by forced status (true/false) - works with mailbox or maildomain",
+                "operationId": "maildomains_message_templates_retrieve",
+                "description": "ViewSet for managing message templates for a maildomain.",
                 "parameters": [
                     {
                         "in": "path",
                         "name": "id",
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
                         },
                         "required": true
                     }
                 ],
                 "tags": [
-                    "message-templates"
+                    "maildomains"
                 ],
                 "security": [
                     {
@@ -3209,20 +3259,31 @@
                 }
             },
             "put": {
-                "operationId": "message_templates_update",
-                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- type: Filter by template type (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_forced: Filter by forced status (true/false) - works with mailbox or maildomain",
+                "operationId": "maildomains_message_templates_update",
+                "description": "ViewSet for managing message templates for a maildomain.",
                 "parameters": [
                     {
                         "in": "path",
                         "name": "id",
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
                         },
                         "required": true
                     }
                 ],
                 "tags": [
-                    "message-templates"
+                    "maildomains"
                 ],
                 "requestBody": {
                     "content": {
@@ -3258,20 +3319,31 @@
                 }
             },
             "patch": {
-                "operationId": "message_templates_partial_update",
-                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- type: Filter by template type (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_forced: Filter by forced status (true/false) - works with mailbox or maildomain",
+                "operationId": "maildomains_message_templates_partial_update",
+                "description": "ViewSet for managing message templates for a maildomain.",
                 "parameters": [
                     {
                         "in": "path",
                         "name": "id",
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
                         },
                         "required": true
                     }
                 ],
                 "tags": [
-                    "message-templates"
+                    "maildomains"
                 ],
                 "requestBody": {
                     "content": {
@@ -3306,20 +3378,31 @@
                 }
             },
             "delete": {
-                "operationId": "message_templates_destroy",
-                "description": "ViewSet for managing message templates and signatures.\n\nThis ViewSet provides endpoints for creating, reading, updating, and deleting\nmessage templates and signatures. Templates can be used for replies, new messages,\nand signatures.\n\nFiltering:\n- type: Filter by template type (reply, new_message, signature)\n- is_active: Filter by active status (true/false)\n- mailbox_id: Filter by mailbox UUID\n- maildomain_id: Filter by mail domain UUID\n- is_forced: Filter by forced status (true/false) - works with mailbox or maildomain",
+                "operationId": "maildomains_message_templates_destroy",
+                "description": "ViewSet for managing message templates for a maildomain.",
                 "parameters": [
                     {
                         "in": "path",
                         "name": "id",
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
                         },
                         "required": true
                     }
                 ],
                 "tags": [
-                    "message-templates"
+                    "maildomains"
                 ],
                 "security": [
                     {
@@ -3329,53 +3412,6 @@
                 "responses": {
                     "204": {
                         "description": "No response body"
-                    }
-                }
-            }
-        },
-        "/api/v1.0/message-templates/{id}/render/": {
-            "get": {
-                "operationId": "message_templates_render_retrieve",
-                "description": "Render a template with the provided context variables.",
-                "parameters": [
-                    {
-                        "in": "path",
-                        "name": "id",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "required": true
-                    }
-                ],
-                "tags": [
-                    "message-templates"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "html_body": {
-                                            "type": "string"
-                                        },
-                                        "text_body": {
-                                            "type": "string"
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        "description": "Template rendered with provided context"
-                    },
-                    "404": {
-                        "description": "Template not found"
                     }
                 }
             }
