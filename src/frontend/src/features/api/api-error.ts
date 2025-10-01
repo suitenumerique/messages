@@ -32,12 +32,12 @@ export const errorToString = (error: unknown): string => {
         .join("\n");
     }
     // If there is no data, it means that the error is a string, probably a complicated html error.
-    return i18n.t("api.error.unexpected");
+    return i18n.t("An unexpected error occurred.");
   }
   // We want to show the error message from the AppError only. Not message from the Error class as they
   // can be really technical and not helpful for the user. For those we show the generic error message.
   if (error instanceof AppError) {
     return error.message;
   }
-  return i18n.t("api.error.unexpected");
+  return i18n.t("An unexpected error occurred.");
 };

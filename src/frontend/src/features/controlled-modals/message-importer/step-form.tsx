@@ -185,15 +185,15 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
                 onSubmit={form.handleSubmit(handleSubmit)}
                 noValidate
             >
-                <h2>{t('message_importer_modal.form.title')}</h2>
+                <h2>{t('First, we need some information about your old mailbox')}</h2>
                 { showImapForm === true && (
                     <>
                     <div className="form-field-row flex-justify-center">
-                        <p>{t('message_importer_modal.form.imap_import_description')}</p>
+                        <p>{t('Indicate your old email address and your password.')}</p>
                     </div>
                     <div className="form-field-row">
                         <RhfInput
-                            label={t('message_importer_modal.form.labels.email_address')}
+                            label={t('Email address')}
                             name="username"
                             type="email"
                             text={form.formState.errors.username ? t(form.formState.errors.username.message as string) : undefined}
@@ -203,7 +203,7 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
                     </div>
                     <div className="form-field-row">
                         <RhfInput
-                            label={t('message_importer_modal.form.labels.password')}
+                            label={t('Password')}
                             name="password"
                             type="password"
                             text={form.formState.errors.password ? t(form.formState.errors.password.message as string) : undefined}
@@ -214,12 +214,12 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
                         showAdvancedImapFields ? (
                             <>
                                 <div className="form-field-row flex-justify-center">
-                                    <p>{t('message_importer_modal.form.imap_import_description')}</p>
+                                    <p>{t('Indicate your old email address and your password.')}</p>
                                 </div>
                                 <div className="form-field-row">
                                     <RhfInput
                                         name="imap_server"
-                                        label={t('message_importer_modal.form.labels.imap_server')}
+                                        label={t('IMAP server')}
                                         text={form.formState.errors.imap_server ? t(form.formState.errors.imap_server.message as string) : undefined}
                                         fullWidth
                                     />
@@ -228,14 +228,14 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
                                         type="number"
                                         min={1}
                                         max={65535}
-                                        label={t('message_importer_modal.form.labels.imap_port')}
+                                        label={t('IMAP port')}
                                         text={form.formState.errors.imap_port ? t(form.formState.errors.imap_port.message as string) : undefined}
                                         fullWidth
                                     />
                                 </div>
                                 <div className="form-field-row">
                                     <RhfCheckbox
-                                        label={t("message_importer_modal.form.labels.use_ssl")}
+                                        label={t("Use SSL")}
                                         name="use_ssl"
                                         fullWidth
                                     />
@@ -252,18 +252,18 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
                     {
                         emailDomain && (
                             <Banner type="info">
-                                <p>{t('message_importer_modal.form.imap_banner.helper')}</p>
+                                <p>{t('To be able to import emails from an IMAP server, you may need to allow IMAP access on your account.')}</p>
                                 <p><LinkToDoc imapDomain={emailDomain} /></p>
                             </Banner>
                         )
                     }
                     <div className="form-field-row flex-justify-center modal-importer-form__or-separator">
-                        <p>{t('message_importer_modal.form.or')}</p>
+                        <p>{t('Or')}</p>
                     </div>
                     </>
                 )}
                 <div className="form-field-row flex-justify-center">
-                    <p>{t('message_importer_modal.form.upload_archive_file')}</p>
+                    <p>{t('Upload an archive')}</p>
                 </div>
                 <div className="form-field-row">
                     <RhfFileUploader
@@ -271,8 +271,8 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
                         accept=".eml,.mbox"
                         icon={<span className="material-icons">inventory_2</span>}
                         fileSelectedIcon={<span className="material-icons">inventory_2</span>}
-                        bigText={t('message_importer_modal.form.labels.archive_file_description')}
-                        text={t('message_importer_modal.form.labels.archive_file_helper')}
+                        bigText={t('Drag and drop an archive here')}
+                        text={t('EML or MBOX')}
                         fullWidth
                     />
                 </div>
@@ -284,7 +284,7 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
                         icon={isPending ? <Spinner size="sm" /> : undefined}
                         fullWidth
                     >
-                        {t('actions.import')}
+                        {t('Import')}
                     </Button>
                 </div>
             </form>
@@ -316,5 +316,5 @@ const LinkToDoc = ({ imapDomain }: { imapDomain: string }) => {
     const doc = Array.from(Object.entries(domainDoc)).find(([regex]) => new RegExp(`^${regex}$`).test(imapDomain))?.[1];
 
     if (!doc) return null;
-    return <a href={doc.href} target="_blank" rel="noreferrer noopener">{t('message_importer_modal.form.imap_banner.link_label', { name: doc.displayName })}</a>
+    return <a href={doc.href} target="_blank" rel="noreferrer noopener">{t('How to allow IMAP connections from your account {{name}}?', { name: doc.displayName })}</a>
 }

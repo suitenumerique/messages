@@ -65,12 +65,12 @@ export const HeaderRight = () => {
           onOpenChange={setIsDropdownOpen}
           options={[
               ...(canAccessDomainAdmin ? [{
-                label: t("user_menu.domain_admin"),
+                label: t("Domain admin"),
                 icon: <Icon name="domain" />,
                 callback: () => router.push("/domain"),
               }] : []),
               {
-                  label: t("actions.import_messages"),
+                  label: t("Import messages"),
                   icon: <Icon name="archive" type={IconType.OUTLINED} />,
                   callback: () => {
                       window.location.hash = `#modal-message-importer`;
@@ -81,7 +81,7 @@ export const HeaderRight = () => {
       <Button
           onClick={() => setIsDropdownOpen(true)}
           icon={<Icon name="settings" type={IconType.OUTLINED} />}
-          aria-label={t("mailbox-panel.actions.more_options")}
+          aria-label={t("More options")}
           color="tertiary-text"
       />
       </DropdownMenu>

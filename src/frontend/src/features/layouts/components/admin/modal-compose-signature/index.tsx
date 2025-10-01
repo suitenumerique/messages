@@ -44,7 +44,7 @@ export const ModalComposeSignature = ({ isOpen, onClose, signature }: ModalCompo
     return (
         <Modal
             isOpen={isOpen}
-            title={t('admin_maildomains_signature.compose_modal.title', { domain: domainName })}
+            title={t('Create a new signature for {{domain}}', { domain: domainName })}
             size={ModalSize.LARGE}
             onClose={onClose}
         >
@@ -130,7 +130,7 @@ const SignatureComposeForm = ({ domain, defaultValue, onSuccess }: SignatureComp
             <form className="signature-composer-form" onSubmit={form.handleSubmit(onSubmit)}>
                 <div className="form-field-row">
                     <RhfInput
-                        label={t('admin_maildomains_signature.compose_modal.form.labels.name')}
+                        label={t('Name')}
                         name="name"
                         text={form.formState.errors.name?.message && t(form.formState.errors.name.message)}
                         fullWidth
@@ -145,21 +145,21 @@ const SignatureComposeForm = ({ domain, defaultValue, onSuccess }: SignatureComp
                 </div>
                 <div className="form-field-row">
                     <RhfCheckbox
-                        label={t('admin_maildomains_signature.compose_modal.form.labels.is_active')}
+                        label={t('Active')}
                         name="is_active"
-                        text={t('admin_maildomains_signature.compose_modal.form.helper_text.is_active')}
+                        text={t('While the signature is disabled, it will not be available to the users.')}
                         fullWidth
                     />
                     <RhfCheckbox
-                        label={t('admin_maildomains_signature.compose_modal.form.labels.is_forced')}
+                        label={t('Forced signature')}
                         name="is_forced"
-                        text={t('admin_maildomains_signature.compose_modal.form.helper_text.is_forced')}
+                        text={t('The forced signature will be the only one usable for new messages.')}
                         fullWidth
                     />
                 </div>
                 <div className="form-actions">
                     <Button type="submit" disabled={isSubmitting}>
-                        {isSubmitting ? t('actions.saving') : t('actions.save')}
+                        {isSubmitting ? t('Saving...') : t('Save')}
                     </Button>
                 </div>
 

@@ -150,7 +150,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
                 details.addEventListener('toggle', resizeIframe);
 
                 const summary = doc.createElement('summary');
-                summary.textContent = t('message_body.show_embedded_message');
+                summary.textContent = t('Show embedded message');
                 details.appendChild(summary);
                 details.appendChild(node);
                 parentElement?.appendChild(details);

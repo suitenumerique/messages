@@ -38,12 +38,12 @@ export const LabelBadge = ({ label, removable = false, linkable = false }: Label
                     <ToasterItem
                         type="info"
                         actions={[{
-                            label: t('actions.undo'),
+                            label: t('Undo'),
                             onClick: () => addLabelMutation(variables)
                         }]}
                     >
                         <span className="material-icons">label_off</span>
-                        <span>{t('labels.thread_unassigned', { label: label.name })}</span>
+                        <span>{t('Label "{{label}}" removed from this conversation.', { label: label.name })}</span>
                     </ToasterItem>,
                     {
                         toastId: JSON.stringify(variables),
@@ -66,7 +66,7 @@ export const LabelBadge = ({ label, removable = false, linkable = false }: Label
         <Badge title={label.name} className="label-badge" style={{ backgroundColor: label.color, color: badgeColor}}>
             {showLink ? <Link href={link}>{label.name}</Link> : label.name}
             {canManageLabels &&selectedThread?.id && removable && (
-                <Tooltip content={t('actions.delete')}>
+                <Tooltip content={t('Delete')}>
                     <button
                         className="label-badge__remove-cta"
                         onClick={() => deleteLabelMutation({ id: label.id, data: { thread_ids: [selectedThread.id] } })}
@@ -74,7 +74,7 @@ export const LabelBadge = ({ label, removable = false, linkable = false }: Label
                         aria-busy={isDeletingLabel}
                     >
                         {isDeletingLabel ? <Spinner size="sm" /> : <span className="material-icons">close</span>}
-                        <span className="c__offscreen">{t('actions.delete')}</span>
+                        <span className="c__offscreen">{t('Delete')}</span>
                     </button>
                 </Tooltip>
             )}

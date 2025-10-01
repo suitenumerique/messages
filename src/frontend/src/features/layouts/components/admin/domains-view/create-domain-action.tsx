@@ -24,7 +24,7 @@ export const CreateDomainAction = ({ onCreate }: CreateDomainActionProps) => {
     return (
         <>
             <Button color="primary" onClick={modal.open}>
-                {t("admin_maildomains_list.actions.new_domain")}
+                {t("New domain")}
             </Button>
             <ModalCreateDomain
                 isOpen={modal.isOpen}

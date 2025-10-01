@@ -41,21 +41,21 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
     const addUpdateSucceededToast = () => {
         addToast(
             <ToasterItem type="info">
-                <span>{t("admin_maildomains_signature.toasts.success_update")}</span>
+                <span>{t("Signature updated!")}</span>
             </ToasterItem>,
         );
     }
     const handleDeleteRow = async (signature: MessageTemplate) => {
         const decision = await modals.deleteConfirmationModal({
-            title: <span className="c__modal__text--centered">{t('admin_maildomains_signature.compose_modal.delete_modal.title', { signature: signature.name })}</span>,
-            children: t('admin_maildomains_signature.compose_modal.delete_modal.message'),
+            title: <span className="c__modal__text--centered">{t('Delete signature "{{signature}}"', { signature: signature.name })}</span>,
+            children: t('Are you sure you want to delete this signature? This action is irreversible!'),
         });
         if (decision === 'delete') {
             await deleteSignature({ maildomainPk: domain.id, id: signature.id });
             invalidateMessageTemplates();
             addToast(
                 <ToasterItem type="info">
-                    <span>{t("admin_maildomains_signature.toasts.delete")}</span>
+                    <span>{t("Signature deleted!")}</span>
                 </ToasterItem>,
             );
         }
@@ -81,7 +81,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
     const columns: Column<MessageTemplate>[] = [
         {
             id: "is_active",
-            headerName: t("admin_maildomains_signature.datagrid_headers.is_active"),
+            headerName: t("Active"),
             size: 75,
             renderCell: ({ row }) => (
                 <div className="flex-row flex-justify-center">
@@ -91,7 +91,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
         },
         {
             id: "is_forced",
-            headerName: t("admin_maildomains_signature.datagrid_headers.is_forced"),
+            headerName: t("Forced"),
             size: 100,
             renderCell: ({ row }) => (
                 <div className="flex-row flex-justify-center">
@@ -105,13 +105,13 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
         },
         {
             id: "name",
-            headerName: t("admin_maildomains_signature.datagrid_headers.name"),
+            headerName: t("Name"),
             renderCell: ({ row }) => row.name,
         },
         {
             id: "actions",
             size: 150,
-            headerName: t("admin_maildomains_signature.datagrid_headers.actions"),
+            headerName: t("Actions"),
             renderCell: ({ row }) => (
                 <div className="flex-row flex-justify-start" style={{ width: "100%", gap: "1rem" }}>
                     <Button
@@ -119,7 +119,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
                         size="small"
                         onClick={() => handleModifyRow(row)}
                     >
-                        {t("admin_maildomains_signature.actions.modify")}
+                        {t("Modify")}
                     </Button>
                     <Button
                         color="danger"
@@ -127,7 +127,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
                         icon={isDeleting ? <Spinner size="sm" /> : <Icon name="delete" size={IconSize.SMALL} />}
                         onClick={() => handleDeleteRow(row)}
                         disabled={isDeleting}
-                        aria-label={t("admin_maildomains_signature.actions.delete")}
+                        aria-label={t("Delete")}
                     >
                     </Button>
                 </div>
@@ -139,7 +139,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
         return (
             <div className="admin-data-grid">
                 <Banner type="info" icon={<Spinner />}>
-                    {t("admin_maildomains_signature.loading")}
+                    {t("Loading signatures...")}
                 </Banner>
             </div>
         );
@@ -149,7 +149,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
         return (
             <div className="admin-data-grid">
                 <Banner type="error">
-                    {t("admin_maildomains_signature.errors.failed_to_load_signatures")}
+                    {t("Error while loading signatures")}
                 </Banner>
             </div>
         );
@@ -166,7 +166,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
                 />
             ) : (
                 <Banner type="info">
-                    {t("admin_maildomains_signature.no_signatures")}
+                    {t("No signatures found")}
                 </Banner>
             )}
             <ModalComposeSignature

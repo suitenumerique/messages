@@ -68,7 +68,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                         message.is_trashed && (
                             <Banner type="info" icon={<span className="material-icons">info</span>}>
                                 <div className="thread-view__trashed-banner__content">
-                                    <p>{t('thread-view.trashed-banner.message_trashed')}</p>
+                                    <p>{t('This message has been deleted.')}</p>
                                     <div className="thread-view__trashed-banner__actions">
                                         <Button
                                             onClick={() => markAsUntrashed({messageIds: [message.id]})}
@@ -76,7 +76,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                             size="small"
                                             icon={<span className="material-icons">restore_from_trash</span>}
                                         >
-                                            {t('actions.undelete')}
+                                            {t('Undelete')}
                                         </Button>
                                     </div>
                                 </div>
@@ -84,7 +84,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                     )}
                     <div className="thread-message__header-rows">
                         <div className="thread-message__header-column thread-message__header-column--left">
-                            <h2 className="thread-message__subject">{message.subject || selectedThread?.snippet || t('thread-item.no-subject')}</h2>
+                            <h2 className="thread-message__subject">{message.subject || selectedThread?.snippet || t('No subject')}</h2>
                         </div>
                         <div className="thread-message__header-column thread-message__header-column--right flex-row flex-align-center">
                             <div className="thread-message__metadata">
@@ -101,7 +101,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                 )}
                                 {message.is_draft && (
                                     <Badge>
-                                        {t('thread_message.draft')}
+                                        {t('Draft')}
                                     </Badge>
                                 )}
                                 {
@@ -112,34 +112,34 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                             </div>
                             <div className="thread-message__header-actions">
                                 {canSendMessages && hasSeveralRecipients && (
-                                    <Tooltip content={t('actions.reply_all')}>
+                                    <Tooltip content={t('Reply all')}>
                                         <Button
                                             color="tertiary-text"
                                             size="small"
                                             icon={<span className="material-icons">reply_all</span>}
-                                            aria-label={t('actions.reply_all')}
+                                            aria-label={t('Reply all')}
                                             onClick={() => setReplyFormMode('reply_all')}
                                         />
                                     </Tooltip>
                                 )}
                                 {canSendMessages && (
-                                <Tooltip content={t('actions.reply')}>
+                                <Tooltip content={t('Reply')}>
                                     <Button
                                         color="tertiary-text"
                                         size="small"
                                         icon={<span className="material-icons">reply</span>}
-                                        aria-label={t('actions.reply')}
+                                        aria-label={t('Reply')}
                                         onClick={() => setReplyFormMode('reply')}
                                         />
                                     </Tooltip>
                                 )}
                                 {canSendMessages && (
-                                    <Tooltip content={t('actions.forward')}>
+                                    <Tooltip content={t('Forward')}>
                                         <Button
                                             color="tertiary-text"
                                         size="small"
                                         icon={<span className="material-icons">forward</span>}
-                                        aria-label={t('actions.forward')}
+                                        aria-label={t('Forward')}
                                         onClick={() => setReplyFormMode('forward')}
                                         />
                                     </Tooltip>
@@ -149,23 +149,23 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                     onOpenChange={setIsDropdownOpen}
                                     options={[
                                         {
-                                            label: hasSiblingMessages ? t('actions.mark_as_unread_from_here') : t('actions.mark_as_unread'),
+                                            label: hasSiblingMessages ? t('Mark as unread from here') : t('Mark as unread'),
                                             icon: <span className="material-icons">mark_email_unread</span>,
                                             callback: () => markAsUnreadFrom(message.id)
                                         },
                                         ...(message.is_trashed ? [] : [{
-                                            label: t('actions.delete'),
+                                            label: t('Delete'),
                                             icon: <span className="material-icons">delete</span>,
                                             callback: () => markAsTrashed({messageIds: [message.id]})
                                          }]),
                                     ]}
                                 >
-                                    <Tooltip content={t('tooltips.more_options')}>
+                                    <Tooltip content={t('More options')}>
                                         <Button
                                             onClick={() => setIsDropdownOpen(true)}
                                             icon={<span className="material-icons">more_vert</span>}
                                             color="primary-text"
-                                            aria-label={t('tooltips.more_options')}
+                                            aria-label={t('More options')}
                                             size="small"
                                         />
                                     </Tooltip>
@@ -176,13 +176,13 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                     <div className="thread-message__header-rows">
                         <div className="thread-message__header-column thread-message__header-column--left">
                             <dl className="thread-message__correspondents">
-                                <dt>{t('thread_message.from')}</dt>
+                                <dt>{t('From: ')}</dt>
                                 <dd>{message.sender.email}</dd>
-                                <dt>{t('thread_message.to')}</dt>
+                                <dt>{t('To: ')}</dt>
                                 <dd>{message.to.map((recipient) => recipient.email).join(', ')}</dd>
                                 {message.cc.length > 0 && (
                                     <>
-                                        <dt>{t('thread_message.cc')}</dt>
+                                        <dt>{t('Copy: ')}</dt>
                                         <dd>{message.cc.map((recipient) => recipient.email).join(', ')}</dd>
                                     </>
                                 )}
@@ -205,26 +205,26 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                     <Button
                                         color="primary"
                                         icon={<span className="material-icons">reply_all</span>}
-                                        aria-label={t('actions.reply_all')}
+                                        aria-label={t('Reply all')}
                                         onClick={() => setReplyFormMode('reply_all')}
                                     >
-                                        {t('actions.reply_all')}
+                                        {t('Reply all')}
                                     </Button>
                                 )}
                                 <Button
                                     color={hasSeveralRecipients ? 'secondary' : 'primary'}
                                     icon={<span className="material-icons">reply</span>}
-                                    aria-label={t('actions.reply')}
+                                    aria-label={t('Reply')}
                                     onClick={() => setReplyFormMode('reply')}
                                 >
-                                    {t('actions.reply')}
+                                    {t('Reply')}
                                 </Button>
                                 <Button
                                     color='secondary'
                                     icon={<span className="material-icons">forward</span>}
                                     onClick={() => setReplyFormMode('forward')}
                                 >
-                                    {t('actions.forward')}
+                                    {t('Forward')}
                                 </Button>
                             </div>
                         )

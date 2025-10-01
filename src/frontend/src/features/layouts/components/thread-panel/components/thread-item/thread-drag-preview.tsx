@@ -23,7 +23,7 @@ export const ThreadDragPreview = ({ thread }: { thread: Thread }) => {
                     )}
                 </div>
                 <div className="thread-item__subject">
-                    {thread.subject || thread.snippet || t('thread-item.no-subject')}
+                    {thread.subject || thread.snippet || t('No subject')}
                 </div>
                 {thread.labels.length > 0 && (
                     <div className="thread-drag-preview__labels">

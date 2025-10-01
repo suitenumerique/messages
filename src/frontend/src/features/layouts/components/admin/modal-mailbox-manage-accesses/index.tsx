@@ -69,7 +69,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
 
     const accessRoleOptions = (isDisabled?: boolean) => Object.values(MailboxRoleChoices).map((role) => {
         return {
-            label: t(`manage_accesses_modal.roles.${role}`),
+            label: t(`mailbox_roles_${role}`, { ns: 'roles' }),
             value: role,
             isDisabled: isDisabled ?? (hasOnlyOneEditor && role !== MailboxRoleChoices.editor),
         }
@@ -88,7 +88,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
 
     return (
         <ShareModal<UserWithoutAbilities, UserWithoutAbilities, MailboxAccessNestedUser>
-            modalTitle={t('manage_accesses_modal.title', { entity: MailboxHelper.toString(mailbox) })}
+            modalTitle={t('Manage {{entity}} accesses', { entity: MailboxHelper.toString(mailbox) })}
             isOpen={isOpen}
             loading={searchUsersQuery.isLoading}
             canUpdate={true}

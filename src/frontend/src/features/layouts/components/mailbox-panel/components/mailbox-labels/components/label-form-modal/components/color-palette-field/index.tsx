@@ -47,7 +47,7 @@ export const RhfColorPaletteField = (props: { name: string }) => {
                             className="color-palette-field__label"
                             onClick={(e) => { if (e.altKey) setShowInputOfHell(!showInputOfHell); }}
                         >
-                            {t('labels.form.fields.color')}
+                            {t('Color: ')}
                         </label>
                         {
                             showInputOfHell && (

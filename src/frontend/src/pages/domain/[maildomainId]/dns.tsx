@@ -39,20 +39,20 @@ function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSData
   const getStatusText = (status: string) => {
     switch (status) {
       case "correct":
-        return t("admin_maildomains_dns.datagrid_row_labels.status_correct");
+        return t("Correct");
       case "incorrect":
-        return t("admin_maildomains_dns.datagrid_row_labels.status_incorrect");
+        return t("Incorrect");
       case "missing":
-        return t("admin_maildomains_dns.datagrid_row_labels.status_missing");
+        return t("Missing");
       default:
-        return t("admin_maildomains_dns.datagrid_row_labels.status_unknown");
+        return t("Unknown");
     }
   };
 
   const columns = [
     {
       id: "type",
-      headerName: t("admin_maildomains_dns.datagrid_headers.type"),
+      headerName: t("Type"),
       size: 80,
       renderCell: ({ row }: { row: DNSRecordWithId }) => (
         <strong>
@@ -62,7 +62,7 @@ function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSData
     },
     {
       id: "target",
-      headerName: t("admin_maildomains_dns.datagrid_headers.target"),
+      headerName: t("Target"),
       size: 200,
       renderCell: ({ row }: { row: DNSRecordWithId }) => (
         <CopyableInput value={row.target || "@"} />
@@ -70,14 +70,14 @@ function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSData
     },
     {
       id: "value",
-      headerName: t("admin_maildomains_dns.datagrid_headers.value"),
+      headerName: t("Value"),
       renderCell: ({ row }: { row: DNSRecordWithId }) => (
         <CopyableInput value={row.value} />
       ),
     },
     {
       id: "status",
-      headerName: t("admin_maildomains_dns.datagrid_headers.status"),
+      headerName: t("Current status"),
       size: 120,
       renderCell: ({ row }: { row: DNSRecordWithId }) => {
         const status = row._check?.status || "unknown";
@@ -94,7 +94,7 @@ function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSData
     return (
       <div className="admin-data-grid">
         <Banner type="info" icon={<Spinner />}>
-          {t("admin_maildomains_dns.checking")}
+          {t("Checking DNS records...")}
         </Banner>
       </div>
     );
@@ -114,7 +114,7 @@ function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSData
     return (
       <div className="admin-data-grid">
         <Banner type="info">
-          {t("admin_maildomains_dns.no_records")}
+          {t("No DNS records found")}
         </Banner>
       </div>
     );
@@ -124,7 +124,7 @@ function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSData
     <div className="admin-data-grid">
       <div style={{ marginBottom: "1.5rem" }}>
         <Banner type="info">
-          <Trans i18nKey="admin_maildomains_dns.explanation" values={{ domain: domain.name }} components={{ strong: <strong /> }} />
+          <Trans i18nKey="These DNS records must be configured on the domain <strong>{{domain}}</strong> for the mail system to work properly. If you don't know how to update them, please contact your technical service provider or system administrator." values={{ domain: domain.name }} components={{ strong: <strong /> }} />
         </Banner>
       </div>
       <DataGrid
@@ -133,7 +133,7 @@ function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSData
       />
       <div style={{ marginTop: "1.5rem" }}>
         <Button icon={justCopied?<Icon name="check" />:<Icon name="content_copy" />} color="secondary" onClick={() => {
-          const headerRow = t("admin_maildomains_dns.datagrid_headers.type") + "\t" + t("admin_maildomains_dns.datagrid_headers.target") + "\t" + t("admin_maildomains_dns.datagrid_headers.value") + "\n";
+          const headerRow = t("Type") + "\t" + t("Target") + "\t" + t("Value") + "\n";
           const records = headerRow + dnsRecords.map((record) => `${record.type.toUpperCase()}\t${record.target || "@"}\t${record.value}`).join("\n");
           navigator.clipboard.writeText(records);
           setJustCopied(true);
@@ -141,7 +141,7 @@ function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSData
             setJustCopied(false);
           }, 2000);
         }}>
-          {t("admin_maildomains_dns.actions.copy_dns_records")}
+          {t("Copy all DNS records")}
         </Button>
       </div>
     </div>
@@ -208,13 +208,13 @@ export default function AdminDNSPage() {
   if (domainError || !selectedMailDomain) {
     return (
         <Banner type="error">
-          {t("admin_maildomains_details.errors.domain_not_found")}
+          {t("Domain not found")}
         </Banner>
     );
   }
 
   const isChecking = dnsCheckMutation.isPending;
-  const error = dnsCheckMutation.error ? t("admin_maildomains_dns.errors.failed_to_check_dns") : null;
+  const error = dnsCheckMutation.error ? t("Error while checking DNS records") : null;
 
   return (
     <AdminLayout
@@ -226,7 +226,7 @@ export default function AdminDNSPage() {
             onClick={handleCheckDNS}
             disabled={dnsCheckMutation.isPending}
           >
-            {dnsCheckMutation.isPending ? t("admin_maildomains_dns.checking") : t("admin_maildomains_dns.actions.check_dns")}
+            {dnsCheckMutation.isPending ? t("Checking DNS records...") : t("Check DNS again")}
           </Button>
         </>
       }

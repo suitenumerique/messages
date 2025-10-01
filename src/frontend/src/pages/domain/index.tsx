@@ -32,7 +32,7 @@ function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
   const columns = [
     {
       id: "name",
-      headerName: t("admin_maildomains_list.datagrid_headers.name"),
+      headerName: t("Domain"),
       renderCell: ({ row }: { row: MailDomainAdmin }) => (
         <span
           style={{ cursor: "pointer", color: "var(--c--theme--colors--primary-600)" }}
@@ -44,18 +44,18 @@ function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
     },
     {
       id: "created_at",
-      headerName: t("admin_maildomains_list.datagrid_headers.created_at"),
+      headerName: t("Created at"),
       renderCell: ({ row }: { row: MailDomainAdmin }) => new Date(row.created_at).toLocaleDateString(i18n.resolvedLanguage),
     },
     {
       id: "updated_at",
-      headerName: t("admin_maildomains_list.datagrid_headers.updated_at"),
+      headerName: t("Updated at"),
       renderCell: ({ row }: { row: MailDomainAdmin }) => new Date(row.updated_at).toLocaleDateString(i18n.resolvedLanguage),
     },
     ...(canManageMaildomainAccesses ? [{
       id: "actions",
       size: 130,
-      headerName: t("admin_maildomains_list.datagrid_headers.actions"),
+      headerName: t("Actions"),
       renderCell: ({ row }: { row: MailDomainAdmin }) => (
         <ActionsCell
           domain={row}
@@ -119,7 +119,7 @@ const AdminPageContent = () => {
   if (error) {
     return (
       <Banner type="error">
-        {t("admin_maildomains_list.loading_error")}
+        {t("An error occurred while loading maildomains.")}
       </Banner>
     );
   }
@@ -127,7 +127,7 @@ const AdminPageContent = () => {
   return (
     <>
       <Bar className="admin-page__bar">
-        <h1>{t("admin_maildomains_list.title")}</h1>
+        <h1>{t("Maildomains management")}</h1>
       </Bar>
       <AdminDataGrid domains={mailDomains} pagination={pagination} />
     </>
@@ -147,7 +147,7 @@ export default function AdminPage() {
     });
     addToast(
       <ToasterItem>
-        <Trans i18nKey="admin_maildomains_list.creation_success" values={{ domain: domain.name }} components={{ strong: <strong /> }} />
+        <Trans i18nKey="The domain <strong>{{domain}}</strong> has been created successfully." values={{ domain: domain.name }} components={{ strong: <strong /> }} />
       </ToasterItem>, {
       toastId: `create-domain-success:${domain.id}`,
     }
@@ -171,6 +171,6 @@ const ActionsCell = ({ domain, onManageAccess }: { domain: MailDomainAdmin, onMa
       size="nano"
       color="secondary"
       onClick={onManageAccess}
-    >{t("admin_maildomains_list.actions.manage_access")}</Button>
+    >{t("Manage accesses")}</Button>
   )
 }

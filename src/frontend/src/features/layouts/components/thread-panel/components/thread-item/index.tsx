@@ -68,12 +68,12 @@ export const ThreadItem = ({ thread }: ThreadItemProps) => {
                             <div className="thread-item__metadata">
                                 {thread.has_draft && (
                                     <Badge>
-                                        {t('thread_message.draft')}
+                                        {t('Draft')}
                                     </Badge>
                                 )}
                         {/* {thread.has_attachments ? (
                                 <span className="thread-item__metadata-attachments">
-                                    <Tooltip placement="bottom" content={t('tooltips.has_attachments')}>
+                                    <Tooltip placement="bottom" content={t('This email has an attachment')}>
                                         <span className="material-icons">attachment</span>
                                     </Tooltip>
                                 </span>
@@ -81,7 +81,7 @@ export const ThreadItem = ({ thread }: ThreadItemProps) => {
                             </div>
                         </div>
                         <div className="thread-item__content">
-                            <p className="thread-item__subject">{thread.subject || thread.snippet || t('thread-item.no-subject')}</p>
+                            <p className="thread-item__subject">{thread.subject || thread.snippet || t('No subject')}</p>
                             {thread.labels.length > 0 && (
                                 <div className="thread-item__labels">
                                     {thread.labels.map((label) => (
@@ -94,7 +94,7 @@ export const ThreadItem = ({ thread }: ThreadItemProps) => {
                 </div>
                 <div className="thread-item__right">
                 {/* <div className="thread-item__actions">
-                    <Tooltip placement="bottom" content={t('actions.mark_as_important')}>
+                    <Tooltip placement="bottom" content={t('Mark as important')}>
                         <Button color="tertiary-text" className="thread-item__action">
                             <span className="material-icons">
                                 flag

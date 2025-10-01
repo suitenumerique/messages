@@ -219,6 +219,8 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `FRONTEND_THEME` | `dsfr` | Frontend theme identifier | Optional |
 | `NEXT_PUBLIC_API_ORIGIN` | `http://localhost:8901` | Frontend API origin | Dev |
 | `NEXT_PUBLIC_S3_DOMAIN_REPLACE` | `http://localhost:9000` | S3 domain replacement for frontend | Dev |
+| `NEXT_PUBLIC_LANGUAGES` | `[["en-US","English"],["fr-FR","Français"]]` | Languages available for frontend | Optional |
+| `NEXT_PUBLIC_DEFAULT_LANGUAGE` | `en-US` | Default language for frontend | Optional |
 
 ## Development Tools
 
@@ -252,7 +254,7 @@ The application uses a new environment file structure with `.defaults` and `.loc
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `LANGUAGE_CODE` | `en-us` | Default language code | Optional |
+| `LANGUAGE_CODE` | `en-us` | Default backend language code | Optional |
 
 
 ### AI

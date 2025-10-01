@@ -50,7 +50,7 @@ export function CopyableInput({ value, readOnly = true }: CopyableInputProps) {
             fontSize: '0.75rem'
           }}
         >
-          {copied ? '✓' : t("admin_maildomains_dns.copy")}
+          {copied ? '✓' : t("Copy")}
         </Button>
       )}
     </div>

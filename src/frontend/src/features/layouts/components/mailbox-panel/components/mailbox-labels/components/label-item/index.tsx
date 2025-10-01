@@ -108,11 +108,11 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
           <ToasterItem
             type="info"
             actions={[{
-              label: t('actions.undo'), onClick: () => deleteThreadMutation.mutate(variables)
+              label: t('Undo'), onClick: () => deleteThreadMutation.mutate(variables)
             }]}
           >
             <span className="material-icons">label</span>
-            <span>{t('labels.thread_assigned', { label: label.name })}</span>
+            <span>{t('Label "{{label}}" assigned to this conversation.', { label: label.name })}</span>
           </ToasterItem>, {
           toastId: JSON.stringify(variables),
         }
@@ -204,8 +204,8 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
 
   const handleDelete = async () => {
     const decision = await modals.deleteConfirmationModal({
-      title: <span className="c__modal__text--centered">{t('labels.delete_modal.title', { label: label.display_name })}</span>,
-      children: t('labels.delete_modal.message'),
+      title: <span className="c__modal__text--centered">{t('Delete label "{{label}}"', { label: label.display_name })}</span>,
+      children: t('Are you sure you want to delete this label? This action is irreversible!'),
     });
 
     if (decision === 'delete') {
@@ -246,10 +246,10 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
               onClick={handleClick}
               className='label-item__toggle'
               aria-expanded={isFolded}
-              title={isFolded ? t('labels.collapse') : t('labels.expand')}
+              title={isFolded ? t('Collapse') : t('Expand')}
             >
               <Icon type={IconType.OUTLINED} name={isFolded ? "chevron_right" : "expand_more"} />
-              <span className="c__offscreen">{isFolded ? t('labels.expand') : t('labels.collapse')}</span>
+              <span className="c__offscreen">{isFolded ? t('Expand') : t('Collapse')}</span>
             </button>
           )}
           <div className="label-item__name">
@@ -265,18 +265,18 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
                 onOpenChange={setIsDropdownOpen}
                 options={[
                   {
-                    label: t('actions.edit'),
+                    label: t('Edit'),
                     icon: <span className="material-icons">edit</span>,
                     callback: () => onEdit(label),
                   },
                   {
-                    label: t('labels.add_sub_label'),
+                    label: t('Add a sub-label'),
                     icon: <span className="material-icons">add</span>,
                     callback: () => onEdit({ name: `${label.name}/`, color: label.color }),
                     showSeparator: true,
                   },
                   {
-                    label: t('actions.delete'),
+                    label: t('Delete'),
                     icon: <span className="material-icons">delete</span>,
                     callback: handleDelete,
                   },
@@ -286,7 +286,7 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
                   onClick={() => setIsDropdownOpen(true)}
                   icon={<Icon name="more_horiz" />}
                   color="primary-text"
-                  aria-label={t('tooltips.more_options')}
+                  aria-label={t('More options')}
                   size="small"
                 />
               </DropdownMenu>

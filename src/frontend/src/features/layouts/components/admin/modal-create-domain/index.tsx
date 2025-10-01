@@ -92,7 +92,7 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateDoma
   return (
     <Modal
           isOpen={isOpen}
-          title={t('create_domain_modal.title')}
+          title={t('Add a domain')}
           size={ModalSize.LARGE}
           onClose={handleClose}
     >
@@ -107,7 +107,7 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateDoma
             <div className="form-field-row">
               <RhfInput
                 name="name"
-                label={t('create_domain_modal.form.labels.name')}
+                label={t('Name')}
                 text={getFieldError('name')}
                 fullWidth
               />
@@ -127,14 +127,14 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateDoma
             <div className="form-field-row">
               <RhfCheckbox
                 name="oidc_autojoin"
-                label={t('create_domain_modal.form.labels.oidc_autojoin')}
+                label={t('Automatically create mailboxes according to OIDC emails')}
                 type="checkbox"
               />
             </div>
             <div className="form-field-row">
               <RhfCheckbox
                 name="identity_sync"
-                label={t('create_domain_modal.form.labels.identity_sync')}
+                label={t('Synchronize mailboxes with an identity provider')}
                 type="checkbox"
               />
             </div>
@@ -145,7 +145,7 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateDoma
                 disabled={isSubmitting}
                 fullWidth
               >
-                {isSubmitting ? t('actions.creating') : t('actions.create')}
+                {isSubmitting ? t('Creating...') : t('Create')}
               </Button>
             </div>
           </form>

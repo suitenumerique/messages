@@ -10,7 +10,7 @@ export const ComposeSignatureAction = () => {
     return (
         <>
             <Button color="primary" onClick={modal.open}>
-                {t("admin_maildomains_details.actions.new_signature")}
+                {t("New signature")}
             </Button>
             <ModalComposeSignature
                 isOpen={modal.isOpen}

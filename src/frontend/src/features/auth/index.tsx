@@ -51,7 +51,7 @@ export const Auth = ({
       sessionStorage.removeItem(SESSION_EXPIRED_KEY);
       addToast(
         <ToasterItem type="info">
-          {t('session_expired')}
+          {t('Your session has expired. Please log in again.')}
         </ToasterItem>
       )
     }

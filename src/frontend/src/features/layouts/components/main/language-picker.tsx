@@ -1,5 +1,6 @@
 import { LanguagePicker as BaseLanguagePicker, LanguagePickerProps } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
+import { LANGUAGES } from "@/features/i18n/conf";
 
 /**
  * @MARK: Those languages should be retrieved from the backend through conf API
@@ -7,10 +8,11 @@ import { useTranslation } from "react-i18next";
  */
 export const LanguagePicker = (props: Pick<LanguagePickerProps, "size" | "color" | "fullWidth">) => {
   const { i18n } = useTranslation();
-  const languages = [
-    { value: "fr-FR", label: "Français", isChecked: i18n.language === "fr-FR" },
-    { value: "en-US", label: "English", isChecked: i18n.language === "en-US" }
-  ]
+  const languages = LANGUAGES.map((language: [string, string]) => ({
+    value: language[0],
+    label: language[1],
+    isChecked: i18n.language === language[0]
+  }));
 
   return (
     <BaseLanguagePicker

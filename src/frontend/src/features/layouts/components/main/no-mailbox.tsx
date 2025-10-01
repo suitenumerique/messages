@@ -8,8 +8,8 @@ export const NoMailbox = () => {
         <div className="no-mailbox">
             <div>
                 <span className="material-icons">error</span>
-                <p>{t('no_mailbox')}</p>
-                <Button onClick={logout}>{t('user_menu.logout')}</Button>
+                <p>{t('No mailbox.')}</p>
+                <Button onClick={logout}>{t('Logout')}</Button>
             </div>
         </div>
     )

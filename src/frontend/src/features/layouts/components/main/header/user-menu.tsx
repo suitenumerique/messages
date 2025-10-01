@@ -16,12 +16,12 @@ const UserMenu = () => {
         <DropdownMenu
           options={[
             ...(canAccessDomainAdmin ? [{
-              label: t("user_menu.domain_admin"),
+              label: t("Domain admin"),
               icon: <Icon name="domain" />,
               callback: () => router.push("/domain"),
             }] : []),
             {
-              label: t("user_menu.logout"),
+              label: t("Logout"),
               icon: <Icon name="logout" />,
               callback: logout,
             },
@@ -39,7 +39,7 @@ const UserMenu = () => {
             }
             iconPosition="right"
           >
-            <span className="text-nowrap">{t("my_account")}</span>
+            <span className="text-nowrap">{t("My Account")}</span>
           </Button>
         </DropdownMenu>
     )

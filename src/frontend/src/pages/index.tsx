@@ -28,9 +28,9 @@ export default function HomePage() {
         <HomeGutter>
           <Hero
             logo={<img src="/images/app-icon.svg" alt="Messages Logo" width={64} />}
-            title={t("home.title")}
+            title={t("Simple and intuitive messaging")}
             banner="/images/banner.webp"
-            subtitle={t("home.subtitle")}
+            subtitle={t("Send and receive your messages in an instant.")}
             mainButton={<ProConnectButton onClick={login} />}
           />
         </HomeGutter>

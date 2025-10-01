@@ -416,7 +416,7 @@ help:
 .PHONY: help
 
 front-shell: ## open a shell in the frontend container
-	@$(COMPOSE) run --rm --build frontend-tools /bin/sh
+	@$(COMPOSE) run --rm --build frontend-tools bash
 .PHONY: front-shell
 
 # Front
@@ -438,7 +438,7 @@ front-build: ## build the frontend locally
 	@$(COMPOSE) run --rm --build frontend-tools npm run build
 .PHONY: front-build
 
-front-i18n-extract: ## Extract the frontend translation inside a json to be used for crowdin
+front-i18n-generate: ## Extract the frontend translation inside a json to be used for crowdin
 	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:extract
 .PHONY: front-i18n-extract
 

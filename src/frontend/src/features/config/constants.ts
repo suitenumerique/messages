@@ -10,5 +10,5 @@ export enum PORTALS {
 export const DEFAULT_PAGE_SIZE = 20;
 
 // Session storage keys
-const STORAGE_PREFIX = "messages_";
-export const SESSION_EXPIRED_KEY = STORAGE_PREFIX + "session_expired";
+export const APP_STORAGE_PREFIX = "messages_";
+export const SESSION_EXPIRED_KEY = APP_STORAGE_PREFIX + "session_expired";

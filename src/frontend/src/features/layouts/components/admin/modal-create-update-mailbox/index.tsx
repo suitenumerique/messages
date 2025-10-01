@@ -273,7 +273,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
       addToast(
         <ToasterItem type="info">
           <Icon name="check" />
-          <span>{t('edit_mailbox_modal.toast.success')}</span>
+          <span>{t('The address has been updated!')}</span>
         </ToasterItem>, {
           toastId: "toast_edit_mailbox_modal_success",
         }
@@ -318,8 +318,8 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
     <Modal
       isOpen={isOpen}
       title={
-        isUpdating ? t('edit_mailbox_modal.title', { mailbox: MailboxHelper.toString(mailbox!) }) :
-          t('create_mailbox_modal.title', { domain: domainName })
+        isUpdating ? t('Edit {{mailbox}} address', { mailbox: MailboxHelper.toString(mailbox!) }) :
+          t('Create a new address @{{domain}}', { domain: domainName })
       }
       size={ModalSize.LARGE}
       onClose={handleClose}
@@ -336,7 +336,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
               onClick={() => handleTabChange("personal")}
               disabled={isUpdating}
             >
-              {isUpdating ? t('edit_mailbox_modal.tabs.personal') : t('create_mailbox_modal.tabs.personal')}
+              {isUpdating ? t('Personal mailbox') : t('Create a new personal mailbox')}
             </button>
             <button
               type="button"
@@ -344,7 +344,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
               onClick={() => handleTabChange("shared")}
               disabled={isUpdating}
             >
-              {isUpdating ? t('edit_mailbox_modal.tabs.shared') : t('create_mailbox_modal.tabs.shared')}
+              {isUpdating ? t('Shared mailbox') : t('Create a new shared mailbox')}
             </button>
             <button
               disabled={isUpdating || true}
@@ -352,7 +352,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
               className={clsx('modal-tab', { 'modal-tab--active': activeTab === "redirect" })}
               onClick={() => handleTabChange("redirect")}
             >
-              {isUpdating ? t('edit_mailbox_modal.tabs.redirect') : t('create_mailbox_modal.tabs.redirect')}
+              {isUpdating ? t('Simple redirect (Coming soon)') : t('Create a simple redirect (Coming soon)')}
             </button>
           </div>
 
@@ -364,7 +364,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
                   <div className="form-field-row name-row">
                     {isUpdating ? (
                       <RhfInput
-                        label={t('edit_mailbox_modal.form.labels.full_name')}
+                        label={t('Full name')}
                         text={getFieldError<"personal", EditMailboxFormData>('full_name')}
                         name="full_name"
                         className="name-input"
@@ -372,7 +372,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
                     ) : (
                       <>
                         <RhfInput
-                          label={t('create_mailbox_modal.form.labels.first_name')}
+                          label={t('First name')}
                           text={getFieldError<"personal", CreateMailboxFormData>('first_name')}
                           name="first_name"
                           className="name-input"
@@ -383,7 +383,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
                           }}
                         />
                         <RhfInput
-                          label={t('create_mailbox_modal.form.labels.last_name')}
+                          label={t('Last name')}
                           text={getFieldError<"personal", CreateMailboxFormData>('last_name')}
                           name="last_name"
                           className="name-input"
@@ -394,7 +394,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
 
                   <div className="form-field-row address-row">
                     <RhfInput
-                      label={t('create_mailbox_modal.form.labels.address')}
+                      label={t('Address')}
                       text={getFieldError<"personal", CreateMailboxFormData>('prefix')}
                       name="prefix"
                       fullWidth
@@ -426,7 +426,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
 
                   <div className="form-field-row">
                     <RhfCheckbox
-                      label={t('create_mailbox_modal.form.labels.confirmation_accepted')}
+                      label={t('I confirm that this address corresponds to the real identity of a colleague, and I commit to deactivating it when their position ends.')}
                       state={getFieldError<"personal", CreateMailboxFormData>('confirmation_accepted') ? "error" : "default"}
                       text={getFieldError<"personal", CreateMailboxFormData>('confirmation_accepted')}
                       name="confirmation_accepted"
@@ -443,7 +443,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
                 <>
                   <div className="form-field-row">
                     <RhfInput
-                      label={t('create_mailbox_modal.form.labels.name')}
+                      label={t('Name')}
                       text={getFieldError<"shared">('name')}
                       name="name"
                       fullWidth
@@ -457,7 +457,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
 
                   <div className="form-field-row address-row">
                     <RhfInput
-                      label={t('create_mailbox_modal.form.labels.address')}
+                      label={t('Address')}
                       text={getFieldError<"shared", CreateMailboxFormData>('prefix')}
                       name="prefix"
                       fullWidth
@@ -480,7 +480,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
                 <>
                   <div className="form-field-row address-row">
                     <RhfInput
-                      label={t('create_mailbox_modal.form.labels.address')}
+                      label={t('Address')}
                       name="prefix"
                       text={getFieldError<"redirect">('prefix')}
                       fullWidth
@@ -501,7 +501,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
 
                   <div className="form-field-row">
                     <RhfInput
-                      label={t('create_mailbox_modal.form.labels.target_email')}
+                      label={t('Target email')}
                       text={getFieldError<"redirect">('target_email')}
                       name="target_email"
                       type="email"
@@ -524,7 +524,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
                   disabled={isSubmitting}
                   fullWidth
                 >
-                  {isSubmitting ? t('actions.saving') : (isUpdating ? t('actions.save') : t('actions.create'))}
+                  {isSubmitting ? t('Saving...') : (isUpdating ? t('Save') : t('Create'))}
                 </Button>
               </div>
             </form>
