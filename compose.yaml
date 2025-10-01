@@ -265,15 +265,14 @@ services:
     ports:
       - "8905:8905"
 
-
-  # crowdin:
-  #   image: crowdin/cli:3.16.0
-  #   volumes:
-  #     - ".:/app"
-  #   env_file:
-  #     - env.d/development/crowdin
-  #   user: "${DOCKER_USER:-1000}"
-  #   working_dir: /app
+  crowdin:
+    image: crowdin/cli:4.11.0
+    volumes:
+      - ".:/app"
+    env_file:
+      - env.d/development/crowdin
+    user: "${DOCKER_USER:-1000}"
+    working_dir: /app
 
   mta-in:
     build:
