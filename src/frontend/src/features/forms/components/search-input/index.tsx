@@ -81,7 +81,7 @@ export const SearchInput = () => {
                 <div className="search__input-container">
                     <label className="search__label" htmlFor="search">
                         <span className="material-icons">search</span>
-                        <span className="c__offscreen">{t("search.placeholder")}</span>
+                        <span className="c__offscreen">{t("Search in messages...")}</span>
                     </label>
                     <input
                         className="search__input"
@@ -91,26 +91,26 @@ export const SearchInput = () => {
                         onChange={handleChange}
                         onFocus={() => setShowFilters(true)}
                         onKeyDown={handleKeyPress}
-                        placeholder={t("search.placeholder")}
+                        placeholder={t("Search in messages...")}
                     />
                 </div>
                 { value && (
                 <Button
                     color="tertiary-text"
                     onClick={resetInput}
-                    title={t("search.filters.reset")}
+                    title={t("Reset")}
                 >
                     <span className="material-icons">close</span>
-                    <span className="c__offscreen">{t("search.filters.reset")}</span>
+                    <span className="c__offscreen">{t("Reset")}</span>
                 </Button>
                 )}
                 <Button
                     color="tertiary-text"
                     onClick={() => setShowFilters(!showFilters)}
-                    title={showFilters ? t("search.filters.close") : t("search.filters.open")}
+                    title={showFilters ? t("Close filters") : t("Open filters")}
                 >
                     <span className="material-icons">tune</span>
-                    <span className="c__offscreen">{showFilters ? t("search.filters.close") : t("search.filters.open")}</span>
+                    <span className="c__offscreen">{showFilters ? t("Close filters") : t("Open filters")}</span>
                 </Button>
             </div>
             {showFilters && <SearchFiltersForm query={value} onChange={handleFiltersChange} />}

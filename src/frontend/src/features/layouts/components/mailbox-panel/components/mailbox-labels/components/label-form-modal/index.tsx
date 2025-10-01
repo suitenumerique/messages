@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import z from "zod";
 import { RhfColorPaletteField } from "./components/color-palette-field";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
+import i18n from "@/features/i18n/initI18n";
 
 export type SubLabelCreation = Partial<Pick<TreeLabel, 'name' | 'color' | 'display_name'>>;
 
@@ -23,10 +24,10 @@ type LabelModalProps = {
 }
 
 const formSchema = z.object({
-    name: z.string().min(1, { error: 'labels.form.errors.name_required' }),
+    name: z.string().min(1, { error: i18n.t("Name is required.") }),
     color: z.string().regex(/^#([0-9a-fA-F]{6})$/),
     parent_label: z.string().optional(),
-    description: z.string().max(255, { error: 'labels.form.errors.description_max_length' }).optional(),
+    description: z.string().max(255, { error: i18n.t("Description must be less than 255 characters.") }).optional(),
     is_auto: z.boolean().optional(),
 });
 
@@ -127,7 +128,7 @@ export const LabelModal = ({ isOpen, onClose, label, onSuccess }: LabelModalProp
         size={ModalSize.SMALL}
         isOpen={isOpen}
         onClose={handleClose}
-        title={isUpdate ? t('labels.update') : t('labels.create')}
+        title={isUpdate ? t('Update a Label') : t('Create a Label')}
         closeOnClickOutside
       >
         <FormProvider {...form}>
@@ -135,7 +136,7 @@ export const LabelModal = ({ isOpen, onClose, label, onSuccess }: LabelModalProp
             <div className="form-field-row">
               <RhfInput
                 name="name"
-                label={t('labels.form.fields.name')}
+                label={t('Label name')}
                 text={form.formState.errors.name?.message && t(form.formState.errors.name.message)}
                 fullWidth
               />
@@ -143,7 +144,7 @@ export const LabelModal = ({ isOpen, onClose, label, onSuccess }: LabelModalProp
             <div className="form-field-row">
               <RhfSelect
                 name="parent_label"
-                label={t('labels.form.fields.parent_label')}
+                label={t('Select a parent label')}
                 options={flattenLabels.map((option) => ({
                   label: option.label,
                   value: option.value,
@@ -165,7 +166,7 @@ export const LabelModal = ({ isOpen, onClose, label, onSuccess }: LabelModalProp
                 <div className="form-field-row">
                   <RhfCheckbox
                     name="is_auto"
-                    label={t('labels.form.fields.auto_labeling')}
+                    label={t('Auto-labeling')}
                     text={form.formState.errors.is_auto?.message && t(form.formState.errors.is_auto.message)}
                     fullWidth
                   />
@@ -174,8 +175,8 @@ export const LabelModal = ({ isOpen, onClose, label, onSuccess }: LabelModalProp
                   <div className="form-field-row">
                     <RhfTextArea
                       name="description"
-                      label={t('labels.form.fields.description')}
-                      text={t('labels.form.fields.description_helper')}
+                      label={t('Description')}
+                      text={t('This description will be used by the AI to automatically assign this label to your messages.')}
                       maxLength={255}
                       fullWidth
                     />
@@ -185,10 +186,10 @@ export const LabelModal = ({ isOpen, onClose, label, onSuccess }: LabelModalProp
             )}
             <footer className="form-field-row">
               <Button type="button" color="secondary" size="medium" onClick={onClose}>
-                {t('actions.cancel')}
+                {t('Cancel')}
               </Button>
               <Button type="submit" color="primary" size="medium">
-                {isUpdate ? t('labels.form.submit_update') : t('labels.form.submit_create')}
+                {isUpdate ? t('Update') : t('Create')}
               </Button>
             </footer>
           </form>

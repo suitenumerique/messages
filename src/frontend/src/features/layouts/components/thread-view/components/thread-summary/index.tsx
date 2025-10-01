@@ -84,7 +84,7 @@ export const ThreadSummary = ({
       onMutate: () => {
         addToast(
           <ToasterItem type="info">
-            {t("summary.generation_in_progress")}
+            {t("Generating summary...")}
           </ToasterItem>
         );
       },
@@ -95,16 +95,16 @@ export const ThreadSummary = ({
             setLocalSummary(newSummary);
             cacheNewSummary(newSummary);
             onSummaryUpdated?.(newSummary);
-            addToast(<ToasterItem type="info">{t("summary.refresh_success")}</ToasterItem>);
+            addToast(<ToasterItem type="info">{t("Summary refreshed!")}</ToasterItem>);
           }
         } else {
-          addToast(<ToasterItem type="error">{t("summary.refresh_error")}</ToasterItem>);
+          addToast(<ToasterItem type="error">{t("Failed to refresh summary.")}</ToasterItem>);
         }
       },
       onError: () => {
         addToast(
           <ToasterItem type="error">
-            {t("summary.refresh_error")}
+            {t("Failed to refresh summary.")}
           </ToasterItem>
         );
       },
@@ -125,18 +125,18 @@ export const ThreadSummary = ({
         <>
           <div className="thread-summary__content">
             {localSummary ? (
-              <ReactMarkdown>{`**${t("summary.title")} :** ${localSummary}`}</ReactMarkdown>
+              <ReactMarkdown>{`**${t("Summary")} :** ${localSummary}`}</ReactMarkdown>
             ) : (
-              <p>{t("summary.no_summary")}</p>
+              <p>{t("No summary available.")}</p>
             )}
           </div>
           <div className="thread-summary__refresh-button">
-            <Tooltip content={t("actions.refresh_summary")}>
+            <Tooltip content={t("Refresh summary")}>
               <Button
                 color="tertiary-text"
                 size="small"
                 icon={<Icon name="autorenew"/>}
-                aria-label={t("actions.refresh_summary")}
+                aria-label={t("Refresh summary")}
                 onClick={handleRefresh}
               />
             </Tooltip>

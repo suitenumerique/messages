@@ -24,7 +24,7 @@ export const AdminPageContent = ({ children }: AdminPageContentProps) => {
     if (!selectedMailDomain) {
       return (
           <div style={{ padding: "2rem", textAlign: "center", color: "var(--c--theme--colors--danger-600)" }}>
-            {t("admin_maildomains_details.errors.domain_not_found")}
+            {t("Domain not found")}
           </div>
       );
     }

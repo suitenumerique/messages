@@ -95,30 +95,30 @@ export const MailboxLabelsBase = ({ mailbox }: MailboxLabelsProps) => {
         onDrop={canManageLabels ? handleDrop : undefined}
       >
         <header className="mailbox-labels__header">
-          <p className="mailbox-labels__title">{t('labels.title')}</p>
+          <p className="mailbox-labels__title">{t('Labels')}</p>
           <div className="mailbox-labels__actions">
             {areAllFolded !== undefined && (
-            <Tooltip content={areAllFolded ? t('labels.expand_all') : t('labels.collapse_all')} placement="bottom">
+            <Tooltip content={areAllFolded ? t('Expand all') : t('Collapse all')} placement="bottom">
               <Button
                 icon={<Icon type={IconType.FILLED} name={areAllFolded ? "unfold_more" : "unfold_less"} size={IconSize.LARGE} />}
                 color="tertiary-text"
                 size="small"
                 onClick={toggleFolding}
                 className="mailbox-labels__fold-button"
-                aria-label={areAllFolded ? t('labels.expand_all') : t('labels.collapse_all')}
+                aria-label={areAllFolded ? t('Expand all') : t('Collapse all')}
               />
             </Tooltip>
             )}
             {labelsQuery.isLoading ? <Spinner /> : (
               canManageLabels && (
-                <Tooltip content={t('labels.create')} placement="bottom">
+                <Tooltip content={t('Create a Label')} placement="bottom">
                   <Button
                     icon={<Icon type={IconType.FILLED} name="add" />}
                     color="primary"
                     size="small"
                     onClick={open}
                     className="mailbox-labels__create-button"
-                    aria-label={t('labels.create')}
+                    aria-label={t('Create a Label')}
                   />
                 </Tooltip>
               )

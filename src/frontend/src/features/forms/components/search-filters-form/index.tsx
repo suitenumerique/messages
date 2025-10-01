@@ -44,69 +44,69 @@ export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) =
         <form className="search__filters" ref={formRef} onSubmit={handleSubmit} onChange={handleChange}>
             <Input
                 name="from"
-                label={t("search.filters.label.from")}
+                label={t("From")}
                 value={parsedQuery.from as string}
                 fullWidth
             />
             <Input
                 name="to"
-                label={t("search.filters.label.to")}
+                label={t("To")}
                 value={parsedQuery.to as string}
                 fullWidth
             />
             <Input
                 name="subject"
-                label={t("search.filters.label.subject")}
+                label={t("Subject")}
                 value={parsedQuery.subject as string}
                 fullWidth
             />
             <Input
                 name="text"
-                label={t("search.filters.label.text")}
+                label={t("Contains the words")}
                 value={parsedQuery.text as string}
                 fullWidth
             />
             <Select
                 name="in"
-                label={t("search.filters.label.in")}
+                label={t("In")}
                 value={parsedQuery.in as string ?? 'all'}
                 showLabelWhenSelected={false}
                 onChange={handleChange}
                 options={[
                     {
-                        label: t("folders.all_messages"),
-                        render: () => <FolderOption label={t("folders.all_messages")} icon="folder" />,
+                        label: t("All messages"),
+                        render: () => <FolderOption label={t("All messages")} icon="folder" />,
                         value: 'all'
                     },
                     {
-                        label: t("folders.drafts"),
-                        render: () => <FolderOption label={t("folders.drafts")} icon="drafts" />,
+                        label: t("Drafts"),
+                        render: () => <FolderOption label={t("Drafts")} icon="drafts" />,
                         value: "draft"
                     },
                     {
-                        label: t("folders.sent"),
-                        render: () => <FolderOption label={t("folders.sent")} icon="outbox" />,
+                        label: t("Sent"),
+                        render: () => <FolderOption label={t("Sent")} icon="outbox" />,
                         value: "sent"
                     },
                     {
-                        label: t("folders.trash"),
-                        render: () => <FolderOption label={t("folders.trash")} icon="delete" />,
+                        label: t("Trash"),
+                        render: () => <FolderOption label={t("Trash")} icon="delete" />,
                         value: "trash" },
                 ]}
                 clearable={false}
                 fullWidth
             />
             <div className="flex-row flex-align-center" style={{ gap: 'var(--c--theme--spacings--2xs)' }}>
-                <Label>{t("search.filters.label.read_state")} :</Label>
-                <Checkbox label={t("search.filters.label.read")} value="true" name="is_read" checked={Boolean(parsedQuery.is_read)} onChange={handleReadStateChange} />
-                <Checkbox label={t("search.filters.label.unread")} value="true" name="is_unread" checked={Boolean(parsedQuery.is_unread)} onChange={handleReadStateChange} />
+                <Label>{t("Read state")} :</Label>
+                <Checkbox label={t("Read")} value="true" name="is_read" checked={Boolean(parsedQuery.is_read)} onChange={handleReadStateChange} />
+                <Checkbox label={t("Unread")} value="true" name="is_unread" checked={Boolean(parsedQuery.is_unread)} onChange={handleReadStateChange} />
             </div>
             <footer className="search__filters-footer">
                 <Button type="reset" color="tertiary-text" onClick={handleReset}>
-                    {t("search.filters.reset")}
+                    {t("Reset")}
                 </Button>
                 <Button type="submit" color="tertiary">
-                    {t("search.filters.submit")}
+                    {t("Search")}
                 </Button>
             </footer>
         </form>

@@ -70,9 +70,9 @@ const TrashSuccessToast = ({ threadIds = [], messageIds = [] }: { threadIds?: Th
     return (
         <ToasterItem
             type="info"
-            actions={[{ label: t('actions.undo'), onClick: undo }]}
+            actions={[{ label: t('Undo'), onClick: undo }]}
         >
-            <span>{threadIds.length > 0 ? t('trash.thread_deleted') : t('trash.message_deleted')}</span>
+            <span>{threadIds.length > 0 ? t('The conversation has been deleted') : t('The message has been deleted')}</span>
         </ToasterItem>
     )
 };

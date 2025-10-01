@@ -15,7 +15,14 @@ const AdminMailboxCredentials = ({ mailbox }: AdminMailboxCredentialsProps) => {
 
     const credentialText = useMemo(() => {
         if (!mailbox.one_time_password) return '';
-        return t('create_mailbox_modal.success.credential_text', { id: MailboxHelper.toString(mailbox), password: mailbox.one_time_password });
+        const id = MailboxHelper.toString(mailbox);
+        const password = mailbox.one_time_password;
+        return t("create_mailbox_modal.success.credential_text",
+            {
+                id,
+                password,
+                defaultValue: 'Your Messages credentials are:\n- Email: {{id}}\n- Password: {{password}}\n\nIt will be asked to change your password at your first login.',
+            });
     }, [mailbox]);
 
     const handleCopyToClipboard = async () => {
@@ -33,9 +40,9 @@ const AdminMailboxCredentials = ({ mailbox }: AdminMailboxCredentialsProps) => {
         <div className="admin-mailbox-credentials">
             <div className="admin-mailbox-credentials__content">
                 <dl>
-                    <dt>{t('create_mailbox_modal.success.credential_identity')}</dt>
+                    <dt>{t('Identity')}</dt>
                     <dd>{MailboxHelper.toString(mailbox)}</dd>
-                    <dt>{t('create_mailbox_modal.success.credential_password')}</dt>
+                    <dt>{t('Temporary password')}</dt>
                     <dd>{mailbox.one_time_password}</dd>
                 </dl>
                 <Button
@@ -43,13 +50,13 @@ const AdminMailboxCredentials = ({ mailbox }: AdminMailboxCredentialsProps) => {
                     icon={<Icon name={clipboardState === 'copied' ? "check" : clipboardState === 'error' ? "close" : "content_copy"} />}
                     onClick={handleCopyToClipboard}
                 >
-                    {clipboardState === 'idle' && t('create_mailbox_modal.success.copy_to_clipboard')}
-                    {clipboardState === 'copied' && t('create_mailbox_modal.success.credentials_copied')}
-                    {clipboardState === 'error' && t('create_mailbox_modal.success.credentials_copy_error')}
+                    {clipboardState === 'idle' && t('Copy to clipboard')}
+                    {clipboardState === 'copied' && t('Credentials copied!')}
+                    {clipboardState === 'error' && t('Unable to copy credentials.')}
                 </Button>
             </div>
             <Banner type="warning" icon={<Icon name="info" type={IconType.OUTLINED} />}>
-                {t('create_mailbox_modal.success.shared_password_info')}
+                {t('Share the credentials of this mailbox with its user. You must transfer them securely, preferably physically.')}
             </Banner>
         </div>
     )

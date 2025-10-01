@@ -49,8 +49,8 @@ export const SignatureComposer = ({ blockNoteOptions, defaultValue, disabled = f
             ...(locales[(i18n.resolvedLanguage) as keyof typeof locales] || locales.en),
             placeholders: {
                 ...(locales[(i18n.resolvedLanguage) as keyof typeof locales] || locales.en).placeholders,
-                emptyDocument: t('message_composer.start_typing'),
-                default: t('message_composer.start_typing'),
+                emptyDocument: t('Start typing...'),
+                default: t('Start typing...'),
             }
         },
         ...blockNoteOptions,

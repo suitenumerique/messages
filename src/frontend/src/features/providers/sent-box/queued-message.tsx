@@ -35,7 +35,7 @@ export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
         setToastId(addToast(
             <ToasterItem type="info">
                 <Spinner size="sm" />
-                <span>{t('queued_message.sending')}</span>
+                <span>{t('Sending message...')}</span>
             </ToasterItem>,
             {
                 autoClose: false,
@@ -58,7 +58,7 @@ export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
                 render: (
                     <ToasterItem type="info">
                         <span className="material-icons">check_circle</span>
-                        <span>{t('queued_message.sent')}</span>
+                        <span>{t('Message sent successfully')}</span>
                     </ToasterItem>
                 ),
                 autoClose: QUEUED_MESSAGE_CLOSE_DELAY,
@@ -70,7 +70,7 @@ export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
                 render: (
                     <ToasterItem type="error">
                         <span className="material-icons">error</span>
-                        <span>{t('queued_message.error')}</span>
+                        <span>{t('The message could not be sent.')}</span>
                     </ToasterItem>
                 ),
                 autoClose: QUEUED_MESSAGE_CLOSE_DELAY * 2,
@@ -82,7 +82,7 @@ export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
     useEffect(() => {
         if (hasTimedOut) {
             toast.update(toastId, {
-                render: <ToasterItem type="error"><span>{t('queued_message.sent_too_long')}</span></ToasterItem>,
+                render: <ToasterItem type="error"><span>{t('The message could not be sent. Please try again later.')}</span></ToasterItem>,
                 autoClose: QUEUED_MESSAGE_CLOSE_DELAY * 2,
             });
             onSettled?.();

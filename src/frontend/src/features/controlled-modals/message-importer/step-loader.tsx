@@ -39,9 +39,9 @@ export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => 
                 onComplete();
             } else if (taskQuery.data.data.status === StatusEnum.FAILURE) {
                 const error = taskQuery.data.data.error || '';
-                let errorKey = "message_importer_modal.api_errors.default";
+                let errorKey = t('An error occurred while importing messages.');
                 if (error.includes("AUTHENTICATIONFAILED")) {
-                    errorKey = "message_importer_modal.api_errors.authentication_failed";
+                    errorKey = t('Authentication failed. Please check your credentials and ensure you have enabled IMAP connections in your account.');
                 }
                 onError(errorKey);
             }
@@ -56,12 +56,18 @@ export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => 
             <p className="task-loader__progress_resume">
                 <strong>
                     {   progress
-                        ? t('message_importer_modal.progression', { count: taskMetadata!.current_message, total: taskMetadata!.total_messages })
-                        : t('message_importer_modal.progression_default')
+                        ? t(
+                            '{{count}} messages imported on {{total}}',
+                            {
+                                count: taskMetadata!.current_message,
+                                total: taskMetadata!.total_messages,
+                                defaultValue_one: '{{count}} message imported on {{total}}'
+                            })
+                        : t('Importing...')
                     }
                 </strong>
             </p>
-            {!!progress && <p>{t('message_importer_modal.progression_details')}</p>}
+            {!!progress && <p>{t('You can close this window and continue using the app.')}</p>}
         </div>
     );
 }

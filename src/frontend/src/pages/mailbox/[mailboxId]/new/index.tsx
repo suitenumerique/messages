@@ -37,7 +37,7 @@ const NewMessageFormPage = () => {
     return (
         <div className="new-message-form">
             <div className="new-message-form-container">
-                <h1>{t("new_message_form.title")}</h1>
+                <h1>{t("New message")}</h1>
                 <MessageForm
                     showSubject={true}
                     onSuccess={handleClose}

@@ -21,6 +21,7 @@ import { Banner } from "@/features/ui/components/banner";
 import { RhfContactComboBox } from "../react-hook-form/rhf-contact-combobox";
 import { DriveFile } from "./drive-attachment-picker";
 import useAbility, { Abilities } from "@/hooks/use-ability";
+import i18n from "@/features/i18n/initI18n";
 
 export type MessageFormMode = "new" |"reply" | "reply_all" | "forward";
 
@@ -36,7 +37,7 @@ interface MessageFormProps {
 }
 
 // Zod schema for form validation
-const emailArraySchema = z.array(z.email({ error: "message_form.error.invalid_recipient" }));
+const emailArraySchema = z.array(z.email({ error: i18n.t("The email {{email}} is invalid.") }));
 const attachmentSchema = z.object({
     blobId: z.uuid(),
     name: z.string(),
@@ -50,7 +51,7 @@ const driveAttachmentSchema = z.object({
     created_at: z.string(),
 });
 const messageFormSchema = z.object({
-    from: z.string().nonempty({ error: "message_form.error.mailbox_required" }),
+    from: z.string().nonempty({ error: i18n.t("Mailbox is required.") }),
     to: emailArraySchema,
     cc: emailArraySchema.optional(),
     bcc: emailArraySchema.optional(),
@@ -223,7 +224,7 @@ export const MessageForm = ({
     const handleDraftMutationSuccess = () => {
         addToast(
             <ToasterItem type="info">
-                <span>{t("message_form.success.saved")}</span>
+                <span>{t("Draft saved")}</span>
             </ToasterItem>,
             {
                 toastId: DRAFT_TOAST_ID
@@ -248,7 +249,7 @@ export const MessageForm = ({
     const isSubmittingMessage = pendingSubmit || messageMutation.isPending;
 
     const handleDeleteMessage = (messageId: string) => {
-        if(window.confirm(t("message_form.confirm.delete"))) {
+        if(window.confirm(t("Are you sure you want to delete this draft? This action cannot be undone."))) {
             stopAutoSave();
             deleteMessageMutation.mutate({
                 id: messageId
@@ -260,7 +261,7 @@ export const MessageForm = ({
                     unselectThread();
                     addToast(
                         <ToasterItem type="info">
-                            <span>{t("message_form.success.draft_deleted")}</span>
+                            <span>{t("Draft deleted")}</span>
                         </ToasterItem>
                     );
                     onClose?.();
@@ -280,7 +281,7 @@ export const MessageForm = ({
             const response = await draftCreateMutation.mutateAsync({ data }, {
                 onSuccess: () => {addToast(
                     <ToasterItem type="info">
-                        <span>{t("message_form.success.draft_transferred")}</span>
+                        <span>{t("Draft transferred to another mailbox")}</span>
                     </ToasterItem>,
                 );
                 }
@@ -395,7 +396,7 @@ export const MessageForm = ({
         // so we have to manually check that at least one recipient is present.
         const hasNoRecipients = data.to.length === 0 && (data.cc?.length ?? 0) === 0 && (data.bcc?.length ?? 0) === 0;
         if (hasNoRecipients) {
-            form.setError("to", { message: t("message_form.error.min_recipient") });
+            form.setError("to", { message: t("At least one recipient is required.") });
             return;
         }
         stopAutoSave(); // Stop auto-save when submitting
@@ -507,7 +508,7 @@ export const MessageForm = ({
                     <RhfSelect
                         name="from"
                         options={getMailboxOptions()}
-                        label={t("thread_message.from")}
+                        label={t("From: ")}
                         clearable={false}
                         disabled={!canChangeSender}
                         compact
@@ -519,9 +520,9 @@ export const MessageForm = ({
                 <div className="form-field-row">
                     <RhfContactComboBox
                         name="to"
-                        label={t("thread_message.to")}
+                        label={t("To:")}
                         // icon={<span className="material-icons">group</span>}
-                        text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? t(form.formState.errors.to.message as string) : t("message_form.helper_text.recipients")}
+                        text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? form.formState.errors.to.message: t("Enter the email addresses of the recipients separated by commas")}
                         textItems={Array.isArray(form.formState.errors.to) ? form.formState.errors.to?.map((error, index) => t(error!.message as string, { email: form.getValues('to')?.[index] })) : []}
                         disabled={!canWriteMessages}
                         fullWidth
@@ -535,9 +536,9 @@ export const MessageForm = ({
                     <div className="form-field-row">
                         <RhfContactComboBox
                             name="cc"
-                            label={t("thread_message.cc")}
+                            label={t("Copy: ")}
                             // icon={<span className="material-icons">group</span>}
-                            text={form.formState.errors.cc && !Array.isArray(form.formState.errors.cc) ? t(form.formState.errors.cc.message as string) : t("message_form.helper_text.recipients")}
+                            text={form.formState.errors.cc && !Array.isArray(form.formState.errors.cc) ? t(form.formState.errors.cc.message as string) : t("Enter the email addresses of the recipients separated by commas")}
                             textItems={Array.isArray(form.formState.errors.cc) ? form.formState.errors.cc?.map((error, index) => t(error!.message as string, { email: form.getValues('cc')?.[index] })) : []}
                             disabled={!canWriteMessages}
                             fullWidth
@@ -550,9 +551,9 @@ export const MessageForm = ({
                     <div className="form-field-row">
                         <RhfContactComboBox
                             name="bcc"
-                            label={t("thread_message.bcc")}
+                            label={t("Blind copy: ")}
                             // icon={<span className="material-icons">visibility_off</span>}
-                            text={form.formState.errors.bcc && !Array.isArray(form.formState.errors.bcc) ? t(form.formState.errors.bcc.message as string) : t("message_form.helper_text.recipients")}
+                            text={form.formState.errors.bcc && !Array.isArray(form.formState.errors.bcc) ? t(form.formState.errors.bcc.message as string) : t("Enter the email addresses of the recipients separated by commas")}
                             textItems={Array.isArray(form.formState.errors.bcc) ? form.formState.errors.bcc?.map((error, index) => t(error!.message as string, { email: form.getValues('bcc')?.[index] })) : []}
                             disabled={!canWriteMessages}
                             fullWidth
@@ -564,8 +565,8 @@ export const MessageForm = ({
                 <div className={clsx("form-field-row", {'form-field-row--hidden': hideSubjectField})}>
                         <RhfInput
                             name="subject"
-                            label={t("thread_message.subject")}
-                            text={form.formState.errors.subject && t(form.formState.errors.subject.message as string)}
+                            label={t("Subject: ")}
+                            text={form.formState.errors.subject && form.formState.errors.subject.message}
                             disabled={!canWriteMessages}
                             fullWidth
                         />
@@ -594,7 +595,7 @@ export const MessageForm = ({
 
                 {showAttachmentsForgetAlert &&
                   <Banner type="warning">
-                    {t("attachments.forgot_question")}
+                    {t("Did you forget an attachment?")}
                   </Banner>
                 }
 
@@ -606,7 +607,7 @@ export const MessageForm = ({
                     }
                     {
                         draft && (
-                            t("message_form.last_save.label", { relativeTime: t(...DateHelper.formatRelativeTime(draft.updated_at, currentTime)) })
+                            t("Last saved {{relativeTime}}", { relativeTime: DateHelper.formatRelativeTime(draft.updated_at, currentTime) })
                         )
                     }
                 </div>
@@ -617,7 +618,7 @@ export const MessageForm = ({
                         icon={isSubmittingMessage ? <Spinner size="sm" /> : undefined}
                         type="submit"
                     >
-                        {t("actions.send")}
+                        {t("Send")}
                     </Button>
                     {!draft && onClose && (
                         <Button
@@ -625,7 +626,7 @@ export const MessageForm = ({
                             color="secondary"
                             onClick={onClose}
                     >
-                            {t("actions.cancel")}
+                            {t("Cancel")}
                         </Button>
                     )}
                     {
@@ -635,7 +636,7 @@ export const MessageForm = ({
                                 color="secondary"
                                 onClick={() => handleDeleteMessage(draft.id)}
                             >
-                                {t("actions.delete_draft")}
+                                {t("Delete draft")}
                             </Button>
                         )
                     }

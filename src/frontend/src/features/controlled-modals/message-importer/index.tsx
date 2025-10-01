@@ -61,7 +61,7 @@ export const ModalMessageImporter = () => {
 
     return (
         <ControlledModal
-            title={t('message_importer_modal.title')}
+            title={t('Import your old messages')}
             modalId={MODAL_MESSAGE_IMPORTER_ID}
             size={ModalSize.LARGE}
             onClose={onClose}

@@ -51,12 +51,12 @@ export const SignatureTemplateSelector = ({ mailboxId, templates = [], defaultSe
         return <Components.FormattingToolbar.Button
                 className="signature-block-selector signature-block-selector--forced"
                 icon={<Icon name="lock" size={IconSize.SMALL} />}
-                mainTooltip={t("message_composer.signature_template_selector.forced_signature_tooltips.main")}
-                secondaryTooltip={t("message_composer.signature_template_selector.forced_signature_tooltips.secondary")}
+                mainTooltip={t("This signature is forced")}
+                secondaryTooltip={t("You cannot modify it.")}
             >
                 <div className="signature-block-selector__content">
                     <Icon name="lock" size={IconSize.SMALL} />
-                    <p>{t('message_composer.signature_template_selector.signature_label', { name:  forcedTemplate.name })}</p>
+                    <p>{t('Signature: {{name}}', { name:  forcedTemplate.name })}</p>
                 </div>
             </Components.FormattingToolbar.Button>;
     }
@@ -66,7 +66,7 @@ export const SignatureTemplateSelector = ({ mailboxId, templates = [], defaultSe
         key={"templateVariableSelector"}
         items={[
           {
-            text: t("message_composer.signature_template_selector.no_signature"),
+            text: t("No signature"),
             isSelected: !isSelected,
             isDisabled: false,
             icon: <Icon name="drive_file_rename_outline" size={IconSize.SMALL} />,
@@ -75,7 +75,7 @@ export const SignatureTemplateSelector = ({ mailboxId, templates = [], defaultSe
             },
           },
           ...templates.map((template) => ({
-            text: t('message_composer.signature_template_selector.signature_label', { name:  template.name }),
+            text: t('Signature: {{name}}', { name:  template.name }),
             isSelected: isSelected === template.id,
             isDisabled: template.is_forced,
             icon: <Icon name={template.is_forced ? "lock" : "drive_file_rename_outline"} size={IconSize.SMALL} />,

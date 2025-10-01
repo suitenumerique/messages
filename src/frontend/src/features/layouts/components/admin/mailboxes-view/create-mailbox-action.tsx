@@ -25,7 +25,7 @@ export const CreateMailboxAction = ({ onCreate }: CreateMailboxActionProps) => {
     return (
         <>
             <Button color="primary" onClick={modal.open}>
-                {t("admin_maildomains_details.actions.new_address")}
+                {t("New address")}
             </Button>
             <ModalCreateOrUpdateMailbox
                 isOpen={modal.isOpen}

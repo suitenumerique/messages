@@ -26,7 +26,7 @@ function AdminLayoutContent({
   const breadcrumbItems = [
     {
       content: (
-        <Link href="/" className="c__breadcrumbs__button" title={t("admin_layout.breadcrumbs.back")}>
+        <Link href="/" className="c__breadcrumbs__button" title={t("Back to your inbox")}>
           <span className="material-icons">mail</span>
         </Link>
       )
@@ -34,7 +34,7 @@ function AdminLayoutContent({
     {
       content: (
         <Link href="/domain" className="c__breadcrumbs__button">
-          {t("admin_layout.breadcrumbs.maildomains_management")}
+          {t("Maildomains management")}
         </Link>
       )
     }
@@ -52,8 +52,8 @@ function AdminLayoutContent({
     // Add current page to breadcrumbs if not on main addresses page
     if (currentTab && currentTab !== "addresses") {
       const tabLabels = {
-        dns: t("admin_layout.tabs.dns"),
-        signatures: t("admin_layout.tabs.signatures")
+        dns: t("DNS"),
+        signatures: t("Signatures")
       };
       breadcrumbItems.push({
         content: (
@@ -67,9 +67,9 @@ function AdminLayoutContent({
 
   // Build tabs if we're in a domain
   const tabs = selectedMailDomain ? [
-    { id: "addresses", label: t("admin_layout.tabs.addresses"), href: `/domain/${selectedMailDomain.id}` },
-    { id: "dns", label: t("admin_layout.tabs.dns"), href: `/domain/${selectedMailDomain.id}/dns` },
-    { id: "signatures", label: t("admin_layout.tabs.signatures"), href: `/domain/${selectedMailDomain.id}/signatures` },
+    { id: "addresses", label: t("Addresses"), href: `/domain/${selectedMailDomain.id}` },
+    { id: "dns", label: t("DNS"), href: `/domain/${selectedMailDomain.id}/dns` },
+    { id: "signatures", label: t("Signatures"), href: `/domain/${selectedMailDomain.id}/signatures` },
   ] : [];
 
   if (!canViewDomainAdmin) {

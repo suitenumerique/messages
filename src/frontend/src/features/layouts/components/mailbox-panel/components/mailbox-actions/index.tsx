@@ -31,7 +31,7 @@ export const MailboxPanelActions = () => {
                     icon={<span className="material-icons">edit_note</span>}
                     disabled={!canWriteMessages}
                 >
-                    {t("actions.new_message")}
+                    {t("New message")}
                 </Button>
             }
             </div>

@@ -23,11 +23,11 @@ export const ActionBar = ({ canUndelete }: ActionBarProps) => {
     return (
         <Bar className="thread-action-bar">
             <div className="thread-action-bar__left">
-                <Tooltip content={t('actions.close_thread')}>
+                <Tooltip content={t('Close this thread')}>
                     <Button
                         onClick={unselectThread}
                         color="tertiary-text"
-                        aria-label={t('tooltips.close_thread')}
+                        aria-label={t('Close this thread')}
                         size="small"
                         icon={<span className="material-icons">close</span>}
                     />
@@ -36,10 +36,10 @@ export const ActionBar = ({ canUndelete }: ActionBarProps) => {
             <div className="thread-action-bar__right">
                 <ThreadAccessesWidget accesses={selectedThread!.accesses} />
                 <ThreadLabelsWidget threadId={selectedThread!.id} selectedLabels={selectedThread!.labels} />
-                <Tooltip content={t('actions.mark_as_unread')}>
+                <Tooltip content={t('Mark as unread')}>
                     <Button
                         color="primary-text"
-                        aria-label={t('actions.mark_as_unread')}
+                        aria-label={t('Mark as unread')}
                         size="small"
                         icon={<span className="material-icons">mark_email_unread</span>}
                         onClick={() => markAsUnread({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
@@ -48,10 +48,10 @@ export const ActionBar = ({ canUndelete }: ActionBarProps) => {
                 {
                     selectedThread!.has_trashed ? (
                         canUndelete && (
-                            <Tooltip content={t('actions.undelete')}>
+                            <Tooltip content={t('Undelete')}>
                                 <Button
                                     color="primary-text"
-                                    aria-label={t('actions.undelete')}
+                                    aria-label={t('Undelete')}
                                     size="small"
                                     icon={<span className="material-icons">restore_from_trash</span>}
                                     onClick={() => markAsUntrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
@@ -59,10 +59,10 @@ export const ActionBar = ({ canUndelete }: ActionBarProps) => {
                             </Tooltip>
                         )
                     ) : (
-                        <Tooltip content={t('actions.delete')}>
+                        <Tooltip content={t('Delete')}>
                             <Button
                                 color="primary-text"
-                                aria-label={t('actions.delete')}
+                                aria-label={t('Delete')}
                                 size="small"
                                 icon={<span className="material-icons">delete</span>}
                                 onClick={() => markAsTrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
@@ -75,17 +75,17 @@ export const ActionBar = ({ canUndelete }: ActionBarProps) => {
                     onOpenChange={setIsDropdownOpen}
                     options={[
                         {
-                            label: t('actions.print'),
+                            label: t('Print'),
                             icon: <span className="material-icons">print</span>,
                         },
                     ]}
                 >
-                    <Tooltip content={t('tooltips.more_options')}>
+                    <Tooltip content={t('More options')}>
                         <Button
                             onClick={() => setIsDropdownOpen(true)}
                             icon={<span className="material-icons">more_vert</span>}
                             color="primary-text"
-                            aria-label={t('tooltips.more_options')}
+                            aria-label={t('More options')}
                             size="small"
                         />
                     </Tooltip>

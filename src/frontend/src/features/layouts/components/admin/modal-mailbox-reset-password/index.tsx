@@ -45,7 +45,7 @@ const ModalMailboxResetPassword = ({ isOpen, onClose, mailbox, domainId }: Modal
     return (
         <Modal
             isOpen={isOpen}
-            title={t('reset_password_modal.modal_title', { mailbox: MailboxHelper.toString(mailbox) })}
+            title={t('Reset password of {{mailbox}}', { mailbox: MailboxHelper.toString(mailbox) })}
             size={ModalSize.MEDIUM}
             onClose={onClose}
         >
@@ -53,11 +53,11 @@ const ModalMailboxResetPassword = ({ isOpen, onClose, mailbox, domainId }: Modal
                 {['idle', 'error'].includes(state) &&
                     <section className="modal-mailbox-reset-password__idle">
                         <header>
-                            <h3>{t('reset_password_modal.idle__title')}</h3>
-                            <p>{t('reset_password_modal.idle__description')}</p>
+                            <h3>{t('Are you sure you want to reset the password?')}</h3>
+                            <p>{t('This action cannot be undone and the user will need the new password to access its mailbox.')}</p>
                         </header>
                         {state === 'error' &&
-                            <Banner type="error">{t('reset_password_modal.error')}</Banner>
+                            <Banner type="error">{t('An error occurred while resetting the password.')}</Banner>
                         }
                         <footer>
                             <Button
@@ -66,7 +66,7 @@ const ModalMailboxResetPassword = ({ isOpen, onClose, mailbox, domainId }: Modal
                                 disabled={isPending}
                                 icon={isPending && <Spinner />}
                             >
-                                {t('actions.cancel')}
+                                {t('Cancel')}
                             </Button>
                             <Button
                                 color="danger"
@@ -74,7 +74,7 @@ const ModalMailboxResetPassword = ({ isOpen, onClose, mailbox, domainId }: Modal
                                 disabled={isPending}
                                 icon={isPending && <Spinner />}
                             >
-                                {t('reset_password_modal.cta')}
+                                {t('Reset password')}
                             </Button>
                         </footer>
                     </section>
@@ -82,12 +82,12 @@ const ModalMailboxResetPassword = ({ isOpen, onClose, mailbox, domainId }: Modal
                 {state === 'success' &&
                     <section className="modal-mailbox-reset-password__success">
                         <header>
-                            <h3>{t('reset_password_modal.success__title')}</h3>
-                            <p>{t('reset_password_modal.success__description')}</p>
+                            <h3>{t('Password reset successfully!')}</h3>
+                            <p>{t('Share the new credentials to the user.')}</p>
                         </header>
                         <AdminMailboxCredentials mailbox={{ ...mailbox, one_time_password: oneTimePassword }} />
                         <footer>
-                            <Button onClick={onClose} color="primary">{t('actions.close')}</Button>
+                            <Button onClick={onClose} color="primary">{t('Close')}</Button>
                         </footer>
                     </section>
                 }

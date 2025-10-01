@@ -58,8 +58,8 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
     const handleDelete = async (mailbox: MailboxAdmin) => {
         const email = MailboxHelper.toString(mailbox);
         const decision = await modals.deleteConfirmationModal({
-            title: <span className="label-item__delete-modal__title">{t('admin_maildomains_details.delete_modal.title', { mailbox: email })}</span>,
-            children: <span className="label-item__delete-modal__message">{t('admin_maildomains_details.delete_modal.message')}</span>,
+            title: <span className="c__modal__text--centered">{t('Delete mailbox {{mailbox}}', { mailbox: email })}</span>,
+            children: t('Are you sure you want to delete this mailbox? This action is irreversible!'),
           });
 
           if (decision === 'delete') {
@@ -69,7 +69,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
                 addToast(
                     <ToasterItem type="error">
                         <Icon name="delete" size={IconSize.SMALL} />
-                        <span>{t('admin_maildomains_details.delete_modal.success', { mailbox: email })}</span>
+                        <span>{t('Mailbox {{mailbox}} has been deleted successfully.', { mailbox: email })}</span>
                     </ToasterItem>
                 );
               },
@@ -80,20 +80,20 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
     const columns = [
         {
             id: "mailbox_type",
-            headerName: t("admin_maildomains_details.datagrid_headers.type"),
+            headerName: t("Type"),
             size: 140,
             renderCell: ({ row }: { row: MailboxAdmin }) => {
                 let typeLabel: string;
                 let color: string;
 
                 if (row.alias_of) {
-                    typeLabel = t("admin_maildomains_details.datagrid_row_labels.alias");
+                    typeLabel = t("Redirection");
                     color = "var(--c--theme--colors--info-600)";
                 } else if (row.is_identity) {
-                    typeLabel = t("admin_maildomains_details.datagrid_row_labels.personal_mailbox");
+                    typeLabel = t("Personal mailbox");
                     color = "var(--c--theme--colors--success-600)";
                 } else {
-                    typeLabel = t("admin_maildomains_details.datagrid_row_labels.shared_mailbox");
+                    typeLabel = t("Shared mailbox");
                     color = "var(--c--theme--colors--success-600)";
                 }
 
@@ -106,30 +106,34 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
         },
         {
             id: "email",
-            headerName: t("admin_maildomains_details.datagrid_headers.email"),
+            headerName: t("Email address"),
             renderCell: ({ row }: { row: MailboxAdmin }) => MailboxHelper.toString(row) ,
         },
         {
             id: "accesses",
-            headerName: t("admin_maildomains_details.datagrid_headers.accesses"),
+            headerName: t("Accesses"),
             renderCell: ({ row }: { row: MailboxAdmin }) => {
                 if (row.accesses?.length === 0) {
                     return (
                         <span style={{ color: "var(--c--theme--colors--danger-600)" }}>
-                            {t("admin_maildomains_details.datagrid_row_labels.no_accesses")}
+                            {t("No accesses")}
                         </span>
                     );
                 }
 
                 const otherAccessesCount = row.accesses?.length - 2;
-                return row.accesses?.slice(0, 2).map((access) => {
-                    return access.user?.full_name || access.user?.email || t("admin_maildomains_details.datagrid_row_labels.unknown_user");
-                }).join(", ") + (otherAccessesCount > 0 ? ` ${t("admin_maildomains_details.datagrid_row_labels.other_user", { count: otherAccessesCount })}` : "");
+                return row.accesses?.slice(0, 2).map((access) => access.user?.full_name || access.user?.email || t("Unknown user")).join(", ")
+                + (otherAccessesCount > 0 ? ` ${
+                    t("and {{count}} other users", {
+                        count: otherAccessesCount,
+                        defaultValue_one: "and 1 other user"
+                    })
+                }` : "");
             },
         },
         ...(canManageMailboxes ? [{
             id: "actions",
-            headerName: t("admin_maildomains_details.datagrid_headers.actions"),
+            headerName: t("Actions"),
             size: 160,
             renderCell: ({ row }: { row: MailboxAdmin }) => <ActionsRow
                 onManageAccess={() => handleManageAccess(row)}
@@ -157,7 +161,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
         return (
             <div className="admin-data-grid">
                 <Banner type="info" icon={<Spinner />}>
-                    {t("admin_maildomains_details.loading")}
+                    {t("Loading addresses...")}
                 </Banner>
             </div>
         );
@@ -167,7 +171,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
         return (
             <div className="admin-data-grid">
                 <Banner type="error">
-                    {t("admin_maildomains_details.errors.failed_to_load_adresses")}
+                    {t("Error while loading addresses")}
                 </Banner>
             </div>
         );
@@ -228,27 +232,27 @@ const ActionsRow = ({ onManageAccess, onResetPassword, onDelete, onUpdate }: Act
                 onClick={onManageAccess}
                 style={{ paddingInline: "var(--c--theme--spacings--xs)" }}
             >
-                {t('admin_maildomains_details.actions.manage_accesses')}
+                {t('Manage accesses')}
             </Button>
             <DropdownMenu
                 isOpen={isMoreActionsOpen}
                 onOpenChange={setMoreActionsOpen}
                 options={[
                     {
-                        label: t('actions.edit'),
+                        label: t('Edit'),
                         icon: <Icon name="edit" size={IconSize.SMALL} />,
                         callback: onUpdate,
                         showSeparator: !onResetPassword,
                     },
                     ...(onResetPassword ? [{
                         icon: <Icon name="lock" size={IconSize.SMALL} />,
-                        label: t('admin_maildomains_details.actions.reset_password'),
+                        label: t('Reset password'),
                         callback: onResetPassword,
                         showSeparator: true,
                     },
                     ] : []),
                     {
-                        label: t('actions.delete'),
+                        label: t('Delete'),
                         icon: <Icon name="delete" size={IconSize.SMALL} />,
                         callback: onDelete,
                     }
@@ -260,7 +264,7 @@ const ActionsRow = ({ onManageAccess, onResetPassword, onDelete, onUpdate }: Act
                     onClick={() => setMoreActionsOpen(true)}
                 >
                     <Icon name="more_vert" size={IconSize.SMALL} />
-                    <span className="c__offscreen">{t('admin_maildomains_details.actions.more')}</span>
+                    <span className="c__offscreen">{t('More')}</span>
                 </Button>
             </DropdownMenu>
         </div >

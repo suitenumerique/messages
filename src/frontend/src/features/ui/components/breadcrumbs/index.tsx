@@ -24,7 +24,7 @@ export const Breadcrumbs = ({
           onClick={onBack}
           disabled={items.length <= 1}
         >
-          {t("Précédent")}
+          {t("Back")}
         </Button>
       )}
 

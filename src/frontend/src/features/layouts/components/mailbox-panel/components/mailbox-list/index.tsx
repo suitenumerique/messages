@@ -7,6 +7,7 @@ import { useMemo } from "react"
 import { useLayoutContext } from "../../../main"
 import { useTranslation } from "react-i18next"
 import { Icon, IconType } from "@gouvfr-lasuite/ui-kit"
+import i18n from "@/features/i18n/initI18n";
 
 // @TODO: replace with real data when folder will be ready
 type Folder = {
@@ -19,7 +20,7 @@ type Folder = {
 export const MAILBOX_FOLDERS: Folder[] = [
     {
         id: "inbox",
-        name: "folders.inbox",
+        name: i18n.t("Inbox"),
         icon: "inbox",
         filter: {
             has_active: "1"
@@ -27,7 +28,7 @@ export const MAILBOX_FOLDERS: Folder[] = [
     },
     {
         id: "all_messages",
-        name: "folders.all_messages",
+        name: i18n.t("All messages"),
         icon: "folder",
         filter: {
             has_messages: "1"
@@ -35,7 +36,7 @@ export const MAILBOX_FOLDERS: Folder[] = [
     },
     {
         id: "drafts",
-        name: "folders.drafts",
+        name: i18n.t("Drafts"),
         icon: "drafts",
         filter: {
             has_draft: "1",
@@ -43,7 +44,7 @@ export const MAILBOX_FOLDERS: Folder[] = [
     },
     {
         id: "sent",
-        name: "folders.sent",
+        name: i18n.t("Sent"),
         icon: "outbox",
         filter: {
             has_sender: "1"
@@ -51,7 +52,7 @@ export const MAILBOX_FOLDERS: Folder[] = [
     },
     {
         id: "trash",
-        name: "folders.trash",
+        name: i18n.t("Trash"),
         icon: "delete",
         filter: {
             has_trashed: "1",

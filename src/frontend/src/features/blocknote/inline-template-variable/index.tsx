@@ -32,8 +32,8 @@ export const TemplateVariableSelector = ({ variables, isLoading }: TemplateVaria
       <Components.FormattingToolbar.Button
         icon={<Spinner size="sm" />}
         isDisabled={true}
-        label={t("inline_template_variable.loading_tooltip")}
-        mainTooltip={t("inline_template_variable.loading_tooltip")}
+        label={t("Loading variables...")}
+        mainTooltip={t("Loading variables...")}
       />
     );
   }
@@ -47,7 +47,7 @@ export const TemplateVariableSelector = ({ variables, isLoading }: TemplateVaria
       key={"templateVariableSelector"}
       items={[
         {
-          text: t("inline_template_variable.label"),
+          text: t("Variables"),
           isSelected: true,
           isDisabled: true,
           icon: <Icon name="space_bar" size={IconSize.SMALL} />,

@@ -16,13 +16,13 @@ export const SurveyButton = (props: ButtonProps) => {
   
   if (!channel || !apiUrl || !widgetPath) return null;
 
-  const title: string = t("feedback_widget.title");
-  const placeholder: string = t("feedback_widget.placeholder");
-  const emailPlaceholder: string = t("feedback_widget.email_placeholder");
-  const submitText: string = t("feedback_widget.submit_text");
-  const successText: string = t("feedback_widget.success_text");
-  const successText2: string = t("feedback_widget.success_text2");
-  const closeLabel: string = t("feedback_widget.close_label");
+  const title: string = t("Do you have any feedback?");
+  const placeholder: string = t("Share your feedback here...");
+  const emailPlaceholder: string = t("Your email...");
+  const submitText: string = t("Send Feedback");
+  const successText: string = t("Thank you for your feedback!");
+  const successText2: string = t("In case of questions, we'll get back to you soon.");
+  const closeLabel: string = t("Close the feedback widget");
 
   const showWidget = () => {
     // Initialize the widget array if it doesn't exist
@@ -73,10 +73,10 @@ export const SurveyButton = (props: ButtonProps) => {
       icon={<Icon name="info" type={IconType.FILLED} />}
       color="tertiary"
       className="feedback-button"
-      title={t("feedback_widget.title")}
+      title={t("Do you have any feedback?")}
       onClick={showWidget}
     >
-      {t("feedback_widget.shortTitle")}
+      {t("Feedback?")}
     </Button>
   )
 }

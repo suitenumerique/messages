@@ -21,16 +21,16 @@ export default function Document() {
         <link rel="apple-touch-icon" sizes="167x167" href="/images/pwa/icons/ios/167.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content={t("app_title")} />
+        <meta name="apple-mobile-web-app-title" content={t("Messaging")} />
         <meta name="apple-touch-fullscreen" content="yes" />
         <meta name="msapplication-TileImage" content="/images/pwa/icons/ios/144.png" />
         <meta name="msapplication-TileColor" content="#FFFFFF" />
         <meta name="msapplication-config" content="/browserconfig.xml" />
-        <meta name="application-name" content={t("app_title")} />
+        <meta name="application-name" content={t("Messaging")} />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="format-detection" content="telephone=no" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-        <meta name="description" content={t("app_description")} />
+        <meta name="description" content={t("Messaging")} />
         <link rel="apple-touch-startup-image" href="/images/pwa/splash/apple-splash-2048-2732.jpg" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
         <link rel="apple-touch-startup-image" href="/images/pwa/splash/apple-splash-2732-2048.jpg" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" />
         <link rel="apple-touch-startup-image" href="/images/pwa/splash/apple-splash-1668-2388.jpg" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
