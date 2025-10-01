@@ -8,6 +8,7 @@
       "no_mailbox": "No mailbox.",
       "no_threads": "No threads.",
       "mailbox": "Mailbox",
+      "session_expired": "Your session has expired. Please log in again.",
       "new_message_form": {
         "title": "New message"
       },
@@ -585,6 +586,7 @@
       "no_mailbox": "Aucune boîte aux lettres.",
       "no_threads": "Aucune conversation.",
       "mailbox": "Boîte aux lettres",
+      "session_expired": "Votre session a expiré. Veuillez vous reconnecter.",
       "new_message_form": {
         "title": "Nouveau message"
       },
