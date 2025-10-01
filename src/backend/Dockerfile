@@ -71,6 +71,11 @@ FROM base AS runtime-base
 # docker user (see entrypoint).
 RUN chmod g=u /etc/passwd
 
+# Install required packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gettext \
+    && rm -rf /var/lib/apt/lists/*
+
 # Un-privileged user running the application
 ARG DOCKER_USER
 USER ${DOCKER_USER}

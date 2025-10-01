@@ -114,7 +114,7 @@ update:  ## Update the project with latest changes
 	@$(MAKE) migrate
 	@$(MAKE) front-install-frozen
 	@$(MAKE) widgets-install
-	# @$(MAKE) back-i18n-compile
+	@$(MAKE) i18n-compile
 .PHONY: update
 
 # -- Docker/compose
@@ -374,8 +374,7 @@ crowdin-upload: ## Upload source translations to crowdin
 
 i18n-compile: ## compile all translations
 i18n-compile: \
-	back-i18n-compile \
-	front-i18n-compile
+	back-i18n-compile
 .PHONY: i18n-compile
 
 i18n-generate: ## create the .pot files and extract frontend messages
@@ -441,15 +440,6 @@ front-build: ## build the frontend locally
 front-i18n-generate: ## Extract the frontend translation inside a json to be used for crowdin
 	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:extract
 .PHONY: front-i18n-extract
-
-front-i18n-generate: ## Generate the frontend json files used for crowdin
-	crowdin-download-sources \
-	front-i18n-extract
-.PHONY: front-i18n-generate
-
-front-i18n-compile: ## Format the crowdin json files used deploy to the apps
-	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:deploy
-.PHONY: front-i18n-compile
 
 back-api-update: ## Update the OpenAPI schema
 	bin/update_openapi_schema

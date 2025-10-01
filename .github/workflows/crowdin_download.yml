@@ -7,10 +7,6 @@ on:
       - 'release/**'
 
 jobs:
-  install-front:
-    uses: ./.github/workflows/front-dependencies-installation.yml
-    with:
-      node_version: '20.x'
 
   synchronize-with-crowdin:
     runs-on: ubuntu-latest
@@ -18,13 +14,12 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Create empty source files
-        run: |
-          touch src/backend/locale/django.pot
-          mkdir -p src/frontend/packages/i18n/locales/impress/
-          touch src/frontend/packages/i18n/locales/impress/translations-crowdin.json
+      - name: Create env files
+        run: make create-env-files
+      - name: Create empty backend source files
+        run: touch src/backend/locale/django.pot
       # crowdin workflow
       - name: crowdin action
         uses: crowdin/github-action@v2
@@ -45,16 +40,8 @@ jobs:
           CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
 
           CROWDIN_BASE_PATH: "../src/"
-      # frontend i18n
-      - name: Restore the frontend cache
-        uses: actions/cache@v4
-        with:
-          path: "src/frontend/**/node_modules"
-          key: front-node_modules-${{ hashFiles('src/frontend/**/yarn.lock') }}
-          fail-on-cache-miss: true
-      - name: generate translations files
-        working-directory: src/frontend
-        run: yarn i18n:deploy
+      - name: Generate source translations
+        run: make i18n-compile
       # Create a new PR
       - name: Create a new Pull Request with new translated strings
         uses: peter-evans/create-pull-request@v7

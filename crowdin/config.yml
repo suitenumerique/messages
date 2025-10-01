@@ -1,0 +1,35 @@
+#
+# Your crowdin's credentials
+#
+api_token_env: CROWDIN_PERSONAL_TOKEN
+project_id_env: CROWDIN_PROJECT_ID
+base_path_env: CROWDIN_BASE_PATH
+
+#
+# Choose file structure in crowdin
+# e.g. true or false
+#
+preserve_hierarchy: true
+
+#
+# Files configuration
+#
+files: [
+  {
+    source : "/backend/locale/django.pot",
+    dest: "/backend.pot",
+    translation : "/backend/locale/%locale_with_underscore%/LC_MESSAGES/django.po"
+  },
+  {
+    source: "/frontend/public/locales/common/en-US.json",
+    dest: "/frontend-common.json",
+    translation: "/frontend/public/locales/common/%locale%.json",
+    skip_untranslated_strings: true,
+  },
+  {
+    source: "/frontend/public/locales/roles/en-US.json",
+    dest: "/frontend-roles.json",
+    translation: "/frontend/public/locales/roles/%locale%.json",
+    skip_untranslated_strings: true,
+  }
+]

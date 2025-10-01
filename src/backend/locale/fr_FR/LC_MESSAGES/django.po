@@ -1,9 +1,9 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: lasuite-docs\n"
+"Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-08-20 09:35+0000\n"
-"PO-Revision-Date: 2025-01-27 09:27\n"
+"POT-Creation-Date: 2025-10-03 10:06+0000\n"
+"PO-Revision-Date: 2025-10-06 07:57\n"
 "Last-Translator: \n"
 "Language-Team: French\n"
 "Language: fr_FR\n"
@@ -11,643 +11,751 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n > 1);\n"
-"X-Crowdin-Project: lasuite-docs\n"
-"X-Crowdin-Project-ID: 754523\n"
+"X-Crowdin-Project: lasuite-messages\n"
+"X-Crowdin-Project-ID: 831182\n"
 "X-Crowdin-Language: fr\n"
-"X-Crowdin-File: backend-drive.pot\n"
-"X-Crowdin-File-ID: 18\n"
+"X-Crowdin-File: backend.pot\n"
+"X-Crowdin-File-ID: 40\n"
 
-#: core/admin.py:73
+#: core/admin.py:71
 msgid "Personal info"
-msgstr "Infos Personnelles"
+msgstr "Informations personnelles"
 
-#: core/admin.py:86
+#: core/admin.py:84
 msgid "Permissions"
-msgstr ""
+msgstr "Permissions"
 
-#: core/admin.py:97
+#: core/admin.py:95
 msgid "Important dates"
 msgstr "Dates importantes"
 
-#: core/admin.py:209
+#: core/admin.py:247
 msgid "Statistics"
-msgstr ""
+msgstr "Statistiques"
 
-#: core/admin.py:226
+#: core/admin.py:264
 msgid "Metadata"
-msgstr ""
+msgstr "Métadonnées"
 
-#: core/admin.py:254 core/admin.py:277
+#: core/admin.py:292 core/admin.py:315
 msgid "Labels"
-msgstr ""
+msgstr "Libellés"
 
-#: core/admin.py:260
+#: core/admin.py:298
 msgid "No labels"
-msgstr ""
+msgstr "Aucun libellé"
 
-#: core/admin.py:352 core/templates/admin/core/message/change_list.html:8
+#: core/admin.py:435 core/templates/admin/core/message/change_list.html:8
 #: core/templates/admin/core/message/import_messages.html:21
 msgid "Import Messages"
-msgstr ""
+msgstr "Importer des messages"
 
-#: core/admin.py:382
+#: core/admin.py:465
 msgid "Import Messages from IMAP"
-msgstr ""
+msgstr "Importer des messages via IMAP"
 
-#: core/admin.py:505
+#: core/admin.py:633
 msgid "Keys"
-msgstr ""
+msgstr "Clés"
+
+#: core/api/serializers.py:1012
+msgid "An mailbox with this local part already exists in this domain."
+msgstr "Une boîte aux lettres avec ce préfixe existe déjà dans ce domaine."
 
 #: core/api/viewsets/placeholder.py:48
-msgid "Full name"
-msgstr "Nom complet"
+msgid "Name"
+msgstr "Nom"
 
 #: core/apps.py:12
 msgid "messages core application"
-msgstr ""
+msgstr "Messages : Application \"Core\""
 
 #: core/authentication/backends.py:70
 msgid "Invalid response format or token verification failed"
-msgstr ""
+msgstr "Mauvais format de réponse ou la vérification de jeton a échoué"
 
 #: core/authentication/backends.py:114
 msgid "User account is disabled"
-msgstr ""
+msgstr "Le compte de l'utilisateur est désactivé"
 
-#: core/models.py:64
+#: core/models.py:70
 msgid "id"
-msgstr ""
-
-#: core/models.py:65
-msgid "primary key for the record as UUID"
-msgstr ""
+msgstr "id"
 
 #: core/models.py:71
-msgid "created on"
-msgstr ""
-
-#: core/models.py:72
-msgid "date and time at which a record was created"
-msgstr ""
+msgid "primary key for the record as UUID"
+msgstr "clé primaire de la ressource en tant que UUID"
 
 #: core/models.py:77
-msgid "updated on"
-msgstr ""
+msgid "created on"
+msgstr "créé le"
 
 #: core/models.py:78
+msgid "date and time at which a record was created"
+msgstr "date et heure de création de la ressource"
+
+#: core/models.py:83
+msgid "updated on"
+msgstr "modifié le"
+
+#: core/models.py:84
 msgid "date and time at which a record was last updated"
-msgstr ""
+msgstr "date et heure de la dernière mise à jour de la ressource"
 
-#: core/models.py:114
-msgid ""
-"We couldn't find a user with this sub but the email is already associated "
-"with a registered user."
-msgstr ""
-
-#: core/models.py:127
-msgid ""
-"Enter a valid sub. This value may contain only letters, numbers, and @/./+/-/"
-"_/: characters."
-msgstr ""
+#: core/models.py:120
+msgid "We couldn't find a user with this sub but the email is already associated with a registered user."
+msgstr "Nous n'avons pas pu trouver un utilisateur avec ce sub mais l'e-mail est déjà associé à un utilisateur enregistré."
 
 #: core/models.py:133
+msgid "Enter a valid sub. This value may contain only letters, numbers, and @/./+/-/_/: characters."
+msgstr "Saisissez un sub valide. Cette valeur ne peut contenir que des lettres, des chiffres et les caractères @/./+/-/_/: uniquement."
+
+#: core/models.py:139
 msgid "sub"
-msgstr ""
+msgstr "sub"
 
-#: core/models.py:135
-msgid ""
-"Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: "
-"characters only."
-msgstr ""
+#: core/models.py:141
+msgid "Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: characters only."
+msgstr "Obligatoire. 255 caractères ou moins. Lettres, chiffres et caractères @/./+/-/_/: uniquement."
 
-#: core/models.py:144
+#: core/models.py:150
 msgid "full name"
 msgstr "nom complet"
 
-#: core/models.py:146
+#: core/models.py:152
 msgid "identity email address"
-msgstr ""
+msgstr "adresse e-mail d'identité"
 
-#: core/models.py:151
+#: core/models.py:157
 msgid "admin email address"
-msgstr ""
+msgstr "adresse e-mail d'administrateur"
 
-#: core/models.py:158
+#: core/models.py:164
 msgid "language"
-msgstr ""
-
-#: core/models.py:159
-msgid "The language in which the user wants to see the interface."
-msgstr ""
+msgstr "langue"
 
 #: core/models.py:165
+msgid "The language in which the user wants to see the interface."
+msgstr "La langue dans laquelle l'utilisateur veut voir l'interface."
+
+#: core/models.py:171
 msgid "The timezone in which the user wants to see times."
-msgstr ""
+msgstr "Le fuseau horaire dans lequel l'utilisateur souhaite voir les heures."
 
-#: core/models.py:168
+#: core/models.py:174
 msgid "staff status"
-msgstr ""
-
-#: core/models.py:170
-msgid "Whether the user can log into this admin site."
-msgstr ""
-
-#: core/models.py:173
-msgid "active"
-msgstr ""
+msgstr "statut d'équipe"
 
 #: core/models.py:176
-msgid ""
-"Whether this user should be treated as active. Unselect this instead of "
-"deleting accounts."
-msgstr ""
+msgid "Whether the user can log into this admin site."
+msgstr "Si l'utilisateur peut se connecter à ce site d'administration."
 
-#: core/models.py:182 core/models.py:267
+#: core/models.py:179
+msgid "active"
+msgstr "actif"
+
+#: core/models.py:182
+msgid "Whether this user should be treated as active. Unselect this instead of deleting accounts."
+msgstr "Si cet utilisateur doit être traité comme actif. Désélectionnez ceci au lieu de supprimer des comptes."
+
+#: core/models.py:188 core/models.py:275
 msgid "Custom attributes"
-msgstr ""
+msgstr "Attributs personnalisés"
 
-#: core/models.py:185
+#: core/models.py:191
 msgid "Metadata to sync to the user in the identity provider."
-msgstr ""
+msgstr "Métadonnées de l'utilisateur à synchroniser avec le fournisseur d'identité."
 
-#: core/models.py:195
+#: core/models.py:201
 msgid "user"
-msgstr ""
+msgstr "utilisateur"
 
-#: core/models.py:196
+#: core/models.py:202
 msgid "users"
-msgstr ""
+msgstr "utilisateurs"
 
-#: core/models.py:241
-msgid ""
-"Enter a valid domain name. This value may contain only lowercase letters, "
-"numbers, dots and - characters."
-msgstr ""
+#: core/models.py:249
+msgid "Enter a valid domain name. This value may contain only lowercase letters, numbers, dots and - characters."
+msgstr "Entrez un nom de domaine valide. Cette valeur ne peut contenir que des minuscules, des chiffres, des points et des caractères -."
 
-#: core/models.py:247 core/models.py:770 core/models.py:997
+#: core/models.py:255 core/models.py:422 core/models.py:890 core/models.py:1117
+#: core/models.py:1657
 msgid "name"
 msgstr "nom"
 
-#: core/models.py:255
-msgid "oidc autojoin"
-msgstr ""
-
-#: core/models.py:257
-msgid "Create mailboxes automatically based on OIDC emails."
-msgstr ""
-
-#: core/models.py:261
-msgid "Identity sync"
-msgstr ""
-
 #: core/models.py:263
-msgid "Sync mailboxes to an identity provider."
-msgstr ""
+msgid "oidc autojoin"
+msgstr "auto-jonction OIDC"
+
+#: core/models.py:265
+msgid "Create mailboxes automatically based on OIDC emails."
+msgstr "Créez automatiquement les boîtes aux lettres à partir des courriels OIDC."
+
+#: core/models.py:269
+msgid "Identity sync"
+msgstr "Synchronisation de l'identité"
 
 #: core/models.py:271
+msgid "Sync mailboxes to an identity provider."
+msgstr "Synchroniser les boîtes aux lettres avec un fournisseur d'identité."
+
+#: core/models.py:279
 msgid "Metadata to sync to the maildomain group in the identity provider."
-msgstr ""
+msgstr "Métadonnées à synchroniser avec le groupe de domaine de messagerie du fournisseur d'identité."
 
-#: core/models.py:277
+#: core/models.py:285
 msgid "mail domain"
-msgstr ""
+msgstr "domaine de messagerie"
 
-#: core/models.py:278
+#: core/models.py:286
 msgid "mail domains"
-msgstr ""
+msgstr "domaines de messagerie"
 
-#: core/models.py:414
-msgid "local part"
-msgstr ""
+#: core/models.py:422
+msgid "Human-readable name for this channel"
+msgstr "Nom intelligible pour ce canal"
 
-#: core/models.py:428
-msgid "is identity"
-msgstr ""
+#: core/models.py:426 core/models.py:1150 core/models.py:1676
+msgid "type"
+msgstr "type"
 
-#: core/models.py:431
-msgid ""
-"Whether this mailbox identifies a person (i.e. is not an alias or a group)"
-msgstr ""
+#: core/models.py:426
+msgid "Type of channel"
+msgstr "Type de canal"
 
-#: core/models.py:441
-msgid "mailbox"
-msgstr ""
+#: core/models.py:430
+msgid "settings"
+msgstr "paramètres"
+
+#: core/models.py:433
+msgid "Channel-specific configuration settings"
+msgstr "Configuration spécifique aux canaux"
 
 #: core/models.py:442
+msgid "Mailbox that receives messages from this channel"
+msgstr "Boîte aux lettres qui reçoit les messages provenant de ce canal"
+
+#: core/models.py:451
+msgid "Mail domain that owns this channel"
+msgstr "Domaine de messagerie qui possède ce canal"
+
+#: core/models.py:456
+msgid "channel"
+msgstr "canal"
+
+#: core/models.py:457
+msgid "channels"
+msgstr "canaux"
+
+#: core/models.py:476
+msgid "local part"
+msgstr "partie locale"
+
+#: core/models.py:490
+msgid "is identity"
+msgstr "est une identité"
+
+#: core/models.py:493
+msgid "Whether this mailbox identifies a person (i.e. is not an alias or a group)"
+msgstr "Si cette boîte aux lettres identifie une personne (c'est-à-dire n'est pas un alias ou un groupe)"
+
+#: core/models.py:503
+msgid "mailbox"
+msgstr "boîte aux lettres"
+
+#: core/models.py:504
 msgid "mailboxes"
-msgstr ""
+msgstr "boîtes aux lettres"
 
-#: core/models.py:599 core/models.py:979 core/models.py:1328
+#: core/models.py:701 core/models.py:1099 core/models.py:1575
 msgid "role"
-msgstr ""
+msgstr "rôle"
 
-#: core/models.py:606
+#: core/models.py:707
+msgid "accessed at"
+msgstr "accédé le"
+
+#: core/models.py:712
 msgid "mailbox access"
-msgstr ""
+msgstr "accès de la boîte aux lettres"
 
-#: core/models.py:607
+#: core/models.py:713
 msgid "mailbox accesses"
-msgstr ""
+msgstr "accès de la boîte aux lettres"
 
-#: core/models.py:617 core/models.py:1062
+#: core/models.py:737 core/models.py:1182
 msgid "subject"
-msgstr ""
+msgstr "objet"
 
-#: core/models.py:618
+#: core/models.py:738
 msgid "snippet"
-msgstr ""
+msgstr "extrait"
 
-#: core/models.py:619
+#: core/models.py:739
 msgid "has unread"
-msgstr ""
+msgstr "a des non lus"
 
-#: core/models.py:620
+#: core/models.py:740
 msgid "has trashed"
-msgstr ""
+msgstr "a des mis à la corbeille"
 
-#: core/models.py:621
+#: core/models.py:741
 msgid "has draft"
-msgstr ""
+msgstr "a un brouillon"
 
-#: core/models.py:622
+#: core/models.py:742
 msgid "has starred"
-msgstr ""
+msgstr "a des favoris"
 
-#: core/models.py:623
+#: core/models.py:743
 msgid "has sender"
-msgstr ""
+msgstr "a envoyé"
 
-#: core/models.py:624
+#: core/models.py:744
 msgid "has messages"
-msgstr ""
+msgstr "a des messages"
 
-#: core/models.py:625 core/models.py:1076
+#: core/models.py:745 core/models.py:1196
 msgid "has attachments"
-msgstr ""
+msgstr "a des pièces jointes"
 
-#: core/models.py:626 core/models.py:1074
+#: core/models.py:746 core/models.py:1194
 msgid "is spam"
-msgstr ""
+msgstr "est un spam"
 
-#: core/models.py:627
+#: core/models.py:747
 msgid "has active"
-msgstr ""
+msgstr "a des actifs"
 
-#: core/models.py:628
+#: core/models.py:748
 msgid "messaged at"
-msgstr ""
+msgstr "dernier message à"
 
-#: core/models.py:629
+#: core/models.py:749
 msgid "sender names"
-msgstr ""
+msgstr "noms des expéditeurs"
 
-#: core/models.py:630
+#: core/models.py:750
 msgid "summary"
-msgstr ""
+msgstr "résumé"
 
-#: core/models.py:634
+#: core/models.py:754
 msgid "thread"
-msgstr ""
+msgstr "conversation"
 
-#: core/models.py:635
+#: core/models.py:755
 msgid "threads"
-msgstr ""
+msgstr "conversations"
 
-#: core/models.py:773
-msgid ""
-"Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/"
-"Projects')"
-msgstr ""
+#: core/models.py:893
+msgid "Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/Projects')"
+msgstr "Nom du libellé/du dossier (vous pouvez utiliser des barres obliques pour la hiérarchie, par exemple « Travail/Projets »)"
 
-#: core/models.py:777
+#: core/models.py:897
 msgid "slug"
-msgstr ""
+msgstr "slug"
 
-#: core/models.py:779
+#: core/models.py:899
 msgid "URL-friendly version of the name"
-msgstr ""
+msgstr "Version du nom optimisée pour les URL"
 
-#: core/models.py:782
+#: core/models.py:902
 msgid "color"
-msgstr ""
+msgstr "couleur"
 
-#: core/models.py:785
+#: core/models.py:905
 msgid "Color of the label in hex format (e.g. #FF0000)"
-msgstr ""
+msgstr "Couleur du libellé au format hexadécimal (par exemple #FF0000)"
 
-#: core/models.py:791
+#: core/models.py:911
 msgid "Mailbox that owns this label"
-msgstr ""
+msgstr "Boîte propriétaire du libellé"
 
-#: core/models.py:796
+#: core/models.py:916
 msgid "Threads that have this label"
-msgstr ""
+msgstr "Conversations qui ont ce libellé"
 
-#: core/models.py:800
+#: core/models.py:920
 msgid "description"
-msgstr ""
+msgstr "description"
 
-#: core/models.py:804
+#: core/models.py:924
 msgid "Description of the label, used by AI to understand its purpose"
-msgstr ""
+msgstr "Description du libellé, utilisée par l'IA pour comprendre son but"
 
-#: core/models.py:807
+#: core/models.py:927
 msgid "auto labeling"
-msgstr ""
+msgstr "labellisation automatique"
 
-#: core/models.py:809
+#: core/models.py:929
 msgid "Whether this label should be automatically applied by AI"
-msgstr ""
+msgstr "Si ce libellé doit être automatiquement appliquée par l'IA"
 
-#: core/models.py:814
+#: core/models.py:934
 msgid "label"
-msgstr ""
+msgstr "libellé"
 
-#: core/models.py:815
+#: core/models.py:935
 msgid "labels"
-msgstr ""
+msgstr "libellés"
 
-#: core/models.py:986
+#: core/models.py:1106
 msgid "thread access"
-msgstr ""
-
-#: core/models.py:987
-msgid "thread accesses"
-msgstr ""
-
-#: core/models.py:998
-msgid "email"
-msgstr ""
-
-#: core/models.py:1007
-msgid "contact"
-msgstr ""
-
-#: core/models.py:1008
-msgid "contacts"
-msgstr ""
-
-#: core/models.py:1030
-msgid "type"
-msgstr ""
-
-#: core/models.py:1035
-msgid "delivered at"
-msgstr ""
-
-#: core/models.py:1037
-msgid "delivery status"
-msgstr ""
-
-#: core/models.py:1042
-msgid "delivery message"
-msgstr ""
-
-#: core/models.py:1043
-msgid "retry count"
-msgstr ""
-
-#: core/models.py:1044
-msgid "retry at"
-msgstr ""
-
-#: core/models.py:1048
-msgid "message recipient"
-msgstr ""
-
-#: core/models.py:1049
-msgid "message recipients"
-msgstr ""
-
-#: core/models.py:1069
-msgid "is draft"
-msgstr ""
-
-#: core/models.py:1070
-msgid "is sender"
-msgstr ""
-
-#: core/models.py:1071
-msgid "is starred"
-msgstr ""
-
-#: core/models.py:1072
-msgid "is trashed"
-msgstr ""
-
-#: core/models.py:1073
-msgid "is unread"
-msgstr ""
-
-#: core/models.py:1075
-msgid "is archived"
-msgstr ""
-
-#: core/models.py:1078
-msgid "trashed at"
-msgstr ""
-
-#: core/models.py:1079
-msgid "sent at"
-msgstr ""
-
-#: core/models.py:1080
-msgid "read at"
-msgstr ""
-
-#: core/models.py:1081
-msgid "archived at"
-msgstr ""
-
-#: core/models.py:1083
-msgid "mime id"
-msgstr ""
+msgstr "accès de conversation"
 
 #: core/models.py:1107
+msgid "thread accesses"
+msgstr "accès des conversations"
+
+#: core/models.py:1118
+msgid "email"
+msgstr "courriel"
+
+#: core/models.py:1127
+msgid "contact"
+msgstr "contact"
+
+#: core/models.py:1128
+msgid "contacts"
+msgstr "contacts"
+
+#: core/models.py:1155
+msgid "delivered at"
+msgstr "délivré à"
+
+#: core/models.py:1157
+msgid "delivery status"
+msgstr "statut de livraison"
+
+#: core/models.py:1162
+msgid "delivery message"
+msgstr "message de livraison"
+
+#: core/models.py:1163
+msgid "retry count"
+msgstr "nombre de tentatives"
+
+#: core/models.py:1164
+msgid "retry at"
+msgstr "réessayer à"
+
+#: core/models.py:1168
+msgid "message recipient"
+msgstr "destinataire du message"
+
+#: core/models.py:1169
+msgid "message recipients"
+msgstr "destinataires du message"
+
+#: core/models.py:1189
+msgid "is draft"
+msgstr "est un brouillon"
+
+#: core/models.py:1190
+msgid "is sender"
+msgstr "est expéditeur"
+
+#: core/models.py:1191
+msgid "is starred"
+msgstr "est favori"
+
+#: core/models.py:1192
+msgid "is trashed"
+msgstr "est mis à la corbeille"
+
+#: core/models.py:1193
+msgid "is unread"
+msgstr "est non lu"
+
+#: core/models.py:1195
+msgid "is archived"
+msgstr "est archivé"
+
+#: core/models.py:1198
+msgid "trashed at"
+msgstr "mis à la corbeille le"
+
+#: core/models.py:1199
+msgid "sent at"
+msgstr "envoyé le"
+
+#: core/models.py:1200
+msgid "read at"
+msgstr "lu à"
+
+#: core/models.py:1201
+msgid "archived at"
+msgstr "archivé à"
+
+#: core/models.py:1203
+msgid "mime id"
+msgstr "id mime"
+
+#: core/models.py:1231
+msgid "Signature template for the message"
+msgstr "Modèle de signature pour le message"
+
+#: core/models.py:1243
 msgid "message"
-msgstr ""
+msgstr "message"
 
-#: core/models.py:1108
+#: core/models.py:1244
 msgid "messages"
-msgstr ""
+msgstr "messages"
 
-#: core/models.py:1160 core/models.py:1183
+#: core/models.py:1308 core/models.py:1331
 msgid "No subject"
-msgstr ""
+msgstr "Aucun objet"
 
-#: core/models.py:1206
+#: core/models.py:1319
+msgid "Message ID"
+msgstr "ID du message"
+
+#: core/models.py:1320
+msgid "From"
+msgstr "De "
+
+#: core/models.py:1321
+msgid "To"
+msgstr "À"
+
+#: core/models.py:1322
+msgid "CC"
+msgstr "CC"
+
+#: core/models.py:1323
+msgid "Date"
+msgstr "Date"
+
+#: core/models.py:1324
+msgid "Subject"
+msgstr "Objet"
+
+#: core/models.py:1325
+msgid "Body"
+msgstr "Corps"
+
+#: core/models.py:1424
 msgid "sha256 hash"
-msgstr ""
+msgstr "hash sha256"
 
-#: core/models.py:1209
+#: core/models.py:1427
 msgid "SHA-256 hash of the uncompressed blob content"
-msgstr ""
+msgstr "Hash SHA-256 du contenu du blob non compressé"
 
-#: core/models.py:1213
+#: core/models.py:1431
 msgid "file size"
-msgstr ""
+msgstr "taille du fichier"
 
-#: core/models.py:1213
+#: core/models.py:1431
 msgid "Size of the blob in bytes"
-msgstr ""
+msgstr "Taille du blob en octets"
 
-#: core/models.py:1217
+#: core/models.py:1435
+msgid "compressed size"
+msgstr "taille compressée"
+
+#: core/models.py:1435
+msgid "Size of the compressed blob in bytes"
+msgstr "Taille du blob compressé en octets"
+
+#: core/models.py:1439
 msgid "content type"
-msgstr ""
+msgstr "type de contenu"
 
-#: core/models.py:1217
+#: core/models.py:1439
 msgid "MIME type of the blob"
-msgstr ""
+msgstr "Type MIME du blob"
 
-#: core/models.py:1221
+#: core/models.py:1443
 msgid "compression"
-msgstr ""
+msgstr "compression"
 
-#: core/models.py:1227
+#: core/models.py:1449
 msgid "raw content"
-msgstr ""
+msgstr "contenu brut"
 
-#: core/models.py:1228
+#: core/models.py:1450
 msgid "Compressed binary content of the blob"
-msgstr ""
+msgstr "Contenu binaire compressé du blob"
 
-#: core/models.py:1235
+#: core/models.py:1459
 msgid "Mailbox that owns this blob"
-msgstr ""
+msgstr "Boîte aux lettres propriétaire de ce blob"
 
-#: core/models.py:1240
+#: core/models.py:1467
+msgid "Mail domain that owns this blob"
+msgstr "Domaine de courrier qui possède ce blob"
+
+#: core/models.py:1474
 msgid "blob"
-msgstr ""
+msgstr "blob"
 
-#: core/models.py:1241
+#: core/models.py:1475
 msgid "blobs"
-msgstr ""
+msgstr "blobs"
 
-#: core/models.py:1268
+#: core/models.py:1515
 msgid "file name"
 msgstr "nom du fichier"
 
-#: core/models.py:1270
+#: core/models.py:1517
 msgid "Original filename of the attachment"
-msgstr ""
+msgstr "Nom du fichier original de la pièce jointe"
 
-#: core/models.py:1277
+#: core/models.py:1524
 msgid "Reference to the blob containing the attachment data"
-msgstr ""
+msgstr "Référence vers le blob contenant les données de la pièce jointe"
 
-#: core/models.py:1284
+#: core/models.py:1531
 msgid "Mailbox that owns this attachment"
-msgstr ""
+msgstr "Boîte aux lettres propriétaire de cette pièce jointe"
 
-#: core/models.py:1290
+#: core/models.py:1537
 msgid "Messages that use this attachment"
-msgstr ""
+msgstr "Messages qui utilisent cette pièce jointe"
 
-#: core/models.py:1295
+#: core/models.py:1542
 msgid "attachment"
-msgstr ""
+msgstr "pièce jointe"
 
-#: core/models.py:1296
+#: core/models.py:1543
 msgid "attachments"
-msgstr ""
+msgstr "pièces jointes"
 
-#: core/models.py:1335
+#: core/models.py:1582
 msgid "mail domain access"
-msgstr ""
+msgstr "accès au domaine de messagerie"
 
-#: core/models.py:1336
+#: core/models.py:1583
 msgid "mail domain accesses"
-msgstr ""
+msgstr "accès au domaine de messagerie"
 
-#: core/models.py:1347
+#: core/models.py:1594
 msgid "selector"
-msgstr ""
+msgstr "sélecteur"
 
-#: core/models.py:1349
+#: core/models.py:1596
 msgid "DKIM selector (e.g., 'default', 'mail')"
-msgstr ""
+msgstr "Sélecteur DKIM (i.e., 'default', 'mail')"
 
-#: core/models.py:1353
+#: core/models.py:1600
 msgid "private key"
-msgstr ""
+msgstr "clé privée"
 
-#: core/models.py:1354
+#: core/models.py:1601
 msgid "DKIM private key in PEM format (encrypted)"
-msgstr ""
+msgstr "Clé privée DKIM au format PEM (chiffrée)"
 
-#: core/models.py:1358
+#: core/models.py:1605
 msgid "public key"
-msgstr ""
+msgstr "clé publique"
 
-#: core/models.py:1359
+#: core/models.py:1606
 msgid "DKIM public key for DNS record generation"
-msgstr ""
+msgstr "Clé publique de DKIM pour la génération d'enregistrements DNS"
 
-#: core/models.py:1363
+#: core/models.py:1610
 msgid "algorithm"
-msgstr ""
+msgstr "algorithme"
 
-#: core/models.py:1366
+#: core/models.py:1613
 msgid "DKIM signing algorithm"
-msgstr ""
+msgstr "Algorithme de signature DKIM"
 
-#: core/models.py:1370
+#: core/models.py:1617
 msgid "key size"
-msgstr ""
+msgstr "taille de la clé"
 
-#: core/models.py:1371
+#: core/models.py:1618
 msgid "Key size in bits (e.g., 2048, 4096 for RSA)"
-msgstr ""
+msgstr "Taille de la clé en octets (par exemple, 2048, 4096 pour RSA)"
 
-#: core/models.py:1375
+#: core/models.py:1622 core/models.py:1683
 msgid "is active"
-msgstr ""
+msgstr "est active"
 
-#: core/models.py:1377
+#: core/models.py:1624
 msgid "Whether this DKIM key is active and should be used for signing"
-msgstr ""
+msgstr "Si cette clé DKIM est active et doit être utilisée pour signer"
 
-#: core/models.py:1384
+#: core/models.py:1631
 msgid "Domain that owns this DKIM key"
-msgstr ""
+msgstr "Domaine propriétaire de cette clé DKIM"
 
-#: core/models.py:1389
+#: core/models.py:1636
 msgid "DKIM key"
-msgstr ""
+msgstr "Clé DKIM"
 
-#: core/models.py:1390
+#: core/models.py:1637
 msgid "DKIM keys"
-msgstr ""
+msgstr "Clés DKIM"
+
+#: core/models.py:1660
+msgid "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')"
+msgstr "Nom du modèle (ex., 'Réponse standard', 'Absence de bureau', 'Signature professionnelle')"
+
+#: core/models.py:1671
+msgid "Reference to the blob containing template content as JSON: {html: str, text: str, raw: any}"
+msgstr "Référence vers le blob contenant le contenu du modèle au format JSON : {html: str, text: str, raw: any}"
+
+#: core/models.py:1679
+msgid "Type of template (reply, new_message, signature)"
+msgstr "Type de modèle (réponse, nouveau message, signature)"
+
+#: core/models.py:1685
+msgid "Whether this template is available for use"
+msgstr "Si ce modèle est utilisable"
+
+#: core/models.py:1694
+msgid "Mail domain that can use this template"
+msgstr "Domaine de messagerie qui peut utiliser ce modèle"
+
+#: core/models.py:1703
+msgid "Mailbox that can use this template"
+msgstr "Boîte aux lettres qui peut utiliser ce modèle"
+
+#: core/models.py:1707
+msgid "is forced"
+msgstr "est forcé"
+
+#: core/models.py:1710
+msgid "Whether this template is forced; no other template of the same type can be used in the same scope"
+msgstr "Si ce modèle est forcé ; aucun autre modèle du même type ne peut être utilisé dans le même périmètre"
+
+#: core/models.py:1716
+msgid "message template"
+msgstr "modèle de message"
+
+#: core/models.py:1717
+msgid "message templates"
+msgstr "modèles de message"
 
 #: core/templates/admin/core/message/change_list.html:13
 #: core/templates/admin/core/message/import_imap.html:20
 msgid "Import from IMAP"
-msgstr ""
+msgstr "Importer via IMAP"
 
 #: core/templates/admin/core/message/import_imap.html:17
 msgid "Home"
-msgstr ""
+msgstr "Accueil"
 
 #: core/templates/admin/core/message/import_imap.html:32
 msgid "Please correct the error below."
-msgstr ""
+msgstr "Veuillez corriger l'erreur ci-dessous."
 
 #: core/templates/admin/core/message/import_imap.html:34
 msgid "Please correct the errors below."
-msgstr ""
+msgstr "Veuillez corriger les erreurs ci-dessous."
 
 #: core/templates/admin/core/message/import_imap.html:53
 msgid "Start Import"
-msgstr ""
+msgstr "Démarrer l'importation"
 
-#: messages/settings.py:266
+#: messages/settings.py:340
 msgid "English"
-msgstr ""
+msgstr "Anglais"
 
-#: messages/settings.py:267
+#: messages/settings.py:341
 msgid "French"
-msgstr ""
-
-#: messages/settings.py:268
-msgid "German"
-msgstr ""
+msgstr "Français"

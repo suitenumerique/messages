@@ -5,757 +5,757 @@ msgstr ""
 "POT-Creation-Date: 2025-10-03 10:06+0000\n"
 "PO-Revision-Date: 2025-10-06 07:57\n"
 "Last-Translator: \n"
-"Language-Team: Dutch\n"
-"Language: nl_NL\n"
+"Language-Team: Russian\n"
+"Language: ru_RU\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"Plural-Forms: nplurals=4; plural=((n%10==1 && n%100!=11) ? 0 : ((n%10 >= 2 && n%10 <=4 && (n%100 < 12 || n%100 > 14)) ? 1 : ((n%10 == 0 || (n%10 >= 5 && n%10 <=9)) || (n%100 >= 11 && n%100 <= 14)) ? 2 : 3));\n"
 "X-Crowdin-Project: lasuite-messages\n"
 "X-Crowdin-Project-ID: 831182\n"
-"X-Crowdin-Language: nl\n"
+"X-Crowdin-Language: ru\n"
 "X-Crowdin-File: backend.pot\n"
 "X-Crowdin-File-ID: 40\n"
 
 #: core/admin.py:71
 msgid "Personal info"
-msgstr ""
+msgstr "Личные данные"
 
 #: core/admin.py:84
 msgid "Permissions"
-msgstr ""
+msgstr "Разрешения"
 
 #: core/admin.py:95
 msgid "Important dates"
-msgstr ""
+msgstr "Важные даты"
 
 #: core/admin.py:247
 msgid "Statistics"
-msgstr ""
+msgstr "Статистика"
 
 #: core/admin.py:264
 msgid "Metadata"
-msgstr ""
+msgstr "Метаданные"
 
 #: core/admin.py:292 core/admin.py:315
 msgid "Labels"
-msgstr ""
+msgstr "Ярлыки"
 
 #: core/admin.py:298
 msgid "No labels"
-msgstr ""
+msgstr "Без ярлыков"
 
 #: core/admin.py:435 core/templates/admin/core/message/change_list.html:8
 #: core/templates/admin/core/message/import_messages.html:21
 msgid "Import Messages"
-msgstr ""
+msgstr "Импорт сообщений"
 
 #: core/admin.py:465
 msgid "Import Messages from IMAP"
-msgstr ""
+msgstr "Импорт сообщений IMAP"
 
 #: core/admin.py:633
 msgid "Keys"
-msgstr ""
+msgstr "Ключи"
 
 #: core/api/serializers.py:1012
 msgid "An mailbox with this local part already exists in this domain."
-msgstr ""
+msgstr "Почтовый ящик с этой локальной частью уже существует в этом домене."
 
 #: core/api/viewsets/placeholder.py:48
 msgid "Name"
-msgstr ""
+msgstr "Имя"
 
 #: core/apps.py:12
 msgid "messages core application"
-msgstr ""
+msgstr "приложение для сообщений"
 
 #: core/authentication/backends.py:70
 msgid "Invalid response format or token verification failed"
-msgstr ""
+msgstr "Неверный формат ответа или проверка токена не удалась"
 
 #: core/authentication/backends.py:114
 msgid "User account is disabled"
-msgstr ""
+msgstr "Учётная запись пользователя отключена"
 
 #: core/models.py:70
 msgid "id"
-msgstr ""
+msgstr "id"
 
 #: core/models.py:71
 msgid "primary key for the record as UUID"
-msgstr ""
+msgstr "первичный ключ для записи как UUID"
 
 #: core/models.py:77
 msgid "created on"
-msgstr ""
+msgstr "создано"
 
 #: core/models.py:78
 msgid "date and time at which a record was created"
-msgstr ""
+msgstr "дата и время создания записи"
 
 #: core/models.py:83
 msgid "updated on"
-msgstr ""
+msgstr "обновлено"
 
 #: core/models.py:84
 msgid "date and time at which a record was last updated"
-msgstr ""
+msgstr "дата и время последнего обновления записи"
 
 #: core/models.py:120
 msgid "We couldn't find a user with this sub but the email is already associated with a registered user."
-msgstr ""
+msgstr "Мы не смогли найти пользователя с этими данными, но этот адрес уже связан с зарегистрированным пользователем."
 
 #: core/models.py:133
 msgid "Enter a valid sub. This value may contain only letters, numbers, and @/./+/-/_/: characters."
-msgstr ""
+msgstr "Введите правильный префикс. Он может содержать только буквы, цифры и символы @/./+/-/_/."
 
 #: core/models.py:139
 msgid "sub"
-msgstr ""
+msgstr "префикс"
 
 #: core/models.py:141
 msgid "Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: characters only."
-msgstr ""
+msgstr "Обязательно. 255 символов или меньше. Только буквы, цифры и @/./+/-/_/: /."
 
 #: core/models.py:150
 msgid "full name"
-msgstr ""
+msgstr "полное имя"
 
 #: core/models.py:152
 msgid "identity email address"
-msgstr ""
+msgstr "личный адрес электронной почты"
 
 #: core/models.py:157
 msgid "admin email address"
-msgstr ""
+msgstr "e-mail администратора"
 
 #: core/models.py:164
 msgid "language"
-msgstr ""
+msgstr "язык"
 
 #: core/models.py:165
 msgid "The language in which the user wants to see the interface."
-msgstr ""
+msgstr "Язык, на котором пользователь хочет видеть интерфейс."
 
 #: core/models.py:171
 msgid "The timezone in which the user wants to see times."
-msgstr ""
+msgstr "Часовой пояс, в котором пользователь хочет видеть время."
 
 #: core/models.py:174
 msgid "staff status"
-msgstr ""
+msgstr "статус сотрудника"
 
 #: core/models.py:176
 msgid "Whether the user can log into this admin site."
-msgstr ""
+msgstr "Может ли пользователь войти на этот административный сайт."
 
 #: core/models.py:179
 msgid "active"
-msgstr ""
+msgstr "активный"
 
 #: core/models.py:182
 msgid "Whether this user should be treated as active. Unselect this instead of deleting accounts."
-msgstr ""
+msgstr "Должен ли пользователь рассматриваться как активный. Альтернатива удалению учётных записей."
 
 #: core/models.py:188 core/models.py:275
 msgid "Custom attributes"
-msgstr ""
+msgstr "Настраиваемые атрибуты"
 
 #: core/models.py:191
 msgid "Metadata to sync to the user in the identity provider."
-msgstr ""
+msgstr "Метаданные для синхронизации с пользователем в поставщике идентификационных данных."
 
 #: core/models.py:201
 msgid "user"
-msgstr ""
+msgstr "пользователь"
 
 #: core/models.py:202
 msgid "users"
-msgstr ""
+msgstr "пользователи"
 
 #: core/models.py:249
 msgid "Enter a valid domain name. This value may contain only lowercase letters, numbers, dots and - characters."
-msgstr ""
+msgstr "Введите правильное имя домена. Это значение может содержать только строчные буквы, цифры, точки и символы дефиса."
 
 #: core/models.py:255 core/models.py:422 core/models.py:890 core/models.py:1117
 #: core/models.py:1657
 msgid "name"
-msgstr ""
+msgstr "имя"
 
 #: core/models.py:263
 msgid "oidc autojoin"
-msgstr ""
+msgstr "oidc autojoin"
 
 #: core/models.py:265
 msgid "Create mailboxes automatically based on OIDC emails."
-msgstr ""
+msgstr "Создание почтовых ящиков автоматически на основе сообщений OIDC."
 
 #: core/models.py:269
 msgid "Identity sync"
-msgstr ""
+msgstr "Синхронизация личных данных"
 
 #: core/models.py:271
 msgid "Sync mailboxes to an identity provider."
-msgstr ""
+msgstr "Синхронизировать почтовые ящики с поставщиком идентификационных данных."
 
 #: core/models.py:279
 msgid "Metadata to sync to the maildomain group in the identity provider."
-msgstr ""
+msgstr "Метаданные для синхронизации с пользователем в поставщике идентификационных данных."
 
 #: core/models.py:285
 msgid "mail domain"
-msgstr ""
+msgstr "почтовый домен"
 
 #: core/models.py:286
 msgid "mail domains"
-msgstr ""
+msgstr "почтовые домены"
 
 #: core/models.py:422
 msgid "Human-readable name for this channel"
-msgstr ""
+msgstr "Человекочитаемое название для этого канала"
 
 #: core/models.py:426 core/models.py:1150 core/models.py:1676
 msgid "type"
-msgstr ""
+msgstr "тип"
 
 #: core/models.py:426
 msgid "Type of channel"
-msgstr ""
+msgstr "Тип канала"
 
 #: core/models.py:430
 msgid "settings"
-msgstr ""
+msgstr "настройки"
 
 #: core/models.py:433
 msgid "Channel-specific configuration settings"
-msgstr ""
+msgstr "Специфичные настройки конфигурации канала"
 
 #: core/models.py:442
 msgid "Mailbox that receives messages from this channel"
-msgstr ""
+msgstr "Почтовый ящик, который получает сообщения от этого канала"
 
 #: core/models.py:451
 msgid "Mail domain that owns this channel"
-msgstr ""
+msgstr "Домен почты, у которого есть этот канал"
 
 #: core/models.py:456
 msgid "channel"
-msgstr ""
+msgstr "канал"
 
 #: core/models.py:457
 msgid "channels"
-msgstr ""
+msgstr "каналы"
 
 #: core/models.py:476
 msgid "local part"
-msgstr ""
+msgstr "локальная часть"
 
 #: core/models.py:490
 msgid "is identity"
-msgstr ""
+msgstr "является личностью"
 
 #: core/models.py:493
 msgid "Whether this mailbox identifies a person (i.e. is not an alias or a group)"
-msgstr ""
+msgstr "Определяет ли этот почтовый ящик человека (т.е. не является псевдонимом или группой)"
 
 #: core/models.py:503
 msgid "mailbox"
-msgstr ""
+msgstr "почтовый ящик"
 
 #: core/models.py:504
 msgid "mailboxes"
-msgstr ""
+msgstr "почтовые ящики"
 
 #: core/models.py:701 core/models.py:1099 core/models.py:1575
 msgid "role"
-msgstr ""
+msgstr "роль"
 
 #: core/models.py:707
 msgid "accessed at"
-msgstr ""
+msgstr "доступ в"
 
 #: core/models.py:712
 msgid "mailbox access"
-msgstr ""
+msgstr "доступ к почтовому ящику"
 
 #: core/models.py:713
 msgid "mailbox accesses"
-msgstr ""
+msgstr "доступ к почтовому ящику"
 
 #: core/models.py:737 core/models.py:1182
 msgid "subject"
-msgstr ""
+msgstr "тема"
 
 #: core/models.py:738
 msgid "snippet"
-msgstr ""
+msgstr "фрагмент"
 
 #: core/models.py:739
 msgid "has unread"
-msgstr ""
+msgstr "содержит непрочитанные"
 
 #: core/models.py:740
 msgid "has trashed"
-msgstr ""
+msgstr "содержит удалённые"
 
 #: core/models.py:741
 msgid "has draft"
-msgstr ""
+msgstr "содержит черновики"
 
 #: core/models.py:742
 msgid "has starred"
-msgstr ""
+msgstr "содержит избранное"
 
 #: core/models.py:743
 msgid "has sender"
-msgstr ""
+msgstr "содержит отправленные"
 
 #: core/models.py:744
 msgid "has messages"
-msgstr ""
+msgstr "содержит сообщения"
 
 #: core/models.py:745 core/models.py:1196
 msgid "has attachments"
-msgstr ""
+msgstr "содержит вложения"
 
 #: core/models.py:746 core/models.py:1194
 msgid "is spam"
-msgstr ""
+msgstr "является спамом"
 
 #: core/models.py:747
 msgid "has active"
-msgstr ""
+msgstr "содержит активные"
 
 #: core/models.py:748
 msgid "messaged at"
-msgstr ""
+msgstr "сообщение в"
 
 #: core/models.py:749
 msgid "sender names"
-msgstr ""
+msgstr "имена отправителя"
 
 #: core/models.py:750
 msgid "summary"
-msgstr ""
+msgstr "сводка"
 
 #: core/models.py:754
 msgid "thread"
-msgstr ""
+msgstr "обсуждение"
 
 #: core/models.py:755
 msgid "threads"
-msgstr ""
+msgstr "обсуждения"
 
 #: core/models.py:893
 msgid "Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/Projects')"
-msgstr ""
+msgstr "Имя ярлыка/папки (может использовать косую черту для задания иерархии, например 'Работа/Проекты')"
 
 #: core/models.py:897
 msgid "slug"
-msgstr ""
+msgstr "псевдоним"
 
 #: core/models.py:899
 msgid "URL-friendly version of the name"
-msgstr ""
+msgstr "Версия имени, совместимая с форматом адресов URL"
 
 #: core/models.py:902
 msgid "color"
-msgstr ""
+msgstr "цвет"
 
 #: core/models.py:905
 msgid "Color of the label in hex format (e.g. #FF0000)"
-msgstr ""
+msgstr "Цвет ярлыка в шестнадцатеричном формате (например, #FF0000)"
 
 #: core/models.py:911
 msgid "Mailbox that owns this label"
-msgstr ""
+msgstr "Почтовый ящик с этим ярлыком"
 
 #: core/models.py:916
 msgid "Threads that have this label"
-msgstr ""
+msgstr "Обсуждения с этим ярлыком"
 
 #: core/models.py:920
 msgid "description"
-msgstr ""
+msgstr "описание"
 
 #: core/models.py:924
 msgid "Description of the label, used by AI to understand its purpose"
-msgstr ""
+msgstr "Описание ярлыка, используемое ИИ для понимания его назначения"
 
 #: core/models.py:927
 msgid "auto labeling"
-msgstr ""
+msgstr "автомаркировка ярлыками"
 
 #: core/models.py:929
 msgid "Whether this label should be automatically applied by AI"
-msgstr ""
+msgstr "Должен ли этот ярлык автоматически применяться ИИ"
 
 #: core/models.py:934
 msgid "label"
-msgstr ""
+msgstr "ярлык"
 
 #: core/models.py:935
 msgid "labels"
-msgstr ""
+msgstr "ярлыки"
 
 #: core/models.py:1106
 msgid "thread access"
-msgstr ""
+msgstr "доступ к обсуждению"
 
 #: core/models.py:1107
 msgid "thread accesses"
-msgstr ""
+msgstr "доступы к обсуждению"
 
 #: core/models.py:1118
 msgid "email"
-msgstr ""
+msgstr "эл. почта"
 
 #: core/models.py:1127
 msgid "contact"
-msgstr ""
+msgstr "контакт"
 
 #: core/models.py:1128
 msgid "contacts"
-msgstr ""
+msgstr "контакты"
 
 #: core/models.py:1155
 msgid "delivered at"
-msgstr ""
+msgstr "доставлено"
 
 #: core/models.py:1157
 msgid "delivery status"
-msgstr ""
+msgstr "состояние доставки"
 
 #: core/models.py:1162
 msgid "delivery message"
-msgstr ""
+msgstr "сообщение для доставки"
 
 #: core/models.py:1163
 msgid "retry count"
-msgstr ""
+msgstr "количество повторов"
 
 #: core/models.py:1164
 msgid "retry at"
-msgstr ""
+msgstr "повторить"
 
 #: core/models.py:1168
 msgid "message recipient"
-msgstr ""
+msgstr "получатель сообщения"
 
 #: core/models.py:1169
 msgid "message recipients"
-msgstr ""
+msgstr "получатели сообщения"
 
 #: core/models.py:1189
 msgid "is draft"
-msgstr ""
+msgstr "является черновиком"
 
 #: core/models.py:1190
 msgid "is sender"
-msgstr ""
+msgstr "отправитель"
 
 #: core/models.py:1191
 msgid "is starred"
-msgstr ""
+msgstr "помечено"
 
 #: core/models.py:1192
 msgid "is trashed"
-msgstr ""
+msgstr "в корзине"
 
 #: core/models.py:1193
 msgid "is unread"
-msgstr ""
+msgstr "непрочитано"
 
 #: core/models.py:1195
 msgid "is archived"
-msgstr ""
+msgstr "заархивировано"
 
 #: core/models.py:1198
 msgid "trashed at"
-msgstr ""
+msgstr "в корзине"
 
 #: core/models.py:1199
 msgid "sent at"
-msgstr ""
+msgstr "отправлено"
 
 #: core/models.py:1200
 msgid "read at"
-msgstr ""
+msgstr "прочитано"
 
 #: core/models.py:1201
 msgid "archived at"
-msgstr ""
+msgstr "архивировано"
 
 #: core/models.py:1203
 msgid "mime id"
-msgstr ""
+msgstr "mime id"
 
 #: core/models.py:1231
 msgid "Signature template for the message"
-msgstr ""
+msgstr "Шаблон подписи для сообщения"
 
 #: core/models.py:1243
 msgid "message"
-msgstr ""
+msgstr "сообщение"
 
 #: core/models.py:1244
 msgid "messages"
-msgstr ""
+msgstr "сообщения"
 
 #: core/models.py:1308 core/models.py:1331
 msgid "No subject"
-msgstr ""
+msgstr "Без темы"
 
 #: core/models.py:1319
 msgid "Message ID"
-msgstr ""
+msgstr "ID сообщения"
 
 #: core/models.py:1320
 msgid "From"
-msgstr ""
+msgstr "От"
 
 #: core/models.py:1321
 msgid "To"
-msgstr ""
+msgstr "Кому"
 
 #: core/models.py:1322
 msgid "CC"
-msgstr ""
+msgstr "Копия"
 
 #: core/models.py:1323
 msgid "Date"
-msgstr ""
+msgstr "Дата"
 
 #: core/models.py:1324
 msgid "Subject"
-msgstr ""
+msgstr "Тема"
 
 #: core/models.py:1325
 msgid "Body"
-msgstr ""
+msgstr "Текст сообщения"
 
 #: core/models.py:1424
 msgid "sha256 hash"
-msgstr ""
+msgstr "sha256 hash"
 
 #: core/models.py:1427
 msgid "SHA-256 hash of the uncompressed blob content"
-msgstr ""
+msgstr "Хэш SHA-256 без сжатого содержимого"
 
 #: core/models.py:1431
 msgid "file size"
-msgstr ""
+msgstr "размер файла"
 
 #: core/models.py:1431
 msgid "Size of the blob in bytes"
-msgstr ""
+msgstr "Размер блока в байтах"
 
 #: core/models.py:1435
 msgid "compressed size"
-msgstr ""
+msgstr "сжатый размер"
 
 #: core/models.py:1435
 msgid "Size of the compressed blob in bytes"
-msgstr ""
+msgstr "Размер сжатого блока в байтах"
 
 #: core/models.py:1439
 msgid "content type"
-msgstr ""
+msgstr "тип содержимого"
 
 #: core/models.py:1439
 msgid "MIME type of the blob"
-msgstr ""
+msgstr "MIME тип блока"
 
 #: core/models.py:1443
 msgid "compression"
-msgstr ""
+msgstr "сжатие"
 
 #: core/models.py:1449
 msgid "raw content"
-msgstr ""
+msgstr "необработанное содержимое"
 
 #: core/models.py:1450
 msgid "Compressed binary content of the blob"
-msgstr ""
+msgstr "Сжатое двоичное содержимое блока"
 
 #: core/models.py:1459
 msgid "Mailbox that owns this blob"
-msgstr ""
+msgstr "Почтовый ящик, у которого есть этот блок"
 
 #: core/models.py:1467
 msgid "Mail domain that owns this blob"
-msgstr ""
+msgstr "Домен почты, у которого есть этот блок"
 
 #: core/models.py:1474
 msgid "blob"
-msgstr ""
+msgstr "блок"
 
 #: core/models.py:1475
 msgid "blobs"
-msgstr ""
+msgstr "блоки"
 
 #: core/models.py:1515
 msgid "file name"
-msgstr ""
+msgstr "имя файла"
 
 #: core/models.py:1517
 msgid "Original filename of the attachment"
-msgstr ""
+msgstr "Исходное имя файла вложения"
 
 #: core/models.py:1524
 msgid "Reference to the blob containing the attachment data"
-msgstr ""
+msgstr "Ссылка на блок, содержащий данные шаблона в формате Json"
 
 #: core/models.py:1531
 msgid "Mailbox that owns this attachment"
-msgstr ""
+msgstr "Почтовый ящик, у которого есть это вложение"
 
 #: core/models.py:1537
 msgid "Messages that use this attachment"
-msgstr ""
+msgstr "Сообщения, которые используют это вложение"
 
 #: core/models.py:1542
 msgid "attachment"
-msgstr ""
+msgstr "вложение"
 
 #: core/models.py:1543
 msgid "attachments"
-msgstr ""
+msgstr "вложения"
 
 #: core/models.py:1582
 msgid "mail domain access"
-msgstr ""
+msgstr "доступ к почтовому домену"
 
 #: core/models.py:1583
 msgid "mail domain accesses"
-msgstr ""
+msgstr "доступ к почтовому домену"
 
 #: core/models.py:1594
 msgid "selector"
-msgstr ""
+msgstr "селектор"
 
 #: core/models.py:1596
 msgid "DKIM selector (e.g., 'default', 'mail')"
-msgstr ""
+msgstr "Селектор DKIM (например, 'default', 'mail')"
 
 #: core/models.py:1600
 msgid "private key"
-msgstr ""
+msgstr "закрытый ключ"
 
 #: core/models.py:1601
 msgid "DKIM private key in PEM format (encrypted)"
-msgstr ""
+msgstr "Закрытый ключ DKIM в формате PEM (зашифрованный)"
 
 #: core/models.py:1605
 msgid "public key"
-msgstr ""
+msgstr "открытый ключ"
 
 #: core/models.py:1606
 msgid "DKIM public key for DNS record generation"
-msgstr ""
+msgstr "Открытый ключ DKIM для генерации DNS записей"
 
 #: core/models.py:1610
 msgid "algorithm"
-msgstr ""
+msgstr "алгоритм"
 
 #: core/models.py:1613
 msgid "DKIM signing algorithm"
-msgstr ""
+msgstr "Алгоритм подписи DKIM"
 
 #: core/models.py:1617
 msgid "key size"
-msgstr ""
+msgstr "размер ключа"
 
 #: core/models.py:1618
 msgid "Key size in bits (e.g., 2048, 4096 for RSA)"
-msgstr ""
+msgstr "Размер ключа в битах (например, 2048, 4096 для RSA)"
 
 #: core/models.py:1622 core/models.py:1683
 msgid "is active"
-msgstr ""
+msgstr "активный"
 
 #: core/models.py:1624
 msgid "Whether this DKIM key is active and should be used for signing"
-msgstr ""
+msgstr "Является ли этот ключ DKIM активным и должен использоваться для подписания"
 
 #: core/models.py:1631
 msgid "Domain that owns this DKIM key"
-msgstr ""
+msgstr "Домен, владеющий этим ключом DKIM"
 
 #: core/models.py:1636
 msgid "DKIM key"
-msgstr ""
+msgstr "Ключ DKIM"
 
 #: core/models.py:1637
 msgid "DKIM keys"
-msgstr ""
+msgstr "Ключи DKIM"
 
 #: core/models.py:1660
 msgid "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')"
-msgstr ""
+msgstr "Название шаблона (например, 'Стандартный ответ', 'Не в офисе', 'Рабочая подпись')"
 
 #: core/models.py:1671
 msgid "Reference to the blob containing template content as JSON: {html: str, text: str, raw: any}"
-msgstr ""
+msgstr "Ссылка на блок, содержащий данные шаблона в формате JSON: {html: str, text: str, raw: any}"
 
 #: core/models.py:1679
 msgid "Type of template (reply, new_message, signature)"
-msgstr ""
+msgstr "Тип шаблона (ответить, новое_сообщение, подпись)"
 
 #: core/models.py:1685
 msgid "Whether this template is available for use"
-msgstr ""
+msgstr "Доступен ли этот шаблон для использования"
 
 #: core/models.py:1694
 msgid "Mail domain that can use this template"
-msgstr ""
+msgstr "Домен почты, который может использовать этот шаблон"
 
 #: core/models.py:1703
 msgid "Mailbox that can use this template"
-msgstr ""
+msgstr "Почтовый ящик, который может использовать этот шаблон"
 
 #: core/models.py:1707
 msgid "is forced"
-msgstr ""
+msgstr "обязательно"
 
 #: core/models.py:1710
 msgid "Whether this template is forced; no other template of the same type can be used in the same scope"
-msgstr ""
+msgstr "Может ли этот шаблон применяться в обязательном порядке; будет невозможно использовать другой шаблон того же типа в той же области"
 
 #: core/models.py:1716
 msgid "message template"
-msgstr ""
+msgstr "шаблон сообщения"
 
 #: core/models.py:1717
 msgid "message templates"
-msgstr ""
+msgstr "шаблоны сообщений"
 
 #: core/templates/admin/core/message/change_list.html:13
 #: core/templates/admin/core/message/import_imap.html:20
 msgid "Import from IMAP"
-msgstr ""
+msgstr "Импорт из IMAP"
 
 #: core/templates/admin/core/message/import_imap.html:17
 msgid "Home"
-msgstr ""
+msgstr "Главная"
 
 #: core/templates/admin/core/message/import_imap.html:32
 msgid "Please correct the error below."
-msgstr ""
+msgstr "Пожалуйста, исправьте следующую ошибку."
 
 #: core/templates/admin/core/message/import_imap.html:34
 msgid "Please correct the errors below."
-msgstr ""
+msgstr "Пожалуйста, исправьте следующие ошибки."
 
 #: core/templates/admin/core/message/import_imap.html:53
 msgid "Start Import"
-msgstr ""
+msgstr "Начать импорт"
 
 #: messages/settings.py:340
 msgid "English"
-msgstr ""
+msgstr "Английский"
 
 #: messages/settings.py:341
 msgid "French"
-msgstr ""
+msgstr "Французский"
