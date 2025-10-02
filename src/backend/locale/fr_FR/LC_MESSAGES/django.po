@@ -3,7 +3,7 @@ msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2025-10-01 16:36+0000\n"
-"PO-Revision-Date: 2025-10-01 22:29\n"
+"PO-Revision-Date: 2025-10-02 08:14\n"
 "Last-Translator: \n"
 "Language-Team: French\n"
 "Language: fr_FR\n"
@@ -759,3 +759,4 @@ msgstr "Anglais"
 #: messages/settings.py:341
 msgid "French"
 msgstr "Français"
+
