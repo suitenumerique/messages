@@ -620,8 +620,7 @@ class MessageSerializer(serializers.ModelSerializer):
     signature = ReadOnlyMessageTemplateSerializer(read_only=True, allow_null=True)
     stmsg_headers = serializers.SerializerMethodField(read_only=True)
 
-    @extend_schema_field(serializers.DictField())
-    def get_stmsg_headers(self, instance):
+    def get_stmsg_headers(self, instance) -> dict:
         """Return the STMSG headers of the message."""
         return instance.get_stmsg_headers()
 
