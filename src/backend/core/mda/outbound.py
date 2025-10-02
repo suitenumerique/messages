@@ -84,7 +84,7 @@ def prepare_outbound_message(
                     else signatures["text_body"]
                 )
                 html_body = (
-                    html_body + "<p>" + signatures["html_body"] + "</p>"
+                    html_body + signatures["html_body"]
                     if html_body
                     else signatures["html_body"]
                 )
