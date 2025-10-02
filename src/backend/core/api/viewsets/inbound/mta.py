@@ -145,6 +145,19 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
             mta_metadata["original_recipients"],  # Log all intended recipients
         )
 
+        if "client_helo" in mta_metadata:
+            prepend_headers = [
+                (
+                    "Received",
+                    f"from {mta_metadata['client_helo']} ("
+                    + f"{mta_metadata['client_hostname']} [{mta_metadata['client_address']}]);",
+                ),
+            ]
+
+            raw_data = (
+                "\r\n".join([f"{k}: {v}" for k, v in prepend_headers]) + "\r\n"
+            ).encode("utf-8") + raw_data
+
         # Parse the email message once
         try:
             parsed_email = parse_email_message(raw_data)

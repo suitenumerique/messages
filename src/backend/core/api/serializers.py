@@ -618,6 +618,12 @@ class MessageSerializer(serializers.ModelSerializer):
     )
 
     signature = ReadOnlyMessageTemplateSerializer(read_only=True, allow_null=True)
+    stmsg_headers = serializers.SerializerMethodField(read_only=True)
+
+    @extend_schema_field(serializers.DictField())
+    def get_stmsg_headers(self, instance):
+        """Return the STMSG headers of the message."""
+        return instance.get_stmsg_headers()
 
     @extend_schema_field(serializers.ListField(child=serializers.DictField()))
     def get_textBody(self, instance):  # pylint: disable=invalid-name
@@ -746,6 +752,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "is_trashed",
             "has_attachments",
             "signature",
+            "stmsg_headers",
         ]
         read_only_fields = fields  # Mark all as read-only
 

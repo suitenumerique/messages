@@ -1262,6 +1262,18 @@ class Message(BaseModel):
         """Get a parsed field from the parsed email data."""
         return (self.get_parsed_data() or {}).get(field_name)
 
+    def get_mime_headers(self) -> Dict[str, str]:
+        """Get the MIME headers of the message."""
+        return self.get_parsed_data().get("headers", {})
+
+    def get_stmsg_headers(self) -> Dict[str, str]:
+        """Get the STMSG headers of the message."""
+        return {
+            k[len("x-stmsg-") :].lower(): v
+            for k, v in self.get_parsed_data().get("headers", {}).items()
+            if k.startswith("x-stmsg-")
+        }
+
     def generate_mime_id(self) -> str:
         """Get the RFC5322 Message-ID of the message."""
         _id = base64.urlsafe_b64encode(uuid.uuid4().bytes).rstrip(b"=").decode("ascii")

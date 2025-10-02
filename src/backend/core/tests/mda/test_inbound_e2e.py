@@ -134,7 +134,13 @@ Content-Disposition: attachment; filename="{attachment_data["filename"]}"
 
         # Step 1: Submit email to MTA API with real JWT
         token = valid_jwt_token(
-            multipart_email_with_attachment, {"original_recipients": [recipient_email]}
+            multipart_email_with_attachment,
+            {
+                "original_recipients": [recipient_email],
+                "client_helo": "client.helo",
+                "client_hostname": "client.hostname",
+                "client_address": "127.1.2.3",
+            },
         )
 
         response = api_client_service_account.post(
@@ -181,6 +187,15 @@ Content-Disposition: attachment; filename="{attachment_data["filename"]}"
             "Message with expected subject not found in API response"
         )
         message_id = message_data["id"]
+
+        # Check message EML
+        response = client.get(reverse("messages-eml", kwargs={"id": message_id}))
+        assert response.status_code == status.HTTP_200_OK
+        assert (
+            response.content
+            == b"Received: from client.helo (client.hostname [127.1.2.3]);\r\n"
+            + multipart_email_with_attachment
+        )
 
         # Verify message content via API
         assert message_data["sender"]["email"] == "sender@example.com"

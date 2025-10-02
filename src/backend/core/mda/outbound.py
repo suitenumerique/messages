@@ -248,8 +248,6 @@ def send_message(message: models.Message, force_mta_out: bool = False):
         message.sent_at = timezone.now()
         message.save(update_fields=["sent_at"])
 
-        mime_data = parse_email_message(message.blob.get_content())
-
         # Include all recipients in the envelope that have not been delivered yet, including BCC
         envelope_to = {
             recipient.contact.email: recipient
@@ -328,14 +326,18 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                 )
 
         external_recipients = set()
+        parsed_email = None
+        blob_content = message.blob.get_content()
         for recipient_email in envelope_to:
             if (
                 check_local_recipient(recipient_email, create_if_missing=True)
                 and not force_mta_out
             ):
                 try:
+                    if parsed_email is None:
+                        parsed_email = parse_email_message(blob_content)
                     delivered = deliver_inbound_message(
-                        recipient_email, mime_data, message.blob.get_content()
+                        recipient_email, parsed_email, blob_content
                     )
                     _mark_delivered(recipient_email, delivered, True)
                 except Exception as e:
@@ -351,7 +353,9 @@ def send_message(message: models.Message, force_mta_out: bool = False):
 
         if external_recipients:
             try:
-                statuses = send_outbound_message(external_recipients, message)
+                statuses = send_outbound_message(
+                    external_recipients, message, blob_content
+                )
                 for recipient_email, status in statuses.items():
                     _mark_delivered(
                         recipient_email,
@@ -377,14 +381,14 @@ def send_message(message: models.Message, force_mta_out: bool = False):
 
 
 def send_outbound_message(
-    recipient_emails: set[str], message: models.Message
+    recipient_emails: set[str], message: models.Message, mime_data: bytes
 ) -> dict[str, Any]:
     """Send an existing Message object via MTA out (SMTP) or direct MX if not configured."""
 
     return send_outbound_email(
         recipient_emails,
         message.sender.email,
-        message.blob.get_content(),
+        mime_data,
         message.sender.mailbox.domain.custom_attributes or {},
     )
 
