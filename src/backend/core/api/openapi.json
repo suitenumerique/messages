@@ -5882,6 +5882,12 @@
                         ],
                         "readOnly": true,
                         "nullable": true
+                    },
+                    "stmsg_headers": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "description": "Return the STMSG headers of the message.",
+                        "readOnly": true
                     }
                 },
                 "required": [
@@ -5903,6 +5909,7 @@
                     "sender",
                     "sent_at",
                     "signature",
+                    "stmsg_headers",
                     "subject",
                     "textBody",
                     "thread_id",

@@ -145,6 +145,9 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
             mta_metadata["original_recipients"],  # Log all intended recipients
         )
 
+        def sanitize_header(header: str) -> str:
+            return header.replace("\r", "").replace("\n", "")[0:255]
+
         if "client_helo" in mta_metadata:
             prepend_headers = [
                 (
@@ -155,7 +158,8 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
             ]
 
             raw_data = (
-                "\r\n".join([f"{k}: {v}" for k, v in prepend_headers]) + "\r\n"
+                "\r\n".join([f"{k}: {sanitize_header(v)}" for k, v in prepend_headers])
+                + "\r\n"
             ).encode("utf-8") + raw_data
 
         # Parse the email message once

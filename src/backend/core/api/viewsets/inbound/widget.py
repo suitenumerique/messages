@@ -121,11 +121,23 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             target_email = str(mailbox)
             target_name = str(mailbox)
 
-        prepend_headers = [
-            ("X-StMsg-Sender-Auth", "none"),
-            ("X-StMsg-Widget-Referer", request.META.get("HTTP_REFERER")),
-            ("Received", f"from widget ({request.META.get('REMOTE_ADDR')})"),
-        ]
+        def sanitize_header(header: str) -> str:
+            return header.replace("\r", "").replace("\n", "")[0:1000]
+
+        prepend_headers = [("X-StMsg-Sender-Auth", "none")]
+        if request.META.get("HTTP_REFERER"):
+            prepend_headers.append(
+                (
+                    "X-StMsg-Widget-Referer",
+                    sanitize_header(request.META.get("HTTP_REFERER")),
+                ),
+            )
+        prepend_headers.append(
+            (
+                "Received",
+                f"from widget ({sanitize_header(request.META.get('REMOTE_ADDR'))})",
+            ),
+        )
 
         # Build a JMAP-like structured format that we could have got from parse_email_message()
         parsed_email = {

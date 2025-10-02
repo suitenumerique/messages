@@ -79,6 +79,7 @@ export * from "./maildomains_message_templates_list_type";
 export * from "./message";
 export * from "./message_html_body_item";
 export * from "./message_signature";
+export * from "./message_stmsg_headers";
 export * from "./message_template";
 export * from "./message_template_request";
 export * from "./message_template_type_choices";
