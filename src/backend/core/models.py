@@ -1126,7 +1126,7 @@ class Contact(BaseModel):
         db_table = "messages_contact"
         verbose_name = _("contact")
         verbose_name_plural = _("contacts")
-        unique_together = ("email", "mailbox")
+        unique_together = ("email", "mailbox", "name")
 
     def __str__(self):
         if self.name:

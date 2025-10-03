@@ -67,6 +67,7 @@ def email_with_duplicate_recipients():
     msg["From"] = "sender@example.com"
     msg["To"] = "recipient@example.com, recipient@example.com"  # Duplicate TO
     msg["Cc"] = "cc@example.com, cc@example.com"  # Duplicate CC
+    msg["Bcc"] = "Jean BCC <bcc@example.com>, Marie BCC <bcc@example.com>, bcc@example.com"  # Duplicate BCC
     msg["Subject"] = "Test Subject with Duplicates"
     msg["Message-ID"] = "<duplicate-test123@example.com>"
     msg["Date"] = "Thu, 1 Jan 2024 12:00:00 +0000"
@@ -442,9 +443,6 @@ def test_imap_import_task_duplicate_recipients(
         recipients = message.recipients.all()
         recipient_emails = [r.contact.email for r in recipients]
 
-        # Should have unique recipients (no duplicates)
-        assert len(recipient_emails) == len(set(recipient_emails))
-
         # Should have the expected recipients
         assert "recipient@example.com" in recipient_emails
         assert "cc@example.com" in recipient_emails
@@ -456,9 +454,13 @@ def test_imap_import_task_duplicate_recipients(
         cc_recipients = message.recipients.filter(
             type=enums.MessageRecipientTypeChoices.CC
         )
+        bcc_recipients = message.recipients.filter(
+            type=enums.MessageRecipientTypeChoices.BCC
+        )
 
         assert to_recipients.count() == 1  # Only one TO recipient (duplicate removed)
         assert cc_recipients.count() == 1  # Only one CC recipient (duplicate removed)
+        assert bcc_recipients.count() == 3  # There is differents names for the same email so 3 contacts are created
 
         # Verify the content
         assert (

@@ -630,8 +630,10 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
                 models.Contact(email=email).full_clean(
                     exclude=["mailbox", "name"]
                 )  # Validate
+
                 recipient_contact, created = models.Contact.objects.get_or_create(
                     email=email,
+                    name=name or email.split("@")[0],
                     mailbox=mailbox,  # Associate contact with the recipient mailbox
                     defaults={"name": name or email.split("@")[0], "email": email},
                 )
