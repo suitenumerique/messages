@@ -165,6 +165,7 @@ lint: \
   back-lint \
   front-lint \
   front-ts-check \
+  widgets-lint \
   mta-in-lint \
   mta-out-lint
 .PHONY: lint
@@ -464,12 +465,25 @@ widgets-build: ## build the widgets
 	$(COMPOSE) run --build --rm widgets-dev npm run build
 .PHONY: widgets-build
 
+widgets-lint: ## lint the widgets
+	$(COMPOSE) run --build --rm widgets-dev npm run lint
+.PHONY: widgets-lint
+
 widgets-shell: ## open a shell in the widgets container
 	$(COMPOSE) run --build --rm widgets-dev /bin/sh
 .PHONY: widgets-shell
 
 widgets-start: ## start the widgets container
 	$(COMPOSE) up --force-recreate --build -d widgets-dev --wait
+	@echo "$(BOLD)"
+	@echo "╔══════════════════════════════════════════════════════════════════════════════╗"
+	@echo "║                                                                              ║"
+	@echo "║  🚀 Widgets development server with Live Reload is started! 🚀               ║"
+	@echo "║                                                                              ║"
+	@echo "║  Open your browser at http://localhost:8905                                  ║"
+	@echo "║                                                                              ║"
+	@echo "╚══════════════════════════════════════════════════════════════════════════════╝"
+	@echo "$(RESET)"
 .PHONY: widgets-start
 
 widgets-deploy: ## deploy the widgets to an S3 bucket

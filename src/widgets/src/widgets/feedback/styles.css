@@ -24,7 +24,7 @@ h6 {
   padding: 16px;
   font-weight: 600;
   font-size: 16px;
-  margin:0;
+  margin: 0;
 }
 
 #close {
@@ -85,11 +85,14 @@ form {
   transition: background 0.2s;
 }
 
-#submit:hover, #close:hover {
+#submit:hover,
+#close:hover {
   background: #1212ff;
 }
 
-#feedback-text:focus, #email:focus, #submit:focus {
+#feedback-text:focus,
+#email:focus,
+#submit:focus {
   outline: 2px solid #0a76f6;
   border-color: white;
 }
@@ -140,7 +143,7 @@ form {
 #error {
   color: #dc3545;
   margin-bottom: 12px;
-} 
+}
 #error:empty {
   margin: 0;
 }
@@ -149,7 +152,7 @@ form {
 @media (max-width: 420px) {
   #wrapper {
     width: 100%;
-    right:0px !important;
+    right: 0px !important;
     border-radius: 0;
   }
 }

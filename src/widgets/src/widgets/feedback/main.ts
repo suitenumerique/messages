@@ -1,7 +1,7 @@
-import styles from './styles.css?inline'
-import { createShadowWidget } from '../../shared/shadow-dom'
-import { installHook } from '../../shared/script'
-import { listenEvent, triggerEvent } from '../../shared/events'
+import styles from "./styles.css?inline";
+import { createShadowWidget } from "../../shared/shadow-dom";
+import { installHook } from "../../shared/script";
+import { listenEvent, triggerEvent } from "../../shared/events";
 
 const widgetName = "feedback";
 
@@ -39,8 +39,7 @@ type FeedbackWidgetArgs = {
   rightOffset?: number;
 };
 
-listenEvent(widgetName, 'init', null, false, async (args: FeedbackWidgetArgs) => {
-
+listenEvent(widgetName, "init", null, false, async (args: FeedbackWidgetArgs) => {
   if (!args.api || !args.channel) {
     console.error("Feedback widget requires an API URL and a channel ID");
     return;
@@ -49,29 +48,31 @@ listenEvent(widgetName, 'init', null, false, async (args: FeedbackWidgetArgs) =>
   let configData: ConfigData | undefined;
   try {
     const config = await fetch(`${args.api}config/`, {
-      'headers': {
-        'X-Channel-ID': args.channel
-      }
+      headers: {
+        "X-Channel-ID": args.channel,
+      },
     });
-    const configResponse = await config.json() as ConfigResponse;
-    if (!configResponse.success) throw new Error(configResponse.detail || 'Unknown error');
-    if (configResponse.captcha) throw new Error('Captcha is not supported yet');
+    const configResponse = (await config.json()) as ConfigResponse;
+    if (!configResponse.success) throw new Error(configResponse.detail || "Unknown error");
+    if (configResponse.captcha) throw new Error("Captcha is not supported yet");
     configData = configResponse.config;
   } catch (error) {
     console.error("Error fetching config", error);
-    triggerEvent(widgetName, 'closed');
+    triggerEvent(widgetName, "closed");
     return;
   }
 
-  const title = args.title || configData?.title || 'Feedback';
-  const placeholder = args.placeholder || configData?.placeholder || 'Share your feedback...';
-  const emailPlaceholder = args.emailPlaceholder || configData?.emailPlaceholder || 'Your email...';
-  const submitText = args.submitText || configData?.submitText || 'Send Feedback';
-  const successText = args.successText || configData?.successText || 'Thank you for your feedback!';
-  const successText2 = args.successText2 || configData?.successText2 || '';
-  const closeLabel = args.closeLabel || configData?.closeLabel || 'Close the feedback widget';
-  
-  const htmlContent = `<div id="wrapper">` +
+  const title = args.title || configData?.title || "Feedback";
+  const placeholder = args.placeholder || configData?.placeholder || "Share your feedback...";
+  const emailPlaceholder = args.emailPlaceholder || configData?.emailPlaceholder || "Your email...";
+  const submitText = args.submitText || configData?.submitText || "Send Feedback";
+  const successText = args.successText || configData?.successText || "Thank you for your feedback!";
+  const successText2 = args.successText2 || configData?.successText2 || "";
+  const closeLabel = args.closeLabel || configData?.closeLabel || "Close the feedback widget";
+
+  /* prettier-ignore */
+  const htmlContent =
+    `<div id="wrapper">` +
       `<div id="header">` +
         `<h6 id="title"></h6>` +
         `<button id="close" tabindex="4">&times;</button>` +
@@ -95,36 +96,36 @@ listenEvent(widgetName, 'init', null, false, async (args: FeedbackWidgetArgs) =>
   const shadowContainer = createShadowWidget(widgetName, htmlContent, styles);
   const shadowRoot = shadowContainer.shadowRoot!;
   const $ = shadowRoot.querySelector.bind(shadowRoot);
-  
-  const wrapper = $<HTMLDivElement>('#wrapper')!
-  const titleSpan = $<HTMLHeadingElement>('#title')!
-  const submitBtn = $<HTMLButtonElement>('#submit')!
-  const feedbackText = $<HTMLTextAreaElement>('#feedback-text')!
-  const errorDiv = $<HTMLParagraphElement>('#error')!
-  const closeBtn = $<HTMLButtonElement>('#close')!
-  const emailInput = $<HTMLInputElement>('#email')!
-  const form = $<HTMLFormElement>('form')!
-  const successDiv = $<HTMLDivElement>('#success')!
-  const successTextP = $<HTMLParagraphElement>('#success-text')!
-  const successText2P = $<HTMLParagraphElement>('#success-text2')!
 
-  wrapper.style.bottom = (20+(args.bottomOffset||0))+"px";
-  wrapper.style.right = (20+(args.rightOffset||0))+"px";
+  const wrapper = $<HTMLDivElement>("#wrapper")!;
+  const titleSpan = $<HTMLHeadingElement>("#title")!;
+  const submitBtn = $<HTMLButtonElement>("#submit")!;
+  const feedbackText = $<HTMLTextAreaElement>("#feedback-text")!;
+  const errorDiv = $<HTMLParagraphElement>("#error")!;
+  const closeBtn = $<HTMLButtonElement>("#close")!;
+  const emailInput = $<HTMLInputElement>("#email")!;
+  const form = $<HTMLFormElement>("form")!;
+  const successDiv = $<HTMLDivElement>("#success")!;
+  const successTextP = $<HTMLParagraphElement>("#success-text")!;
+  const successText2P = $<HTMLParagraphElement>("#success-text2")!;
+
+  wrapper.style.bottom = 20 + (args.bottomOffset || 0) + "px";
+  wrapper.style.right = 20 + (args.rightOffset || 0) + "px";
 
   titleSpan.textContent = title;
   feedbackText.placeholder = placeholder;
   emailInput.placeholder = emailPlaceholder;
   submitBtn.textContent = submitText;
-  closeBtn.setAttribute('aria-label', closeLabel);
+  closeBtn.setAttribute("aria-label", closeLabel);
 
   if (args.email) {
     emailInput.remove();
   }
 
-  form.addEventListener('submit', async (e) => {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    errorDiv.innerHTML = '';
-    const message = feedbackText.value.trim()
+    errorDiv.innerHTML = "";
+    const message = feedbackText.value.trim();
     const email = args.email || emailInput.value.trim();
     try {
       if (!message) {
@@ -135,51 +136,50 @@ listenEvent(widgetName, 'init', null, false, async (args: FeedbackWidgetArgs) =>
         emailInput.focus();
         throw new Error("Missing value");
       }
-      
+
       const ret = await fetch(configData?.submitUrl || `${args.api}deliver/`, {
-        'method': 'POST',
-        'headers': {
-          'Content-Type': 'application/json',
-          'X-Channel-ID': args.channel
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Channel-ID": args.channel,
         },
-        'body': JSON.stringify({ textBody: message, email })
+        body: JSON.stringify({ textBody: message, email }),
       });
       let retData;
       try {
         retData = await ret.json();
-      } catch (error) {
-        throw new Error('Invalid response from server');
+      } catch {
+        throw new Error("Invalid response from server");
       }
-      
-      if (!retData.success) throw new Error(retData.detail || 'Unknown error');
-  
+
+      if (!retData.success) throw new Error(retData.detail || "Unknown error");
+
       form.remove();
-      successDiv.style.display = 'flex';
-      requestAnimationFrame(() => {  // This RAF call allows screen readers to register the aria-live area
+      successDiv.style.display = "flex";
+      requestAnimationFrame(() => {
+        // This RAF call allows screen readers to register the aria-live area
         successTextP.textContent = successText;
         successText2P.textContent = successText2;
       });
-    
     } catch (error) {
-      errorDiv.style.display = 'block';
-      errorDiv.textContent = "⚠ " + (error instanceof Error ? error.message : 'Unknown error');
+      errorDiv.style.display = "block";
+      errorDiv.textContent = "⚠ " + (error instanceof Error ? error.message : "Unknown error");
     }
   });
 
   const closeWidget = () => {
     shadowRoot.host.remove();
-    triggerEvent(widgetName, 'closed');
-  }
+    triggerEvent(widgetName, "closed");
+  };
 
-  closeBtn.addEventListener('click', closeWidget);
-  listenEvent(widgetName, 'close', null, false, closeWidget);
+  closeBtn.addEventListener("click", closeWidget);
+  listenEvent(widgetName, "close", null, false, closeWidget);
 
   document.body.appendChild(shadowContainer);
 
   feedbackText.focus();
 
-  triggerEvent(widgetName, 'opened');
-  
+  triggerEvent(widgetName, "opened");
 });
 
 installHook(widgetName);
