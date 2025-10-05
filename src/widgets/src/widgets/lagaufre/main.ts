@@ -36,14 +36,17 @@ type GaufreWidgetArgs = {
   background?: string;
   headerLogo?: string;
   headerUrl?: string;
+  open?: boolean;
 };
 
+// Initialize widget (load data and prepare shadow DOM)
 listenEvent(widgetName, "init", null, false, async (args: GaufreWidgetArgs) => {
-
-    if (!args.api && !args.data) {
+  if (!args.api && !args.data) {
     console.error("Missing API URL");
     return;
   }
+
+  let isVisible = false;
 
   let headerHtml = "";
   if (args.headerLogo && args.headerUrl) {
@@ -95,7 +98,6 @@ listenEvent(widgetName, "init", null, false, async (args: GaufreWidgetArgs) => {
 
   // Apply positioning styles
   wrapper.style.position = position;
-
   wrapper.style.top = typeof top === "number" ? `${top}px` : "unset";
   wrapper.style.bottom = typeof bottom === "number" ? `${bottom}px` : "unset";
   wrapper.style.left = typeof left === "number" ? `${left}px` : "unset";
@@ -111,6 +113,9 @@ listenEvent(widgetName, "init", null, false, async (args: GaufreWidgetArgs) => {
     wrapper.style.background = args.background;
   }
 
+  // Initially hide the widget
+  wrapper.style.display = "none";
+
   const showError = (message: string) => {
     loadingDiv.style.display = "none";
     servicesContainer.style.display = "none";
@@ -118,7 +123,7 @@ listenEvent(widgetName, "init", null, false, async (args: GaufreWidgetArgs) => {
     errorDiv.textContent = message;
   };
 
-  const showServices = (data: ServicesResponse) => {
+  const renderServices = (data: ServicesResponse) => {
     loadingDiv.style.display = "none";
     errorDiv.style.display = "none";
     servicesContainer.style.display = "block";
@@ -154,12 +159,12 @@ listenEvent(widgetName, "init", null, false, async (args: GaufreWidgetArgs) => {
     servicesContainer.appendChild(servicesGrid);
   };
 
+  // Load data
   if (args.data) {
-    showServices(args.data);
+    renderServices(args.data);
   } else {
     // Fetch services from API
     try {
-
       const response = await fetch(args.api!, {
         method: "GET",
       });
@@ -169,7 +174,7 @@ listenEvent(widgetName, "init", null, false, async (args: GaufreWidgetArgs) => {
       if (data.error) {
         showError(`Error: ${JSON.stringify(data.error)}`);
       } else if (data.services && data.services.length > 0) {
-        showServices(data);
+        renderServices(data);
       } else {
         showError("No services found");
       }
@@ -178,37 +183,65 @@ listenEvent(widgetName, "init", null, false, async (args: GaufreWidgetArgs) => {
     }
   }
 
-  const closeWidget = () => {
-    shadowRoot.host.remove();
-    triggerEvent(widgetName, "closed");
-  };
-
-  // Close button click handler
-  closeBtn.addEventListener("click", closeWidget);
-
-  // OK button click handler (mobile only)
-  okBtn.addEventListener("click", closeWidget);
-
-  // Listen for programmatic close events
-  listenEvent(widgetName, "close", null, false, closeWidget);
-
-  // Click outside to close
   const handleClickOutside = (event: MouseEvent) => {
     if (!shadowContainer.contains(event.target as Node)) {
-      closeWidget();
+      triggerEvent(widgetName, "close");
     }
   };
 
-  // Add click outside listener after a short delay to prevent immediate closing
-  setTimeout(() => {
-    document.addEventListener("click", handleClickOutside);
-  }, 100);
+  // Open widget (show the prepared shadow DOM)
+  listenEvent(widgetName, "open", null, false, () => {
+    wrapper.style.display = "block";
 
-  // TODO: listen to "escape" key ?
+    // Add click outside listener after a short delay to prevent immediate closing or double-clicks.
+    setTimeout(() => {
+      isVisible = true;
+      document.addEventListener("click", handleClickOutside);
+    }, 300);
 
+    triggerEvent(widgetName, "opened");
+  });
+
+  // Close widget (hide the shadow DOM)
+  listenEvent(widgetName, "close", null, false, () => {
+    if (!isVisible) {
+      return; // Already closed
+    }
+
+    wrapper.style.display = "none";
+    isVisible = false;
+
+    // Remove click outside listener
+    document.removeEventListener("click", handleClickOutside);
+
+    triggerEvent(widgetName, "closed");
+  });
+
+  // Toggle widget visibility
+  listenEvent(widgetName, "toggle", null, false, () => {
+    if (isVisible) {
+      triggerEvent(widgetName, "close");
+    } else {
+      triggerEvent(widgetName, "open");
+    }
+  });
+
+  // Close button click handlers
+  okBtn.addEventListener("click", () => {
+    triggerEvent(widgetName, "close");
+  });
+  closeBtn.addEventListener("click", () => {
+    triggerEvent(widgetName, "close");
+  });
+
+  // Add to DOM but keep hidden
   document.body.appendChild(shadowContainer);
 
-  triggerEvent(widgetName, "opened");
+  triggerEvent(widgetName, "initialized");
+
+  if (args.open) {
+    triggerEvent(widgetName, "open");
+  }
 });
 
 installHook(widgetName);

@@ -65,7 +65,8 @@
             <button onclick="openBasicWidget(this)">Open La Gaufre Widget</button>
             <div class="code-block"><pre>
 _stmsg_widget.push(['lagaufre', 'init', {
-    api: '/demo/lagaufre-data.json'
+    api: '/demo/lagaufre-data.json',
+    open: true
 }]);</pre></div>
         </div>
 
@@ -75,7 +76,8 @@ _stmsg_widget.push(['lagaufre', 'init', {
             <button onclick="openBasicWidget(this)">Open with ANCT Data</button>
             <div class="code-block"><pre>
 _stmsg_widget.push(['lagaufre', 'init', {
-    api: 'https://operateurs.suite.anct.gouv.fr/api/v1.0/lagaufre/services/?operator=9f5624fc-ef99-4d10-ae3f-403a81eb16ef&siret=21870030000013'
+    api: 'https://operateurs.suite.anct.gouv.fr/api/v1.0/lagaufre/services/?operator=9f5624fc-ef99-4d10-ae3f-403a81eb16ef&siret=21870030000013',
+    open: true
 }]);</pre></div>
         </div>
 
@@ -87,6 +89,7 @@ _stmsg_widget.push(['lagaufre', 'init', {
 // With gradient background
 _stmsg_widget.push(['lagaufre', 'init', {
     api: 'https://lasuite.numerique.gouv.fr/api/services',
+    open: true,
     background: 'linear-gradient(180deg, #eceffd 0%, #FFFFFF 20%)',
     headerLogo: 'https://lasuite.numerique.gouv.fr/_next/static/media/suite-numerique.ebdb6ce9.svg',
     headerUrl: 'https://lasuite.numerique.gouv.fr'
@@ -101,6 +104,7 @@ _stmsg_widget.push(['lagaufre', 'init', {
 // With custom font
 _stmsg_widget.push(['lagaufre', 'init', {
     api: '/demo/lagaufre-data.json',
+    open: true,
     fontFamily: 'Georgia, serif'
 }]);</pre></div>
         </div>
@@ -114,6 +118,7 @@ _stmsg_widget.push(['lagaufre', 'init', {
 // Top Right positioning
 _stmsg_widget.push(['lagaufre', 'init', {
     api: './lagaufre-data.json',
+    open: true,
     title: 'La Gaufre - Top Right',
     position: 'fixed',
     top: 20,
@@ -125,12 +130,27 @@ _stmsg_widget.push(['lagaufre', 'init', {
 // Bottom Left positioning
 _stmsg_widget.push(['lagaufre', 'init', {
     api: './lagaufre-data.json',
+    open: true,
     title: 'La Gaufre - Bottom Left',
     position: 'fixed',
     bottom: 20,
     left: 20
 }]);</pre></div>
             
+            <button onclick="openBasicWidget(this)">Below button (absolute)</button>
+            <div class="code-block"><pre>
+// Bottom Left positioning
+(button) => {
+    _stmsg_widget.push(['lagaufre', 'init', {
+        api: './lagaufre-data.json',
+        open: true,
+        title: 'La Gaufre - Bottom Left',
+        position: 'absolute',
+        top: button.offsetTop + button.offsetHeight + 10,
+        right: window.innerWidth - button.offsetLeft - button.offsetWidth
+    }]);
+}</pre></div>
+
         </div>
 
         <div class="demo-section">
@@ -139,6 +159,7 @@ _stmsg_widget.push(['lagaufre', 'init', {
             <button onclick="openBasicWidget(this)">Open La Gaufre Widget</button>
             <div class="code-block"><pre>
 _stmsg_widget.push(['lagaufre', 'init', {
+    open: true,
     data: {
         "services": [
             {
@@ -157,7 +178,7 @@ _stmsg_widget.push(['lagaufre', 'init', {
         </div>
 
         <div class="demo-section">
-            <h3>Close Widget Programmatically</h3>
+            <h3>Open and close Widget Programmatically</h3>
             <p>Close the widget programmatically after 2 seconds:</p>
             <button onclick="openBasicWidget(this)">Open Widget</button>
             <div class="code-block"><pre>
@@ -165,8 +186,16 @@ _stmsg_widget.push(['lagaufre', 'init', {
     api: '/demo/lagaufre-data.json'
 }]);
 setTimeout(() => {
+    _stmsg_widget.push(['lagaufre', 'open']);
+}, 300);
+setTimeout(() => {
     _stmsg_widget.push(['lagaufre', 'close']);
 }, 2000);</pre></div>
+
+            <button onclick="openBasicWidget(this)">Toggle Widget Programmatically</button>
+            <div class="code-block"><pre>
+_stmsg_widget.push(['lagaufre', 'toggle']);</pre></div>
+
         </div>
 
         <div class="demo-section">
@@ -174,18 +203,12 @@ setTimeout(() => {
             <p>The widget expects the following API response format:</p>
             <div class="code-block"><pre>
 {
-  "organization": {
-    "name": "Organization Name",
-    "type": "Organization Type", 
-    "siret": "12345678901234"
-  },
   "services": [
     {
-      "id": 1,
       "name": "Service Name",
       "url": "https://service-url.com",
-      "maturity": "production",
-      "logo": "/api/v1.0/servicelogo/1/",
+      "maturity": "stable",
+      "logo": "/path/to.svg",
       "subscribed": true
     }
   ]
@@ -213,7 +236,10 @@ setTimeout(() => {
                 
                 // Execute the code
                 try {
-                    eval(cleanCode);
+                    var ret = eval(cleanCode);
+                    if (typeof ret === 'function') {
+                        return ret(button);;
+                    }
                 } catch (error) {
                     console.error('Error executing widget code:', error);
                     alert('Error executing widget code: ' + error.message);
@@ -221,26 +247,6 @@ setTimeout(() => {
             } else {
                 console.error('No code block found after button');
             }
-        }
-        
-        function setupEventListeners() {
-            const eventLog = document.getElementById('event-log');
-            
-            document.addEventListener('stmsg-widget-lagaufre-opened', () => {
-                logEvent('Widget opened');
-            });
-            
-            document.addEventListener('stmsg-widget-lagaufre-closed', () => {
-                logEvent('Widget closed');
-            });
-            
-            function logEvent(message) {
-                const timestamp = new Date().toLocaleTimeString();
-                eventLog.innerHTML += `[${timestamp}] ${message}\n`;
-                eventLog.scrollTop = eventLog.scrollHeight;
-            }
-            
-            logEvent('Event listeners setup complete');
         }
         
     </script>

@@ -24,7 +24,7 @@ for (const widget of discoverWidgets()) {
                     entryFileNames: widget + '.js',
                     format: 'iife'
                 }
-            },
+            }
         },
     })
 }

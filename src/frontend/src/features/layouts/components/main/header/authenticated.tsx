@@ -7,6 +7,7 @@ import { SearchInput } from "@/features/forms/components/search-input";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useAuth, logout } from "@/features/auth";
 import { LanguagePicker } from "@/features/layouts/components/main/language-picker";
+import { LagaufreButton } from "@/features/ui/components/lagaufre";
 
 
 type AuthenticatedHeaderProps = HeaderProps & {
@@ -86,6 +87,7 @@ export const HeaderRight = () => {
       />
       </DropdownMenu>
       {isDesktop && <VerticalSeparator size="24px" />}
+      <LagaufreButton />
       <UserMenu
         user={user ? {
           full_name: user.full_name ?? undefined,
