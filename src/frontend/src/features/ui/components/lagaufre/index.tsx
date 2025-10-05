@@ -11,50 +11,47 @@ export const LagaufreButton = () => {
   
   const apiUrl = process.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_API_URL; 
   const widgetPath = process.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_PATH;
-  
-  if (!apiUrl || !widgetPath) return null;
 
   const label: string = t("lagaufre_widget.label");
   const closeLabel: string = t("lagaufre_widget.close_label");
 
   // Initialize widget on component mount
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
-    if (typeof window !== "undefined" && widgetPath) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any)._stmsg_widget = (window as any)._stmsg_widget || [];
-      
-      // Construct script URLs from the base path
-      const feedbackScript = `${widgetPath}lagaufre.js`;
+    if (typeof window == "undefined" || !widgetPath || !apiUrl) return;
 
-      // Load the loader script if not already loaded
-      if (!document.querySelector(`script[src="${feedbackScript}"]`)) {
-        const script = document.createElement("script");
-        script.async = true;
-        script.src = feedbackScript;
-        const firstScript = document.getElementsByTagName("script")[0];
-        if (firstScript && firstScript.parentNode) {
-          firstScript.parentNode.insertBefore(script, firstScript);
-        }
-      }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any)._stmsg_widget = (window as any)._stmsg_widget || [];
+    
+    // Construct script URLs from the base path
+    const feedbackScript = `${widgetPath}lagaufre.js`;
 
-      // Initialize the widget
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any)._stmsg_widget.push([
-        "lagaufre",
-        "init",
-        {
-          api: apiUrl,
-          label,
-          closeLabel,
-          position: 'fixed',
-          top: 53,
-          right: 12
-        },
-      ]);
-
-      setIsWidgetInitialized(true);
+    // Load the loader script if not already loaded
+    if (!document.querySelector(`script[src="${feedbackScript}"]`)) {
+    const script = document.createElement("script");
+    script.async = true;
+    script.src = feedbackScript;
+    const firstScript = document.getElementsByTagName("script")[0];
+    if (firstScript && firstScript.parentNode) {
+        firstScript.parentNode.insertBefore(script, firstScript);
     }
+    }
+
+    // Initialize the widget
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any)._stmsg_widget.push([
+    "lagaufre",
+    "init",
+    {
+        api: apiUrl,
+        label,
+        closeLabel,
+        position: 'fixed',
+        top: 53,
+        right: 12
+    },
+    ]);
+
+    setIsWidgetInitialized(true);
   }, [apiUrl, widgetPath, label, closeLabel]);
 
   const toggleWidget = () => {

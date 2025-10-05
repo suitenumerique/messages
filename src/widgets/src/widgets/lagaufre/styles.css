@@ -14,7 +14,6 @@
   flex-direction: column;
   overflow: hidden;
   font-family: inherit;
-  z-index: 1000;
 }
 
 #header {
