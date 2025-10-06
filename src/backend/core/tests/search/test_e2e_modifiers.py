@@ -235,7 +235,6 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
         message=message5, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
     )
 
-
     # Thread 6: Starred and read message
     thread6 = ThreadFactory(subject="Important Announcement")
     ThreadAccessFactory(
@@ -388,7 +387,9 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 class TestSearchModifiersE2E:
     """End-to-end tests for Gmail-style search modifiers."""
 
-    def test_search_e2e_modifiers_basic_searches(self, setup_search, api_client, test_url, test_threads):
+    def test_search_e2e_modifiers_basic_searches(
+        self, setup_search, api_client, test_url, test_threads
+    ):
         """Test searching with empty query."""
 
         # No search
@@ -449,7 +450,9 @@ class TestSearchModifiersE2E:
         thread_ids = [t["id"] for t in response.data["results"]]
         assert str(test_threads["thread1"].id) in thread_ids
 
-    def test_search_e2e_modifiers_to_search_modifier(self, setup_search, api_client, test_url, test_threads):
+    def test_search_e2e_modifiers_to_search_modifier(
+        self, setup_search, api_client, test_url, test_threads
+    ):
         """Test searching with the 'to:' modifier."""
 
         # Test English version
@@ -486,7 +489,9 @@ class TestSearchModifiersE2E:
         assert response.status_code == 200
         assert len(response.data["results"]) == 0
 
-    def test_search_e2e_modifiers_cc_search_modifier(self, setup_search, api_client, test_url, test_threads):
+    def test_search_e2e_modifiers_cc_search_modifier(
+        self, setup_search, api_client, test_url, test_threads
+    ):
         """Test searching with the 'cc:' modifier."""
         # Test English version
         response = api_client.get(f"{test_url}?search=cc:robert@example.com")

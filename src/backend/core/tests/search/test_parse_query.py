@@ -135,6 +135,7 @@ def test_search_parse_query_in_trash_modifier_french():
 
     assert result == {"text": "some text", "in_trash": True}
 
+
 def test_search_parse_query_in_archives_modifier_english():
     """Test parsing 'in:archives' modifier in English."""
     query = "in:archives some text"
@@ -150,12 +151,14 @@ def test_search_parse_query_in_archives_modifier_french_with_accent():
 
     assert result == {"text": "some text", "in_archives": True}
 
+
 def test_search_parse_query_in_archives_modifier_french_without_accent():
     """Test parsing 'dans:archives' modifier in French without accent."""
     query = "dans:archives some text"
     result = parse_search_query(query)
 
     assert result == {"text": "some text", "in_archives": True}
+
 
 def test_search_parse_query_in_sent_modifier_english():
     """Test parsing 'in:sent' modifier in English."""

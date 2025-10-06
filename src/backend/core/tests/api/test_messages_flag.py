@@ -445,6 +445,7 @@ def test_api_flag_mark_messages_untrashed_success(api_client):
     thread.refresh_from_db()
     assert thread.has_trashed is False
 
+
 # --- Tests for Archived Flag ---
 
 
