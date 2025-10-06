@@ -1291,6 +1291,17 @@
                                     },
                                     "summary": "Trash threads"
                                 },
+                                "ArchiveThreads": {
+                                    "value": {
+                                        "flag": "archived",
+                                        "value": true,
+                                        "thread_ids": [
+                                            "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+                                            "b2c3d4e5-f6a7-8901-2345-67890abcdef0"
+                                        ]
+                                    },
+                                    "summary": "Archive threads"
+                                },
                                 "StarMessagesAndThreads": {
                                     "value": {
                                         "flag": "starred",
@@ -1350,6 +1361,17 @@
                                             ]
                                         },
                                         "summary": "Trash threads"
+                                    },
+                                    "ArchiveThreads": {
+                                        "value": {
+                                            "flag": "archived",
+                                            "value": true,
+                                            "thread_ids": [
+                                                "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+                                                "b2c3d4e5-f6a7-8901-2345-67890abcdef0"
+                                            ]
+                                        },
+                                        "summary": "Archive threads"
                                     },
                                     "StarMessagesAndThreads": {
                                         "value": {
@@ -3781,6 +3803,14 @@
                     },
                     {
                         "in": "query",
+                        "name": "has_archived",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads that have archived (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
                         "name": "has_attachments",
                         "schema": {
                             "type": "integer"
@@ -4364,6 +4394,14 @@
                 "parameters": [
                     {
                         "in": "query",
+                        "name": "has_archived",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads that are archived (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
                         "name": "has_attachments",
                         "schema": {
                             "type": "integer"
@@ -4814,10 +4852,11 @@
                 "enum": [
                     "unread",
                     "starred",
-                    "trashed"
+                    "trashed",
+                    "archived"
                 ],
                 "type": "string",
-                "description": "* `unread` - unread\n* `starred` - starred\n* `trashed` - trashed"
+                "description": "* `unread` - unread\n* `starred` - starred\n* `trashed` - trashed\n* `archived` - archived"
             },
             "ImportFileRequest": {
                 "type": "object",
@@ -5870,6 +5909,10 @@
                         "type": "boolean",
                         "readOnly": true
                     },
+                    "is_archived": {
+                        "type": "boolean",
+                        "readOnly": true
+                    },
                     "has_attachments": {
                         "type": "boolean",
                         "readOnly": true
@@ -5899,6 +5942,7 @@
                     "has_attachments",
                     "htmlBody",
                     "id",
+                    "is_archived",
                     "is_draft",
                     "is_sender",
                     "is_starred",
@@ -6553,6 +6597,10 @@
                         "type": "boolean",
                         "readOnly": true
                     },
+                    "has_archived": {
+                        "type": "boolean",
+                        "readOnly": true
+                    },
                     "has_draft": {
                         "type": "boolean",
                         "readOnly": true
@@ -6631,6 +6679,7 @@
                 "required": [
                     "accesses",
                     "has_active",
+                    "has_archived",
                     "has_attachments",
                     "has_draft",
                     "has_messages",

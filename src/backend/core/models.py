@@ -738,6 +738,7 @@ class Thread(BaseModel):
     snippet = models.TextField(_("snippet"), blank=True)
     has_unread = models.BooleanField(_("has unread"), default=False)
     has_trashed = models.BooleanField(_("has trashed"), default=False)
+    has_archived = models.BooleanField(_("has archived"), default=False)
     has_draft = models.BooleanField(_("has draft"), default=False)
     has_starred = models.BooleanField(_("has starred"), default=False)
     has_sender = models.BooleanField(_("has sender"), default=False)
@@ -781,6 +782,7 @@ class Thread(BaseModel):
             # No messages in thread
             self.has_unread = False
             self.has_trashed = False
+            self.has_archived = False
             self.has_draft = False
             self.has_starred = False
             self.has_sender = False
@@ -796,6 +798,7 @@ class Thread(BaseModel):
                 msg["is_unread"] and not msg["is_trashed"] for msg in message_data
             )
             self.has_trashed = any(msg["is_trashed"] for msg in message_data)
+            self.has_archived = any(msg["is_archived"] for msg in message_data)
             self.has_draft = any(
                 msg["is_draft"] and not msg["is_trashed"] for msg in message_data
             )
@@ -870,6 +873,7 @@ class Thread(BaseModel):
             update_fields=[
                 "has_unread",
                 "has_trashed",
+                "has_archived",
                 "has_draft",
                 "has_starred",
                 "has_sender",

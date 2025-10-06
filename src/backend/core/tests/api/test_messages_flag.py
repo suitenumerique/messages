@@ -24,7 +24,7 @@ pytestmark = pytest.mark.django_db
 API_URL = reverse("change-flag")
 
 
-def test_mark_messages_unread_success(api_client):
+def test_api_flag_mark_messages_unread_success(api_client):
     """Test marking messages as unread successfully."""
     user = UserFactory()
     api_client.force_authenticate(user=user)
@@ -71,7 +71,7 @@ def test_mark_messages_unread_success(api_client):
     assert thread.has_unread is True
 
 
-def test_mark_messages_read_success(api_client):
+def test_api_flag_mark_messages_read_success(api_client):
     """Test marking messages as read successfully."""
     user = UserFactory()
     api_client.force_authenticate(user=user)
@@ -114,7 +114,7 @@ def test_mark_messages_read_success(api_client):
     assert thread.has_unread is False
 
 
-def test_mark_thread_messages_unread_success(api_client):
+def test_api_flag_mark_thread_messages_unread_success(api_client):
     """Test marking all messages in a thread as unread."""
     user = UserFactory()
     api_client.force_authenticate(user=user)
@@ -148,7 +148,7 @@ def test_mark_thread_messages_unread_success(api_client):
     assert thread.has_unread is True
 
 
-def test_mark_thread_messages_read_success(api_client):
+def test_api_flag_mark_thread_messages_read_success(api_client):
     """Test marking all messages in a thread as read."""
     user = UserFactory()
     api_client.force_authenticate(user=user)
@@ -182,7 +182,7 @@ def test_mark_thread_messages_read_success(api_client):
     assert thread.has_unread is False
 
 
-def test_mark_multiple_threads_read_success(api_client):
+def test_api_flag_mark_multiple_threads_read_success(api_client):
     """Test marking all messages in multiple threads as read."""
     user = UserFactory()
     api_client.force_authenticate(user=user)
@@ -231,13 +231,13 @@ def test_mark_multiple_threads_read_success(api_client):
     assert thread3.has_unread is False
 
 
-def test_mark_messages_unauthorized(api_client):
+def test_api_flag_mark_messages_unauthorized(api_client):
     """Test marking messages without authentication."""
     response = api_client.post(API_URL, data={}, format="json")
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-def test_mark_messages_no_permission(api_client):
+def test_api_flag_mark_messages_no_permission(api_client):
     """Test marking messages in a mailbox the user doesn't have access to."""
     user = UserFactory()
     api_client.force_authenticate(user=user)
@@ -290,7 +290,7 @@ def test_mark_messages_no_permission(api_client):
         },  # invalid message ids
     ],
 )
-def test_mark_messages_invalid_requests(api_client, data):
+def test_api_flag_mark_messages_invalid_requests(api_client, data):
     """
     Parametrized test for invalid flag, missing ids, and invalid value.
     """
@@ -313,7 +313,7 @@ def test_mark_messages_invalid_requests(api_client, data):
 # --- Tests for Starred Flag ---
 
 
-def test_mark_messages_starred_success(api_client):
+def test_api_flag_mark_messages_starred_success(api_client):
     """Test marking messages as starred successfully."""
     user = UserFactory()
     api_client.force_authenticate(user=user)
@@ -345,7 +345,7 @@ def test_mark_messages_starred_success(api_client):
     assert thread.has_starred is True
 
 
-def test_mark_messages_unstarred_success(api_client):
+def test_api_flag_mark_messages_unstarred_success(api_client):
     """Test marking messages as unstarred successfully."""
     user = UserFactory()
     api_client.force_authenticate(user=user)
@@ -380,7 +380,7 @@ def test_mark_messages_unstarred_success(api_client):
 # --- Tests for Trashed Flag ---
 
 
-def test_mark_messages_trashed_success(api_client):
+def test_api_flag_mark_messages_trashed_success(api_client):
     """Test marking messages as trashed successfully."""
     user = UserFactory()
     api_client.force_authenticate(user=user)
@@ -413,7 +413,7 @@ def test_mark_messages_trashed_success(api_client):
     assert thread.has_trashed is True
 
 
-def test_mark_messages_untrashed_success(api_client):
+def test_api_flag_mark_messages_untrashed_success(api_client):
     """Test marking messages as untrashed successfully."""
     user = UserFactory()
     api_client.force_authenticate(user=user)
@@ -444,3 +444,71 @@ def test_mark_messages_untrashed_success(api_client):
 
     thread.refresh_from_db()
     assert thread.has_trashed is False
+
+# --- Tests for Archived Flag ---
+
+
+def test_api_flag_mark_messages_archived_success(api_client):
+    """Test marking messages as archived successfully."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])  # Ensure correct permission if needed
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
+    msg1 = MessageFactory(thread=thread, is_archived=False)
+    msg2 = MessageFactory(thread=thread, is_archived=True)  # Already archived
+
+    thread.refresh_from_db()
+    thread.update_stats()
+    assert thread.has_archived is True
+
+    message_ids = [str(msg1.id)]
+    data = {"flag": "archived", "value": True, "message_ids": message_ids}
+    response = api_client.post(API_URL, data=data, format="json")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 1
+
+    msg1.refresh_from_db()
+    msg2.refresh_from_db()
+    assert msg1.is_archived is True
+    assert msg1.archived_at is not None
+    assert msg2.is_archived is True
+
+    thread.refresh_from_db()
+    assert thread.has_archived is True
+
+
+def test_api_flag_mark_messages_unarchived_success(api_client):
+    """Test marking messages as unarchived successfully."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
+    msg1 = MessageFactory(thread=thread, is_archived=True, archived_at=timezone.now())
+    msg2 = MessageFactory(thread=thread, is_archived=False)  # Already unarchived
+
+    thread.refresh_from_db()
+    thread.update_stats()
+    assert thread.has_archived is True
+
+    message_ids = [str(msg1.id)]
+    data = {"flag": "archived", "value": False, "message_ids": message_ids}
+    response = api_client.post(API_URL, data=data, format="json")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 1
+
+    msg1.refresh_from_db()
+    msg2.refresh_from_db()
+    assert msg1.is_archived is False
+    assert msg1.archived_at is None
+    assert msg2.is_archived is False
+
+    thread.refresh_from_db()
+    assert thread.has_archived is False

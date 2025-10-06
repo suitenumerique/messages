@@ -148,11 +148,15 @@ def search_threads(
         # Add in: filters (trash, sent, draft)
         if parsed_query.get("in_sent"):
             search_body["query"]["bool"]["filter"].append({"term": {"is_sender": True}})
-        if parsed_query.get("in_draft"):
+        if parsed_query.get("in_drafts"):
             search_body["query"]["bool"]["filter"].append({"term": {"is_draft": True}})
         if parsed_query.get("in_trash"):
             search_body["query"]["bool"]["filter"].append(
                 {"term": {"is_trashed": True}}
+            )
+        if parsed_query.get("in_archives"):
+            search_body["query"]["bool"]["filter"].append(
+                {"term": {"is_archived": True}}
             )
 
         # Add is: filters (starred, read, unread)

@@ -53,8 +53,8 @@ export class SearchHelper {
     }
 
 
-    static serializeSearchFormData = (data: FormData, language: string = 'en'): string => {
-        const i18nFiltersMap = SearchFiltersMap[language as keyof typeof SearchFiltersMap] ?? SearchFiltersMap['en'];
+    static serializeSearchFormData = (data: FormData, language: string = 'en-US'): string => {
+        const i18nFiltersMap = SearchFiltersMap[language as keyof typeof SearchFiltersMap] ?? SearchFiltersMap['en-US'];
         const isFiltersMapKey = (key: string): key is keyof typeof i18nFiltersMap => i18nFiltersMap.hasOwnProperty(key);
 
         return Array.from(data.entries()).reduce((acc, [key, value]) => {
@@ -65,7 +65,7 @@ export class SearchHelper {
             }
             if (key === 'in') {
                 const filterKey = key.concat('_', value.toString());
-                if (value === 'all' ||  !isFiltersMapKey(filterKey)) return acc;
+                if (value === 'all_messages' ||  !isFiltersMapKey(filterKey)) return acc;
                 return `${i18nFiltersMap[filterKey][0]} ${acc}`;
             }
             if ((value as string).trim() && isFiltersMapKey(key)) {

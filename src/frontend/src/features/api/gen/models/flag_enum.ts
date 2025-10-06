@@ -10,6 +10,7 @@
  * * `unread` - unread
  * `starred` - starred
  * `trashed` - trashed
+ * `archived` - archived
  */
 export type FlagEnum = (typeof FlagEnum)[keyof typeof FlagEnum];
 
@@ -18,4 +19,5 @@ export const FlagEnum = {
   unread: "unread",
   starred: "starred",
   trashed: "trashed",
+  archived: "archived",
 } as const;

@@ -249,6 +249,7 @@ class ThreadAdmin(admin.ModelAdmin):
                 "fields": (
                     "has_unread",
                     "has_trashed",
+                    "has_archived",
                     "has_draft",
                     "has_starred",
                     "has_sender",
@@ -272,6 +273,7 @@ class ThreadAdmin(admin.ModelAdmin):
         "display_labels",
         "has_unread",
         "has_trashed",
+        "has_archived",
         "has_draft",
         "has_starred",
         "has_attachments",

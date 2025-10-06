@@ -76,6 +76,8 @@ export const ThreadView = () => {
     const unreadMessageIds = messages?.results?.filter((m) => !m.read_at).map((m) => m.id) || [];
     const trashedMessageIds = messages?.results?.filter((m) => m.is_trashed).map((m) => m.id) || [];
     const isThreadTrashed = trashedMessageIds.length === messages?.results?.length;
+    const archivedMessageIds = messages?.results?.filter((m) => m.is_archived).map((m) => m.id) || [];
+    const isThreadArchived = archivedMessageIds.length === messages?.results?.length;
 
     /**
      * Setup an intersection observer to mark messages as read when they are
@@ -122,7 +124,7 @@ export const ThreadView = () => {
 
     return (
         <div className="thread-view" ref={rootRef}>
-            <ActionBar canUndelete={isThreadTrashed} />
+            <ActionBar canUndelete={isThreadTrashed} canUnarchive={isThreadArchived} />
             <h2 className="thread-view__subject">{selectedThread.subject}</h2>
             {isAISummaryEnabled && (
                 <ThreadSummary

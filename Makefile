@@ -488,8 +488,8 @@ api-update: \
 .PHONY: api-update
 
 search-index: ## Create and/or reindex opensearch data
-	@$(MANAGE) es_create_index
-	@$(MANAGE) es_reindex --all
+	@$(MANAGE) search_index_create
+	@$(MANAGE) search_reindex --all
 .PHONY: search-index
 
 mta-in-poetry-lock: ## lock the dependencies

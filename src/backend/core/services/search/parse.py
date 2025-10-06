@@ -16,8 +16,9 @@ def parse_search_query(query: str) -> Dict[str, Any]:
     - subject: (sujet:) - subject text
     - "exact phrase" - quoted text for exact matching
     - in:trash (dans:corbeille) - in trash
+    - in:archives (dans:archives or dans:archivés) - in archives
     - in:sent (dans:envoyes or dans:envoyés) - sent items
-    - in:draft (dans:brouillons) - drafts
+    - in:drafts (dans:brouillons) - drafts
     - is:starred (est:suivi) - starred
     - is:read (est:lu) - read
     - is:unread (est:nonlu) - unread
@@ -45,7 +46,8 @@ def parse_search_query(query: str) -> Dict[str, Any]:
         # Flag modifiers
         "in_trash": ["in:trash", "dans:corbeille"],
         "in_sent": ["in:sent", "dans:envoyes", "dans:envoyés"],
-        "in_draft": ["in:draft", "dans:brouillons"],
+        "in_archives": ["in:archives", "dans:archives", "dans:archivés"],
+        "in_drafts": ["in:drafts", "dans:brouillons"],
         "is_starred": ["is:starred", "est:suivi"],
         "is_read_true": ["is:read", "est:lu"],
         "is_read_false": ["is:unread", "est:nonlu"],
@@ -56,7 +58,8 @@ def parse_search_query(query: str) -> Dict[str, Any]:
     flag_modifiers = {
         "in_trash": "in_trash",
         "in_sent": "in_sent",
-        "in_draft": "in_draft",
+        "in_archives": "in_archives",
+        "in_drafts": "in_drafts",
         "is_starred": "is_starred",
         "is_read_true": "is_read",
         "is_read_false": "is_read",
@@ -64,7 +67,8 @@ def parse_search_query(query: str) -> Dict[str, Any]:
     flag_values = {
         "in_trash": True,
         "in_sent": True,
-        "in_draft": True,
+        "in_archives": True,
+        "in_drafts": True,
         "is_starred": True,
         "is_read_true": True,
         "is_read_false": False,

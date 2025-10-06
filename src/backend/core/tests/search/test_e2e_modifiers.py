@@ -213,13 +213,36 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
         message=message4, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
     )
 
-    # Thread 5: Starred and read message
-    thread5 = ThreadFactory(subject="Important Announcement")
+    # Thread 5: Archived message
+    thread5 = ThreadFactory(subject="Old Newsletter")
     ThreadAccessFactory(
         mailbox=mailbox1, thread=thread5, role=enums.ThreadAccessRoleChoices.EDITOR
     )
     message5 = MessageFactory(
         thread=thread5,
+        subject="Archived Newsletter",
+        sender=contact3,
+        is_archived=True,
+        raw_mime=(
+            f"From: {contact3.email}\r\n"
+            f"To: {contact1.email}\r\n"
+            f"Subject: Archived Newsletter\r\n"
+            f"Content-Type: text/plain\r\n\r\n"
+            f"This is last week's newsletter that should be in archived."
+        ).encode("utf-8"),
+    )
+    MessageRecipientFactory(
+        message=message5, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
+    )
+
+
+    # Thread 6: Starred and read message
+    thread6 = ThreadFactory(subject="Important Announcement")
+    ThreadAccessFactory(
+        mailbox=mailbox1, thread=thread6, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
+    message6 = MessageFactory(
+        thread=thread6,
         subject="Important Announcement",
         sender=contact4,
         is_starred=True,
@@ -233,16 +256,16 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
         ).encode("utf-8"),
     )
     MessageRecipientFactory(
-        message=message5, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
+        message=message6, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
     )
 
-    # Thread 6: Unread message
-    thread6 = ThreadFactory(subject="New Notification")
+    # Thread 7: Unread message
+    thread7 = ThreadFactory(subject="New Notification")
     ThreadAccessFactory(
-        mailbox=mailbox1, thread=thread6, role=enums.ThreadAccessRoleChoices.EDITOR
+        mailbox=mailbox1, thread=thread7, role=enums.ThreadAccessRoleChoices.EDITOR
     )
-    message6 = MessageFactory(
-        thread=thread6,
+    message7 = MessageFactory(
+        thread=thread7,
         subject="New Notification",
         sender=contact3,
         is_unread=True,
@@ -255,16 +278,16 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
         ).encode("utf-8"),
     )
     MessageRecipientFactory(
-        message=message6, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
+        message=message7, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
     )
 
-    # Thread 7: For testing exact phrases
-    thread7 = ThreadFactory(subject="Project Feedback")
+    # Thread 8: For testing exact phrases
+    thread8 = ThreadFactory(subject="Project Feedback")
     ThreadAccessFactory(
-        mailbox=mailbox1, thread=thread7, role=enums.ThreadAccessRoleChoices.EDITOR
+        mailbox=mailbox1, thread=thread8, role=enums.ThreadAccessRoleChoices.EDITOR
     )
-    message7 = MessageFactory(
-        thread=thread7,
+    message8 = MessageFactory(
+        thread=thread8,
         subject="Project Feedback",
         sender=contact2,
         raw_mime=(
@@ -276,16 +299,16 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
         ).encode("utf-8"),
     )
     MessageRecipientFactory(
-        message=message7, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
+        message=message8, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
     )
 
-    # Thread 8: For testing in second mailbox
-    thread8 = ThreadFactory(subject="Different Mailbox Message")
+    # Thread 9: For testing in second mailbox
+    thread9 = ThreadFactory(subject="Different Mailbox Message")
     ThreadAccessFactory(
-        mailbox=mailbox2, thread=thread8, role=enums.ThreadAccessRoleChoices.EDITOR
+        mailbox=mailbox2, thread=thread9, role=enums.ThreadAccessRoleChoices.EDITOR
     )
-    message8 = MessageFactory(
-        thread=thread8,
+    message9 = MessageFactory(
+        thread=thread9,
         subject="Different Mailbox Message",
         sender=contact1,
         raw_mime=(
@@ -297,16 +320,16 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
         ).encode("utf-8"),
     )
     MessageRecipientFactory(
-        message=message8, contact=contact2, type=enums.MessageRecipientTypeChoices.TO
+        message=message9, contact=contact2, type=enums.MessageRecipientTypeChoices.TO
     )
 
-    # Thread 9: For testing sent messages
-    thread9 = ThreadFactory(subject="Sent Message")
+    # Thread 10: For testing sent messages
+    thread10 = ThreadFactory(subject="Sent Message")
     ThreadAccessFactory(
-        mailbox=mailbox1, thread=thread9, role=enums.ThreadAccessRoleChoices.EDITOR
+        mailbox=mailbox1, thread=thread10, role=enums.ThreadAccessRoleChoices.EDITOR
     )
-    message9 = MessageFactory(
-        thread=thread9,
+    message10 = MessageFactory(
+        thread=thread10,
         subject="Sent Message",
         sender=contact1,  # Same as the user's primary contact
         is_sender=True,
@@ -319,12 +342,12 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
         ).encode("utf-8"),
     )
     MessageRecipientFactory(
-        message=message9, contact=contact3, type=enums.MessageRecipientTypeChoices.TO
+        message=message10, contact=contact3, type=enums.MessageRecipientTypeChoices.TO
     )
 
     # A second sent message in the same thread
-    message9_2 = MessageFactory(
-        thread=thread9,
+    message10_2 = MessageFactory(
+        thread=thread10,
         subject="Sent Message 2",
         sender=contact1,  # Same as the user's primary contact
         is_sender=True,
@@ -337,7 +360,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
         ).encode("utf-8"),
     )
     MessageRecipientFactory(
-        message=message9_2, contact=contact3, type=enums.MessageRecipientTypeChoices.TO
+        message=message10_2, contact=contact3, type=enums.MessageRecipientTypeChoices.TO
     )
 
     # Wait for indexing to complete
@@ -353,6 +376,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
         "thread7": thread7,
         "thread8": thread8,
         "thread9": thread9,
+        "thread10": thread10,
     }
 
 
@@ -364,18 +388,18 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 class TestSearchModifiersE2E:
     """End-to-end tests for Gmail-style search modifiers."""
 
-    def test_basic_searches(self, setup_search, api_client, test_url, test_threads):
+    def test_search_e2e_modifiers_basic_searches(self, setup_search, api_client, test_url, test_threads):
         """Test searching with empty query."""
 
         # No search
         response = api_client.get(f"{test_url}?search=")
         assert response.status_code == 200
-        assert len(response.data["results"]) == 9
+        assert len(response.data["results"]) == 10
 
         # Now find all
         response = api_client.get(f"{test_url}?search=example")
         assert response.status_code == 200
-        assert len(response.data["results"]) == 9
+        assert len(response.data["results"]) == 10
 
         # Now find a single one
         response = api_client.get(f"{test_url}?search=msgninetwo")
@@ -395,7 +419,7 @@ class TestSearchModifiersE2E:
         assert response.status_code == 200
         assert len(response.data["results"]) == 0
 
-    def test_from_search_modifier(
+    def test_search_e2e_modifiers_from_search_modifier(
         self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'from:' modifier."""
@@ -425,7 +449,7 @@ class TestSearchModifiersE2E:
         thread_ids = [t["id"] for t in response.data["results"]]
         assert str(test_threads["thread1"].id) in thread_ids
 
-    def test_to_search_modifier(self, setup_search, api_client, test_url, test_threads):
+    def test_search_e2e_modifiers_to_search_modifier(self, setup_search, api_client, test_url, test_threads):
         """Test searching with the 'to:' modifier."""
 
         # Test English version
@@ -446,23 +470,23 @@ class TestSearchModifiersE2E:
         thread_ids = [t["id"] for t in response.data["results"]]
         assert str(test_threads["thread1"].id) in thread_ids
 
-    def test_to_search_modifier_substring(
+    def test_search_e2e_modifiers_to_search_modifier_substring(
         self, setup_search, api_client, test_url, test_threads
     ):
         # Test substring search
         response = api_client.get(f"{test_url}?search=to:@example.com")
         assert response.status_code == 200
-        assert len(response.data["results"]) == 9
+        assert len(response.data["results"]) == 10
 
         response = api_client.get(f"{test_url}?search=to:example")
         assert response.status_code == 200
-        assert len(response.data["results"]) == 9
+        assert len(response.data["results"]) == 10
 
         response = api_client.get(f"{test_url}?search=to:examples")
         assert response.status_code == 200
         assert len(response.data["results"]) == 0
 
-    def test_cc_search_modifier(self, setup_search, api_client, test_url, test_threads):
+    def test_search_e2e_modifiers_cc_search_modifier(self, setup_search, api_client, test_url, test_threads):
         """Test searching with the 'cc:' modifier."""
         # Test English version
         response = api_client.get(f"{test_url}?search=cc:robert@example.com")
@@ -482,7 +506,7 @@ class TestSearchModifiersE2E:
         thread_ids = [t["id"] for t in response.data["results"]]
         assert str(test_threads["thread2"].id) in thread_ids
 
-    def test_bcc_search_modifier(
+    def test_search_e2e_modifiers_bcc_search_modifier(
         self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'bcc:' modifier."""
@@ -504,7 +528,7 @@ class TestSearchModifiersE2E:
         thread_ids = [t["id"] for t in response.data["results"]]
         assert str(test_threads["thread2"].id) in thread_ids
 
-    def test_subject_search_modifier(
+    def test_search_e2e_modifiers_subject_search_modifier(
         self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'subject:' modifier."""
@@ -526,7 +550,7 @@ class TestSearchModifiersE2E:
         thread_ids = [t["id"] for t in response.data["results"]]
         assert str(test_threads["thread1"].id) in thread_ids
 
-    def test_exact_phrase_search(
+    def test_search_e2e_modifiers_exact_phrase_search(
         self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with quoted exact phrases."""
@@ -537,7 +561,7 @@ class TestSearchModifiersE2E:
 
         # Check if the correct threads are found
         thread_ids = [t["id"] for t in response.data["results"]]
-        assert str(test_threads["thread7"].id) in thread_ids
+        assert str(test_threads["thread8"].id) in thread_ids
 
         # Test with a phrase that shouldn't match
         response = api_client.get(f'{test_url}?search="no match phrase"')
@@ -546,7 +570,7 @@ class TestSearchModifiersE2E:
         assert response.status_code == 200
         assert len(response.data["results"]) == 0
 
-    def test_in_trash_search_modifier(
+    def test_search_e2e_modifiers_in_trash_search_modifier(
         self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'in:trash' modifier."""
@@ -568,7 +592,29 @@ class TestSearchModifiersE2E:
         thread_ids = [t["id"] for t in response.data["results"]]
         assert str(test_threads["thread4"].id) in thread_ids
 
-    def test_in_sent_search_modifier(
+    def test_search_e2e_modifiers_in_archives_search_modifier(
+        self, setup_search, api_client, test_url, test_threads
+    ):
+        """Test searching with the 'in:archives' modifier."""
+        # Test English version
+        response = api_client.get(f"{test_url}?search=in:archives")
+
+        # Verify response
+        assert response.status_code == 200
+
+        # Check if the correct threads are found
+        thread_ids = [t["id"] for t in response.data["results"]]
+        assert str(test_threads["thread5"].id) in thread_ids
+
+        # Test French version
+        response = api_client.get(f"{test_url}?search=dans:archivés")
+
+        # Verify the same results
+        assert response.status_code == 200
+        thread_ids = [t["id"] for t in response.data["results"]]
+        assert str(test_threads["thread5"].id) in thread_ids
+
+    def test_search_e2e_modifiers_in_sent_search_modifier(
         self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'in:sent' modifier."""
@@ -580,7 +626,7 @@ class TestSearchModifiersE2E:
 
         # Check if the correct threads are found
         thread_ids = [t["id"] for t in response.data["results"]]
-        assert thread_ids == [str(test_threads["thread9"].id)]
+        assert thread_ids == [str(test_threads["thread10"].id)]
 
         # Test French version with accent
         response = api_client.get(f"{test_url}?search=dans:envoyés")
@@ -588,7 +634,7 @@ class TestSearchModifiersE2E:
         # Verify the same results
         assert response.status_code == 200
         thread_ids = [t["id"] for t in response.data["results"]]
-        assert str(test_threads["thread9"].id) in thread_ids
+        assert str(test_threads["thread10"].id) in thread_ids
 
         # Test French version without accent
         response = api_client.get(f"{test_url}?search=dans:envoyes")
@@ -596,14 +642,14 @@ class TestSearchModifiersE2E:
         # Verify the same results
         assert response.status_code == 200
         thread_ids = [t["id"] for t in response.data["results"]]
-        assert str(test_threads["thread9"].id) in thread_ids
+        assert str(test_threads["thread10"].id) in thread_ids
 
-    def test_in_draft_search_modifier(
+    def test_search_e2e_modifiers_in_drafts_search_modifier(
         self, setup_search, api_client, test_url, test_threads
     ):
-        """Test searching with the 'in:draft' modifier."""
+        """Test searching with the 'in:drafts' modifier."""
         # Test English version
-        response = api_client.get(f"{test_url}?search=in:draft")
+        response = api_client.get(f"{test_url}?search=in:drafts")
 
         # Verify response
         assert response.status_code == 200
@@ -620,7 +666,7 @@ class TestSearchModifiersE2E:
         thread_ids = [t["id"] for t in response.data["results"]]
         assert str(test_threads["thread3"].id) in thread_ids
 
-    def test_is_starred_search_modifier(
+    def test_search_e2e_modifiers_is_starred_search_modifier(
         self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'is:starred' modifier."""
@@ -632,7 +678,7 @@ class TestSearchModifiersE2E:
 
         # Check if the correct threads are found
         thread_ids = [t["id"] for t in response.data["results"]]
-        assert str(test_threads["thread5"].id) in thread_ids
+        assert str(test_threads["thread6"].id) in thread_ids
 
         # Test French version
         response = api_client.get(f"{test_url}?search=est:suivi")
@@ -640,9 +686,9 @@ class TestSearchModifiersE2E:
         # Verify the same results
         assert response.status_code == 200
         thread_ids = [t["id"] for t in response.data["results"]]
-        assert str(test_threads["thread5"].id) in thread_ids
+        assert str(test_threads["thread6"].id) in thread_ids
 
-    def test_is_read_search_modifier(
+    def test_search_e2e_modifiers_is_read_search_modifier(
         self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'is:read' modifier."""
@@ -664,7 +710,7 @@ class TestSearchModifiersE2E:
         thread_ids = [t["id"] for t in response.data["results"]]
         assert str(test_threads["thread5"].id) in thread_ids
 
-    def test_is_unread_search_modifier(
+    def test_search_e2e_modifiers_is_unread_search_modifier(
         self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with the 'is:unread' modifier."""
@@ -676,7 +722,7 @@ class TestSearchModifiersE2E:
 
         # Check if the correct threads are found
         thread_ids = [t["id"] for t in response.data["results"]]
-        assert str(test_threads["thread6"].id) in thread_ids
+        assert str(test_threads["thread7"].id) in thread_ids
 
         # Test French version
         response = api_client.get(f"{test_url}?search=est:nonlu")
@@ -684,9 +730,9 @@ class TestSearchModifiersE2E:
         # Verify the same results
         assert response.status_code == 200
         thread_ids = [t["id"] for t in response.data["results"]]
-        assert str(test_threads["thread6"].id) in thread_ids
+        assert str(test_threads["thread7"].id) in thread_ids
 
-    def test_multiple_modifiers_search(
+    def test_search_e2e_modifiers_multiple_modifiers_search(
         self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with multiple modifiers."""
@@ -708,9 +754,9 @@ class TestSearchModifiersE2E:
         # Verify correct results
         assert response.status_code == 200
         thread_ids = [t["id"] for t in response.data["results"]]
-        assert str(test_threads["thread6"].id) in thread_ids
+        assert str(test_threads["thread7"].id) in thread_ids
 
-    def test_combined_text_and_modifier_search(
+    def test_search_e2e_modifiers_combined_text_and_modifier_search(
         self, setup_search, api_client, test_url, test_threads
     ):
         """Test searching with both free text and modifiers."""
@@ -722,7 +768,7 @@ class TestSearchModifiersE2E:
 
         # Check if the correct threads are found
         thread_ids = [t["id"] for t in response.data["results"]]
-        assert str(test_threads["thread7"].id) in thread_ids
+        assert str(test_threads["thread8"].id) in thread_ids
 
         # Search with text and a modifier that doesn't match the text
         response = api_client.get(f"{test_url}?search=from:robert@example.com feedback")
