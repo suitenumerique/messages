@@ -2,8 +2,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-10-03 10:06+0000\n"
-"PO-Revision-Date: 2025-10-06 07:57\n"
+"POT-Creation-Date: 2025-10-06 16:30+0000\n"
+"PO-Revision-Date: 2025-10-06 16:32\n"
 "Last-Translator: \n"
 "Language-Team: Ukrainian\n"
 "Language: uk_UA\n"
@@ -33,32 +33,32 @@ msgstr "Важливі дати"
 msgid "Statistics"
 msgstr "Статистика"
 
-#: core/admin.py:264
+#: core/admin.py:265
 msgid "Metadata"
 msgstr "Метадані"
 
-#: core/admin.py:292 core/admin.py:315
+#: core/admin.py:294 core/admin.py:317
 msgid "Labels"
 msgstr "Мітки"
 
-#: core/admin.py:298
+#: core/admin.py:300
 msgid "No labels"
 msgstr "Без міток"
 
-#: core/admin.py:435 core/templates/admin/core/message/change_list.html:8
+#: core/admin.py:437 core/templates/admin/core/message/change_list.html:8
 #: core/templates/admin/core/message/import_messages.html:21
 msgid "Import Messages"
 msgstr "Імпорт повідомлень"
 
-#: core/admin.py:465
+#: core/admin.py:467
 msgid "Import Messages from IMAP"
 msgstr "Імпорт повідомлень з IMAP"
 
-#: core/admin.py:633
+#: core/admin.py:635
 msgid "Keys"
 msgstr "Ключі"
 
-#: core/api/serializers.py:1012
+#: core/api/serializers.py:1014
 msgid "An mailbox with this local part already exists in this domain."
 msgstr "Поштова скринька з цією локальною частиною вже існує в цьому домені."
 
@@ -178,8 +178,8 @@ msgstr "користувачі"
 msgid "Enter a valid domain name. This value may contain only lowercase letters, numbers, dots and - characters."
 msgstr "Введіть допустиме ім'я домену. Це значення може містити лише малі літери, цифри, крапки та символи дефісу."
 
-#: core/models.py:255 core/models.py:422 core/models.py:890 core/models.py:1117
-#: core/models.py:1657
+#: core/models.py:255 core/models.py:422 core/models.py:894 core/models.py:1121
+#: core/models.py:1661
 msgid "name"
 msgstr "ім’я"
 
@@ -215,7 +215,7 @@ msgstr "поштові домени"
 msgid "Human-readable name for this channel"
 msgstr "Людино-читуване ім'я для цього каналу"
 
-#: core/models.py:426 core/models.py:1150 core/models.py:1676
+#: core/models.py:426 core/models.py:1154 core/models.py:1680
 msgid "type"
 msgstr "тип"
 
@@ -267,7 +267,7 @@ msgstr "поштова скринька"
 msgid "mailboxes"
 msgstr "поштові скриньки"
 
-#: core/models.py:701 core/models.py:1099 core/models.py:1575
+#: core/models.py:701 core/models.py:1103 core/models.py:1579
 msgid "role"
 msgstr "роль"
 
@@ -283,7 +283,7 @@ msgstr "доступ до поштової скриньки"
 msgid "mailbox accesses"
 msgstr "доступ до поштової скриньки"
 
-#: core/models.py:737 core/models.py:1182
+#: core/models.py:737 core/models.py:1186
 msgid "subject"
 msgstr "тема"
 
@@ -300,434 +300,438 @@ msgid "has trashed"
 msgstr "у кошику"
 
 #: core/models.py:741
+msgid "has archived"
+msgstr ""
+
+#: core/models.py:742
 msgid "has draft"
 msgstr "має чернетку"
 
-#: core/models.py:742
+#: core/models.py:743
 msgid "has starred"
 msgstr "додано в обране"
 
-#: core/models.py:743
+#: core/models.py:744
 msgid "has sender"
 msgstr "має відправника"
 
-#: core/models.py:744
+#: core/models.py:745
 msgid "has messages"
 msgstr "має повідомлення"
 
-#: core/models.py:745 core/models.py:1196
+#: core/models.py:746 core/models.py:1200
 msgid "has attachments"
 msgstr "має вкладення"
 
-#: core/models.py:746 core/models.py:1194
+#: core/models.py:747 core/models.py:1198
 msgid "is spam"
 msgstr "є спамом"
 
-#: core/models.py:747
+#: core/models.py:748
 msgid "has active"
 msgstr "має активні"
 
-#: core/models.py:748
+#: core/models.py:749
 msgid "messaged at"
 msgstr "відправлене"
 
-#: core/models.py:749
+#: core/models.py:750
 msgid "sender names"
 msgstr "імена відправника"
 
-#: core/models.py:750
+#: core/models.py:751
 msgid "summary"
 msgstr "короткий зміст"
 
-#: core/models.py:754
+#: core/models.py:755
 msgid "thread"
 msgstr "обговорення"
 
-#: core/models.py:755
+#: core/models.py:756
 msgid "threads"
 msgstr "обговорення"
 
-#: core/models.py:893
+#: core/models.py:897
 msgid "Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/Projects')"
 msgstr "Назва мітки/папки (може використовувати косі риски для ієрархії, наприклад, 'Робота/Проекти')"
 
-#: core/models.py:897
+#: core/models.py:901
 msgid "slug"
 msgstr "псевдонім"
 
-#: core/models.py:899
+#: core/models.py:903
 msgid "URL-friendly version of the name"
 msgstr "URL-дружня версія імені латиницею"
 
-#: core/models.py:902
+#: core/models.py:906
 msgid "color"
 msgstr "колір"
 
-#: core/models.py:905
+#: core/models.py:909
 msgid "Color of the label in hex format (e.g. #FF0000)"
 msgstr "Колір мітки у hex-форматі (наприклад, #FF0000)"
 
-#: core/models.py:911
+#: core/models.py:915
 msgid "Mailbox that owns this label"
 msgstr "Поштова скринька, що має цю мітку"
 
-#: core/models.py:916
+#: core/models.py:920
 msgid "Threads that have this label"
 msgstr "Обговорення з цією міткою"
 
-#: core/models.py:920
+#: core/models.py:924
 msgid "description"
 msgstr "опис"
 
-#: core/models.py:924
+#: core/models.py:928
 msgid "Description of the label, used by AI to understand its purpose"
 msgstr "Опис мітки, що використовується ШІ для розуміння її мети"
 
-#: core/models.py:927
+#: core/models.py:931
 msgid "auto labeling"
 msgstr "автоматичне позначення"
 
-#: core/models.py:929
+#: core/models.py:933
 msgid "Whether this label should be automatically applied by AI"
 msgstr "Чи буде ця мітка автоматично застосована ШІ"
 
-#: core/models.py:934
+#: core/models.py:938
 msgid "label"
 msgstr "мітка"
 
-#: core/models.py:935
+#: core/models.py:939
 msgid "labels"
 msgstr "мітки"
 
-#: core/models.py:1106
+#: core/models.py:1110
 msgid "thread access"
 msgstr "доступ до обговорення"
 
-#: core/models.py:1107
+#: core/models.py:1111
 msgid "thread accesses"
 msgstr "доступ до обговорень"
 
-#: core/models.py:1118
+#: core/models.py:1122
 msgid "email"
 msgstr "ел. пошта"
 
-#: core/models.py:1127
+#: core/models.py:1131
 msgid "contact"
 msgstr "контакт"
 
-#: core/models.py:1128
+#: core/models.py:1132
 msgid "contacts"
 msgstr "контакти"
 
-#: core/models.py:1155
+#: core/models.py:1159
 msgid "delivered at"
 msgstr "доставлено"
 
-#: core/models.py:1157
+#: core/models.py:1161
 msgid "delivery status"
 msgstr "стан доставки"
 
-#: core/models.py:1162
+#: core/models.py:1166
 msgid "delivery message"
 msgstr "повідомлення про доставку"
 
-#: core/models.py:1163
+#: core/models.py:1167
 msgid "retry count"
 msgstr "число повторних спроб"
 
-#: core/models.py:1164
+#: core/models.py:1168
 msgid "retry at"
 msgstr "повторити"
 
-#: core/models.py:1168
+#: core/models.py:1172
 msgid "message recipient"
 msgstr "одержувач повідомлення"
 
-#: core/models.py:1169
+#: core/models.py:1173
 msgid "message recipients"
 msgstr "одержувачі повідомлення"
 
-#: core/models.py:1189
+#: core/models.py:1193
 msgid "is draft"
 msgstr "чернетка"
 
-#: core/models.py:1190
+#: core/models.py:1194
 msgid "is sender"
 msgstr "відправник"
 
-#: core/models.py:1191
+#: core/models.py:1195
 msgid "is starred"
 msgstr "позначено зірочкою"
 
-#: core/models.py:1192
+#: core/models.py:1196
 msgid "is trashed"
 msgstr "у кошику"
 
-#: core/models.py:1193
+#: core/models.py:1197
 msgid "is unread"
 msgstr "непрочитане"
 
-#: core/models.py:1195
+#: core/models.py:1199
 msgid "is archived"
 msgstr "архівовано"
 
-#: core/models.py:1198
+#: core/models.py:1202
 msgid "trashed at"
 msgstr "у кошику"
 
-#: core/models.py:1199
+#: core/models.py:1203
 msgid "sent at"
 msgstr "надіслано"
 
-#: core/models.py:1200
+#: core/models.py:1204
 msgid "read at"
 msgstr "читати"
 
-#: core/models.py:1201
+#: core/models.py:1205
 msgid "archived at"
 msgstr "архівовано"
 
-#: core/models.py:1203
+#: core/models.py:1207
 msgid "mime id"
 msgstr "mime id"
 
-#: core/models.py:1231
+#: core/models.py:1235
 msgid "Signature template for the message"
 msgstr "Шаблон підпису для повідомлення"
 
-#: core/models.py:1243
+#: core/models.py:1247
 msgid "message"
 msgstr "повідомлення"
 
-#: core/models.py:1244
+#: core/models.py:1248
 msgid "messages"
 msgstr "повідомлення"
 
-#: core/models.py:1308 core/models.py:1331
+#: core/models.py:1312 core/models.py:1335
 msgid "No subject"
 msgstr "Без теми"
 
-#: core/models.py:1319
+#: core/models.py:1323
 msgid "Message ID"
 msgstr "ID повідомлення"
 
-#: core/models.py:1320
+#: core/models.py:1324
 msgid "From"
 msgstr "Від"
 
-#: core/models.py:1321
+#: core/models.py:1325
 msgid "To"
 msgstr "Кому"
 
-#: core/models.py:1322
+#: core/models.py:1326
 msgid "CC"
 msgstr "Прихована копія"
 
-#: core/models.py:1323
+#: core/models.py:1327
 msgid "Date"
 msgstr "Дата"
 
-#: core/models.py:1324
+#: core/models.py:1328
 msgid "Subject"
 msgstr "Тема"
 
-#: core/models.py:1325
+#: core/models.py:1329
 msgid "Body"
 msgstr "Вміст"
 
-#: core/models.py:1424
+#: core/models.py:1428
 msgid "sha256 hash"
 msgstr "sha256 hash"
 
-#: core/models.py:1427
+#: core/models.py:1431
 msgid "SHA-256 hash of the uncompressed blob content"
 msgstr "Контрольні суми SHA-256 нестиснутого вмісту"
 
-#: core/models.py:1431
+#: core/models.py:1435
 msgid "file size"
 msgstr "розмір файлу"
 
-#: core/models.py:1431
+#: core/models.py:1435
 msgid "Size of the blob in bytes"
 msgstr "Розмір блоку в байтах"
 
-#: core/models.py:1435
+#: core/models.py:1439
 msgid "compressed size"
 msgstr "стиснутий розмір"
 
-#: core/models.py:1435
+#: core/models.py:1439
 msgid "Size of the compressed blob in bytes"
 msgstr "Розмір стиснутого блоку в байтах"
 
-#: core/models.py:1439
+#: core/models.py:1443
 msgid "content type"
 msgstr "тип вмісту"
 
-#: core/models.py:1439
+#: core/models.py:1443
 msgid "MIME type of the blob"
 msgstr "MIME-тип блоку"
 
-#: core/models.py:1443
+#: core/models.py:1447
 msgid "compression"
 msgstr "стиснення"
 
-#: core/models.py:1449
+#: core/models.py:1453
 msgid "raw content"
 msgstr "сирий вміст"
 
-#: core/models.py:1450
+#: core/models.py:1454
 msgid "Compressed binary content of the blob"
 msgstr "Стиснутий бінарний вміст блоку"
 
-#: core/models.py:1459
+#: core/models.py:1463
 msgid "Mailbox that owns this blob"
 msgstr "Поштова скринька, що має цей блок"
 
-#: core/models.py:1467
+#: core/models.py:1471
 msgid "Mail domain that owns this blob"
 msgstr "Поштовий домен, що має цей блок"
 
-#: core/models.py:1474
+#: core/models.py:1478
 msgid "blob"
 msgstr "блок"
 
-#: core/models.py:1475
+#: core/models.py:1479
 msgid "blobs"
 msgstr "блоки"
 
-#: core/models.py:1515
+#: core/models.py:1519
 msgid "file name"
 msgstr "назва файлу"
 
-#: core/models.py:1517
+#: core/models.py:1521
 msgid "Original filename of the attachment"
 msgstr "Оригінальна назва вкладеного файлу"
 
-#: core/models.py:1524
+#: core/models.py:1528
 msgid "Reference to the blob containing the attachment data"
 msgstr "Посилання на блок, що містить дані вкладення"
 
-#: core/models.py:1531
+#: core/models.py:1535
 msgid "Mailbox that owns this attachment"
 msgstr "Поштова скринька, що має це вкладення"
 
-#: core/models.py:1537
+#: core/models.py:1541
 msgid "Messages that use this attachment"
 msgstr "Повідомлення, які використовують це вкладення"
 
-#: core/models.py:1542
+#: core/models.py:1546
 msgid "attachment"
 msgstr "вкладення"
 
-#: core/models.py:1543
+#: core/models.py:1547
 msgid "attachments"
 msgstr "вкладення"
 
-#: core/models.py:1582
+#: core/models.py:1586
 msgid "mail domain access"
 msgstr "доступ до поштового домену"
 
-#: core/models.py:1583
+#: core/models.py:1587
 msgid "mail domain accesses"
 msgstr "доступи до поштового домену"
 
-#: core/models.py:1594
+#: core/models.py:1598
 msgid "selector"
 msgstr "селектор"
 
-#: core/models.py:1596
+#: core/models.py:1600
 msgid "DKIM selector (e.g., 'default', 'mail')"
 msgstr "DKIM селектор (наприклад, 'default', 'mail')"
 
-#: core/models.py:1600
+#: core/models.py:1604
 msgid "private key"
 msgstr "приватний ключ"
 
-#: core/models.py:1601
+#: core/models.py:1605
 msgid "DKIM private key in PEM format (encrypted)"
 msgstr "Приватний ключ DKIM у форматі PEM (зашифрований)"
 
-#: core/models.py:1605
+#: core/models.py:1609
 msgid "public key"
 msgstr "відкритий ключ"
 
-#: core/models.py:1606
+#: core/models.py:1610
 msgid "DKIM public key for DNS record generation"
 msgstr "Публічний ключ DKIM для генерації записів DNS"
 
-#: core/models.py:1610
+#: core/models.py:1614
 msgid "algorithm"
 msgstr "алгоритм"
 
-#: core/models.py:1613
+#: core/models.py:1617
 msgid "DKIM signing algorithm"
 msgstr "Алгоритм підпису DKIM"
 
-#: core/models.py:1617
+#: core/models.py:1621
 msgid "key size"
 msgstr "розмір ключа"
 
-#: core/models.py:1618
+#: core/models.py:1622
 msgid "Key size in bits (e.g., 2048, 4096 for RSA)"
 msgstr "Розмір ключа у бітах (наприклад, 2048, 4096 для RSA)"
 
-#: core/models.py:1622 core/models.py:1683
+#: core/models.py:1626 core/models.py:1687
 msgid "is active"
 msgstr "активний"
 
-#: core/models.py:1624
+#: core/models.py:1628
 msgid "Whether this DKIM key is active and should be used for signing"
 msgstr "Чи є цей ключ DKIM активним і повинен використовуватися для підпису"
 
-#: core/models.py:1631
+#: core/models.py:1635
 msgid "Domain that owns this DKIM key"
 msgstr "Домен, який володіє цим ключем DKIM"
 
-#: core/models.py:1636
+#: core/models.py:1640
 msgid "DKIM key"
 msgstr "Ключ DKIM"
 
-#: core/models.py:1637
+#: core/models.py:1641
 msgid "DKIM keys"
 msgstr "Ключі DKIM"
 
-#: core/models.py:1660
+#: core/models.py:1664
 msgid "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')"
 msgstr "Назва шаблону (наприклад, 'Стандартна відповідь', 'Не в офісі', 'Підпис роботи')"
 
-#: core/models.py:1671
+#: core/models.py:1675
 msgid "Reference to the blob containing template content as JSON: {html: str, text: str, raw: any}"
 msgstr "Посилання на блок, що містить вміст шаблону в форматі JSON: {html: str, text: str, raw: any}"
 
-#: core/models.py:1679
+#: core/models.py:1683
 msgid "Type of template (reply, new_message, signature)"
 msgstr "Тип шаблону (відповідь, нове_повідомлення, підпис)"
 
-#: core/models.py:1685
+#: core/models.py:1689
 msgid "Whether this template is available for use"
 msgstr "Чи доступний цей шаблон для використання"
 
-#: core/models.py:1694
+#: core/models.py:1698
 msgid "Mail domain that can use this template"
 msgstr "Поштовий домен, який може використовувати цей шаблон"
 
-#: core/models.py:1703
+#: core/models.py:1707
 msgid "Mailbox that can use this template"
 msgstr "Поштова скринька, що може використовувати цей шаблон"
 
-#: core/models.py:1707
+#: core/models.py:1711
 msgid "is forced"
 msgstr "обов'язковий"
 
-#: core/models.py:1710
+#: core/models.py:1714
 msgid "Whether this template is forced; no other template of the same type can be used in the same scope"
 msgstr "Чи є цей шаблон обов'язковим; жоден інший шаблон того ж типу не може використовуватися в тій же області"
 
-#: core/models.py:1716
+#: core/models.py:1720
 msgid "message template"
 msgstr "шаблон повідомлення"
 
-#: core/models.py:1717
+#: core/models.py:1721
 msgid "message templates"
 msgstr "шаблони повідомлень"
 
@@ -759,3 +763,4 @@ msgstr "Англійська"
 #: messages/settings.py:341
 msgid "French"
 msgstr "Французька"
+
