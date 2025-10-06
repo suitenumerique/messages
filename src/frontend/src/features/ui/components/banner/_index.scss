@@ -35,10 +35,29 @@
 
 .banner__content__icon {
     font-size: 1.15rem;
-    height: 20px;
+    height: 20px
+}
+
+.banner__content__icon .material-icons {
+    font-size: inherit;
 }
 
 .banner__content__text {
     text-align: left;
     flex: 1;
+}
+
+.banner--compact {
+    padding-inline: var(--c--theme--spacings--xs);
+    font-size: var(--c--theme--font--sizes--sm);
+    padding-block: var(--c--theme--spacings--xs);
+
+    .banner__content__icon {
+        font-size: 1rem;
+        height: 16px;
+    }
+}
+
+.banner--full-width {
+    width: 100%;
 }

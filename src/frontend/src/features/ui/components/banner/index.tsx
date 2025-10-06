@@ -1,3 +1,4 @@
+import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
 
@@ -5,18 +6,20 @@ type BannerProps = {
     children: React.ReactNode;
     type: "info" | "error" | "warning";
     icon?: React.ReactNode;
+    compact?: boolean;
+    fullWidth?: boolean;
 }
 
 /**
  * A banner component that displays a message with an icon and a type (error or info).
  * TODO: Migrate this component into our ui-kit
  */
-export const Banner = ({ children, type = 'info', icon }: BannerProps) => {
+export const Banner = ({ children, type = 'info', icon, compact = false, fullWidth = false }: BannerProps) => {
     const { t } = useTranslation();
 
     return (
         <div
-            className={clsx("banner", `banner--${type}`)}
+            className={clsx("banner", `banner--${type}`, { "banner--compact": compact, "banner--full-width": fullWidth })}
             role="alert"
             aria-live="polite"
             aria-label={t(`aria.labels.banner.${type}`)}
@@ -28,7 +31,7 @@ export const Banner = ({ children, type = 'info', icon }: BannerProps) => {
                 >
                     {
                         icon ? icon : (
-                            <span className="material-icons">{type}</span>
+                            <Icon name={type} type={IconType.OUTLINED} />
                         )
                     }
                 </div>

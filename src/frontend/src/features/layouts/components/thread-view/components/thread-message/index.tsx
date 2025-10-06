@@ -14,6 +14,7 @@ import { Banner } from "@/features/ui/components/banner";
 import { MessageFormMode } from "@/features/forms/components/message-form";
 import MailHelper from "@/features/utils/mail-helper";
 import useAbility, { Abilities } from "@/hooks/use-ability";
+import { ContactChip } from "@/features/ui/components/contact-chip";
 
 type ThreadMessageProps = {
     message: Message,
@@ -29,6 +30,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
             return null;
         })
         const showReplyForm = replyFormMode !== null;
+        const isSuspiciousSender = Boolean(message.stmsg_headers?.['sender-auth'] === 'none');
         const { markAsUnread } = useRead()
         const { markAsTrashed, markAsUntrashed } = useTrash()
         const { unselectThread, selectedThread, messages, queryStates, selectedMailbox } = useMailboxContext()
@@ -173,17 +175,45 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                             </div>
                         </div>
                     </div>
+                    { isSuspiciousSender && (
+                    <div className="thread-message__header-rows" style={{ marginBlock: 'var(--c--theme--spacings--xs)' }}>
+                        <Banner type="warning" compact fullWidth>
+                            <div className="thread-message__header-banner__content">
+                                <p>{t(t('The sender of this message cannot be trusted. Be careful when interacting with it.'))}</p>
+                                </div>
+                            </Banner>
+                        </div>
+                    )}
                     <div className="thread-message__header-rows">
                         <div className="thread-message__header-column thread-message__header-column--left">
                             <dl className="thread-message__correspondents">
                                 <dt>{t('From: ')}</dt>
-                                <dd>{message.sender.email}</dd>
+                                <dd className="recipient-chip-list">
+                                    <ContactChip
+                                        contact={message.sender}
+                                        showWarning={isSuspiciousSender}
+                                    />
+                                </dd>
                                 <dt>{t('To: ')}</dt>
-                                <dd>{message.to.map((recipient) => recipient.email).join(', ')}</dd>
+                                <dd className="recipient-chip-list">
+                                    {message.to.map((recipient) => (
+                                        <ContactChip
+                                            key={recipient.id}
+                                            contact={recipient}
+                                        />
+                                    ))}
+                                </dd>
                                 {message.cc.length > 0 && (
                                     <>
                                         <dt>{t('Copy: ')}</dt>
-                                        <dd>{message.cc.map((recipient) => recipient.email).join(', ')}</dd>
+                                        <dd className="recipient-chip-list">
+                                            {message.cc.map((recipient) => (
+                                                <ContactChip
+                                                    key={recipient.id}
+                                                    contact={recipient}
+                                                />
+                                            ))}
+                                        </dd>
                                     </>
                                 )}
                             </dl>
