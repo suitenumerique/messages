@@ -2,6 +2,7 @@ import styles from "./styles.css?inline";
 import { createShadowWidget } from "../../shared/shadow-dom";
 import { installHook } from "../../shared/script";
 import { listenEvent, triggerEvent } from "../../shared/events";
+import { trapFocus, trapEscape } from "../../shared/focus";
 
 const widgetName = "lagaufre";
 
@@ -37,6 +38,8 @@ type GaufreWidgetArgs = {
   headerLogo?: string;
   headerUrl?: string;
   open?: boolean;
+  label?: string;
+  closeLabel?: string;
 };
 
 // Initialize widget (load data and prepare shadow DOM)
@@ -52,16 +55,16 @@ listenEvent(widgetName, "init", null, false, async (args: GaufreWidgetArgs) => {
   if (args.headerLogo && args.headerUrl) {
     headerHtml =
       `<a href="${args.headerUrl}" target="_blank">` +
-      `<img src="${args.headerLogo}" alt="Header Logo" class="header-logo">` +
+      `<img src="${args.headerLogo}" alt="Logo" class="header-logo">` +
       `</a>`;
   }
 
   /* prettier-ignore */
   const htmlContent =
-    `<div id="wrapper">` +
+    `<div id="wrapper" role="dialog" aria-modal="true" tabindex="-1">` +
         `<div id="header">` +
             headerHtml +
-            `<button id="close" tabindex="1">&times;</button>` +
+            `<button id="close">&times;</button>` +
         `</div>` +
         `<div id="content">` +
             `<div id="loading" class="loading">Loading services...</div>` +
@@ -112,6 +115,12 @@ listenEvent(widgetName, "init", null, false, async (args: GaufreWidgetArgs) => {
   if (args.background) {
     wrapper.style.background = args.background;
   }
+
+  // Apply texts
+  const label = args.label || "Services";
+  const closeLabel = args.closeLabel || "Close the Services menu";
+  wrapper.setAttribute("aria-labelledby", label);
+  closeBtn.setAttribute("aria-label", closeLabel);
 
   // Initially hide the widget
   wrapper.style.display = "none";
@@ -189,6 +198,9 @@ listenEvent(widgetName, "init", null, false, async (args: GaufreWidgetArgs) => {
     }
   };
 
+  let untrapFocus: (() => void) | null = null;
+  let untrapEscape: (() => void) | null = null;
+
   // Open widget (show the prepared shadow DOM)
   listenEvent(widgetName, "open", null, false, () => {
     wrapper.style.display = "block";
@@ -197,13 +209,26 @@ listenEvent(widgetName, "init", null, false, async (args: GaufreWidgetArgs) => {
     setTimeout(() => {
       isVisible = true;
       document.addEventListener("click", handleClickOutside);
-    }, 300);
+      wrapper.focus();
+    }, 200);
+
+    untrapFocus = trapFocus(shadowRoot, wrapper, "a,button");
+    untrapEscape = trapEscape(() => {
+      triggerEvent(widgetName, "close");
+    });
 
     triggerEvent(widgetName, "opened");
   });
 
   // Close widget (hide the shadow DOM)
   listenEvent(widgetName, "close", null, false, () => {
+    if (untrapFocus) {
+      untrapFocus();
+    }
+    if (untrapEscape) {
+      untrapEscape();
+    }
+
     if (!isVisible) {
       return; // Already closed
     }

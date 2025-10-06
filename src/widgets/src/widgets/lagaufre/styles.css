@@ -185,11 +185,12 @@
   flex-direction: column;
   align-items: center;
   width: 100%;
+  padding-top: 4px;
 }
 
 .service-name {
   font-weight: 600;
-  font-size: 12px;
+  font-size: 14px;
   color: #1e40af;
   margin-bottom: 2px;
   line-height: 1.2;

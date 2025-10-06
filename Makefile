@@ -490,6 +490,13 @@ widgets-stop: ## stop the widgets container
 	$(COMPOSE) stop widgets-dev
 .PHONY: widgets-stop
 
+widgets-restart: ## restart the widgets container and rebuild
+widgets-restart: \
+	widgets-stop \
+	widgets-build \
+	widgets-start
+.PHONY: widgets-restart
+
 widgets-deploy: ## deploy the widgets to an S3 bucket
 	@## Error if the env vars MESSAGES_WIDGETS_S3_PATH is not set
 	@if [ -z "$$MESSAGES_WIDGETS_S3_PATH" ]; then \

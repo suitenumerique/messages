@@ -25,15 +25,20 @@ export const LagaufreButton = () => {
     // Construct script URLs from the base path
     const feedbackScript = `${widgetPath}lagaufre.js`;
 
+    document.addEventListener("stmsg-widget-lagaufre-closed", () => {
+        // Focus the button
+        (document.querySelector(".lagaufre-button") as HTMLElement)?.focus();
+    });
+
     // Load the loader script if not already loaded
     if (!document.querySelector(`script[src="${feedbackScript}"]`)) {
-    const script = document.createElement("script");
-    script.async = true;
-    script.src = feedbackScript;
-    const firstScript = document.getElementsByTagName("script")[0];
-    if (firstScript && firstScript.parentNode) {
-        firstScript.parentNode.insertBefore(script, firstScript);
-    }
+        const script = document.createElement("script");
+        script.async = true;
+        script.src = feedbackScript;
+        const firstScript = document.getElementsByTagName("script")[0];
+        if (firstScript && firstScript.parentNode) {
+            firstScript.parentNode.insertBefore(script, firstScript);
+        }
     }
 
     // Initialize the widget
