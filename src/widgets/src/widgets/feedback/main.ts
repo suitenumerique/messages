@@ -2,6 +2,7 @@ import styles from "./styles.css?inline";
 import { createShadowWidget } from "../../shared/shadow-dom";
 import { installHook } from "../../shared/script";
 import { listenEvent, triggerEvent } from "../../shared/events";
+import { trapFocus, trapEscape } from "../../shared/focus";
 
 const widgetName = "feedback";
 
@@ -75,13 +76,13 @@ listenEvent(widgetName, "init", null, false, async (args: FeedbackWidgetArgs) =>
     `<div id="wrapper">` +
       `<div id="header">` +
         `<h6 id="title"></h6>` +
-        `<button id="close" tabindex="4">&times;</button>` +
+        `<button id="close">&times;</button>` +
       `</div>` +
       `<div id="content">` +
         `<form>` +
-          `<textarea id="feedback-text" autocomplete="off" required tabindex="1"></textarea>` +
-          `<input type="email" id="email" autocomplete="email" required tabindex="2">` +
-          `<button type="submit" id="submit" tabindex="3"></button>` +
+          `<textarea id="feedback-text" autocomplete="off" required></textarea>` +
+          `<input type="email" id="email" autocomplete="email" required>` +
+          `<button type="submit" id="submit"></button>` +
         `</form>` +
         `<div id="error" aria-live="polite" role="status"></div>` +
         `<div aria-live="polite" role="status" id="success">` +
@@ -101,7 +102,7 @@ listenEvent(widgetName, "init", null, false, async (args: FeedbackWidgetArgs) =>
   const titleSpan = $<HTMLHeadingElement>("#title")!;
   const submitBtn = $<HTMLButtonElement>("#submit")!;
   const feedbackText = $<HTMLTextAreaElement>("#feedback-text")!;
-  const errorDiv = $<HTMLParagraphElement>("#error")!;
+  const errorDiv = $<HTMLDivElement>("#error")!;
   const closeBtn = $<HTMLButtonElement>("#close")!;
   const emailInput = $<HTMLInputElement>("#email")!;
   const form = $<HTMLFormElement>("form")!;
@@ -124,7 +125,7 @@ listenEvent(widgetName, "init", null, false, async (args: FeedbackWidgetArgs) =>
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    errorDiv.innerHTML = "";
+    errorDiv.textContent = "";
     const message = feedbackText.value.trim();
     const email = args.email || emailInput.value.trim();
     try {
@@ -167,17 +168,35 @@ listenEvent(widgetName, "init", null, false, async (args: FeedbackWidgetArgs) =>
     }
   });
 
+  let untrapFocus: (() => void) | null = null;
+  let untrapEscape: (() => void) | null = null;
+  let removeCloseListener: () => void = () => {};
+
   const closeWidget = () => {
     shadowRoot.host.remove();
+    if (untrapFocus) {
+      untrapFocus();
+    }
+    if (untrapEscape) {
+      untrapEscape();
+    }
+    if (removeCloseListener) {
+      removeCloseListener();
+    }
     triggerEvent(widgetName, "closed");
   };
 
   closeBtn.addEventListener("click", closeWidget);
-  listenEvent(widgetName, "close", null, false, closeWidget);
+  removeCloseListener = listenEvent(widgetName, "close", null, false, closeWidget);
 
   document.body.appendChild(shadowContainer);
 
   feedbackText.focus();
+
+  untrapFocus = trapFocus(shadowRoot, wrapper, "textarea,input,button");
+  untrapEscape = trapEscape(() => {
+    triggerEvent(widgetName, "close");
+  });
 
   triggerEvent(widgetName, "opened");
 });

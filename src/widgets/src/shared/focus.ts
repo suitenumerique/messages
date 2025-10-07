@@ -9,6 +9,8 @@ export const trapFocus = (shadowRoot: ShadowRoot, container: HTMLElement, select
     const focusable = Array.from(container.querySelectorAll(selector)).filter((element) =>
       isVisible(element as HTMLElement),
     );
+    if (focusable.length === 0) return;
+
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
 
@@ -30,7 +32,6 @@ export const trapFocus = (shadowRoot: ShadowRoot, container: HTMLElement, select
 
 export const trapEscape = (cb: () => void) => {
   const handleKeydown = (e: KeyboardEvent) => {
-    console.log("handleKeydown", e.key);
     if (e.key !== "Escape") return;
     e.preventDefault();
     cb();
