@@ -1011,7 +1011,7 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
             domain=self.context.get("domain"), local_part=value
         ).exists():
             raise serializers.ValidationError(
-                _("An mailbox with this local part already exists in this domain.")
+                _("A mailbox with this local part already exists in this domain.")
             )
         return value
 

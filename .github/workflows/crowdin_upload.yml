@@ -26,7 +26,9 @@ jobs:
         with:
           config: crowdin/config.yml
           upload_sources: true
-          upload_translations: false
+          upload_translations: true
+          # Upload french translations only as we want to translate this language during dev
+          upload_language: fr
           download_translations: false
           create_pull_request: false
         env:

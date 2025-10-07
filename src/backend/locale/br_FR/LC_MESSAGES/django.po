@@ -2,15 +2,18 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-10-06 16:30+0000\n"
-"PO-Revision-Date: 2025-10-06 16:32\n"
+"POT-Creation-Date: 2025-10-07 16:25+0000\n"
+"PO-Revision-Date: 2025-10-07 16:17\n"
 "Last-Translator: \n"
 "Language-Team: Breton\n"
 "Language: br_FR\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=5; plural=(n%10==1 && (n%100!=11 || n%100!=71 || n%100!=91) ? 0 : n%10==2 && (n%100!=12 || n%100!=72 || n%100!=92) ? 1 : ((n%10>=3 && n%10<=4) || n%10==9) && ((n%100 < 10 || n%100 > 19) || (n%100 < 70 || n%100 > 79) || (n%100 < 90 || n%100 > 99)) ? 2 : (n!=0 && n%1;\n"
+"Plural-Forms: nplurals=5; plural=(n%10==1 && (n%100!=11 || n%100!=71 || "
+"n%100!=91) ? 0 : n%10==2 && (n%100!=12 || n%100!=72 || n%100!=92) ? 1 : "
+"((n%10>=3 && n%10<=4) || n%10==9) && ((n%100 < 10 || n%100 > 19) || (n%100 < "
+"70 || n%100 > 79) || (n%100 < 90 || n%100 > 99)) ? 2 : (n!=0 && n%1;\n"
 "X-Crowdin-Project: lasuite-messages\n"
 "X-Crowdin-Project-ID: 831182\n"
 "X-Crowdin-Language: br-FR\n"
@@ -59,7 +62,7 @@ msgid "Keys"
 msgstr ""
 
 #: core/api/serializers.py:1014
-msgid "An mailbox with this local part already exists in this domain."
+msgid "A mailbox with this local part already exists in this domain."
 msgstr ""
 
 #: core/api/viewsets/placeholder.py:48
@@ -103,11 +106,15 @@ msgid "date and time at which a record was last updated"
 msgstr ""
 
 #: core/models.py:120
-msgid "We couldn't find a user with this sub but the email is already associated with a registered user."
+msgid ""
+"We couldn't find a user with this sub but the email is already associated "
+"with a registered user."
 msgstr ""
 
 #: core/models.py:133
-msgid "Enter a valid sub. This value may contain only letters, numbers, and @/./+/-/_/: characters."
+msgid ""
+"Enter a valid sub. This value may contain only letters, numbers, and @/./+/-/"
+"_/: characters."
 msgstr ""
 
 #: core/models.py:139
@@ -115,7 +122,9 @@ msgid "sub"
 msgstr ""
 
 #: core/models.py:141
-msgid "Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: characters only."
+msgid ""
+"Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: "
+"characters only."
 msgstr ""
 
 #: core/models.py:150
@@ -155,7 +164,9 @@ msgid "active"
 msgstr ""
 
 #: core/models.py:182
-msgid "Whether this user should be treated as active. Unselect this instead of deleting accounts."
+msgid ""
+"Whether this user should be treated as active. Unselect this instead of "
+"deleting accounts."
 msgstr ""
 
 #: core/models.py:188 core/models.py:275
@@ -175,7 +186,9 @@ msgid "users"
 msgstr ""
 
 #: core/models.py:249
-msgid "Enter a valid domain name. This value may contain only lowercase letters, numbers, dots and - characters."
+msgid ""
+"Enter a valid domain name. This value may contain only lowercase letters, "
+"numbers, dots and - characters."
 msgstr ""
 
 #: core/models.py:255 core/models.py:422 core/models.py:894 core/models.py:1121
@@ -256,7 +269,8 @@ msgid "is identity"
 msgstr ""
 
 #: core/models.py:493
-msgid "Whether this mailbox identifies a person (i.e. is not an alias or a group)"
+msgid ""
+"Whether this mailbox identifies a person (i.e. is not an alias or a group)"
 msgstr ""
 
 #: core/models.py:503
@@ -352,7 +366,9 @@ msgid "threads"
 msgstr ""
 
 #: core/models.py:897
-msgid "Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/Projects')"
+msgid ""
+"Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/"
+"Projects')"
 msgstr ""
 
 #: core/models.py:901
@@ -696,11 +712,15 @@ msgid "DKIM keys"
 msgstr ""
 
 #: core/models.py:1664
-msgid "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')"
+msgid ""
+"Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work "
+"Signature')"
 msgstr ""
 
 #: core/models.py:1675
-msgid "Reference to the blob containing template content as JSON: {html: str, text: str, raw: any}"
+msgid ""
+"Reference to the blob containing template content as JSON: {html: str, text: "
+"str, raw: any}"
 msgstr ""
 
 #: core/models.py:1683
@@ -724,7 +744,9 @@ msgid "is forced"
 msgstr ""
 
 #: core/models.py:1714
-msgid "Whether this template is forced; no other template of the same type can be used in the same scope"
+msgid ""
+"Whether this template is forced; no other template of the same type can be "
+"used in the same scope"
 msgstr ""
 
 #: core/models.py:1720
@@ -756,11 +778,10 @@ msgstr ""
 msgid "Start Import"
 msgstr ""
 
-#: messages/settings.py:340
+#: messages/settings.py:348
 msgid "English"
 msgstr ""
 
-#: messages/settings.py:341
+#: messages/settings.py:349
 msgid "French"
 msgstr ""
-

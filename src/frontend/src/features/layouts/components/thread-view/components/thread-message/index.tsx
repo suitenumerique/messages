@@ -180,7 +180,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                         <Banner type="warning" compact fullWidth>
                             <div className="thread-message__header-banner__content">
                                 <p>{t("This contact's identity could not be verified. Proceed with caution.")}</p>
-                                </div>
+                            </div>
                             </Banner>
                         </div>
                     )}
