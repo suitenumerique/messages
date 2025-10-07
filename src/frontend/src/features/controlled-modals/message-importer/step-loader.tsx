@@ -56,13 +56,7 @@ export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => 
             <p className="task-loader__progress_resume">
                 <strong>
                     {   progress
-                        ? t(
-                            '{{count}} messages imported on {{total}}',
-                            {
-                                count: taskMetadata!.current_message,
-                                total: taskMetadata!.total_messages,
-                                defaultValue_one: '{{count}} message imported on {{total}}'
-                            })
+                        ? t('{{progress}}% imported', { progress: Math.ceil(progress) })
                         : t('Importing...')
                     }
                 </strong>

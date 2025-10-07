@@ -94,6 +94,10 @@
     }
 }
 
+.task-loader__progress_resume {
+    font-variant-numeric: tabular-nums;
+}
+
 .importer-completed {
     display: flex;
     flex-direction: column;

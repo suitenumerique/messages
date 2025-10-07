@@ -48,7 +48,7 @@ export const ContactChip = ({ contact, showWarning = false }: ContactChipProps) 
 
     if (showWarning) {
         return (
-            <Tooltip content={t('This contact cannot be trusted. Be careful when interacting with this contact.')}>
+            <Tooltip content={t('This contact cannot be trusted. Be careful when interacting with it.')}>
                 {chipContent}
             </Tooltip>
         );
