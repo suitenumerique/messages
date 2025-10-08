@@ -76,6 +76,10 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
                     font-size: 14px;
                     color: #24292e;
                 }
+                body > *:first-child {
+                    margin-top: 0;
+                    padding-top: 0 !important;
+                }
                 *:not(:last-child) {
                     margin-bottom: 1em;
                 }

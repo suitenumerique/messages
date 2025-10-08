@@ -41,7 +41,7 @@ import type {
   SendCreate400,
   SendCreate403,
   SendCreate503,
-  SendMessageRequestRequest,
+  SendMessageRequest,
   SendMessageResponse,
 } from ".././models";
 
@@ -1271,14 +1271,14 @@ export const getSendCreateUrl = () => {
 };
 
 export const sendCreate = async (
-  sendMessageRequestRequest: SendMessageRequestRequest,
+  sendMessageRequest: SendMessageRequest,
   options?: RequestInit,
 ): Promise<sendCreateResponse> => {
   return fetchAPI<sendCreateResponse>(getSendCreateUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(sendMessageRequestRequest),
+    body: JSON.stringify(sendMessageRequest),
   });
 };
 
@@ -1289,14 +1289,14 @@ export const getSendCreateMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof sendCreate>>,
     TError,
-    { data: SendMessageRequestRequest },
+    { data: SendMessageRequest },
     TContext
   >;
   request?: SecondParameter<typeof fetchAPI>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof sendCreate>>,
   TError,
-  { data: SendMessageRequestRequest },
+  { data: SendMessageRequest },
   TContext
 > => {
   const mutationKey = ["sendCreate"];
@@ -1310,7 +1310,7 @@ export const getSendCreateMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof sendCreate>>,
-    { data: SendMessageRequestRequest }
+    { data: SendMessageRequest }
   > = (props) => {
     const { data } = props ?? {};
 
@@ -1323,7 +1323,7 @@ export const getSendCreateMutationOptions = <
 export type SendCreateMutationResult = NonNullable<
   Awaited<ReturnType<typeof sendCreate>>
 >;
-export type SendCreateMutationBody = SendMessageRequestRequest;
+export type SendCreateMutationBody = SendMessageRequest;
 export type SendCreateMutationError =
   | SendCreate400
   | SendCreate403
@@ -1337,7 +1337,7 @@ export const useSendCreate = <
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof sendCreate>>,
       TError,
-      { data: SendMessageRequestRequest },
+      { data: SendMessageRequest },
       TContext
     >;
     request?: SecondParameter<typeof fetchAPI>;
@@ -1346,7 +1346,7 @@ export const useSendCreate = <
 ): UseMutationResult<
   Awaited<ReturnType<typeof sendCreate>>,
   TError,
-  { data: SendMessageRequestRequest },
+  { data: SendMessageRequest },
   TContext
 > => {
   const mutationOptions = getSendCreateMutationOptions(options);

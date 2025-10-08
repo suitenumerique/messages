@@ -93,11 +93,11 @@ def fixture_signature_template(mailbox):
     )
 
 
-class TestSendMessageViewSignature:
-    """Test signature handling in SendMessageView."""
+class TestSendMessageAPIView:
+    """Test SendMessageAPIView."""
 
     @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
-    def test_send_message_with_signature_placeholder(
+    def test_api_send_message_with_signature_placeholder(
         self,
         user,
         mailbox_access,
@@ -142,7 +142,7 @@ class TestSendMessageViewSignature:
                 in content
             )
 
-    def test_send_message_without_signature_placeholder(
+    def test_api_send_message_without_signature_placeholder(
         self, user, mailbox_access, mailbox, draft_message
     ):
         """Test sending a message without signature placeholder."""
@@ -175,7 +175,7 @@ class TestSendMessageViewSignature:
                 assert response.data["task_id"] == "task-123"
 
     @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
-    def test_send_message_with_text_body_only(
+    def test_api_send_message_with_text_body_only(
         self,
         user,
         mailbox_access,
@@ -220,7 +220,7 @@ class TestSendMessageViewSignature:
             )
 
     @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
-    def test_send_message_with_html_body_only(
+    def test_api_send_message_with_html_body_only(
         self,
         user,
         mailbox_access,
@@ -265,7 +265,7 @@ class TestSendMessageViewSignature:
             )
 
     @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
-    def test_send_message_with_signature_and_reply(
+    def test_api_send_message_with_signature_and_reply(
         self,
         user,
         mailbox_access,
@@ -314,4 +314,111 @@ class TestSendMessageViewSignature:
             assert (
                 "Best regards,\r\nJohn Doe\r\nSoftware Engineer\r\nEngineering"
                 in content
+            )
+
+    def test_api_send_message_with_archive_true(
+        self,
+        user,
+        mailbox_access,
+        mailbox,
+        draft_message,
+        signature_template,
+    ):
+        """Test sending a message with archive=True passes the parameter to the task."""
+        # Authenticate user
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        # Mock the send_message_task
+        with patch("core.api.viewsets.send.send_message_task") as mock_task:
+            mock_task_instance = MagicMock()
+            mock_task_instance.id = "task-123"
+            mock_task.delay.return_value = mock_task_instance
+
+            # Send request with HTML body only
+            response = client.post(
+                reverse("send-message"),
+                format="json",
+                data={
+                    "messageId": str(draft_message.id),
+                    "senderId": str(mailbox.id),
+                    "htmlBody": "<p>Hello world!</p>",
+                    "archive": True,
+                },
+            )
+
+            assert response.status_code == status.HTTP_200_OK
+            assert response.data["task_id"] == "task-123"
+
+            mock_task.delay.assert_called_once_with(
+                str(draft_message.id), must_archive=True
+            )
+
+    def test_api_send_message_with_archive_false(
+        self, user, mailbox_access, mailbox, draft_message
+    ):
+        """Test sending a message with archive=False passes the parameter to the task."""
+        # Authenticate user
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        # Mock the send_message_task
+        with patch("core.api.viewsets.send.send_message_task") as mock_task:
+            mock_task_instance = MagicMock()
+            mock_task_instance.id = "task-123"
+            mock_task.delay.return_value = mock_task_instance
+
+            # Send request with archive=False
+            response = client.post(
+                reverse("send-message"),
+                format="json",
+                data={
+                    "messageId": str(draft_message.id),
+                    "senderId": str(mailbox.id),
+                    "textBody": "Hello world!",
+                    "htmlBody": "<p>Hello world!</p>",
+                    "archive": False,
+                },
+            )
+
+            assert response.status_code == status.HTTP_200_OK
+            assert response.data["task_id"] == "task-123"
+
+            # Verify the task was called with must_archive=False
+            mock_task.delay.assert_called_once_with(
+                str(draft_message.id), must_archive=False
+            )
+
+    def test_api_send_message_without_archive_parameter(
+        self, user, mailbox_access, mailbox, draft_message
+    ):
+        """Test sending a message without archive parameter defaults to False."""
+        # Authenticate user
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        # Mock the send_message_task
+        with patch("core.api.viewsets.send.send_message_task") as mock_task:
+            mock_task_instance = MagicMock()
+            mock_task_instance.id = "task-123"
+            mock_task.delay.return_value = mock_task_instance
+
+            # Send request without archive parameter
+            response = client.post(
+                reverse("send-message"),
+                format="json",
+                data={
+                    "messageId": str(draft_message.id),
+                    "senderId": str(mailbox.id),
+                    "textBody": "Hello world!",
+                    "htmlBody": "<p>Hello world!</p>",
+                },
+            )
+
+            assert response.status_code == status.HTTP_200_OK
+            assert response.data["task_id"] == "task-123"
+
+            # Verify the task was called with must_archive=False (default)
+            mock_task.delay.assert_called_once_with(
+                str(draft_message.id), must_archive=False
             )

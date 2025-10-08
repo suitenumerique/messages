@@ -24,27 +24,7 @@ logger = logging.getLogger(__name__)
 
 @extend_schema(
     tags=["messages"],
-    request=inline_serializer(
-        name="SendMessageRequest",
-        fields={
-            "messageId": drf_serializers.UUIDField(
-                required=True,
-                help_text="ID of the draft message to send",
-            ),
-            "senderId": drf_serializers.UUIDField(
-                required=True,
-                help_text="Mailbox ID from which to send (must match draft)",
-            ),
-            "textBody": drf_serializers.CharField(
-                required=False,
-                help_text="Text body of the message",
-            ),
-            "htmlBody": drf_serializers.CharField(
-                required=False,
-                help_text="HTML body of the message",
-            ),
-        },
-    ),
+    request=serializers.SendMessageSerializer,
     responses={
         200: inline_serializer(
             name="SendMessageResponse",
@@ -96,13 +76,11 @@ class SendMessageView(APIView):
 
     def post(self, request):
         """Send a draft message identified by messageId."""
-        message_id = request.data.get("messageId")
-        sender_id = request.data.get("senderId")
-
-        if not message_id:
-            raise drf_exceptions.ValidationError("messageId is required.")
-        if not sender_id:
-            raise drf_exceptions.ValidationError("senderId is required.")
+        serializer = serializers.SendMessageSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        message_id = serializer.validated_data.get("messageId")
+        sender_id = serializer.validated_data.get("senderId")
+        must_archive = serializer.validated_data.get("archive", False) is True
 
         try:
             mailbox_sender = models.Mailbox.objects.get(id=sender_id)
@@ -142,7 +120,7 @@ class SendMessageView(APIView):
             )
 
         # Launch async task for sending the message
-        task = send_message_task.delay(str(message.id))
+        task = send_message_task.delay(str(message.id), must_archive=must_archive)
 
         # --- Finalize ---
         # Message state should be updated by prepare_outbound_message/send_message

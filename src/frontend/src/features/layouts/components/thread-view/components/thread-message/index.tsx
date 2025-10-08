@@ -25,10 +25,13 @@ type ThreadMessageProps = {
 export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
     ({ message, isLatest, draftMessage, ...props }, ref) => {
         const { t, i18n } = useTranslation()
-        const [replyFormMode, setReplyFormMode] = useState<MessageFormMode | null>(() => {
-            if (!message.is_trashed && (message.is_draft || draftMessage?.is_draft)) return 'reply';
+        const getReplyFormMode = () => {
+            if (!message.is_draft || message.is_trashed) return null;
+            if (!draftMessage) return 'new';
+            if (draftMessage.is_draft) return 'reply';
             return null;
-        })
+        }
+        const [replyFormMode, setReplyFormMode] = useState<MessageFormMode | null>(getReplyFormMode)
         const showReplyForm = replyFormMode !== null;
         const isSuspiciousSender = Boolean(message.stmsg_headers?.['sender-auth'] === 'none');
         const { markAsUnread } = useRead()
@@ -60,7 +63,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         }, [messages, unselectThread, markAsUnread])
 
         useEffect(() => {
-            setReplyFormMode(!message.is_trashed && (message.is_draft || draftMessage?.is_draft) ? 'reply' : null);
+            setReplyFormMode(getReplyFormMode())
         }, [message, draftMessage])
 
         return (

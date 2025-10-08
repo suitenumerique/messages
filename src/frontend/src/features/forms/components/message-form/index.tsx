@@ -1,5 +1,5 @@
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button } from "@openfun/cunningham-react";
+import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Button, Tooltip } from "@openfun/cunningham-react";
 import { clsx } from "clsx";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
@@ -22,6 +22,8 @@ import { RhfContactComboBox } from "../react-hook-form/rhf-contact-combobox";
 import { DriveFile } from "./drive-attachment-picker";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import i18n from "@/features/i18n/initI18n";
+import { DropdownButton } from "@/features/ui/components/dropdown-button";
+import { PREFER_SEND_MODE_KEY, PreferSendMode } from "@/features/config/constants";
 
 export type MessageFormMode = "new" |"reply" | "reply_all" | "forward";
 
@@ -78,13 +80,16 @@ export const MessageForm = ({
     const { t } = useTranslation();
     const router = useRouter();
     const [draft, setDraft] = useState<Message | undefined>(draftMessage);
+    const [preferredSendMode, setPreferredSendMode] = useState<PreferSendMode>(() => {
+        if (mode === 'new') return PreferSendMode.SEND;
+        return localStorage.getItem(PREFER_SEND_MODE_KEY) as PreferSendMode ?? PreferSendMode.SEND;
+    });
     const [showCCField, setShowCCField] = useState((draftMessage?.cc?.length ?? 0) > 0);
     const [showBCCField, setShowBCCField] = useState((draftMessage?.bcc?.length ?? 0) > 0);
-    const [pendingSubmit, setPendingSubmit] = useState(false);
+    const [pendingSubmit, setPendingSubmit] = useState<{ archive: boolean } | null>(null);
     const [currentTime, setCurrentTime] = useState(new Date());
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
     const quoteType: QuoteType | undefined = mode !== "new" ? (mode === "forward" ? "forward" : "reply") : undefined;
-
     const { selectedMailbox, mailboxes, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
     const hideSubjectField = Boolean(parentMessage);
     const defaultSenderId = mailboxes?.find((mailbox) => {
@@ -212,10 +217,11 @@ export const MessageForm = ({
                 form.clearErrors();
                 toast.dismiss(DRAFT_TOAST_ID);
             },
-            onSuccess: async (response) => {
+            onSuccess: async (response, { data: variables }) => {
                 const data = (response as sendCreateResponse200).data;
                 const taskId = data.task_id;
-                addQueuedMessage(taskId);
+                const shouldCloseThread = !!variables.archive;
+                addQueuedMessage(taskId, shouldCloseThread);
                 onSuccess?.();
             }
         }
@@ -246,7 +252,7 @@ export const MessageForm = ({
 
     const deleteMessageMutation = useMessagesDestroy();
     const isSavingDraft = draftCreateMutation.isPending || draftUpdateMutation.isPending || deleteMessageMutation.isPending;
-    const isSubmittingMessage = pendingSubmit || messageMutation.isPending;
+    const isSubmittingMessage = pendingSubmit !== null || messageMutation.isPending;
 
     const handleDeleteMessage = (messageId: string) => {
         if(window.confirm(t("Are you sure you want to delete this draft? This action cannot be undone."))) {
@@ -389,7 +395,7 @@ export const MessageForm = ({
     /**
      * Send the draft message
      */
-    const handleSubmit = async (data: MessageFormFields) => {
+    const handleSubmit = async (data: MessageFormFields, { archive }: { archive: boolean }) => {
         if (!canSendMessages) return;
 
         // recipients are optional to save the draft but required to send the message
@@ -403,10 +409,10 @@ export const MessageForm = ({
 
         if (isSavingDraft) {
             // Do not trigger the submit but mark the form as pending for submitting
-            setPendingSubmit(true);
+            setPendingSubmit({ archive });
             return;
         }
-        setPendingSubmit(false);
+        setPendingSubmit(null);
 
         // Only save if there are unsaved changes, otherwise use existing draft
         let draftToSend = draft;
@@ -424,6 +430,7 @@ export const MessageForm = ({
                 senderId: data.from,
                 htmlBody: MailHelper.attachDriveAttachmentsToHtmlBody(data.messageHtmlBody, data.driveAttachments),
                 textBody: MailHelper.attachDriveAttachmentsToTextBody(data.messageTextBody, data.driveAttachments),
+                archive,
             }
         });
     };
@@ -459,8 +466,8 @@ export const MessageForm = ({
     // Effect to retriger handleSubmit if the form is pending for submit
     // and the draft save state is updated to false
     useEffect(() => {
-        if (pendingSubmit && !isSavingDraft) {
-            handleSubmit(form.getValues());
+        if (pendingSubmit !== null && !isSavingDraft) {
+            handleSubmit(form.getValues(), pendingSubmit);
         }
     }, [isSavingDraft]);
 
@@ -496,11 +503,15 @@ export const MessageForm = ({
         }
     }, [showBCCField])
 
+    useEffect(() => {
+        localStorage.setItem(PREFER_SEND_MODE_KEY, preferredSendMode);
+    }, [preferredSendMode])
+
     return (
         <FormProvider {...form}>
             <form
                 className="message-form"
-                onSubmit={form.handleSubmit(handleSubmit)}
+                onSubmit={form.handleSubmit(data => handleSubmit(data, { archive: preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE }))}
                 onBlur={form.handleSubmit(saveDraft)}
                 onKeyDown={handleKeyDown}
             >
@@ -612,32 +623,48 @@ export const MessageForm = ({
                     }
                 </div>
                 <footer className="form-footer">
-                    <Button
+                    <DropdownButton
                         color="primary"
-                        disabled={!canSendMessages || !draft || isSubmittingMessage}
-                        icon={isSubmittingMessage ? <Spinner size="sm" /> : undefined}
+                        disabled={!canSendMessages || isSubmittingMessage}
                         type="submit"
+                        dropdownOptions={[
+                            ...(mode !== 'new' ? [{
+                                label: preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? t("Send") : t("Send and archive"),
+                                icon: <Icon name={preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? "send" : "send_and_archive"} type={IconType.OUTLINED} />,
+                                callback: form.handleSubmit(data => handleSubmit(data, { archive: preferredSendMode !== PreferSendMode.SEND_AND_ARCHIVE })),
+                                showSeparator: true,
+                            }, {
+                                label: t("Use \"Send and archive\" by default"),
+                                icon: <Icon name={preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? "check_box" : "check_box_outline_blank"} type={IconType.OUTLINED} />,
+                                callback: () => setPreferredSendMode(preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? PreferSendMode.SEND : PreferSendMode.SEND_AND_ARCHIVE)
+                            }] : [])
+                        ]}
                     >
-                        {t("Send")}
-                    </Button>
+                        {preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE && t("Send and archive")}
+                        {preferredSendMode === PreferSendMode.SEND && t("Send")}
+                    </DropdownButton>
                     {!draft && onClose && (
-                        <Button
-                            type="button"
-                            color="secondary"
-                            onClick={onClose}
-                    >
-                            {t("Cancel")}
-                        </Button>
+                        <Tooltip content={t("Delete")}>
+                            <Button
+                                type="button"
+                                color="tertiary"
+                                onClick={onClose}
+                                aria-label={t("Delete")}
+                                icon={<Icon name="delete" type={IconType.OUTLINED} />}
+                            />
+                        </Tooltip>
                     )}
                     {
                         canWriteMessages && draft && (
-                            <Button
-                                type="button"
-                                color="secondary"
-                                onClick={() => handleDeleteMessage(draft.id)}
-                            >
-                                {t("Delete draft")}
-                            </Button>
+                            <Tooltip content={t("Delete draft")}>
+                                <Button
+                                    type="button"
+                                    color="tertiary"
+                                    onClick={() => handleDeleteMessage(draft.id)}
+                                    aria-label={t("Delete draft")}
+                                    icon={<Icon name="delete" type={IconType.OUTLINED} />}
+                                />
+                            </Tooltip>
                         )
                     }
                 </footer>

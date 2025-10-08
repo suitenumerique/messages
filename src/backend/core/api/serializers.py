@@ -1340,3 +1340,22 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
             # Update all fields atomically
             template = super().update(instance, validated_data)
             return template
+
+
+class SendMessageSerializer(serializers.Serializer):
+    """Serializer for sending messages."""
+
+    messageId = serializers.UUIDField(required=True)
+    senderId = serializers.UUIDField(required=True)
+    archive = serializers.BooleanField(required=False, default=False)
+    textBody = serializers.CharField(required=False, allow_blank=True)
+    htmlBody = serializers.CharField(required=False, allow_blank=True)
+
+    class Meta:
+        fields = ["messageId", "senderId", "archive", "textBody", "htmlBody"]
+
+    def create(self, validated_data):
+        """This serializer is only used to validate the data, not to create or update."""
+
+    def update(self, instance, validated_data):
+        """This serializer is only used to validate the data, not to create or update."""

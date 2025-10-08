@@ -18,7 +18,7 @@ logger = get_task_logger(__name__)
 
 
 @celery_app.task(bind=True)
-def send_message_task(self, message_id, force_mta_out=False):
+def send_message_task(self, message_id, force_mta_out=False, must_archive=False):
     """Send a message asynchronously.
 
     Args:
@@ -47,6 +47,23 @@ def send_message_task(self, message_id, force_mta_out=False):
                 "success": True,
             },
         )
+
+        # If requested, archive the whole thread after sending
+        if must_archive:
+            try:
+                thread = message.thread
+                models.Message.objects.filter(thread=thread).update(
+                    is_archived=True, archived_at=timezone.now()
+                )
+                thread.update_stats()
+            except Exception as e:
+                # Not critical, just log the error
+                logger.exception(
+                    "Error in send_message_task when archiving thread %s after sending message %s: %s",
+                    thread.id,
+                    message_id,
+                    e,
+                )
 
         return {
             "message_id": str(message_id),

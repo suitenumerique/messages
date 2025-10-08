@@ -3,13 +3,13 @@ import { QueueMessage } from "./queued-message";
 import { useMailboxContext } from "../mailbox";
 
 type SentBoxContextType = {
-    queuedMessages: readonly string[];
-    addQueuedMessage: (taskId: string) => void;
+    queuedMessages: readonly [string, boolean][];
+    addQueuedMessage: (taskId: string, closeThread: boolean) => void;
     removeQueuedMessage: (taskId: string) => void;
 }
 
 const SentBoxContext = createContext<SentBoxContextType>({
-    queuedMessages: [] as string[],
+    queuedMessages: [] as [string, boolean][],
     addQueuedMessage: () => {},
     removeQueuedMessage: () => {},
 });
@@ -20,19 +20,20 @@ const SentBoxContext = createContext<SentBoxContextType>({
  * toast to inform the user of the sending status.
  */
 export const SentBoxProvider = ({ children }: PropsWithChildren) => {
-    const { invalidateThreadsStats, invalidateThreadMessages } = useMailboxContext();
-    const [queuedMessages, setQueuedMessages] = useState<string []>([]);
+    const { invalidateThreadsStats, invalidateThreadMessages, unselectThread } = useMailboxContext();
+    const [queuedMessages, setQueuedMessages] = useState<[string, boolean][]>([]);
 
-    const addQueuedMessage = (taskId: string) => {
-        setQueuedMessages([...queuedMessages, taskId]);
+    const addQueuedMessage = (taskId: string, closeThread: boolean = false) => {
+        setQueuedMessages(prev => [...prev, [taskId, closeThread]]);
     }
 
     const removeQueuedMessage = (taskId: string) => {
-        setQueuedMessages(queuedMessages.filter(id => id !== taskId));
+        setQueuedMessages(prev => prev.filter(([id]) => id !== taskId));
     }
 
-    const handleSettled = (taskId: string) => {
+    const handleSettled = (taskId: string, closeThread?: boolean) => {
         removeQueuedMessage(taskId);
+        if (closeThread) unselectThread();
         invalidateThreadsStats();
         invalidateThreadMessages();
     }
@@ -46,11 +47,11 @@ export const SentBoxProvider = ({ children }: PropsWithChildren) => {
         <SentBoxContext.Provider value={context}>
             {children}
             {
-                queuedMessages.map(taskId => (
+                queuedMessages.map(([taskId, closeThread]) => (
                     <QueueMessage
                         key={taskId}
                         taskId={taskId}
-                        onSettled={() => handleSettled(taskId)}
+                        onSettled={() => { handleSettled(taskId, closeThread) }}
                     />
                 ))
             }

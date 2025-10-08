@@ -3652,7 +3652,7 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/SendMessageRequestRequest"
+                                "$ref": "#/components/schemas/SendMessageRequest"
                             },
                             "examples": {
                                 "SendDraft": {
@@ -3668,7 +3668,7 @@
                         },
                         "multipart/form-data": {
                             "schema": {
-                                "$ref": "#/components/schemas/SendMessageRequestRequest"
+                                "$ref": "#/components/schemas/SendMessageRequest"
                             }
                         }
                     },
@@ -6488,28 +6488,27 @@
                     "one_time_password"
                 ]
             },
-            "SendMessageRequestRequest": {
+            "SendMessageRequest": {
                 "type": "object",
+                "description": "Serializer for sending messages.",
                 "properties": {
                     "messageId": {
                         "type": "string",
-                        "format": "uuid",
-                        "description": "ID of the draft message to send"
+                        "format": "uuid"
                     },
                     "senderId": {
                         "type": "string",
-                        "format": "uuid",
-                        "description": "Mailbox ID from which to send (must match draft)"
+                        "format": "uuid"
+                    },
+                    "archive": {
+                        "type": "boolean",
+                        "default": false
                     },
                     "textBody": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "Text body of the message"
+                        "type": "string"
                     },
                     "htmlBody": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "HTML body of the message"
+                        "type": "string"
                     }
                 },
                 "required": [

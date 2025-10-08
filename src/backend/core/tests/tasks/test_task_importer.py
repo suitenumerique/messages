@@ -1,4 +1,4 @@
-"""Tests for core tasks."""
+"""Tests for importer tasks."""
 # pylint: disable=redefined-outer-name, no-value-for-parameter
 
 import logging
@@ -70,7 +70,7 @@ def mock_task():
 class TestProcessMboxFileTask:
     """Test suite for process_mbox_file_task."""
 
-    def test_process_mbox_file_success(self, mailbox, sample_mbox_content):
+    def test_task_process_mbox_file_success(self, mailbox, sample_mbox_content):
         """Test successful MBOX file processing."""
         # Mock deliver_inbound_message to always succeed
         with patch("core.mda.inbound.deliver_inbound_message", return_value=True):
@@ -166,7 +166,9 @@ class TestProcessMboxFileTask:
                 assert messages[1].subject == "Test Message 2"
                 assert messages[2].subject == "Test Message 1"
 
-    def test_process_mbox_file_partial_success(self, mailbox, sample_mbox_content):
+    def test_task_process_mbox_file_partial_success(
+        self, mailbox, sample_mbox_content
+    ):
         """Test MBOX processing with some messages failing."""
 
         # Mock deliver_inbound_message to fail for the second message
@@ -277,7 +279,7 @@ class TestProcessMboxFileTask:
             assert messages[0].subject == "Test Message 1"
             assert messages[1].subject == "Test Message 3"
 
-    def test_process_mbox_file_mailbox_not_found(self, sample_mbox_content):
+    def test_task_process_mbox_file_mailbox_not_found(self, sample_mbox_content):
         """Test MBOX processing with non-existent mailbox."""
         # Create a mock task instance
         mock_task = MagicMock()
@@ -321,7 +323,9 @@ class TestProcessMboxFileTask:
             # Verify no messages were created
             assert Message.objects.count() == 0
 
-    def test_process_mbox_file_parse_error(self, mailbox, sample_mbox_content):
+    def test_task_process_mbox_file_parse_error(
+        self, mailbox, sample_mbox_content
+    ):
         """Test MBOX processing with message parsing error."""
 
         # Mock parse_email_message to raise an exception for all messages
@@ -418,7 +422,7 @@ class TestProcessMboxFileTask:
             # Verify no messages were created
             assert Message.objects.count() == 0
 
-    def test_process_mbox_file_empty(self, mailbox):
+    def test_task_process_mbox_file_empty(self, mailbox):
         """Test processing an empty MBOX file."""
         # Create a mock task instance
         mock_task = MagicMock()
@@ -462,7 +466,7 @@ class TestProcessMboxFileTask:
 class TestSplitMboxFile:
     """Test the split_mbox_file function."""
 
-    def test_split_mbox_file_success(self, sample_mbox_content):
+    def test_task_split_mbox_file_success(self, sample_mbox_content):
         """Test successful splitting of MBOX file."""
         messages = split_mbox_file(sample_mbox_content)
         assert len(messages) == 3
@@ -471,12 +475,12 @@ class TestSplitMboxFile:
         assert b"Test Message 2" in messages[1]
         assert b"Test Message 1" in messages[2]
 
-    def test_split_mbox_file_empty(self):
+    def test_task_split_mbox_file_empty(self):
         """Test splitting an empty MBOX file."""
         messages = split_mbox_file(b"")
         assert len(messages) == 0
 
-    def test_split_mbox_file_single_message(self):
+    def test_task_split_mbox_file_single_message(self):
         """Test splitting a MBOX file with a single message."""
         content = b"""From user@example.com Thu Jan 1 00:00:00 2024
 Subject: Single Message
@@ -489,7 +493,7 @@ This is a single message.
         assert len(messages) == 1
         assert b"Single Message" in messages[0]
 
-    def test_split_mbox_file_malformed(self):
+    def test_task_split_mbox_file_malformed(self):
         """Test splitting a malformed MBOX file."""
         # Content without proper From headers
         content = b"""Subject: Malformed Message
