@@ -108,6 +108,7 @@ bootstrap: ## Prepare the project for local development
 update:  ## Update the project with latest changes
 	@$(MAKE) data/media
 	@$(MAKE) data/static
+	@$(MAKE) import-bucket
 	@$(MAKE) create-env-files
 	@$(MAKE) build
 	@$(MAKE) collectstatic
@@ -157,6 +158,14 @@ restart-minimal: \
 	stop \
 	start-minimal
 .PHONY: restart-minimal
+
+import-bucket: ## create the message imports bucket to objectstorage
+	@$(COMPOSE_RUN) objectstorage-createbucket
+.PHONY: import-bucket
+
+objectstorage-shell: ## open a shell in the objectstorage container
+	@$(COMPOSE) run --rm --build objectstorage bash
+.PHONY: objectstorage-shell
 
 # -- Linters
 

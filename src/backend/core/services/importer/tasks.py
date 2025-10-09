@@ -1,10 +1,14 @@
 """Import-related tasks."""
 
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught, too-many-lines
-from typing import Any, Dict, List
+from typing import Any, Dict, Generator
 
+from django.core.files.storage import storages
+
+import magic
 from celery.utils.log import get_task_logger
 
+from core import enums
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import parse_email_message
 from core.models import Mailbox
@@ -24,14 +28,12 @@ logger = get_task_logger(__name__)
 
 
 @celery_app.task(bind=True)
-def process_mbox_file_task(
-    self, file_content: bytes, recipient_id: str
-) -> Dict[str, Any]:
+def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, Any]:
     """
     Process a MBOX file asynchronously.
 
     Args:
-        file_content: The content of the MBOX file
+        file_key: The storage key of the MBOX file
         recipient_id: The UUID of the recipient mailbox
 
     Returns:
@@ -67,90 +69,159 @@ def process_mbox_file_task(
             "error": error_msg,
         }
 
-    # Split the mbox file into individual messages
-    messages = split_mbox_file(file_content)
-    total_messages = len(messages)
+    try:
+        # Get storage and open file
+        message_imports_storage = storages["message-imports"]
 
-    for i, message_content in enumerate(messages, 1):
-        current_message = i
-        try:
-            # Update task state with progress
-            result = {
-                "message_status": f"Processing message {i} of {total_messages}",
-                "total_messages": total_messages,
-                "success_count": success_count,
-                "failure_count": failure_count,
-                "type": "mbox",
-                "current_message": i,
-            }
+        with message_imports_storage.open(file_key, "rb") as file:
             self.update_state(
                 state="PROGRESS",
                 meta={
-                    "result": result,
+                    "result": {
+                        "message_status": "Initializing import",
+                        "type": "mbox",
+                    },
                     "error": None,
                 },
             )
+            # Ensure file is a valid mbox file
+            content_type = magic.from_buffer(file.read(2048), mime=True)
+            if content_type not in enums.MBOX_SUPPORTED_MIME_TYPES:
+                raise Exception(f"Expected MBOX file, got {content_type}")
 
-            # Parse the email message
-            parsed_email = parse_email_message(message_content)
-            # Deliver the message
-            if deliver_inbound_message(
-                str(recipient), parsed_email, message_content, is_import=True
-            ):
-                success_count += 1
-            else:
-                failure_count += 1
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.exception(
-                "Error processing message from mbox file for recipient %s: %s",
-                recipient_id,
-                e,
-            )
-            failure_count += 1
+            # First pass: count total messages
+            file.seek(0)
+            total_messages = count_mbox_messages(file)
 
-    result = {
-        "message_status": "Completed processing messages",
-        "total_messages": total_messages,
-        "success_count": success_count,
-        "failure_count": failure_count,
-        "type": "mbox",
-        "current_message": current_message,
-    }
+            # Reset file pointer
+            file.seek(0)
 
-    self.update_state(
-        state="SUCCESS",
-        meta={
+            # Second pass: process messages
+            for i, message_content in enumerate(stream_mbox_messages(file), 1):
+                current_message = i
+                try:
+                    # Update task state with progress
+                    result = {
+                        "message_status": f"Processing message {i} of {total_messages}",
+                        "total_messages": total_messages,
+                        "success_count": success_count,
+                        "failure_count": failure_count,
+                        "type": "mbox",
+                        "current_message": i,
+                    }
+                    self.update_state(
+                        state="PROGRESS",
+                        meta={
+                            "result": result,
+                            "error": None,
+                        },
+                    )
+
+                    # Parse the email message
+                    parsed_email = parse_email_message(message_content)
+                    # Deliver the message
+                    if deliver_inbound_message(
+                        str(recipient), parsed_email, message_content, is_import=True
+                    ):
+                        success_count += 1
+                    else:
+                        failure_count += 1
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    logger.exception(
+                        "Error processing message from mbox file for recipient %s: %s",
+                        recipient_id,
+                        e,
+                    )
+                    failure_count += 1
+
+        result = {
+            "message_status": "Completed processing messages",
+            "total_messages": total_messages,
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "type": "mbox",
+            "current_message": current_message,
+        }
+
+        self.update_state(
+            state="SUCCESS",
+            meta={
+                "result": result,
+                "error": None,
+            },
+        )
+
+        return {
+            "status": "SUCCESS",
             "result": result,
             "error": None,
-        },
-    )
+        }
 
-    return {
-        "status": "SUCCESS",
-        "result": result,
-        "error": None,
-    }
+    except Exception as e:
+        logger.exception(
+            "Error processing MBOX file for recipient %s: %s",
+            recipient_id,
+            e,
+        )
+        error_msg = str(e)
+        result = {
+            "message_status": "Failed to process messages",
+            "total_messages": total_messages,
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "type": "mbox",
+            "current_message": current_message,
+        }
+        self.update_state(
+            state="FAILURE",
+            meta={
+                "result": result,
+                "error": error_msg,
+            },
+        )
+        return {
+            "status": "FAILURE",
+            "result": result,
+            "error": error_msg,
+        }
 
 
-def split_mbox_file(content: bytes) -> List[bytes]:
+def count_mbox_messages(file) -> int:
     """
-    Split a MBOX file into individual email messages.
+    Count the number of messages in an MBOX file without loading everything into memory.
+    """
+    count = 0
+    for line in file:
+        if line.startswith(b"From "):
+            count += 1
+    return count
+
+
+def stream_mbox_messages(file) -> Generator[bytes, None, None]:
+    """
+    Stream individual email messages from an MBOX file without loading everything into memory.
+
+    Note: To maintain chronological order (needed for reply threading), we first collect
+    all messages and then yield them in reverse order, since mbox files store messages
+    with the most recent first.
 
     Args:
-        content: The content of the MBOX file
+        file: File-like object to read from
 
-    Returns:
-        List of individual email messages as bytes
+    Yields:
+        Individual email messages as bytes
     """
-    messages = []
     current_message = []
     in_message = False
+    messages = []
 
-    for line in content.splitlines(keepends=True):
+    # Read line by line to avoid loading entire file into memory at once
+    # We still need to collect messages for reversing due to mbox format
+    for line in file:
         # Check for mbox message separator
         if line.startswith(b"From "):
-            if in_message:
-                # End of previous message
+            if in_message and current_message:
+                # End of previous message - store it
                 messages.append(b"".join(current_message))
                 current_message = []
             in_message = True
@@ -164,9 +235,10 @@ def split_mbox_file(content: bytes) -> List[bytes]:
     if current_message:
         messages.append(b"".join(current_message))
 
-    # Last message is the first one, so we need to reverse the list
-    # to treat messages replies correctly
-    return messages[::-1]
+    # Yield messages in reverse order to treat replies correctly
+    # (mbox format stores newest messages first)
+    for message in reversed(messages):
+        yield message
 
 
 @celery_app.task(bind=True)
@@ -315,14 +387,12 @@ def import_imap_messages_task(
 
 
 @celery_app.task(bind=True)
-def process_eml_file_task(
-    self, file_content: bytes, recipient_id: str
-) -> Dict[str, Any]:
+def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, Any]:
     """
     Process an EML file asynchronously.
 
     Args:
-        file_content: The content of the EML file
+        file_key: The storage key of the EML file
         recipient_id: The UUID of the recipient mailbox
 
     Returns:
@@ -369,6 +439,16 @@ def process_eml_file_task(
                 "error": None,
             },
         )
+
+        # Get storage and read file
+        message_imports_storage = storages["message-imports"]
+        with message_imports_storage.open(file_key, "rb") as file:
+            content_type = magic.from_buffer(file.read(2048), mime=True)
+            if content_type not in enums.EML_SUPPORTED_MIME_TYPES:
+                raise Exception(f"Expected EML file, got {content_type}")
+
+            file.seek(0)
+            file_content = file.read()
 
         # Parse the email message
         parsed_email = parse_email_message(file_content)

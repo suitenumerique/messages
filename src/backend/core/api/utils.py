@@ -1,7 +1,11 @@
 """Util to generate S3 authorization headers for object storage access control"""
 
+import hashlib
 
-# import botocore
+from django.conf import settings
+
+import boto3
+import botocore
 
 
 def flat_to_nested(items):
@@ -31,6 +35,37 @@ def flat_to_nested(items):
         raise ValueError("More than one root element detected")
 
     return roots[0] if roots else {}
+
+
+def get_file_key(user_id, filename):
+    """Generate the file key to store file in the message imports bucket."""
+    return hashlib.sha256(f"{user_id}-{filename}".encode("utf-8")).hexdigest()
+
+
+def generate_presigned_url(storage, *args, **kwargs):
+    """Generate a presigned URL for the message imports bucket."""
+    # This settings should be used if the backend application and the frontend application
+    # can't connect to the object storage with the same domain. This is the case in the
+    # docker compose stack used in development. The frontend application will use localhost
+    # to connect to the object storage while the backend application will use the object storage
+    # service name declared in the docker compose stack.
+    # This is needed because the domain name is used to compute the signature. So it can't be
+    # changed dynamically by the frontend application.
+    if replace_domain_url := settings.AWS_S3_DOMAIN_REPLACE:
+        s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=storage.access_key,
+            aws_secret_access_key=storage.secret_key,
+            endpoint_url=replace_domain_url,
+            config=botocore.client.Config(
+                region_name=storage.region_name,
+                signature_version=storage.signature_version,
+            ),
+        )
+    else:
+        s3_client = storage.connection.meta.client
+
+    return s3_client.generate_presigned_url(*args, **kwargs)
 
 
 # def generate_s3_authorization_headers(key):

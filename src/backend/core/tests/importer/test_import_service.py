@@ -5,12 +5,14 @@ import datetime
 from unittest.mock import MagicMock, patch
 
 from django.contrib.messages.storage.fallback import FallbackStorage
+from django.core.files.storage import storages
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import HttpRequest
 
 import pytest
 
 from core import factories
+from core.api.utils import get_file_key
 from core.enums import MailboxRoleChoices
 from core.mda.inbound import deliver_inbound_message
 from core.models import Mailbox, MailDomain, Message
@@ -61,10 +63,29 @@ def mock_request():
 
 
 @pytest.fixture
-def eml_file():
+def eml_file(user):
     """Get test eml file from test data."""
     with open("core/tests/resources/message.eml", "rb") as f:
-        return SimpleUploadedFile("test.eml", f.read(), content_type="message/rfc822")
+        storage = storages["message-imports"]
+        file_content = f.read()
+        file = SimpleUploadedFile(
+            "test.eml", file_content, content_type="message/rfc822"
+        )
+        s3_client = storage.connection.meta.client
+        file_key = get_file_key(user.id, file.name)
+        s3_client.put_object(
+            Bucket=storage.bucket_name,
+            Key=file_key,
+            Body=file_content,
+            ContentType=file.content_type,
+        )
+
+    yield file
+    # Remove the file from the bucket at teardown
+    s3_client.delete_object(
+        Bucket=storage.bucket_name,
+        Key=file_key,
+    )
 
 
 @pytest.fixture
@@ -74,43 +95,50 @@ def mbox_file_path():
 
 
 @pytest.fixture
-def mbox_file(mbox_file_path):
+def mbox_file(user, mbox_file_path):
     """Get test mbox file from test data."""
     with open(mbox_file_path, "rb") as f:
-        return SimpleUploadedFile(
-            "test.mbox", f.read(), content_type="application/mbox"
+        storage = storages["message-imports"]
+        file_content = f.read()
+        file = SimpleUploadedFile(
+            "test.mbox", file_content, content_type="application/mbox"
+        )
+        s3_client = storage.connection.meta.client
+        file_key = get_file_key(user.id, file.name)
+        s3_client.put_object(
+            Bucket=storage.bucket_name,
+            Key=file_key,
+            Body=file_content,
+            ContentType=file.content_type,
         )
 
-
-@pytest.fixture
-def blob_mbox(mbox_file, mailbox):
-    """Create a blob from a file."""
-    # Read the file content once
-    file_content = mbox_file.read()
-    return mailbox.create_blob(
-        content=file_content,
-        content_type=mbox_file.content_type,
+    yield file
+    # Remove the file from the bucket at teardown
+    s3_client.delete_object(
+        Bucket=storage.bucket_name,
+        Key=file_key,
     )
 
 
 @pytest.fixture
-def blob_eml(eml_file, mailbox):
-    """Create a blob from a file."""
-    # Read the file content once
-    file_content = eml_file.read()
-    return mailbox.create_blob(
-        content=file_content,
-        content_type=eml_file.content_type,
-    )
+def eml_key(user, eml_file):
+    """Get the key for the EML file."""
+    return get_file_key(user.id, eml_file.name)
+
+
+@pytest.fixture
+def mbox_key(user, mbox_file):
+    """Get the key for the MBOX file."""
+    return get_file_key(user.id, mbox_file.name)
 
 
 @pytest.mark.django_db
-def test_import_file_eml_by_superuser(admin_user, mailbox, blob_eml, mock_request):
+def test_import_file_eml_by_superuser(admin_user, mailbox, eml_key, mock_request):
     """Test successful EML file import for superuser."""
     with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
-            file=blob_eml,
+            file_key=eml_key,
             recipient=mailbox,
             user=admin_user,
             request=mock_request,
@@ -123,7 +151,7 @@ def test_import_file_eml_by_superuser(admin_user, mailbox, blob_eml, mock_reques
 
 
 @pytest.mark.django_db
-def test_import_file_eml_by_superuser_sync(admin_user, mailbox, blob_eml):
+def test_import_file_eml_by_superuser_sync(admin_user, mailbox, eml_key):
     """Test importing an EML file by a superuser synchronously."""
     # Mock deliver_inbound_message to always succeed
     original_deliver = deliver_inbound_message
@@ -143,7 +171,7 @@ def test_import_file_eml_by_superuser_sync(admin_user, mailbox, blob_eml):
         ):
             # Run the import
             task_result = process_eml_file_task(
-                file_content=blob_eml.get_content(),
+                file_key=eml_key,
                 recipient_id=str(mailbox.id),
             )
 
@@ -202,9 +230,7 @@ def test_import_file_eml_by_superuser_sync(admin_user, mailbox, blob_eml):
 
 
 @pytest.mark.django_db
-def test_import_file_eml_by_user_with_access_task(
-    user, mailbox, blob_eml, mock_request
-):
+def test_import_file_eml_by_user_with_access_task(user, mailbox, eml_key, mock_request):
     """Test successful EML file import by user with access on mailbox."""
     # Add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
@@ -212,7 +238,7 @@ def test_import_file_eml_by_user_with_access_task(
     with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
-            file=blob_eml,
+            file_key=eml_key,
             recipient=mailbox,
             user=user,
             request=mock_request,
@@ -225,9 +251,7 @@ def test_import_file_eml_by_user_with_access_task(
 
 
 @pytest.mark.django_db
-def test_import_file_eml_by_user_with_access_sync(
-    user, mailbox, blob_eml, mock_request
-):
+def test_import_file_eml_by_user_with_access_sync(user, mailbox, eml_key, mock_request):
     """Test importing an EML file by a user with access synchronously."""
     # Add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
@@ -250,7 +274,7 @@ def test_import_file_eml_by_user_with_access_sync(
         ):
             # Run the import
             task_result = process_eml_file_task(
-                file_content=blob_eml.get_content(),
+                file_key=eml_key,
                 recipient_id=str(mailbox.id),
             )
 
@@ -310,7 +334,7 @@ def test_import_file_eml_by_user_with_access_sync(
 
 @pytest.mark.django_db
 def test_import_file_mbox_by_superuser_task(
-    admin_user, mailbox, blob_mbox, mock_request
+    admin_user, mailbox, mbox_key, mock_request
 ):
     """Test successful MBOX file import by superuser."""
 
@@ -319,7 +343,7 @@ def test_import_file_mbox_by_superuser_task(
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
-            file=blob_mbox,
+            file_key=mbox_key,
             recipient=mailbox,
             user=admin_user,
             request=mock_request,
@@ -333,7 +357,7 @@ def test_import_file_mbox_by_superuser_task(
 
 @pytest.mark.django_db
 def test_import_file_mbox_by_user_with_access_task(
-    user, mailbox, blob_mbox, mock_request
+    user, mailbox, mbox_key, mock_request
 ):
     """Test successful MBOX file import by user with access on mailbox."""
     # Add access to mailbox
@@ -344,7 +368,7 @@ def test_import_file_mbox_by_user_with_access_task(
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
-            file=blob_mbox,
+            file_key=mbox_key,
             recipient=mailbox,
             user=user,
             request=mock_request,
@@ -358,11 +382,11 @@ def test_import_file_mbox_by_user_with_access_task(
 
 @pytest.mark.django_db
 def test_import_file_mbox_by_superuser_db_creation(
-    admin_user, mailbox, blob_mbox, mock_request
+    admin_user, mailbox, mbox_key, mock_request
 ):
     """Test file import for a superuser"""
     success, response_data = ImportService.import_file(
-        file=blob_mbox,
+        file_key=mbox_key,
         recipient=mailbox,
         user=admin_user,
         request=mock_request,
@@ -382,13 +406,13 @@ def test_import_file_mbox_by_superuser_db_creation(
     )
 
 
-def test_import_file_no_access(user, domain, blob_eml, mock_request):
+def test_import_file_no_access(user, domain, eml_key, mock_request):
     """Test file import without mailbox access."""
     # Create a mailbox the user does NOT have access to
     mailbox = Mailbox.objects.create(local_part="noaccess", domain=domain)
 
     success, response_data = ImportService.import_file(
-        file=blob_eml,
+        file_key=eml_key,
         recipient=mailbox,
         user=user,
         request=mock_request,
@@ -404,59 +428,43 @@ def test_import_file_invalid_file(admin_user, mailbox, mock_request):
     """Test import with an invalid file."""
     # Create an invalid file (not EML or MBOX)
     invalid_content = b"Invalid file content"
-    invalid_file = mailbox.create_blob(
-        content=invalid_content,
-        content_type="application/pdf",  # Invalid MIME type for email import
+    invalid_file = SimpleUploadedFile(
+        "test.pdf", invalid_content, content_type="application/pdf"
+    )
+    invalid_file_key = get_file_key(admin_user.id, invalid_file.name)
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    s3_client.put_object(
+        Bucket=storage.bucket_name,
+        Key=invalid_file_key,
+        Body=invalid_content,
+        ContentType=invalid_file.content_type,
     )
 
-    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
-        # The task should not be called for invalid files
-        mock_task.assert_not_called()
+    try:
+        with patch(
+            "core.services.importer.tasks.process_eml_file_task.delay"
+        ) as mock_task:
+            # The task should not be called for invalid files
+            mock_task.assert_not_called()
 
-        success, response_data = ImportService.import_file(
-            file=invalid_file,
-            recipient=mailbox,
-            user=admin_user,
-            request=mock_request,
+            success, response_data = ImportService.import_file(
+                file_key=invalid_file_key,
+                recipient=mailbox,
+                user=admin_user,
+                request=mock_request,
+            )
+
+            assert success is False
+            assert "detail" in response_data
+            assert "Invalid file format" in response_data["detail"]
+            assert Message.objects.count() == 0
+    finally:
+        # Clean up: delete the file from S3 after the test
+        s3_client.delete_object(
+            Bucket=storage.bucket_name,
+            Key=invalid_file_key,
         )
-
-        assert success is False
-        assert "detail" in response_data
-        assert "Invalid file format" in response_data["detail"]
-        assert Message.objects.count() == 0
-
-
-@pytest.mark.django_db
-def test_import_file_text_plain_mime_type(
-    admin_user, mailbox, mock_request, mbox_file_path
-):
-    """Test import of MBOX file with text/plain MIME type."""
-    # Read the mbox file content
-    with open(mbox_file_path, "rb") as f:
-        mbox_content = f.read()
-
-    # Create a file with text/plain MIME type
-    blob_mbox = mailbox.create_blob(
-        content=mbox_content,
-        content_type="text/plain",
-    )
-
-    with patch(
-        "core.services.importer.tasks.process_mbox_file_task.delay"
-    ) as mock_task:
-        # The task should be called for text/plain files (they are now accepted as MBOX)
-        mock_task.return_value.id = "fake-task-id"
-        success, response_data = ImportService.import_file(
-            file=blob_mbox,
-            recipient=mailbox,
-            user=admin_user,
-            request=mock_request,
-        )
-
-        assert success is True
-        assert response_data["type"] == "mbox"
-        assert response_data["task_id"] == "fake-task-id"
-        mock_task.assert_called_once()
 
 
 def test_import_imap_by_superuser(admin_user, mailbox, mock_request):

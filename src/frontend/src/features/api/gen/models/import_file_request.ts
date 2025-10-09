@@ -10,8 +10,11 @@
  * Serializer for importing email files.
  */
 export interface ImportFileRequest {
-  /** UUID of the blob */
-  blob: string;
+  /**
+   * Filename
+   * @minLength 1
+   */
+  filename: string;
   /** UUID of the recipient mailbox */
   recipient: string;
 }

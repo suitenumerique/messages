@@ -1,4 +1,7 @@
-import { StatusEnum, useTasksRetrieve } from "@/features/api/gen";
+import { StatusEnum } from "@/features/api/gen";
+import ProgressBar from "@/features/ui/components/progress-bar";
+import { useImportTaskStatus } from "@/hooks/use-import-task";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -8,7 +11,7 @@ type StepLoaderProps = {
     onError: (error: string) => void;
 }
 
-type TaskMetadata = {
+export type TaskMetadata = {
     current_message: number;
     total_messages: number;
     failure_count: number;
@@ -20,48 +23,30 @@ type TaskMetadata = {
 
 export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => {
     const { t } = useTranslation();
-    const taskQuery = useTasksRetrieve(taskId, {
-        query: {
-            refetchInterval: 1000,
-            enabled: Boolean(taskId),
-            meta: {
-                noGlobalError: true,
-            }
-        }
-    });
-
-    const taskMetadata = (taskQuery.data?.data.result) as TaskMetadata | undefined;
-    const progress = taskMetadata ? (taskMetadata.success_count / taskMetadata.total_messages * 100) : null;
+    const importStatus = useImportTaskStatus(taskId)!;
 
     useEffect(() => {
-        if (taskQuery.data) {
-            if (taskQuery.data.data.status === StatusEnum.SUCCESS) {
-                onComplete();
-            } else if (taskQuery.data.data.status === StatusEnum.FAILURE) {
-                const error = taskQuery.data.data.error || '';
-                let errorKey = t('An error occurred while importing messages.');
-                if (error.includes("AUTHENTICATIONFAILED")) {
-                    errorKey = t('Authentication failed. Please check your credentials and ensure you have enabled IMAP connections in your account.');
-                }
-                onError(errorKey);
+        if (importStatus?.state === StatusEnum.SUCCESS) {
+            onComplete();
+        } else if (importStatus?.state === StatusEnum.FAILURE) {
+            const error = importStatus?.error || '';
+            let errorKey = t('An error occurred while importing messages.');
+            if (error.includes("AUTHENTICATIONFAILED")) {
+                errorKey = t('Authentication failed. Please check your credentials and ensure you have enabled IMAP connections in your account.');
             }
+            onError(errorKey);
         }
-    }, [taskQuery.data]);
+    }, [importStatus?.state]);
 
     return (
         <div className="task-loader">
-            <div className="task-loader__progress_bar">
-                <div className="task-loader__progress_bar__progress" style={{ width: `${progress || 0}%` }} />
+            <Spinner size="lg" />
+            <div className="task-loader__progress_resume">
+                <p>{t('Importing...')}</p>
+                {importStatus.progress > 0&& t('{{progress}}% imported', { progress: importStatus.progress })}
             </div>
-            <p className="task-loader__progress_resume">
-                <strong>
-                    {   progress
-                        ? t('{{progress}}% imported', { progress: Math.ceil(progress) })
-                        : t('Importing...')
-                    }
-                </strong>
-            </p>
-            {!!progress && <p>{t('You can close this window and continue using the app.')}</p>}
+            <ProgressBar progress={importStatus.progress} />
+            {importStatus.state === StatusEnum.PROGRESS && <p>{t('You can close this window and continue using the app.')}</p>}
         </div>
     );
 }

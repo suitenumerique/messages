@@ -74,6 +74,7 @@ RUN chmod g=u /etc/passwd
 # Install required packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gettext \
+    libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Un-privileged user running the application

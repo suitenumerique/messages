@@ -9,6 +9,7 @@
 /**
  * * `FAILURE` - FAILURE
  * `PENDING` - PENDING
+ * `PROGRESS` - PROGRESS
  * `RECEIVED` - RECEIVED
  * `RETRY` - RETRY
  * `REVOKED` - REVOKED
@@ -21,6 +22,7 @@ export type StatusEnum = (typeof StatusEnum)[keyof typeof StatusEnum];
 export const StatusEnum = {
   FAILURE: "FAILURE",
   PENDING: "PENDING",
+  PROGRESS: "PROGRESS",
   RECEIVED: "RECEIVED",
   RETRY: "RETRY",
   REVOKED: "REVOKED",

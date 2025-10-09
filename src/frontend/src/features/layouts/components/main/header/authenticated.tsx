@@ -1,6 +1,6 @@
 import { DropdownMenu, HeaderProps, Icon, IconType, useResponsive, UserMenu, VerticalSeparator } from "@gouvfr-lasuite/ui-kit";
 import { Button, useCunningham } from "@openfun/cunningham-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/router";
 import { SearchInput } from "@/features/forms/components/search-input";
@@ -9,6 +9,10 @@ import { useAuth, logout } from "@/features/auth";
 import { LanguagePicker } from "@/features/layouts/components/main/language-picker";
 import { LagaufreButton } from "@/features/ui/components/lagaufre";
 import { useMailboxContext } from "@/features/providers/mailbox";
+import { MESSAGE_IMPORT_TASK_KEY } from "@/features/config/constants";
+import { useImportTaskStatus } from "@/hooks/use-import-task";
+import { StatusEnum } from "@/features/api/gen";
+import { CircularProgress } from "@/features/ui/components/circular-progress";
 
 
 type AuthenticatedHeaderProps = HeaderProps & {
@@ -53,42 +57,12 @@ export const AuthenticatedHeader = ({
 };
 
 export const HeaderRight = () => {
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const { user } = useAuth();
   const { isDesktop } = useResponsive();
-  const { t } = useTranslation();
-  const router = useRouter();
-  const canAccessDomainAdmin = useAbility(Abilities.CAN_VIEW_DOMAIN_ADMIN);
-  const { selectedMailbox } = useMailboxContext();
-  const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
 
   return (
     <>
-      <DropdownMenu
-          isOpen={isDropdownOpen}
-          onOpenChange={setIsDropdownOpen}
-          options={[
-              ...(canAccessDomainAdmin ? [{
-                label: t("Domain admin"),
-                icon: <Icon name="domain" />,
-                callback: () => router.push("/domain"),
-              }] : []),
-              ...(canImportMessages ? [{
-                  label: t("Import messages"),
-                  icon: <Icon name="archive" type={IconType.OUTLINED} />,
-                  callback: () => {
-                      window.location.hash = `#modal-message-importer`;
-                  }
-              }] : []),
-          ]}
-      >
-      <Button
-          onClick={() => setIsDropdownOpen(true)}
-          icon={<Icon name="settings" type={IconType.OUTLINED} />}
-          aria-label={t("More options")}
-          color="tertiary-text"
-      />
-      </DropdownMenu>
+      <ApplicationMenu />
       {isDesktop && <VerticalSeparator size="24px" />}
       <LagaufreButton />
       <UserMenu
@@ -104,3 +78,68 @@ export const HeaderRight = () => {
     </>
   );
 };
+
+const ApplicationMenu = () => {
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const { selectedMailbox } = useMailboxContext();
+  const canAccessDomainAdmin = useAbility(Abilities.CAN_VIEW_DOMAIN_ADMIN);
+  const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
+  const { t } = useTranslation();
+  const router = useRouter();
+  const taskId = useMemo(() => {
+    if (typeof window === undefined) return null;
+    return localStorage.getItem(MESSAGE_IMPORT_TASK_KEY);
+  }, [isDropdownOpen]);
+
+  const taskStatus = useImportTaskStatus(taskId, { enabled: canImportMessages && isDropdownOpen });
+  const importMessageOption = useMemo(() => {
+    let label = t("Import messages");
+    let icon = <Icon name="archive" type={IconType.OUTLINED} />;
+
+    if (taskStatus) {
+      if (taskStatus.state === StatusEnum.PROGRESS) {
+        label = t("Importing messages...");
+        if (taskStatus.loading) icon = <CircularProgress loading />;
+        else icon = <CircularProgress progress={taskStatus.progress} withLabel />;
+      }
+      if (taskStatus.state === StatusEnum.SUCCESS) {
+        label = t("Imported messages");
+        icon = <CircularProgress progress={100} />;
+      }
+      if (taskStatus.state === StatusEnum.FAILURE) {
+        label = t("Import failed");
+        icon = <Icon name="error" type={IconType.OUTLINED} />;
+      }
+    }
+
+    return {
+      label,
+      icon,
+      callback: () => {
+        window.location.hash = `#modal-message-importer`;
+      }
+    }
+  }, [taskStatus]);
+
+  return (
+    <DropdownMenu
+          isOpen={isDropdownOpen}
+          onOpenChange={setIsDropdownOpen}
+          options={[
+              ...(canAccessDomainAdmin ? [{
+                label: t("Domain admin"),
+                icon: <Icon name="domain" />,
+                callback: () => router.push("/domain"),
+              }] : []),
+              ...(canImportMessages ? [importMessageOption] : []),
+          ]}
+      >
+      <Button
+          onClick={() => setIsDropdownOpen(true)}
+          icon={<Icon name="settings" type={IconType.OUTLINED} />}
+          aria-label={t("More options")}
+          color="tertiary-text"
+      />
+      </DropdownMenu>
+  )
+}

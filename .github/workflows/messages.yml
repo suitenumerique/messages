@@ -26,6 +26,8 @@ jobs:
 
   test-back:
     runs-on: ubuntu-latest
+    env:
+      DOCKER_USER: 1001
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,9 +36,11 @@ jobs:
       - name: Setup data directories
         run: |
           mkdir -p data/media data/static
-          chmod -R 777 data
+          chown -R 1001:1001 data
       - name: Collect static files
         run: make collectstatic
+      - name: Create msg-imports bucket
+        run: make import-bucket
       - name: Run backend tests
         run: make back-test
 

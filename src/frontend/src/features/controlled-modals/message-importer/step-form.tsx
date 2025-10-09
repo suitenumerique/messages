@@ -6,13 +6,15 @@ import { Button } from "@openfun/cunningham-react";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/router";
-import { BlobUploadCreate201, importFileCreateResponse202, importImapCreateResponse202, useBlobUploadCreate, useImportFileCreate, useImportImapCreate } from "@/features/api/gen";
+import { importFileCreateResponse202, importImapCreateResponse202, useImportFileCreate, useImportImapCreate } from "@/features/api/gen";
 import MailHelper, { IMAP_DOMAIN_REGEXES } from "@/features/utils/mail-helper";
 import { RhfInput } from "../../forms/components/react-hook-form";
 import { RhfFileUploader } from "../../forms/components/react-hook-form/rhf-file-uploader";
 import { RhfCheckbox } from "../../forms/components/react-hook-form/rhf-checkbox";
 import { Banner } from "@/features/ui/components/banner";
 import i18n from "@/features/i18n/initI18n";
+import { BucketUploadState, useBucketUpload } from "./use-bucket-upload";
+import ProgressBar from "@/features/ui/components/progress-bar";
 
 const usernameSchema = z.email({ error: i18n.t('The email address is invalid.') });
 
@@ -40,11 +42,13 @@ const importerFormSchema = z.object({
 type FormFields = z.infer<typeof importerFormSchema>;
 
 type StepFormProps = {
+    onUploading: () => void;
     onSuccess: (taskId: string) => void;
-    onError: (error: string) => void;
+    onError: (error: string | null) => void;
+    error: string | null;
 
 }
-export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
+export const StepForm = ({ onUploading, onSuccess, onError, error}: StepFormProps) => {
     const { t } = useTranslation();
     const router = useRouter();
     const [showAdvancedImapFields, setShowAdvancedImapFields] = useState(false);
@@ -52,30 +56,33 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
     const imapMutation = useImportImapCreate({
         mutation: {
             meta: { noGlobalError: true },
-            onError: () => {
-                onError(t('An error occurred while importing messages.'));
-            },
+            onError: () => onError(t('An error occurred while importing messages.')),
             onSuccess: (data) => onSuccess((data as importImapCreateResponse202).data.task_id!)
-        }
-    });
-    const blobMutation = useBlobUploadCreate({
-        mutation: {
-            meta: { noGlobalError: true },
-            onError: () => {
-                onError(t('An error occurred while importing messages.'));
-            },
         }
     });
     const archiveMutation = useImportFileCreate({
         mutation: {
             meta: { noGlobalError: true },
-            onError: () => {
-                onError(t('An error occurred while importing messages.'));
-            },
+            onError: () => onError(t('An error occurred while importing messages.')),
             onSuccess: (data) => onSuccess((data as importFileCreateResponse202).data.task_id!)
         }
     });
-    const isPending = imapMutation.isPending || archiveMutation.isPending || blobMutation.isPending;
+    const bucketUploadManager = useBucketUpload({
+        onSuccess: (manager) => archiveMutation.mutate({
+            data: {
+                filename: manager.file!.name,
+                recipient: router.query.mailboxId as string,
+            }
+        }, {
+            onSettled: manager.reset,
+        }),
+        onError: (error) => {
+            if (error === 'Aborted') onError(t('You have aborted the upload.'));
+            else onError(t('An error occurred while uploading the archive file.'));
+        },
+    });
+    const isBucketUploading = [BucketUploadState.INITIATING, BucketUploadState.IMPORTING, BucketUploadState.COMPLETING].includes(bucketUploadManager.state);
+    const isPending = imapMutation.isPending || archiveMutation.isPending || isBucketUploading;
 
     const defaultValues = {
         imap_server: '',
@@ -103,7 +110,7 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
      * Try to guess the imap server from the email address
      * If it fails, show all the form fields to invite the user to fill them manually
      */
-    const discoverImapServer:FocusEventHandler<HTMLInputElement> = async () => {
+    const discoverImapServer: FocusEventHandler<HTMLInputElement> = async () => {
         const email = form.getValues("username")!;
         const result = usernameSchema.safeParse(email);
 
@@ -145,15 +152,8 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
      * Exec the mutation to import emails from an Archive file.
      */
     const importFromArchive = async (file: File) => {
-        const blob = await blobMutation.mutateAsync(
-            { data: { file },
-            mailboxId: router.query.mailboxId as string
-        });
-        const payload = {
-            blob: (blob.data as BlobUploadCreate201).blobId,
-            recipient: router.query.mailboxId as string,
-        }
-        return archiveMutation.mutateAsync({ data: payload });
+        bucketUploadManager.upload(file);
+        onUploading();
     }
 
     /**
@@ -162,6 +162,7 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
      * We assume that all mutation returns a celery task id as response.
      */
     const handleSubmit = async (data: FormFields) => {
+        onError(null);
         if (data.archive_file.length > 0) {
             importFromArchive(data.archive_file[0]);
         } else {
@@ -187,86 +188,86 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
                 noValidate
             >
                 <h2>{t('First, we need some information about your old mailbox')}</h2>
-                { showImapForm === true && (
+                {showImapForm === true && (
                     <>
-                    <div className="form-field-row flex-justify-center">
-                        <p>{t('Indicate your old email address and your password.')}</p>
-                    </div>
-                    <div className="form-field-row">
-                        <RhfInput
-                            label={t('Email address')}
-                            name="username"
-                            type="email"
-                            text={form.formState.errors.username ? t(form.formState.errors.username.message as string) : undefined}
-                            onBlur={discoverImapServer}
-                            fullWidth
-                        />
-                    </div>
-                    <div className="form-field-row">
-                        <RhfInput
-                            label={t('Password')}
-                            name="password"
-                            type="password"
-                            text={form.formState.errors.password ? t(form.formState.errors.password.message as string) : undefined}
-                            fullWidth
-                        />
-                    </div>
-                    {
-                        showAdvancedImapFields ? (
-                            <>
-                                <div className="form-field-row flex-justify-center">
-                                    <p>{t('Indicate your old email address and your password.')}</p>
-                                </div>
-                                <div className="form-field-row">
-                                    <RhfInput
-                                        name="imap_server"
-                                        label={t('IMAP server')}
-                                        text={form.formState.errors.imap_server ? t(form.formState.errors.imap_server.message as string) : undefined}
-                                        fullWidth
-                                    />
-                                    <RhfInput
-                                        name="imap_port"
-                                        type="number"
-                                        min={1}
-                                        max={65535}
-                                        label={t('IMAP port')}
-                                        text={form.formState.errors.imap_port ? t(form.formState.errors.imap_port.message as string) : undefined}
-                                        fullWidth
-                                    />
-                                </div>
-                                <div className="form-field-row">
-                                    <RhfCheckbox
-                                        label={t("Use SSL")}
-                                        name="use_ssl"
-                                        fullWidth
-                                    />
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                <input type="hidden" {...form.register('imap_server')} />
-                                <input type="hidden" {...form.register('imap_port')} />
-                                <input type="hidden" {...form.register('use_ssl')} />
-                            </>
-                        )
-                    }
-                    {
-                        emailDomain && (
-                            <Banner type="info">
-                                <p>{t('To be able to import emails from an IMAP server, you may need to allow IMAP access on your account.')}</p>
-                                <p><LinkToDoc imapDomain={emailDomain} /></p>
-                            </Banner>
-                        )
-                    }
-                    <div className="form-field-row flex-justify-center modal-importer-form__or-separator">
-                        <p>{t('Or')}</p>
-                    </div>
+                        <div className="form-field-row flex-justify-center">
+                            <p>{t('Indicate your old email address and your password.')}</p>
+                        </div>
+                        <div className="form-field-row">
+                            <RhfInput
+                                label={t('Email address')}
+                                name="username"
+                                type="email"
+                                text={form.formState.errors.username ? t(form.formState.errors.username.message as string) : undefined}
+                                onBlur={discoverImapServer}
+                                fullWidth
+                            />
+                        </div>
+                        <div className="form-field-row">
+                            <RhfInput
+                                label={t('Password')}
+                                name="password"
+                                type="password"
+                                text={form.formState.errors.password ? t(form.formState.errors.password.message as string) : undefined}
+                                fullWidth
+                            />
+                        </div>
+                        {
+                            showAdvancedImapFields ? (
+                                <>
+                                    <div className="form-field-row flex-justify-center">
+                                        <p>{t('Indicate your old email address and your password.')}</p>
+                                    </div>
+                                    <div className="form-field-row">
+                                        <RhfInput
+                                            name="imap_server"
+                                            label={t('IMAP server')}
+                                            text={form.formState.errors.imap_server ? t(form.formState.errors.imap_server.message as string) : undefined}
+                                            fullWidth
+                                        />
+                                        <RhfInput
+                                            name="imap_port"
+                                            type="number"
+                                            min={1}
+                                            max={65535}
+                                            label={t('IMAP port')}
+                                            text={form.formState.errors.imap_port ? t(form.formState.errors.imap_port.message as string) : undefined}
+                                            fullWidth
+                                        />
+                                    </div>
+                                    <div className="form-field-row">
+                                        <RhfCheckbox
+                                            label={t("Use SSL")}
+                                            name="use_ssl"
+                                            fullWidth
+                                        />
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <input type="hidden" {...form.register('imap_server')} />
+                                    <input type="hidden" {...form.register('imap_port')} />
+                                    <input type="hidden" {...form.register('use_ssl')} />
+                                </>
+                            )
+                        }
+                        {
+                            emailDomain && (
+                                <Banner type="info">
+                                    <p>{t('To be able to import emails from an IMAP server, you may need to allow IMAP access on your account.')}</p>
+                                    <p><LinkToDoc imapDomain={emailDomain} /></p>
+                                </Banner>
+                            )
+                        }
+                        <div className="form-field-row flex-justify-center modal-importer-form__or-separator">
+                            <p>{t('Or')}</p>
+                        </div>
                     </>
                 )}
                 <div className="form-field-row flex-justify-center">
                     <p>{t('Upload an archive')}</p>
                 </div>
-                <div className="form-field-row">
+                <div className="form-field-row archive_file_field">
                     <RhfFileUploader
                         name="archive_file"
                         accept=".eml,.mbox"
@@ -276,17 +277,36 @@ export const StepForm = ({ onSuccess, onError }: StepFormProps) => {
                         text={t('EML or MBOX')}
                         fullWidth
                     />
+                    {[BucketUploadState.INITIATING, BucketUploadState.IMPORTING, BucketUploadState.COMPLETING, BucketUploadState.COMPLETED].includes(bucketUploadManager.state) && (
+                        <div className="progress-bar-container">
+                            <ProgressBar progress={bucketUploadManager.progress} />
+                            <p>{t('Uploading... {{progress}}%', { progress: bucketUploadManager.progress })}</p>
+                        </div>
+                    )}
                 </div>
+                {error && ( <Banner type="error"><p>{t(error)}</p></Banner> )}
                 <div className="form-field-row">
-                    <Button
-                        type="submit"
-                        aria-busy={isPending}
-                        disabled={isPending}
-                        icon={isPending ? <Spinner size="sm" /> : undefined}
-                        fullWidth
-                    >
-                        {t('Import')}
-                    </Button>
+                    {[BucketUploadState.IMPORTING].includes(bucketUploadManager.state) ? (
+                        <Button
+                            type="button"
+                            onClick={bucketUploadManager.abort}
+                            color="tertiary"
+                            fullWidth
+                        >
+                                {t('Abort upload')}
+                        </Button>
+
+                    ) : (
+                        <Button
+                            type="submit"
+                            aria-busy={isPending}
+                            disabled={isPending}
+                            icon={isPending ? <Spinner size="sm" /> : undefined}
+                            fullWidth
+                        >
+                            {t('Import')}
+                        </Button>
+                    )}
                 </div>
             </form>
         </FormProvider>

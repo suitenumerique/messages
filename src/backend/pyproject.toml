@@ -24,10 +24,12 @@ requires-python = ">=3.13,<4.0"
 
 # Note: after changing this list you must re-run `make back-poetry-lock`
 dependencies = [
+    "boto3==1.40.43",
+    "botocore==1.40.43",
     "celery[redis]==5.5.2",
     "cryptography==45.0.5",
     "dj-database-url==2.3.0",
-    "django==5.1.12",
+    "django==5.1.13",
     "django-celery-beat==2.8.0",
     "django-celery-results==2.6.0",
     "django-configurations==2.5.1",

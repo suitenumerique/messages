@@ -2,7 +2,8 @@
 # pylint: disable=redefined-outer-name, unused-argument, no-value-for-parameter
 
 import datetime
-from unittest.mock import MagicMock, patch
+from io import BytesIO
+from unittest.mock import MagicMock, Mock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
@@ -12,6 +13,17 @@ import pytest
 from core import factories
 from core.models import Mailbox, MailDomain, Message, Thread
 from core.services.importer.tasks import process_eml_file_task, process_mbox_file_task
+
+
+def mock_storage_open(content: bytes):
+    """Helper to create a mock storage that returns the given content."""
+
+    def create_file(*args, **kwargs):
+        return BytesIO(content)
+
+    mock_storage = Mock()
+    mock_storage.open = Mock(side_effect=create_file)
+    return mock_storage
 
 
 @pytest.fixture
@@ -112,53 +124,61 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
         )
         mock_delay.assert_called_once()
 
-        # Run the task synchronously for testing
-        task_result = process_eml_file_task(
-            file_content=eml_file, recipient_id=str(mailbox.id)
-        )
-        assert task_result["result"]["message_status"] == "Completed processing message"
-        assert task_result["result"]["type"] == "eml"
-        assert task_result["result"]["total_messages"] == 1
-        assert task_result["result"]["success_count"] == 1
-        assert task_result["result"]["failure_count"] == 0
-        assert task_result["result"]["current_message"] == 1
+        # Mock storage for running task synchronously
+        mock_storage = mock_storage_open(eml_file)
 
-        # Verify progress updates were called correctly
-        assert mock_task.update_state.call_count == 2
+        with patch("core.services.importer.tasks.storages") as mock_storages:
+            mock_storages.__getitem__.return_value = mock_storage
+            # Run the task synchronously for testing
+            task_result = process_eml_file_task(
+                file_key="test-file-key.eml", recipient_id=str(mailbox.id)
+            )
+            assert (
+                task_result["result"]["message_status"]
+                == "Completed processing message"
+            )
+            assert task_result["result"]["type"] == "eml"
+            assert task_result["result"]["total_messages"] == 1
+            assert task_result["result"]["success_count"] == 1
+            assert task_result["result"]["failure_count"] == 0
+            assert task_result["result"]["current_message"] == 1
 
-        mock_task.update_state.assert_any_call(
-            state="PROGRESS",
-            meta={
-                "result": {
-                    "message_status": "Processing message 1 of 1",
-                    "total_messages": 1,
-                    "success_count": 0,
-                    "failure_count": 0,
-                    "type": "eml",
-                    "current_message": 1,
+            # Verify progress updates were called correctly
+            assert mock_task.update_state.call_count == 2
+
+            mock_task.update_state.assert_any_call(
+                state="PROGRESS",
+                meta={
+                    "result": {
+                        "message_status": "Processing message 1 of 1",
+                        "total_messages": 1,
+                        "success_count": 0,
+                        "failure_count": 0,
+                        "type": "eml",
+                        "current_message": 1,
+                    },
+                    "error": None,
                 },
-                "error": None,
-            },
-        )
-        mock_task.update_state.assert_called_with(
-            state="SUCCESS",
-            meta={
-                "result": task_result["result"],
-                "error": None,
-            },
-        )
+            )
+            mock_task.update_state.assert_called_with(
+                state="SUCCESS",
+                meta={
+                    "result": task_result["result"],
+                    "error": None,
+                },
+            )
 
-        # check that the message was created
-        assert Message.objects.count() == 1
-        message = Message.objects.first()
-        assert message.subject == "Mon mail avec joli pj"
-        assert message.has_attachments is True
-        assert message.sender.email == "sender@example.com"
-        assert message.recipients.get().contact.email == "recipient@example.com"
-        assert message.sent_at == message.thread.messaged_at
-        assert message.sent_at == (
-            datetime.datetime(2025, 5, 26, 20, 13, 44, tzinfo=datetime.timezone.utc)
-        )
+            # check that the message was created
+            assert Message.objects.count() == 1
+            message = Message.objects.first()
+            assert message.subject == "Mon mail avec joli pj"
+            assert message.has_attachments is True
+            assert message.sender.email == "sender@example.com"
+            assert message.recipients.get().contact.email == "recipient@example.com"
+            assert message.sent_at == message.thread.messaged_at
+            assert message.sent_at == (
+                datetime.datetime(2025, 5, 26, 20, 13, 44, tzinfo=datetime.timezone.utc)
+            )
 
 
 @pytest.mark.django_db
@@ -168,11 +188,18 @@ def test_process_mbox_file_task(mailbox, mbox_file):
     mock_task = MagicMock()
     mock_task.update_state = MagicMock()
 
+    # Mock storage
+    mock_storage = mock_storage_open(mbox_file)
+
     # Mock the task's update_state method to avoid database operations
-    with patch.object(process_mbox_file_task, "update_state", mock_task.update_state):
+    with (
+        patch.object(process_mbox_file_task, "update_state", mock_task.update_state),
+        patch("core.services.importer.tasks.storages") as mock_storages,
+    ):
+        mock_storages.__getitem__.return_value = mock_storage
         # Run the task synchronously for testing
         task_result = process_mbox_file_task(
-            file_content=mbox_file, recipient_id=str(mailbox.id)
+            file_key="test-file-key.mbox", recipient_id=str(mailbox.id)
         )
         assert task_result["status"] == "SUCCESS"
         assert (
@@ -187,7 +214,7 @@ def test_process_mbox_file_task(mailbox, mbox_file):
         assert task_result["result"]["current_message"] == 3
 
         # Verify progress updates were called correctly
-        assert mock_task.update_state.call_count == 4  # 3 PROGRESS + 1 SUCCESS
+        assert mock_task.update_state.call_count == 5  # 4 PROGRESS + 1 SUCCESS
 
         # Verify progress updates
         for i in range(1, 4):

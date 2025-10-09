@@ -2,6 +2,7 @@
 
 from django.contrib import admin, messages
 from django.contrib.auth import admin as auth_admin
+from django.core.files.storage import storages
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.urls import path
@@ -9,6 +10,7 @@ from django.utils.html import escape, format_html
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
+from core.api.utils import get_file_key
 from core.services.importer import ImportService
 
 from . import models
@@ -416,13 +418,18 @@ class MessageAdmin(admin.ModelAdmin):
 
                 # Create a Blob from the uploaded file
                 file_content = import_file.read()
-                blob = recipient.create_blob(
-                    content=file_content,
-                    content_type=import_file.content_type,
+                storage = storages["message-imports"]
+                s3_client = storage.connection.meta.client
+                file_key = get_file_key(recipient.id, import_file.name)
+                s3_client.put_object(
+                    Bucket=storage.bucket_name,
+                    Key=file_key,
+                    Body=file_content,
+                    ContentType=import_file.content_type,
                 )
 
                 success, _response_data = ImportService.import_file(
-                    file=blob,
+                    file_key=file_key,
                     recipient=recipient,
                     user=request.user,
                     request=request,

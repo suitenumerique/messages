@@ -120,3 +120,12 @@ class MessageTemplateTypeChoices(models.IntegerChoices):
     REPLY = 1, "reply"
     NEW_MESSAGE = 2, "new_message"
     SIGNATURE = 3, "signature"
+
+
+EML_SUPPORTED_MIME_TYPES = ["message/rfc822", "application/eml"]
+MBOX_SUPPORTED_MIME_TYPES = [
+    "application/octet-stream",
+    "text/plain",
+    "application/mbox",
+]
+ARCHIVE_SUPPORTED_MIME_TYPES = EML_SUPPORTED_MIME_TYPES + MBOX_SUPPORTED_MIME_TYPES

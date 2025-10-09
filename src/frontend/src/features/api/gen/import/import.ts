@@ -27,7 +27,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 /**
  * 
         Import messages by uploading an EML or MBOX file.
-        
+
         The import is processed asynchronously and returns a task ID for tracking.
         The file must be a valid EML or MBOX format. The recipient mailbox must exist
         and the user must have access to it.
@@ -60,7 +60,7 @@ export const importFileCreate = async (
   options?: RequestInit,
 ): Promise<importFileCreateResponse> => {
   const formData = new FormData();
-  formData.append(`blob`, importFileRequest.blob);
+  formData.append(`filename`, importFileRequest.filename);
   formData.append(`recipient`, importFileRequest.recipient);
 
   return fetchAPI<importFileCreateResponse>(getImportFileCreateUrl(), {
@@ -136,19 +136,417 @@ export const useImportFileCreate = <TError = void, TContext = unknown>(
   return useMutation(mutationOptions, queryClient);
 };
 /**
+ * Create a multipart upload or a direct upload for a file to the message imports bucket.
+- In case of a multipart upload, the upload_id is returned to be used for subsequent part uploads.
+- In case of a direct upload, a signed url is returned to directly upload
+  the file to the message imports bucket.
+ */
+export type importFileUploadCreateResponse201 = {
+  data: void;
+  status: 201;
+};
+
+export type importFileUploadCreateResponseComposite =
+  importFileUploadCreateResponse201;
+
+export type importFileUploadCreateResponse =
+  importFileUploadCreateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getImportFileUploadCreateUrl = () => {
+  return `/api/v1.0/import/file/upload/`;
+};
+
+export const importFileUploadCreate = async (
+  options?: RequestInit,
+): Promise<importFileUploadCreateResponse> => {
+  return fetchAPI<importFileUploadCreateResponse>(
+    getImportFileUploadCreateUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getImportFileUploadCreateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importFileUploadCreate>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof importFileUploadCreate>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["importFileUploadCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof importFileUploadCreate>>,
+    void
+  > = () => {
+    return importFileUploadCreate(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ImportFileUploadCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof importFileUploadCreate>>
+>;
+
+export type ImportFileUploadCreateMutationError = unknown;
+
+export const useImportFileUploadCreate = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof importFileUploadCreate>>,
+      TError,
+      void,
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof importFileUploadCreate>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationOptions = getImportFileUploadCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Update a multipart upload to complete it by providing all part ETags.
+ */
+export type importFileUploadUpdateResponse200 = {
+  data: void;
+  status: 200;
+};
+
+export type importFileUploadUpdateResponseComposite =
+  importFileUploadUpdateResponse200;
+
+export type importFileUploadUpdateResponse =
+  importFileUploadUpdateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getImportFileUploadUpdateUrl = (uploadId: string) => {
+  return `/api/v1.0/import/file/upload/${uploadId}/`;
+};
+
+export const importFileUploadUpdate = async (
+  uploadId: string,
+  options?: RequestInit,
+): Promise<importFileUploadUpdateResponse> => {
+  return fetchAPI<importFileUploadUpdateResponse>(
+    getImportFileUploadUpdateUrl(uploadId),
+    {
+      ...options,
+      method: "PUT",
+    },
+  );
+};
+
+export const getImportFileUploadUpdateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importFileUploadUpdate>>,
+    TError,
+    { uploadId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof importFileUploadUpdate>>,
+  TError,
+  { uploadId: string },
+  TContext
+> => {
+  const mutationKey = ["importFileUploadUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof importFileUploadUpdate>>,
+    { uploadId: string }
+  > = (props) => {
+    const { uploadId } = props ?? {};
+
+    return importFileUploadUpdate(uploadId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ImportFileUploadUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof importFileUploadUpdate>>
+>;
+
+export type ImportFileUploadUpdateMutationError = unknown;
+
+export const useImportFileUploadUpdate = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof importFileUploadUpdate>>,
+      TError,
+      { uploadId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof importFileUploadUpdate>>,
+  TError,
+  { uploadId: string },
+  TContext
+> => {
+  const mutationOptions = getImportFileUploadUpdateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Abort a multipart upload of a file to the message imports bucket.
+ */
+export type importFileUploadDestroyResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type importFileUploadDestroyResponseComposite =
+  importFileUploadDestroyResponse204;
+
+export type importFileUploadDestroyResponse =
+  importFileUploadDestroyResponseComposite & {
+    headers: Headers;
+  };
+
+export const getImportFileUploadDestroyUrl = (uploadId: string) => {
+  return `/api/v1.0/import/file/upload/${uploadId}/`;
+};
+
+export const importFileUploadDestroy = async (
+  uploadId: string,
+  options?: RequestInit,
+): Promise<importFileUploadDestroyResponse> => {
+  return fetchAPI<importFileUploadDestroyResponse>(
+    getImportFileUploadDestroyUrl(uploadId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getImportFileUploadDestroyMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importFileUploadDestroy>>,
+    TError,
+    { uploadId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof importFileUploadDestroy>>,
+  TError,
+  { uploadId: string },
+  TContext
+> => {
+  const mutationKey = ["importFileUploadDestroy"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof importFileUploadDestroy>>,
+    { uploadId: string }
+  > = (props) => {
+    const { uploadId } = props ?? {};
+
+    return importFileUploadDestroy(uploadId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ImportFileUploadDestroyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof importFileUploadDestroy>>
+>;
+
+export type ImportFileUploadDestroyMutationError = unknown;
+
+export const useImportFileUploadDestroy = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof importFileUploadDestroy>>,
+      TError,
+      { uploadId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof importFileUploadDestroy>>,
+  TError,
+  { uploadId: string },
+  TContext
+> => {
+  const mutationOptions = getImportFileUploadDestroyMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Create a presigned url to upload a part of a file to the message imports bucket.
+ */
+export type importFileUploadPartCreateResponse200 = {
+  data: void;
+  status: 200;
+};
+
+export type importFileUploadPartCreateResponseComposite =
+  importFileUploadPartCreateResponse200;
+
+export type importFileUploadPartCreateResponse =
+  importFileUploadPartCreateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getImportFileUploadPartCreateUrl = (uploadId: string) => {
+  return `/api/v1.0/import/file/upload/${uploadId}/part/`;
+};
+
+export const importFileUploadPartCreate = async (
+  uploadId: string,
+  options?: RequestInit,
+): Promise<importFileUploadPartCreateResponse> => {
+  return fetchAPI<importFileUploadPartCreateResponse>(
+    getImportFileUploadPartCreateUrl(uploadId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getImportFileUploadPartCreateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importFileUploadPartCreate>>,
+    TError,
+    { uploadId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof importFileUploadPartCreate>>,
+  TError,
+  { uploadId: string },
+  TContext
+> => {
+  const mutationKey = ["importFileUploadPartCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof importFileUploadPartCreate>>,
+    { uploadId: string }
+  > = (props) => {
+    const { uploadId } = props ?? {};
+
+    return importFileUploadPartCreate(uploadId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ImportFileUploadPartCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof importFileUploadPartCreate>>
+>;
+
+export type ImportFileUploadPartCreateMutationError = unknown;
+
+export const useImportFileUploadPartCreate = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof importFileUploadPartCreate>>,
+      TError,
+      { uploadId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof importFileUploadPartCreate>>,
+  TError,
+  { uploadId: string },
+  TContext
+> => {
+  const mutationOptions = getImportFileUploadPartCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
  * 
         Import messages from an IMAP server.
-        
+
         This endpoint initiates an asynchronous import process from an IMAP server.
         The import is processed in the background and returns a task ID for tracking.
-        
+
         Required parameters:
         - imap_server: Hostname of the IMAP server
         - imap_port: Port number for the IMAP server
         - username: IMAP account username
         - password: IMAP account password
         - recipient: ID of the mailbox to import messages into
-        
+
         Optional parameters:
         - use_ssl: Whether to use SSL for the connection (default: true)
         

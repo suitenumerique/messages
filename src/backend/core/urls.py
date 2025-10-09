@@ -10,7 +10,7 @@ from core.api.viewsets.config import ConfigView
 from core.api.viewsets.contacts import ContactViewSet
 from core.api.viewsets.draft import DraftMessageView
 from core.api.viewsets.flag import ChangeFlagView
-from core.api.viewsets.import_message import ImportViewSet
+from core.api.viewsets.import_message import ImportViewSet, MessagesArchiveUploadViewSet
 from core.api.viewsets.inbound.mta import InboundMTAViewSet
 from core.api.viewsets.inbound.widget import InboundWidgetViewSet
 from core.api.viewsets.label import LabelViewSet
@@ -48,6 +48,11 @@ router.register("threads", ThreadViewSet, basename="threads")
 router.register("labels", LabelViewSet, basename="labels")
 router.register("mailboxes", MailboxViewSet, basename="mailboxes")
 router.register("maildomains", AdminMailDomainViewSet, basename="admin-maildomains")
+router.register(
+    "import/file/upload",
+    MessagesArchiveUploadViewSet,
+    basename="messages-archive-upload",
+)
 
 # Router for /threads/{thread_id}/accesses/
 thread_access_nested_router = DefaultRouter()

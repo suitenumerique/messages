@@ -9,6 +9,7 @@ https://docs.djangoproject.com/en/3.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.1/ref/settings/
 """
+# pylint: disable=too-many-lines
 
 import logging
 import os
@@ -157,8 +158,36 @@ class Base(Configuration):
                 environ_name="STORAGES_STATICFILES_BACKEND",
             ),
         },
+        "message-imports": {
+            "BACKEND": "storages.backends.s3.S3Storage",
+            "OPTIONS": {
+                "endpoint_url": values.Value(
+                    environ_name="STORAGE_MESSAGE_IMPORTS_ENDPOINT_URL",
+                    environ_prefix=None,
+                ),
+                "bucket_name": values.Value(
+                    environ_name="STORAGE_MESSAGE_IMPORTS_BUCKET_NAME",
+                    environ_prefix=None,
+                ),
+                "access_key": values.Value(
+                    environ_name="STORAGE_MESSAGE_IMPORTS_ACCESS_KEY",
+                    environ_prefix=None,
+                ),
+                "secret_key": values.Value(
+                    environ_name="STORAGE_MESSAGE_IMPORTS_SECRET_KEY",
+                    environ_prefix=None,
+                ),
+                "region_name": values.Value(
+                    environ_name="STORAGE_MESSAGE_IMPORTS_REGION_NAME",
+                    environ_prefix=None,
+                ),
+                "querystring_expire": values.PositiveIntegerValue(
+                    environ_name="STORAGE_MESSAGE_IMPORTS_EXPIRE_POLICY",
+                    environ_prefix=None,
+                ),
+            },
+        },
     }
-
     # MDA settings
     MDA_API_SECRET = values.Value(
         "my-shared-secret-mda", environ_name="MDA_API_SECRET", environ_prefix=None
@@ -298,6 +327,9 @@ class Base(Configuration):
     )
 
     # Media
+    AWS_S3_DOMAIN_REPLACE = values.Value(
+        environ_name="AWS_S3_DOMAIN_REPLACE", environ_prefix=None
+    )
     AWS_S3_ENDPOINT_URL = values.Value(
         environ_name="AWS_S3_ENDPOINT_URL", environ_prefix=None
     )
@@ -318,6 +350,11 @@ class Base(Configuration):
     AWS_S3_UPLOAD_POLICY_EXPIRATION = values.Value(
         24 * 60 * 60,  # 24h
         environ_name="AWS_S3_UPLOAD_POLICY_EXPIRATION",
+        environ_prefix=None,
+    )
+    AWS_S3_SIGNATURE_VERSION = values.Value(
+        "s3v4",
+        environ_name="AWS_S3_SIGNATURE_VERSION",
         environ_prefix=None,
     )
 
@@ -878,6 +915,8 @@ class Test(Base):
     IDENTITY_PROVIDER = None
 
     CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
+
+    AWS_S3_DOMAIN_REPLACE = None
 
     # Add a test encryption key for django-fernet-encrypted-fields
     SALT_KEY = ["test-salt-for-development-only"]

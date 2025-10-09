@@ -1,0 +1,39 @@
+.circular-progress {
+    position: relative;
+    width: var(--var-size);
+    height: var(--var-size);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    gap: var(--c--theme--spacings--sm);
+    transition: transform var(--transitionDuration, 0.3s) ease-in-out;
+
+    &--loading {
+        animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+        from {
+            transform: rotate(0deg);
+        }
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    &__label {
+        font-size: 0.65rem;
+        font-weight: bold;
+        color: var(--c--theme--colors--greyscale-400);
+        position: absolute;
+        top: 52%;
+        line-height: 1;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+
+    &__progress {
+        transition: stroke-dashoffset var(--transitionDuration, 0.3s) ease-in-out;
+    }
+}

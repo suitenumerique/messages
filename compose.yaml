@@ -51,37 +51,36 @@ services:
       - "8904:1080"
       - "8917:1025"
 
-  # minio:
-  #   user: ${DOCKER_USER:-1000}
-  #   image: minio/minio
-  #   environment:
-  #     - MINIO_ROOT_USER=st-messages
-  #     - MINIO_ROOT_PASSWORD=password
-  #   ports:
-  #     - "9000:9000"
-  #     - "9001:9001"
-  #   healthcheck:
-  #     test: ["CMD", "mc", "ready", "local"]
-  #     interval: 1s
-  #     timeout: 20s
-  #     retries: 300
-  #   entrypoint: ""
-  #   command: minio server --console-address :9001 /data
-  #   volumes:
-  #     - ./data/media:/data
+  objectstorage:
+    user: ${DOCKER_USER:-1000}
+    image: minio/minio
+    environment:
+      - MINIO_ROOT_USER=st-messages
+      - MINIO_ROOT_PASSWORD=password
+    ports:
+      - "8906:9000"
+      - "8907:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 20s
+      retries: 300
+    entrypoint: ""
+    command: minio server --console-address :9001 /data
+    volumes:
+      - ./data/media:/data
 
-  # createbuckets:
-  #   image: minio/mc
-  #   depends_on:
-  #     minio:
-  #       condition: service_healthy
-  #       restart: true
-  #   entrypoint: >
-  #     sh -c "
-  #     /usr/bin/mc alias set st-messages http://minio:9000 st-messages password && \
-  #     /usr/bin/mc mb st-messages/st-messages-media-storage && \
-  #     /usr/bin/mc version enable st-messages/st-messages-media-storage && \
-  #     exit 0;"
+  objectstorage-createbucket:
+    image: minio/mc
+    depends_on:
+      objectstorage:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      /usr/bin/mc alias set st-messages http://objectstorage:9000 st-messages password && \
+      /usr/bin/mc mb st-messages/msg-imports --ignore-existing && \
+      /usr/bin/mc ilm rule rm --all --force st-messages/msg-imports || true && \
+      /usr/bin/mc ilm rule add --expire-days 1 st-messages/msg-imports"
 
   backend-dev:
     build:
@@ -110,6 +109,8 @@ services:
       postgresql:
         condition: service_healthy
         # restart: true
+      objectstorage:
+       condition: service_healthy
       redis:
         condition: service_started
       opensearch:
@@ -118,9 +119,6 @@ services:
         condition: service_started
       mailcatcher:
         condition: service_started
-
-      # createbuckets:
-      #  condition: service_started
 
   backend-db:
     profiles:

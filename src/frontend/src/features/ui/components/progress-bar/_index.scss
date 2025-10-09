@@ -1,0 +1,47 @@
+.progress-bar{
+    width: 100%;
+    height: 10px;
+    background-color: var(--c--theme--colors--greyscale-300);
+        background-image: linear-gradient(
+            -45deg,
+            rgba(255, 255, 255, 0.25) 25%,
+            transparent 25%,
+            transparent 50%,
+            rgba(255, 255, 255, 0.25) 50%,
+            rgba(255, 255, 255, 0.25) 75%,
+            transparent 75%,
+            transparent
+        );
+        background-size: 40px 40px;
+        animation: progress-stripes 1s linear infinite;
+    border-radius: 50vw;
+    overflow: hidden;
+
+    &__progress {
+        height: 100%;
+        transition: width 0.2s linear;
+        background-color: var(--c--theme--colors--primary-400);
+        background-image: linear-gradient(
+            -45deg,
+            rgba(255, 255, 255, 0.15) 25%,
+            transparent 25%,
+            transparent 50%,
+            rgba(255, 255, 255, 0.15) 50%,
+            rgba(255, 255, 255, 0.15) 75%,
+            transparent 75%,
+            transparent
+        );
+        background-size: 40px 40px;
+        animation: progress-stripes 1s linear infinite;
+        border-radius: 50vw;
+    }
+}
+
+@keyframes progress-stripes {
+    0% {
+        background-position: 0 0;
+    }
+    100% {
+        background-position: 40px 0;
+    }
+}

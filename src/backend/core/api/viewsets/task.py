@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
             name="TaskStatusResponse",
             fields={
                 "status": drf_serializers.ChoiceField(
-                    choices=sorted(celery_states.ALL_STATES)
+                    choices=sorted({*celery_states.ALL_STATES, "PROGRESS"})
                 ),
                 "result": drf_serializers.JSONField(allow_null=True),
                 "error": drf_serializers.CharField(allow_null=True),

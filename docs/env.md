@@ -112,7 +112,7 @@ The application uses a new environment file structure with `.defaults` and `.loc
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `AWS_S3_ENDPOINT_URL` | `http://minio:9000` | S3 endpoint URL | Optional |
+| `AWS_S3_ENDPOINT_URL` | `http://objectstorage:9000` | S3 endpoint URL | Optional |
 | `AWS_S3_ACCESS_KEY_ID` | `messages` | S3 access key | Optional |
 | `AWS_S3_SECRET_ACCESS_KEY` | `password` | S3 secret key | Optional |
 | `AWS_S3_REGION_NAME` | None | S3 region | Optional |
@@ -120,6 +120,17 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `AWS_S3_UPLOAD_POLICY_EXPIRATION` | `86400` | Upload policy expiration (24h) | Optional |
 | `MEDIA_BASE_URL` | `http://localhost:8902` | Base URL for media files | Optional |
 | `ITEM_FILE_MAX_SIZE` | `5368709120` | Max file size (5GB) | Optional |
+
+### Message Imports Storage
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `STORAGE_MESSAGE_IMPORTS_ENDPOINT_URL` | `http://objectstorage:9000` | S3 endpoint URL | Required |
+| `STORAGE_MESSAGE_IMPORTS_BUCKET_NAME` | `msg-imports` | S3 bucket name | Required |
+| `STORAGE_MESSAGE_IMPORTS_ACCESS_KEY` | `st-messages` | S3 access key | Required |
+| `STORAGE_MESSAGE_IMPORTS_SECRET_KEY` | `password` | S3 secret key | Required |
+| `STORAGE_MESSAGE_IMPORTS_REGION_NAME` | None | S3 region | Optional |
+| `STORAGE_MESSAGE_IMPORTS_EXPIRE_POLICY` | `3600` | Upload policy expiration (1h) | Optional |
 
 ### Static Files
 

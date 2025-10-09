@@ -2,11 +2,15 @@
 
 # pylint: disable=redefined-outer-name,R0801
 
+from django.core.files.storage import storages
+from django.core.files.uploadedfile import SimpleUploadedFile
+
 import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from core import models
+from core.api.utils import get_file_key
 from core.factories import MailboxFactory, UserFactory
 
 IMPORT_FILE_URL = "/api/v1.0/import/file/"
@@ -47,34 +51,53 @@ def mbox_file_path():
     )
 
 
-def upload_mbox_file(client, mbox_file_path, mailbox):
-    """Helper function to upload mbox file via API."""
+@pytest.fixture
+def mbox_file(user, mbox_file_path):
+    """Get the test mbox file from test data and put it in the message imports bucket."""
     with open(mbox_file_path, "rb") as f:
-        mbox_content = f.read()
+        storage = storages["message-imports"]
+        s3_client = storage.connection.meta.client
+        file_content = f.read()
+        file = SimpleUploadedFile(
+            "test.mbox", file_content, content_type="application/mbox"
+        )
+        file_key = get_file_key(user.id, file.name)
+        s3_client.put_object(
+            Bucket=storage.bucket_name,
+            Key=file_key,
+            Body=file_content,
+            ContentType=file.content_type,
+        )
 
-    blob = mailbox.create_blob(
-        content=mbox_content,
-        content_type="application/mbox",
+    yield file
+
+    # Remove the file from the bucket at teardown
+    s3_client.delete_object(
+        Bucket=storage.bucket_name,
+        Key=file_key,
     )
 
+
+def upload_mbox_file(client, mailbox, mbox_file):
+    """Helper function to upload mbox file via API."""
     response = client.post(
         IMPORT_FILE_URL,
-        {"blob": blob.id, "recipient": str(mailbox.id)},
+        {"filename": mbox_file.name, "recipient": str(mailbox.id)},
         format="multipart",
     )
     return response
 
 
 @pytest.mark.django_db
-def test_import_french_mbox_with_labels_and_flags(
-    authenticated_client, mbox_file_path, mailbox
+def test_api_import_labels_french_import_mbox_with_labels_and_flags(
+    authenticated_client, mailbox, mbox_file
 ):
     """Test that French mbox import correctly creates labels and sets flags."""
     # check db is empty
     assert not models.Message.objects.exists()
 
     # Import the mbox file via API
-    response = upload_mbox_file(authenticated_client, mbox_file_path, mailbox)
+    response = upload_mbox_file(authenticated_client, mailbox, mbox_file)
 
     # Check that the import was accepted
     assert response.status_code == status.HTTP_202_ACCEPTED
@@ -139,11 +162,11 @@ def test_import_french_mbox_with_labels_and_flags(
 
 
 @pytest.mark.django_db
-def test_french_gmail_system_labels_are_ignored(
-    authenticated_client, mbox_file_path, mailbox
+def test_api_import_labels_french_gmail_system_labels_are_ignored(
+    authenticated_client, mailbox, mbox_file
 ):
     """Test that French Gmail system labels are not created as user labels."""
-    response = upload_mbox_file(authenticated_client, mbox_file_path, mailbox)
+    response = upload_mbox_file(authenticated_client, mailbox, mbox_file)
     assert response.status_code == status.HTTP_202_ACCEPTED
 
     # These French Gmail system labels should not be created
@@ -164,11 +187,11 @@ def test_french_gmail_system_labels_are_ignored(
 
 
 @pytest.mark.django_db
-def test_french_read_unread_labels_set_correctly(
-    authenticated_client, mbox_file_path, mailbox
+def test_api_import_labels_french_read_unread_labels_set_correctly(
+    authenticated_client, mailbox, mbox_file
 ):
     """Test that French read/unread status is set correctly based on Gmail labels."""
-    response = upload_mbox_file(authenticated_client, mbox_file_path, mailbox)
+    response = upload_mbox_file(authenticated_client, mailbox, mbox_file)
     assert response.status_code == status.HTTP_202_ACCEPTED
 
     messages = models.Message.objects.filter(thread__accesses__mailbox=mailbox)
@@ -182,11 +205,11 @@ def test_french_read_unread_labels_set_correctly(
 
 
 @pytest.mark.django_db
-def test_french_special_cases_for_sent_and_draft_messages(
-    authenticated_client, mbox_file_path, mailbox
+def test_api_import_labels_french_special_cases_for_sent_and_draft_messages(
+    authenticated_client, mailbox, mbox_file
 ):
     """Test that French sent and draft messages are automatically marked as read."""
-    response = upload_mbox_file(authenticated_client, mbox_file_path, mailbox)
+    response = upload_mbox_file(authenticated_client, mailbox, mbox_file)
     assert response.status_code == status.HTTP_202_ACCEPTED
 
     # Sent messages should not be unread
@@ -205,11 +228,11 @@ def test_french_special_cases_for_sent_and_draft_messages(
 
 
 @pytest.mark.django_db
-def test_french_hierarchical_labels_are_created_correctly(
-    authenticated_client, mbox_file_path, mailbox
+def test_api_import_labels_french_hierarchical_labels_are_created_correctly(
+    authenticated_client, mailbox, mbox_file
 ):
     """Test that French hierarchical labels are created with proper structure."""
-    response = upload_mbox_file(authenticated_client, mbox_file_path, mailbox)
+    response = upload_mbox_file(authenticated_client, mailbox, mbox_file)
     assert response.status_code == status.HTTP_202_ACCEPTED
 
     # Check that parent labels are created
@@ -238,15 +261,15 @@ def test_french_hierarchical_labels_are_created_correctly(
 
 
 @pytest.mark.django_db
-def test_french_thread_stats_are_updated_correctly(
-    authenticated_client, mbox_file_path, mailbox
+def test_api_import_labels_french_thread_stats_are_updated_correctly(
+    authenticated_client, mailbox, mbox_file
 ):
     """Test that French thread statistics are updated after flag changes."""
     # check db is empty
     assert not models.Message.objects.exists()
     assert not models.Thread.objects.exists()
 
-    response = upload_mbox_file(authenticated_client, mbox_file_path, mailbox)
+    response = upload_mbox_file(authenticated_client, mailbox, mbox_file)
     assert response.status_code == status.HTTP_202_ACCEPTED
 
     messages_unread = models.Message.objects.filter(
@@ -261,19 +284,13 @@ def test_french_thread_stats_are_updated_correctly(
 
 
 @pytest.mark.django_db
-def test_french_api_authentication_required(api_client, mbox_file_path, mailbox):
+def test_api_import_labels_french_api_authentication_required(
+    api_client, mailbox, mbox_file
+):
     """Test that API authentication is required for French mbox import."""
-    with open(mbox_file_path, "rb") as f:
-        mbox_content = f.read()
-
-    blob = mailbox.create_blob(
-        content=mbox_content,
-        content_type="application/mbox",
-    )
-
     response = api_client.post(
         IMPORT_FILE_URL,
-        {"blob": blob.id, "recipient": str(mailbox.id)},
+        {"filename": mbox_file.name, "recipient": str(mailbox.id)},
         format="multipart",
     )
 
@@ -281,23 +298,17 @@ def test_french_api_authentication_required(api_client, mbox_file_path, mailbox)
 
 
 @pytest.mark.django_db
-def test_french_mailbox_access_required(api_client, mbox_file_path, mailbox):
+def test_api_import_labels_french_mailbox_access_required(
+    api_client, mailbox, mbox_file
+):
     """Test that user must have access to mailbox for French mbox import."""
     # Create user without mailbox access
     other_user = UserFactory()
     api_client.force_authenticate(user=other_user)
 
-    with open(mbox_file_path, "rb") as f:
-        mbox_content = f.read()
-
-    blob = mailbox.create_blob(
-        content=mbox_content,
-        content_type="application/mbox",
-    )
-
     response = api_client.post(
         IMPORT_FILE_URL,
-        {"blob": blob.id, "recipient": str(mailbox.id)},
+        {"filename": mbox_file.name, "recipient": str(mailbox.id)},
         format="multipart",
     )
 
@@ -305,11 +316,11 @@ def test_french_mailbox_access_required(api_client, mbox_file_path, mailbox):
 
 
 @pytest.mark.django_db
-def test_french_utf8_encoded_labels_are_handled_correctly(
-    authenticated_client, mbox_file_path, mailbox
+def test_api_import_labels_french_utf8_encoded_labels_are_handled_correctly(
+    authenticated_client, mailbox, mbox_file
 ):
     """Test that UTF-8 encoded French labels are properly decoded and handled."""
-    response = upload_mbox_file(authenticated_client, mbox_file_path, mailbox)
+    response = upload_mbox_file(authenticated_client, mailbox, mbox_file)
     assert response.status_code == status.HTTP_202_ACCEPTED
 
     # Check that UTF-8 encoded labels are properly decoded
@@ -324,9 +335,11 @@ def test_french_utf8_encoded_labels_are_handled_correctly(
 
 
 @pytest.mark.django_db
-def test_french_mixed_language_labels(authenticated_client, mbox_file_path, mailbox):
+def test_api_import_labels_french_mixed_language_labels(
+    authenticated_client, mailbox, mbox_file
+):
     """Test that mixed French/English labels are handled correctly."""
-    response = upload_mbox_file(authenticated_client, mbox_file_path, mailbox)
+    response = upload_mbox_file(authenticated_client, mailbox, mbox_file)
     assert response.status_code == status.HTTP_202_ACCEPTED
 
     # Check that French labels are created as user labels

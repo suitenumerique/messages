@@ -1,18 +1,18 @@
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { ControlledModal, useModalStore } from "@/features/providers/modal-store";
-import { ModalSize } from "@openfun/cunningham-react";
-import { useState } from "react";
+import { ModalSize, useModals } from "@openfun/cunningham-react";
 import { useTranslation } from "react-i18next";
 import { StepForm } from "./step-form";
 import { StepLoader } from "./step-loader";
 import { StepCompleted } from "./step-completed";
-import { Banner } from "@/features/ui/components/banner";
 import clsx from "clsx";
+import { MESSAGE_IMPORT_TASK_KEY } from "@/features/config/constants";
+import { useEffect, useState } from "react";
 
 
 export const MODAL_MESSAGE_IMPORTER_ID = "modal-message-importer";
 
-type IMPORT_STEP = 'idle' | 'importing' | 'completed';
+type IMPORT_STEP = 'idle' | 'importing' | 'uploading' | 'completed';
 
 /**
  * A controlled modal to import messages from an archive file or an IMAP server.
@@ -25,21 +25,29 @@ type IMPORT_STEP = 'idle' | 'importing' | 'completed';
 export const ModalMessageImporter = () => {
     const { invalidateThreadMessages, invalidateThreadsStats, invalidateLabels } = useMailboxContext();
     const { t } = useTranslation();
-    const [step, setStep] = useState<IMPORT_STEP>('idle');
+    const modals = useModals();
+    const [taskId, setTaskId] = useState<string | null>(() => {
+        if (typeof localStorage === 'undefined') return null;
+        return localStorage.getItem(MESSAGE_IMPORT_TASK_KEY) || null;
+    });
+    const [step, setStep] = useState<IMPORT_STEP>(taskId ? 'importing' : 'idle');
     const [error, setError] = useState<string | null>(null);
-    const [taskId, setTaskId] = useState<string>('');
     const { closeModal } = useModalStore();
     const onClose = () => {
-        setStep('idle');
-        setTaskId('');
-        setError(null);
+        if (!taskId) {
+            setStep('idle');
+            setTaskId('');
+            setError(null);
+        }
     }
     const handleCompletedStepClose = () => {
-        onClose();
         closeModal(MODAL_MESSAGE_IMPORTER_ID);
+        onClose();
     }
 
     const handleImportingStepComplete = async () => {
+        localStorage.removeItem(MESSAGE_IMPORT_TASK_KEY);
+        setTaskId('');
         setStep('completed');
         await Promise.all([
             invalidateThreadMessages(),
@@ -48,16 +56,46 @@ export const ModalMessageImporter = () => {
         ]);
     }
 
-    const handleFormSuccess = (taskId: string) => {
-        setStep('importing');
-        setTaskId(taskId);
+
+    const handleArchiveUploading = () => {
+        setStep('uploading');
+        setTaskId('');
+        setError(null);
+        localStorage.removeItem(MESSAGE_IMPORT_TASK_KEY);
     }
 
-    const handleError = (error: string) => {
+    const handleFormSuccess = (taskId: string) => {
+        setTaskId(taskId);
+        setStep('importing');
+        localStorage.setItem(MESSAGE_IMPORT_TASK_KEY, taskId);
+    }
+
+    const handleError = (error: string | null) => {
         setStep('idle');
+        setTaskId('');
+        localStorage.removeItem(MESSAGE_IMPORT_TASK_KEY);
         setError(error);
     }
 
+    const handleConfirmCloseModal = async () => {
+        const decision = await modals.confirmationModal({
+            title: <span className="c__modal__text--centered">{t('An archive is uploading')}</span>,
+            children: t('Are you sure you want to close this dialog? Your upload will be aborted!'),
+        });
+
+        return decision === 'yes';
+    }
+
+    // Effect to prevent the user from leaving the page while an archive is uploading
+    useEffect(() => {
+        if (step !== 'uploading') return;
+        const unloadCallback = async (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+        };
+
+        window.addEventListener("beforeunload", unloadCallback);
+        return () => window.removeEventListener("beforeunload", unloadCallback);
+      }, [step]);
 
     return (
         <ControlledModal
@@ -65,23 +103,25 @@ export const ModalMessageImporter = () => {
             modalId={MODAL_MESSAGE_IMPORTER_ID}
             size={ModalSize.LARGE}
             onClose={onClose}
+            confirmFn={step !== 'uploading' ? undefined : handleConfirmCloseModal}
         >
             <div className="modal-importer">
-                {(step === 'idle' || step === 'importing') && (
+                {(step === 'idle'  || step === 'uploading' || step === 'importing') && (
                     <div
                         className={clsx("flex-column flex-align-center", { "c__offscreen": step === 'importing' })}
                         style={{ gap: 'var(--c--theme--spacings--xl)' }}
                     >
-                        {error && ( <Banner type="error"><p>{t(error)}</p></Banner> )}
                         <StepForm
+                            onUploading={handleArchiveUploading}
                             onSuccess={handleFormSuccess}
                             onError={handleError}
+                            error={error}
                         />
                     </div>
                 )}
                 {step === 'importing' && (
                     <StepLoader
-                        taskId={taskId}
+                        taskId={taskId!}
                         onComplete={handleImportingStepComplete}
                         onError={handleError}
                     />

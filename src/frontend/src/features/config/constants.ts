@@ -13,6 +13,7 @@ export const DEFAULT_PAGE_SIZE = 20;
 export const APP_STORAGE_PREFIX = "messages_";
 export const SESSION_EXPIRED_KEY = APP_STORAGE_PREFIX + "session_expired";
 export const PREFER_SEND_MODE_KEY = APP_STORAGE_PREFIX + "prefer-send-mode";
+export const MESSAGE_IMPORT_TASK_KEY = APP_STORAGE_PREFIX + "message-import-task";
 export enum PreferSendMode {
     SEND_AND_ARCHIVE = "send-and-archive",
     SEND = "send",

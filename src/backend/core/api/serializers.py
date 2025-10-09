@@ -1162,8 +1162,8 @@ class ImportBaseSerializer(serializers.Serializer):
 class ImportFileSerializer(ImportBaseSerializer):
     """Serializer for importing email files."""
 
-    blob = serializers.UUIDField(
-        help_text="UUID of the blob",
+    filename = serializers.CharField(
+        help_text="Filename",
         required=True,
     )
 
@@ -1171,6 +1171,95 @@ class ImportFileSerializer(ImportBaseSerializer):
         help_text="UUID of the recipient mailbox",
         required=True,
     )
+
+
+class ImportFileUploadSerializer(ImportBaseSerializer):
+    """Serializer for uploading files to the message imports bucket."""
+
+    filename = serializers.CharField(
+        help_text="Filename",
+        required=True,
+    )
+    content_type = serializers.CharField(
+        help_text="Content type",
+        required=True,
+    )
+
+    class Meta:
+        fields = ["filename", "content_type"]
+
+    def validate_content_type(self, value):
+        """Validate content type."""
+        if value not in enums.ARCHIVE_SUPPORTED_MIME_TYPES:
+            raise serializers.ValidationError("Only EML and MBOX files are supported.")
+        return value
+
+
+class ImportFileUploadPartSerializer(ImportBaseSerializer):
+    """Serializer for uploading parts of a file to the message imports bucket."""
+
+    filename = serializers.CharField(
+        help_text="Filename",
+        required=True,
+    )
+    upload_id = serializers.CharField(
+        help_text="Upload ID",
+        required=True,
+    )
+    part_number = serializers.IntegerField(
+        help_text="Part number", required=True, min_value=1
+    )
+
+    class Meta:
+        fields = ["filename", "upload_id", "part_number"]
+
+
+class UploadPartSerializer(ImportBaseSerializer):
+    """Serializer for an upload part."""
+
+    ETag = serializers.CharField(
+        help_text="ETag",
+        required=True,
+    )
+    PartNumber = serializers.IntegerField(
+        help_text="Part number", required=True, min_value=1
+    )
+
+    class Meta:
+        fields = ["ETag", "PartNumber"]
+
+
+class ImportFileUploadCompleteSerializer(ImportBaseSerializer):
+    """Serializer for completing a multipart upload of a file to the message imports bucket."""
+
+    filename = serializers.CharField(
+        help_text="Filename",
+        required=True,
+    )
+    upload_id = serializers.CharField(
+        help_text="Upload ID",
+        required=True,
+    )
+    parts = UploadPartSerializer(required=True, many=True)
+
+    class Meta:
+        fields = ["filename", "upload_id", "parts"]
+
+
+class ImportFileUploadAbortSerializer(ImportBaseSerializer):
+    """Serializer for aborting a multipart upload of a file to the message imports bucket."""
+
+    filename = serializers.CharField(
+        help_text="Filename",
+        required=True,
+    )
+    upload_id = serializers.CharField(
+        help_text="Upload ID",
+        required=True,
+    )
+
+    class Meta:
+        fields = ["filename", "upload_id"]
 
 
 class ImportIMAPSerializer(ImportBaseSerializer):

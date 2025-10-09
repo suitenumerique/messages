@@ -1421,7 +1421,7 @@
         "/api/v1.0/import/file/": {
             "post": {
                 "operationId": "import_file_create",
-                "description": "\n        Import messages by uploading an EML or MBOX file.\n        \n        The import is processed asynchronously and returns a task ID for tracking.\n        The file must be a valid EML or MBOX format. The recipient mailbox must exist\n        and the user must have access to it.\n        ",
+                "description": "\n        Import messages by uploading an EML or MBOX file.\n\n        The import is processed asynchronously and returns a task ID for tracking.\n        The file must be a valid EML or MBOX format. The recipient mailbox must exist\n        and the user must have access to it.\n        ",
                 "tags": [
                     "import"
                 ],
@@ -1483,10 +1483,114 @@
                 }
             }
         },
+        "/api/v1.0/import/file/upload/": {
+            "post": {
+                "operationId": "import_file_upload_create",
+                "description": "Create a multipart upload or a direct upload for a file to the message imports bucket.\n- In case of a multipart upload, the upload_id is returned to be used for subsequent part uploads.\n- In case of a direct upload, a signed url is returned to directly upload\n  the file to the message imports bucket.",
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/import/file/upload/{upload_id}/": {
+            "put": {
+                "operationId": "import_file_upload_update",
+                "description": "Update a multipart upload to complete it by providing all part ETags.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "upload_id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "import_file_upload_destroy",
+                "description": "Abort a multipart upload of a file to the message imports bucket.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "upload_id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/import/file/upload/{upload_id}/part/": {
+            "post": {
+                "operationId": "import_file_upload_part_create",
+                "description": "Create a presigned url to upload a part of a file to the message imports bucket.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "upload_id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
         "/api/v1.0/import/imap/": {
             "post": {
                 "operationId": "import_imap_create",
-                "description": "\n        Import messages from an IMAP server.\n        \n        This endpoint initiates an asynchronous import process from an IMAP server.\n        The import is processed in the background and returns a task ID for tracking.\n        \n        Required parameters:\n        - imap_server: Hostname of the IMAP server\n        - imap_port: Port number for the IMAP server\n        - username: IMAP account username\n        - password: IMAP account password\n        - recipient: ID of the mailbox to import messages into\n        \n        Optional parameters:\n        - use_ssl: Whether to use SSL for the connection (default: true)\n        ",
+                "description": "\n        Import messages from an IMAP server.\n\n        This endpoint initiates an asynchronous import process from an IMAP server.\n        The import is processed in the background and returns a task ID for tracking.\n\n        Required parameters:\n        - imap_server: Hostname of the IMAP server\n        - imap_port: Port number for the IMAP server\n        - username: IMAP account username\n        - password: IMAP account password\n        - recipient: ID of the mailbox to import messages into\n\n        Optional parameters:\n        - use_ssl: Whether to use SSL for the connection (default: true)\n        ",
                 "tags": [
                     "import"
                 ],
@@ -5103,10 +5207,10 @@
                 "type": "object",
                 "description": "Serializer for importing email files.",
                 "properties": {
-                    "blob": {
+                    "filename": {
                         "type": "string",
-                        "format": "uuid",
-                        "description": "UUID of the blob"
+                        "minLength": 1,
+                        "description": "Filename"
                     },
                     "recipient": {
                         "type": "string",
@@ -5115,7 +5219,7 @@
                     }
                 },
                 "required": [
-                    "blob",
+                    "filename",
                     "recipient"
                 ]
             },
@@ -6787,6 +6891,7 @@
                 "enum": [
                     "FAILURE",
                     "PENDING",
+                    "PROGRESS",
                     "RECEIVED",
                     "RETRY",
                     "REVOKED",
@@ -6794,7 +6899,7 @@
                     "SUCCESS"
                 ],
                 "type": "string",
-                "description": "* `FAILURE` - FAILURE\n* `PENDING` - PENDING\n* `RECEIVED` - RECEIVED\n* `RETRY` - RETRY\n* `REVOKED` - REVOKED\n* `STARTED` - STARTED\n* `SUCCESS` - SUCCESS"
+                "description": "* `FAILURE` - FAILURE\n* `PENDING` - PENDING\n* `PROGRESS` - PROGRESS\n* `RECEIVED` - RECEIVED\n* `RETRY` - RETRY\n* `REVOKED` - REVOKED\n* `STARTED` - STARTED\n* `SUCCESS` - SUCCESS"
             },
             "TaskStatusResponse": {
                 "type": "object",

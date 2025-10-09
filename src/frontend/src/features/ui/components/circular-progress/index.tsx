@@ -1,22 +1,31 @@
+import { CSSProperties } from "react";
 import { CheckIcon } from "../icon";
+import clsx from "clsx";
 
 interface CircularProgressProps {
-  progress: number;
+  progress?: number;
   size?: number;
   strokeWidth?: number;
   primaryColor?: string;
   secondaryColor?: string;
   transitionDuration?: number;
+  withLabel?: boolean;
+  loading?: boolean;
 }
 
 export const CircularProgress = ({
-  progress,
+  progress = 0,
   primaryColor = "#1a237e",
-  secondaryColor = "#f0f0f0",
+  secondaryColor = "#E5E5E5",
   transitionDuration = 0.3,
+  withLabel = false,
+  loading = false,
 }: CircularProgressProps) => {
   if (progress > 100) {
     progress = 100;
+  }
+  if (loading) {
+    progress = 33;
   }
 
   const strokeWidth = 2;
@@ -38,35 +47,34 @@ export const CircularProgress = ({
 
   return (
     <div
-      style={{
-        position: "relative",
-        width: `${fixedSize}px`,
-        height: `${fixedSize}px`,
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-      }}
+      className={clsx("circular-progress", { 'circular-progress--loading': loading })}
+      style={{ '--var-size': `${fixedSize}px` } as CSSProperties}
     >
       {!isComplete && (
-        <svg
-          width={fixedSize}
-          height={fixedSize}
-          viewBox={`0 0 ${fixedSize} ${fixedSize}`}
-          style={{ transform: isComplete ? "rotate(0deg)" : "rotate(-90deg)" }}
-        >
-          {/* Background circle - centered in the 24x24 container */}
-          <circle
-            cx={fixedSize / 2}
-            cy={fixedSize / 2}
-            r={radius}
-            fill="none"
-            stroke={secondaryColor}
-            strokeWidth={strokeWidth}
-          />
-
-          {/* Progress circle - centered in the 24x24 container */}
-          {!isComplete && (
+        <>
+          {withLabel && !loading && <span className="circular-progress__label">{progress}</span>}
+          <svg
+            width={fixedSize}
+            height={fixedSize}
+            viewBox={`0 0 ${fixedSize} ${fixedSize}`}
+            style={{ transform: isComplete ? "rotate(0deg)" : "rotate(-90deg)" }}
+          >
+            {/* Background circle - centered in the 24x24 container */}
             <circle
+              cx={fixedSize / 2}
+              cy={fixedSize / 2}
+              r={radius}
+              fill="none"
+              stroke={secondaryColor}
+              strokeWidth={strokeWidth}
+            />
+
+            {/* Progress circle - centered in the 24x24 container */}
+            <circle
+              className="circular-progress__progress"
+              style={{
+                '--transitionDuration': `${transitionDuration}s`,
+              } as CSSProperties}
               cx={fixedSize / 2}
               cy={fixedSize / 2}
               r={radius}
@@ -76,12 +84,9 @@ export const CircularProgress = ({
               strokeDasharray={circumference}
               strokeDashoffset={dashOffset}
               strokeLinecap="round"
-              style={{
-                transition: `stroke-dashoffset ${transitionDuration}s ease-in-out`,
-              }}
             />
-          )}
-        </svg>
+          </svg>
+        </>
       )}
       {/* Check mark when complete */}
       {isComplete && <CheckIcon />}

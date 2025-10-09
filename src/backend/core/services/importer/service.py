@@ -4,9 +4,11 @@ import logging
 from typing import Any, Dict, Optional, Tuple
 
 from django.contrib import messages
+from django.core.files.storage import storages
 from django.http import HttpRequest
 
-from core.models import Blob, Mailbox
+from core import enums
+from core.models import Mailbox
 
 from .tasks import (
     import_imap_messages_task,
@@ -22,7 +24,7 @@ class ImportService:
 
     @staticmethod
     def import_file(
-        file: Blob,
+        file_key: str,
         recipient: Mailbox,
         user: Any,
         request: Optional[HttpRequest] = None,
@@ -42,18 +44,32 @@ class ImportService:
         if not user.is_superuser and not recipient.accesses.filter(user=user).exists():
             return False, {"detail": "You do not have access to this mailbox."}
 
-        try:
-            file_content = file.get_content()
-            content_type = file.content_type
+        message_imports_storage = storages["message-imports"]
 
+        if not message_imports_storage.exists(file_key):
+            return False, {"detail": "File not found."}
+
+        # We retrieve the content type from the file metadata as we need to make a quick check
+        # but this is not guaranteed to be correct so we have to check the file content again in the task
+        s3_client = message_imports_storage.connection.meta.client
+        unsafe_content_type = s3_client.head_object(
+            Bucket=message_imports_storage.bucket_name, Key=file_key
+        ).get("ContentType")
+
+        if unsafe_content_type not in enums.ARCHIVE_SUPPORTED_MIME_TYPES:
+            return False, {
+                "detail": (
+                    "Invalid file format. Only EML (message/rfc822) and MBOX "
+                    "(application/octet-stream, application/mbox, or text/plain) files are supported. "
+                    "Detected content type: {content_type}"
+                ).format(content_type=unsafe_content_type)
+            }
+
+        try:
             # Check MIME type for MBOX
-            if content_type in [
-                "application/octet-stream",
-                "text/plain",
-                "application/mbox",
-            ]:
+            if unsafe_content_type in enums.MBOX_SUPPORTED_MIME_TYPES:
                 # Process MBOX file asynchronously
-                task = process_mbox_file_task.delay(file_content, str(recipient.id))
+                task = process_mbox_file_task.delay(file_key, str(recipient.id))
                 response_data = {"task_id": task.id, "type": "mbox"}
                 if request:
                     messages.info(
@@ -63,9 +79,9 @@ class ImportService:
                     )
                 return True, response_data
             # Check MIME type for EML
-            elif content_type in ["message/rfc822", "application/eml"]:
+            elif unsafe_content_type in enums.EML_SUPPORTED_MIME_TYPES:
                 # Process EML file asynchronously
-                task = process_eml_file_task.delay(file_content, str(recipient.id))
+                task = process_eml_file_task.delay(file_key, str(recipient.id))
                 response_data = {"task_id": task.id, "type": "eml"}
                 if request:
                     messages.info(
@@ -74,14 +90,6 @@ class ImportService:
                         "This may take a while. You can check the status in the Celery task monitor.",
                     )
                 return True, response_data
-            else:
-                return False, {
-                    "detail": (
-                        "Invalid file format. Only EML (message/rfc822) and MBOX "
-                        "(application/octet-stream, application/mbox, or text/plain) files are supported. "
-                        "Detected content type: {content_type}"
-                    ).format(content_type=content_type)
-                }
         except Exception as e:
             logger.exception("Error processing file: %s", e)
             if request:
