@@ -9,6 +9,8 @@ https://docs.djangoproject.com/en/5.1/howto/deployment/wsgi/
 
 import os
 
+from django.conf import settings
+
 from configurations.wsgi import get_wsgi_application
 
 # pylint: disable=all
@@ -19,7 +21,10 @@ try:
     class QuietWSGIRequestHandler(django.core.servers.basehttp.WSGIRequestHandler):
         def log_message(self, format, *args):
             path = getattr(self, "path", "")
-            if path.rstrip("/") == "/api/v1.0/healthz":
+            if (
+                path.split("?", 1)[0].rstrip("/")
+                == f"/api/{settings.API_VERSION}/healthz"
+            ):
                 return
             super().log_message(format, *args)
 
