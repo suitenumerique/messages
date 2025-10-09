@@ -19,7 +19,7 @@ try:
     class QuietWSGIRequestHandler(django.core.servers.basehttp.WSGIRequestHandler):
         def log_message(self, format, *args):
             path = getattr(self, "path", "")
-            if path.strip("/").endswith("healthz"):
+            if path.rstrip("/") == "/api/v1.0/healthz":
                 return
             super().log_message(format, *args)
 
