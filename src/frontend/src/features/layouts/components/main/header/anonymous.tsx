@@ -2,6 +2,7 @@ import { HeaderProps, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { Button } from "@openfun/cunningham-react";
 import { useTranslation } from "react-i18next";
 import { LanguagePicker } from "../language-picker";
+import { LagaufreButton } from "@/features/ui/components/lagaufre";
 
 
 export const AnonymousHeader = ({
@@ -32,8 +33,12 @@ export const AnonymousHeader = ({
       </div>
       <div className="c__header__right">
         {isDesktop && (
+          <>
             <LanguagePicker />
+            <LagaufreButton />
+          </>
         )}
+        
       </div>
     </div>
   );

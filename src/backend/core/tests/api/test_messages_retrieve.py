@@ -18,6 +18,12 @@ def message_url(message):
     return reverse("messages-detail", kwargs={"id": message.id})
 
 
+@pytest.fixture
+def message_url_eml(message):
+    """Get the url for a message."""
+    return reverse("messages-eml", kwargs={"id": message.id})
+
+
 class TestRetrieveMessage:
     """Test retrieving a message."""
 
@@ -59,3 +65,11 @@ class TestRetrieveMessage:
         response = client.get(message_url)
         # we should get a 404 because the message is not accessible by the other user
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_retrieve_message_eml(self, message_url_eml, message, mailbox_access):
+        """Test retrieving a message EML."""
+        client = APIClient()
+        client.force_authenticate(user=mailbox_access.user)
+        response = client.get(message_url_eml)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.content == message.blob.get_content()

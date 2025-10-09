@@ -22,6 +22,7 @@ def create_draft(
     cc_emails: Optional[list] = None,
     bcc_emails: Optional[list] = None,
     attachments: Optional[list] = None,
+    signature_id: Optional[str] = None,
 ) -> models.Message:
     """
     Create a new draft message.
@@ -35,6 +36,7 @@ def create_draft(
         cc_emails: List of CC recipient emails
         bcc_emails: List of BCC recipient emails
         attachments: List of attachment objects with blobId, partId, and name
+        signature_id: Optional signature template ID
 
     Returns:
         The created draft message
@@ -62,7 +64,7 @@ def create_draft(
             reply_to_message = models.Message.objects.select_related("thread").get(
                 id=parent_id
             )
-            # Ensure user has access to parent thread
+            # Ensure mailbox has access to parent thread
             if not models.ThreadAccess.objects.filter(
                 thread=reply_to_message.thread,
                 mailbox=mailbox,
@@ -83,6 +85,8 @@ def create_draft(
             mailbox=mailbox,
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
+    # Validate and get signature if provided
+    signature = mailbox.get_validated_signature(signature_id)
 
     # Create message instance
     message = models.Message(
@@ -99,6 +103,7 @@ def create_draft(
         )
         if draft_body
         else None,
+        signature=signature,
     )
     message.save()
 
@@ -119,7 +124,9 @@ def create_draft(
 
 
 def update_draft(
-    mailbox: models.Mailbox, message: models.Message, update_data: dict
+    mailbox: models.Mailbox,
+    message: models.Message,
+    update_data: dict,
 ) -> models.Message:
     """
     Update draft details (subject, recipients, body, attachments).
@@ -149,6 +156,17 @@ def update_draft(
         ).exists()
     ):
         raise drf.exceptions.PermissionDenied("Access denied to this message's thread.")
+
+    # Update signature if provided
+    signature_id = update_data.get("signatureId")
+    signature = mailbox.get_validated_signature(signature_id)
+    if signature and message.signature != signature:
+        message.signature = signature
+        message.save(update_fields=["signature", "updated_at"])
+    elif not signature_id and "signatureId" in update_data and signature is None:
+        # explicitly clearing the signature
+        message.signature = None
+        message.save(update_fields=["signature", "updated_at"])
 
     # Update subject if provided
     if "subject" in update_data and update_data["subject"] != message.subject:

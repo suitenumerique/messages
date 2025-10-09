@@ -16,12 +16,13 @@ export function FeedbackWidget({
   const widgetPath = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH;
   const channel = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL;
 
-  const title: string = t("feedback_widget.title");
-  const placeholder: string = t("feedback_widget.placeholder");
-  const emailPlaceholder: string = t("feedback_widget.email_placeholder");
-  const submitText: string = t("feedback_widget.submit_text");
-  const successText: string = t("feedback_widget.success_text");
-  const successText2: string = t("feedback_widget.success_text2");
+  const title: string = t("Do you have any feedback?");
+  const placeholder: string = t("Share your feedback here...");
+  const emailPlaceholder: string = t("Your email...");
+  const submitText: string = t("Send Feedback");
+  const successText: string = t("Thank you for your feedback!");
+  const successText2: string = t("In case of questions, we'll get back to you soon.");
+  const closeLabel: string = t("Close the feedback widget");
 
   useEffect(() => {
     if (!channel || !apiUrl || !widgetPath) return;
@@ -50,12 +51,14 @@ export function FeedbackWidget({
             submitText,
             successText,
             successText2,
+            closeLabel,
             // Add email parameter if user is logged in
             ...(user?.email && { email: user.email }),
           },
           script: feedbackScript,
           widget,
           label: title,
+          closeLabel,
         },
       ]);
 

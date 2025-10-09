@@ -110,6 +110,7 @@ MESSAGE_MAPPING = {
             # Flags
             "is_draft": {"type": "boolean"},
             "is_trashed": {"type": "boolean"},
+            "is_archived": {"type": "boolean"},
             "is_starred": {"type": "boolean"},
             "is_unread": {"type": "boolean"},
             "is_sender": {"type": "boolean"},

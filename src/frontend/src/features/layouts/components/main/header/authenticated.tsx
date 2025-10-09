@@ -7,6 +7,7 @@ import { SearchInput } from "@/features/forms/components/search-input";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useAuth, logout } from "@/features/auth";
 import { LanguagePicker } from "@/features/layouts/components/main/language-picker";
+import { LagaufreButton } from "@/features/ui/components/lagaufre";
 
 
 type AuthenticatedHeaderProps = HeaderProps & {
@@ -65,12 +66,12 @@ export const HeaderRight = () => {
           onOpenChange={setIsDropdownOpen}
           options={[
               ...(canAccessDomainAdmin ? [{
-                label: t("user_menu.domain_admin"),
+                label: t("Domain admin"),
                 icon: <Icon name="domain" />,
                 callback: () => router.push("/domain"),
               }] : []),
               {
-                  label: t("actions.import_messages"),
+                  label: t("Import messages"),
                   icon: <Icon name="archive" type={IconType.OUTLINED} />,
                   callback: () => {
                       window.location.hash = `#modal-message-importer`;
@@ -81,11 +82,12 @@ export const HeaderRight = () => {
       <Button
           onClick={() => setIsDropdownOpen(true)}
           icon={<Icon name="settings" type={IconType.OUTLINED} />}
-          aria-label={t("mailbox-panel.actions.more_options")}
+          aria-label={t("More options")}
           color="tertiary-text"
       />
       </DropdownMenu>
       {isDesktop && <VerticalSeparator size="24px" />}
+      <LagaufreButton />
       <UserMenu
         user={user ? {
           full_name: user.full_name ?? undefined,

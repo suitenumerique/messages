@@ -2,6 +2,7 @@ import type { ReactElement, ReactNode } from "react";
 import type { NextPage } from "next";
 import type { AppProps } from "next/app";
 import { CunninghamProvider } from "@gouvfr-lasuite/ui-kit";
+import "@blocknote/mantine/style.css";
 import {
   MutationCache,
   Query,
@@ -9,8 +10,7 @@ import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
-// import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import "../styles/main.scss";
 import "../features/i18n/initI18n";
 import {
@@ -67,8 +67,8 @@ export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
   return (
     <>
       <Head>
-        <title>{t("app_title")}</title>
-        <meta name="description" content={t("app_description")} />
+        <title>{t("Messaging")}</title>
+        <meta name="description" content={t("Messaging")} />
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
         <link rel="icon" href="/images/favicon-light.svg" type="image/svg+xml" />
         <link
@@ -85,7 +85,7 @@ export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
         />
       </Head>
       <QueryClientProvider client={queryClient}>
-        {/* <ReactQueryDevtools initialIsOpen={false} /> */}
+        <ReactQueryDevtools initialIsOpen={false} />
         <ConfigProvider>
           <CunninghamProvider currentLocale={i18n.language}>
             <Auth>

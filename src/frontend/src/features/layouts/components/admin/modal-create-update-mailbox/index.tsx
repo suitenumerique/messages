@@ -21,6 +21,7 @@ import { JSONSchema } from "zod/v4/core";
 import MailboxHelper from "@/features/utils/mailbox-helper";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Icon } from "@gouvfr-lasuite/ui-kit";
+import i18n from "@/features/i18n/initI18n";
 
 export const MODAL_CREATE_ADDRESS_ID = "modal-create-address";
 
@@ -73,38 +74,38 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
   const createMailboxSchema = z.discriminatedUnion("type", [
     z.object({
       type: z.literal("personal"),
-      first_name: z.string().min(1, { error: "create_mailbox_modal.form.errors.first_name_required" }),
-      last_name: z.string().min(1, { error: "create_mailbox_modal.form.errors.last_name_required" }),
+      first_name: z.string().min(1, { error: i18n.t("First name is required.") }),
+      last_name: z.string().min(1, { error: i18n.t("Last name is required.") }),
       prefix: z.string()
-        .min(1, { error: "create_mailbox_modal.form.errors.prefix_required" })
-        .regex(/^[a-zA-Z0-9_.-]+$/, { error: "create_mailbox_modal.form.errors.prefix_invalid" }),
-      confirmation_accepted: z.boolean().refine(val => val === true, { error: "create_mailbox_modal.form.errors.confirmation_required" }),
+        .min(1, { error: i18n.t("Prefix is required.") })
+        .regex(/^[a-zA-Z0-9_.-]+$/, { error: i18n.t("Prefix can only contain letters, numbers, dots, underscores and hyphens.") }),
+      confirmation_accepted: z.boolean().refine(val => val === true, { error: i18n.t("You must confirm this statement.") }),
       ...convertJsonSchemaToZod(SCHEMA_CUSTOM_ATTRIBUTES_USER as JSONSchema.Schema),
     }),
     z.object({
       type: z.literal("shared"),
-      name: z.string().min(1, { error: "create_mailbox_modal.form.errors.name_required" }),
+      name: z.string().min(1, { error: i18n.t("Name is required.") }),
       prefix: z.string()
-        .min(1, { error: "create_mailbox_modal.form.errors.prefix_required" })
-        .regex(/^[a-zA-Z0-9_.-]+$/, { error: "create_mailbox_modal.form.errors.prefix_invalid" }),
+        .min(1, { error: i18n.t("Prefix is required.") })
+        .regex(/^[a-zA-Z0-9_.-]+$/, { error: i18n.t("Prefix can only contain letters, numbers, dots, underscores and hyphens.") }),
     }),
     z.object({
       type: z.literal("redirect"),
       prefix: z.string()
-        .min(1, { error: "create_mailbox_modal.form.errors.prefix_required" })
-        .regex(/^[a-zA-Z0-9_.-]+$/, { error: "create_mailbox_modal.form.errors.prefix_invalid" }),
-      target_email: z.email({ error: "create_mailbox_modal.form.errors.target_email_invalid" }),
+        .min(1, { error: i18n.t("Prefix is required.") })
+        .regex(/^[a-zA-Z0-9_.-]+$/, { error: i18n.t("Prefix can only contain letters, numbers, dots, underscores and hyphens.") }),
+      target_email: z.email({ error: i18n.t("Please enter a valid email address.") }),
     }),
   ]);
   const editMailboxSchema = z.discriminatedUnion("type", [
     z.object({
       type: z.literal("personal"),
-      full_name: z.string().min(1, { error: "edit_mailbox_modal.form.errors.full_name_required" }),
+      full_name: z.string().min(1, { error: i18n.t("Full name is required.") }),
       ...convertJsonSchemaToZod(SCHEMA_CUSTOM_ATTRIBUTES_USER as JSONSchema.Schema),
     }),
     z.object({
       type: z.literal("shared"),
-      name: z.string().min(1, { error: "create_mailbox_modal.form.errors.name_required" }),
+      name: z.string().min(1, { error: i18n.t("Name is required.") }),
     }),
   ]);
   type CreateMailboxFormData = z.infer<typeof createMailboxSchema>;
@@ -243,9 +244,9 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
       onSuccess?.();
     } catch (error: unknown) {
       if (error instanceof APIError && error.data.local_part) {
-        setError("create_mailbox_modal.api_errors.prefix_exists");
+        setError(t('An address with this prefix already exists in this domain.'));
       } else {
-        setError("create_mailbox_modal.api_errors.default");
+        setError(t('An error occurred while creating the address.'));
       }
     }
   }
@@ -273,14 +274,14 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
       addToast(
         <ToasterItem type="info">
           <Icon name="check" />
-          <span>{t('edit_mailbox_modal.toast.success')}</span>
+          <span>{t('The address has been updated!')}</span>
         </ToasterItem>, {
           toastId: "toast_edit_mailbox_modal_success",
         }
       )
       handleClose();
     } catch {
-      setError("edit_mailbox_modal.api_errors.default");
+      setError(t('An error occurred while updating the address.'));
     }
   }
 
@@ -311,15 +312,15 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
     Errors extends MailboxTypeErrors<FormData, Type> = MailboxTypeErrors<FormData, Type>>(fieldName: keyof Errors) => {
     const errors = form.formState.errors as Errors;
     const error = errors?.[fieldName];
-    return error?.message ? t(error.message as string) : undefined;
+    return error?.message ? error.message : undefined;
   }
 
   return (
     <Modal
       isOpen={isOpen}
       title={
-        isUpdating ? t('edit_mailbox_modal.title', { mailbox: MailboxHelper.toString(mailbox!) }) :
-          t('create_mailbox_modal.title', { domain: domainName })
+        isUpdating ? t('Edit {{mailbox}} address', { mailbox: MailboxHelper.toString(mailbox!) }) :
+          t('Create a new address @{{domain}}', { domain: domainName })
       }
       size={ModalSize.LARGE}
       onClose={handleClose}
@@ -336,7 +337,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
               onClick={() => handleTabChange("personal")}
               disabled={isUpdating}
             >
-              {isUpdating ? t('edit_mailbox_modal.tabs.personal') : t('create_mailbox_modal.tabs.personal')}
+              {isUpdating ? t('Personal mailbox') : t('Create a new personal mailbox')}
             </button>
             <button
               type="button"
@@ -344,7 +345,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
               onClick={() => handleTabChange("shared")}
               disabled={isUpdating}
             >
-              {isUpdating ? t('edit_mailbox_modal.tabs.shared') : t('create_mailbox_modal.tabs.shared')}
+              {isUpdating ? t('Shared mailbox') : t('Create a new shared mailbox')}
             </button>
             <button
               disabled={isUpdating || true}
@@ -352,7 +353,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
               className={clsx('modal-tab', { 'modal-tab--active': activeTab === "redirect" })}
               onClick={() => handleTabChange("redirect")}
             >
-              {isUpdating ? t('edit_mailbox_modal.tabs.redirect') : t('create_mailbox_modal.tabs.redirect')}
+              {isUpdating ? t('Simple redirect (Coming soon)') : t('Create a simple redirect (Coming soon)')}
             </button>
           </div>
 
@@ -364,7 +365,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
                   <div className="form-field-row name-row">
                     {isUpdating ? (
                       <RhfInput
-                        label={t('edit_mailbox_modal.form.labels.full_name')}
+                        label={t('Full name')}
                         text={getFieldError<"personal", EditMailboxFormData>('full_name')}
                         name="full_name"
                         className="name-input"
@@ -372,7 +373,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
                     ) : (
                       <>
                         <RhfInput
-                          label={t('create_mailbox_modal.form.labels.first_name')}
+                          label={t('First name')}
                           text={getFieldError<"personal", CreateMailboxFormData>('first_name')}
                           name="first_name"
                           className="name-input"
@@ -383,7 +384,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
                           }}
                         />
                         <RhfInput
-                          label={t('create_mailbox_modal.form.labels.last_name')}
+                          label={t('Last name')}
                           text={getFieldError<"personal", CreateMailboxFormData>('last_name')}
                           name="last_name"
                           className="name-input"
@@ -394,7 +395,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
 
                   <div className="form-field-row address-row">
                     <RhfInput
-                      label={t('create_mailbox_modal.form.labels.address')}
+                      label={t('Address')}
                       text={getFieldError<"personal", CreateMailboxFormData>('prefix')}
                       name="prefix"
                       fullWidth
@@ -426,7 +427,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
 
                   <div className="form-field-row">
                     <RhfCheckbox
-                      label={t('create_mailbox_modal.form.labels.confirmation_accepted')}
+                      label={t('I confirm that this address corresponds to the real identity of a colleague, and I commit to deactivating it when their position ends.')}
                       state={getFieldError<"personal", CreateMailboxFormData>('confirmation_accepted') ? "error" : "default"}
                       text={getFieldError<"personal", CreateMailboxFormData>('confirmation_accepted')}
                       name="confirmation_accepted"
@@ -443,7 +444,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
                 <>
                   <div className="form-field-row">
                     <RhfInput
-                      label={t('create_mailbox_modal.form.labels.name')}
+                      label={t('Name')}
                       text={getFieldError<"shared">('name')}
                       name="name"
                       fullWidth
@@ -457,7 +458,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
 
                   <div className="form-field-row address-row">
                     <RhfInput
-                      label={t('create_mailbox_modal.form.labels.address')}
+                      label={t('Address')}
                       text={getFieldError<"shared", CreateMailboxFormData>('prefix')}
                       name="prefix"
                       fullWidth
@@ -480,7 +481,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
                 <>
                   <div className="form-field-row address-row">
                     <RhfInput
-                      label={t('create_mailbox_modal.form.labels.address')}
+                      label={t('Address')}
                       name="prefix"
                       text={getFieldError<"redirect">('prefix')}
                       fullWidth
@@ -501,7 +502,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
 
                   <div className="form-field-row">
                     <RhfInput
-                      label={t('create_mailbox_modal.form.labels.target_email')}
+                      label={t('Target email')}
                       text={getFieldError<"redirect">('target_email')}
                       name="target_email"
                       type="email"
@@ -524,7 +525,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
                   disabled={isSubmitting}
                   fullWidth
                 >
-                  {isSubmitting ? t('actions.saving') : (isUpdating ? t('actions.save') : t('actions.create'))}
+                  {isSubmitting ? t('Saving...') : (isUpdating ? t('Save') : t('Create'))}
                 </Button>
               </div>
             </form>

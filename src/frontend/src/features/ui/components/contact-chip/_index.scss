@@ -1,0 +1,71 @@
+.contact-chip {
+    display: inline-flex;
+    align-items: center;
+    cursor: default;
+    font-size: var(--c--theme--font--sizes--sm);
+    white-space: nowrap;
+    z-index: 1;
+
+    &:not(:last-of-type):after {
+        content: ", ";
+        margin-right: 1ex;
+    }
+
+    &[data-copied="true"] {
+        .contact-chip__content, .contact-chip__warning {
+            color: transparent;
+        }
+        .contact-chip__copied {
+            visibility: visible;
+            opacity: 1;
+        }
+    }
+}
+
+.contact-chip__content {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    position: relative;
+    z-index: 1;
+    transition: color 0.2s;
+
+    &:hover:before {
+        content: "";
+        display: block;
+        position: absolute;
+        inset: -4px -8px;
+        border-radius: 4px;
+        background-color: var(--c--theme--colors--greyscale-200);
+        z-index: -1;
+    }
+}
+
+.contact-chip__copied {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-align: left;
+    justify-content: flex-start;
+    color: var(--c--theme--colors--greyscale-900);
+    transition: visibility 0.2s, opacity 0.2s;
+    visibility: hidden;
+    opacity: 0;
+}
+
+.contact-chip__warning {
+    color: var(--c--theme--colors--warning-600);
+    transition: color 0.2s;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+}
+

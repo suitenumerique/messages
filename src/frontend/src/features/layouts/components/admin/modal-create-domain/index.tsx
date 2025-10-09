@@ -13,6 +13,7 @@ import { convertJsonSchemaToZod } from '@/features/forms/components/zod-json-sch
 import { JSONSchema } from 'zod/v4/core';
 import { ItemJsonSchema } from '@/features/forms/components/zod-json-schema-serializer';
 import { RhfJsonSchemaField } from '@/features/forms/components/react-hook-form/rhf-json-schema-field';
+import i18n from '@/features/i18n/initI18n';
 
 type ModalCreateDomainProps = {
   isOpen: boolean;
@@ -31,8 +32,8 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateDoma
 
   const createDomainSchema = z.object({
       name: z.string()
-      .min(1, { error: "create_domain_modal.form.errors.name_required" })
-      .regex(/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/, { message: "create_domain_modal.form.errors.name_invalid" }),
+      .min(1, { error: i18n.t("Name is required.") })
+      .regex(/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/, { message: i18n.t("Name must be a valid domain name.") }),
       oidc_autojoin: z.boolean(),
       identity_sync: z.boolean(),
       ...convertJsonSchemaToZod(SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN as JSONSchema.Schema)
@@ -83,7 +84,7 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateDoma
       handleClose();
 
     } catch {
-      setError("create_domain_modal.api_errors.default");
+      setError(t('An error occurred while creating the domain.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -92,7 +93,7 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateDoma
   return (
     <Modal
           isOpen={isOpen}
-          title={t('create_domain_modal.title')}
+          title={t('Add a domain')}
           size={ModalSize.LARGE}
           onClose={handleClose}
     >
@@ -107,7 +108,7 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateDoma
             <div className="form-field-row">
               <RhfInput
                 name="name"
-                label={t('create_domain_modal.form.labels.name')}
+                label={t('Name')}
                 text={getFieldError('name')}
                 fullWidth
               />
@@ -127,14 +128,14 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateDoma
             <div className="form-field-row">
               <RhfCheckbox
                 name="oidc_autojoin"
-                label={t('create_domain_modal.form.labels.oidc_autojoin')}
+                label={t('Automatically create mailboxes according to OIDC emails')}
                 type="checkbox"
               />
             </div>
             <div className="form-field-row">
               <RhfCheckbox
                 name="identity_sync"
-                label={t('create_domain_modal.form.labels.identity_sync')}
+                label={t('Synchronize mailboxes with an identity provider')}
                 type="checkbox"
               />
             </div>
@@ -145,7 +146,7 @@ export const ModalCreateDomain = ({ isOpen, onClose, onCreate }: ModalCreateDoma
                 disabled={isSubmitting}
                 fullWidth
               >
-                {isSubmitting ? t('actions.creating') : t('actions.create')}
+                {isSubmitting ? t('Creating...') : t('Create')}
               </Button>
             </div>
           </form>

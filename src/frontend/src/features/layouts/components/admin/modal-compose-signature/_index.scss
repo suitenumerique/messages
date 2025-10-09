@@ -1,0 +1,23 @@
+.modal-compose-signature .signature-composer-form {
+  .form-field-row {
+    margin-bottom: var(--c--theme--spacings--s);
+  }
+}
+
+.signature-composer {
+  span[data-inline-content-type="template-variable"] {
+    align-items: center;
+    padding: 0 4px;
+    border-radius: 6px;
+    background: var(--c--theme--colors--primary-100);
+    color: var(--c--theme--colors--primary-800);
+    font-size: 12px;
+    border: 1px solid var(--c--theme--colors--primary-300);
+    user-select: none;
+    font-family: monospace;
+  }
+
+  .node-template-variable.ProseMirror-selectednode span[data-inline-content-type="template-variable"] {
+    background: #94badc;
+  }
+}

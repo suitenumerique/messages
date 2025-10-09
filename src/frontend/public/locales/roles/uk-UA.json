@@ -1,0 +1,9 @@
+{
+    "mailbox_roles_admin": "Адміністратор",
+    "mailbox_roles_editor": "Редактор",
+    "mailbox_roles_sender": "Відправник",
+    "mailbox_roles_viewer": "Глядач",
+    "maildomain_roles_admin": "Адміністратор",
+    "thread_roles_editor": "Редактор",
+    "thread_roles_viewer": "Глядач"
+}

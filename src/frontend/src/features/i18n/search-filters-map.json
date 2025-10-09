@@ -1,23 +1,25 @@
 {
-    "en": {
+    "en-US": {
         "from": ["from"],
         "to": ["to"],
         "subject": ["subject"],
         "text": ["text"],
         "in_trash": ["in:trash"],
+        "in_archives": ["in:archives"],
         "in_sent": ["in:sent"],
-        "in_draft": ["in:draft"],
+        "in_drafts": ["in:drafts"],
         "is_read": ["is:read"],
         "is_unread": ["is:unread"]
     },
-    "fr": {
+    "fr-FR": {
         "from": ["de"],
         "to": ["a"],
         "subject": ["sujet"],
         "text": ["text"],
         "in_trash": ["dans:corbeille"],
+        "in_archives": ["dans:archives", "dans:archivés"],
         "in_sent": ["dans:envoyes", "dans:envoyés"],
-        "in_draft": ["dans:brouillons"],
+        "in_drafts": ["dans:brouillons"],
         "is_read": ["est:lu"],
         "is_unread": ["est:nonlu"]
     }

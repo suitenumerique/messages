@@ -8,7 +8,9 @@ from django.db.models import F
 from django.shortcuts import get_object_or_404
 
 from drf_spectacular.utils import (
+    OpenApiParameter,
     OpenApiResponse,
+    OpenApiTypes,
     extend_schema,
     inline_serializer,
 )
@@ -26,6 +28,7 @@ from rest_framework.response import Response
 from core import models
 from core.api import permissions as core_permissions
 from core.api import serializers as core_serializers
+from core.enums import MessageTemplateTypeChoices
 from core.services.dns.check import check_dns_records
 
 logger = getLogger(__name__)
@@ -328,3 +331,60 @@ class AdminMailDomainMailboxViewSet(
         return Response(
             {"one_time_password": mailbox_password}, status=status.HTTP_200_OK
         )
+
+
+class AdminMailDomainMessageTemplateViewSet(
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.DestroyModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.ListModelMixin,
+    viewsets.GenericViewSet,
+):
+    """ViewSet for managing message templates for a maildomain."""
+
+    permission_classes = [
+        core_permissions.IsSuperUser | core_permissions.IsMailDomainAdmin
+    ]
+    serializer_class = core_serializers.MessageTemplateSerializer
+    pagination_class = None
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        """Get queryset for list action with filtering."""
+        queryset = models.MessageTemplate.objects.filter(
+            maildomain_id=self.kwargs.get("maildomain_pk")
+        )
+        # filter by type if provided
+        template_types = [
+            MessageTemplateTypeChoices[template_type.upper()]
+            for template_type in self.request.query_params.getlist("type")
+            if template_type.upper() in MessageTemplateTypeChoices.names
+        ]
+        if template_types:
+            queryset = queryset.filter(type__in=template_types)
+        return queryset
+
+    def get_serializer_context(self):
+        """Add maildomain to serializer context."""
+        context = super().get_serializer_context()
+        context["domain"] = get_object_or_404(
+            models.MailDomain, pk=self.kwargs.get("maildomain_pk")
+        )
+        return context
+
+    @extend_schema(
+        responses=core_serializers.MessageTemplateSerializer(many=True),
+        description="List message templates for a maildomain.",
+        parameters=[
+            OpenApiParameter(
+                name="type",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                enum=[c[1] for c in MessageTemplateTypeChoices.choices],
+            ),
+        ],
+    )
+    def list(self, request, *args, **kwargs):
+        """List message templates for a maildomain."""
+        return super().list(request, *args, **kwargs)

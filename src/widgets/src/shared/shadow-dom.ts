@@ -8,23 +8,23 @@ export function createShadowWidget(widgetName: string, htmlContent: string, cssC
   }
 
   // Create container element
-  const container = document.createElement('div');
+  const container = document.createElement("div");
   container.id = id;
-  
+
   // Create shadow root
-  const shadow = container.attachShadow({ mode: 'open' });
-  
+  const shadow = container.attachShadow({ mode: "open" });
+
   // Create style element for scoped CSS
-  const style = document.createElement('style');
+  const style = document.createElement("style");
   style.textContent = cssContent;
-  
+
   // Create content element
-  const content = document.createElement('div');
+  const content = document.createElement("div");
   content.innerHTML = htmlContent;
-  
+
   // Append style and content to shadow DOM
   shadow.appendChild(style);
   shadow.appendChild(content);
-  
+
   return container;
 }

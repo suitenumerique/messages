@@ -7,6 +7,7 @@ import { useMemo } from "react"
 import { useLayoutContext } from "../../../main"
 import { useTranslation } from "react-i18next"
 import { Icon, IconType } from "@gouvfr-lasuite/ui-kit"
+import i18n from "@/features/i18n/initI18n";
 
 // @TODO: replace with real data when folder will be ready
 type Folder = {
@@ -14,45 +15,60 @@ type Folder = {
     name: string;
     icon: string;
     filter?: Record<string, string>;
+    searchable?: boolean;
 }
 
 export const MAILBOX_FOLDERS: Folder[] = [
     {
         id: "inbox",
-        name: "folders.inbox",
+        name: i18n.t("Inbox"),
         icon: "inbox",
+        searchable: false,
         filter: {
             has_active: "1"
         },
     },
     {
         id: "all_messages",
-        name: "folders.all_messages",
-        icon: "folder",
+        name: i18n.t("All messages"),
+        icon: "mark_as_unread",
+        searchable: true,
         filter: {
             has_messages: "1"
         },
     },
     {
         id: "drafts",
-        name: "folders.drafts",
+        name: i18n.t("Drafts"),
         icon: "drafts",
+        searchable: true,
         filter: {
             has_draft: "1",
         },
     },
     {
         id: "sent",
-        name: "folders.sent",
+        name: i18n.t("Sent"),
         icon: "outbox",
+        searchable: true,
         filter: {
             has_sender: "1"
         },
     },
     {
+        id: "archives",
+        name: i18n.t("Archives"),
+        icon: "inventory_2",
+        searchable: true,
+        filter: {
+            has_archived: "1",
+        },
+    },
+    {
         id: "trash",
-        name: "folders.trash",
+        name: i18n.t("Trash"),
         icon: "delete",
+        searchable: true,
         filter: {
             has_trashed: "1",
         },
@@ -63,14 +79,6 @@ export const MAILBOX_FOLDERS: Folder[] = [
     //     icon: "report",
     //     filter: {
     //         is_spam: "1",
-    //     },
-    // },
-    // {
-    //     id: "archive",
-    //     name: "folders.archive",
-    //     icon: "inventory_2",
-    //     filter: {
-    //         has_archived: "1",
     //     },
     // },
 ]

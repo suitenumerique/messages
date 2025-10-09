@@ -5,6 +5,7 @@ Declare and configure the models for the messages core application
 
 import base64
 import hashlib
+import json
 import uuid
 from datetime import timedelta
 from logging import getLogger
@@ -15,8 +16,10 @@ from django.contrib.auth import models as auth_models
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.core import validators
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
+from django.db.models import Case, Q, When
 from django.utils import timezone
+from django.utils.html import escape
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
@@ -35,6 +38,7 @@ from core.enums import (
     MailDomainAccessRoleChoices,
     MessageDeliveryStatusChoices,
     MessageRecipientTypeChoices,
+    MessageTemplateTypeChoices,
     ThreadAccessRoleChoices,
     UserAbilities,
 )
@@ -561,51 +565,13 @@ class Mailbox(BaseModel):
         Raises:
             ValueError: If content is empty
         """
-        if not content:
-            raise ValueError("Content cannot be empty")
 
-        # Calculate SHA256 hash of the original content
-        sha256_hash = hashlib.sha256(content).digest()
-
-        # Store the original size
-        original_size = len(content)
-
-        # Apply compression if requested
-        compressed_content = content
-        if compression == CompressionTypeChoices.ZSTD:
-            compressed_content = pyzstd.compress(
-                content, level_or_option=settings.MESSAGES_BLOB_ZSTD_LEVEL
-            )
-            logger.debug(
-                "Compressed blob from %d bytes to %d bytes (%.1f%% reduction)",
-                original_size,
-                len(compressed_content),
-                (1 - len(compressed_content) / original_size) * 100,
-            )
-        elif compression == CompressionTypeChoices.NONE:
-            compressed_content = content
-        else:
-            raise ValueError(f"Unsupported compression type: {compression}")
-
-        # Create the blob
-        blob = Blob.objects.create(
-            sha256=sha256_hash,
-            size=original_size,
+        return Blob.objects.create_blob(
+            content=content,
             content_type=content_type,
             compression=compression,
-            raw_content=compressed_content,
             mailbox=self,
         )
-
-        logger.info(
-            "Created blob %s: %d bytes, %s compression, %s content type",
-            blob.id,
-            original_size,
-            compression.label,
-            content_type,
-        )
-
-        return blob
 
     def get_abilities(self, user):
         """
@@ -665,6 +631,62 @@ class Mailbox(BaseModel):
             MailboxAbilities.CAN_MANAGE_LABELS: can_modify,
         }
 
+    def get_validated_signature(self, signature_id: str):
+        """Helper method to validate and retrieve a signature template.
+
+        Args:
+            signature_id: ID of the signature template
+
+        Returns:
+            MessageTemplate if valid and accessible, None otherwise
+        """
+        # Check for forced signature with domain having priority over mailbox
+        forced_signature = (
+            MessageTemplate.objects.filter(
+                Q(maildomain=self.domain) | Q(mailbox=self),
+                type=MessageTemplateTypeChoices.SIGNATURE,
+                is_forced=True,
+                is_active=True,
+            )
+            .order_by(
+                # Domain signatures first (maildomain_id not null), then mailbox signatures
+                Case(
+                    When(maildomain__isnull=False, then=0),
+                    default=1,
+                )
+            )
+            .first()
+        )
+
+        signature = forced_signature if forced_signature else None
+        if not signature and not signature_id:
+            return None
+
+        if not signature and signature_id:
+            try:
+                signature = MessageTemplate.objects.get(
+                    id=signature_id,
+                    type=MessageTemplateTypeChoices.SIGNATURE,
+                    is_active=True,
+                )
+            except MessageTemplate.DoesNotExist:
+                logger.error("Signature template not found with id: %s", signature_id)
+                return None
+
+            # Verify signature is in sender scope
+            in_sender_scope = (
+                signature.mailbox_id and signature.mailbox_id == self.id
+            ) or (signature.maildomain_id and signature.maildomain_id == self.domain_id)
+            if not in_sender_scope:
+                logger.warning(
+                    "Signature %s cannot be used in mailbox %s",
+                    signature.id,
+                    str(self),
+                )
+                return None
+
+        return signature
+
 
 class MailboxAccess(BaseModel):
     """Mailbox access model to store mailbox access information."""
@@ -716,6 +738,7 @@ class Thread(BaseModel):
     snippet = models.TextField(_("snippet"), blank=True)
     has_unread = models.BooleanField(_("has unread"), default=False)
     has_trashed = models.BooleanField(_("has trashed"), default=False)
+    has_archived = models.BooleanField(_("has archived"), default=False)
     has_draft = models.BooleanField(_("has draft"), default=False)
     has_starred = models.BooleanField(_("has starred"), default=False)
     has_sender = models.BooleanField(_("has sender"), default=False)
@@ -759,6 +782,7 @@ class Thread(BaseModel):
             # No messages in thread
             self.has_unread = False
             self.has_trashed = False
+            self.has_archived = False
             self.has_draft = False
             self.has_starred = False
             self.has_sender = False
@@ -774,6 +798,7 @@ class Thread(BaseModel):
                 msg["is_unread"] and not msg["is_trashed"] for msg in message_data
             )
             self.has_trashed = any(msg["is_trashed"] for msg in message_data)
+            self.has_archived = any(msg["is_archived"] for msg in message_data)
             self.has_draft = any(
                 msg["is_draft"] and not msg["is_trashed"] for msg in message_data
             )
@@ -848,6 +873,7 @@ class Thread(BaseModel):
             update_fields=[
                 "has_unread",
                 "has_trashed",
+                "has_archived",
                 "has_draft",
                 "has_starred",
                 "has_sender",
@@ -1204,6 +1230,14 @@ class Message(BaseModel):
         blank=True,
         related_name="draft",
     )
+    signature = models.ForeignKey(
+        "MessageTemplate",
+        help_text=_("Signature template for the message"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="messages",
+    )
 
     # Internal cache for parsed data
     _parsed_email_cache: Optional[Dict[str, Any]] = None
@@ -1231,6 +1265,18 @@ class Message(BaseModel):
     def get_parsed_field(self, field_name: str) -> Any:
         """Get a parsed field from the parsed email data."""
         return (self.get_parsed_data() or {}).get(field_name)
+
+    def get_mime_headers(self) -> Dict[str, str]:
+        """Get the MIME headers of the message."""
+        return self.get_parsed_data().get("headers", {})
+
+    def get_stmsg_headers(self) -> Dict[str, str]:
+        """Get the STMSG headers of the message."""
+        return {
+            k[len("x-stmsg-") :].lower(): v
+            for k, v in self.get_parsed_data().get("headers", {}).items()
+            if k.startswith("x-stmsg-")
+        }
 
     def generate_mime_id(self) -> str:
         """Get the RFC5322 Message-ID of the message."""
@@ -1298,6 +1344,76 @@ class Message(BaseModel):
         return len(counted_text.split())
 
 
+class BlobManager(models.Manager):
+    """Custom Manager for Blob model."""
+
+    def create_blob(
+        self,
+        content: bytes,
+        content_type: str,
+        compression: Optional[CompressionTypeChoices] = CompressionTypeChoices.ZSTD,
+        **kwargs,
+    ) -> "Blob":
+        """
+        Create a new blob with automatic SHA256 calculation and compression.
+        Args:
+            content: Raw binary content to store
+            content_type: MIME type of the content
+            compression: Compression type to use (defaults to ZSTD)
+        Returns:
+            The created Blob instance
+        Raises:
+            ValidationError: If content is empty or compression is unsupported
+        """
+        if not content:
+            raise ValidationError({"content": "Content cannot be empty"})
+
+        # Calculate SHA256 hash of the original content
+        sha256_hash = hashlib.sha256(content).digest()
+
+        # Store the original size
+        original_size = len(content)
+
+        # Apply compression if requested
+        compressed_content = content
+        if compression == CompressionTypeChoices.ZSTD:
+            compressed_content = pyzstd.compress(
+                content, level_or_option=settings.MESSAGES_BLOB_ZSTD_LEVEL
+            )
+            logger.debug(
+                "Compressed blob from %d bytes to %d bytes (%.1f%% reduction)",
+                original_size,
+                len(compressed_content),
+                (1 - len(compressed_content) / original_size) * 100,
+            )
+        elif compression == CompressionTypeChoices.NONE:
+            compressed_content = content
+        else:
+            raise ValidationError(
+                {"compression": f"Unsupported compression type: {compression}"}
+            )
+
+        # Create the blob
+        blob = Blob.objects.create(
+            sha256=sha256_hash,
+            size=original_size,
+            content_type=content_type,
+            compression=compression,
+            raw_content=compressed_content,
+            **kwargs,
+        )
+
+        logger.debug(
+            "Created blob %s: %d bytes, %s compression, %s content type",
+            blob.id,
+            original_size,
+            compression.label,
+            content_type,
+        )
+
+        return blob
+
+
 class Blob(BaseModel):
     """
     Blob model to store immutable binary data.
@@ -1340,16 +1456,36 @@ class Blob(BaseModel):
 
     mailbox = models.ForeignKey(
         "Mailbox",
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="blobs",
         help_text=_("Mailbox that owns this blob"),
     )
+    maildomain = models.ForeignKey(
+        "MailDomain",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="blobs",
+        help_text=_("Mail domain that owns this blob"),
+    )
+
+    objects = BlobManager()
 
     class Meta:
         db_table = "messages_blob"
         verbose_name = _("blob")
         verbose_name_plural = _("blobs")
         ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(mailbox__isnull=False) | models.Q(maildomain__isnull=False)
+                ),
+                name="blob_has_owner",
+            ),
+        ]
 
     def __str__(self):
         return f"Blob {self.id} ({self.size} bytes)"
@@ -1516,3 +1652,205 @@ class DKIMKey(BaseModel):
         """Get the DNS TXT record value for this DKIM key."""
         algorithm_enum = DKIMAlgorithmChoices(self.algorithm)
         return f"v=DKIM1; k={algorithm_enum.label}; p={self.public_key}"
+
+
+class MessageTemplate(BaseModel):
+    """Message template model to store reusable message templates and signatures."""
+
+    name = models.CharField(
+        _("name"),
+        max_length=255,
+        help_text=_(
+            "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')"
+        ),
+    )
+
+    blob = models.ForeignKey(
+        "Blob",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="message_templates",
+        help_text=_(
+            "Reference to the blob containing template content as JSON: {html: str, text: str, raw: any}"
+        ),
+    )
+
+    type = models.SmallIntegerField(
+        _("type"),
+        choices=MessageTemplateTypeChoices.choices,
+        default=MessageTemplateTypeChoices.REPLY,
+        help_text=_("Type of template (reply, new_message, signature)"),
+    )
+
+    is_active = models.BooleanField(
+        _("is active"),
+        default=True,
+        help_text=_("Whether this template is available for use"),
+    )
+
+    maildomain = models.ForeignKey(
+        "MailDomain",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="message_templates",
+        help_text=_("Mail domain that can use this template"),
+    )
+
+    mailbox = models.ForeignKey(
+        "Mailbox",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="message_templates",
+        help_text=_("Mailbox that can use this template"),
+    )
+
+    is_forced = models.BooleanField(
+        _("is forced"),
+        default=False,
+        help_text=_(
+            "Whether this template is forced; no other template of the same type can be used in the same scope"
+        ),
+    )
+
+    class Meta:
+        db_table = "messages_messagetemplate"
+        verbose_name = _("message template")
+        verbose_name_plural = _("message templates")
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(mailbox__isnull=False) | models.Q(maildomain__isnull=False)
+                ),
+                name="messagetemplate_has_owner",
+            ),
+            models.UniqueConstraint(
+                fields=("mailbox", "type"),
+                condition=models.Q(is_forced=True),
+                name="uniq_forced_template_mailbox_type",
+            ),
+            models.UniqueConstraint(
+                fields=("maildomain", "type"),
+                condition=models.Q(is_forced=True),
+                name="uniq_forced_template_maildomain_type",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("mailbox", "type", "is_active")),
+            models.Index(fields=("maildomain", "type", "is_active")),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_type_display()})"
+
+    def save(self, *args, **kwargs):
+        """If the template is forced, unforce all other templates of the same type
+        in the same scope (mailbox or maildomain)
+        only one forced template is allowed per type and scope"""
+        with transaction.atomic():
+            if self.is_forced:
+                qs = (
+                    MessageTemplate.objects.select_for_update()
+                    .filter(type=self.type, is_forced=True)
+                    .exclude(id=self.id)
+                )
+                if self.mailbox_id:
+                    qs = qs.filter(mailbox_id=self.mailbox_id)
+                elif self.maildomain_id:
+                    qs = qs.filter(maildomain_id=self.maildomain_id)
+                qs.update(is_forced=False)
+            super().save(*args, **kwargs)
+
+    def clean(self):
+        if not self.mailbox and not self.maildomain:
+            raise ValidationError(
+                {"__all__": "MessageTemplate must have a mailbox or maildomain"}
+            )
+        # it's not possible to link a template to both a mailbox and a maildomain
+        if self.mailbox and self.maildomain:
+            raise ValidationError(
+                {"__all__": "Mailbox and maildomain cannot be linked together"}
+            )
+        # if user desactivate a forced template, the template is no longer forced
+        if not self.is_active:
+            self.is_forced = False
+        super().clean()
+
+    @property
+    def html_body(self):
+        """Get HTML body from content blob."""
+        if not self.blob:
+            return ""
+        try:
+            content = json.loads(self.blob.get_content().decode("utf-8"))
+            return content.get("html", "")
+        except (json.JSONDecodeError, AttributeError):
+            return ""
+
+    @property
+    def text_body(self):
+        """Get text body from content blob."""
+        if not self.blob:
+            return ""
+        try:
+            content = json.loads(self.blob.get_content().decode("utf-8"))
+            return content.get("text", "")
+        except (json.JSONDecodeError, AttributeError):
+            return ""
+
+    @property
+    def raw_body(self):
+        """Get raw body from content blob."""
+        if not self.blob:
+            return None
+        try:
+            content = json.loads(self.blob.get_content().decode("utf-8"))
+            raw_body = content.get("raw")
+            return json.dumps(raw_body, separators=(",", ":")) if raw_body else None
+        except (json.JSONDecodeError, AttributeError):
+            return None
+
+    def render_template(
+        self, mailbox: Mailbox = None, user: User = None
+    ) -> Dict[str, str]:
+        """
+        Render the template with the given context.
+
+        Args:
+            mailbox: Mailbox object
+            user: User object
+
+        Returns:
+            Dictionary with 'html_body' and 'text_body' keys containing rendered content
+        """
+        name = (
+            mailbox.contact.name
+            if mailbox and mailbox.contact
+            else (getattr(user, "full_name", None) if user else "")
+        )
+        context = {"name": name}
+        schema = settings.SCHEMA_CUSTOM_ATTRIBUTES_USER
+        schema_properties = schema.get("properties", {})
+
+        if user:
+            for field_key in schema_properties.keys():
+                context[field_key] = user.custom_attributes.get(field_key) or ""
+
+        rendered_html_body = self.html_body
+        rendered_text_body = self.text_body
+
+        # Simple placeholder substitution
+        for key, value in context.items():
+            placeholder = f"{{{key}}}"
+            rendered_html_body = rendered_html_body.replace(
+                placeholder, escape(str(value))
+            )
+            rendered_text_body = rendered_text_body.replace(placeholder, str(value))
+
+        return {
+            "html_body": rendered_html_body,
+            "text_body": rendered_text_body,
+        }

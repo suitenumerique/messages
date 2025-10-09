@@ -68,13 +68,15 @@ class TestApiDraftAndSendMessage:
     ):
         """Test create draft message and then successfully send it via the service."""
 
-        mock_send_outbound_message.side_effect = lambda recipient_emails, message: {
-            recipient_email: {
-                "delivered": True,
-                "error": None,
+        mock_send_outbound_message.side_effect = (
+            lambda recipient_emails, message, blob_content: {
+                recipient_email: {
+                    "delivered": True,
+                    "error": None,
+                }
+                for recipient_email in recipient_emails
             }
-            for recipient_email in recipient_emails
-        }
+        )
 
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -209,13 +211,15 @@ class TestApiDraftAndSendMessage:
         self, mock_send_outbound_message, mailbox, authenticated_user, send_url
     ):
         """Test create draft message and then successfully send it via the service."""
-        mock_send_outbound_message.side_effect = lambda recipient_emails, message: {
-            recipient_email: {
-                "delivered": True,
-                "error": None,
+        mock_send_outbound_message.side_effect = (
+            lambda recipient_emails, message, blob_content: {
+                recipient_email: {
+                    "delivered": True,
+                    "error": None,
+                }
+                for recipient_email in recipient_emails
             }
-            for recipient_email in recipient_emails
-        }
+        )
 
         other_mailbox = factories.MailboxFactory(
             local_part="cantine", domain__name="tataouin.fr"
@@ -360,21 +364,23 @@ class TestApiDraftAndSendMessage:
     ):
         """Test sending a draft message when the delivery service fails."""
 
-        mock_send_outbound_message.side_effect = lambda recipient_emails, message: {
-            recipient_email: {"delivered": False, "error": "Custom error message"}
-            if recipient_email == "fail@external.com"
-            else {
-                "delivered": False,
-                "error": "Custom error message",
-                "retry": True,
+        mock_send_outbound_message.side_effect = (
+            lambda recipient_emails, message, blob_content: {
+                recipient_email: {"delivered": False, "error": "Custom error message"}
+                if recipient_email == "fail@external.com"
+                else {
+                    "delivered": False,
+                    "error": "Custom error message",
+                    "retry": True,
+                }
+                if recipient_email == "retry@external.com"
+                else {
+                    "delivered": True,
+                    "error": None,
+                }
+                for recipient_email in recipient_emails
             }
-            if recipient_email == "retry@external.com"
-            else {
-                "delivered": True,
-                "error": None,
-            }
-            for recipient_email in recipient_emails
-        }
+        )
 
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -715,13 +721,15 @@ class TestApiDraftAndSendMessage:
         self, mock_send_outbound_message, mailbox, authenticated_user, send_url
     ):
         """Test sending a message with empty subject (migration 0018)."""
-        mock_send_outbound_message.side_effect = lambda recipient_emails, message: {
-            recipient_email: {
-                "delivered": True,
-                "error": None,
+        mock_send_outbound_message.side_effect = (
+            lambda recipient_emails, message, blob_content: {
+                recipient_email: {
+                    "delivered": True,
+                    "error": None,
+                }
+                for recipient_email in recipient_emails
             }
-            for recipient_email in recipient_emails
-        }
+        )
 
         factories.MailboxAccessFactory(
             mailbox=mailbox,

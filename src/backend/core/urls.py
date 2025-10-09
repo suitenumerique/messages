@@ -20,10 +20,15 @@ from core.api.viewsets.mailbox_access import MailboxAccessViewSet
 # Import the viewsets from the correctly named file
 from core.api.viewsets.maildomain import (
     AdminMailDomainMailboxViewSet,
+    AdminMailDomainMessageTemplateViewSet,
     AdminMailDomainViewSet,
 )
 from core.api.viewsets.maildomain_access import MaildomainAccessViewSet
 from core.api.viewsets.message import MessageViewSet
+from core.api.viewsets.message_template import (
+    AvailableMailboxMessageTemplateViewSet,
+    MailboxMessageTemplateViewSet,
+)
 from core.api.viewsets.metrics import MailDomainUsersMetricsApiView
 from core.api.viewsets.placeholder import PlaceholderView
 from core.api.viewsets.send import SendMessageView
@@ -76,6 +81,31 @@ inbound_nested_router.register(
     r"widget", InboundWidgetViewSet, basename="inbound-widget"
 )
 
+
+# Router for /maildomains/{maildomain_id}/message-templates/
+# allow to manage message templates for a maildomain in admin view
+maildomain_message_template_nested_router = DefaultRouter()
+maildomain_message_template_nested_router.register(
+    r"message-templates",
+    AdminMailDomainMessageTemplateViewSet,
+    basename="admin-maildomains-message-templates",
+)
+
+# Router for /mailboxes/{mailbox_id}/message-templates/available/
+# allow to insert the template into editor (new message, reply, signature)
+mailbox_message_template_nested_router = DefaultRouter()
+mailbox_message_template_nested_router.register(
+    r"message-templates/available",
+    AvailableMailboxMessageTemplateViewSet,
+    basename="available-mailbox-message-templates",
+)
+mailbox_message_template_nested_router.register(
+    r"message-templates",
+    MailboxMessageTemplateViewSet,
+    basename="mailbox-message-templates",
+)
+
+
 urlpatterns = [
     path(
         f"api/{settings.API_VERSION}/",
@@ -95,12 +125,24 @@ urlpatterns = [
                     ),  # Includes /mailboxes/{id}/accesses/
                 ),
                 path(
+                    "mailboxes/<uuid:mailbox_id>/",
+                    include(
+                        mailbox_message_template_nested_router.urls
+                    ),  # Includes /mailboxes/{id}/message-templates/
+                ),
+                path(
                     "maildomains/<uuid:maildomain_pk>/",
                     include(maildomain_nested_router.urls),
                 ),
                 path(
                     "inbound/",
                     include(inbound_nested_router.urls),
+                ),
+                path(
+                    "maildomains/<uuid:maildomain_pk>/",
+                    include(
+                        maildomain_message_template_nested_router.urls
+                    ),  # Includes /maildomains/{id}/message-templates/
                 ),
                 *oidc_urls,
             ]

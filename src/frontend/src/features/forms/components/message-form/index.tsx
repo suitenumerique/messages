@@ -1,5 +1,5 @@
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button } from "@openfun/cunningham-react";
+import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Button, Tooltip } from "@openfun/cunningham-react";
 import { clsx } from "clsx";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Attachment, DraftMessageRequestRequest, Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
-import MessageEditor from "@/features/forms/components/message-editor";
+import { MessageComposer, QuoteType } from "@/features/forms/components/message-composer";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import MailHelper from "@/features/utils/mail-helper";
 import { RhfInput, RhfSelect } from "../react-hook-form";
@@ -21,6 +21,9 @@ import { Banner } from "@/features/ui/components/banner";
 import { RhfContactComboBox } from "../react-hook-form/rhf-contact-combobox";
 import { DriveFile } from "./drive-attachment-picker";
 import useAbility, { Abilities } from "@/hooks/use-ability";
+import i18n from "@/features/i18n/initI18n";
+import { DropdownButton } from "@/features/ui/components/dropdown-button";
+import { PREFER_SEND_MODE_KEY, PreferSendMode } from "@/features/config/constants";
 
 export type MessageFormMode = "new" |"reply" | "reply_all" | "forward";
 
@@ -36,7 +39,7 @@ interface MessageFormProps {
 }
 
 // Zod schema for form validation
-const emailArraySchema = z.array(z.email({ error: "message_form.error.invalid_recipient" }));
+const emailArraySchema = z.array(z.email({ error: i18n.t("The email {{email}} is invalid.") }));
 const attachmentSchema = z.object({
     blobId: z.uuid(),
     name: z.string(),
@@ -50,16 +53,17 @@ const driveAttachmentSchema = z.object({
     created_at: z.string(),
 });
 const messageFormSchema = z.object({
-    from: z.string().nonempty({ error: "message_form.error.mailbox_required" }),
+    from: z.string().nonempty({ error: i18n.t("Mailbox is required.") }),
     to: emailArraySchema,
     cc: emailArraySchema.optional(),
     bcc: emailArraySchema.optional(),
     subject: z.string().trim(),
-    messageEditorHtml: z.string().optional().readonly(),
-    messageEditorText: z.string().optional().readonly(),
-    messageEditorDraft: z.string().optional().readonly(),
+    messageHtmlBody: z.string().optional().readonly(),
+    messageTextBody: z.string().optional().readonly(),
+    messageDraftBody: z.string().optional().readonly(),
     attachments: z.array(attachmentSchema).optional(),
     driveAttachments: z.array(driveAttachmentSchema).optional(),
+    signatureId: z.string().optional().nullable(),
 });
 
 type MessageFormFields = z.infer<typeof messageFormSchema>;
@@ -76,11 +80,16 @@ export const MessageForm = ({
     const { t } = useTranslation();
     const router = useRouter();
     const [draft, setDraft] = useState<Message | undefined>(draftMessage);
+    const [preferredSendMode, setPreferredSendMode] = useState<PreferSendMode>(() => {
+        if (mode === 'new') return PreferSendMode.SEND;
+        return localStorage.getItem(PREFER_SEND_MODE_KEY) as PreferSendMode ?? PreferSendMode.SEND;
+    });
     const [showCCField, setShowCCField] = useState((draftMessage?.cc?.length ?? 0) > 0);
     const [showBCCField, setShowBCCField] = useState((draftMessage?.bcc?.length ?? 0) > 0);
-    const [pendingSubmit, setPendingSubmit] = useState(false);
+    const [pendingSubmit, setPendingSubmit] = useState<{ archive: boolean } | null>(null);
     const [currentTime, setCurrentTime] = useState(new Date());
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const quoteType: QuoteType | undefined = mode !== "new" ? (mode === "forward" ? "forward" : "reply") : undefined;
     const { selectedMailbox, mailboxes, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
     const hideSubjectField = Boolean(parentMessage);
     const defaultSenderId = mailboxes?.find((mailbox) => {
@@ -153,11 +162,12 @@ export const MessageForm = ({
             cc: draft?.cc?.map(contact => contact.email) ?? [],
             bcc: draft?.bcc?.map(contact => contact.email) ?? [],
             subject: getDefaultSubject(),
-            messageEditorDraft: draftBody,
-            messageEditorHtml: undefined,
-            messageEditorText: undefined,
+            messageDraftBody: draftBody,
+            messageHtmlBody: undefined,
+            messageTextBody: undefined,
             attachments: getDefaultAttachments(),
             driveAttachments: draftDriveAttachments,
+            signatureId: draft?.signature?.id,
         }
     }, [draft, selectedMailbox])
 
@@ -169,9 +179,9 @@ export const MessageForm = ({
         defaultValues: formDefaultValues,
     });
 
-    const messageEditorDraft = useWatch({
+    const messageDraftBody = useWatch({
         control: form.control,
-        name: "messageEditorDraft",
+        name: "messageDraftBody",
     }) || "";
 
     const attachments = useWatch({
@@ -198,20 +208,20 @@ export const MessageForm = ({
     }, [draft, driveAttachments]);
 
     const showAttachmentsForgetAlert = useMemo(() => {
-        return MailHelper.areAttachmentsMentionedInDraft(messageEditorDraft) && attachments.length === 0 && driveAttachments.length === 0;
-    }, [messageEditorDraft, attachments, driveAttachments]);
+        return MailHelper.areAttachmentsMentionedInDraft(messageDraftBody) && attachments.length === 0 && driveAttachments.length === 0;
+    }, [messageDraftBody, attachments, driveAttachments]);
 
     const messageMutation = useSendCreate({
         mutation: {
             onSettled: () => {
                 form.clearErrors();
-                setPendingSubmit(false);
                 toast.dismiss(DRAFT_TOAST_ID);
             },
-            onSuccess: async (response) => {
-                const data = (response as sendCreateResponse200).data
+            onSuccess: async (response, { data: variables }) => {
+                const data = (response as sendCreateResponse200).data;
                 const taskId = data.task_id;
-                addQueuedMessage(taskId);
+                const shouldCloseThread = !!variables.archive;
+                addQueuedMessage(taskId, shouldCloseThread);
                 onSuccess?.();
             }
         }
@@ -220,7 +230,7 @@ export const MessageForm = ({
     const handleDraftMutationSuccess = () => {
         addToast(
             <ToasterItem type="info">
-                <span>{t("message_form.success.saved")}</span>
+                <span>{t("Draft saved")}</span>
             </ToasterItem>,
             {
                 toastId: DRAFT_TOAST_ID
@@ -239,10 +249,13 @@ export const MessageForm = ({
         mutation: { onSuccess: handleDraftMutationSuccess }
     });
 
+
     const deleteMessageMutation = useMessagesDestroy();
+    const isSavingDraft = draftCreateMutation.isPending || draftUpdateMutation.isPending || deleteMessageMutation.isPending;
+    const isSubmittingMessage = pendingSubmit !== null || messageMutation.isPending;
 
     const handleDeleteMessage = (messageId: string) => {
-        if(window.confirm(t("message_form.confirm.delete"))) {
+        if(window.confirm(t("Are you sure you want to delete this draft? This action cannot be undone."))) {
             stopAutoSave();
             deleteMessageMutation.mutate({
                 id: messageId
@@ -254,7 +267,7 @@ export const MessageForm = ({
                     unselectThread();
                     addToast(
                         <ToasterItem type="info">
-                            <span>{t("message_form.success.draft_deleted")}</span>
+                            <span>{t("Draft deleted")}</span>
                         </ToasterItem>
                     );
                     onClose?.();
@@ -274,7 +287,7 @@ export const MessageForm = ({
             const response = await draftCreateMutation.mutateAsync({ data }, {
                 onSuccess: () => {addToast(
                     <ToasterItem type="info">
-                        <span>{t("message_form.success.draft_transferred")}</span>
+                        <span>{t("Draft transferred to another mailbox")}</span>
                     </ToasterItem>,
                 );
                 }
@@ -289,57 +302,6 @@ export const MessageForm = ({
             // @TODO: Make something less hardcoded to improve the maintainability of the code
             router.replace(`/mailbox/${mailboxId}/thread/${threadId}?has_draft=1`);
         }
-    }
-    /**
-     * Update or create a draft message if any field to change.
-     */
-    const saveDraft = async (data: MessageFormFields) => {
-        if (!canWriteMessages) return;
-        const canSaveDraft = (
-            Object.keys(form.formState.dirtyFields).length > 0
-            && (
-                draft || (
-                    data.subject.length > 0
-                    || data.to.length > 0
-                    || (data.cc?.length ?? 0) > 0
-                    || (data.bcc?.length ?? 0) > 0
-                    || (data.messageEditorText?.length ?? 0) > 0
-                    || (data.attachments?.length ?? 0) > 0
-                    || (data.driveAttachments?.length ?? 0) > 0
-                )
-            )
-        )
-        if (!canSaveDraft) return draft;
-
-        const payload = {
-            to: data.to,
-            cc: data.cc ?? [],
-            bcc: data.bcc ?? [],
-            subject: data.subject,
-            senderId: data.from,
-            parentId: parentMessage?.id,
-            draftBody: MailHelper.attachDriveAttachmentsToDraft(data.messageEditorDraft, data.driveAttachments),
-            attachments: data.attachments,
-        }
-        let response;
-
-        if (!draft) {
-            response = await draftCreateMutation.mutateAsync({
-                data: payload,
-            });
-        } else if (form.formState.dirtyFields.from) {
-            handleChangeSender(payload);
-            return;
-        } else {
-            response = await draftUpdateMutation.mutateAsync({
-                messageId: draft.id,
-                data: payload,
-            });
-        }
-
-        const newDraft = response.data as Message;
-        setDraft(newDraft);
-        return newDraft;
     }
 
     /**
@@ -365,35 +327,110 @@ export const MessageForm = ({
     };
 
     /**
+     * Update or create a draft message if any field to change.
+     */
+    const saveDraft = async (data: MessageFormFields) => {
+        if (!canWriteMessages || isSavingDraft) return;
+        stopAutoSave();
+
+        const saveDraftNeeded = (
+            Object.keys(form.formState.dirtyFields).length > 0
+            && (
+                !!draft || (
+                    data.subject.length > 0
+                    || data.to.length > 0
+                    || (data.cc?.length ?? 0) > 0
+                    || (data.bcc?.length ?? 0) > 0
+                    || (data.messageTextBody?.length ?? 0) > 0
+                    || (data.attachments?.length ?? 0) > 0
+                    || (data.driveAttachments?.length ?? 0) > 0
+                    || (data.signatureId?.length ?? 0) > 0
+                )
+            )
+        )
+
+        if (!saveDraftNeeded) {
+            return;
+        }
+
+        const payload = {
+            to: data.to,
+            cc: data.cc ?? [],
+            bcc: data.bcc ?? [],
+            subject: data.subject,
+            senderId: data.from,
+            parentId: parentMessage?.id,
+            draftBody: MailHelper.attachDriveAttachmentsToDraft(data.messageDraftBody, data.driveAttachments),
+            attachments: data.attachments,
+            signatureId: data.signatureId ?? null,
+        }
+
+        let response;
+
+        try {
+            if (!draft) {
+                response = await draftCreateMutation.mutateAsync({
+                    data: payload,
+                });
+            } else if (form.formState.dirtyFields.from) {
+                await handleChangeSender(payload);
+                return;
+            } else {
+                response = await draftUpdateMutation.mutateAsync({
+                    messageId: draft.id,
+                    data: payload,
+                });
+            }
+
+            const newDraft = response.data as Message;
+            setDraft(newDraft);
+            return newDraft;
+        } catch (error) {
+            console.error("Error in saveDraft:", error);
+        } finally {
+            startAutoSave();
+        }
+    }
+
+    /**
      * Send the draft message
      */
-    const handleSubmit = async (data: MessageFormFields) => {
+    const handleSubmit = async (data: MessageFormFields, { archive }: { archive: boolean }) => {
         if (!canSendMessages) return;
-        setPendingSubmit(true);
-        stopAutoSave(); // Stop auto-save when submitting
 
         // recipients are optional to save the draft but required to send the message
         // so we have to manually check that at least one recipient is present.
         const hasNoRecipients = data.to.length === 0 && (data.cc?.length ?? 0) === 0 && (data.bcc?.length ?? 0) === 0;
         if (hasNoRecipients) {
-            setPendingSubmit(false);
-            form.setError("to", { message: t("message_form.error.min_recipient") });
+            form.setError("to", { message: t("At least one recipient is required.") });
             return;
         }
+        stopAutoSave(); // Stop auto-save when submitting
 
-        const draft = await saveDraft(data);
+        if (isSavingDraft) {
+            // Do not trigger the submit but mark the form as pending for submitting
+            setPendingSubmit({ archive });
+            return;
+        }
+        setPendingSubmit(null);
 
-        if (!draft) {
-            setPendingSubmit(false);
+        // Only save if there are unsaved changes, otherwise use existing draft
+        let draftToSend = draft;
+        if (Object.keys(form.formState.dirtyFields).length > 0 || !draft) {
+            draftToSend = await saveDraft(data);
+        }
+
+        if (!draftToSend) {
             return;
         }
 
         messageMutation.mutate({
             data: {
-                messageId: draft.id,
+                messageId: draftToSend.id,
                 senderId: data.from,
-                htmlBody: MailHelper.attachDriveAttachmentsToHtmlBody(data.messageEditorHtml, data.driveAttachments),
-                textBody: MailHelper.attachDriveAttachmentsToTextBody(data.messageEditorText, data.driveAttachments),
+                htmlBody: MailHelper.attachDriveAttachmentsToHtmlBody(data.messageHtmlBody, data.driveAttachments),
+                textBody: MailHelper.attachDriveAttachmentsToTextBody(data.messageTextBody, data.driveAttachments),
+                archive,
             }
         });
     };
@@ -423,10 +460,16 @@ export const MessageForm = ({
         startAutoSave();
 
         // Cleanup on unmount
-        return () => {
-            stopAutoSave();
-        };
+        return stopAutoSave;
     }, []);
+
+    // Effect to retriger handleSubmit if the form is pending for submit
+    // and the draft save state is updated to false
+    useEffect(() => {
+        if (pendingSubmit !== null && !isSavingDraft) {
+            handleSubmit(form.getValues(), pendingSubmit);
+        }
+    }, [isSavingDraft]);
 
     // Restart auto-save when form becomes dirty
     useEffect(() => {
@@ -460,11 +503,15 @@ export const MessageForm = ({
         }
     }, [showBCCField])
 
+    useEffect(() => {
+        localStorage.setItem(PREFER_SEND_MODE_KEY, preferredSendMode);
+    }, [preferredSendMode])
+
     return (
         <FormProvider {...form}>
             <form
                 className="message-form"
-                onSubmit={form.handleSubmit(handleSubmit)}
+                onSubmit={form.handleSubmit(data => handleSubmit(data, { archive: preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE }))}
                 onBlur={form.handleSubmit(saveDraft)}
                 onKeyDown={handleKeyDown}
             >
@@ -472,7 +519,7 @@ export const MessageForm = ({
                     <RhfSelect
                         name="from"
                         options={getMailboxOptions()}
-                        label={t("thread_message.from")}
+                        label={t("From: ")}
                         clearable={false}
                         disabled={!canChangeSender}
                         compact
@@ -484,9 +531,9 @@ export const MessageForm = ({
                 <div className="form-field-row">
                     <RhfContactComboBox
                         name="to"
-                        label={t("thread_message.to")}
+                        label={t("To:")}
                         // icon={<span className="material-icons">group</span>}
-                        text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? t(form.formState.errors.to.message as string) : t("message_form.helper_text.recipients")}
+                        text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? form.formState.errors.to.message: t("Enter the email addresses of the recipients separated by commas")}
                         textItems={Array.isArray(form.formState.errors.to) ? form.formState.errors.to?.map((error, index) => t(error!.message as string, { email: form.getValues('to')?.[index] })) : []}
                         disabled={!canWriteMessages}
                         fullWidth
@@ -500,9 +547,9 @@ export const MessageForm = ({
                     <div className="form-field-row">
                         <RhfContactComboBox
                             name="cc"
-                            label={t("thread_message.cc")}
+                            label={t("Copy: ")}
                             // icon={<span className="material-icons">group</span>}
-                            text={form.formState.errors.cc && !Array.isArray(form.formState.errors.cc) ? t(form.formState.errors.cc.message as string) : t("message_form.helper_text.recipients")}
+                            text={form.formState.errors.cc && !Array.isArray(form.formState.errors.cc) ? t(form.formState.errors.cc.message as string) : t("Enter the email addresses of the recipients separated by commas")}
                             textItems={Array.isArray(form.formState.errors.cc) ? form.formState.errors.cc?.map((error, index) => t(error!.message as string, { email: form.getValues('cc')?.[index] })) : []}
                             disabled={!canWriteMessages}
                             fullWidth
@@ -515,9 +562,9 @@ export const MessageForm = ({
                     <div className="form-field-row">
                         <RhfContactComboBox
                             name="bcc"
-                            label={t("thread_message.bcc")}
+                            label={t("Blind copy: ")}
                             // icon={<span className="material-icons">visibility_off</span>}
-                            text={form.formState.errors.bcc && !Array.isArray(form.formState.errors.bcc) ? t(form.formState.errors.bcc.message as string) : t("message_form.helper_text.recipients")}
+                            text={form.formState.errors.bcc && !Array.isArray(form.formState.errors.bcc) ? t(form.formState.errors.bcc.message as string) : t("Enter the email addresses of the recipients separated by commas")}
                             textItems={Array.isArray(form.formState.errors.bcc) ? form.formState.errors.bcc?.map((error, index) => t(error!.message as string, { email: form.getValues('bcc')?.[index] })) : []}
                             disabled={!canWriteMessages}
                             fullWidth
@@ -529,21 +576,25 @@ export const MessageForm = ({
                 <div className={clsx("form-field-row", {'form-field-row--hidden': hideSubjectField})}>
                         <RhfInput
                             name="subject"
-                            label={t("thread_message.subject")}
-                            text={form.formState.errors.subject && t(form.formState.errors.subject.message as string)}
+                            label={t("Subject: ")}
+                            text={form.formState.errors.subject && form.formState.errors.subject.message}
                             disabled={!canWriteMessages}
                             fullWidth
                         />
                     </div>
 
                 <div className="form-field-row">
-                    <MessageEditor
-                        defaultValue={form.getValues('messageEditorDraft')}
+                    <MessageComposer
+                        mailboxId={form.getValues('from')}
+                        defaultValue={form.getValues('messageDraftBody')}
                         fullWidth
-                        state={form.formState.errors?.messageEditorDraft ? "error" : "default"}
-                        text={form.formState.errors?.messageEditorDraft?.message}
-                        quotedMessage={mode !== "new" ? parentMessage : undefined}
+                        state={form.formState.errors?.messageDraftBody ? "error" : "default"}
+                        text={form.formState.errors?.messageDraftBody?.message}
+                        quotedMessage={quoteType ? parentMessage : undefined}
+                        quoteType={quoteType}
                         disabled={!canWriteMessages}
+                        draft={draft}
+                        submitDraft={form.handleSubmit(saveDraft)}
                     />
                 </div>
 
@@ -555,7 +606,7 @@ export const MessageForm = ({
 
                 {showAttachmentsForgetAlert &&
                   <Banner type="warning">
-                    {t("attachments.forgot_question")}
+                    {t("Did you forget an attachment?")}
                   </Banner>
                 }
 
@@ -567,37 +618,53 @@ export const MessageForm = ({
                     }
                     {
                         draft && (
-                            t("message_form.last_save.label", { relativeTime: t(...DateHelper.formatRelativeTime(draft.updated_at, currentTime)) })
+                            t("Last saved {{relativeTime}}", { relativeTime: DateHelper.formatRelativeTime(draft.updated_at, currentTime) })
                         )
                     }
                 </div>
                 <footer className="form-footer">
-                    <Button
+                    <DropdownButton
                         color="primary"
-                        disabled={!canSendMessages || !draft || pendingSubmit}
-                        icon={pendingSubmit ? <Spinner size="sm" /> : undefined}
+                        disabled={!canSendMessages || isSubmittingMessage}
                         type="submit"
+                        dropdownOptions={[
+                            ...(mode !== 'new' ? [{
+                                label: preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? t("Send") : t("Send and archive"),
+                                icon: <Icon name={preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? "send" : "send_and_archive"} type={IconType.OUTLINED} />,
+                                callback: form.handleSubmit(data => handleSubmit(data, { archive: preferredSendMode !== PreferSendMode.SEND_AND_ARCHIVE })),
+                                showSeparator: true,
+                            }, {
+                                label: t("Use \"Send and archive\" by default"),
+                                icon: <Icon name={preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? "check_box" : "check_box_outline_blank"} type={IconType.OUTLINED} />,
+                                callback: () => setPreferredSendMode(preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? PreferSendMode.SEND : PreferSendMode.SEND_AND_ARCHIVE)
+                            }] : [])
+                        ]}
                     >
-                        {t("actions.send")}
-                    </Button>
+                        {preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE && t("Send and archive")}
+                        {preferredSendMode === PreferSendMode.SEND && t("Send")}
+                    </DropdownButton>
                     {!draft && onClose && (
-                        <Button
-                            type="button"
-                            color="secondary"
-                            onClick={onClose}
-                    >
-                            {t("actions.cancel")}
-                        </Button>
+                        <Tooltip content={t("Delete")}>
+                            <Button
+                                type="button"
+                                color="tertiary"
+                                onClick={onClose}
+                                aria-label={t("Delete")}
+                                icon={<Icon name="delete" type={IconType.OUTLINED} />}
+                            />
+                        </Tooltip>
                     )}
                     {
                         canWriteMessages && draft && (
-                            <Button
-                                type="button"
-                                color="secondary"
-                                onClick={() => handleDeleteMessage(draft.id)}
-                            >
-                                {t("actions.delete_draft")}
-                            </Button>
+                            <Tooltip content={t("Delete draft")}>
+                                <Button
+                                    type="button"
+                                    color="tertiary"
+                                    onClick={() => handleDeleteMessage(draft.id)}
+                                    aria-label={t("Delete draft")}
+                                    icon={<Icon name="delete" type={IconType.OUTLINED} />}
+                                />
+                            </Tooltip>
                         )
                     }
                 </footer>

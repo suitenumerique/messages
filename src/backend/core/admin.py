@@ -249,6 +249,7 @@ class ThreadAdmin(admin.ModelAdmin):
                 "fields": (
                     "has_unread",
                     "has_trashed",
+                    "has_archived",
                     "has_draft",
                     "has_starred",
                     "has_sender",
@@ -272,6 +273,7 @@ class ThreadAdmin(admin.ModelAdmin):
         "display_labels",
         "has_unread",
         "has_trashed",
+        "has_archived",
         "has_draft",
         "has_starred",
         "has_attachments",
@@ -381,7 +383,7 @@ class MessageAdmin(admin.ModelAdmin):
     search_fields = ("subject", "sender__name", "sender__email", "mime_id")
     change_list_template = "admin/core/message/change_list.html"
     raw_id_fields = ("thread", "blob", "draft_blob", "parent", "channel")
-    autocomplete_fields = ("sender",)
+    autocomplete_fields = ("sender", "signature")
     readonly_fields = ("mime_id", "created_at", "updated_at")
 
     def get_queryset(self, request):
@@ -637,3 +639,51 @@ class DKIMKeyAdmin(admin.ModelAdmin):
             },
         ),
     )
+
+
+@admin.register(models.MessageTemplate)
+class MessageTemplateAdmin(admin.ModelAdmin):
+    """Admin class for the MessageTemplate model"""
+
+    list_display = (
+        "name",
+        "type",
+        "is_forced",
+        "is_active",
+        "mailbox",
+        "maildomain",
+        "created_at",
+    )
+    list_filter = (
+        "type",
+        "is_forced",
+        "created_at",
+    )
+    autocomplete_fields = ("mailbox", "maildomain")
+    search_fields = ("name",)
+    readonly_fields = (
+        "id",
+        "created_at",
+        "updated_at",
+        "raw_body",
+        "text_body",
+        "html_body",
+    )
+
+    def get_raw_body(self, obj):
+        """Return the raw body of the template."""
+        return obj.raw_body
+
+    get_raw_body.short_description = "Raw Body"
+
+    def get_text_body(self, obj):
+        """Return the text body of the template."""
+        return obj.text_body
+
+    get_text_body.short_description = "Text Body"
+
+    def get_html_body(self, obj):
+        """Return the html body of the template."""
+        return obj.html_body
+
+    get_html_body.short_description = "HTML Body"

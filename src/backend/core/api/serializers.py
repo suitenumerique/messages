@@ -1,6 +1,10 @@
+# pylint: disable=too-many-lines
 """Client serializers for the messages core app."""
 # pylint: disable=too-many-lines
 
+import json
+
+from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q
 from django.utils.translation import gettext_lazy as _
 
@@ -8,7 +12,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
-from core import models
+from core import enums, models
 
 
 class IntegerChoicesField(serializers.ChoiceField):
@@ -299,6 +303,43 @@ class MailboxLightSerializer(serializers.ModelSerializer):
         return None
 
 
+class ReadOnlyMessageTemplateSerializer(serializers.ModelSerializer):
+    """Serialize message templates for read-only operations."""
+
+    type = IntegerChoicesField(choices_class=enums.MessageTemplateTypeChoices)
+    html_body = serializers.SerializerMethodField()
+    text_body = serializers.SerializerMethodField()
+    raw_body = serializers.SerializerMethodField()
+
+    def get_html_body(self, obj) -> str:
+        """Get HTML body from blob."""
+        return obj.html_body
+
+    def get_text_body(self, obj) -> str:
+        """Get text body from content blob."""
+        return obj.text_body
+
+    def get_raw_body(self, obj) -> str | None:
+        """Get raw blob from content blob."""
+        return obj.raw_body
+
+    class Meta:
+        model = models.MessageTemplate
+        fields = [
+            "id",
+            "name",
+            "html_body",
+            "text_body",
+            "raw_body",
+            "type",
+            "is_active",
+            "is_forced",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
 class ContactSerializer(serializers.ModelSerializer):
     """Serialize contacts."""
 
@@ -529,6 +570,7 @@ class ThreadSerializer(serializers.ModelSerializer):
             "messages",
             "has_unread",
             "has_trashed",
+            "has_archived",
             "has_draft",
             "has_starred",
             "has_attachments",
@@ -575,6 +617,13 @@ class MessageSerializer(serializers.ModelSerializer):
     thread_id = serializers.UUIDField(
         source="thread.id", allow_null=True, read_only=True
     )
+
+    signature = ReadOnlyMessageTemplateSerializer(read_only=True, allow_null=True)
+    stmsg_headers = serializers.SerializerMethodField(read_only=True)
+
+    def get_stmsg_headers(self, instance) -> dict:
+        """Return the STMSG headers of the message."""
+        return instance.get_stmsg_headers()
 
     @extend_schema_field(serializers.ListField(child=serializers.DictField()))
     def get_textBody(self, instance):  # pylint: disable=invalid-name
@@ -623,6 +672,7 @@ class MessageSerializer(serializers.ModelSerializer):
                         "name": attachment["name"],
                         "size": attachment["size"],
                         "type": attachment["type"],
+                        "cid": attachment.get("cid"),
                     }
                 )
             return stripped_attachments
@@ -665,7 +715,7 @@ class MessageSerializer(serializers.ModelSerializer):
             and instance.is_sender
             and instance.thread.accesses.filter(
                 mailbox__accesses__user=request.user,
-                role=models.ThreadAccessRoleChoices.EDITOR,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
             ).exists()
         ):
             contacts = models.Contact.objects.filter(
@@ -700,7 +750,10 @@ class MessageSerializer(serializers.ModelSerializer):
             "is_unread",
             "is_starred",
             "is_trashed",
+            "is_archived",
             "has_attachments",
+            "signature",
+            "stmsg_headers",
         ]
         read_only_fields = fields  # Mark all as read-only
 
@@ -958,7 +1011,7 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
             domain=self.context.get("domain"), local_part=value
         ).exists():
             raise serializers.ValidationError(
-                _("An mailbox with this local part already exists in this domain.")
+                _("A mailbox with this local part already exists in this domain.")
             )
         return value
 
@@ -1175,3 +1228,133 @@ class ChannelSerializer(AbilitiesModelSerializer):
             )
 
         return attrs
+
+
+class MessageTemplateSerializer(serializers.ModelSerializer):
+    """Serialize message templates for POST/PUT/PATCH operations."""
+
+    type = IntegerChoicesField(choices_class=enums.MessageTemplateTypeChoices)
+
+    is_forced = serializers.BooleanField(
+        required=False, default=False, help_text="Set as forced template"
+    )
+    html_body = serializers.CharField(required=False)
+    text_body = serializers.CharField(required=False)
+    raw_body = serializers.CharField(required=False)
+
+    class Meta:
+        model = models.MessageTemplate
+        fields = [
+            "id",
+            "name",
+            "html_body",
+            "text_body",
+            "raw_body",
+            "type",
+            "is_active",
+            "is_forced",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        """Validate template data."""
+        # For creation or update, all content fields must be provided
+        # if one of fields html_body, text_body, raw_body is provided, all must be provided
+        if any(field in attrs for field in ["html_body", "text_body", "raw_body"]):
+            if not all(
+                field in attrs for field in ["html_body", "text_body", "raw_body"]
+            ):
+                raise serializers.ValidationError(
+                    "All content fields (html_body, text_body, raw_body) must be provided together."
+                )
+
+        return super().validate(attrs)
+
+    def create(self, validated_data):
+        """Create template with relationships and ensure atomic content creation."""
+        html_body = validated_data.pop("html_body", "")
+        text_body = validated_data.pop("text_body", "")
+        raw_body = validated_data.pop("raw_body", "")
+        validated_data["maildomain"] = self.context.get("domain")
+        validated_data["mailbox"] = self.context.get("mailbox")
+
+        # Use atomic transaction to ensure all content fields are created together
+        with transaction.atomic():
+            # Create content blob with all content
+            # Parse raw_body if it's a JSON string
+            try:
+                raw_body = json.loads(raw_body) if raw_body else None
+            except json.JSONDecodeError as err:
+                raise serializers.ValidationError(
+                    {"raw_body": f"Invalid JSON: {err.msg}"}
+                ) from err
+
+            content = json.dumps(
+                {"html": html_body, "text": text_body, "raw": raw_body},
+                separators=(",", ":"),
+            )
+            # content is changed to bytes
+            blob = models.Blob.objects.create_blob(
+                content=content.encode("utf-8"),
+                content_type="application/json",
+                maildomain=self.context.get("domain"),
+                mailbox=self.context.get("mailbox"),
+            )
+            validated_data["blob"] = blob
+            template = super().create(validated_data)
+            return template
+
+    def update(self, instance, validated_data):
+        """Update template with relationships. Not allowed to change mailbox or maildomain."""
+        html_body = validated_data.pop("html_body", None)
+        text_body = validated_data.pop("text_body", None)
+        raw_body = validated_data.pop("raw_body", None)
+
+        # Use atomic transaction to ensure all content fields are updated together
+        with transaction.atomic():
+            # Update content blob if any content field is provided
+            if any(field is not None for field in [html_body, text_body, raw_body]):
+                # Delete old blob
+                if instance.blob:
+                    instance.blob.delete()
+                # Create content for new blob
+                content = {
+                    "html": html_body,
+                    "text": text_body,
+                    "raw": json.loads(raw_body) if raw_body else None,
+                }
+                # Create new blob
+                blob = models.Blob.objects.create_blob(
+                    content=json.dumps(content, separators=(",", ":")).encode("utf-8"),
+                    content_type="application/json",
+                    maildomain=self.instance.maildomain
+                    if self.instance.maildomain
+                    else None,
+                    mailbox=self.instance.mailbox if self.instance.mailbox else None,
+                )
+                validated_data["blob"] = blob
+
+            # Update all fields atomically
+            template = super().update(instance, validated_data)
+            return template
+
+
+class SendMessageSerializer(serializers.Serializer):
+    """Serializer for sending messages."""
+
+    messageId = serializers.UUIDField(required=True)
+    senderId = serializers.UUIDField(required=True)
+    archive = serializers.BooleanField(required=False, default=False)
+    textBody = serializers.CharField(required=False, allow_blank=True)
+    htmlBody = serializers.CharField(required=False, allow_blank=True)
+
+    class Meta:
+        fields = ["messageId", "senderId", "archive", "textBody", "htmlBody"]
+
+    def create(self, validated_data):
+        """This serializer is only used to validate the data, not to create or update."""
+
+    def update(self, instance, validated_data):
+        """This serializer is only used to validate the data, not to create or update."""

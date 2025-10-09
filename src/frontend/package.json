@@ -17,7 +17,8 @@
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
-    "ts:check": "tsc --noEmit"
+    "ts:check": "tsc --noEmit",
+    "i18n:extract": "i18next-cli extract"
   },
   "dependencies": {
     "@blocknote/core": "0.33.0",
@@ -37,6 +38,7 @@
     "dompurify": "3.2.6",
     "downshift": "9.0.10",
     "i18next": "25.3.0",
+    "i18next-http-backend": "3.0.2",
     "next": "15.3.4",
     "pretty-bytes": "7.0.0",
     "react": "19.1.0",
@@ -62,6 +64,7 @@
     "@vitest/ui": "3.2.4",
     "eslint": "9.30.0",
     "eslint-config-next": "15.3.4",
+    "i18next-cli": "1.5.5",
     "jsdom": "26.1.0",
     "orval": "7.10.0",
     "prettier": "3.6.2",

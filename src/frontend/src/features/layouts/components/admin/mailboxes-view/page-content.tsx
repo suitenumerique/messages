@@ -1,8 +1,8 @@
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { AdminMailboxDataGrid } from "./mailbox-data-grid";
-import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
 import { useTranslation } from "react-i18next";
 import { usePagination } from "@openfun/cunningham-react";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
+import { AdminMailboxDataGrid } from "./mailbox-data-grid";
 
 type AdminDomainPageContentProps = {
     pagination: ReturnType<typeof usePagination>;
@@ -23,7 +23,7 @@ export const AdminDomainPageContent = ({ pagination }: AdminDomainPageContentPro
     if (!selectedMailDomain) {
       return (
           <div style={{ padding: "2rem", textAlign: "center", color: "var(--c--theme--colors--danger-600)" }}>
-            {t("admin_maildomains_details.errors.domain_not_found")}
+            {t("Domain not found")}
           </div>
       );
     }

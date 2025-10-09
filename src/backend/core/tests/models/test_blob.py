@@ -1,5 +1,7 @@
 """Tests for blob compression functionality."""
 
+from django.core.exceptions import ValidationError
+
 import pytest
 
 from core import enums, factories
@@ -54,7 +56,7 @@ class TestBlobCompression:
         mailbox = factories.MailboxFactory()
 
         # Try to create blob with empty content
-        with pytest.raises(ValueError, match="Content cannot be empty"):
+        with pytest.raises(ValidationError, match="Content cannot be empty"):
             mailbox.create_blob(
                 content=b"",
                 content_type="text/plain",

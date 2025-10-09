@@ -1,3 +1,4 @@
+import { MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
 import { SearchHelper } from "@/features/utils/search-helper";
 import { Label } from "@gouvfr-lasuite/ui-kit";
 import { Button, Checkbox, Input, Select } from "@openfun/cunningham-react";
@@ -44,69 +45,53 @@ export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) =
         <form className="search__filters" ref={formRef} onSubmit={handleSubmit} onChange={handleChange}>
             <Input
                 name="from"
-                label={t("search.filters.label.from")}
+                label={t("From")}
                 value={parsedQuery.from as string}
                 fullWidth
             />
             <Input
                 name="to"
-                label={t("search.filters.label.to")}
+                label={t("To")}
                 value={parsedQuery.to as string}
                 fullWidth
             />
             <Input
                 name="subject"
-                label={t("search.filters.label.subject")}
+                label={t("Subject")}
                 value={parsedQuery.subject as string}
                 fullWidth
             />
             <Input
                 name="text"
-                label={t("search.filters.label.text")}
+                label={t("Contains the words")}
                 value={parsedQuery.text as string}
                 fullWidth
             />
             <Select
                 name="in"
-                label={t("search.filters.label.in")}
-                value={parsedQuery.in as string ?? 'all'}
+                label={t("In")}
+                value={parsedQuery.in as string ?? 'all_messages'}
                 showLabelWhenSelected={false}
                 onChange={handleChange}
-                options={[
-                    {
-                        label: t("folders.all_messages"),
-                        render: () => <FolderOption label={t("folders.all_messages")} icon="folder" />,
-                        value: 'all'
-                    },
-                    {
-                        label: t("folders.drafts"),
-                        render: () => <FolderOption label={t("folders.drafts")} icon="drafts" />,
-                        value: "draft"
-                    },
-                    {
-                        label: t("folders.sent"),
-                        render: () => <FolderOption label={t("folders.sent")} icon="outbox" />,
-                        value: "sent"
-                    },
-                    {
-                        label: t("folders.trash"),
-                        render: () => <FolderOption label={t("folders.trash")} icon="delete" />,
-                        value: "trash" },
-                ]}
+                options={MAILBOX_FOLDERS.filter((folder) => folder.searchable).map((folder) => ({
+                    label: t(folder.name),
+                    render: () => <FolderOption label={t(folder.name)} icon={folder.icon} />,
+                    value: folder.id
+                }))}
                 clearable={false}
                 fullWidth
             />
             <div className="flex-row flex-align-center" style={{ gap: 'var(--c--theme--spacings--2xs)' }}>
-                <Label>{t("search.filters.label.read_state")} :</Label>
-                <Checkbox label={t("search.filters.label.read")} value="true" name="is_read" checked={Boolean(parsedQuery.is_read)} onChange={handleReadStateChange} />
-                <Checkbox label={t("search.filters.label.unread")} value="true" name="is_unread" checked={Boolean(parsedQuery.is_unread)} onChange={handleReadStateChange} />
+                <Label>{t("Read state")} :</Label>
+                <Checkbox label={t("Read")} value="true" name="is_read" checked={Boolean(parsedQuery.is_read)} onChange={handleReadStateChange} />
+                <Checkbox label={t("Unread")} value="true" name="is_unread" checked={Boolean(parsedQuery.is_unread)} onChange={handleReadStateChange} />
             </div>
             <footer className="search__filters-footer">
                 <Button type="reset" color="tertiary-text" onClick={handleReset}>
-                    {t("search.filters.reset")}
+                    {t("Reset")}
                 </Button>
                 <Button type="submit" color="tertiary">
-                    {t("search.filters.submit")}
+                    {t("Search")}
                 </Button>
             </footer>
         </form>

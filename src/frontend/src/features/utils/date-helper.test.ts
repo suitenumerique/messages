@@ -54,7 +54,7 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(dateString);
 
-      expect(result).toEqual(['units.past_relative_time.just_now', undefined]);
+      expect(result).toEqual('just now');
     });
 
     it('should return "less than minute ago" for times between 5 and 60 seconds ago', () => {
@@ -62,7 +62,7 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(dateString);
 
-      expect(result).toEqual(['units.past_relative_time.less_than_minute_ago', undefined]);
+      expect(result).toEqual('less than a minute ago');
     });
 
     it('should return "minutes ago" with count for times between 1 minute and 1 hour ago', () => {
@@ -70,7 +70,7 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(dateString);
 
-      expect(result).toEqual(['units.past_relative_time.minutes_ago', { count: 30 }]);
+      expect(result).toEqual('30 minutes ago');
     });
 
     it('should return "hours ago" with count for times between 1 hour and 24 hours ago', () => {
@@ -78,7 +78,7 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(dateString);
 
-      expect(result).toEqual(['units.past_relative_time.hours_ago', { count: 3 }]);
+      expect(result).toEqual('3 hours ago');
     });
 
     it('should return "days ago" with count for times more than 24 hours ago', () => {
@@ -86,7 +86,7 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(dateString);
 
-      expect(result).toEqual(['units.past_relative_time.days_ago', { count: 2 }]);
+      expect(result).toEqual('2 days ago');
     });
 
     it('should handle custom time reference as Date object', () => {
@@ -95,7 +95,7 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(dateString, customTimeRef);
 
-      expect(result).toEqual(['units.past_relative_time.hours_ago', { count: 1 }]);
+      expect(result).toEqual('1 hour ago');
     });
 
     it('should handle custom time reference as string', () => {
@@ -104,7 +104,7 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(dateString, customTimeRef);
 
-      expect(result).toEqual(['units.past_relative_time.hours_ago', { count: 1 }]);
+      expect(result).toEqual('1 hour ago');
     });
 
     it('should handle edge case of exactly 5 seconds ago', () => {
@@ -112,7 +112,7 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(dateString);
 
-      expect(result).toEqual(['units.past_relative_time.less_than_minute_ago', undefined]);
+      expect(result).toEqual('less than a minute ago');
     });
 
     it('should handle edge case of exactly 1 minute ago', () => {
@@ -120,7 +120,7 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(dateString);
 
-      expect(result).toEqual(['units.past_relative_time.minutes_ago', { count: 1 }]);
+      expect(result).toEqual('1 minute ago');
     });
 
     it('should handle edge case of exactly 1 hour ago', () => {
@@ -128,7 +128,7 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(dateString);
 
-      expect(result).toEqual(['units.past_relative_time.hours_ago', { count: 1 }]);
+      expect(result).toEqual('1 hour ago');
     });
 
     it('should handle edge case of exactly 24 hours ago', () => {
@@ -136,7 +136,7 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(dateString);
 
-      expect(result).toEqual(['units.past_relative_time.days_ago', { count: 1 }]);
+      expect(result).toEqual('1 day ago');
     });
 
     it('should handle future dates (negative time difference)', () => {
@@ -145,7 +145,7 @@ describe('DateHelper', () => {
       const result = DateHelper.formatRelativeTime(dateString);
 
       // Should still return "just now" for future dates
-      expect(result).toEqual(['units.past_relative_time.just_now', undefined]);
+      expect(result).toEqual('just now');
     });
 
     it('should handle very old dates', () => {
@@ -153,7 +153,7 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(dateString);
 
-      expect(result).toEqual(['units.past_relative_time.days_ago', { count: 1461 }]); // ~4 years in days
+      expect(result).toEqual('1461 days ago'); // ~4 years in days
     });
 
     it('should handle invalid date strings gracefully', () => {
@@ -161,8 +161,8 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(invalidDateString);
 
-      // Should return "just now" for invalid dates (NaN comparison)
-      expect(result).toEqual(['', undefined]);
+      // Should return "" for invalid dates (NaN comparison)
+      expect(result).toEqual('');
     });
 
     it('should handle empty string date', () => {
@@ -170,8 +170,8 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(emptyDateString);
 
-      // Should return "just now" for empty dates
-      expect(result).toEqual(['', undefined]);
+      // Should return "" for empty dates
+      expect(result).toEqual('');
     });
   });
 });

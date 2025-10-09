@@ -67,6 +67,8 @@ It features a [MTA](https://en.wikipedia.org/wiki/Message_transfer_agent) based 
 * 🚀 Messages is designed to be installed on the cloud or on your own servers.
 * 🛠️ Configuration through environment variables for most settings
 
+<img src="/docs/assets/architecture-high-level.png" alt="Messages architecture" width="100%" align="center"/>
+
 ## Getting started 🔧
 
 ### Prerequisite
@@ -149,7 +151,7 @@ When running the project, the following services are available:
 ### OpenAPI client
 
 The frontend API client is generated with
-[Orval](https://orval.dev/). It consumes the OpenAPI schema generated from the backend through 
+[Orval](https://orval.dev/). It consumes the OpenAPI schema generated from the backend through
 [drf-spectacular](https://drf-spectacular.readthedocs.io/en/latest/).
 
 The JSON OpenAPI schema is located in
@@ -234,7 +236,7 @@ We'd love to hear your thoughts, and hear about your experiments, so come and sa
 
 This work is released under the MIT License (see [LICENSE](https://github.com/suitenumerique/messages/blob/main/LICENSE)).
 
-While Messages is a public-driven initiative, our license choice is an invitation for private sector actors to use, sell and contribute to the project. 
+While Messages is a public-driven initiative, our license choice is an invitation for private sector actors to use, sell and contribute to the project.
 
 
 ## Contributing 🙌
@@ -243,6 +245,8 @@ While Messages is a public-driven initiative, our license choice is an invitatio
 This project is intended to be community-driven, so please, do not hesitate to [get in touch](https://matrix.to/#/#messages-official:matrix.org) if you have any question related to our implementation or design decisions.
 
 We also have a [public roadmap](https://github.com/orgs/suitenumerique/projects/4).
+
+You can help us with translations on [Crowdin](https://crowdin.com/project/lasuite-messages).
 
 If you intend to make pull requests, see [CONTRIBUTING](https://github.com/suitenumerique/messages/blob/main/CONTRIBUTING.md) for guidelines.
 

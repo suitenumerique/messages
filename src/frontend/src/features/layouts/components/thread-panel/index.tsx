@@ -64,9 +64,9 @@ export const ThreadPanel = () => {
             <div className="thread-panel thread-panel--empty">
                 <div>
                     <Image src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
-                    <p>{t('no_threads')}</p>
+                    <p>{t('No threads.')}</p>
                     {showImportButton && (
-                        <Button href="#modal-message-importer">{t('actions.import_messages')}</Button>
+                        <Button href="#modal-message-importer">{t('Import messages')}</Button>
                     )}
                 </div>
             </div>
@@ -76,22 +76,22 @@ export const ThreadPanel = () => {
     return (
         <div className="thread-panel">
             <Bar className="thread-panel__bar">
-                <Tooltip content={t('actions.refresh')}>
+                <Tooltip content={t('Refresh')}>
                     <Button
                         onClick={refetchMailboxes}
                         icon={<span className="material-icons">refresh</span>}
                         color="tertiary-text"
                         size="small"
-                        aria-label={t('actions.refresh')}
+                        aria-label={t('Refresh')}
                     />
                 </Tooltip>
-                <Tooltip content={t('actions.mark_all_as_read')}>
+                <Tooltip content={t('Mark all as read')}>
                     <Button
                         onClick={() => markAsRead({ threadIds: threads?.results.map((thread) => thread.id) })}
                         icon={<span className="material-icons">mark_email_read</span>}
                         color="tertiary-text"
                         size="small"
-                        aria-label={t('actions.mark_all_as_read')}
+                        aria-label={t('Mark all as read')}
                     />
                 </Tooltip>
                 <DropdownMenu
@@ -99,7 +99,7 @@ export const ThreadPanel = () => {
                     onOpenChange={setIsDropdownOpen}
                     options={[
                         {
-                            label: t('actions.mark_all_as_unread'),
+                            label: t('Mark all as unread'),
                             icon: <span className="material-icons">mark_email_unread</span>,
                             callback: () => {
                                 markAsUnread({
@@ -110,12 +110,12 @@ export const ThreadPanel = () => {
                         },
                     ]}
                 >
-                    <Tooltip content={t('tooltips.more_options')}>
+                    <Tooltip content={t('More options')}>
                         <Button
                             onClick={() => setIsDropdownOpen(true)}
                             icon={<span className="material-icons">more_vert</span>}
                             color="primary-text"
-                            aria-label={t('tooltips.more_options')}
+                            aria-label={t('More options')}
                             size="small"
                         />
                     </Tooltip>
@@ -128,7 +128,7 @@ export const ThreadPanel = () => {
                         {queryStates.threads.isFetchingNextPage && (
                             <>
                                 <Spinner />
-                                <span>{t('thread-panel.loading-next-threads')}</span>
+                                <span>{t('Loading next threads...')}</span>
                             </>
                         )}
                     </div>

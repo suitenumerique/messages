@@ -3,11 +3,11 @@ import MailHelper, { SUPPORTED_IMAP_DOMAINS, ATTACHMENT_SEPARATORS } from './mai
 describe('MailHelper', () => {
   describe('markdownToHtml', () => {
     it('should convert markdown to HTML', async () => {
-      const markdown = '**Hello World**';
+      const markdown = '**Hello World**\n\n*Note: This is a test*';
       const html = await MailHelper.markdownToHtml(markdown);
       expect(html).toMatchInlineSnapshot(`
-        "<div data-id="react-email-markdown"><p><strong style="font-weight:bold">Hello World</strong></p>
-        </div>"
+        "<p><strong style="font-weight:bold">Hello World</strong></p>
+        <p><em style="font-style:italic">Note: This is a test</em></p>"
       `);
     });
   });

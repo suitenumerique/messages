@@ -45,7 +45,7 @@ describe('SearchHelper', () => {
         it('should serialize simple text', () => {
             const formData = new FormData();
             formData.append('text', 'hello world');
-            const result = SearchHelper.serializeSearchFormData(formData, 'en');
+            const result = SearchHelper.serializeSearchFormData(formData, 'en-US');
             expect(result).toBe('hello world');
         });
 
@@ -53,7 +53,7 @@ describe('SearchHelper', () => {
             const formData = new FormData();
             formData.append('from', 'john@example.com');
             formData.append('to', 'jane@example.com');
-            const result = SearchHelper.serializeSearchFormData(formData, 'en');
+            const result = SearchHelper.serializeSearchFormData(formData, 'en-US');
             expect(result).toContain('from:"john@example.com"');
             expect(result).toContain('to:"jane@example.com"');
         });
@@ -61,14 +61,14 @@ describe('SearchHelper', () => {
         it('should serialize boolean filters', () => {
             const formData = new FormData();
             formData.append('is_unread', 'true');
-            const result = SearchHelper.serializeSearchFormData(formData, 'en');
+            const result = SearchHelper.serializeSearchFormData(formData, 'en-US');
             expect(result).toContain('is:unread');
         });
 
         it('should serialize folder filters', () => {
             const formData = new FormData();
             formData.append('in', 'trash');
-            const result = SearchHelper.serializeSearchFormData(formData, 'en');
+            const result = SearchHelper.serializeSearchFormData(formData, 'en-US');
             expect(result).toContain('in:trash');
         });
 
@@ -76,7 +76,7 @@ describe('SearchHelper', () => {
             const formData = new FormData();
             formData.append('from', '');
             formData.append('text', 'hello');
-            const result = SearchHelper.serializeSearchFormData(formData, 'en');
+            const result = SearchHelper.serializeSearchFormData(formData, 'en-US');
             expect(result).toBe('hello');
         });
 
@@ -84,13 +84,13 @@ describe('SearchHelper', () => {
             const formData = new FormData();
             formData.append('from', 'john@example.com');
             formData.append('text', 'hello');
-            
+
             // Test with English
-            const enResult = SearchHelper.serializeSearchFormData(formData, 'en');
+            const enResult = SearchHelper.serializeSearchFormData(formData, 'en-US');
             expect(enResult).toContain('from:"john@example.com"');
-            
+
             // Test with French (assuming it exists in SearchFiltersMap)
-            const frResult = SearchHelper.serializeSearchFormData(formData, 'fr');
+            const frResult = SearchHelper.serializeSearchFormData(formData, 'fr-FR');
             expect(frResult).toContain('de:"john@example.com"');
         });
 
@@ -98,10 +98,10 @@ describe('SearchHelper', () => {
             const formData = new FormData();
             formData.append('from', 'john@example.com');
             formData.append('text', 'hello');
-            
+
             // Test with English
-            const enResult = SearchHelper.serializeSearchFormData(formData, 'de');
+            const enResult = SearchHelper.serializeSearchFormData(formData, 'de-DE');
             expect(enResult).toContain('from:"john@example.com"');
         });
     });
-}); 
+});

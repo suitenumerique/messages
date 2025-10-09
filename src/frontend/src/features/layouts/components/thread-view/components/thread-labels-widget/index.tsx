@@ -32,13 +32,16 @@ export const ThreadLabelsWidget = ({ threadId, selectedLabels = [] }: ThreadLabe
                     content={
                         <span className="thread-labels-widget__loading-labels-tooltip-content">
                             <Spinner size="sm" />
-                            {t('thread-view.action-bar.loading-labels')}
+                            {t('Loading labels...')}
                         </span>
                     }
                 >
-                    <Button size="small" color="primary-text">
-                        <Icon type={IconType.OUTLINED} name="new_label" />
-                    </Button>
+                    <Button
+                        size="small"
+                        color="primary-text"
+                        aria-label={t('Add label')}
+                        icon={<Icon type={IconType.OUTLINED} name="new_label" />}
+                    />
                 </Tooltip>
             </div>
         )
@@ -46,10 +49,14 @@ export const ThreadLabelsWidget = ({ threadId, selectedLabels = [] }: ThreadLabe
 
     return (
         <div className="thread-labels-widget">
-            <Tooltip content={t('actions.add_label')}>
-                <Button onClick={() => setIsPopupOpen(true)} size="small" color="primary-text">
-                    <Icon type={IconType.OUTLINED} name="new_label" />
-                </Button>
+            <Tooltip content={t('Add label')}>
+                <Button
+                    onClick={() => setIsPopupOpen(true)}
+                    size="small"
+                    color="primary-text"
+                    aria-label={t('Add label')}
+                    icon={<Icon type={IconType.OUTLINED} name="new_label" />}
+                />
             </Tooltip>
             {isPopupOpen &&
             <>
@@ -139,12 +146,12 @@ const LabelsPopup = ({ labels = [], selectedLabels, threadId }: LabelsPopupProps
     return (
         <div className="thread-labels-widget__popup">
             <header className="thread-labels-widget__popup__header">
-                <h3><Icon type={IconType.OUTLINED} name="new_label" /> {t('thread-labels-widget.popup.title')}</h3>
+                <h3><Icon type={IconType.OUTLINED} name="new_label" /> {t('Add labels')}</h3>
                 <Input
                     className="thread-labels-widget__popup__search"
                     type="search"
                     icon={<Icon type={IconType.OUTLINED} name="search" />}
-                    label={t('thread-labels-widget.popup.search_placeholder')}
+                    label={t('Search a label')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     fullWidth
@@ -163,7 +170,7 @@ const LabelsPopup = ({ labels = [], selectedLabels, threadId }: LabelsPopupProps
                 <li className="thread-labels-widget__popup__content__empty">
                     <Button color="secondary" onClick={open} fullWidth icon={<Icon type={IconType.OUTLINED} name="add" />}>
                         <span className="thread-labels-widget__popup__content__empty__button-label">
-                        {searchQuery && labelsOptions.length === 0 ? t('thread-labels-widget.popup.create_label', { label: searchQuery }) : t('thread-labels-widget.popup.create_new_label')}
+                        {searchQuery && labelsOptions.length === 0 ? t('Create the label "{{label}}"', { label: searchQuery }) : t('Create a new label')}
                         </span>
                     </Button>
                     <LabelModal

@@ -18,7 +18,7 @@ from core import models
 from .. import permissions
 
 # Define allowed flag types
-ALLOWED_FLAGS = ["unread", "starred", "trashed"]
+ALLOWED_FLAGS = ["unread", "starred", "trashed", "archived"]
 
 
 class ChangeFlagView(APIView):
@@ -91,6 +91,17 @@ class ChangeFlagView(APIView):
                 "Trash threads",
                 value={
                     "flag": "trashed",
+                    "value": True,
+                    "thread_ids": [
+                        "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+                        "b2c3d4e5-f6a7-8901-2345-67890abcdef0",
+                    ],
+                },
+            ),
+            OpenApiExample(
+                "Archive threads",
+                value={
+                    "flag": "archived",
                     "value": True,
                     "thread_ids": [
                         "a1b2c3d4-e5f6-7890-1234-567890abcdef",
@@ -186,6 +197,11 @@ class ChangeFlagView(APIView):
                         batch_update_data["trashed_at"] = (
                             current_time if value else None
                         )
+                    elif flag == "archived":
+                        batch_update_data["is_archived"] = value
+                        batch_update_data["archived_at"] = (
+                            current_time if value else None
+                        )
 
                     messages_to_update.update(**batch_update_data)
                     # Collect threads affected by direct message updates
@@ -220,9 +236,14 @@ class ChangeFlagView(APIView):
                         batch_update_data["trashed_at"] = (
                             current_time if value else None
                         )
-                        # Note: Trashing a thread might have other side effects (e.g., updating thread state)
-                        # This current logic only updates the is_trashed flag on messages within.
-                        # If Thread model itself has state, update threads_to_process separately.
+                    elif flag == "archived":
+                        batch_update_data["is_archived"] = value
+                        batch_update_data["archived_at"] = (
+                            current_time if value else None
+                        )
+                    # Note: Trashing or Archiving a thread might have other side effects (e.g., updating thread state)
+                    # This current logic only updates the is_trashed or is_archived flag on messages within.
+                    # If Thread model itself has state, update threads_to_process separately.
 
                     # Apply the update to messages within the selected threads
                     messages_in_threads_qs.update(**batch_update_data)

@@ -86,17 +86,17 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         auth_data = request.auth
         channel = auth_data["channel"]
 
-        unverified_sender_email = data.get("email")
+        sender_email = data.get("email")
         message_text = data.get("textBody", "")
 
-        if not unverified_sender_email:
+        if not sender_email:
             return Response(
                 {"detail": "Missing email"}, status=status.HTTP_400_BAD_REQUEST
             )
 
         # Validate the sender email format with django's email validator
         try:
-            validate_email(unverified_sender_email)
+            validate_email(sender_email)
         except ValidationError:
             return Response(
                 {"detail": "Invalid email format"}, status=status.HTTP_400_BAD_REQUEST
@@ -121,57 +121,39 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             target_email = str(mailbox)
             target_name = str(mailbox)
 
-        default_sender_email = (
-            channel.settings.get("default_sender_email") or "widget@noreply.invalid"
-        )
-        default_sender_name = channel.settings.get("default_sender_name") or "Widget"
+        def sanitize_header(header: str) -> str:
+            return header.replace("\r", "").replace("\n", "")[0:1000]
 
-        # Once we have means to authenticate senders (JWT?) we'll set them here.
-        # For now, we use a default sender configured in the channel.
-        sender_email = default_sender_email
-        sender_name = default_sender_name
-
-        intro_text = (
-            channel.settings.get("intro_text")
-            or "The following message was received from a widget:"
-        )
-
-        escaped_email = html_escape(unverified_sender_email)
-        signature = [
-            (
-                "Sender",
-                f"<a href='mailto:{escaped_email}'>{escaped_email}</a> (❌ Unverified)",
-            ),
-            ("IP", request.META.get("REMOTE_ADDR")),  # TODO geoip
-            (
-                "Page",
+        prepend_headers = [("X-StMsg-Sender-Auth", "none")]
+        if request.META.get("HTTP_REFERER"):
+            prepend_headers.append(
                 (
-                    f"<a href='{html_escape(request.META.get('HTTP_REFERER'))}'"
-                    + " target='_blank' rel='noopener noreferrer'>"
-                    + f"{html_escape(request.META.get('HTTP_REFERER'))}</a>"
+                    "X-StMsg-Widget-Referer",
+                    sanitize_header(request.META.get("HTTP_REFERER")),
                 ),
+            )
+        prepend_headers.append(
+            (
+                "Received",
+                f"from widget ({sanitize_header(request.META.get('REMOTE_ADDR'))})",
             ),
-        ]
-
-        message_text = (
-            intro_text
-            + "<br/><br/>"
-            + html_escape(message_text).replace("\n", "<br/>")
-            + "<br/><br/>--<br/>"
-            + "<br/>".join([f"{k}: {v}" for k, v in signature])
         )
 
         # Build a JMAP-like structured format that we could have got from parse_email_message()
         parsed_email = {
-            "subject": f"Message from {unverified_sender_email}",
-            "from": {"name": sender_name, "email": sender_email},
+            "subject": "Message from widget",
+            "from": {"email": sender_email},
             "to": [{"name": target_name, "email": target_email}],
             "date": timezone.now(),
-            "htmlBody": [{"content": message_text}],
+            "htmlBody": [{"content": html_escape(message_text).replace("\n", "<br/>")}],
+            "textBody": [{"content": message_text}],
         }
 
         delivered = deliver_inbound_message(
-            target_email, parsed_email, compose_email(parsed_email), channel=channel
+            target_email,
+            parsed_email,
+            compose_email(parsed_email, prepend_headers=prepend_headers),
+            channel=channel,
         )
 
         if not delivered:
@@ -183,7 +165,7 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         logger.info(
             "Successfully created message from widget for channel %s, sender: %s",
             channel.id,
-            unverified_sender_email,
+            sender_email,
         )
 
         return Response(

@@ -35,4 +35,9 @@ export interface DraftMessageRequestRequest {
   bcc?: string[];
   /** List of attachment objects with blobId, partId, and name */
   attachments?: DraftMessageRequestRequestAttachmentsItem[];
+  /**
+   * ID of the signature template to use
+   * @nullable
+   */
+  signatureId?: string | null;
 }

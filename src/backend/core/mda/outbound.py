@@ -44,6 +44,7 @@ def prepare_outbound_message(
     message: models.Message,
     text_body: str,
     html_body: str,
+    user: Optional[models.User] = None,
 ) -> bool:
     """Compose and sign an existing draft Message object before sending via SMTP.
 
@@ -63,6 +64,37 @@ def prepare_outbound_message(
 
     # Generate a MIME id
     message.mime_id = message.generate_mime_id()
+
+    # Insert the validated signature
+    validated_signature = mailbox_sender.get_validated_signature(
+        message.signature.id if message.signature else None
+    )
+    if message.signature != validated_signature:
+        message.signature = validated_signature
+        message.save(update_fields=["signature"])
+    if message.signature:
+        try:
+            signatures = message.signature.render_template(
+                mailbox=mailbox_sender, user=user
+            )
+            if signatures:
+                text_body = (
+                    text_body + "\n" + signatures["text_body"]
+                    if text_body
+                    else signatures["text_body"]
+                )
+                html_body = (
+                    html_body + signatures["html_body"]
+                    if html_body
+                    else signatures["html_body"]
+                )
+        except Exception as e:
+            logger.error(
+                "Failed to render signature %s for message %s: %s",
+                message.signature.id,
+                message.id,
+                e,
+            )
 
     # Handle reply and forward message embedding
     if message.parent:
@@ -216,8 +248,6 @@ def send_message(message: models.Message, force_mta_out: bool = False):
         message.sent_at = timezone.now()
         message.save(update_fields=["sent_at"])
 
-        mime_data = parse_email_message(message.blob.get_content())
-
         # Include all recipients in the envelope that have not been delivered yet, including BCC
         envelope_to = {
             recipient.contact.email: recipient
@@ -296,14 +326,18 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                 )
 
         external_recipients = set()
+        parsed_email = None
+        blob_content = message.blob.get_content()
         for recipient_email in envelope_to:
             if (
                 check_local_recipient(recipient_email, create_if_missing=True)
                 and not force_mta_out
             ):
                 try:
+                    if parsed_email is None:
+                        parsed_email = parse_email_message(blob_content)
                     delivered = deliver_inbound_message(
-                        recipient_email, mime_data, message.blob.get_content()
+                        recipient_email, parsed_email, blob_content
                     )
                     _mark_delivered(recipient_email, delivered, True)
                 except Exception as e:
@@ -319,7 +353,9 @@ def send_message(message: models.Message, force_mta_out: bool = False):
 
         if external_recipients:
             try:
-                statuses = send_outbound_message(external_recipients, message)
+                statuses = send_outbound_message(
+                    external_recipients, message, blob_content
+                )
                 for recipient_email, status in statuses.items():
                     _mark_delivered(
                         recipient_email,
@@ -345,14 +381,14 @@ def send_message(message: models.Message, force_mta_out: bool = False):
 
 
 def send_outbound_message(
-    recipient_emails: set[str], message: models.Message
+    recipient_emails: set[str], message: models.Message, mime_data: bytes
 ) -> dict[str, Any]:
     """Send an existing Message object via MTA out (SMTP) or direct MX if not configured."""
 
     return send_outbound_email(
         recipient_emails,
         message.sender.email,
-        message.blob.get_content(),
+        mime_data,
         message.sender.mailbox.domain.custom_attributes or {},
     )
 

@@ -12,7 +12,7 @@ from django.core.exceptions import ValidationError
 from django.db.utils import Error as DjangoDbError
 from django.utils import timezone
 
-from core import models
+from core import enums, models
 from core.ai.call_label import assign_label_to_thread
 from core.ai.thread_summarizer import summarize_thread
 from core.ai.utils import (
@@ -426,15 +426,20 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
             else:
                 snippet = "(No snippet available)"  # Absolute fallback
 
+            # Truncate subject to 255 characters if it exceeds max_length
+            thread_subject = parsed_email.get("subject")
+            if thread_subject and len(thread_subject) > 255:
+                thread_subject = thread_subject[:255]
+
             thread = models.Thread.objects.create(
-                subject=parsed_email.get("subject"),
+                subject=thread_subject,
                 snippet=snippet,
             )
             # Create a thread access for the sender mailbox
             models.ThreadAccess.objects.create(
                 thread=thread,
                 mailbox=mailbox,
-                role=models.ThreadAccessRoleChoices.EDITOR,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
             )
     except (DjangoDbError, ValidationError) as e:
         logger.error("Failed to find or create thread for %s: %s", recipient_email, e)
@@ -541,10 +546,15 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
             content_type="message/rfc822",
         )
 
+        # Truncate subject to 255 characters if it exceeds max_length
+        subject = parsed_email.get("subject")
+        if subject and len(subject) > 255:
+            subject = subject[:255]
+
         message = models.Message.objects.create(
             thread=thread,
             sender=sender_contact,
-            subject=parsed_email.get("subject"),
+            subject=subject,
             blob=blob,
             mime_id=parsed_email.get("messageId", parsed_email.get("message_id"))
             or None,
@@ -588,11 +598,23 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
         return False
 
     # --- 6. Create Recipient Contacts and Links --- #
-    recipient_types_to_process = [
-        (models.MessageRecipientTypeChoices.TO, parsed_email.get("to", [])),
-        (models.MessageRecipientTypeChoices.CC, parsed_email.get("cc", [])),
-        (models.MessageRecipientTypeChoices.BCC, parsed_email.get("bcc", [])),
-    ]
+    # deduplicate recipients
+    recipient_types_to_process = []
+    for type_choice, type_name in [
+        (models.MessageRecipientTypeChoices.TO, "to"),
+        (models.MessageRecipientTypeChoices.CC, "cc"),
+        (models.MessageRecipientTypeChoices.BCC, "bcc"),
+    ]:
+        recipients = list(
+            {
+                frozenset(recipient.items())
+                for recipient in parsed_email.get(type_name, [])
+            }
+        )
+        recipient_types_to_process.append(
+            (type_choice, [dict(recipient) for recipient in recipients])
+        )
+
     for recipient_type, recipients_list in recipient_types_to_process:
         for recipient_data in recipients_list:
             email = recipient_data.get("email")

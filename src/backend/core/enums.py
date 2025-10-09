@@ -107,3 +107,11 @@ class MailboxAbilities(models.TextChoices):
     CAN_VIEW_MESSAGES = "view_messages", "Can view mailbox messages"
     CAN_SEND_MESSAGES = "send_messages", "Can send messages from mailbox"
     CAN_MANAGE_LABELS = "manage_labels", "Can manage mailbox labels"
+
+
+class MessageTemplateTypeChoices(models.IntegerChoices):
+    """Defines the possible types of message templates."""
+
+    REPLY = 1, "reply"
+    NEW_MESSAGE = 2, "new_message"
+    SIGNATURE = 3, "signature"

@@ -70,7 +70,7 @@ class TestPlaceholderView:
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert data["full_name"] == "Full name"
+        assert data["name"] == "Name"
         assert data["job_title"] == "Job title"
         assert data["is_elected"] == "Is elected"
 
@@ -121,7 +121,7 @@ class TestPlaceholderView:
         data = response.json()
         assert data["job_title"] == "Fonction"
         assert data["is_elected"] == "Est élu"
-        assert data["full_name"] == "Nom complet"
+        assert data["name"] == "Nom"
 
         # Test that fallback language handling works correctly.
         response = api_client.get(url, HTTP_ACCEPT_LANGUAGE="de-de")
@@ -129,4 +129,4 @@ class TestPlaceholderView:
         data = response.json()
         assert data["job_title"] == "Job title"
         assert data["is_elected"] == "Is elected"
-        assert data["full_name"] == "Full name"
+        assert data["name"] == "Name"

@@ -207,8 +207,11 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
      * Unselect the current thread and navigate to the mailbox page if needed
      */
     const unselectThread = () => {
-        if (selectedMailbox && router.query.threadId) {
-            router.push(`/mailbox/${selectedMailbox!.id}?${searchParams}`);
+        if (typeof window === 'undefined') return;
+
+        const threadId = router.query.threadId as string | undefined;
+        if (selectedMailbox && threadId && window.location.pathname.includes(threadId)) {
+            router.push(`/mailbox/${selectedMailbox!.id}${window.location.search}`);
         }
     }
 

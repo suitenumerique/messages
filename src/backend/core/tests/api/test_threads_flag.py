@@ -22,7 +22,7 @@ FLAG_API_URL = reverse("change-flag")
 # Removed TestThreadsBulkDelete class
 
 
-def test_trash_single_thread_success(api_client):
+def test_api_flag_trash_single_thread_success(api_client):
     """Test marking a single thread as trashed successfully via flag endpoint."""
     user = factories.UserFactory()
     api_client.force_authenticate(user=user)
@@ -62,7 +62,7 @@ def test_trash_single_thread_success(api_client):
     assert msg2.trashed_at is not None
 
 
-def test_untrash_single_thread_success(api_client):
+def test_api_flag_untrash_single_thread_success(api_client):
     """Test marking a single thread as untrashed successfully via flag endpoint."""
     user = factories.UserFactory()
     api_client.force_authenticate(user=user)
@@ -106,7 +106,7 @@ def test_untrash_single_thread_success(api_client):
     assert msg2.trashed_at is None
 
 
-def test_trash_multiple_threads_success(api_client):
+def test_api_flag_trash_multiple_threads_success(api_client):
     """Test marking multiple threads as trashed successfully."""
     user = factories.UserFactory()
     api_client.force_authenticate(user=user)
@@ -170,7 +170,7 @@ def test_trash_multiple_threads_success(api_client):
     assert msg3.is_trashed is True  # Remained trashed
 
 
-def test_trash_thread_unauthorized(api_client):
+def test_api_flag_trash_thread_unauthorized(api_client):
     """Test trashing a thread without authentication."""
     thread = factories.ThreadFactory()
     data = {"flag": "trashed", "value": True, "thread_ids": [str(thread.id)]}
@@ -178,7 +178,7 @@ def test_trash_thread_unauthorized(api_client):
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-def test_trash_thread_no_permission(api_client):
+def test_api_flag_trash_thread_no_permission(api_client):
     """Test trashing a thread the user doesn't have access to."""
     user = factories.UserFactory()
     api_client.force_authenticate(user=user)
@@ -209,7 +209,7 @@ def test_trash_thread_no_permission(api_client):
     )  # Verify thread wasn't deleted
 
 
-def test_trash_non_existent_thread(api_client):
+def test_api_flag_trash_non_existent_thread(api_client):
     """Test trashing a thread that does not exist."""
     user = factories.UserFactory()
     api_client.force_authenticate(user=user)

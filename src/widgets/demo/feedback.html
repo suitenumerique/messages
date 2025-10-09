@@ -46,7 +46,8 @@
       _stmsg_widget.push(["feedback", "init", {
         "title": "Do you have any feedback?",
         "api": "http://localhost:8905/demo/api.json?",
-        "channel": "xyz-xyz-xyz"
+        "channel": "xyz-xyz-xyz",
+        "successText2": "We will get back to you as soon as possible. Let's add some text too to test the widget behaving correctly."
       }]);
     </script>
 
@@ -81,5 +82,17 @@
       }]);
     '>Re-init with submit error</button>
     
+    <br/><br/>
+
+    <button onclick='
+      _stmsg_widget.push(["feedback", "init", {
+        "title": "With offset",
+        "api": "/demo/api.json?",
+        "channel": "xyz-xyz-xyz",
+        "bottomOffset": 100,
+        "rightOffset": 50
+      }]);
+    '>Re-init with position offset</button>
+    
   </body>
-</html> 
+</html>

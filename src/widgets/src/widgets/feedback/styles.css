@@ -1,8 +1,6 @@
 /* Widget styles */
 #wrapper {
   position: fixed;
-  bottom: 100px;
-  right: 20px;
   z-index: 1000;
   width: 350px;
   height: 400px;
@@ -11,18 +9,22 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 #header {
   background: #000091;
   color: white;
-  padding: 16px;
-  font-weight: 600;
-  font-size: 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  border-radius: 12px 12px 0 0;
+}
+
+h6 {
+  padding: 16px;
+  font-weight: 600;
+  font-size: 16px;
+  margin: 0;
 }
 
 #close {
@@ -31,19 +33,22 @@
   color: white;
   cursor: pointer;
   font-size: 18px;
-  padding: 0;
+  margin-right: 12px;
   width: 24px;
   height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-#close:hover {
-  opacity: 0.8;
+  border-radius: 8px;
 }
 
 #content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+form {
   flex: 1;
   padding: 16px;
   display: flex;
@@ -59,7 +64,7 @@
   font-size: 14px;
 }
 
-textarea {
+#feedback-text {
   flex: 1;
   border: 1px solid #e0e0e0;
   border-radius: 8px;
@@ -69,10 +74,10 @@ textarea {
   resize: none;
 }
 
-button[type="submit"] {
+#submit {
   background: #000091;
   color: white;
-  border: none;
+  border: 2px solid #000091;
   border-radius: 8px;
   padding: 12px;
   font-weight: 600;
@@ -80,8 +85,20 @@ button[type="submit"] {
   transition: background 0.2s;
 }
 
-button[type="submit"]:hover {
+#submit:hover,
+#close:hover {
   background: #1212ff;
+}
+
+#feedback-text:focus,
+#email:focus,
+#submit:focus {
+  outline: 2px solid #0a76f6;
+  border-color: white;
+}
+
+#close:focus {
+  outline: 2px solid white;
 }
 
 #status {
@@ -90,22 +107,52 @@ button[type="submit"]:hover {
   text-align: center;
 }
 
-.success {
-  color: #28a745;
-  display:table;
-  margin:40px auto;
+#success {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
 }
 
-.error {
+#success i {
+  background: #27a658;
+  color: white;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 20px;
+  font-style: normal;
+}
+
+#success p {
+  color: #0f4e27;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 30px;
+}
+
+#error {
   color: #dc3545;
-} 
+  margin-bottom: 12px;
+}
+#error:empty {
+  margin: 0;
+}
 
 /* Responsive */
 @media (max-width: 420px) {
   #wrapper {
     width: 100%;
-    right:0px;
+    right: 0px !important;
     border-radius: 0;
-    bottom:75px;
   }
 }

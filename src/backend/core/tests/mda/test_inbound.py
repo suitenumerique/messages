@@ -672,7 +672,7 @@ class TestDeliverInboundMessage:
     def test_deliver_message_with_very_long_subject(
         self, target_mailbox, raw_email_data
     ):
-        """Test delivery of message with subject exceeding max_length."""
+        """Test delivery of message with subject exceeding max_length gets truncated."""
         recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
 
         # Create parsed email with very long subject
@@ -688,12 +688,25 @@ class TestDeliverInboundMessage:
             "date": timezone.now(),
         }
 
-        # This should fail due to max_length constraint
+        # This should now succeed with truncated subject
         success = deliver_inbound_message(
             recipient_addr, parsed_email_long_subject, raw_email_data
         )
-        assert success is False
-        assert models.Message.objects.count() == 0
+        assert success is True
+        assert models.Message.objects.count() == 1
+        assert models.Thread.objects.count() == 1
+
+        # Verify the subject was truncated to 255 characters
+        message = models.Message.objects.first()
+        thread = models.Thread.objects.first()
+
+        assert len(message.subject) == 255
+        assert len(thread.subject) == 255
+        assert message.subject == "A" * 255  # Truncated version
+        assert thread.subject == "A" * 255  # Truncated version
+        assert (
+            message.subject == thread.subject
+        )  # Both should be the same truncated value
 
     def test_thread_subject_consistency_with_empty_subject(
         self, target_mailbox, raw_email_data

@@ -114,7 +114,7 @@ update:  ## Update the project with latest changes
 	@$(MAKE) migrate
 	@$(MAKE) front-install-frozen
 	@$(MAKE) widgets-install
-	# @$(MAKE) back-i18n-compile
+	@$(MAKE) i18n-compile
 .PHONY: update
 
 # -- Docker/compose
@@ -165,6 +165,7 @@ lint: \
   back-lint \
   front-lint \
   front-ts-check \
+  widgets-lint \
   mta-in-lint \
   mta-out-lint
 .PHONY: lint
@@ -374,8 +375,7 @@ crowdin-upload: ## Upload source translations to crowdin
 
 i18n-compile: ## compile all translations
 i18n-compile: \
-	back-i18n-compile \
-	front-i18n-compile
+	back-i18n-compile
 .PHONY: i18n-compile
 
 i18n-generate: ## create the .pot files and extract frontend messages
@@ -416,7 +416,7 @@ help:
 .PHONY: help
 
 front-shell: ## open a shell in the frontend container
-	@$(COMPOSE) run --rm --build frontend-tools /bin/sh
+	@$(COMPOSE) run --rm --build frontend-tools bash
 .PHONY: front-shell
 
 # Front
@@ -438,18 +438,9 @@ front-build: ## build the frontend locally
 	@$(COMPOSE) run --rm --build frontend-tools npm run build
 .PHONY: front-build
 
-front-i18n-extract: ## Extract the frontend translation inside a json to be used for crowdin
+front-i18n-generate: ## Extract the frontend translation inside a json to be used for crowdin
 	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:extract
 .PHONY: front-i18n-extract
-
-front-i18n-generate: ## Generate the frontend json files used for crowdin
-	crowdin-download-sources \
-	front-i18n-extract
-.PHONY: front-i18n-generate
-
-front-i18n-compile: ## Format the crowdin json files used deploy to the apps
-	@$(COMPOSE) run --rm --build frontend-tools npm run i18n:deploy
-.PHONY: front-i18n-compile
 
 back-api-update: ## Update the OpenAPI schema
 	bin/update_openapi_schema
@@ -474,13 +465,37 @@ widgets-build: ## build the widgets
 	$(COMPOSE) run --build --rm widgets-dev npm run build
 .PHONY: widgets-build
 
+widgets-lint: ## lint the widgets
+	$(COMPOSE) run --build --rm widgets-dev npm run lint
+.PHONY: widgets-lint
+
 widgets-shell: ## open a shell in the widgets container
 	$(COMPOSE) run --build --rm widgets-dev /bin/sh
 .PHONY: widgets-shell
 
 widgets-start: ## start the widgets container
 	$(COMPOSE) up --force-recreate --build -d widgets-dev --wait
+	@echo "$(BOLD)"
+	@echo "╔══════════════════════════════════════════════════════════════════════════════╗"
+	@echo "║                                                                              ║"
+	@echo "║  🚀 Widgets development server with Live Reload is started! 🚀               ║"
+	@echo "║                                                                              ║"
+	@echo "║  Open your browser at http://localhost:8905                                  ║"
+	@echo "║                                                                              ║"
+	@echo "╚══════════════════════════════════════════════════════════════════════════════╝"
+	@echo "$(RESET)"
 .PHONY: widgets-start
+
+widgets-stop: ## stop the widgets container
+	$(COMPOSE) stop widgets-dev
+.PHONY: widgets-stop
+
+widgets-restart: ## restart the widgets container and rebuild
+widgets-restart: \
+	widgets-stop \
+	widgets-build \
+	widgets-start
+.PHONY: widgets-restart
 
 widgets-deploy: ## deploy the widgets to an S3 bucket
 	@## Error if the env vars MESSAGES_WIDGETS_S3_PATH is not set
@@ -498,8 +513,8 @@ api-update: \
 .PHONY: api-update
 
 search-index: ## Create and/or reindex opensearch data
-	@$(MANAGE) es_create_index
-	@$(MANAGE) es_reindex --all
+	@$(MANAGE) search_index_create
+	@$(MANAGE) search_reindex --all
 .PHONY: search-index
 
 mta-in-poetry-lock: ## lock the dependencies

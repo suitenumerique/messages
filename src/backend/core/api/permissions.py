@@ -225,7 +225,7 @@ class IsAllowedToCreateMessage(IsAuthenticated):
                 if models.ThreadAccess.objects.filter(
                     thread=parent_message.thread,
                     mailbox=view.mailbox,
-                    role=models.ThreadAccessRoleChoices.EDITOR,
+                    role=enums.ThreadAccessRoleChoices.EDITOR,
                 ).exists():
                     return True
             except models.Message.DoesNotExist:
@@ -243,7 +243,7 @@ class IsAllowedToCreateMessage(IsAuthenticated):
                 if not models.ThreadAccess.objects.filter(
                     thread=draft_message.thread,
                     mailbox=view.mailbox,
-                    role=models.ThreadAccessRoleChoices.EDITOR,
+                    role=enums.ThreadAccessRoleChoices.EDITOR,
                 ).exists():
                     return False
             except models.Message.DoesNotExist:
@@ -449,3 +449,15 @@ class HasMetricsApiKey(permissions.BasePermission):
             request.headers.get("Authorization") or "",
             f"Bearer {settings.METRICS_API_KEY}",
         )
+
+
+class HasAccessToMailbox(IsAuthenticated):
+    """Allows access only to users with the access to the mailbox."""
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+
+        return models.MailboxAccess.objects.filter(
+            user=request.user, mailbox=view.kwargs.get("mailbox_id")
+        ).exists()

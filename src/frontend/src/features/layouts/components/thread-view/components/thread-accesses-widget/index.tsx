@@ -80,7 +80,7 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
         // TODO : Update Share Modal to hide the remove button if there is only one editor
         if (hasOnlyOneEditor && access.role === ThreadAccessRoleChoices.editor) {
             addToast(<ToasterItem type="error">
-                <p>{t('thread_accesses_widget.last_editor_deletion_forbidden')}</p>
+                <p>{t('You cannot delete the last editor of this thread')}</p>
             </ToasterItem>, {
                 toastId: "last-editor-deletion-forbidden",
                 autoClose: 3000,
@@ -93,7 +93,7 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
         }, {
             onSuccess: () => {
                 addToast(<ToasterItem>
-                    <p>{t('thread_accesses_widget.access_removed')}</p>
+                    <p>{t('Thread access removed')}</p>
                 </ToasterItem>);
             }
         });
@@ -101,7 +101,7 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
 
     const accessRoleOptions = (isDisabled?: boolean) => Object.values(ThreadAccessRoleChoices).map((role) => {
         return {
-            label: t(`roles.${role}`),
+            label: t(`thread_roles_${role}`, { ns: 'roles' }),
             value: role,
             isDisabled: isDisabled ?? (hasOnlyOneEditor && role !== ThreadAccessRoleChoices.editor),
         }
@@ -109,7 +109,7 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
 
     return (
         <>
-            <Tooltip content={t('thread_accesses_widget.see_members')}>
+            <Tooltip content={t('See members of this conversation')}>
                 <Button color="tertiary-text" size="small" className="thread-accesses-widget" onClick={() => setIsShareModalOpen(true)}>
                     <ThreadAccessesList accesses={accesses} />
                     <div className="thread-accesses-widget__item thread-accesses-widget__item--count">
@@ -118,7 +118,7 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
                 </Button>
             </Tooltip>
             <ShareModal<MailboxLight, MailboxLight, ThreadAccessDetail>
-                modalTitle={t('thread_accesses_widget.share_access')}
+                modalTitle={t('Share access')}
                 isOpen={isShareModalOpen}
                 loading={searchMailboxesQuery.isLoading}
                 canUpdate={canManageThreadAccess}
@@ -133,7 +133,7 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
                 accesses={normalizedAccesses}
                 accessRoleTopMessage={(access) => {
                     if (hasOnlyOneEditor && access.role === ThreadAccessRoleChoices.editor) {
-                        return t('thread_accesses_widget.last_editor_role_top_message');
+                        return t('You are the last editor of this thread, you cannot therefore modify your access.');
                     }
                 }}
             />

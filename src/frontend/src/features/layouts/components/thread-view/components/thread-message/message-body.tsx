@@ -58,7 +58,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
             FORBID_TAGS: ['script', 'object', 'iframe', 'embed', 'audio', 'video'],
             ADD_ATTR: ['target', 'rel'],
         });
-    }, []);
+    }, [rawHtmlBody, rawTextBody]);
 
     const wrappedHtml = useMemo(() => {
         return `
@@ -75,6 +75,10 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
                     font-size: 14px;
                     color: #24292e;
+                }
+                body > *:first-child {
+                    margin-top: 0;
+                    padding-top: 0 !important;
                 }
                 *:not(:last-child) {
                     margin-bottom: 1em;
@@ -150,7 +154,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
                 details.addEventListener('toggle', resizeIframe);
 
                 const summary = doc.createElement('summary');
-                summary.textContent = t('message_body.show_embedded_message');
+                summary.textContent = t('Show embedded message');
                 details.appendChild(summary);
                 details.appendChild(node);
                 parentElement?.appendChild(details);

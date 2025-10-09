@@ -16,7 +16,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core import models
+from core import enums, models
 from core.mda.draft import create_draft, update_draft
 
 from .. import permissions, serializers
@@ -78,6 +78,11 @@ logger = logging.getLogger(__name__)
                 default=list,
                 help_text="List of attachment objects with blobId, partId, and name",
             ),
+            "signatureId": drf_serializers.UUIDField(
+                required=False,
+                allow_null=True,
+                help_text="ID of the signature template to use",
+            ),
         },
     ),
     responses={
@@ -126,6 +131,7 @@ logger = logging.getLogger(__name__)
                 "to": ["recipient@example.com"],
                 "cc": ["cc@example.com"],
                 "bcc": ["bcc@example.com"],
+                "signatureId": "123e4567-e89b-12d3-a456-426614174000",
             },
         ),
         OpenApiExample(
@@ -144,6 +150,7 @@ logger = logging.getLogger(__name__)
                 "subject": "Updated subject",
                 "draftBody": json.dumps({"arbitrary": "new json content"}),
                 "to": ["new-recipient@example.com"],
+                "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                 "attachments": [
                     {
                         "partId": "att-1",
@@ -169,6 +176,7 @@ class DraftMessageView(APIView):
         - cc: list[str] (optional)
         - bcc: list[str] (optional)
         - attachmentIds: list[str] (optional, IDs of previously uploaded blobs)
+        - signatureId: str (optional, ID of the signature template to use)
         Return newly created draft message
 
     PUT /api/v1.0/draft/{message_id}/ with expected data:
@@ -178,6 +186,7 @@ class DraftMessageView(APIView):
         - cc: list[str] (optional)
         - bcc: list[str] (optional)
         - attachmentIds: list[str] (optional, IDs of previously uploaded blobs)
+        - signatureId: str (optional, ID of the signature template to use)
         Return updated draft message
     """
 
@@ -212,6 +221,7 @@ class DraftMessageView(APIView):
             cc_emails=request.data.get("cc", []),
             bcc_emails=request.data.get("bcc", []),
             attachments=request.data.get("attachments", []),
+            signature_id=request.data.get("signatureId"),
         )
 
         # Refresh to get latest data
@@ -250,7 +260,7 @@ class DraftMessageView(APIView):
                 is_draft=True,
                 # Ensure the user has access to this thread
                 thread__accesses__mailbox=sender_mailbox,
-                thread__accesses__role=models.ThreadAccessRoleChoices.EDITOR,
+                thread__accesses__role=enums.ThreadAccessRoleChoices.EDITOR,
             )
         except models.Message.DoesNotExist as exc:
             raise drf.exceptions.NotFound(

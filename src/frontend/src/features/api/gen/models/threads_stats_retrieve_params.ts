@@ -9,6 +9,10 @@ import type { ThreadsStatsRetrieveStatsFields } from "./threads_stats_retrieve_s
 
 export type ThreadsStatsRetrieveParams = {
   /**
+   * Filter threads that are archived (1=true, 0=false).
+   */
+  has_archived?: number;
+  /**
    * Filter threads with attachments (1=true, 0=false).
    */
   has_attachments?: number;

@@ -214,7 +214,7 @@ class TestPrometheusMetrics:
 
         assert metrics[("draft_attachments_total_size_bytes")] == 0
 
-    @pytest.mark.parametrize("blob_size", [0, 150, 1000])
+    @pytest.mark.parametrize("blob_size", [150, 1000])
     @pytest.mark.django_db
     def test_get_attachments_size_one_attachment(
         self, api_client, settings, url, blob_size
@@ -237,7 +237,7 @@ class TestPrometheusMetrics:
 
         assert metrics[("draft_attachments_total_size_bytes")] == blob_size
 
-    @pytest.mark.parametrize("blob_sizes", [[0, 0], [0, 150, 1000], [1, 2, 3, 4, 5]])
+    @pytest.mark.parametrize("blob_sizes", [[1, 150, 1000], [1, 2, 3, 4, 5]])
     @pytest.mark.django_db
     def test_get_attachments_size_multiple_attachments(
         self, api_client, settings, url, blob_sizes

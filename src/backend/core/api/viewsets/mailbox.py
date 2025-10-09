@@ -24,10 +24,6 @@ class MailboxViewSet(
     def get_queryset(self):
         """Restrict results to the current user's mailboxes."""
         user = self.request.user
-        # for superuser, return all mailboxes
-        if user.is_superuser and user.is_staff:
-            return models.Mailbox.objects.all()
-
         # For regular users, annotate with their actual role
         return (
             models.Mailbox.objects.filter(accesses__user=user)

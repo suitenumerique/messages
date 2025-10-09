@@ -129,7 +129,7 @@ export const AttachmentUploader = ({
 
     return (
         <Field
-            text={isFileTooLarge ? t("message_form.attachments_uploader.errors.file_too_large", { size: AttachmentHelper.getFormattedSize(MAX_ATTACHMENT_SIZE, i18n.language) }) : t("message_form.attachments_uploader.helper_text", { size: AttachmentHelper.getFormattedSize(MAX_ATTACHMENT_SIZE, i18n.language) })}
+            text={isFileTooLarge ? t("The file is too large. It must be less than {{size}}.", { size: AttachmentHelper.getFormattedSize(MAX_ATTACHMENT_SIZE, i18n.language) }) : t("Attachments must be less than {{size}}.", { size: AttachmentHelper.getFormattedSize(MAX_ATTACHMENT_SIZE, i18n.language) })}
             state={isFileTooLarge ? 'error' : 'default'}
             fullWidth
         >
@@ -142,18 +142,22 @@ export const AttachmentUploader = ({
                     type="button"
                     disabled={disabled}
                 >
-                    {t("message_form.attachments_uploader.input_label")}
+                    {t("Add attachments")}
                 </Button>
                 <DriveAttachmentPicker onPick={handleDriveAttachmentPick} />
                 <p className="attachment-uploader__input__helper-text">
-                    {t("message_form.attachments_uploader.or_drag_and_drop")}
+                    {t("or drag and drop some files")}
                 </p>
                 <input {...getInputProps()} />
             </div>
             { [...attachments, ...uploadingQueue, ...failedQueue].length > 0 && (
                 <div className="attachment-uploader__bucket">
                     <p className="attachment-bucket__counter">
-                        <strong>{t("attachments.counter", { count: attachments.length })}</strong>{' '}
+                        <strong>
+                        {attachments.length > 0
+                            ? t("{{count}} attachments", { count: attachments.length, defaultValue_one: "{{count}} attachment" })
+                            : t("No attachments")}
+                        </strong>{' '}
                         ({AttachmentHelper.getFormattedTotalSize(attachments, i18n.resolvedLanguage)})
                     </p>
                     <div className="attachment-bucket__list">
@@ -165,7 +169,7 @@ export const AttachmentUploader = ({
                                 errorAction={() => uploadFile(entry)}
                                 onDelete={() => removeToFailedQueue([entry])}
                                 canDownload={false}
-                                errorMessage={t("message_form.attachments_uploader.error_message")}
+                                errorMessage={t("The upload failed. Please try again.")}
                             />
                         ))}
                         {uploadingQueue.map((entry) => (

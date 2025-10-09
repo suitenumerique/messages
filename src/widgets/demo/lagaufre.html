@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>La Gaufre Widget Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .demo-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .demo-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+        }
+        .demo-section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        button {
+            background: #000091;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1212ff;
+        }
+        .code-block {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 14px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <a href="/">Back to index</a>
+        <h1>La Gaufre Widget Demo</h1>
+        <p>This demo shows how to use the La Gaufre widget to display a list of services with subscription status.</p>
+
+        <div class="demo-section">
+            <h3>Basic Usage</h3>
+            <p>Open the widget with default settings:</p>
+            <button onclick="openBasicWidget(this)">Open La Gaufre Widget</button>
+            <div class="code-block"><pre>
+_stmsg_widget.push(['lagaufre', 'init', {
+    api: '/demo/lagaufre-data.json',
+    open: true
+}]);</pre></div>
+        </div>
+
+        <div class="demo-section">
+            <h3>With ANCT Data</h3>
+            <p>Open the widget with ANCT services data:</p>
+            <button onclick="openBasicWidget(this)">Open with ANCT Data</button>
+            <div class="code-block"><pre>
+_stmsg_widget.push(['lagaufre', 'init', {
+    api: 'https://operateurs.suite.anct.gouv.fr/api/v1.0/lagaufre/services/?operator=9f5624fc-ef99-4d10-ae3f-403a81eb16ef&siret=21870030000013',
+    open: true
+}]);</pre></div>
+        </div>
+
+        <div class="demo-section">
+            <h3>With LaSuite data and style</h3>
+            <p>Open the widget with gradient background:</p>
+            <button onclick="openBasicWidget(this)">Open with LaSuite Data</button>
+            <div class="code-block"><pre>
+// With gradient background
+_stmsg_widget.push(['lagaufre', 'init', {
+    api: 'https://lasuite.numerique.gouv.fr/api/services',
+    open: true,
+    background: 'linear-gradient(180deg, #eceffd 0%, #FFFFFF 20%)',
+    headerLogo: 'https://lasuite.numerique.gouv.fr/_next/static/media/suite-numerique.ebdb6ce9.svg',
+    headerUrl: 'https://lasuite.numerique.gouv.fr'
+}]);</pre></div>
+        </div>
+
+        <div class="demo-section">
+            <h3>With Custom Font</h3>
+            <p>Open the widget with custom font family:</p>
+            <button onclick="openBasicWidget(this)">Open with Custom Font</button>
+            <div class="code-block"><pre>
+// With custom font
+_stmsg_widget.push(['lagaufre', 'init', {
+    api: '/demo/lagaufre-data.json',
+    open: true,
+    fontFamily: 'Georgia, serif'
+}]);</pre></div>
+        </div>
+
+        <div class="demo-section">
+            <h3>Positioning Options</h3>
+            <p>Control widget position and behavior:</p>
+
+            <button onclick="openBasicWidget(this)">Top Right</button>
+            <div class="code-block"><pre>
+// Top Right positioning
+_stmsg_widget.push(['lagaufre', 'init', {
+    api: './lagaufre-data.json',
+    open: true,
+    title: 'La Gaufre - Top Right',
+    position: 'fixed',
+    top: 20,
+    right: 20
+}]);</pre></div>
+            
+            <button onclick="openBasicWidget(this)">Bottom Left</button>
+            <div class="code-block"><pre>
+// Bottom Left positioning
+_stmsg_widget.push(['lagaufre', 'init', {
+    api: './lagaufre-data.json',
+    open: true,
+    title: 'La Gaufre - Bottom Left',
+    position: 'fixed',
+    bottom: 20,
+    left: 20
+}]);</pre></div>
+            
+            <button onclick="openBasicWidget(this)">Below button (absolute)</button>
+            <div class="code-block"><pre>
+// Absolute positioning, tied to a button
+(button) => {
+    _stmsg_widget.push(['lagaufre', 'init', {
+        api: './lagaufre-data.json',
+        open: true,
+        title: 'La Gaufre - Bottom Left',
+        position: 'absolute',
+        top: button.offsetTop + button.offsetHeight + 10,
+        right: window.innerWidth - button.offsetLeft - button.offsetWidth
+    }]);
+}</pre></div>
+
+        </div>
+
+        <div class="demo-section">
+            <h3>With hardcoded data</h3>
+            <p>You can pass static data and avoid any API calls:</p>
+            <button onclick="openBasicWidget(this)">Open La Gaufre Widget</button>
+            <div class="code-block"><pre>
+_stmsg_widget.push(['lagaufre', 'init', {
+    open: true,
+    data: {
+        "services": [
+            {
+                "name": "Authentication Service",
+                "url": "https://example.com/auth",
+                "logo": "./logos/auth.svg",
+            },
+            {
+                "name": "Document Portal",
+                "url": "https://example.com/docs",
+                "logo": "./logos/docs.svg",
+            },
+        ]
+    }
+}]);</pre></div>
+        </div>
+
+        <div class="demo-section">
+            <h3>Open and close Widget Programmatically</h3>
+            <p>Close the widget programmatically after 2 seconds:</p>
+            <button onclick="openBasicWidget(this)">Open Widget</button>
+            <div class="code-block"><pre>
+_stmsg_widget.push(['lagaufre', 'init', {
+    api: '/demo/lagaufre-data.json'
+}]);
+setTimeout(() => {
+    _stmsg_widget.push(['lagaufre', 'open']);
+}, 300);
+setTimeout(() => {
+    _stmsg_widget.push(['lagaufre', 'close']);
+}, 2000);</pre></div>
+
+            <button onclick="openBasicWidget(this)">Toggle Widget Programmatically</button>
+            <div class="code-block"><pre>
+_stmsg_widget.push(['lagaufre', 'toggle']);</pre></div>
+
+        </div>
+
+        <div class="demo-section">
+            <h3>API Response Format</h3>
+            <p>The widget expects the following API response format:</p>
+            <div class="code-block"><pre>
+{
+  "services": [
+    {
+      "name": "Service Name",
+      "url": "https://service-url.com",
+      "maturity": "stable",
+      "logo": "/path/to.svg",
+      "subscribed": true
+    }
+  ]
+}</pre></div>
+        </div>
+    </div>
+
+    <!-- Load the La Gaufre widget -->
+    <script type="module" src="../src/widgets/lagaufre/main.ts"></script>
+    
+    <script>
+        // Initialize the widget system
+        window._stmsg_widget = window._stmsg_widget || [];
+        
+        function openBasicWidget(button) {
+            // Find the code block that immediately follows this button
+            const codeBlock = button.nextElementSibling;
+            
+            if (codeBlock && codeBlock.classList.contains('code-block')) {
+                // Extract the JavaScript code from the code block
+                const codeText = codeBlock.textContent.trim();
+                
+                // Remove comments and clean up the code
+                const cleanCode = codeText.replace(/^\/\/.*$/gm, '').trim();
+                
+                // Execute the code
+                try {
+                    var ret = eval(cleanCode);
+                    if (typeof ret === 'function') {
+                        return ret(button);;
+                    }
+                } catch (error) {
+                    console.error('Error executing widget code:', error);
+                    alert('Error executing widget code: ' + error.message);
+                }
+            } else {
+                console.error('No code block found after button');
+            }
+        }
+        
+    </script>
+</body>
+</html>

@@ -3,6 +3,8 @@
 Core application factories
 """
 
+import json
+
 from django.conf import settings
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
@@ -10,7 +12,7 @@ from django.utils import timezone
 import factory.fuzzy
 from faker import Faker
 
-from core import models
+from core import enums, models
 
 fake = Faker()
 
@@ -217,18 +219,6 @@ class LabelFactory(factory.django.DjangoModelFactory):
                 self.threads.add(thread)
 
 
-class BlobFactory(factory.django.DjangoModelFactory):
-    """A factory to random blobs for testing purposes."""
-
-    class Meta:
-        model = models.Blob
-
-    raw_content = factory.LazyAttribute(lambda o: b"Blob content")
-    content_type = factory.LazyAttribute(lambda o: "application/octet-stream")
-    size = factory.LazyAttribute(lambda o: len(o.raw_content))
-    mailbox = factory.SubFactory(MailboxFactory)
-
-
 class AttachmentFactory(factory.django.DjangoModelFactory):
     """A factory to random attachments for testing purposes."""
 
@@ -242,10 +232,8 @@ class AttachmentFactory(factory.django.DjangoModelFactory):
     @factory.lazy_attribute
     def blob(self):
         """Create a blob with specified size for the attachment."""
-        raw_content = b"x" * self.blob_size
-        return BlobFactory(
-            mailbox=self.mailbox, size=self.blob_size, raw_content=raw_content
-        )
+        content = b"x" * self.blob_size
+        return BlobFactory(mailbox=self.mailbox, content=content)
 
     @classmethod
     def _adjust_kwargs(cls, **kwargs):
@@ -268,3 +256,74 @@ class ChannelFactory(factory.django.DjangoModelFactory):
     type = factory.fuzzy.FuzzyChoice(["widget", "mta"])
     settings = factory.Dict({"config": {"enabled": True}})
     mailbox = factory.SubFactory(MailboxFactory)
+
+
+class BlobFactory(factory.django.DjangoModelFactory):
+    """A factory to create blobs for testing purposes."""
+
+    class Meta:
+        model = models.Blob
+
+    content = factory.LazyAttribute(lambda o: b"Blob content")
+    content_type = factory.LazyAttribute(lambda o: "application/octet-stream")
+
+    @classmethod
+    def _create(cls, model_class, *args, **kwargs):
+        """Override _create to create a mailbox or maildomain if not provided and create_blob."""
+        if not kwargs.get("mailbox") and not kwargs.get("maildomain"):
+            kwargs["mailbox"] = MailboxFactory()
+
+        content = kwargs.pop("content")
+        content_type = kwargs.pop("content_type", "application/octet-stream")
+        mailbox = kwargs.pop("mailbox", None)
+        maildomain = kwargs.pop("maildomain", None)
+        return models.Blob.objects.create_blob(
+            content=content,
+            content_type=content_type,
+            mailbox=mailbox,
+            maildomain=maildomain,
+        )
+
+
+class MessageTemplateFactory(factory.django.DjangoModelFactory):
+    """A factory to create message templates for testing purposes."""
+
+    class Meta:
+        model = models.MessageTemplate
+        skip_postgeneration_save = True
+
+    name = factory.Sequence(lambda n: f"Template {n}")
+    type = factory.fuzzy.FuzzyChoice(
+        [choice[0] for choice in enums.MessageTemplateTypeChoices.choices]
+    )
+
+    @classmethod
+    def _create(cls, model_class, *args, **kwargs):
+        """Override _create to handle content blob creation."""
+        # Extract content-related kwargs
+
+        html_body = kwargs.pop("html_body", fake.sentence(nb_words=10))
+        text_body = kwargs.pop("text_body", fake.text(max_nb_chars=100))
+        raw_body = kwargs.pop("raw_body", {"key": "value"})
+
+        # Create the template first
+        template = super()._create(model_class, *args, **kwargs)
+
+        # Only create content blob if one wasn't provided
+        if not template.blob:
+            content = {"html": html_body, "text": text_body, "raw": raw_body}
+
+            # Create content blob using the mailbox if available, otherwise use maildomain's first mailbox
+            mailbox = template.mailbox or (
+                template.maildomain.mailbox_set.first() if template.maildomain else None
+            )
+
+            template.blob = BlobFactory(
+                content=json.dumps(content).encode("utf-8"),
+                content_type="application/json",
+                mailbox=mailbox,
+                maildomain=template.maildomain if not mailbox else None,
+            )
+            template.save()
+
+        return template

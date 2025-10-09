@@ -1,9 +1,11 @@
 """API ViewSet for Message model."""
 
 from django.db.models import Exists, OuterRef
+from django.http import HttpResponse
 
 import rest_framework as drf
 from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
 
 from core import models
 
@@ -63,3 +65,23 @@ class MessageViewSet(
             message.delete()
             thread.update_stats()
         return drf.response.Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["get"], url_path="eml")
+    def eml(self, request, *args, **kwargs):
+        """Return the EML file for a message."""
+        text_plain = request.GET.get("text_plain", "0")
+        if text_plain == "1":
+            content_type = "text/plain; charset=utf-8"
+            headers = {}
+        else:
+            content_type = "message/rfc822; charset=utf-8"
+            headers = {
+                "Content-Disposition": 'attachment; filename="message.eml"',
+            }
+        message = self.get_object()
+        resp = HttpResponse(
+            message.blob.get_content(),
+            content_type=content_type,
+            headers=headers,
+        )
+        return resp

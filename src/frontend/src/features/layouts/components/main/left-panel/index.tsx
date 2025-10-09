@@ -4,6 +4,7 @@ import { HeaderRight } from "../header/authenticated";
 import { SurveyButton } from "@/features/ui/components/feedback-button";
 import { MailboxPanel } from "../../mailbox-panel";
 import { LanguagePicker } from "../language-picker";
+import { LagaufreButton } from "@/features/ui/components/lagaufre";
 
 export const LeftPanel = ({ hasNoMailbox = true }: { hasNoMailbox?: boolean }) => {
     const { user } = useAuth();
@@ -18,7 +19,10 @@ export const LeftPanel = ({ hasNoMailbox = true }: { hasNoMailbox?: boolean }) =
             </div>
             {isTablet &&
                 <div className="left-panel__footer">
-                    {user ? <HeaderRight /> : <LanguagePicker />}
+                    {user ? <HeaderRight /> : <>
+                        <LanguagePicker />
+                        <LagaufreButton />
+                    </>}
                 </div>
             }
             {process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL && (

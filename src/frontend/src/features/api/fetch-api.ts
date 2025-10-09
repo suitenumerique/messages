@@ -1,6 +1,7 @@
 // Inspired by https://github.com/orval-labs/orval/blob/master/samples/next-app-with-fetch/custom-fetch.ts
 
 import { logout } from "../auth";
+import { SESSION_EXPIRED_KEY } from "../config/constants";
 import { APIError } from "./api-error";
 import { getHeaders, getRequestUrl, isJson } from "./utils";
 
@@ -12,16 +13,17 @@ export const fetchAPI= async <T>(
   pathname: string,
   { params, logoutOn401, ...requestInit }: RequestInit & fetchAPIOptions & { params?: Record<string, string> } = {},
 ): Promise<T> => {
-  const requesUrl = getRequestUrl(pathname, params);
+  const requestUrl = getRequestUrl(pathname, params);
   const isMultipartFormData = requestInit.body instanceof FormData;
 
-  const response = await fetch(requesUrl, {
+  const response = await fetch(requestUrl, {
     ...requestInit,
     credentials: "include",
     headers: getHeaders(requestInit.headers, isMultipartFormData),
   });
 
   if ((logoutOn401 ?? true) && response.status === 401) {
+    sessionStorage.setItem(SESSION_EXPIRED_KEY, 'true');
     logout();
   }
 

@@ -14,7 +14,7 @@ def normalize_txt_value(value: str) -> str:
     """
     Normalize a TXT record value.
     """
-    return re.sub(r"\s*\;\s*", ";", value.strip('"'))
+    return re.sub(r"\;$", "", re.sub(r"\s*\;\s*", ";", value.strip('"')))
 
 
 def check_single_record(

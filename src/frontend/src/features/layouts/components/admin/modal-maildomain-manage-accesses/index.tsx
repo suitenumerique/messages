@@ -54,7 +54,7 @@ export const ModalMaildomainManageAccesses = ({ domain, isOpen, onClose }: Modal
 
     const accessRoleOptions = () => Object.values(MailDomainAccessRoleChoices).map((role) => {
         return {
-            label: t(`manage_accesses_modal.roles.${role}`),
+            label: t(`maildomain_roles_${role}`, { ns: 'roles' }),
             value: role,
         }
     });
@@ -72,7 +72,7 @@ export const ModalMaildomainManageAccesses = ({ domain, isOpen, onClose }: Modal
 
     return (
         <ShareModal<UserWithoutAbilities, UserWithoutAbilities, MaildomainAccessRead>
-            modalTitle={t('manage_accesses_modal.title', { entity: domain.name })}
+            modalTitle={t('Manage {{entity}} accesses', { entity: domain.name })}
             isOpen={isOpen}
             loading={isLoadingAccesses || isLoadingSearchUsers}
             canUpdate={true}

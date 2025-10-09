@@ -58,8 +58,8 @@ export const AttachmentItem = ({ attachment, isLoading = false, canDownload = tr
                         {
                             variant === "error" && errorAction &&
                             <Button
-                                aria-label={t("actions.retry")}
-                                title={t("actions.retry")}
+                                aria-label={t("Retry")}
+                                title={t("Retry")}
                                 icon={<Icon name="loop" />}
                                 size="medium"
                                 color="tertiary-text"
@@ -69,8 +69,8 @@ export const AttachmentItem = ({ attachment, isLoading = false, canDownload = tr
                         {
                             canDownload && downloadUrl &&
                             <Button
-                                aria-label={t("actions.download")}
-                                title={t("actions.download")}
+                                aria-label={t("Download")}
+                                title={t("Download")}
                                 size="medium"
                                 icon={<Icon name="download" />}
                                 color="tertiary-text"
@@ -81,8 +81,8 @@ export const AttachmentItem = ({ attachment, isLoading = false, canDownload = tr
                         {
                             onDelete &&
                             <Button
-                                aria-label={t("actions.delete")}
-                                title={t("actions.delete")}
+                                aria-label={t("Delete")}
+                                title={t("Delete")}
                                 icon={<Icon name="close" />}
                                 size="medium"
                                 color="tertiary-text"

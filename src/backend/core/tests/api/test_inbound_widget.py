@@ -9,7 +9,7 @@ from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.test import APIClient
 
-from core import factories
+from core import factories, models
 from core.api.viewsets.inbound.widget import WidgetAuthentication
 
 
@@ -28,9 +28,6 @@ def fixture_channel():
         mailbox=mailbox,
         settings={
             "config": {"enabled": True, "theme": "light"},
-            "default_sender_email": "widget@example.com",
-            "default_sender_name": "Widget Sender",
-            "intro_text": "Message from widget:",
         },
     )
 
@@ -45,9 +42,6 @@ def fixture_channel_with_mailbox_contact():
         mailbox=mailbox,
         settings={
             "config": {"enabled": True, "theme": "light"},
-            "default_sender_email": "widget@example.com",
-            "default_sender_name": "Widget Sender",
-            "intro_text": "Message from widget:",
         },
     )
 
@@ -277,11 +271,7 @@ class TestInboundWidgetDeliver:
         channel = factories.ChannelFactory(
             type="widget",
             mailbox=factories.MailboxFactory(),
-            settings={
-                "default_sender_email": "custom@widget.com",
-                "default_sender_name": "Custom Widget",
-                "intro_text": "Custom intro text:",
-            },
+            settings={},
         )
 
         data = {
@@ -302,14 +292,16 @@ class TestInboundWidgetDeliver:
         call_args = mock_deliver.call_args[0]
         parsed_email = call_args[1]
 
-        assert parsed_email["from"]["email"] == "custom@widget.com"
-        assert parsed_email["from"]["name"] == "Custom Widget"
-        assert "Custom intro text:" in parsed_email["htmlBody"][0]["content"]
+        assert parsed_email["from"]["email"] == "sender@example.com"
+        assert (
+            "Test message with custom settings"
+            in parsed_email["htmlBody"][0]["content"]
+        )
 
-    @patch("core.api.viewsets.inbound.widget.deliver_inbound_message")
-    def test_deliver_message_formatting(self, mock_deliver, api_client, channel):
-        """Test that message is properly formatted with HTML and signature."""
-        mock_deliver.return_value = True
+    def test_deliver_message_e2e(self, api_client, channel):
+        """Test that message is properly formatted with HTML and metadata."""
+
+        assert models.Message.objects.count() == 0
 
         data = {
             "email": "sender@example.com",
@@ -325,22 +317,31 @@ class TestInboundWidgetDeliver:
 
         assert response.status_code == status.HTTP_200_OK
 
-        # Verify the parsed email structure and formatting
-        call_args = mock_deliver.call_args[0]
-        parsed_email = call_args[1]
+        assert models.Message.objects.count() == 1
+        mailbox = channel.mailbox
+        message = models.Message.objects.first()
+        # Check we have a threadaccess on the right mailbox
+        assert message.thread.accesses.first().mailbox == mailbox
+        assert message.sender.email == "sender@example.com"
+        assert message.subject == "Message from widget"
 
-        html_content = parsed_email["htmlBody"][0]["content"]
+        authenticated_user = factories.UserFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=models.MailboxRoleChoices.VIEWER,
+        )
+        api_client.force_authenticate(user=authenticated_user)
 
-        # Check that newlines are converted to <br/> tags
-        assert "Line 1<br/>Line 2<br/>Line 3" in html_content
-
-        # Check that signature is included
-        assert "Sender" in html_content
-        assert "sender@example.com" in html_content
-        assert "❌ Unverified" in html_content
-        assert "IP" in html_content
-        assert "Page" in html_content
-        assert "https://example.com/contact" in html_content
+        # Check the STMSG headers in the REST API
+        apimsg = api_client.get(f"/api/v1.0/messages/{message.id}/")
+        assert apimsg.status_code == status.HTTP_200_OK
+        assert apimsg.json()["stmsg_headers"] == {
+            "sender-auth": "none",
+            "widget-referer": "https://example.com/contact",
+        }
+        assert apimsg.json()["htmlBody"][0]["content"] == "Line 1<br/>Line 2<br/>Line 3"
+        assert apimsg.json()["textBody"][0]["content"] == "Line 1\r\nLine 2\r\nLine 3"
 
     def test_deliver_without_authentication(self, api_client):
         """Test deliver endpoint without authentication."""

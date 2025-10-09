@@ -1,0 +1,57 @@
+{
+  "organization": {
+    "name": "Example Organization",
+    "type": "Public Administration",
+    "siret": "12345678901234"
+  },
+  "services": [
+    {
+      "id": 1,
+      "name": "Authentication Service",
+      "url": "https://example.com/auth",
+      "maturity": "stable",
+      "logo": "./logos/auth.svg",
+      "subscribed": true
+    },
+    {
+      "id": 2,
+      "name": "Document Portal",
+      "url": "https://example.com/docs",
+      "maturity": "stable",
+      "logo": "./logos/docs.svg",
+      "subscribed": true
+    },
+    {
+      "id": 3,
+      "name": "Payment Gateway",
+      "url": "https://example.com/payments",
+      "maturity": "stable",
+      "logo": "./logos/payment.svg",
+      "subscribed": false
+    },
+    {
+      "id": 4,
+      "name": "Analytics Dashboard",
+      "url": "https://example.com/analytics",
+      "maturity": "beta",
+      "logo": "./logos/analytics.svg",
+      "subscribed": true
+    },
+    {
+      "id": 5,
+      "name": "Notification Center",
+      "url": "https://example.com/notifications",
+      "maturity": "alpha",
+      "logo": "./logos/notifications.svg",
+      "subscribed": false
+    },
+    {
+      "id": 6,
+      "name": "File Storage",
+      "url": "https://example.com/storage",
+      "maturity": "stable",
+      "logo": "./logos/storage.svg",
+      "subscribed": true
+    }
+  ]
+}

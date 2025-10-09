@@ -22,4 +22,4 @@ class JSONField(serializers.Field):
         """
         if data is None:
             return None
-        return json.dumps(data)
+        return json.dumps(data, separators=(",", ":"))

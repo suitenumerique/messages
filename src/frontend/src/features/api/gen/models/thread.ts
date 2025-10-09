@@ -21,6 +21,7 @@ export interface Thread {
   readonly messages: string;
   readonly has_unread: boolean;
   readonly has_trashed: boolean;
+  readonly has_archived: boolean;
   readonly has_draft: boolean;
   readonly has_starred: boolean;
   readonly has_attachments: boolean;

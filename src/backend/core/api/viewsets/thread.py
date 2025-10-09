@@ -76,6 +76,7 @@ class ThreadViewSet(
         # These filters operate on the Thread model's boolean fields
         filter_mapping = {
             "has_trashed": "has_trashed",
+            "has_archived": "has_archived",
             "has_draft": "has_draft",
             "has_starred": "has_starred",
             "has_sender": "has_sender",
@@ -122,6 +123,12 @@ class ThreadViewSet(
                 type=OpenApiTypes.INT,
                 location=OpenApiParameter.QUERY,
                 description="Filter threads that are trashed (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_archived",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads that are archived (1=true, 0=false).",
             ),
             OpenApiParameter(
                 name="has_draft",
@@ -209,6 +216,7 @@ class ThreadViewSet(
         # Define valid base fields that can be counted
         valid_base_fields = {
             "has_trashed",
+            "has_archived",
             "has_draft",
             "has_starred",
             "has_attachments",
@@ -343,6 +351,12 @@ class ThreadViewSet(
                 type=OpenApiTypes.INT,
                 location=OpenApiParameter.QUERY,
                 description="Filter threads that have messages (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_archived",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads that have archived (1=true, 0=false).",
             ),
             OpenApiParameter(
                 name="is_spam",

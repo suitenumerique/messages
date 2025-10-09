@@ -24,31 +24,42 @@ export const MailboxCreationSuccess = ({ type, mailbox, onClose }: MailboxCreati
                 </div>
                 {
                   type === "redirect" && (
-                    <p><Trans i18nKey="create_mailbox_modal.success.redirect" values={{mailbox:mailboxAddress}}/></p>
+                    <p>
+                      <Trans i18nKey="The redirect mailbox <strong>{{mailboxAddress}}</strong> has been created successfully." values={{mailboxAddress}}>
+                        The redirect mailbox <strong>{mailboxAddress}</strong> has been created successfully.
+                      </Trans>
+                    </p>
                   )
                 }
                 {
                   type === "shared" && (
-                    <p><Trans i18nKey="create_mailbox_modal.success.shared" values={{mailbox:mailboxAddress}}/></p>
+                    <p>
+                      <Trans i18nKey="The shared mailbox <strong>{{mailboxAddress}}</strong> has been created successfully." values={{mailboxAddress}}>
+                        The shared mailbox <strong>{mailboxAddress}</strong> has been created successfully.
+                      </Trans>
+                    </p>
                   )
                 }
                 {
                   type === "personal" && (
                     <>
-                      <p><Trans i18nKey="create_mailbox_modal.success.personal" values={{mailbox:mailboxAddress}}/></p>
+                      <p>
+                        <Trans i18nKey="The personal mailbox <strong>{{mailboxAddress}}</strong> has been created successfully." values={{mailboxAddress}}>
+                          The personal mailbox <strong>{mailboxAddress}</strong> has been created successfully.
+                        </Trans></p>
                       {
                         mailbox.one_time_password ? (
                           <AdminMailboxCredentials mailbox={mailbox} />
                       ) : (
                         <Banner type="warning" icon={<Icon name="info" type={IconType.OUTLINED} />}>
-                          {t('create_mailbox_modal.success.credential_info')}
+                          {t('You can now inform the person that their mailbox is ready to be used and communicate the instructions for authentication.')}
                         </Banner>
                       )}
                     </>
                   )
                 }
             </div>
-            <Button onClick={onClose} color="primary">{t('actions.close')}</Button>
+            <Button onClick={onClose} color="primary">{t('Close')}</Button>
         </div>
     )
 }

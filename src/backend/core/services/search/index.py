@@ -133,6 +133,7 @@ def index_message(message: models.Message) -> bool:
         "html_body": html_body,
         "is_draft": message.is_draft,
         "is_trashed": message.is_trashed,
+        "is_archived": message.is_archived,
         "is_starred": message.is_starred,
         "is_unread": message.is_unread,
         "is_sender": message.is_sender,

@@ -9,6 +9,8 @@ import type { MessageHtmlBodyItem } from "./message_html_body_item";
 import type { MessageTextBodyItem } from "./message_text_body_item";
 import type { Attachment } from "./attachment";
 import type { Contact } from "./contact";
+import type { MessageSignature } from "./message_signature";
+import type { MessageStmsgHeaders } from "./message_stmsg_headers";
 
 /**
  * Serialize messages, getting parsed details from the Message model.
@@ -45,5 +47,10 @@ export interface Message {
   readonly is_unread: boolean;
   readonly is_starred: boolean;
   readonly is_trashed: boolean;
+  readonly is_archived: boolean;
   readonly has_attachments: boolean;
+  /** @nullable */
+  readonly signature: MessageSignature;
+  /** Return the STMSG headers of the message. */
+  readonly stmsg_headers: MessageStmsgHeaders;
 }

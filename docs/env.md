@@ -87,7 +87,7 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `MTA_OUT_DIRECT_PORT` | `25` | TCP port for direct mode on remote MX servers | Optional |
 | `MTA_OUT_SMTP_TLS_SECURITY_LEVEL` | `may` | SMTP TLS security level ("none", "may") | Optional |
 | `MDA_API_SECRET` | `my-shared-secret-mda` | Shared secret for MDA API | Required |
-| `MDA_API_BASE_URL` | `http://backend-dev:8000/api/v1.0/mta/` | Base URL for MDA API | Dev |
+| `MDA_API_BASE_URL` | `http://backend-dev:8000/api/v1.0/` | Base URL for MDA API | Dev |
 
 ### Email Domain Configuration
 
@@ -219,6 +219,8 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `FRONTEND_THEME` | `dsfr` | Frontend theme identifier | Optional |
 | `NEXT_PUBLIC_API_ORIGIN` | `http://localhost:8901` | Frontend API origin | Dev |
 | `NEXT_PUBLIC_S3_DOMAIN_REPLACE` | `http://localhost:9000` | S3 domain replacement for frontend | Dev |
+| `NEXT_PUBLIC_LANGUAGES` | `[["en-US","English"],["fr-FR","Français"]]` | Languages available for frontend | Optional |
+| `NEXT_PUBLIC_DEFAULT_LANGUAGE` | `en-US` | Default language for frontend | Optional |
 
 ## Development Tools
 
@@ -252,7 +254,7 @@ The application uses a new environment file structure with `.defaults` and `.loc
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `LANGUAGE_CODE` | `en-us` | Default language code | Optional |
+| `LANGUAGE_CODE` | `en-us` | Default backend language code | Optional |
 
 
 ### AI

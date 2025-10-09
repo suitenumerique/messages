@@ -479,7 +479,9 @@ def create_multipart_message(  # pylint: disable=too-many-branches
 
 
 def compose_email(
-    jmap_data: Dict[str, Any], in_reply_to: Optional[str] = None
+    jmap_data: Dict[str, Any],
+    in_reply_to: Optional[str] = None,
+    prepend_headers: Optional[List[tuple[str, str]]] = None,
 ) -> bytes:
     """
     Convert a JMAP email object to RFC5322 format.
@@ -526,9 +528,15 @@ def compose_email(
         # Convert the top-level part to string
         message_str = msg_part.to_string()
 
+        prepend_raw = ""
+        if prepend_headers:
+            prepend_raw = (
+                "\r\n".join([f"{k}: {v}" for k, v in prepend_headers]) + "\r\n"
+            )
+
         # Flanker doesn't enforce line length limits or CRLF conversion
         # so we have to re-encode the message here to stay RFC compliant
-        msg = message_from_string(message_str)
+        msg = message_from_string(prepend_raw + message_str)
         out = BytesIO()
         gen = BytesGenerator(out, policy=email_policy_smtp.clone(max_line_length=76))
         gen.flatten(msg)

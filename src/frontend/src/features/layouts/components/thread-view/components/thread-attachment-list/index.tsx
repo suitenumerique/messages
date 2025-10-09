@@ -16,8 +16,11 @@ export const AttachmentList = ({ attachments }: AttachmentListProps) => {
         <section className="thread-attachment-list">
             <header className="thread-attachment-list__header">
                 <p>
-                    <strong>{t("attachments.counter", { count: attachments.length })}</strong>
-                    {' '}
+                    <strong>
+                    {attachments.length > 0
+                        ? t("{{count}} attachments", { count: attachments.length, defaultValue_one: "{{count}} attachment" })
+                        : t("No attachments")}
+                    </strong>{' '}
                     ({AttachmentHelper.getFormattedTotalSize(attachments, i18n.resolvedLanguage)})
                 </p>
             </header>

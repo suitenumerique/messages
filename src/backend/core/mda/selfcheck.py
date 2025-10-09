@@ -60,7 +60,7 @@ def create_and_send_draft(
         "htmlBody": html_body or text_body,
     }
 
-    draft_body_json = json.dumps(draft_body)
+    draft_body_json = json.dumps(draft_body, separators=(",", ":"))
 
     # Create the draft
     message = create_draft(

@@ -105,7 +105,7 @@ class Base(Configuration):
         if os.environ.get("DATABASE_URL")
         else {
             "ENGINE": values.Value(
-                "django.db.backends.postgresql_psycopg2",
+                "django_prometheus.db.backends.postgresql",
                 environ_name="DB_ENGINE",
                 environ_prefix=None,
             ),
@@ -209,6 +209,14 @@ class Base(Configuration):
         default=False,
         environ_name="MESSAGES_ACCEPT_ALL_EMAILS",
         environ_prefix=None,
+    )
+
+    # IMAP importer settings
+    IMAP_TIMEOUT = values.PositiveIntegerValue(
+        60, environ_name="IMAP_TIMEOUT", environ_prefix=None
+    )
+    IMAP_MAX_RETRIES = values.PositiveIntegerValue(
+        3, environ_name="IMAP_MAX_RETRIES", environ_prefix=None
     )
 
     # Self-check settings
@@ -339,7 +347,6 @@ class Base(Configuration):
         (
             ("en-us", _("English")),
             ("fr-fr", _("French")),
-            ("de-de", _("German")),
         )
     )
 

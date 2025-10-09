@@ -1,0 +1,262 @@
+/* La Gaufre Widget styles - Clean minimalist design */
+#wrapper {
+  position: fixed;
+  top: 60px;
+  right: 60px;
+  z-index: 1000;
+  width: 340px;
+  max-height: 480px;
+  background: white;
+  border-radius: 0.25rem;
+  box-shadow: 0 0px 6px rgba(0, 0, 145, 0.1);
+  border: 1px solid #e5e5e5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: inherit;
+}
+
+#header {
+  display: none;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 16px;
+  background: transparent;
+  border-bottom: 1px solid #dfe2ea;
+  min-height: 48px;
+  position: relative;
+}
+
+.header-logo {
+  height: 25px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+}
+
+#close {
+  position: absolute;
+  right: 16px;
+}
+
+#close {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 36px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+#close:hover {
+  background-color: #f0f0f0;
+}
+
+#close:focus {
+  outline: 2px solid #0a76f6;
+}
+
+#footer {
+  display: none;
+  padding: 16px;
+  background: transparent;
+  border-top: 1px solid #dfe2ea;
+  justify-content: flex-end;
+}
+
+.ok-button {
+  background: #3e5de7;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  min-width: 60px;
+}
+
+.ok-button:hover {
+  background: #1d4ed8;
+}
+
+.ok-button:focus {
+  outline: 2px solid #0a76f6;
+}
+
+#content {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Loading state */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #666;
+  font-size: 14px;
+}
+
+/* Error state */
+.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #dc3545;
+  font-size: 14px;
+  text-align: center;
+}
+
+/* Services grid */
+.services-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  justify-items: center;
+}
+
+/* Service cards */
+.service-card {
+  background: transparent;
+  text-align: center;
+  transition: all 0.2s ease;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.service-card:hover {
+  background-color: #eef1f4;
+  border-radius: 6px;
+}
+
+/* Service logo container */
+.service-card a {
+  position: relative;
+  padding: 8px;
+  width: 100%;
+  text-decoration: none;
+  display: block;
+}
+
+.service-logo {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+}
+
+.maturity-badge {
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #eef1f4;
+  color: #2845c1;
+  border-radius: 12px;
+  padding: 2px 4px;
+  font-size: 9px;
+  line-height: 9px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+/* Service info */
+.service-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding-top: 4px;
+}
+
+.service-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1e40af;
+  margin-bottom: 2px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+/* Responsive design */
+@media (max-width: 480px) {
+  #wrapper {
+    width: 100%;
+    right: 0 !important;
+    left: 0 !important;
+    border-radius: 0;
+    bottom: 0 !important;
+    top: 0 !important;
+    max-height: 100vh;
+  }
+
+  #header {
+    height: 40px;
+    display: flex;
+  }
+
+  .header-logo {
+    height: 35px;
+  }
+
+  #footer {
+    display: flex;
+  }
+
+  .services-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  .service-card {
+    width: 70px;
+    padding: 6px;
+  }
+
+  .service-logo,
+  .service-logo-placeholder {
+    width: 40px;
+    height: 40px;
+  }
+
+  .service-name {
+    font-size: 11px;
+  }
+}
+
+/* Scrollbar styling */
+#content::-webkit-scrollbar {
+  width: 4px;
+}
+
+#content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#content::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 2px;
+}
+
+#content::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

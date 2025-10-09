@@ -9,7 +9,7 @@ from django.urls import reverse
 
 import pytest
 
-from core import factories
+from core import enums, factories
 from core.forms import IMAPImportForm
 from core.models import Mailbox, MailDomain, Message, Thread
 from core.services.importer.tasks import import_imap_messages_task
@@ -61,6 +61,20 @@ def sample_email():
 
 
 @pytest.fixture
+def email_with_duplicate_recipients():
+    """Create an email message with duplicate recipients."""
+    msg = EmailMessage()
+    msg["From"] = "sender@example.com"
+    msg["To"] = "recipient@example.com, recipient@example.com"  # Duplicate TO
+    msg["Cc"] = "cc@example.com, cc@example.com"  # Duplicate CC
+    msg["Subject"] = "Test Subject with Duplicates"
+    msg["Message-ID"] = "<duplicate-test123@example.com>"
+    msg["Date"] = "Thu, 1 Jan 2024 12:00:00 +0000"
+    msg.set_content("This is a test message with duplicate recipients.")
+    return msg.as_bytes()
+
+
+@pytest.fixture
 def mock_imap_connection(sample_email):
     """Mock IMAP connection with sample messages."""
     mock_imap = MagicMock()
@@ -82,6 +96,24 @@ def mock_imap_connection(sample_email):
     # Mock close and logout
     mock_imap.close.return_value = ("OK", [b"Closed"])
     mock_imap.logout.return_value = ("OK", [b"Logged out"])
+    return mock_imap
+
+
+@pytest.fixture
+def mock_imap_connection_with_duplicates(
+    mock_imap_connection, email_with_duplicate_recipients
+):
+    """Mock IMAP connection for duplicate recipient tests - override fetch behavior."""
+    # Copy the original fixture configuration
+    mock_imap = mock_imap_connection
+
+    # Override specific behaviors for duplicate test
+    mock_imap.search.return_value = ("OK", [b"1"])  # Only 1 message
+    mock_imap.fetch.return_value = (
+        "OK",
+        [(b"1 (FLAGS (\\Seen))", email_with_duplicate_recipients)],
+    )
+
     return mock_imap
 
 
@@ -352,3 +384,88 @@ def test_imap_import_task_message_fetch_failure(
             state="SUCCESS",
             meta=task,
         )
+
+
+@patch("core.mda.inbound.logger")
+@patch("imaplib.IMAP4_SSL")
+@patch.object(celery_app.backend, "store_result")
+def test_imap_import_task_duplicate_recipients(
+    mock_store_result,
+    mock_imap4_ssl,
+    mock_logger,
+    mailbox,
+    mock_imap_connection_with_duplicates,
+):
+    """Test IMAP import task with duplicate recipients handles deduplication correctly."""
+    mock_imap4_ssl.return_value = mock_imap_connection_with_duplicates
+    mock_store_result.return_value = None
+
+    # Create a mock task instance
+    mock_task = MagicMock()
+    mock_task.update_state = MagicMock()
+
+    with patch.object(
+        import_imap_messages_task, "update_state", mock_task.update_state
+    ):
+        # Run the task
+        task = import_imap_messages_task(
+            imap_server="imap.example.com",
+            imap_port=993,
+            username="test@example.com",
+            password="password123",
+            use_ssl=True,
+            recipient_id=str(mailbox.id),
+        )
+
+        # Verify results
+        assert task["status"] == "SUCCESS"
+        assert (
+            task["result"]["message_status"]
+            == "Completed processing messages from folder 'INBOX'"
+        )
+        assert task["result"]["type"] == "imap"
+        assert task["result"]["total_messages"] == 1
+        assert task["result"]["success_count"] == 1
+        assert task["result"]["failure_count"] == 0
+        assert task["result"]["current_message"] == 1
+
+        # Verify messages were created
+        assert Message.objects.count() == 1
+        assert Thread.objects.count() == 1
+
+        # Check the message
+        message = Message.objects.first()
+        assert message.subject == "Test Subject with Duplicates"
+        assert message.sender.email == "sender@example.com"
+
+        # Verify recipients - should have unique recipients only
+        recipients = message.recipients.all()
+        recipient_emails = [r.contact.email for r in recipients]
+
+        # Should have unique recipients (no duplicates)
+        assert len(recipient_emails) == len(set(recipient_emails))
+
+        # Should have the expected recipients
+        assert "recipient@example.com" in recipient_emails
+        assert "cc@example.com" in recipient_emails
+
+        # Verify recipient types
+        to_recipients = message.recipients.filter(
+            type=enums.MessageRecipientTypeChoices.TO
+        )
+        cc_recipients = message.recipients.filter(
+            type=enums.MessageRecipientTypeChoices.CC
+        )
+
+        assert to_recipients.count() == 1  # Only one TO recipient (duplicate removed)
+        assert cc_recipients.count() == 1  # Only one CC recipient (duplicate removed)
+
+        # Verify the content
+        assert (
+            message.get_parsed_field("textBody")[0]["content"]
+            == "This is a test message with duplicate recipients.\n"
+        )
+
+        # Critical: Verify that no validation errors were logged
+        # This ensures the deduplication logic works correctly
+        mock_logger.error.assert_not_called()

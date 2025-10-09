@@ -327,7 +327,8 @@
                                         ],
                                         "bcc": [
                                             "bcc@example.com"
-                                        ]
+                                        ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                     },
                                     "summary": "New Draft Message"
                                 },
@@ -350,6 +351,7 @@
                                         "to": [
                                             "new-recipient@example.com"
                                         ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                         "attachments": [
                                             {
                                                 "partId": "att-1",
@@ -395,7 +397,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -418,6 +421,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -452,7 +456,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -475,6 +480,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -553,7 +559,8 @@
                                         ],
                                         "bcc": [
                                             "bcc@example.com"
-                                        ]
+                                        ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                     },
                                     "summary": "New Draft Message"
                                 },
@@ -576,6 +583,7 @@
                                         "to": [
                                             "new-recipient@example.com"
                                         ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                         "attachments": [
                                             {
                                                 "partId": "att-1",
@@ -621,7 +629,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -644,6 +653,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -678,7 +688,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -701,6 +712,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -792,7 +804,8 @@
                                         ],
                                         "bcc": [
                                             "bcc@example.com"
-                                        ]
+                                        ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                     },
                                     "summary": "New Draft Message"
                                 },
@@ -815,6 +828,7 @@
                                         "to": [
                                             "new-recipient@example.com"
                                         ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                         "attachments": [
                                             {
                                                 "partId": "att-1",
@@ -860,7 +874,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -883,6 +898,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -917,7 +933,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -940,6 +957,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -1029,7 +1047,8 @@
                                         ],
                                         "bcc": [
                                             "bcc@example.com"
-                                        ]
+                                        ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                     },
                                     "summary": "New Draft Message"
                                 },
@@ -1052,6 +1071,7 @@
                                         "to": [
                                             "new-recipient@example.com"
                                         ],
+                                        "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                         "attachments": [
                                             {
                                                 "partId": "att-1",
@@ -1097,7 +1117,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -1120,6 +1141,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -1154,7 +1176,8 @@
                                             ],
                                             "bcc": [
                                                 "bcc@example.com"
-                                            ]
+                                            ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000"
                                         },
                                         "summary": "New Draft Message"
                                     },
@@ -1177,6 +1200,7 @@
                                             "to": [
                                                 "new-recipient@example.com"
                                             ],
+                                            "signatureId": "123e4567-e89b-12d3-a456-426614174000",
                                             "attachments": [
                                                 {
                                                     "partId": "att-1",
@@ -1267,6 +1291,17 @@
                                     },
                                     "summary": "Trash threads"
                                 },
+                                "ArchiveThreads": {
+                                    "value": {
+                                        "flag": "archived",
+                                        "value": true,
+                                        "thread_ids": [
+                                            "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+                                            "b2c3d4e5-f6a7-8901-2345-67890abcdef0"
+                                        ]
+                                    },
+                                    "summary": "Archive threads"
+                                },
                                 "StarMessagesAndThreads": {
                                     "value": {
                                         "flag": "starred",
@@ -1326,6 +1361,17 @@
                                             ]
                                         },
                                         "summary": "Trash threads"
+                                    },
+                                    "ArchiveThreads": {
+                                        "value": {
+                                            "flag": "archived",
+                                            "value": true,
+                                            "thread_ids": [
+                                                "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+                                                "b2c3d4e5-f6a7-8901-2345-67890abcdef0"
+                                            ]
+                                        },
+                                        "summary": "Archive threads"
                                     },
                                     "StarMessagesAndThreads": {
                                         "value": {
@@ -2234,6 +2280,400 @@
                 }
             }
         },
+        "/api/v1.0/mailboxes/{mailbox_id}/message-templates/": {
+            "get": {
+                "operationId": "mailboxes_message_templates_list",
+                "description": "ViewSet for retrieving and rendering message templates for a mailbox.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/MessageTemplate"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "mailboxes_message_templates_create",
+                "description": "ViewSet for retrieving and rendering message templates for a mailbox.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/message-templates/{id}/": {
+            "get": {
+                "operationId": "mailboxes_message_templates_retrieve",
+                "description": "ViewSet for retrieving and rendering message templates for a mailbox.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "mailboxes_message_templates_update",
+                "description": "ViewSet for retrieving and rendering message templates for a mailbox.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "mailboxes_message_templates_partial_update",
+                "description": "ViewSet for retrieving and rendering message templates for a mailbox.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMessageTemplateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMessageTemplateRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "mailboxes_message_templates_destroy",
+                "description": "ViewSet for retrieving and rendering message templates for a mailbox.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/message-templates/{id}/render/": {
+            "get": {
+                "operationId": "mailboxes_message_templates_render_retrieve",
+                "description": "Render a template with the provided context variables.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "html_body": {
+                                            "type": "string"
+                                        },
+                                        "text_body": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Template rendered with provided context"
+                    },
+                    "404": {
+                        "description": "Template not found"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/message-templates/available/": {
+            "get": {
+                "operationId": "mailboxes_message_templates_available_list",
+                "description": "List message templates.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "type",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "new_message",
+                                "reply",
+                                "signature"
+                            ]
+                        }
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/ReadOnlyMessageTemplate"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/mailboxes/{id}/": {
             "get": {
                 "operationId": "mailboxes_retrieve",
@@ -2957,6 +3397,312 @@
                 }
             }
         },
+        "/api/v1.0/maildomains/{maildomain_pk}/message-templates/": {
+            "get": {
+                "operationId": "maildomains_message_templates_list",
+                "description": "List message templates for a maildomain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "type",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "new_message",
+                                "reply",
+                                "signature"
+                            ]
+                        }
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/MessageTemplate"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "maildomains_message_templates_create",
+                "description": "ViewSet for managing message templates for a maildomain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/maildomains/{maildomain_pk}/message-templates/{id}/": {
+            "get": {
+                "operationId": "maildomains_message_templates_retrieve",
+                "description": "ViewSet for managing message templates for a maildomain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "maildomains_message_templates_update",
+                "description": "ViewSet for managing message templates for a maildomain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MessageTemplateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "maildomains_message_templates_partial_update",
+                "description": "ViewSet for managing message templates for a maildomain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMessageTemplateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMessageTemplateRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MessageTemplate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "maildomains_message_templates_destroy",
+                "description": "ViewSet for managing message templates for a maildomain.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
         "/api/v1.0/messages/": {
             "get": {
                 "operationId": "messages_list",
@@ -3061,6 +3807,44 @@
                 }
             }
         },
+        "/api/v1.0/messages/{id}/eml/": {
+            "get": {
+                "operationId": "messages_eml_retrieve",
+                "description": "Return the EML file for a message.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Message"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/placeholders/": {
             "get": {
                 "operationId": "placeholders_retrieve",
@@ -3086,7 +3870,7 @@
                                         "description": "Verbose label for the field"
                                     },
                                     "example": {
-                                        "full_name": "Full name",
+                                        "name": "Name",
                                         "job_title": "Job title",
                                         "is_elected": "Is elected"
                                     }
@@ -3109,7 +3893,7 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/SendMessageRequestRequest"
+                                "$ref": "#/components/schemas/SendMessageRequest"
                             },
                             "examples": {
                                 "SendDraft": {
@@ -3125,7 +3909,7 @@
                         },
                         "multipart/form-data": {
                             "schema": {
-                                "$ref": "#/components/schemas/SendMessageRequestRequest"
+                                "$ref": "#/components/schemas/SendMessageRequest"
                             }
                         }
                     },
@@ -3257,6 +4041,14 @@
                             "type": "integer"
                         },
                         "description": "Filter threads that have active messages (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "has_archived",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads that have archived (1=true, 0=false)."
                     },
                     {
                         "in": "query",
@@ -3843,6 +4635,14 @@
                 "parameters": [
                     {
                         "in": "query",
+                        "name": "has_archived",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads that are archived (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
                         "name": "has_attachments",
                         "schema": {
                             "type": "integer"
@@ -4277,6 +5077,12 @@
                             "additionalProperties": {}
                         },
                         "description": "List of attachment objects with blobId, partId, and name"
+                    },
+                    "signatureId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "nullable": true,
+                        "description": "ID of the signature template to use"
                     }
                 },
                 "required": [
@@ -4287,10 +5093,11 @@
                 "enum": [
                     "unread",
                     "starred",
-                    "trashed"
+                    "trashed",
+                    "archived"
                 ],
                 "type": "string",
-                "description": "* `unread` - unread\n* `starred` - starred\n* `trashed` - trashed"
+                "description": "* `unread` - unread\n* `starred` - starred\n* `trashed` - trashed\n* `archived` - archived"
             },
             "ImportFileRequest": {
                 "type": "object",
@@ -5343,8 +6150,27 @@
                         "type": "boolean",
                         "readOnly": true
                     },
+                    "is_archived": {
+                        "type": "boolean",
+                        "readOnly": true
+                    },
                     "has_attachments": {
                         "type": "boolean",
+                        "readOnly": true
+                    },
+                    "signature": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/ReadOnlyMessageTemplate"
+                            }
+                        ],
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "stmsg_headers": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "description": "Return the STMSG headers of the message.",
                         "readOnly": true
                     }
                 },
@@ -5357,6 +6183,7 @@
                     "has_attachments",
                     "htmlBody",
                     "id",
+                    "is_archived",
                     "is_draft",
                     "is_sender",
                     "is_starred",
@@ -5366,11 +6193,120 @@
                     "read_at",
                     "sender",
                     "sent_at",
+                    "signature",
+                    "stmsg_headers",
                     "subject",
                     "textBody",
                     "thread_id",
                     "to",
                     "updated_at"
+                ]
+            },
+            "MessageTemplate": {
+                "type": "object",
+                "description": "Serialize message templates for POST/PUT/PATCH operations.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')",
+                        "maxLength": 255
+                    },
+                    "html_body": {
+                        "type": "string"
+                    },
+                    "text_body": {
+                        "type": "string"
+                    },
+                    "raw_body": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "$ref": "#/components/schemas/MessageTemplateTypeChoices"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "description": "Whether this template is available for use"
+                    },
+                    "is_forced": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Set as forced template"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "name",
+                    "type",
+                    "updated_at"
+                ]
+            },
+            "MessageTemplateRequest": {
+                "type": "object",
+                "description": "Serialize message templates for POST/PUT/PATCH operations.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')",
+                        "maxLength": 255
+                    },
+                    "html_body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "text_body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "raw_body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "type": {
+                        "$ref": "#/components/schemas/MessageTemplateTypeChoices"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "description": "Whether this template is available for use"
+                    },
+                    "is_forced": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Set as forced template"
+                    }
+                },
+                "required": [
+                    "name",
+                    "type"
+                ]
+            },
+            "MessageTemplateTypeChoices": {
+                "type": "string",
+                "enum": [
+                    "reply",
+                    "new_message",
+                    "signature"
                 ]
             },
             "PaginatedMailDomainAdminList": {
@@ -5622,6 +6558,42 @@
                     }
                 }
             },
+            "PatchedMessageTemplateRequest": {
+                "type": "object",
+                "description": "Serialize message templates for POST/PUT/PATCH operations.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')",
+                        "maxLength": 255
+                    },
+                    "html_body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "text_body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "raw_body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "type": {
+                        "$ref": "#/components/schemas/MessageTemplateTypeChoices"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "description": "Whether this template is available for use"
+                    },
+                    "is_forced": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Set as forced template"
+                    }
+                }
+            },
             "PatchedThreadAccessRequest": {
                 "type": "object",
                 "description": "Serialize thread access information.",
@@ -5640,6 +6612,78 @@
                         "$ref": "#/components/schemas/ThreadAccessRoleChoices"
                     }
                 }
+            },
+            "ReadOnlyMessageTemplate": {
+                "type": "object",
+                "description": "Serialize message templates for read-only operations.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')"
+                    },
+                    "html_body": {
+                        "type": "string",
+                        "description": "Get HTML body from blob.",
+                        "readOnly": true
+                    },
+                    "text_body": {
+                        "type": "string",
+                        "description": "Get text body from content blob.",
+                        "readOnly": true
+                    },
+                    "raw_body": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Get raw blob from content blob.",
+                        "readOnly": true
+                    },
+                    "type": {
+                        "$ref": "#/components/schemas/MessageTemplateTypeChoices"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "description": "Whether this template is available for use"
+                    },
+                    "is_forced": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "description": "Whether this template is forced; no other template of the same type can be used in the same scope"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "html_body",
+                    "id",
+                    "is_active",
+                    "is_forced",
+                    "name",
+                    "raw_body",
+                    "text_body",
+                    "type",
+                    "updated_at"
+                ]
             },
             "ResetPasswordError": {
                 "type": "object",
@@ -5685,28 +6729,27 @@
                     "one_time_password"
                 ]
             },
-            "SendMessageRequestRequest": {
+            "SendMessageRequest": {
                 "type": "object",
+                "description": "Serializer for sending messages.",
                 "properties": {
                     "messageId": {
                         "type": "string",
-                        "format": "uuid",
-                        "description": "ID of the draft message to send"
+                        "format": "uuid"
                     },
                     "senderId": {
                         "type": "string",
-                        "format": "uuid",
-                        "description": "Mailbox ID from which to send (must match draft)"
+                        "format": "uuid"
+                    },
+                    "archive": {
+                        "type": "boolean",
+                        "default": false
                     },
                     "textBody": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "Text body of the message"
+                        "type": "string"
                     },
                     "htmlBody": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "HTML body of the message"
+                        "type": "string"
                     }
                 },
                 "required": [
@@ -5794,6 +6837,10 @@
                         "type": "boolean",
                         "readOnly": true
                     },
+                    "has_archived": {
+                        "type": "boolean",
+                        "readOnly": true
+                    },
                     "has_draft": {
                         "type": "boolean",
                         "readOnly": true
@@ -5872,6 +6919,7 @@
                 "required": [
                     "accesses",
                     "has_active",
+                    "has_archived",
                     "has_attachments",
                     "has_draft",
                     "has_messages",

@@ -1,4 +1,5 @@
 """Tests for the core.mda.outbound module."""
+# pylint: disable=unused-argument
 
 import threading
 import time
@@ -12,6 +13,86 @@ import pytest
 
 from core import enums, factories, models
 from core.mda import outbound
+
+SCHEMA_CUSTOM_ATTRIBUTES = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/suitenumerique/messages/schemas/custom-fields/user",
+    "type": "object",
+    "title": "User custom fields",
+    "additionalProperties": False,
+    "properties": {
+        "job_title": {"type": "string"},
+        "department": {"type": "string"},
+    },
+    "required": [],
+}
+
+
+@pytest.fixture(name="user")
+def fixture_user():
+    """Create a test user with custom attributes."""
+    return factories.UserFactory(
+        full_name="John Doe",
+        custom_attributes={
+            "job_title": "Software Engineer",
+            "department": "Engineering",
+        },
+    )
+
+
+@pytest.fixture(name="signature_template")
+def fixture_signature_template(mailbox_sender):
+    """Create a signature template in the same mailbox as the sender."""
+    return factories.MessageTemplateFactory(
+        name="Professional Signature",
+        html_body="<p>Best regards,<br>{name}<br>{job_title}<br>{department}</p>",
+        text_body="Best regards,\n{name}\n{job_title}\n{department}",
+        type=enums.MessageTemplateTypeChoices.SIGNATURE,
+        is_active=True,
+        mailbox=mailbox_sender,
+    )
+
+
+@pytest.fixture(name="mailbox_sender")
+def fixture_mailbox_sender():
+    """Create a test mailbox sender."""
+    return factories.MailboxFactory()
+
+
+@pytest.fixture(name="mailbox_access")
+def fixture_mailbox_access(user, mailbox_sender):
+    """Create mailbox access for the user."""
+    return factories.MailboxAccessFactory(
+        user=user,
+        mailbox=mailbox_sender,
+        role=models.MailboxRoleChoices.EDITOR,
+    )
+
+
+@pytest.fixture(name="other_user")
+def fixture_other_user():
+    """Create another user for testing unauthorized access."""
+    return factories.UserFactory()
+
+
+@pytest.fixture(name="message")
+def fixture_message(mailbox_sender, signature_template=None):
+    """Create a test message."""
+    thread = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=mailbox_sender,
+        thread=thread,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
+    sender_contact = factories.ContactFactory(mailbox=mailbox_sender)
+
+    return factories.MessageFactory(
+        thread=thread,
+        sender=sender_contact,
+        is_draft=True,
+        subject="Test Message",
+        signature=signature_template,
+    )
 
 
 @pytest.mark.django_db
@@ -518,3 +599,229 @@ class TestSendMessageRedisLock(TransactionTestCase):
             # Verify the message was processed
             self.message.refresh_from_db()
             assert self.message.sent_at is not None
+
+
+@pytest.mark.django_db
+class TestPrepareOutboundMessageSignature:
+    """Test signature handling in prepare_outbound_message function."""
+
+    @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
+    def test_prepare_outbound_message_with_html_signature(
+        self, user, signature_template, mailbox_sender, mailbox_access
+    ):
+        """Test preparing message with HTML signature."""
+        html_body = "<p>Hello world!</p>"
+        text_body = "Hello world!"
+        message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            is_draft=True,
+            subject="Test Message",
+            signature=signature_template,
+        )
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, text_body, html_body, user
+        )
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "Hello world!" in content
+        assert (
+            "Best regards,<br>John Doe<br>Software Engineer<br>Engineering</p>"
+            in content
+        )
+
+    @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
+    def test_prepare_outbound_message_with_text_signature(
+        self, user, signature_template, mailbox_sender, mailbox_access
+    ):
+        """Test preparing message with text signature."""
+        html_body = None
+        text_body = "Hello world!"
+        message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            is_draft=True,
+            subject="Test Message",
+            signature=signature_template,
+        )
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, text_body, html_body, user
+        )
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "Hello world!" in content
+        assert (
+            "Best regards,\r\nJohn Doe\r\nSoftware Engineer\r\nEngineering" in content
+        )
+
+    def test_prepare_outbound_message_without_signature(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """Test preparing message without signature."""
+        html_body = "<p>Hello world!</p>"
+        text_body = "Hello world!"
+        message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            is_draft=True,
+            subject="Test Message",
+            signature=None,
+        )
+
+        result = outbound.prepare_outbound_message(
+            mailbox_sender, message, text_body, html_body, user
+        )
+
+        assert result is True
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "Hello world!" in content
+        assert "Best regards" not in content
+
+    @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
+    def test_prepare_outbound_message_with_reply_and_signature(
+        self, user, signature_template, mailbox_sender, mailbox_access
+    ):
+        """Test preparing message with both reply content and signature."""
+        # Create a parent message for reply
+        parent_message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            subject="Original Subject",
+        )
+        message = factories.MessageFactory(
+            thread=parent_message.thread,
+            sender=parent_message.sender,
+            subject="Re: Original Subject",
+            parent=parent_message,
+            signature=signature_template,
+        )
+
+        html_body = "<p>This is a reply</p>"
+        text_body = "This is a reply"
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, text_body, html_body, user
+        )
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "This is a reply" in content
+        assert (
+            "Best regards,\r\nJohn Doe\r\nSoftware Engineer\r\nEngineering" in content
+        )
+
+    @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
+    def test_prepare_outbound_message_with_inactive_signature(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """Test preparing message with inactive signature."""
+        inactive_signature = factories.MessageTemplateFactory(
+            name="Inactive Signature",
+            html_body="<p>Inactive content</p>",
+            text_body="Inactive content",
+            type=enums.MessageTemplateTypeChoices.SIGNATURE,
+            mailbox=mailbox_sender,
+            is_active=False,
+        )
+
+        html_body = "<p>Hello world!</p>"
+        text_body = "Hello world!"
+        message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            is_draft=True,
+            subject="Test Message",
+            signature=inactive_signature,
+        )
+
+        result = outbound.prepare_outbound_message(
+            mailbox_sender, message, text_body, html_body, user
+        )
+
+        assert result is True
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "Hello world!" in content
+        assert "Inactive content" not in content
+
+    @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
+    def test_prepare_outbound_message_with_unauthorized_signature(
+        self, user, mailbox_sender, mailbox_access
+    ):
+        """Test preparing message with unauthorized signature."""
+        other_mailbox = factories.MailboxFactory()
+        unauthorized_signature = factories.MessageTemplateFactory(
+            name="Unauthorized Signature",
+            html_body="<p>Unauthorized content</p>",
+            text_body="Unauthorized content",
+            type=enums.MessageTemplateTypeChoices.SIGNATURE,
+            mailbox=other_mailbox,
+            is_active=True,
+        )
+
+        html_body = "<p>Hello world!</p>"
+        text_body = "Hello world!"
+        message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            is_draft=True,
+            subject="Test Message",
+            signature=unauthorized_signature,
+        )
+
+        result = outbound.prepare_outbound_message(
+            mailbox_sender, message, text_body, html_body, user
+        )
+
+        assert result is True
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert "Hello world!" in content
+        assert "Unauthorized content" not in content
+
+    @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
+    def test_prepare_outbound_message_with_only_signature(
+        self, user, signature_template, mailbox_sender, mailbox_access
+    ):
+        """Test preparing message with only signature."""
+        html_body = None
+        text_body = None
+        message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            is_draft=True,
+            subject="Test Message",
+            signature=signature_template,
+        )
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, text_body, html_body, user
+        )
+
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert (
+            "Best regards,\r\nJohn Doe\r\nSoftware Engineer\r\nEngineering" in content
+        )
+        assert (
+            "Best regards,<br>John Doe<br>Software Engineer<br>Engineering</p>"
+            in content
+        )
+
+        # Same with empty text and html bodies
+        html_body = ""
+        text_body = ""
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, text_body, html_body, user
+        )
+        message.refresh_from_db()
+        content = message.blob.get_content().decode()
+        assert (
+            "Best regards,\r\nJohn Doe\r\nSoftware Engineer\r\nEngineering" in content
+        )
+        assert (
+            "Best regards,<br>John Doe<br>Software Engineer<br>Engineering</p>"
+            in content
+        )

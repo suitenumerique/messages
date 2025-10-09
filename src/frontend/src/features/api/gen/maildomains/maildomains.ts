@@ -31,9 +31,13 @@ import type {
   MailboxAdminCreatePayloadRequest,
   MaildomainsListParams,
   MaildomainsMailboxesListParams,
+  MaildomainsMessageTemplatesListParams,
+  MessageTemplate,
+  MessageTemplateRequest,
   PaginatedMailDomainAdminList,
   PaginatedMailboxAdminList,
   PatchedMailboxAdminPartialUpdatePayloadRequest,
+  PatchedMessageTemplateRequest,
   ResetPasswordError,
   ResetPasswordInternalServerError,
   ResetPasswordNotFound,
@@ -1538,6 +1542,882 @@ export const useMaildomainsMailboxesResetPassword = <
 > => {
   const mutationOptions =
     getMaildomainsMailboxesResetPasswordMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * List message templates for a maildomain.
+ */
+export type maildomainsMessageTemplatesListResponse200 = {
+  data: MessageTemplate[];
+  status: 200;
+};
+
+export type maildomainsMessageTemplatesListResponseComposite =
+  maildomainsMessageTemplatesListResponse200;
+
+export type maildomainsMessageTemplatesListResponse =
+  maildomainsMessageTemplatesListResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMaildomainsMessageTemplatesListUrl = (
+  maildomainPk: string,
+  params?: MaildomainsMessageTemplatesListParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1.0/maildomains/${maildomainPk}/message-templates/?${stringifiedParams}`
+    : `/api/v1.0/maildomains/${maildomainPk}/message-templates/`;
+};
+
+export const maildomainsMessageTemplatesList = async (
+  maildomainPk: string,
+  params?: MaildomainsMessageTemplatesListParams,
+  options?: RequestInit,
+): Promise<maildomainsMessageTemplatesListResponse> => {
+  return fetchAPI<maildomainsMessageTemplatesListResponse>(
+    getMaildomainsMessageTemplatesListUrl(maildomainPk, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMaildomainsMessageTemplatesListQueryKey = (
+  maildomainPk: string,
+  params?: MaildomainsMessageTemplatesListParams,
+) => {
+  return [
+    `/api/v1.0/maildomains/${maildomainPk}/message-templates/`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getMaildomainsMessageTemplatesListQueryOptions = <
+  TData = Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  params?: MaildomainsMessageTemplatesListParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getMaildomainsMessageTemplatesListQueryKey(maildomainPk, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>
+  > = ({ signal }) =>
+    maildomainsMessageTemplatesList(maildomainPk, params, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!maildomainPk,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MaildomainsMessageTemplatesListQueryResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>
+>;
+export type MaildomainsMessageTemplatesListQueryError = unknown;
+
+export function useMaildomainsMessageTemplatesList<
+  TData = Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  params: undefined | MaildomainsMessageTemplatesListParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>,
+          TError,
+          Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMaildomainsMessageTemplatesList<
+  TData = Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  params?: MaildomainsMessageTemplatesListParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>,
+          TError,
+          Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMaildomainsMessageTemplatesList<
+  TData = Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  params?: MaildomainsMessageTemplatesListParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMaildomainsMessageTemplatesList<
+  TData = Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  params?: MaildomainsMessageTemplatesListParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsMessageTemplatesList>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMaildomainsMessageTemplatesListQueryOptions(
+    maildomainPk,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * ViewSet for managing message templates for a maildomain.
+ */
+export type maildomainsMessageTemplatesCreateResponse201 = {
+  data: MessageTemplate;
+  status: 201;
+};
+
+export type maildomainsMessageTemplatesCreateResponseComposite =
+  maildomainsMessageTemplatesCreateResponse201;
+
+export type maildomainsMessageTemplatesCreateResponse =
+  maildomainsMessageTemplatesCreateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMaildomainsMessageTemplatesCreateUrl = (
+  maildomainPk: string,
+) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/message-templates/`;
+};
+
+export const maildomainsMessageTemplatesCreate = async (
+  maildomainPk: string,
+  messageTemplateRequest: MessageTemplateRequest,
+  options?: RequestInit,
+): Promise<maildomainsMessageTemplatesCreateResponse> => {
+  return fetchAPI<maildomainsMessageTemplatesCreateResponse>(
+    getMaildomainsMessageTemplatesCreateUrl(maildomainPk),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(messageTemplateRequest),
+    },
+  );
+};
+
+export const getMaildomainsMessageTemplatesCreateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsMessageTemplatesCreate>>,
+    TError,
+    { maildomainPk: string; data: MessageTemplateRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsMessageTemplatesCreate>>,
+  TError,
+  { maildomainPk: string; data: MessageTemplateRequest },
+  TContext
+> => {
+  const mutationKey = ["maildomainsMessageTemplatesCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsMessageTemplatesCreate>>,
+    { maildomainPk: string; data: MessageTemplateRequest }
+  > = (props) => {
+    const { maildomainPk, data } = props ?? {};
+
+    return maildomainsMessageTemplatesCreate(
+      maildomainPk,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MaildomainsMessageTemplatesCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsMessageTemplatesCreate>>
+>;
+export type MaildomainsMessageTemplatesCreateMutationBody =
+  MessageTemplateRequest;
+export type MaildomainsMessageTemplatesCreateMutationError = unknown;
+
+export const useMaildomainsMessageTemplatesCreate = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof maildomainsMessageTemplatesCreate>>,
+      TError,
+      { maildomainPk: string; data: MessageTemplateRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsMessageTemplatesCreate>>,
+  TError,
+  { maildomainPk: string; data: MessageTemplateRequest },
+  TContext
+> => {
+  const mutationOptions =
+    getMaildomainsMessageTemplatesCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * ViewSet for managing message templates for a maildomain.
+ */
+export type maildomainsMessageTemplatesRetrieveResponse200 = {
+  data: MessageTemplate;
+  status: 200;
+};
+
+export type maildomainsMessageTemplatesRetrieveResponseComposite =
+  maildomainsMessageTemplatesRetrieveResponse200;
+
+export type maildomainsMessageTemplatesRetrieveResponse =
+  maildomainsMessageTemplatesRetrieveResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMaildomainsMessageTemplatesRetrieveUrl = (
+  maildomainPk: string,
+  id: string,
+) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/message-templates/${id}/`;
+};
+
+export const maildomainsMessageTemplatesRetrieve = async (
+  maildomainPk: string,
+  id: string,
+  options?: RequestInit,
+): Promise<maildomainsMessageTemplatesRetrieveResponse> => {
+  return fetchAPI<maildomainsMessageTemplatesRetrieveResponse>(
+    getMaildomainsMessageTemplatesRetrieveUrl(maildomainPk, id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMaildomainsMessageTemplatesRetrieveQueryKey = (
+  maildomainPk: string,
+  id: string,
+) => {
+  return [
+    `/api/v1.0/maildomains/${maildomainPk}/message-templates/${id}/`,
+  ] as const;
+};
+
+export const getMaildomainsMessageTemplatesRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getMaildomainsMessageTemplatesRetrieveQueryKey(maildomainPk, id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>
+  > = ({ signal }) =>
+    maildomainsMessageTemplatesRetrieve(maildomainPk, id, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(maildomainPk && id),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MaildomainsMessageTemplatesRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>
+>;
+export type MaildomainsMessageTemplatesRetrieveQueryError = unknown;
+
+export function useMaildomainsMessageTemplatesRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMaildomainsMessageTemplatesRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMaildomainsMessageTemplatesRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMaildomainsMessageTemplatesRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>,
+  TError = unknown,
+>(
+  maildomainPk: string,
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMaildomainsMessageTemplatesRetrieveQueryOptions(
+    maildomainPk,
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * ViewSet for managing message templates for a maildomain.
+ */
+export type maildomainsMessageTemplatesUpdateResponse200 = {
+  data: MessageTemplate;
+  status: 200;
+};
+
+export type maildomainsMessageTemplatesUpdateResponseComposite =
+  maildomainsMessageTemplatesUpdateResponse200;
+
+export type maildomainsMessageTemplatesUpdateResponse =
+  maildomainsMessageTemplatesUpdateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMaildomainsMessageTemplatesUpdateUrl = (
+  maildomainPk: string,
+  id: string,
+) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/message-templates/${id}/`;
+};
+
+export const maildomainsMessageTemplatesUpdate = async (
+  maildomainPk: string,
+  id: string,
+  messageTemplateRequest: MessageTemplateRequest,
+  options?: RequestInit,
+): Promise<maildomainsMessageTemplatesUpdateResponse> => {
+  return fetchAPI<maildomainsMessageTemplatesUpdateResponse>(
+    getMaildomainsMessageTemplatesUpdateUrl(maildomainPk, id),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(messageTemplateRequest),
+    },
+  );
+};
+
+export const getMaildomainsMessageTemplatesUpdateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsMessageTemplatesUpdate>>,
+    TError,
+    { maildomainPk: string; id: string; data: MessageTemplateRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsMessageTemplatesUpdate>>,
+  TError,
+  { maildomainPk: string; id: string; data: MessageTemplateRequest },
+  TContext
+> => {
+  const mutationKey = ["maildomainsMessageTemplatesUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsMessageTemplatesUpdate>>,
+    { maildomainPk: string; id: string; data: MessageTemplateRequest }
+  > = (props) => {
+    const { maildomainPk, id, data } = props ?? {};
+
+    return maildomainsMessageTemplatesUpdate(
+      maildomainPk,
+      id,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MaildomainsMessageTemplatesUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsMessageTemplatesUpdate>>
+>;
+export type MaildomainsMessageTemplatesUpdateMutationBody =
+  MessageTemplateRequest;
+export type MaildomainsMessageTemplatesUpdateMutationError = unknown;
+
+export const useMaildomainsMessageTemplatesUpdate = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof maildomainsMessageTemplatesUpdate>>,
+      TError,
+      { maildomainPk: string; id: string; data: MessageTemplateRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsMessageTemplatesUpdate>>,
+  TError,
+  { maildomainPk: string; id: string; data: MessageTemplateRequest },
+  TContext
+> => {
+  const mutationOptions =
+    getMaildomainsMessageTemplatesUpdateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * ViewSet for managing message templates for a maildomain.
+ */
+export type maildomainsMessageTemplatesPartialUpdateResponse200 = {
+  data: MessageTemplate;
+  status: 200;
+};
+
+export type maildomainsMessageTemplatesPartialUpdateResponseComposite =
+  maildomainsMessageTemplatesPartialUpdateResponse200;
+
+export type maildomainsMessageTemplatesPartialUpdateResponse =
+  maildomainsMessageTemplatesPartialUpdateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMaildomainsMessageTemplatesPartialUpdateUrl = (
+  maildomainPk: string,
+  id: string,
+) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/message-templates/${id}/`;
+};
+
+export const maildomainsMessageTemplatesPartialUpdate = async (
+  maildomainPk: string,
+  id: string,
+  patchedMessageTemplateRequest: PatchedMessageTemplateRequest,
+  options?: RequestInit,
+): Promise<maildomainsMessageTemplatesPartialUpdateResponse> => {
+  return fetchAPI<maildomainsMessageTemplatesPartialUpdateResponse>(
+    getMaildomainsMessageTemplatesPartialUpdateUrl(maildomainPk, id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(patchedMessageTemplateRequest),
+    },
+  );
+};
+
+export const getMaildomainsMessageTemplatesPartialUpdateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsMessageTemplatesPartialUpdate>>,
+    TError,
+    { maildomainPk: string; id: string; data: PatchedMessageTemplateRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsMessageTemplatesPartialUpdate>>,
+  TError,
+  { maildomainPk: string; id: string; data: PatchedMessageTemplateRequest },
+  TContext
+> => {
+  const mutationKey = ["maildomainsMessageTemplatesPartialUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsMessageTemplatesPartialUpdate>>,
+    { maildomainPk: string; id: string; data: PatchedMessageTemplateRequest }
+  > = (props) => {
+    const { maildomainPk, id, data } = props ?? {};
+
+    return maildomainsMessageTemplatesPartialUpdate(
+      maildomainPk,
+      id,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MaildomainsMessageTemplatesPartialUpdateMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof maildomainsMessageTemplatesPartialUpdate>>
+  >;
+export type MaildomainsMessageTemplatesPartialUpdateMutationBody =
+  PatchedMessageTemplateRequest;
+export type MaildomainsMessageTemplatesPartialUpdateMutationError = unknown;
+
+export const useMaildomainsMessageTemplatesPartialUpdate = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof maildomainsMessageTemplatesPartialUpdate>>,
+      TError,
+      { maildomainPk: string; id: string; data: PatchedMessageTemplateRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsMessageTemplatesPartialUpdate>>,
+  TError,
+  { maildomainPk: string; id: string; data: PatchedMessageTemplateRequest },
+  TContext
+> => {
+  const mutationOptions =
+    getMaildomainsMessageTemplatesPartialUpdateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * ViewSet for managing message templates for a maildomain.
+ */
+export type maildomainsMessageTemplatesDestroyResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type maildomainsMessageTemplatesDestroyResponseComposite =
+  maildomainsMessageTemplatesDestroyResponse204;
+
+export type maildomainsMessageTemplatesDestroyResponse =
+  maildomainsMessageTemplatesDestroyResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMaildomainsMessageTemplatesDestroyUrl = (
+  maildomainPk: string,
+  id: string,
+) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/message-templates/${id}/`;
+};
+
+export const maildomainsMessageTemplatesDestroy = async (
+  maildomainPk: string,
+  id: string,
+  options?: RequestInit,
+): Promise<maildomainsMessageTemplatesDestroyResponse> => {
+  return fetchAPI<maildomainsMessageTemplatesDestroyResponse>(
+    getMaildomainsMessageTemplatesDestroyUrl(maildomainPk, id),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getMaildomainsMessageTemplatesDestroyMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsMessageTemplatesDestroy>>,
+    TError,
+    { maildomainPk: string; id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsMessageTemplatesDestroy>>,
+  TError,
+  { maildomainPk: string; id: string },
+  TContext
+> => {
+  const mutationKey = ["maildomainsMessageTemplatesDestroy"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsMessageTemplatesDestroy>>,
+    { maildomainPk: string; id: string }
+  > = (props) => {
+    const { maildomainPk, id } = props ?? {};
+
+    return maildomainsMessageTemplatesDestroy(maildomainPk, id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MaildomainsMessageTemplatesDestroyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsMessageTemplatesDestroy>>
+>;
+
+export type MaildomainsMessageTemplatesDestroyMutationError = unknown;
+
+export const useMaildomainsMessageTemplatesDestroy = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof maildomainsMessageTemplatesDestroy>>,
+      TError,
+      { maildomainPk: string; id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsMessageTemplatesDestroy>>,
+  TError,
+  { maildomainPk: string; id: string },
+  TContext
+> => {
+  const mutationOptions =
+    getMaildomainsMessageTemplatesDestroyMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };
