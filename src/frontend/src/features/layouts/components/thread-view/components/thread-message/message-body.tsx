@@ -86,7 +86,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody, attachments = [] }: MessageBody
             FORBID_TAGS: ['script', 'object', 'iframe', 'embed', 'audio', 'video'],
             ADD_ATTR: ['target', 'rel'],
         });
-    }, [rawHtmlBody, rawTextBody]);
+    }, [rawHtmlBody, rawTextBody, cidToBlobUrlMap]);
 
     const wrappedHtml = useMemo(() => {
         return `
