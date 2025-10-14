@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import DomPurify from "dompurify";
 import { useTranslation } from "react-i18next";
+import { Attachment } from "@/features/api/gen/models";
+import { getRequestUrl, getApiOrigin } from "@/features/api/utils";
+import { getBlobDownloadRetrieveUrl } from "@/features/api/gen/blob/blob";
 
 type MessageBodyProps = {
     rawHtmlBody: string;
     rawTextBody: string;
+    attachments?: readonly Attachment[];
 }
 
 const CSP = [
-    // Allow images from our domain and data URIs
-    "img-src 'self' data: http://localhost:8900",
+    // Allow images from our domain, data URIs, and API endpoints
+    `img-src 'self' data: ${getApiOrigin()}`,
     // Disable everything else by default
     "default-src 'none'",
     // No scripts at all
@@ -35,9 +39,21 @@ const CSP = [
     "frame-ancestors 'none'",
   ].join('; ');
 
-const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
+const MessageBody = ({ rawHtmlBody, rawTextBody, attachments = [] }: MessageBodyProps) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const { t } = useTranslation();
+
+    // Create a mapping of CID to blob URL for CID image transformation
+    const cidToBlobUrlMap = useMemo(() => {
+        const map = new Map<string, string>();
+        attachments.forEach(attachment => {
+            if (attachment.cid) {
+                const blobUrl = getRequestUrl(getBlobDownloadRetrieveUrl(attachment.blobId));
+                map.set(attachment.cid, blobUrl);
+            }
+        });
+        return map;
+    }, [attachments]);
 
     DomPurify.addHook(
         'afterSanitizeAttributes',
@@ -49,6 +65,18 @@ const MessageBody = ({ rawHtmlBody, rawTextBody }: MessageBodyProps) => {
                     node.setAttribute('target', '_blank');
                 }
                 node.setAttribute('rel', 'noopener noreferrer');
+            }
+            
+            // Transform CID references in img src attributes
+            if (node.tagName === 'IMG' && cidToBlobUrlMap.size > 0) {
+                const src = node.getAttribute('src');
+                if (src && src.startsWith('cid:')) {
+                    const cid = src.substring(4); // Remove 'cid:' prefix
+                    const blobUrl = cidToBlobUrlMap.get(cid);
+                    if (blobUrl) {
+                        node.setAttribute('src', blobUrl);
+                    }
+                }
             }
         }
     );

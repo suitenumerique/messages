@@ -4983,10 +4983,17 @@
                         "readOnly": true,
                         "title": "Created on",
                         "description": "date and time at which a record was created"
+                    },
+                    "cid": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Content-ID for inline images"
                     }
                 },
                 "required": [
                     "blobId",
+                    "cid",
                     "created_at",
                     "id",
                     "name",

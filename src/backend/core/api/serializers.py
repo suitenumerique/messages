@@ -377,6 +377,9 @@ class AttachmentSerializer(serializers.ModelSerializer):
     blobId = serializers.UUIDField(source="blob.id", read_only=True)
     type = serializers.CharField(source="content_type", read_only=True)
     sha256 = serializers.SerializerMethodField()
+    cid = serializers.CharField(
+        read_only=True, allow_null=True, help_text="Content-ID for inline images"
+    )
 
     def get_sha256(self, obj):
         """Convert binary SHA256 to hex string."""
@@ -392,6 +395,7 @@ class AttachmentSerializer(serializers.ModelSerializer):
             "type",
             "sha256",
             "created_at",
+            "cid",
         ]
         read_only_fields = fields
 

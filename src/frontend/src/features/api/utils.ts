@@ -27,16 +27,18 @@ export const isJson = (str: string) => {
   return true;
 };
 
+export function getApiOrigin() {
+  return process.env.NEXT_PUBLIC_API_ORIGIN ||
+    (typeof window !== "undefined" ? window.location.origin : "");
+}
+
 /**
  * Build the request url from the context url and the base url
  *
  */
 export function getRequestUrl(pathname: string, params?: Record<string, string>): string {
-  const origin =
-    process.env.NEXT_PUBLIC_API_ORIGIN ||
-    (typeof window !== "undefined" ? window.location.origin : "");
 
-  const requestUrl = new URL(`${origin}${pathname}`);
+  const requestUrl = new URL(`${getApiOrigin()}${pathname}`);
 
   if (params) {
     Object.entries(params).forEach(([key, value]) => {

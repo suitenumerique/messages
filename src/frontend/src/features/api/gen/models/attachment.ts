@@ -21,4 +21,9 @@ export interface Attachment {
   readonly sha256: string;
   /** date and time at which a record was created */
   readonly created_at: string;
+  /**
+   * Content-ID for inline images
+   * @nullable
+   */
+  readonly cid: string | null;
 }

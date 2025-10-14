@@ -241,6 +241,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                 <MessageBody
                     rawTextBody={textBody}
                     rawHtmlBody={htmlBody}
+                    attachments={message.attachments}
                 />
                 <footer className="thread-message__footer">
                     {!message.is_draft && (message.attachments.length > 0 || driveAttachments.length > 0) && (
