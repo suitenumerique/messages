@@ -79,6 +79,11 @@
     margin: 0;
     word-break: break-word;
 }
+.thread-message__correspondents .recipient-chip-list {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+}
 
 .thread-message__body {
     width: 100%;

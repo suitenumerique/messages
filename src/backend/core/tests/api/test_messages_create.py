@@ -150,7 +150,7 @@ class TestApiDraftAndSendMessage:
         ).data
         assert draft_api_message["draftBody"] == draft_content
         assert draft_api_message["is_draft"] is True
-        assert draft_api_message["bcc"][0]["email"] == "jean@external.com"
+        assert draft_api_message["bcc"][0]["contact"]["email"] == "jean@external.com"
 
         send_response = client.post(
             send_url,

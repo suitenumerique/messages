@@ -2,7 +2,7 @@ import { useMemo, useState, useCallback, forwardRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Tooltip } from "@openfun/cunningham-react";
 import { DropdownMenu } from "@gouvfr-lasuite/ui-kit";
-import { Message } from "@/features/api/gen/models";
+import { Message, MessageDeliveryStatusChoices, MessageRecipient } from "@/features/api/gen/models";
 import useRead from "@/features/message/use-read";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { Badge } from "@/features/ui/components/badge";
@@ -14,9 +14,9 @@ import { Banner } from "@/features/ui/components/banner";
 import { MessageFormMode } from "@/features/forms/components/message-form";
 import MailHelper from "@/features/utils/mail-helper";
 import useAbility, { Abilities } from "@/hooks/use-ability";
-import { ContactChip } from "@/features/ui/components/contact-chip";
 import { getMessagesEmlRetrieveUrl } from "@/features/api/gen/messages/messages";
 import { getRequestUrl } from "@/features/api/utils";
+import { ContactChip, ContactChipDeliveryStatus } from "@/features/ui/components/contact-chip";
 
 type ThreadMessageProps = {
     message: Message,
@@ -54,6 +54,20 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         const [htmlBody, driveAttachments] = MailHelper.extractDriveAttachmentsFromHtmlBody(message.htmlBody[0]?.content as string);
         const [textBody,] = MailHelper.extractDriveAttachmentsFromTextBody(message.textBody[0]?.content as string);
 
+        const getRecipientDeliveryStatus = (recipient: MessageRecipient): ContactChipDeliveryStatus | undefined => {
+            switch (recipient.delivery_status) {
+                case MessageDeliveryStatusChoices.failed:
+                    return {'status': 'undelivered', 'timestamp': recipient.retry_at!};
+                case MessageDeliveryStatusChoices.retry:
+                    return {'status': 'delivering', 'timestamp': recipient.retry_at!};
+                case MessageDeliveryStatusChoices.sent:
+                case MessageDeliveryStatusChoices.internal:
+                    return {'status': 'delivered', 'timestamp': recipient.delivered_at!};
+                default:
+                    return undefined;
+            }
+        }
+
         const handleCloseReplyForm = () => {
             setReplyFormMode(null);
         }
@@ -78,7 +92,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                     <p>{t('This message has been deleted.')}</p>
                                     <div className="thread-view__trashed-banner__actions">
                                         <Button
-                                            onClick={() => markAsUntrashed({messageIds: [message.id]})}
+                                            onClick={() => markAsUntrashed({ messageIds: [message.id] })}
                                             color="primary-text"
                                             size="small"
                                             icon={<span className="material-icons">restore_from_trash</span>}
@@ -87,8 +101,8 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                         </Button>
                                     </div>
                                 </div>
-                        </Banner>
-                    )}
+                            </Banner>
+                        )}
                     <div className="thread-message__header-rows">
                         <div className="thread-message__header-column thread-message__header-column--left">
                             <h2 className="thread-message__subject">{message.subject || selectedThread?.snippet || t('No subject')}</h2>
@@ -130,13 +144,13 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                     </Tooltip>
                                 )}
                                 {canSendMessages && (
-                                <Tooltip content={t('Reply')}>
-                                    <Button
-                                        color="tertiary-text"
-                                        size="small"
-                                        icon={<span className="material-icons">reply</span>}
-                                        aria-label={t('Reply')}
-                                        onClick={() => setReplyFormMode('reply')}
+                                    <Tooltip content={t('Reply')}>
+                                        <Button
+                                            color="tertiary-text"
+                                            size="small"
+                                            icon={<span className="material-icons">reply</span>}
+                                            aria-label={t('Reply')}
+                                            onClick={() => setReplyFormMode('reply')}
                                         />
                                     </Tooltip>
                                 )}
@@ -144,10 +158,10 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                     <Tooltip content={t('Forward')}>
                                         <Button
                                             color="tertiary-text"
-                                        size="small"
-                                        icon={<span className="material-icons">forward</span>}
-                                        aria-label={t('Forward')}
-                                        onClick={() => setReplyFormMode('forward')}
+                                            size="small"
+                                            icon={<span className="material-icons">forward</span>}
+                                            aria-label={t('Forward')}
+                                            onClick={() => setReplyFormMode('forward')}
                                         />
                                     </Tooltip>
                                 )}
@@ -176,8 +190,8 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                         ...(message.is_trashed ? [] : [{
                                             label: t('Delete'),
                                             icon: <span className="material-icons">delete</span>,
-                                            callback: () => markAsTrashed({messageIds: [message.id]})
-                                         }]),
+                                            callback: () => markAsTrashed({ messageIds: [message.id] })
+                                        }]),
                                     ]}
                                 >
                                     <Tooltip content={t('More options')}>
@@ -193,12 +207,12 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                             </div>
                         </div>
                     </div>
-                    { isSuspiciousSender && (
-                    <div className="thread-message__header-rows" style={{ marginBlock: 'var(--c--theme--spacings--xs)' }}>
-                        <Banner type="warning" compact fullWidth>
-                            <div className="thread-message__header-banner__content">
-                                <p>{t("This contact's identity could not be verified. Proceed with caution.")}</p>
-                            </div>
+                    {isSuspiciousSender && (
+                        <div className="thread-message__header-rows" style={{ marginBlock: 'var(--c--theme--spacings--xs)' }}>
+                            <Banner type="warning" compact fullWidth>
+                                <div className="thread-message__header-banner__content">
+                                    <p>{t("This contact's identity could not be verified. Proceed with caution.")}</p>
+                                </div>
                             </Banner>
                         </div>
                     )}
@@ -209,26 +223,46 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                 <dd className="recipient-chip-list">
                                     <ContactChip
                                         contact={message.sender}
-                                        showWarning={isSuspiciousSender}
+                                        status={isSuspiciousSender ? 'unverified' : undefined}
                                     />
                                 </dd>
-                                <dt>{t('To: ')}</dt>
-                                <dd className="recipient-chip-list">
-                                    {message.to.map((recipient) => (
-                                        <ContactChip
-                                            key={recipient.id}
-                                            contact={recipient}
-                                        />
-                                    ))}
-                                </dd>
+                                {message.to.length > 0 && (
+                                    <>
+                                        <dt>{t('To: ')}</dt>
+                                        <dd className="recipient-chip-list">
+                                            {message.to.map((recipient) => (
+                                                <ContactChip
+                                                    key={`to-${recipient.contact.id}`}
+                                                    contact={recipient.contact}
+                                                    status={getRecipientDeliveryStatus(recipient)}
+                                                />
+                                            ))}
+                                        </dd>
+                                    </>
+                                )}
                                 {message.cc.length > 0 && (
                                     <>
                                         <dt>{t('Copy: ')}</dt>
                                         <dd className="recipient-chip-list">
                                             {message.cc.map((recipient) => (
                                                 <ContactChip
-                                                    key={recipient.id}
-                                                    contact={recipient}
+                                                    key={`cc-${recipient.contact.id}`}
+                                                    contact={recipient.contact}
+                                                    status={getRecipientDeliveryStatus(recipient)}
+                                                />
+                                            ))}
+                                        </dd>
+                                    </>
+                                )}
+                                {message.bcc.length > 0 && (
+                                    <>
+                                        <dt>{t('BCC: ')}</dt>
+                                        <dd className="recipient-chip-list">
+                                            {message.bcc.map((recipient) => (
+                                                <ContactChip
+                                                    key={`bcc-${recipient.contact.id}`}
+                                                    contact={recipient.contact}
+                                                    status={getRecipientDeliveryStatus(recipient)}
                                                 />
                                             ))}
                                         </dd>
@@ -277,7 +311,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                             </div>
                         )
                     }
-                    { !isFetchingMessages && showReplyForm && <MessageReplyForm
+                    {!isFetchingMessages && showReplyForm && <MessageReplyForm
                         mode={replyFormMode}
                         handleClose={handleCloseReplyForm}
                         message={draftMessage || message}

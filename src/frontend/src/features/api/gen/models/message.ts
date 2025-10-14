@@ -9,6 +9,7 @@ import type { MessageHtmlBodyItem } from "./message_html_body_item";
 import type { MessageTextBodyItem } from "./message_text_body_item";
 import type { Attachment } from "./attachment";
 import type { Contact } from "./contact";
+import type { MessageRecipient } from "./message_recipient";
 import type { MessageSignature } from "./message_signature";
 import type { MessageStmsgHeaders } from "./message_stmsg_headers";
 
@@ -35,9 +36,9 @@ export interface Message {
   readonly draftBody: string | null;
   readonly attachments: readonly Attachment[];
   readonly sender: Contact;
-  readonly to: readonly Contact[];
-  readonly cc: readonly Contact[];
-  readonly bcc: readonly Contact[];
+  readonly to: readonly MessageRecipient[];
+  readonly cc: readonly MessageRecipient[];
+  readonly bcc: readonly MessageRecipient[];
   /** @nullable */
   readonly read_at: string | null;
   /** @nullable */

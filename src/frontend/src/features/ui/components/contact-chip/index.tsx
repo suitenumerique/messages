@@ -1,59 +1,75 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "@openfun/cunningham-react";
 import { Contact } from "@/features/api/gen/models";
 import { Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
+import { ContactPopover } from "./contact-popover";
+import { DateHelper } from "@/features/utils/date-helper";
+
+
+type DeliveryStatus = 'undelivered' | 'delivering' | 'delivered';
+export type ContactChipDeliveryStatus = {
+    status: DeliveryStatus;
+    timestamp: string;
+}
+type ContactChipSenderStatus = 'unverified';
 
 type ContactChipProps = {
     contact: Contact;
-    showWarning?: boolean;
+    status?: ContactChipDeliveryStatus | ContactChipSenderStatus;
 }
 
-export const ContactChip = ({ contact, showWarning = false }: ContactChipProps) => {
+export const ContactChip = ({ contact, status }: ContactChipProps) => {
     const { t } = useTranslation();
-    const [copied, setCopied] = useState(false);
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-    const handleCopy = async () => {
-        try {
-            await navigator.clipboard.writeText(contact.email);
-            setCopied(true);
-            timeoutRef.current = setTimeout(() => setCopied(false), 1000);
-        } catch (err) {
-            console.error('Failed to copy email:', err);
-        }
-    };
-
-    // Cleanup timeout on unmount
-    useEffect(() => () => {
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-        }
-    }, []);
+    const popoverTriggerRef = useRef<HTMLButtonElement | null>(null);
+    const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
     const chipContent = (
-        <div className="contact-chip" data-copied={copied}>
-            <button type="button" className="contact-chip__content" onClick={handleCopy}>
-                {showWarning && (
+        <div className="contact-chip">
+            <button type="button" ref={popoverTriggerRef} className="contact-chip__content" onClick={() => setIsPopoverOpen(open => !open)}>
+                {status === 'unverified' && (
                     <Icon name="warning" type={IconType.OUTLINED} size={IconSize.SMALL} className="contact-chip__warning" />
                 )}
+                {status instanceof Object && status.status === 'undelivered' && (
+                    <Icon name="cancel" type={IconType.FILLED} size={IconSize.SMALL} className="contact-chip__error" />
+                )}
+                {status instanceof Object && status.status === 'delivering' && (
+                    <Icon name="update" type={IconType.OUTLINED} size={IconSize.SMALL} className="contact-chip__warning" />
+                )}
                 <span className="contact-chip__email">{contact.email}</span>
-                <span className="contact-chip__copied" aria-hidden={!copied}>
-                    <Icon name="check" type={IconType.OUTLINED} size={IconSize.SMALL} aria-live="polite" />
-                    {t('Copied!')}
-                </span>
             </button>
+            <ContactPopover
+                contact={contact}
+                isOpen={isPopoverOpen}
+                triggerRef={popoverTriggerRef}
+                onOpenChange={setIsPopoverOpen}
+            />
         </div>
     );
 
-    if (showWarning) {
+    if (status === 'unverified') {
         return (
             <Tooltip content={t("This contact's identity could not be verified. Proceed with caution.")}>
                 {chipContent}
             </Tooltip>
         );
     }
+    if (status instanceof Object) {
+        if (status.status === 'undelivered') {
+            return (
+                <Tooltip content={t("This message has not been delivered. Last update: {{timestamp}}.", { timestamp: DateHelper.formatRelativeTime(status.timestamp) })}>
+                    {chipContent}
+                </Tooltip>
+            )
+        }
+        if (status.status === 'delivering') {
+            return (
+                <Tooltip content={t("This message is being delivered. Last update: {{timestamp}}.", { timestamp: DateHelper.formatRelativeTime(status.timestamp) })}>
+                    {chipContent}
+                </Tooltip>
+            )
+        }
+    }
 
     return chipContent;
 };
-

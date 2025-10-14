@@ -81,7 +81,7 @@ describe('DateHelper', () => {
       expect(result).toEqual('3 hours ago');
     });
 
-    it('should return "days ago" with count for times more than 24 hours ago', () => {
+    it('should return "days ago" with count for times between 24 hours and 7 days ago', () => {
       const dateString = '2024-01-13T12:00:00.000Z'; // 2 days ago
 
       const result = DateHelper.formatRelativeTime(dateString);
@@ -139,6 +139,54 @@ describe('DateHelper', () => {
       expect(result).toEqual('1 day ago');
     });
 
+    it('should return "weeks ago" with count for times between 7 and 30 days ago', () => {
+      const dateString = '2024-01-01T12:00:00.000Z'; // 14 days ago
+
+      const result = DateHelper.formatRelativeTime(dateString);
+
+      expect(result).toEqual('2 weeks ago');
+    });
+
+    it('should handle edge case of exactly 7 days ago', () => {
+      const dateString = '2024-01-08T12:00:00.000Z'; // Exactly 7 days ago
+
+      const result = DateHelper.formatRelativeTime(dateString);
+
+      expect(result).toEqual('1 week ago');
+    });
+
+    it('should return "months ago" with count for times between 30 and 365 days ago', () => {
+      const dateString = '2023-11-15T12:00:00.000Z'; // ~2 months ago
+
+      const result = DateHelper.formatRelativeTime(dateString);
+
+      expect(result).toEqual('2 months ago');
+    });
+
+    it('should handle edge case of exactly 30 days ago', () => {
+      const dateString = '2023-12-16T12:00:00.000Z'; // Exactly 30 days ago
+
+      const result = DateHelper.formatRelativeTime(dateString);
+
+      expect(result).toEqual('1 month ago');
+    });
+
+    it('should return "years ago" with count for times more than 365 days ago', () => {
+      const dateString = '2022-01-15T12:00:00.000Z'; // 2 years ago
+
+      const result = DateHelper.formatRelativeTime(dateString);
+
+      expect(result).toEqual('2 years ago');
+    });
+
+    it('should handle edge case of exactly 365 days ago', () => {
+      const dateString = '2023-01-15T12:00:00.000Z'; // Exactly 365 days ago
+
+      const result = DateHelper.formatRelativeTime(dateString);
+
+      expect(result).toEqual('1 year ago');
+    });
+
     it('should handle future dates (negative time difference)', () => {
       const dateString = '2024-01-15T12:30:00.000Z'; // 30 minutes in the future
 
@@ -153,7 +201,7 @@ describe('DateHelper', () => {
 
       const result = DateHelper.formatRelativeTime(dateString);
 
-      expect(result).toEqual('1461 days ago'); // ~4 years in days
+      expect(result).toEqual('4 years ago');
     });
 
     it('should handle invalid date strings gracefully', () => {

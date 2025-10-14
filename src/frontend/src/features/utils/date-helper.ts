@@ -42,41 +42,54 @@ export class DateHelper {
    * @param timeRef - The time reference to compute the relative time from
    * @returns [translationKey, count]
    */
-  public static formatRelativeTime(dateString: string, timeRef: Date | string = new Date()): string {
+  public static formatRelativeTime(dateString: string | null | undefined, timeRef: Date | string = new Date()): string {
+    if (!dateString) return "";
     const now = timeRef instanceof Date ? timeRef : new Date(timeRef);
     const date = new Date(dateString);
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-    if (isNaN(diffInSeconds)) {
-      return "";
-    }
-
-    if (diffInSeconds < 5) {
-      return i18n.t("just now");
-    }
-    else if (diffInSeconds < 60) {
-      return i18n.t("less than a minute ago");
-    }
-    else if (diffInSeconds < 3600) {
+    if (isNaN(diffInSeconds)) return "";
+    if (diffInSeconds < 5) return i18n.t("just now");
+    if (diffInSeconds < 60) return i18n.t("less than a minute ago");
+    if (diffInSeconds < 3_600) {
       return i18n.t("{{count}} minutes ago", {
         count: Math.floor(diffInSeconds / 60),
         defaultValue_one: "{{count}} minute ago",
         defaultValue_other: "{{count}} minutes ago",
       })
     }
-    else if (diffInSeconds < 86400) {
+    if (diffInSeconds < 86_400) {
       return i18n.t("{{count}} hours ago", {
           count: Math.floor(diffInSeconds / 3600),
           defaultValue_one: "{{count}} hour ago",
           defaultValue_other: "{{count}} hours ago",
         });
     }
-    else {
+    if (diffInSeconds < 604_800) {
       return i18n.t("{{count}} days ago", {
         count: Math.floor(diffInSeconds / 86400),
         defaultValue_one: "{{count}} day ago",
         defaultValue_other: "{{count}} days ago",
       });
     }
+    if (diffInSeconds < 2_592_000) {
+      return i18n.t("{{count}} weeks ago", {
+        count: Math.floor(diffInSeconds / 604800),
+        defaultValue_one: "{{count}} week ago",
+        defaultValue_other: "{{count}} weeks ago",
+      });
+    }
+    if (diffInSeconds < 31_536_000) {
+      return i18n.t("{{count}} months ago", {
+        count: Math.floor(diffInSeconds / 2592000),
+        defaultValue_one: "{{count}} month ago",
+        defaultValue_other: "{{count}} months ago",
+      });
+    }
+    return i18n.t("{{count}} years ago", {
+      count: Math.floor(diffInSeconds / 31536000),
+      defaultValue_one: "{{count}} year ago",
+      defaultValue_other: "{{count}} years ago",
+    });
   }
 }

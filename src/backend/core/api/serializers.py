@@ -589,6 +589,21 @@ class ThreadSerializer(serializers.ModelSerializer):
         read_only_fields = fields  # Mark all as read-only for safety
 
 
+class MessageRecipientSerializer(serializers.ModelSerializer):
+    """Serialize message recipients."""
+
+    contact = ContactSerializer(read_only=True)
+    delivery_status = IntegerChoicesField(
+        choices_class=models.MessageDeliveryStatusChoices, read_only=True, allow_null=True
+    )
+    retry_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    delivered_at = serializers.DateTimeField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = models.MessageRecipient
+        fields = ["contact", "delivery_status", "retry_at", "delivered_at"]
+
+
 class MessageSerializer(serializers.ModelSerializer):
     """
     Serialize messages, getting parsed details from the Message model.
@@ -679,27 +694,23 @@ class MessageSerializer(serializers.ModelSerializer):
 
         return []
 
-    @extend_schema_field(ContactSerializer(many=True))
+    @extend_schema_field(MessageRecipientSerializer(many=True))
     def get_to(self, instance):
         """Return the 'To' recipients."""
-        contacts = models.Contact.objects.filter(
-            id__in=instance.recipients.filter(
-                type=models.MessageRecipientTypeChoices.TO
-            ).values_list("contact", flat=True)
-        )
-        return ContactSerializer(contacts, many=True).data
+        recipients = models.MessageRecipient.objects.filter(
+            message_id=instance.id, type=models.MessageRecipientTypeChoices.TO
+        ).select_related("contact")
+        return MessageRecipientSerializer(recipients, many=True).data
 
-    @extend_schema_field(ContactSerializer(many=True))
+    @extend_schema_field(MessageRecipientSerializer(many=True))
     def get_cc(self, instance):
         """Return the 'Cc' recipients."""
-        contacts = models.Contact.objects.filter(
-            id__in=instance.recipients.filter(
-                type=models.MessageRecipientTypeChoices.CC
-            ).values_list("contact", flat=True)
-        )
-        return ContactSerializer(contacts, many=True).data
+        recipients = models.MessageRecipient.objects.filter(
+            message_id=instance.id, type=models.MessageRecipientTypeChoices.CC
+        ).select_related("contact")
+        return MessageRecipientSerializer(recipients, many=True).data
 
-    @extend_schema_field(ContactSerializer(many=True))
+    @extend_schema_field(MessageRecipientSerializer(many=True))
     def get_bcc(self, instance):
         """
         Return the 'Bcc' recipients, only if the requesting user is allowed to see them.
@@ -718,13 +729,12 @@ class MessageSerializer(serializers.ModelSerializer):
                 role=enums.ThreadAccessRoleChoices.EDITOR,
             ).exists()
         ):
-            contacts = models.Contact.objects.filter(
-                id__in=instance.recipients.filter(
-                    type=models.MessageRecipientTypeChoices.BCC
-                ).values_list("contact", flat=True)
-            )
-            return ContactSerializer(contacts, many=True).data
-        return []  # Hide Bcc by default
+            recipients = models.MessageRecipient.objects.filter(
+                message_id=instance.id, type=models.MessageRecipientTypeChoices.BCC
+            ).select_related("contact")
+            return MessageRecipientSerializer(recipients, many=True).data
+
+        return []
 
     class Meta:
         model = models.Message

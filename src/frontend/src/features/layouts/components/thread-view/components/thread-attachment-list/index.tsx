@@ -25,7 +25,7 @@ export const AttachmentList = ({ attachments }: AttachmentListProps) => {
                 </p>
             </header>
             <div className="thread-attachment-list__body">
-                {attachments.map((attachment) => <AttachmentItem key={attachment.id} attachment={attachment} />)}
+                {attachments.map((attachment) => <AttachmentItem key={`attachment-${attachment.id}`} attachment={attachment} />)}
             </div>
         </section>
     )

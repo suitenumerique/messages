@@ -108,30 +108,30 @@ export const MessageForm = ({
     }
 
     const recipients = useMemo(() => {
-        if (draft) return draft.to.map(contact => contact.email);
+        if (draft) return draft.to.map(({ contact }) => contact.email);
         if (!mode.startsWith("reply") || !parentMessage) return [];
 
         if (mode === "reply_all") {
             return [...new Set([
-                {email: parentMessage.sender.email},
+                {contact: {email: parentMessage.sender.email}},
                 ...parentMessage.to,
                 ...parentMessage.cc
                 ]
-                .filter(contact => contact.email !== selectedMailbox!.email)
-                .map(contact => contact.email)
+                .filter(({ contact }) => contact.email !== selectedMailbox!.email)
+                .map(({ contact }) => contact.email)
             )]
         }
         // If the sender is replying to himself, we can consider that it prefers
         // to reply to the message recipient.
         if (parentMessage.sender.email === selectedMailbox?.email) {
             if (parentMessage.to.length > 0) {
-                return parentMessage.to.map(contact => contact.email);
+                return parentMessage.to.map(({ contact }) => contact.email);
             }
             if (parentMessage.cc.length > 0) {
-                return parentMessage.cc.map(contact => contact.email);
+                return parentMessage.cc.map(({ contact }) => contact.email);
             }
             if (parentMessage.bcc.length > 0) {
-                return parentMessage.bcc.map(contact => contact.email);
+                return parentMessage.bcc.map(({ contact }) => contact.email);
             }
         }
         return [parentMessage.sender.email];
@@ -158,9 +158,9 @@ export const MessageForm = ({
         const [draftBody, draftDriveAttachments] = MailHelper.extractDriveAttachmentsFromDraft(draft?.draftBody ?? '');
         return {
             from: defaultSenderId ?? '',
-            to: draft?.to?.map(contact => contact.email) ?? recipients,
-            cc: draft?.cc?.map(contact => contact.email) ?? [],
-            bcc: draft?.bcc?.map(contact => contact.email) ?? [],
+            to: draft?.to?.map(({ contact }) => contact.email) ?? recipients,
+            cc: draft?.cc?.map(({ contact }) => contact.email) ?? [],
+            bcc: draft?.bcc?.map(({ contact }) => contact.email) ?? [],
             subject: getDefaultSubject(),
             messageDraftBody: draftBody,
             messageHtmlBody: undefined,

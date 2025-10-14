@@ -383,7 +383,7 @@ Content-Type: text/html
         # Check JMAP recipients (parsed from raw_mime)
         assert len(msg2_data["to"]) == 1
         # We check the *email* parsed from the header now, not the contact ID directly
-        assert msg2_data["to"][0]["email"] == to_contact2.email
+        assert msg2_data["to"][0]["contact"]["email"] == to_contact2.email
         assert msg2_data["cc"] == []
         assert msg2_data["bcc"] == []
 
@@ -403,9 +403,9 @@ Content-Type: text/html
 
         # Check JMAP recipients (parsed from raw_mime)
         assert len(msg1_data["to"]) == 1
-        assert msg1_data["to"][0]["email"] == to_contact1.email
+        assert msg1_data["to"][0]["contact"]["email"] == to_contact1.email
         assert len(msg1_data["cc"]) == 1
-        assert msg1_data["cc"][0]["email"] == cc_contact1.email
+        assert msg1_data["cc"][0]["contact"]["email"] == cc_contact1.email
         assert msg1_data["bcc"] == []
 
     def test_list_messages_unauthorized(self):

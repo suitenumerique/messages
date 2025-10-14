@@ -89,7 +89,7 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
                 mode: quoteType!,
                 messageId: quotedMessage.id,
                 subject: quotedMessage.subject,
-                recipients: quotedMessage.to.map((to) => to.email).join(", "),
+                recipients: quotedMessage.to.map((to) => to.contact.email).join(", "),
                 sender: quotedMessage.sender.email,
                 received_at: quotedMessage.created_at
             }

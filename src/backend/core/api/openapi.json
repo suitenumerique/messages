@@ -6214,21 +6214,21 @@
                     "to": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/components/schemas/Contact"
+                            "$ref": "#/components/schemas/MessageRecipient"
                         },
                         "readOnly": true
                     },
                     "cc": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/components/schemas/Contact"
+                            "$ref": "#/components/schemas/MessageRecipient"
                         },
                         "readOnly": true
                     },
                     "bcc": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/components/schemas/Contact"
+                            "$ref": "#/components/schemas/MessageRecipient"
                         },
                         "readOnly": true
                     },
@@ -6314,6 +6314,56 @@
                     "thread_id",
                     "to",
                     "updated_at"
+                ]
+            },
+            "MessageDeliveryStatusChoices": {
+                "type": "string",
+                "enum": [
+                    "internal",
+                    "sent",
+                    "failed",
+                    "retry"
+                ]
+            },
+            "MessageRecipient": {
+                "type": "object",
+                "description": "Serialize message recipients.",
+                "properties": {
+                    "contact": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/Contact"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "delivery_status": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/MessageDeliveryStatusChoices"
+                            }
+                        ],
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "retry_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "delivered_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "contact",
+                    "delivered_at",
+                    "delivery_status",
+                    "retry_at"
                 ]
             },
             "MessageTemplate": {
