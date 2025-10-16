@@ -6351,6 +6351,11 @@
                         "readOnly": true,
                         "nullable": true
                     },
+                    "delivery_message": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true
+                    },
                     "retry_at": {
                         "type": "string",
                         "format": "date-time",
@@ -6367,6 +6372,7 @@
                 "required": [
                     "contact",
                     "delivered_at",
+                    "delivery_message",
                     "delivery_status",
                     "retry_at"
                 ]

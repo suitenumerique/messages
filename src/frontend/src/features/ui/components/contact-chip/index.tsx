@@ -10,7 +10,8 @@ import { DateHelper } from "@/features/utils/date-helper";
 type DeliveryStatus = 'undelivered' | 'delivering' | 'delivered';
 export type ContactChipDeliveryStatus = {
     status: DeliveryStatus;
-    timestamp: string;
+    timestamp: string | null;
+    message: string | null;
 }
 type ContactChipSenderStatus = 'unverified';
 
@@ -55,16 +56,9 @@ export const ContactChip = ({ contact, status }: ContactChipProps) => {
         );
     }
     if (status instanceof Object) {
-        if (status.status === 'undelivered') {
+        if (['undelivered', 'delivering'].includes(status.status)) {
             return (
-                <Tooltip content={t("This message has not been delivered. Last update: {{timestamp}}.", { timestamp: DateHelper.formatRelativeTime(status.timestamp) })}>
-                    {chipContent}
-                </Tooltip>
-            )
-        }
-        if (status.status === 'delivering') {
-            return (
-                <Tooltip content={t("This message is being delivered. Last update: {{timestamp}}.", { timestamp: DateHelper.formatRelativeTime(status.timestamp) })}>
+                <Tooltip content={<DeliveryStatusTooltip status={status} />}>
                     {chipContent}
                 </Tooltip>
             )
@@ -73,3 +67,28 @@ export const ContactChip = ({ contact, status }: ContactChipProps) => {
 
     return chipContent;
 };
+
+const DeliveryStatusTooltip = ({ status }: { status: ContactChipDeliveryStatus }) => {
+    const { t } = useTranslation();
+
+    return (
+        <div>
+            {status.status === 'undelivered' && (
+                <p>{t("This message has not been delivered.")}</p>
+            )}
+            {status.status === 'delivering' && (
+                <p>{t("This message is being delivered.")}</p>
+            )}
+            {status.timestamp || status.message && (
+                <div style={{ marginTop: '1rem' }}>
+                    {status.timestamp && (
+                        <p><em>{t("Last update: {{timestamp}}", { timestamp: DateHelper.formatRelativeTime(status.timestamp) })}</em></p>
+                    )}
+                    {status.message && (
+                        <details><summary>{t('Show logs')}</summary>{status.message}</details>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}

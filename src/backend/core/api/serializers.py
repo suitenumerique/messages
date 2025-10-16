@@ -602,12 +602,13 @@ class MessageRecipientSerializer(serializers.ModelSerializer):
         read_only=True,
         allow_null=True,
     )
+    delivery_message = serializers.CharField(read_only=True, allow_null=True)
     retry_at = serializers.DateTimeField(read_only=True, allow_null=True)
     delivered_at = serializers.DateTimeField(read_only=True, allow_null=True)
 
     class Meta:
         model = models.MessageRecipient
-        fields = ["contact", "delivery_status", "retry_at", "delivered_at"]
+        fields = ["contact", "delivery_status", "delivery_message", "retry_at", "delivered_at"]
 
 
 class MessageSerializer(serializers.ModelSerializer):

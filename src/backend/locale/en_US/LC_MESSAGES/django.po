@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-docs\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-10-15 12:16+0000\n"
+"POT-Creation-Date: 2025-10-16 14:12+0000\n"
 "PO-Revision-Date: 2025-01-27 09:27\n"
 "Last-Translator: \n"
 "Language-Team: English\n"
@@ -58,7 +58,7 @@ msgstr ""
 msgid "Keys"
 msgstr ""
 
-#: core/api/serializers.py:1024
+#: core/api/serializers.py:1031
 msgid "A mailbox with this local part already exists in this domain."
 msgstr ""
 
@@ -721,7 +721,7 @@ msgid ""
 msgstr ""
 
 #: core/models.py:1687
-msgid "Type of template (reply, new_message, signature)"
+msgid "Type of template (message, signature)"
 msgstr ""
 
 #: core/models.py:1693

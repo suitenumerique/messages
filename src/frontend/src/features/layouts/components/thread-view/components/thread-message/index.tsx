@@ -55,14 +55,18 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         const [textBody,] = MailHelper.extractDriveAttachmentsFromTextBody(message.textBody[0]?.content as string);
 
         const getRecipientDeliveryStatus = (recipient: MessageRecipient): ContactChipDeliveryStatus | undefined => {
+            // If the message has just been sent, it has not delivery status but for the sender it is useful to show that the message is being delivered
+            if (message.is_sender && recipient.delivery_status === null) {
+                return {'status': 'delivering', 'timestamp': null, 'message': null};
+            }
             switch (recipient.delivery_status) {
                 case MessageDeliveryStatusChoices.failed:
-                    return {'status': 'undelivered', 'timestamp': recipient.retry_at!};
+                    return {'status': 'undelivered', 'timestamp': recipient.retry_at, 'message': recipient.delivery_message};
                 case MessageDeliveryStatusChoices.retry:
-                    return {'status': 'delivering', 'timestamp': recipient.retry_at!};
+                    return {'status': 'delivering', 'timestamp': recipient.retry_at, 'message': recipient.delivery_message};
                 case MessageDeliveryStatusChoices.sent:
                 case MessageDeliveryStatusChoices.internal:
-                    return {'status': 'delivered', 'timestamp': recipient.delivered_at!};
+                    return {'status': 'delivered', 'timestamp': recipient.delivered_at, 'message': recipient.delivery_message};
                 default:
                     return undefined;
             }

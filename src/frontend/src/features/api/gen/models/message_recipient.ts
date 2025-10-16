@@ -16,6 +16,8 @@ export interface MessageRecipient {
   /** @nullable */
   readonly delivery_status: MessageRecipientDeliveryStatus;
   /** @nullable */
+  readonly delivery_message: string | null;
+  /** @nullable */
   readonly retry_at: string | null;
   /** @nullable */
   readonly delivered_at: string | null;

@@ -2,8 +2,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-10-15 12:16+0000\n"
-"PO-Revision-Date: 2025-10-15 12:15\n"
+"POT-Creation-Date: 2025-10-16 14:12+0000\n"
+"PO-Revision-Date: 2025-10-16 14:11\n"
 "Last-Translator: \n"
 "Language-Team: Russian\n"
 "Language: ru_RU\n"
@@ -60,7 +60,7 @@ msgstr "Импорт сообщений IMAP"
 msgid "Keys"
 msgstr "Ключи"
 
-#: core/api/serializers.py:1024
+#: core/api/serializers.py:1031
 msgid "A mailbox with this local part already exists in this domain."
 msgstr "Почтовый ящик с этой локальной частью уже существует в этом домене."
 
@@ -746,7 +746,9 @@ msgstr ""
 "str, raw: any}"
 
 #: core/models.py:1687
-msgid "Type of template (reply, new_message, signature)"
+#, fuzzy
+#| msgid "Type of template (reply, new_message, signature)"
+msgid "Type of template (message, signature)"
 msgstr "Тип шаблона (ответить, новое_сообщение, подпись)"
 
 #: core/models.py:1693
