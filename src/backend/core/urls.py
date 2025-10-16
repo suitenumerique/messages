@@ -12,6 +12,7 @@ from core.api.viewsets.draft import DraftMessageView
 from core.api.viewsets.flag import ChangeFlagView
 from core.api.viewsets.import_message import ImportViewSet, MessagesArchiveUploadViewSet
 from core.api.viewsets.inbound.mta import InboundMTAViewSet
+from core.api.viewsets.inbound.webhook import InboundWebhookViewSet
 from core.api.viewsets.inbound.widget import InboundWidgetViewSet
 from core.api.viewsets.label import LabelViewSet
 from core.api.viewsets.mailbox import MailboxViewSet
@@ -82,6 +83,9 @@ maildomain_nested_router.register(
 # Router for /inbound/
 inbound_nested_router = DefaultRouter()
 inbound_nested_router.register(r"mta", InboundMTAViewSet, basename="inbound-mta")
+inbound_nested_router.register(
+    r"webhook", InboundWebhookViewSet, basename="inbound-webhook"
+)
 inbound_nested_router.register(
     r"widget", InboundWidgetViewSet, basename="inbound-widget"
 )
