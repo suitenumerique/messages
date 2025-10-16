@@ -121,10 +121,6 @@ class MessageTemplateTypeChoices(models.IntegerChoices):
     SIGNATURE = 2, "signature"
 
 
-EML_SUPPORTED_MIME_TYPES = ["message/rfc822", "application/eml"]
-MBOX_SUPPORTED_MIME_TYPES = [
-    "application/octet-stream",
-    "text/plain",
-    "application/mbox",
-]
+EML_SUPPORTED_MIME_TYPES = ["message/rfc822", "application/eml", "text/plain"]
+MBOX_SUPPORTED_MIME_TYPES = ["application/octet-stream", "text/plain", "application/mbox"]
 ARCHIVE_SUPPORTED_MIME_TYPES = EML_SUPPORTED_MIME_TYPES + MBOX_SUPPORTED_MIME_TYPES
