@@ -163,11 +163,11 @@
                                             "type": "boolean",
                                             "readOnly": true
                                         },
-                                        "AI_FEATURE_SUMMARY_ENABLED": {
+                                        "FEATURE_AI_SUMMARY": {
                                             "type": "boolean",
                                             "readOnly": true
                                         },
-                                        "AI_FEATURE_AUTOLABELS_ENABLED": {
+                                        "FEATURE_AI_AUTOLABELS": {
                                             "type": "boolean",
                                             "readOnly": true
                                         },
@@ -204,8 +204,8 @@
                                         "LANGUAGES",
                                         "LANGUAGE_CODE",
                                         "AI_ENABLED",
-                                        "AI_FEATURE_SUMMARY_ENABLED",
-                                        "AI_FEATURE_AUTOLABELS_ENABLED",
+                                        "FEATURE_AI_SUMMARY",
+                                        "FEATURE_AI_AUTOLABELS",
                                         "SCHEMA_CUSTOM_ATTRIBUTES_USER",
                                         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN"
                                     ]

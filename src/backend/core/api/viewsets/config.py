@@ -30,11 +30,11 @@ class ConfigView(drf.views.APIView):
                         },
                         "LANGUAGE_CODE": {"type": "string", "readOnly": True},
                         "AI_ENABLED": {"type": "boolean", "readOnly": True},
-                        "AI_FEATURE_SUMMARY_ENABLED": {
+                        "FEATURE_AI_SUMMARY": {
                             "type": "boolean",
                             "readOnly": True,
                         },
-                        "AI_FEATURE_AUTOLABELS_ENABLED": {
+                        "FEATURE_AI_AUTOLABELS": {
                             "type": "boolean",
                             "readOnly": True,
                         },
@@ -68,8 +68,8 @@ class ConfigView(drf.views.APIView):
                         "LANGUAGES",
                         "LANGUAGE_CODE",
                         "AI_ENABLED",
-                        "AI_FEATURE_SUMMARY_ENABLED",
-                        "AI_FEATURE_AUTOLABELS_ENABLED",
+                        "FEATURE_AI_SUMMARY",
+                        "FEATURE_AI_AUTOLABELS",
                         "SCHEMA_CUSTOM_ATTRIBUTES_USER",
                         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN",
                     ],
@@ -97,8 +97,8 @@ class ConfigView(drf.views.APIView):
 
         # AI Features
         dict_settings["AI_ENABLED"] = is_ai_enabled()
-        dict_settings["AI_FEATURE_SUMMARY_ENABLED"] = is_ai_summary_enabled()
-        dict_settings["AI_FEATURE_AUTOLABELS_ENABLED"] = is_auto_labels_enabled()
+        dict_settings["FEATURE_AI_SUMMARY"] = is_ai_summary_enabled()
+        dict_settings["FEATURE_AI_AUTOLABELS"] = is_auto_labels_enabled()
 
         # Drive service
         if base_url := settings.DRIVE_CONFIG.get("base_url"):

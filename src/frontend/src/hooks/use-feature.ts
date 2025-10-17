@@ -20,9 +20,9 @@ export const useFeatureFlag = (featureKey: FEATURE_KEYS) => {
         case FEATURE_KEYS.DRIVE:
             return config.DRIVE !== undefined;
         case FEATURE_KEYS.AI_SUMMARY:
-            return config.AI_ENABLED === true && config.AI_FEATURE_SUMMARY_ENABLED === true;
+            return config.AI_ENABLED === true && config.FEATURE_AI_SUMMARY === true;
         case FEATURE_KEYS.AI_AUTOLABELS:
-            return config.AI_ENABLED === true && config.AI_FEATURE_AUTOLABELS_ENABLED === true;
+            return config.AI_ENABLED === true && config.FEATURE_AI_AUTOLABELS === true;
         default:
             throw new Error(`Unknown feature key: ${featureKey}`);
     }

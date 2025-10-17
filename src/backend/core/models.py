@@ -631,8 +631,12 @@ class Mailbox(BaseModel):
             MailboxAbilities.CAN_VIEW_MESSAGES: has_access,
             MailboxAbilities.CAN_SEND_MESSAGES: can_send,
             MailboxAbilities.CAN_MANAGE_LABELS: can_modify,
-            MailboxAbilities.CAN_MANAGE_MESSAGE_TEMPLATES: is_admin,
-            MailboxAbilities.CAN_IMPORT_MESSAGES: is_admin,
+            MailboxAbilities.CAN_MANAGE_MESSAGE_TEMPLATES: (
+                is_admin and settings.FEATURE_MESSAGE_TEMPLATES
+            ),
+            MailboxAbilities.CAN_IMPORT_MESSAGES: (
+                is_admin and settings.FEATURE_IMPORT_MESSAGES
+            ),
         }
 
     def get_validated_signature(self, signature_id: str):

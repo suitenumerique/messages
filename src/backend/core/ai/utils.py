@@ -23,9 +23,9 @@ def is_ai_enabled() -> bool:
     """Check if AI features are enabled based on the presence of required settings in the environment (API_KEY, BASE_URL, MODEL)"""
     return all(
         [
-            getattr(settings, "AI_API_KEY", None),
-            getattr(settings, "AI_BASE_URL", None),
-            getattr(settings, "AI_MODEL", None),
+            settings.AI_API_KEY,
+            settings.AI_BASE_URL,
+            settings.AI_MODEL,
         ]
     )
 
@@ -33,18 +33,14 @@ def is_ai_enabled() -> bool:
 def is_ai_summary_enabled() -> bool:
     """
     Check if AI summary features are enabled.
-    This is determined by the presence of the AI settings and if AI_FEATURE_SUMMARY_ENABLED is set to 1.
+    This is determined by the presence of the AI settings and if FEATURE_AI_SUMMARY is set to 1.
     """
-    return all(
-        [is_ai_enabled(), getattr(settings, "AI_FEATURE_SUMMARY_ENABLED", False)]
-    )
+    return all([is_ai_enabled(), settings.FEATURE_AI_SUMMARY])
 
 
 def is_auto_labels_enabled() -> bool:
     """
     Check if AI auto-labeling features are enabled.
-    This is determined by the presence of the AI settings and if AI_FEATURE_AUTO_LABELS_ENABLED is set to 1.
+    This is determined by the presence of the AI settings and if FEATURE_AI_AUTOLABELS is set to 1.
     """
-    return all(
-        [is_ai_enabled(), getattr(settings, "AI_FEATURE_AUTOLABELS_ENABLED", False)]
-    )
+    return all([is_ai_enabled(), settings.FEATURE_AI_AUTOLABELS])

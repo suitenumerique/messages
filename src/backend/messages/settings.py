@@ -677,12 +677,18 @@ class Base(Configuration):
     AI_BASE_URL = values.Value(None, environ_name="AI_BASE_URL", environ_prefix=None)
     AI_MODEL = values.Value(None, environ_name="AI_MODEL", environ_prefix=None)
 
-    AI_FEATURE_SUMMARY_ENABLED = values.BooleanValue(
-        default=False, environ_name="AI_FEATURE_SUMMARY_ENABLED", environ_prefix=None
+    # Feature flags
+    FEATURE_AI_SUMMARY = values.BooleanValue(
+        default=False, environ_name="FEATURE_AI_SUMMARY", environ_prefix=None
     )
-
-    AI_FEATURE_AUTOLABELS_ENABLED = values.BooleanValue(
-        default=False, environ_name="AI_FEATURE_AUTOLABELS_ENABLED", environ_prefix=None
+    FEATURE_AI_AUTOLABELS = values.BooleanValue(
+        default=False, environ_name="FEATURE_AI_AUTOLABELS", environ_prefix=None
+    )
+    FEATURE_MESSAGE_TEMPLATES = values.BooleanValue(
+        default=False, environ_name="FEATURE_MESSAGE_TEMPLATES", environ_prefix=None
+    )
+    FEATURE_IMPORT_MESSAGES = values.BooleanValue(
+        default=True, environ_name="FEATURE_IMPORT_MESSAGES", environ_prefix=None
     )
 
     # Logging

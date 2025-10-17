@@ -94,8 +94,8 @@ AI_API_KEY=
 AI_MODEL=
 
 # AI features
-AI_FEATURE_SUMMARY_ENABLED=False
-AI_FEATURE_AUTOLABELS_ENABLED=False
+FEATURE_AI_SUMMARY=False
+FEATURE_AI_AUTOLABELS=False
 
 # Interoperability
 # Drive - https://github.com/suitenumerique/drive
