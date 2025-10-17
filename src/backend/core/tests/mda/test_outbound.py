@@ -114,6 +114,7 @@ class TestSendOutboundMessage:
             thread=thread,
             sender=sender_contact,
             is_draft=False,
+            is_sender=True,
             subject="Test Outbound",
         )
         # Create a blob with the raw MIME content
@@ -466,6 +467,7 @@ class TestSendMessageRedisLock(TransactionTestCase):
             thread=self.thread,
             sender=self.sender_contact,
             is_draft=False,
+            is_sender=True,
             subject="Test Lock",
         )
         # Create a blob with the raw MIME content
