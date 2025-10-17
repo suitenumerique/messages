@@ -9,10 +9,13 @@ from drf_spectacular.utils import (
     OpenApiParameter,
     OpenApiResponse,
     extend_schema,
+    inline_serializer,
 )
 from rest_framework import mixins, status, viewsets
+from rest_framework import serializers as drf_serializers
 
 from core import enums, models
+from core.ai.message_generator import generate_new_message, generate_reply_message
 from core.ai.thread_summarizer import summarize_thread
 from core.services.search import search_threads
 
@@ -487,6 +490,89 @@ class ThreadViewSet(
         return drf.response.Response(
             {"summary": thread.summary}, status=status.HTTP_200_OK
         )
+
+    @extend_schema(
+        request=inline_serializer(
+            name="GenerateNewMessageRequest",
+            fields={
+                "draft": drf_serializers.CharField(
+                    required=False, help_text="Current message draft."
+                ),
+                "user_prompt": drf_serializers.CharField(
+                    required=False, help_text="User prompt for the AI."
+                ),
+            },
+        ),
+        responses={
+            200: OpenApiResponse(
+                response={
+                    "type": "object",
+                    "properties": {"message": {"type": "string"}},
+                },
+                description="Message successfully generated.",
+            ),
+            403: OpenApiResponse(
+                response={"detail": "Permission denied"},
+                description="User does not have permission to generate a new message.",
+            ),
+        },
+        tags=["threads"],
+    )
+    @drf.decorators.action(
+        detail=False,
+        methods=["post"],
+        url_path="generate-new-message",
+        url_name="generate-new-message",
+    )
+    def generate_new_message(self, request):
+        """Generate a new message using the AI model based on the user's prompt and draft."""
+        draft = request.data.get("draft", "")
+        user_prompt = request.data.get("user_prompt", "")
+        user = self.request.user
+        name = getattr(user, "full_name", getattr(user, "username", ""))
+        message = generate_new_message(draft, user_prompt, name)
+        return drf.response.Response({"message": message}, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        request=inline_serializer(
+            name="GenerateReplyMessageRequest",
+            fields={
+                "draft": drf_serializers.CharField(
+                    required=False, help_text="Current message draft."
+                ),
+                "user_prompt": drf_serializers.CharField(
+                    required=False, help_text="User prompt for the AI."
+                ),
+            },
+        ),
+        responses={
+            200: OpenApiResponse(
+                response={
+                    "type": "object",
+                    "properties": {"message": {"type": "string"}},
+                },
+                description="Reply message successfully generated.",
+            ),
+            403: OpenApiResponse(
+                response={"detail": "Permission denied"},
+                description="User does not have permission to generate a reply message.",
+            ),
+        },
+        tags=["threads"],
+    )
+    @drf.decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path="generate-reply-message",
+        url_name="generate-reply-message",
+    )
+    def generate_reply_message(self, request, pk):  # pylint: disable=unused-argument
+        """Generate a reply message using the AI model based on the thread context and user's prompt."""
+        thread = self.get_object()
+        draft = request.data.get("draft", "")
+        user_prompt = request.data.get("user_prompt", "")
+        message = generate_reply_message(draft, thread, user_prompt)
+        return drf.response.Response({"message": message}, status=status.HTTP_200_OK)
 
     # @extend_schema(
     #     tags=["threads"],

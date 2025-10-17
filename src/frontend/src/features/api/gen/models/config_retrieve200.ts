@@ -16,6 +16,7 @@ export type ConfigRetrieve200 = {
   readonly AI_ENABLED: boolean;
   readonly AI_FEATURE_SUMMARY_ENABLED: boolean;
   readonly AI_FEATURE_AUTOLABELS_ENABLED: boolean;
+  readonly AI_FEATURE_MESSAGES_GENERATION_ENABLED: boolean;
   /** The URLs of the Drive external service. */
   readonly DRIVE?: ConfigRetrieve200DRIVE;
   readonly SCHEMA_CUSTOM_ATTRIBUTES_USER: ConfigRetrieve200SCHEMACUSTOMATTRIBUTESUSER;

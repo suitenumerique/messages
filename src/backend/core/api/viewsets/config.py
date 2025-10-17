@@ -6,7 +6,7 @@ import rest_framework as drf
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.permissions import AllowAny
 
-from core.ai.utils import is_ai_enabled, is_ai_summary_enabled, is_auto_labels_enabled
+from core.ai.utils import is_ai_enabled, is_ai_summary_enabled, is_auto_labels_enabled, is_ai_messages_generation_enabled
 
 
 class ConfigView(drf.views.APIView):
@@ -35,6 +35,10 @@ class ConfigView(drf.views.APIView):
                             "readOnly": True,
                         },
                         "AI_FEATURE_AUTOLABELS_ENABLED": {
+                            "type": "boolean",
+                            "readOnly": True,
+                        },
+                        "AI_FEATURE_MESSAGES_GENERATION_ENABLED": {
                             "type": "boolean",
                             "readOnly": True,
                         },
@@ -70,6 +74,7 @@ class ConfigView(drf.views.APIView):
                         "AI_ENABLED",
                         "AI_FEATURE_SUMMARY_ENABLED",
                         "AI_FEATURE_AUTOLABELS_ENABLED",
+                        "AI_FEATURE_MESSAGES_GENERATION_ENABLED",
                         "SCHEMA_CUSTOM_ATTRIBUTES_USER",
                         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN",
                     ],
@@ -99,6 +104,7 @@ class ConfigView(drf.views.APIView):
         dict_settings["AI_ENABLED"] = is_ai_enabled()
         dict_settings["AI_FEATURE_SUMMARY_ENABLED"] = is_ai_summary_enabled()
         dict_settings["AI_FEATURE_AUTOLABELS_ENABLED"] = is_auto_labels_enabled()
+        dict_settings["AI_FEATURE_MESSAGES_GENERATION_ENABLED"] = is_ai_messages_generation_enabled()
 
         # Drive service
         if base_url := settings.DRIVE_CONFIG.get("base_url"):

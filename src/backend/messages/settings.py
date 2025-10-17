@@ -680,6 +680,11 @@ class Base(Configuration):
     AI_FEATURE_SUMMARY_ENABLED = values.BooleanValue(
         default=False, environ_name="AI_FEATURE_SUMMARY_ENABLED", environ_prefix=None
     )
+    AI_FEATURE_MESSAGES_GENERATION_ENABLED = values.BooleanValue(
+        default=False,
+        environ_name="AI_FEATURE_MESSAGES_GENERATION_ENABLED",
+        environ_prefix=None,
+    )
 
     AI_FEATURE_AUTOLABELS_ENABLED = values.BooleanValue(
         default=False, environ_name="AI_FEATURE_AUTOLABELS_ENABLED", environ_prefix=None

@@ -26,8 +26,12 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  GenerateNewMessageRequestRequest,
+  GenerateReplyMessageRequestRequest,
   PaginatedThreadList,
   Thread,
+  ThreadsGenerateNewMessageCreate200,
+  ThreadsGenerateReplyMessageCreate200,
   ThreadsListParams,
   ThreadsRefreshSummaryCreate200,
   ThreadsStatsRetrieve200,
@@ -655,6 +659,118 @@ export const useThreadsDestroy = <TError = unknown, TContext = unknown>(
   return useMutation(mutationOptions, queryClient);
 };
 /**
+ * Generate a reply message using the AI model based on the thread context and user's prompt.
+ */
+export type threadsGenerateReplyMessageCreateResponse200 = {
+  data: ThreadsGenerateReplyMessageCreate200;
+  status: 200;
+};
+
+export type threadsGenerateReplyMessageCreateResponse403 = {
+  data: unknown;
+  status: 403;
+};
+
+export type threadsGenerateReplyMessageCreateResponseComposite =
+  | threadsGenerateReplyMessageCreateResponse200
+  | threadsGenerateReplyMessageCreateResponse403;
+
+export type threadsGenerateReplyMessageCreateResponse =
+  threadsGenerateReplyMessageCreateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getThreadsGenerateReplyMessageCreateUrl = (id: string) => {
+  return `/api/v1.0/threads/${id}/generate-reply-message/`;
+};
+
+export const threadsGenerateReplyMessageCreate = async (
+  id: string,
+  generateReplyMessageRequestRequest: GenerateReplyMessageRequestRequest,
+  options?: RequestInit,
+): Promise<threadsGenerateReplyMessageCreateResponse> => {
+  return fetchAPI<threadsGenerateReplyMessageCreateResponse>(
+    getThreadsGenerateReplyMessageCreateUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(generateReplyMessageRequestRequest),
+    },
+  );
+};
+
+export const getThreadsGenerateReplyMessageCreateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof threadsGenerateReplyMessageCreate>>,
+    TError,
+    { id: string; data: GenerateReplyMessageRequestRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof threadsGenerateReplyMessageCreate>>,
+  TError,
+  { id: string; data: GenerateReplyMessageRequestRequest },
+  TContext
+> => {
+  const mutationKey = ["threadsGenerateReplyMessageCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof threadsGenerateReplyMessageCreate>>,
+    { id: string; data: GenerateReplyMessageRequestRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return threadsGenerateReplyMessageCreate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ThreadsGenerateReplyMessageCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof threadsGenerateReplyMessageCreate>>
+>;
+export type ThreadsGenerateReplyMessageCreateMutationBody =
+  GenerateReplyMessageRequestRequest;
+export type ThreadsGenerateReplyMessageCreateMutationError = unknown;
+
+export const useThreadsGenerateReplyMessageCreate = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof threadsGenerateReplyMessageCreate>>,
+      TError,
+      { id: string; data: GenerateReplyMessageRequestRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof threadsGenerateReplyMessageCreate>>,
+  TError,
+  { id: string; data: GenerateReplyMessageRequestRequest },
+  TContext
+> => {
+  const mutationOptions =
+    getThreadsGenerateReplyMessageCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
  * Refresh the summary of a thread.
  */
 export type threadsRefreshSummaryCreateResponse200 = {
@@ -952,6 +1068,117 @@ export function useThreadsSummaryRetrieve<
   return query;
 }
 
+/**
+ * Generate a new message using the AI model based on the user's prompt and draft.
+ */
+export type threadsGenerateNewMessageCreateResponse200 = {
+  data: ThreadsGenerateNewMessageCreate200;
+  status: 200;
+};
+
+export type threadsGenerateNewMessageCreateResponse403 = {
+  data: unknown;
+  status: 403;
+};
+
+export type threadsGenerateNewMessageCreateResponseComposite =
+  | threadsGenerateNewMessageCreateResponse200
+  | threadsGenerateNewMessageCreateResponse403;
+
+export type threadsGenerateNewMessageCreateResponse =
+  threadsGenerateNewMessageCreateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getThreadsGenerateNewMessageCreateUrl = () => {
+  return `/api/v1.0/threads/generate-new-message/`;
+};
+
+export const threadsGenerateNewMessageCreate = async (
+  generateNewMessageRequestRequest: GenerateNewMessageRequestRequest,
+  options?: RequestInit,
+): Promise<threadsGenerateNewMessageCreateResponse> => {
+  return fetchAPI<threadsGenerateNewMessageCreateResponse>(
+    getThreadsGenerateNewMessageCreateUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(generateNewMessageRequestRequest),
+    },
+  );
+};
+
+export const getThreadsGenerateNewMessageCreateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof threadsGenerateNewMessageCreate>>,
+    TError,
+    { data: GenerateNewMessageRequestRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof threadsGenerateNewMessageCreate>>,
+  TError,
+  { data: GenerateNewMessageRequestRequest },
+  TContext
+> => {
+  const mutationKey = ["threadsGenerateNewMessageCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof threadsGenerateNewMessageCreate>>,
+    { data: GenerateNewMessageRequestRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return threadsGenerateNewMessageCreate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ThreadsGenerateNewMessageCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof threadsGenerateNewMessageCreate>>
+>;
+export type ThreadsGenerateNewMessageCreateMutationBody =
+  GenerateNewMessageRequestRequest;
+export type ThreadsGenerateNewMessageCreateMutationError = unknown;
+
+export const useThreadsGenerateNewMessageCreate = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof threadsGenerateNewMessageCreate>>,
+      TError,
+      { data: GenerateNewMessageRequestRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof threadsGenerateNewMessageCreate>>,
+  TError,
+  { data: GenerateNewMessageRequestRequest },
+  TContext
+> => {
+  const mutationOptions =
+    getThreadsGenerateNewMessageCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
 /**
  * Get aggregated statistics for threads based on filters.
  */

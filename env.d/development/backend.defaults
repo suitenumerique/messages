@@ -96,6 +96,7 @@ AI_MODEL=
 # AI features
 AI_FEATURE_SUMMARY_ENABLED=False
 AI_FEATURE_AUTOLABELS_ENABLED=False
+AI_FEATURE_MESSAGES_GENERATION_ENABLED=False
 
 # Interoperability
 # Drive - https://github.com/suitenumerique/drive

@@ -171,6 +171,10 @@
                                             "type": "boolean",
                                             "readOnly": true
                                         },
+                                        "AI_FEATURE_MESSAGES_GENERATION_ENABLED": {
+                                            "type": "boolean",
+                                            "readOnly": true
+                                        },
                                         "DRIVE": {
                                             "type": "object",
                                             "description": "The URLs of the Drive external service.",
@@ -206,6 +210,7 @@
                                         "AI_ENABLED",
                                         "AI_FEATURE_SUMMARY_ENABLED",
                                         "AI_FEATURE_AUTOLABELS_ENABLED",
+                                        "AI_FEATURE_MESSAGES_GENERATION_ENABLED",
                                         "SCHEMA_CUSTOM_ATTRIBUTES_USER",
                                         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN"
                                     ]
@@ -4342,6 +4347,71 @@
                 }
             }
         },
+        "/api/v1.0/threads/{id}/generate-reply-message/": {
+            "post": {
+                "operationId": "threads_generate_reply_message_create",
+                "description": "Generate a reply message using the AI model based on the thread context and user's prompt.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "threads"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/GenerateReplyMessageRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/GenerateReplyMessageRequestRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Reply message successfully generated."
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "detail": "Permission denied"
+                                }
+                            }
+                        },
+                        "description": "User does not have permission to generate a reply message."
+                    }
+                }
+            }
+        },
         "/api/v1.0/threads/{id}/refresh-summary/": {
             "post": {
                 "operationId": "threads_refresh_summary_create",
@@ -4740,6 +4810,61 @@
                 "responses": {
                     "204": {
                         "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/threads/generate-new-message/": {
+            "post": {
+                "operationId": "threads_generate_new_message_create",
+                "description": "Generate a new message using the AI model based on the user's prompt and draft.",
+                "tags": [
+                    "threads"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/GenerateNewMessageRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/GenerateNewMessageRequestRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Message successfully generated."
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "detail": "Permission denied"
+                                }
+                            }
+                        },
+                        "description": "User does not have permission to generate a new message."
                     }
                 }
             }
@@ -5221,6 +5346,36 @@
                 ],
                 "type": "string",
                 "description": "* `unread` - unread\n* `starred` - starred\n* `trashed` - trashed\n* `archived` - archived"
+            },
+            "GenerateNewMessageRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "draft": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Current message draft."
+                    },
+                    "user_prompt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "User prompt for the AI."
+                    }
+                }
+            },
+            "GenerateReplyMessageRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "draft": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Current message draft."
+                    },
+                    "user_prompt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "User prompt for the AI."
+                    }
+                }
             },
             "ImportFileRequest": {
                 "type": "object",
