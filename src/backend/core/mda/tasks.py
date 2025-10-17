@@ -23,7 +23,6 @@ def send_message_task(self, message_id, force_mta_out=False, must_archive=False)
 
     Args:
         message_id: The ID of the message to send
-        mime_data: The MIME data dictionary
         force_mta_out: Whether to force sending via MTA
 
     Returns:
