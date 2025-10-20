@@ -107,7 +107,7 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
     mock_task.update_state = MagicMock()
 
     with (
-        patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_delay,
+        patch("core.services.importer.tasks.process_eml_file_task.send") as mock_delay,
         patch.object(process_eml_file_task, "update_state", mock_task.update_state),
     ):
         mock_delay.return_value.id = "fake-task-id"
@@ -183,7 +183,7 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
 
 @pytest.mark.django_db
 def test_process_mbox_file_task(mailbox, mbox_file):
-    """Test the Celery task that processes MBOX files."""
+    """Test the task that processes MBOX files."""
     # Create a mock task instance
     mock_task = MagicMock()
     mock_task.update_state = MagicMock()

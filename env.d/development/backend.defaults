@@ -27,6 +27,10 @@ METRICS_API_KEY=ExampleMetricsApiKey
 # Python
 PYTHONPATH=/app
 
+# Dramatiq
+DRAMATIQ_BROKER_URL=redis://redis:6379
+DRAMATIQ_CRONTAB_REDIS_URL=redis://redis:6379/0
+
 # Messages settings
 
 # Mail

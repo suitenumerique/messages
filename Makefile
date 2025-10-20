@@ -324,8 +324,9 @@ back-poetry-tree: ## show dependencies as a tree
 	@$(COMPOSE) run --rm --build backend-dev pipdeptree
 .PHONY: back-poetry-tree
 
-pip-audit: ## check the dependencies
-	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp --build backend-dev pip-audit
+pip-audit: ## check the dependencies	
+	# https://github.com/pypa/pip/issues/13607
+	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp --build backend-dev pip-audit --ignore-vuln GHSA-4xh5-x5gv-qwph
 .PHONY: pip-audit
 
 collectstatic: ## collect static files

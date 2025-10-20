@@ -69,25 +69,25 @@ class ImportService:
             # Check MIME type for MBOX
             if unsafe_content_type in enums.MBOX_SUPPORTED_MIME_TYPES:
                 # Process MBOX file asynchronously
-                task = process_mbox_file_task.delay(file_key, str(recipient.id))
-                response_data = {"task_id": task.id, "type": "mbox"}
+                task = process_mbox_file_task.send(file_key, str(recipient.id))
+                response_data = {"task_id": task.message_id, "type": "mbox"}
                 if request:
                     messages.info(
                         request,
                         f"Started processing MBOX file for recipient {recipient}. "
-                        "This may take a while. You can check the status in the Celery task monitor.",
+                        "This may take a while.",
                     )
                 return True, response_data
             # Check MIME type for EML
             elif unsafe_content_type in enums.EML_SUPPORTED_MIME_TYPES:
                 # Process EML file asynchronously
-                task = process_eml_file_task.delay(file_key, str(recipient.id))
-                response_data = {"task_id": task.id, "type": "eml"}
+                task = process_eml_file_task.send(file_key, str(recipient.id))
+                response_data = {"task_id": task.message_id, "type": "eml"}
                 if request:
                     messages.info(
                         request,
                         f"Started processing EML file for recipient {recipient}. "
-                        "This may take a while. You can check the status in the Celery task monitor.",
+                        "This may take a while.",
                     )
                 return True, response_data
         except Exception as e:
@@ -129,7 +129,7 @@ class ImportService:
 
         try:
             # Start the import task
-            task = import_imap_messages_task.delay(
+            task = import_imap_messages_task.send(
                 imap_server=imap_server,
                 imap_port=imap_port,
                 username=username,
@@ -137,12 +137,12 @@ class ImportService:
                 use_ssl=use_ssl,
                 recipient_id=str(recipient.id),
             )
-            response_data = {"task_id": task.id, "type": "imap"}
+            response_data = {"task_id": task.message_id, "type": "imap"}
             if request:
                 messages.info(
                     request,
                     f"Started importing messages from IMAP server for recipient {recipient}. "
-                    "This may take a while. You can check the status in the Celery task monitor.",
+                    "This may take a while.",
                 )
             return True, response_data
 

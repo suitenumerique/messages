@@ -229,7 +229,7 @@ def prepare_outbound_message(
 def send_message(message: models.Message, force_mta_out: bool = False):
     """Send an existing Message, internally or externally.
 
-    This part is called asynchronously from the celery worker.
+    This part is called asynchronously from the worker.
     """
 
     # Refuse to send messages that are draft or not senders

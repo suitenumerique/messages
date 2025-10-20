@@ -43,7 +43,7 @@ class ImportViewSet(viewsets.ViewSet):
         request=ImportFileSerializer,
         responses={
             202: OpenApiResponse(
-                description="Import started. Returns Celery task ID for tracking.",
+                description="Import started. Returns task ID for tracking.",
                 response={
                     "type": "object",
                     "properties": {
@@ -96,7 +96,7 @@ class ImportViewSet(viewsets.ViewSet):
         request=ImportIMAPSerializer,
         responses={
             202: OpenApiResponse(
-                description="IMAP import started. Returns Celery task ID for tracking the import progress.",
+                description="IMAP import started. Returns task ID for tracking the import progress.",
                 response={
                     "type": "object",
                     "properties": {

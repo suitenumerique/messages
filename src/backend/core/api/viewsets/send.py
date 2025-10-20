@@ -120,7 +120,7 @@ class SendMessageView(APIView):
             )
 
         # Launch async task for sending the message
-        task = send_message_task.delay(str(message.id), must_archive=must_archive)
+        task = send_message_task.send(str(message.id), must_archive=must_archive)
 
         # --- Finalize ---
         # Message state should be updated by prepare_outbound_message/send_message
@@ -130,4 +130,4 @@ class SendMessageView(APIView):
         # Update thread stats after un-drafting
         message.thread.update_stats()
 
-        return Response({"task_id": task.id}, status=status.HTTP_200_OK)
+        return Response({"task_id": task.message_id}, status=status.HTTP_200_OK)

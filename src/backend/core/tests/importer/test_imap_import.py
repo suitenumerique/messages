@@ -14,8 +14,6 @@ from core.forms import IMAPImportForm
 from core.models import Mailbox, MailDomain, Message, Thread
 from core.services.importer.tasks import import_imap_messages_task
 
-from messages.celery_app import app as celery_app
-
 
 @pytest.fixture
 def admin_user(db):
@@ -163,7 +161,7 @@ def test_imap_import_form_view(admin_client, mailbox):
     }
 
     with patch(
-        "core.services.importer.tasks.import_imap_messages_task.delay"
+        "core.services.importer.tasks.import_imap_messages_task.send"
     ) as mock_task:
         response = admin_client.post(url, form_data, follow=True)
         assert response.status_code == 200
@@ -174,13 +172,11 @@ def test_imap_import_form_view(admin_client, mailbox):
 
 
 @patch("imaplib.IMAP4_SSL")
-@patch.object(celery_app.backend, "store_result")
 def test_imap_import_task_success(
-    mock_store_result, mock_imap4_ssl, mailbox, mock_imap_connection, sample_email
+    mock_imap4_ssl, mailbox, mock_imap_connection, sample_email
 ):
     """Test successful IMAP import task execution."""
     mock_imap4_ssl.return_value = mock_imap_connection
-    mock_store_result.return_value = None
 
     # Create a mock task instance
     mock_task = MagicMock()
@@ -310,12 +306,11 @@ def test_imap_import_task_login_failure(mailbox):
 
 
 @patch("imaplib.IMAP4_SSL")
-@patch.object(celery_app.backend, "store_result")
+@patch("core.services.importer.tasks.set_task_progress")
 def test_imap_import_task_message_fetch_failure(
-    mock_store_result, mock_imap4_ssl, mailbox
+    mock_set_task_progress, mock_imap4_ssl, mailbox
 ):
     """Test IMAP import task with message fetch failure."""
-    mock_store_result.return_value = None
     mock_imap = MagicMock()
     mock_imap.login.return_value = ("OK", [b"Logged in"])
 
@@ -330,67 +325,56 @@ def test_imap_import_task_message_fetch_failure(
     mock_imap.logout.return_value = ("OK", [b"Logged out"])
     mock_imap4_ssl.return_value = mock_imap
 
-    # Create a mock task instance
-    mock_task = MagicMock()
-    mock_task.update_state = MagicMock()
+    mock_set_task_progress = MagicMock()
 
-    with patch.object(
-        import_imap_messages_task, "update_state", mock_task.update_state
-    ):
-        # Run the task
-        task = import_imap_messages_task(
-            imap_server="imap.example.com",
-            imap_port=993,
-            username="test@example.com",
-            password="password123",
-            use_ssl=True,
-            recipient_id=str(mailbox.id),
-        )
+    # Run the task
+    task = import_imap_messages_task(
+        imap_server="imap.example.com",
+        imap_port=993,
+        username="test@example.com",
+        password="password123",
+        use_ssl=True,
+        recipient_id=str(mailbox.id),
+    )
 
-        # Verify all messages failed
-        assert task["status"] == "SUCCESS"
-        assert (
-            task["result"]["message_status"]
-            == "Completed processing messages from folder 'INBOX'"
-        )
-        assert task["result"]["type"] == "imap"
-        assert task["result"]["total_messages"] == 3
-        assert task["result"]["success_count"] == 0
-        assert task["result"]["failure_count"] == 3
-        assert task["result"]["current_message"] == 3
+    # Verify all messages failed
+    assert task["status"] == "SUCCESS"
+    assert (
+        task["result"]["message_status"]
+        == "Completed processing messages from folder 'INBOX'"
+    )
+    assert task["result"]["type"] == "imap"
+    assert task["result"]["total_messages"] == 3
+    assert task["result"]["success_count"] == 0
+    assert task["result"]["failure_count"] == 3
+    assert task["result"]["current_message"] == 3
 
-        # Verify progress updates were called correctly
-        assert mock_task.update_state.call_count == 4  # 3 PROGRESS + 1 SUCCESS
+    # Verify progress updates were called correctly
+    assert mock_set_task_progress.call_count == 3  # 3 PROGRESS
 
-        # Verify progress updates
-        for i in range(1, 4):
-            mock_task.update_state.assert_any_call(
-                state="PROGRESS",
-                meta={
-                    "result": {
-                        "message_status": f"Processing message {i} of 3",
-                        "total_messages": 3,
-                        "success_count": 0,
-                        "failure_count": i,  # Current message failed
-                        "type": "imap",
-                        "current_message": i,
-                    },
-                    "error": None,
+    # Verify progress updates
+    for i in range(1, 4):
+        mock_set_task_progress.assert_any_call(
+            state="PROGRESS",
+            meta={
+                "result": {
+                    "message_status": f"Processing message {i} of 3",
+                    "total_messages": 3,
+                    "success_count": 0,
+                    "failure_count": i,  # Current message failed
+                    "type": "imap",
+                    "current_message": i,
                 },
-            )
-
-        # Verify success update
-        mock_task.update_state.assert_any_call(
-            state="SUCCESS",
-            meta=task,
+                "error": None,
+            },
         )
 
 
 @patch("core.mda.inbound.logger")
 @patch("imaplib.IMAP4_SSL")
-@patch.object(celery_app.backend, "store_result")
+@patch("core.services.importer.tasks.set_task_progress")
 def test_imap_import_task_duplicate_recipients(
-    mock_store_result,
+    mock_set_task_progress,
     mock_imap4_ssl,
     mock_logger,
     mailbox,
@@ -398,7 +382,6 @@ def test_imap_import_task_duplicate_recipients(
 ):
     """Test IMAP import task with duplicate recipients handles deduplication correctly."""
     mock_imap4_ssl.return_value = mock_imap_connection_with_duplicates
-    mock_store_result.return_value = None
 
     # Create a mock task instance
     mock_task = MagicMock()

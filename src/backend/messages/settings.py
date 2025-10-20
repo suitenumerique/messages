@@ -441,8 +441,8 @@ class Base(Configuration):
         "drf_spectacular",
         # Third party apps
         "corsheaders",
-        "django_celery_beat",
-        "django_celery_results",
+        "django_dramatiq",
+        "dramatiq_crontab",
         "django_filters",
         "rest_framework",
         "parler",
@@ -528,19 +528,62 @@ class Base(Configuration):
         None, environ_name="FRONTEND_THEME", environ_prefix=None
     )
 
-    # Celery
-    CELERY_BROKER_URL = values.Value(
-        "redis://redis:6379", environ_name="CELERY_BROKER_URL", environ_prefix=None
-    )
-    CELERY_RESULT_BACKEND = "django-db"
-    CELERY_CACHE_BACKEND = "django-cache"
-    CELERY_BROKER_TRANSPORT_OPTIONS = values.DictValue({})
-    CELERY_RESULT_EXTENDED = True
-    CELERY_TASK_RESULT_EXPIRES = 60 * 60 * 24 * 30  # 30 days
-    CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+    # Dramatiq
+    DRAMATIQ_BROKER = {
+        "BROKER": "dramatiq.brokers.redis.RedisBroker",
+        "OPTIONS": {
+            "url": values.Value(
+                "redis://redis:6379",
+                environ_name="DRAMATIQ_BROKER_URL",
+                environ_prefix=None,
+            ),
+        },
+        "MIDDLEWARE": [
+            "dramatiq.middleware.Prometheus",
+            "dramatiq.middleware.AgeLimit",
+            "dramatiq.middleware.TimeLimit",
+            "dramatiq.middleware.Callbacks",
+            "dramatiq.middleware.Retries",
+            "dramatiq.middleware.CurrentMessage",
+            # "dramatiq.results.middleware.Results",
+            "django_dramatiq.middleware.DbConnectionsMiddleware",
+            "django_dramatiq.middleware.AdminMiddleware",
+        ],
+    }
 
-    DISABLE_CELERY_BEAT_SCHEDULE = values.BooleanValue(
-        default=False, environ_name="DISABLE_CELERY_BEAT_SCHEDULE", environ_prefix=None
+    DRAMATIQ_RESULT_BACKEND = {
+        "BACKEND": "dramatiq.results.backends.redis.RedisBackend",
+        "BACKEND_OPTIONS": {
+            "url": values.Value(
+                "redis://redis:6379",
+                environ_name="DRAMATIQ_RESULT_BACKEND",
+                environ_prefix=None,
+            ),
+        },
+        "MIDDLEWARE_OPTIONS": {
+            "result_ttl": 7 * 24 * 60 * 60  # 7 days
+        },
+    }
+
+    # Defines which database should be used to persist Task objects when the
+    # AdminMiddleware is enabled. The default value is "default".
+    DRAMATIQ_TASKS_DATABASE = "default"
+
+    # Dramatiq Crontab configuration
+    DRAMATIQ_CRONTAB = {
+        "REDIS_URL": values.Value(
+            "redis://redis:6379/0",
+            environ_name="DRAMATIQ_CRONTAB_REDIS_URL",
+            environ_prefix=None,
+        ),
+    }
+
+    DRAMATIQ_AUTODISCOVER_MODULES = [
+        "tasks"
+    ]  # services.search.tasks", "services.importer.tasks"]
+
+    DISABLE_DRAMATIQ_SCHEDULE = values.BooleanValue(
+        default=False, environ_name="DISABLE_DRAMATIQ_SCHEDULE", environ_prefix=None
     )
 
     # Session
@@ -900,7 +943,21 @@ class DevelopmentMinimal(Development):
     Development environment settings with minimal dependencies
     """
 
-    CELERY_TASK_ALWAYS_EAGER = True
+    DRAMATIQ_BROKER = {
+        "BROKER": "dramatiq.brokers.stub.StubBroker",
+        "OPTIONS": {},
+        "MIDDLEWARE": [
+            "dramatiq.middleware.AgeLimit",
+            "dramatiq.middleware.TimeLimit",
+            "dramatiq.middleware.Callbacks",
+            "dramatiq.middleware.Retries",
+            "dramatiq.middleware.CurrentMessage",
+            "dramatiq.middleware.Result",
+            "django_dramatiq.middleware.DbConnectionsMiddleware",
+            "django_dramatiq.middleware.AdminMiddleware",
+        ],
+    }
+
     OPENSEARCH_INDEX_THREADS = False
     CACHES = {
         "default": {
@@ -920,7 +977,20 @@ class Test(Base):
 
     IDENTITY_PROVIDER = None
 
-    CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
+    DRAMATIQ_BROKER = {
+        "BROKER": "dramatiq.brokers.stub.StubBroker",
+        "OPTIONS": {},
+        "MIDDLEWARE": [
+            "dramatiq.middleware.AgeLimit",
+            "dramatiq.middleware.TimeLimit",
+            "dramatiq.middleware.Callbacks",
+            "dramatiq.middleware.Retries",
+            "dramatiq.middleware.CurrentMessage",
+            # "dramatiq.results.middleware.Results",
+            "django_dramatiq.middleware.DbConnectionsMiddleware",
+            "django_dramatiq.middleware.AdminMiddleware",
+        ],
+    }
 
     AWS_S3_DOMAIN_REPLACE = None
 

@@ -3,6 +3,7 @@
 import base64
 import codecs
 import imaplib
+import logging
 import re
 import socket
 import time
@@ -10,12 +11,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from django.conf import settings
 
-from celery.utils.log import get_task_logger
-
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import parse_email_message
+from core.utils import set_task_progress
 
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def decode_imap_utf7(s):
@@ -396,7 +396,6 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
     message_list: List[bytes],
     recipient: Any,
     username: str,
-    task_instance: Any,
     success_count: int,
     failure_count: int,
     current_message: int,
@@ -443,17 +442,17 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
 
         # Update task state after processing the message
         message_status = f"Processing message {current_message} of {total_messages}"
-        result = {
-            "message_status": message_status,
-            "total_messages": total_messages,
-            "success_count": success_count,
-            "failure_count": failure_count,
-            "type": "imap",
-            "current_message": current_message,
-        }
-        task_instance.update_state(
-            state="PROGRESS",
-            meta={"result": result, "error": None},
+
+        set_task_progress(
+            None,
+            {
+                "message_status": message_status,
+                "total_messages": total_messages,
+                "success_count": success_count,
+                "failure_count": failure_count,
+                "type": "imap",
+                "current_message": current_message,
+            },
         )
 
     return success_count, failure_count, current_message

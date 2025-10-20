@@ -5,15 +5,14 @@ from typing import Any, Dict, Generator
 
 from django.core.files.storage import storages
 
+import dramatiq
 import magic
-from celery.utils.log import get_task_logger
 
 from core import enums
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import parse_email_message
 from core.models import Mailbox
-
-from messages.celery_app import app as celery_app
+from core.utils import register_task, set_task_progress
 
 from .imap import (
     IMAPConnectionManager,
@@ -24,11 +23,11 @@ from .imap import (
     select_imap_folder,
 )
 
-logger = get_task_logger(__name__)
+logger = dramatiq.get_logger(__name__)
 
 
-@celery_app.task(bind=True)
-def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, Any]:
+@register_task
+def process_mbox_file_task(file_key: str, recipient_id: str) -> Dict[str, Any]:
     """
     Process a MBOX file asynchronously.
 
@@ -44,6 +43,8 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
     total_messages = 0
     current_message = 0
 
+    set_task_progress(0, {"message": "Loading recipient mailbox"})
+
     try:
         recipient = Mailbox.objects.get(id=recipient_id)
     except Mailbox.DoesNotExist:
@@ -56,13 +57,6 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
             "type": "mbox",
             "current_message": 0,
         }
-        self.update_state(
-            state="FAILURE",
-            meta={
-                "result": result,
-                "error": error_msg,
-            },
-        )
         return {
             "status": "FAILURE",
             "result": result,
@@ -70,28 +64,32 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
         }
 
     try:
+        set_task_progress(5, {"message": "Opening MBOX file"})
+
         # Get storage and open file
         message_imports_storage = storages["message-imports"]
 
         with message_imports_storage.open(file_key, "rb") as file:
-            self.update_state(
-                state="PROGRESS",
-                meta={
-                    "result": {
-                        "message_status": "Initializing import",
-                        "type": "mbox",
-                    },
-                    "error": None,
-                },
-            )
+            set_task_progress(10, {"message": "Validating file format"})
+
             # Ensure file is a valid mbox file
             content_type = magic.from_buffer(file.read(2048), mime=True)
             if content_type not in enums.MBOX_SUPPORTED_MIME_TYPES:
                 raise Exception(f"Expected MBOX file, got {content_type}")
 
+            set_task_progress(15, {"message": "Counting messages"})
+
             # First pass: count total messages
             file.seek(0)
             total_messages = count_mbox_messages(file)
+
+            set_task_progress(
+                20,
+                {
+                    "message": f"Found {total_messages} messages, starting processing",
+                    "total_messages": total_messages,
+                },
+            )
 
             # Reset file pointer
             file.seek(0)
@@ -99,24 +97,23 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
             # Second pass: process messages
             for i, message_content in enumerate(stream_mbox_messages(file), 1):
                 current_message = i
-                try:
-                    # Update task state with progress
-                    result = {
-                        "message_status": f"Processing message {i} of {total_messages}",
-                        "total_messages": total_messages,
-                        "success_count": success_count,
-                        "failure_count": failure_count,
-                        "type": "mbox",
-                        "current_message": i,
-                    }
-                    self.update_state(
-                        state="PROGRESS",
-                        meta={
-                            "result": result,
-                            "error": None,
+
+                # Update progress every 100 messages or at the end
+                if i % 100 == 0 or i == total_messages:
+                    progress_percentage = min(20 + (i / total_messages) * 70, 90)
+                    set_task_progress(
+                        int(progress_percentage),
+                        {
+                            "message": f"Processing message {i} of {total_messages}",
+                            "total_messages": total_messages,
+                            "success_count": success_count,
+                            "failure_count": failure_count,
+                            "type": "mbox",
+                            "current_message": i,
                         },
                     )
 
+                try:
                     # Parse the email message
                     parsed_email = parse_email_message(message_content)
                     # Deliver the message
@@ -143,13 +140,7 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
             "current_message": current_message,
         }
 
-        self.update_state(
-            state="SUCCESS",
-            meta={
-                "result": result,
-                "error": None,
-            },
-        )
+        set_task_progress(100, {"message": "MBOX processing completed successfully"})
 
         return {
             "status": "SUCCESS",
@@ -172,13 +163,6 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
             "type": "mbox",
             "current_message": current_message,
         }
-        self.update_state(
-            state="FAILURE",
-            meta={
-                "result": result,
-                "error": error_msg,
-            },
-        )
         return {
             "status": "FAILURE",
             "result": result,
@@ -241,9 +225,8 @@ def stream_mbox_messages(file) -> Generator[bytes, None, None]:
         yield message
 
 
-@celery_app.task(bind=True)
+@register_task
 def import_imap_messages_task(
-    self,
     imap_server: str,
     imap_port: int,
     username: str,
@@ -270,6 +253,8 @@ def import_imap_messages_task(
     current_message = 0
 
     try:
+        set_task_progress(0, {"message": "Connecting to IMAP server"})
+
         # Get recipient mailbox
         recipient = Mailbox.objects.get(id=recipient_id)
 
@@ -324,7 +309,6 @@ def import_imap_messages_task(
                     message_list=message_list,
                     recipient=recipient,
                     username=username,
-                    task_instance=self,
                     success_count=success_count,
                     failure_count=failure_count,
                     current_message=current_message,
@@ -350,11 +334,6 @@ def import_imap_messages_task(
             "current_message": current_message,
         }
 
-        self.update_state(
-            state="SUCCESS",
-            meta={"status": "SUCCESS", "result": result, "error": None},
-        )
-
         return {"status": "SUCCESS", "result": result, "error": None}
 
     except Mailbox.DoesNotExist:
@@ -367,7 +346,6 @@ def import_imap_messages_task(
             "type": "imap",
             "current_message": 0,
         }
-        self.update_state(state="FAILURE", meta={"result": result, "error": error_msg})
         return {"status": "FAILURE", "result": result, "error": error_msg}
 
     except Exception as e:
@@ -382,12 +360,11 @@ def import_imap_messages_task(
             "type": "imap",
             "current_message": current_message,
         }
-        self.update_state(state="FAILURE", meta={"result": result, "error": error_msg})
         return {"status": "FAILURE", "result": result, "error": error_msg}
 
 
-@celery_app.task(bind=True)
-def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, Any]:
+@register_task
+def process_eml_file_task(file_key: str, recipient_id: str) -> Dict[str, Any]:
     """
     Process an EML file asynchronously.
 
@@ -398,6 +375,9 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
     Returns:
         Dict with task status and result
     """
+
+    set_task_progress(0, {"message": "Loading recipient mailbox"})
+
     try:
         recipient = Mailbox.objects.get(id=recipient_id)
     except Mailbox.DoesNotExist:
@@ -410,36 +390,13 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             "type": "eml",
             "current_message": 0,
         }
-        self.update_state(
-            state="FAILURE",
-            meta={
-                "result": result,
-                "error": error_msg,
-            },
-        )
         return {
+            "status": "FAILURE",
             "result": result,
             "error": error_msg,
         }
 
     try:
-        # Update progress state
-        progress_result = {
-            "message_status": "Processing message 1 of 1",
-            "total_messages": 1,
-            "success_count": 0,
-            "failure_count": 0,
-            "type": "eml",
-            "current_message": 1,
-        }
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "result": progress_result,
-                "error": None,
-            },
-        )
-
         # Get storage and read file
         message_imports_storage = storages["message-imports"]
         with message_imports_storage.open(file_key, "rb") as file:
@@ -467,13 +424,6 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
         }
 
         if success:
-            self.update_state(
-                state="SUCCESS",
-                meta={
-                    "result": result,
-                    "error": None,
-                },
-            )
             return {
                 "status": "SUCCESS",
                 "result": result,
@@ -481,13 +431,6 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             }
 
         error_msg = "Failed to deliver message"
-        self.update_state(
-            state="FAILURE",
-            meta={
-                "result": result,
-                "error": error_msg,
-            },
-        )
         return {
             "status": "FAILURE",
             "result": result,
@@ -509,13 +452,6 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             "type": "eml",
             "current_message": 1,
         }
-        self.update_state(
-            state="FAILURE",
-            meta={
-                "result": result,
-                "error": error_msg,
-            },
-        )
         return {
             "status": "FAILURE",
             "result": result,

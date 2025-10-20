@@ -1,0 +1,19 @@
+{% extends "admin/index.html" %}
+
+{% block content %}
+{{ block.super }}
+
+{% if user.is_staff %}
+<div class="module">
+    <h2>Task Management</h2>
+    <div class="form-row">
+        <div>
+            <a href="{% url 'admin:dramatiq_dashboard' %}" class="addlink">
+                Dramatiq Dashboard
+            </a>
+            <p class="help">Monitor and manage background tasks</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

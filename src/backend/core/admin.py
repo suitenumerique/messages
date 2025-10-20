@@ -1,14 +1,19 @@
 """Admin classes and registrations for core app."""
 
 from django.contrib import admin, messages
+from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth import admin as auth_admin
 from django.core.files.storage import storages
+from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
-from django.urls import path
+from django.urls import path, reverse
 from django.utils.html import escape, format_html
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
+
+import dramatiq
+import dramatiq_dashboard
 
 from core.api.utils import get_file_key
 from core.services.importer import ImportService
@@ -694,3 +699,75 @@ class MessageTemplateAdmin(admin.ModelAdmin):
         return obj.html_body
 
     get_html_body.short_description = "HTML Body"
+
+
+# Dramatiq Dashboard Integration
+@staff_member_required
+def dramatiq_dashboard_view(request):
+    """Serve the Dramatiq dashboard for staff users only."""
+    # Get the broker from django-dramatiq
+    broker = dramatiq.get_broker()
+
+    # Create the dashboard app
+    dashboard_app = dramatiq_dashboard.DashboardApp(broker=broker, prefix="")
+
+    # Create a WSGI environment
+    environ = {
+        "REQUEST_METHOD": request.method,
+        "PATH_INFO": request.path_info,
+        "QUERY_STRING": request.META.get("QUERY_STRING", ""),
+        "CONTENT_TYPE": request.META.get("CONTENT_TYPE", ""),
+        "CONTENT_LENGTH": request.META.get("CONTENT_LENGTH", ""),
+        "HTTP_HOST": request.META.get("HTTP_HOST", ""),
+        "SERVER_NAME": request.META.get("SERVER_NAME", ""),
+        "SERVER_PORT": request.META.get("SERVER_PORT", ""),
+        "wsgi.url_scheme": request.scheme,
+        "wsgi.input": request,
+        "wsgi.errors": request,
+        "wsgi.version": (1, 0),
+        "wsgi.multithread": True,
+        "wsgi.multiprocess": False,
+        "wsgi.run_once": False,
+    }
+
+    # Add HTTP headers
+    for key, value in request.META.items():
+        if key.startswith("HTTP_"):
+            environ[key] = value
+
+    # Call the dashboard app
+    def start_response(status, response_headers):  # pylint: disable=unused-argument
+        # This will be called by the WSGI app
+        pass
+
+    # Get the response from the dashboard
+    response_body = dashboard_app(environ, start_response)
+
+    # Create Django response
+    response = HttpResponse(b"".join(response_body))
+    response.status_code = 200
+    response["Content-Type"] = "text/html; charset=utf-8"
+
+    return response
+
+
+class CoreAdminSite(admin.AdminSite):
+    """Custom admin site with Dramatiq dashboard integration."""
+
+    def get_urls(self):
+        """Add Dramatiq dashboard URL to admin URLs."""
+        urls = super().get_urls()
+        custom_urls = [
+            path("dramatiq/", dramatiq_dashboard_view, name="dramatiq_dashboard"),
+        ]
+        return custom_urls + urls
+
+    def index(self, request, extra_context=None):
+        """Add Dramatiq dashboard link to admin index."""
+        extra_context = extra_context or {}
+        extra_context["dramatiq_dashboard_url"] = reverse("admin:dramatiq_dashboard")
+        return super().index(request, extra_context)
+
+
+# Create custom admin site instance
+admin_site = CoreAdminSite(name="admin")

@@ -118,7 +118,7 @@ class TestSendMessageAPIView:
         with patch("core.api.viewsets.send.send_message_task") as mock_task:
             mock_task_instance = MagicMock()
             mock_task_instance.id = "task-123"
-            mock_task.delay.return_value = mock_task_instance
+            mock_task.send.return_value = mock_task_instance
 
             # Send request
             response = client.post(
@@ -158,7 +158,7 @@ class TestSendMessageAPIView:
             with patch("core.api.viewsets.send.send_message_task") as mock_task:
                 mock_task_instance = MagicMock()
                 mock_task_instance.id = "task-123"
-                mock_task.delay.return_value = mock_task_instance
+                mock_task.send.return_value = mock_task_instance
 
                 # Send request
                 response = client.post(
@@ -196,7 +196,7 @@ class TestSendMessageAPIView:
         with patch("core.api.viewsets.send.send_message_task") as mock_task:
             mock_task_instance = MagicMock()
             mock_task_instance.id = "task-123"
-            mock_task.delay.return_value = mock_task_instance
+            mock_task.send.return_value = mock_task_instance
 
             # Send request with text body only
             response = client.post(
@@ -241,7 +241,7 @@ class TestSendMessageAPIView:
         with patch("core.api.viewsets.send.send_message_task") as mock_task:
             mock_task_instance = MagicMock()
             mock_task_instance.id = "task-123"
-            mock_task.delay.return_value = mock_task_instance
+            mock_task.send.return_value = mock_task_instance
 
             # Send request with HTML body only
             response = client.post(
@@ -292,7 +292,7 @@ class TestSendMessageAPIView:
         with patch("core.api.viewsets.send.send_message_task") as mock_task:
             mock_task_instance = MagicMock()
             mock_task_instance.id = "task-123"
-            mock_task.delay.return_value = mock_task_instance
+            mock_task.send.return_value = mock_task_instance
 
             # Send request
             response = client.post(
@@ -333,7 +333,7 @@ class TestSendMessageAPIView:
         with patch("core.api.viewsets.send.send_message_task") as mock_task:
             mock_task_instance = MagicMock()
             mock_task_instance.id = "task-123"
-            mock_task.delay.return_value = mock_task_instance
+            mock_task.send.return_value = mock_task_instance
 
             # Send request with HTML body only
             response = client.post(
@@ -350,7 +350,7 @@ class TestSendMessageAPIView:
             assert response.status_code == status.HTTP_200_OK
             assert response.data["task_id"] == "task-123"
 
-            mock_task.delay.assert_called_once_with(
+            mock_task.send.assert_called_once_with(
                 str(draft_message.id), must_archive=True
             )
 
@@ -366,7 +366,7 @@ class TestSendMessageAPIView:
         with patch("core.api.viewsets.send.send_message_task") as mock_task:
             mock_task_instance = MagicMock()
             mock_task_instance.id = "task-123"
-            mock_task.delay.return_value = mock_task_instance
+            mock_task.send.return_value = mock_task_instance
 
             # Send request with archive=False
             response = client.post(
@@ -385,7 +385,7 @@ class TestSendMessageAPIView:
             assert response.data["task_id"] == "task-123"
 
             # Verify the task was called with must_archive=False
-            mock_task.delay.assert_called_once_with(
+            mock_task.send.assert_called_once_with(
                 str(draft_message.id), must_archive=False
             )
 
@@ -401,7 +401,7 @@ class TestSendMessageAPIView:
         with patch("core.api.viewsets.send.send_message_task") as mock_task:
             mock_task_instance = MagicMock()
             mock_task_instance.id = "task-123"
-            mock_task.delay.return_value = mock_task_instance
+            mock_task.send.return_value = mock_task_instance
 
             # Send request without archive parameter
             response = client.post(
@@ -419,6 +419,6 @@ class TestSendMessageAPIView:
             assert response.data["task_id"] == "task-123"
 
             # Verify the task was called with must_archive=False (default)
-            mock_task.delay.assert_called_once_with(
+            mock_task.send.assert_called_once_with(
                 str(draft_message.id), must_archive=False
             )

@@ -1,8 +1,8 @@
 """
-Management command to run arbitrary Celery tasks synchronously.
+Management command to run arbitrary Dramatiq actors synchronously.
 
-This command provides a Django interface to run Celery tasks with the same
-CLI flags as the main Celery CLI, but executes them synchronously instead
+This command provides a Django interface to run Dramatiq actors with the same
+CLI flags as the main Dramatiq CLI, but executes them synchronously instead
 of queuing them as background tasks.
 """
 
@@ -16,21 +16,21 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    """Run arbitrary Celery tasks synchronously."""
+    """Run arbitrary Dramatiq actors synchronously."""
 
     help = """
-    Run arbitrary Celery tasks synchronously.
+    Run arbitrary Dramatiq actors synchronously.
     
     Examples:
-        python manage.py run_task fetch_service_metrics
-        python manage.py run_task fetch_metrics_for_service --pargs '["123e4567-e89b-12d3-a456-426614174000"]'
-        python manage.py run_task fetch_service_metrics --kwargs '{"debug": true}'
-        python manage.py run_task other_app.tasks.some_task
+        python manage.py run_task send_message_task
+        python manage.py run_task send_message_task --pargs '["123e4567-e89b-12d3-a456-426614174000"]'
+        python manage.py run_task send_message_task --kwargs '{"must_archive": true}'
+        python manage.py run_task core.mda.tasks.send_message_task
     """
 
     def add_arguments(self, parser):
         """Add command line arguments."""
-        parser.add_argument("task_name", help="Name of the Celery task to run")
+        parser.add_argument("task_name", help="Name of the Dramatiq actor to run")
 
         # Task execution options
         parser.add_argument(
@@ -76,7 +76,7 @@ class Command(BaseCommand):
 
         try:
             # Execute task synchronously
-            result = task_func.apply(args=task_args, kwargs=kwargs)
+            result = task_func(*task_args, **kwargs)
 
             # Output result
             if options["json"]:
@@ -92,8 +92,18 @@ class Command(BaseCommand):
     def _get_task_function(self, task_name: str):
         """Get the task function by name using dynamic imports."""
         try:
-            # Try to import from core.tasks first
-            tasks_module = importlib.import_module("core.tasks")
+            # Try to import from core.mda.tasks first
+            tasks_module = importlib.import_module("core.mda.tasks")
+            if hasattr(tasks_module, task_name):
+                return getattr(tasks_module, task_name)
+
+            # Try core.services.search.tasks
+            tasks_module = importlib.import_module("core.services.search.tasks")
+            if hasattr(tasks_module, task_name):
+                return getattr(tasks_module, task_name)
+
+            # Try core.services.importer.tasks
+            tasks_module = importlib.import_module("core.services.importer.tasks")
             if hasattr(tasks_module, task_name):
                 return getattr(tasks_module, task_name)
 
@@ -105,7 +115,7 @@ class Command(BaseCommand):
                 return getattr(module, func_name)
 
             self.stdout.write(
-                self.style.WARNING(f"Task '{task_name}' not found in core.tasks module")
+                self.style.WARNING(f"Task '{task_name}' not found in any tasks module")
             )
             return None
 

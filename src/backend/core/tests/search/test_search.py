@@ -17,9 +17,11 @@ from core.services.search import (
     delete_index,
     index_message,
     index_thread,
-    reindex_all,
-    reindex_mailbox,
     search_threads,
+)
+from core.services.search.tasks import (
+    reindex_all_task,
+    reindex_mailbox_task,
 )
 
 
@@ -137,7 +139,7 @@ def test_reindex_all(mock_es_client_index):
     mock_es_client_index.indices.exists.return_value = False
 
     # Call the function
-    result = reindex_all()
+    result = reindex_all_task()
 
     # Verify result
     assert result["status"] == "success"
@@ -152,7 +154,7 @@ def test_reindex_mailbox(mock_es_client_index, test_mailbox, test_thread):
     """Test reindexing a specific mailbox."""
 
     # Call the function
-    result = reindex_mailbox(str(test_mailbox.id))
+    result = reindex_mailbox_task(str(test_mailbox.id))
 
     assert mock_es_client_index.index.call_count > 0
 

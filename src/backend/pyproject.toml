@@ -5,7 +5,7 @@
 [project]
 name = "messages-backend"
 version = "0.0.1"
-authors = [{ "name" = "ANCT", "email" = "suiteterritoriale@anct.gouv.fr" }]
+authors = [{ "name" = "ANCT", "email" = "contact@suite.anct.gouv.fr" }]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Framework :: Django",
@@ -26,12 +26,13 @@ requires-python = ">=3.13,<4.0"
 dependencies = [
     "boto3==1.40.43",
     "botocore==1.40.43",
-    "celery[redis]==5.5.2",
     "cryptography==45.0.5",
     "dj-database-url==2.3.0",
     "django==5.1.13",
-    "django-celery-beat==2.8.0",
-    "django-celery-results==2.6.0",
+    "django-dramatiq==0.14.0",
+    "dramatiq[redis]==1.18.0",
+    "dramatiq-dashboard@git+https://github.com/dbowring/dramatiq_dashboard@128ee38e2b5efc36c4ae964a934cffc41baaf896",
+    "dramatiq-crontab[sentry]==1.0.12",
     "django-configurations==2.5.1",
     "django-cors-headers==4.6.0",
     "django-countries==7.6.1",

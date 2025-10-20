@@ -53,8 +53,8 @@ def index_message_post_save(sender, instance, created, **kwargs):
 
     try:
         # Schedule the indexing task asynchronously
-        index_message_task.delay(str(instance.id))
-        # reindex_thread_task.delay(str(instance.thread.id))
+        index_message_task.send(str(instance.id))
+        # reindex_thread_task.send(str(instance.thread.id))
 
     # pylint: disable=broad-exception-caught
     except Exception as e:
@@ -74,7 +74,7 @@ def index_message_recipient_post_save(sender, instance, created, **kwargs):
     try:
         # Schedule the indexing task asynchronously
         # TODO: deduplicate the indexing of the message!
-        index_message_task.delay(str(instance.message.id))
+        index_message_task.send(str(instance.message.id))
 
     # pylint: disable=broad-exception-caught
     except Exception as e:
@@ -93,7 +93,7 @@ def index_thread_post_save(sender, instance, created, **kwargs):
 
     try:
         # Schedule the indexing task asynchronously
-        reindex_thread_task.delay(str(instance.id))
+        reindex_thread_task.send(str(instance.id))
 
     # pylint: disable=broad-exception-caught
     except Exception as e:

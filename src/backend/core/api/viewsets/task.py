@@ -1,9 +1,9 @@
-"""API ViewSet for Celery task status."""
+"""API ViewSet for asynchronous task statuses."""
 
 import logging
 
-from celery import states as celery_states
-from celery.result import AsyncResult
+import dramatiq
+from dramatiq.results import ResultFailure, ResultMissing, ResultTimeout
 from drf_spectacular.utils import (
     OpenApiExample,
     extend_schema,
@@ -14,9 +14,12 @@ from rest_framework import serializers as drf_serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from messages.celery_app import app as celery_app
+from core.utils import get_task_progress
 
 logger = logging.getLogger(__name__)
+
+# Map Dramatiq states to Celery-like states for frontend compatibility
+DRAMATIQ_STATES = ["PENDING", "SUCCESS", "FAILURE", "RETRY", "REJECTED", "PROGRESS"]
 
 
 @extend_schema(
@@ -34,9 +37,7 @@ logger = logging.getLogger(__name__)
         200: inline_serializer(
             name="TaskStatusResponse",
             fields={
-                "status": drf_serializers.ChoiceField(
-                    choices=sorted({*celery_states.ALL_STATES, "PROGRESS"})
-                ),
+                "status": drf_serializers.ChoiceField(choices=sorted(DRAMATIQ_STATES)),
                 "result": drf_serializers.JSONField(allow_null=True),
                 "error": drf_serializers.CharField(allow_null=True),
             },
@@ -59,38 +60,65 @@ logger = logging.getLogger(__name__)
     ],
 )
 class TaskDetailView(APIView):
-    """View to retrieve the status of a Celery task."""
+    """View to retrieve the status of a task."""
 
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, task_id):
-        """Get the status of a Celery task."""
+        """Get the status of a task."""
+        # Try to fetch a result from Dramatiq's result backend
+        broker = dramatiq.get_broker()
+        result_backend = broker.get_results_backend()
 
-        task_result = AsyncResult(task_id, app=celery_app)
+        if result_backend is not None:
+            try:
+                # Retrieve a Message for this task id from the backend, then get result
+                # See Dramatiq results API: message.get_result(...)
+                message = result_backend.get_message(task_id)
+                result = message.get_result(backend=result_backend, block=False)
+                return Response(
+                    {
+                        "status": "SUCCESS",
+                        "result": result,
+                        "error": None,
+                    }
+                )
+            except ResultMissing:
+                # No result yet; fall through to progress/pending logic
+                pass
+            except ResultFailure as exc:
+                return Response(
+                    {
+                        "status": "FAILURE",
+                        "result": None,
+                        "error": str(exc),
+                    }
+                )
+            except ResultTimeout as exc:
+                # Treat timeouts as pending
+                logger.debug("Result timeout for task %s: %s", task_id, exc)
 
-        # By default unknown tasks will be in PENDING. There is no reliable
-        # way to check if a task exists or not with Celery.
-        # https://github.com/celery/celery/issues/3596#issuecomment-262102185
+        # Check if we have progress data for this task
+        progress_data = get_task_progress(task_id)
 
-        # Prepare the response data
-        result_data = {
-            "status": task_result.status,
-            "result": None,
-            "error": None,
-        }
+        if progress_data:
+            # Task is in progress
+            return Response(
+                {
+                    "status": "PROGRESS",
+                    "result": None,
+                    "error": None,
+                    "progress": progress_data.get("progress"),
+                    "message": progress_data.get("metadata", {}).get("message"),
+                    "timestamp": progress_data.get("timestamp"),
+                }
+            )
 
-        # If the result is a dict with status/result/error, unpack and propagate status
-        if isinstance(task_result.result, dict) and set(task_result.result.keys()) >= {
-            "status",
-            "result",
-            "error",
-        }:
-            result_data["status"] = task_result.result["status"]
-            result_data["result"] = task_result.result["result"]
-            result_data["error"] = task_result.result["error"]
-        else:
-            result_data["result"] = task_result.result
-        if task_result.state == "PROGRESS" and task_result.info:
-            result_data.update(task_result.info)
-
-        return Response(result_data)
+        # Default to pending when no result and no progress
+        return Response(
+            {
+                "status": "PENDING",
+                "result": None,
+                "error": None,
+            }
+        )

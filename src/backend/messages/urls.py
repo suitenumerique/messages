@@ -2,7 +2,6 @@
 
 from django.conf import settings
 from django.conf.urls.static import static
-from django.contrib import admin
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from django.http import HttpResponse
 from django.urls import include, path, re_path
@@ -13,8 +12,10 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from core.admin import admin_site
+
 urlpatterns = [
-    path(settings.ADMIN_URL, admin.site.urls),
+    path(settings.ADMIN_URL, admin_site.urls),
     path("", include("core.urls")),
     path(
         "healthz/",

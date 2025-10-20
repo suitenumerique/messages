@@ -135,7 +135,7 @@ def mbox_key(user, mbox_file):
 @pytest.mark.django_db
 def test_import_file_eml_by_superuser(admin_user, mailbox, eml_key, mock_request):
     """Test successful EML file import for superuser."""
-    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
+    with patch("core.services.importer.tasks.process_eml_file_task.send") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
             file_key=eml_key,
@@ -235,7 +235,7 @@ def test_import_file_eml_by_user_with_access_task(user, mailbox, eml_key, mock_r
     # Add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
-    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
+    with patch("core.services.importer.tasks.process_eml_file_task.send") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
             file_key=eml_key,
@@ -338,9 +338,7 @@ def test_import_file_mbox_by_superuser_task(
 ):
     """Test successful MBOX file import by superuser."""
 
-    with patch(
-        "core.services.importer.tasks.process_mbox_file_task.delay"
-    ) as mock_task:
+    with patch("core.services.importer.tasks.process_mbox_file_task.send") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
             file_key=mbox_key,
@@ -363,9 +361,7 @@ def test_import_file_mbox_by_user_with_access_task(
     # Add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
-    with patch(
-        "core.services.importer.tasks.process_mbox_file_task.delay"
-    ) as mock_task:
+    with patch("core.services.importer.tasks.process_mbox_file_task.send") as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
             file_key=mbox_key,
@@ -443,7 +439,7 @@ def test_import_file_invalid_file(admin_user, mailbox, mock_request):
 
     try:
         with patch(
-            "core.services.importer.tasks.process_eml_file_task.delay"
+            "core.services.importer.tasks.process_eml_file_task.send"
         ) as mock_task:
             # The task should not be called for invalid files
             mock_task.assert_not_called()
@@ -470,7 +466,7 @@ def test_import_file_invalid_file(admin_user, mailbox, mock_request):
 def test_import_imap_by_superuser(admin_user, mailbox, mock_request):
     """Test successful IMAP import."""
     with patch(
-        "core.services.importer.tasks.import_imap_messages_task.delay"
+        "core.services.importer.tasks.import_imap_messages_task.send"
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_imap(
@@ -504,7 +500,7 @@ def test_import_imap_by_user_with_access(user, mailbox, mock_request, role):
     mailbox.accesses.create(user=user, role=role)
 
     with patch(
-        "core.services.importer.tasks.import_imap_messages_task.delay"
+        "core.services.importer.tasks.import_imap_messages_task.send"
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_imap(
@@ -550,7 +546,7 @@ def test_import_imap_task_error(admin_user, mailbox, mock_request):
     mailbox.accesses.create(user=admin_user, role=MailboxRoleChoices.ADMIN)
 
     with patch(
-        "core.services.importer.tasks.import_imap_messages_task.delay"
+        "core.services.importer.tasks.import_imap_messages_task.send"
     ) as mock_task:
         mock_task.side_effect = Exception("Task error")
         success, response_data = ImportService.import_imap(

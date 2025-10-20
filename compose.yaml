@@ -159,14 +159,14 @@ services:
       target: poetry
     pull_policy: build
 
-  celery-dev:
+  worker-dev:
     build:
       context: src/backend
       target: runtime-dev
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
-    command: ["celery", "-A", "messages.celery_app", "worker", "-l", "DEBUG", "-Q", "celery,default"]
+    command: ["python", "manage.py", "rundramatiq", "-p", "2", "-t", "4"]
     environment:
       - DJANGO_CONFIGURATION=Development
     env_file:
@@ -177,39 +177,27 @@ services:
       - ./data/static:/data/static
     depends_on:
       - backend-dev
+      - redis
 
-  celery-ui:
+  scheduler-dev:
     build:
       context: src/backend
       target: runtime-dev
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
-    depends_on:
-      - redis
+    command: ["python", "manage.py", "crontab"]
     environment:
-      - FLOWER_UNAUTHENTICATED_API=true
       - DJANGO_CONFIGURATION=Development
     env_file:
       - env.d/development/backend.defaults
       - env.d/development/backend.local
     volumes:
       - ./src/backend:/app
-    ports:
-      - "8903:8803"
-    command: celery -A messages.celery_app flower --port=8803
-
-  # nginx:
-  #   image: nginx:1.25
-  #   ports:
-  #     - "8083:8083"
-  #   volumes:
-  #     - ./docker/files/development/etc/nginx/conf.d:/etc/nginx/conf.d:ro
-  #   depends_on:
-  #     - keycloak
-  #     - backend-dev
-  #     - mta-in
-  #     - mta-out
+      - ./data/static:/data/static
+    depends_on:
+      - backend-dev
+      - redis
 
   frontend-dev:
     user: "${DOCKER_USER:-1000}"

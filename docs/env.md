@@ -60,7 +60,7 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `REDIS_URL` | `redis://redis:6379` | Redis connection URL (internal) | Optional |
-| `CELERY_BROKER_URL` | `redis://redis:6379` | Celery message broker URL (internal) | Optional |
+| `DRAMATIQ_BROKER_URL` | `redis://redis:6379` | Dramatiq message broker URL (internal) | Optional |
 | `CACHES_DEFAULT_TIMEOUT` | `30` | Default cache timeout in seconds | Optional |
 
 **Note**: For external Redis access, use `localhost:8913`. For internal container communication, use `redis:6379`.
