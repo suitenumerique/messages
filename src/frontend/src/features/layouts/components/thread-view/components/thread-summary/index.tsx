@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Button, Tooltip } from "@openfun/cunningham-react";
+import { Button } from "@openfun/cunningham-react";
 import { Icon, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import ReactMarkdown from "react-markdown";
@@ -27,7 +27,7 @@ export const ThreadSummary = ({
   const { t } = useTranslation();
   const [localSummary, setLocalSummary] = useState(summary);
 
-  // Build the cache key for the thread 
+  // Build the cache key for the thread
   const threadQueryKey = useMemo(() => {
     if (!selectedMailboxId || !searchParams) return ["threads"];
     const queryKey = ["threads", selectedMailboxId];
@@ -49,15 +49,15 @@ export const ThreadSummary = ({
       (
         oldData:
           | {
-              pages: Array<{
-                data: {
-                  results: { id: string; summary?: string }[];
-                  count: number;
-                  next: string | null;
-                  previous: string | null;
-                };
-              }>;
-            }
+            pages: Array<{
+              data: {
+                results: { id: string; summary?: string }[];
+                count: number;
+                next: string | null;
+                previous: string | null;
+              };
+            }>;
+          }
           | undefined
       ) => {
         if (!oldData) return oldData;
@@ -131,15 +131,15 @@ export const ThreadSummary = ({
             )}
           </div>
           <div className="thread-summary__refresh-button">
-            <Tooltip content={t("Refresh summary")}>
-              <Button
-                color="tertiary-text"
-                size="small"
-                icon={<Icon name="autorenew"/>}
-                aria-label={t("Refresh summary")}
-                onClick={handleRefresh}
-              />
-            </Tooltip>
+            <Button
+              color="tertiary"
+              size="small"
+              icon={<Icon name="autorenew" />}
+              aria-label={t("Refresh summary")}
+              onClick={handleRefresh}
+            >
+              {t("Summarize")}
+            </Button>
           </div>
         </>
       )}

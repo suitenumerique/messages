@@ -1,20 +1,20 @@
 .label-badge {
-    padding: 0.25rem 0.5rem;
+    padding: 0;
 
-    &:has(a) {
-        padding: 0;
-    }
-
-    & > a {
+    & > .label-badge__label {
+        padding: 0.5rem 0.5rem;
+        display: inline-block;
         text-decoration: none;
         color: inherit;
-        padding: 0.25rem 0.5rem;
-        border-radius: 4px;
+    }
+
+    &:has(a.label-badge__label) {
+        padding: 0;
     }
 
     &:has(.label-badge__remove-cta) {
         padding-right: 0;
-        padding-block: 0
+        padding-block: 0;
     }
 
     &__remove-cta {
@@ -23,12 +23,19 @@
         appearance: none;
         border: none;
         cursor: pointer;
-        padding: 0.25rem 0.5rem;
-        border-radius: 4px;
+        display: block;
+        align-self: stretch;
     }
 
-    & > a:hover,
+    & > a.label-badge__label:hover,
     &__remove-cta:hover {
         background-color: rgba(0, 0, 0, 0.25);
+    }
+
+    // == Modifiers
+    &--compact {
+        & > .label-badge__label {
+            padding: 0.25rem 0.5rem;
+        }
     }
 }

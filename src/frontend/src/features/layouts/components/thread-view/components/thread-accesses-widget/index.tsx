@@ -29,9 +29,9 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const { selectedMailbox, selectedThread, invalidateThreadMessages } = useMailboxContext();
-    const { mutate: removeThreadAccess } = useThreadsAccessesDestroy({ mutation: { onSuccess: invalidateThreadMessages } });
-    const { mutate: createThreadAccess } = useThreadsAccessesCreate({ mutation: { onSuccess: invalidateThreadMessages } });
-    const { mutate: updateThreadAccess } = useThreadsAccessesUpdate({ mutation: { onSuccess: invalidateThreadMessages } });
+    const { mutate: removeThreadAccess } = useThreadsAccessesDestroy({ mutation: { onSuccess: () => invalidateThreadMessages() } });
+    const { mutate: createThreadAccess } = useThreadsAccessesCreate({ mutation: { onSuccess: () => invalidateThreadMessages() } });
+    const { mutate: updateThreadAccess } = useThreadsAccessesUpdate({ mutation: { onSuccess: () => invalidateThreadMessages() } });
     const searchMailboxesQuery = useMailboxesSearchList(selectedMailbox?.id ?? "", {
         q: searchQuery,
     }, {

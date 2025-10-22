@@ -1,5 +1,5 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo } from "react";
-import { Mailbox, MailboxRoleChoices, PaginatedMessageList, PaginatedThreadList, Thread, useLabelsList, useMailboxesList, useMessagesList, useThreadsListInfinite } from "../api/gen";
+import { Mailbox, MailboxRoleChoices, Message, messagesListResponse200, PaginatedMessageList, PaginatedThreadList, Thread, useLabelsList, useMailboxesList, useMessagesList, useThreadsListInfinite } from "../api/gen";
 import { FetchStatus, QueryStatus, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import usePrevious from "@/hooks/use-previous";
@@ -18,6 +18,12 @@ type PaginatedQueryState = QueryState & {
     isFetchingNextPage: boolean;
 }
 
+type MessageQueryInvalidationSource = {
+    type: 'delete' | 'update';
+    metadata: { ids?: Message['id'][], threadIds?: Thread['id'][] };
+    payload?: Partial<Message>;
+}
+
 type MailboxContextType = {
     mailboxes: readonly Mailbox[] | null;
     threads: PaginatedThreadList | null;
@@ -26,9 +32,9 @@ type MailboxContextType = {
     selectedThread: Thread | null;
     unselectThread: () => void;
     loadNextThreads: () => Promise<unknown>;
-    invalidateThreadMessages: () => void;
-    invalidateThreadsStats: () => void;
-    invalidateLabels: () => void;
+    invalidateThreadMessages: (source?: MessageQueryInvalidationSource) => Promise<void>;
+    invalidateThreadsStats: () => Promise<void>;
+    invalidateLabels: () => Promise<void>;
     refetchMailboxes: () => void;
     isPending: boolean;
     queryStates: {
@@ -51,9 +57,9 @@ const MailboxContext = createContext<MailboxContextType>({
     selectedThread: null,
     loadNextThreads: async () => {},
     unselectThread: () => {},
-    invalidateThreadMessages: () => {},
-    invalidateThreadsStats: () => {},
-    invalidateLabels: () => {},
+    invalidateThreadMessages: async () => {},
+    invalidateThreadsStats: async () => {},
+    invalidateLabels: async () => {},
     refetchMailboxes: () => {},
     isPending: false,
     queryStates: {
@@ -180,13 +186,56 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         },
     });
 
+
+    const _updateThreadMessagesQueryData = (threadId: Thread['id'], source: MessageQueryInvalidationSource) => {
+        queryClient.setQueryData(['messages', threadId], (oldData: messagesListResponse200 | undefined) => {
+            if (!oldData?.data?.results) return oldData;
+            let newResults = [ ...oldData.data.results ];
+            if (source.type === 'delete') {
+                newResults = newResults.filter((message: Message) => {
+                    if ((source.metadata.threadIds ?? []).includes(threadId)) return true;
+                    return !(source.metadata.ids ?? []).includes(message.id);
+                });
+            } else if (source.type === 'update') {
+                newResults = newResults.map((message: Message) => {
+                    if (
+                        (source.metadata.threadIds ?? []).includes(threadId)
+                        || (source.metadata.ids ?? []).includes(message.id)
+                    ) {
+                        return { ...message, ...source.payload };
+                    }
+                    return message;
+                });
+            }
+
+            return {
+                ...oldData,
+                data: {
+                    ...oldData.data,
+                    results: newResults,
+                    count: newResults.length,
+                }
+            };
+        });
+    }
     /**
      * Invalidate the threads and messages queries to refresh the data
+     * If a source is provided, it could be used to update query cache from the source data
      */
-    const invalidateThreadMessages = async () => {
+    const invalidateThreadMessages = async (source?: MessageQueryInvalidationSource) => {
         await queryClient.invalidateQueries({ queryKey: ['threads', selectedMailbox?.id] });
+        if (source && ((source.metadata.threadIds ?? []).length ?? 0) > 0) {
+            source.metadata.threadIds!.forEach(threadId => {
+                if (queryClient.getQueryState(['messages', threadId])) {
+                    _updateThreadMessagesQueryData(threadId, source);
+                }
+            });
+        }
         if (selectedThread) {
             await queryClient.invalidateQueries({ queryKey: ['messages', selectedThread.id] });
+            if (source && ((source.metadata.ids ?? []).length ?? 0) > 0) {
+                _updateThreadMessagesQueryData(selectedThread.id, source);
+            }
         }
     }
     const resetSearchQueryDebounced = useDebounceCallback(() => {
@@ -196,7 +245,10 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     }, 500);
 
     const invalidateThreadsStats = async () => {
-        await queryClient.invalidateQueries({ queryKey: ['threads', 'stats', selectedMailbox?.id] });
+        await queryClient.invalidateQueries({
+            queryKey: ['threads', 'stats', selectedMailbox?.id],
+            predicate: ({ queryKey }) => !(queryKey[queryKey.length - 1] as string).startsWith('label_slug=')
+        });
     }
 
     const invalidateLabels = async () => {

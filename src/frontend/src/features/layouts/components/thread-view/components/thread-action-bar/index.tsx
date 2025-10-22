@@ -26,7 +26,7 @@ export const ActionBar = ({ canUndelete, canUnarchive }: ActionBarProps) => {
     return (
         <Bar className="thread-action-bar">
             <div className="thread-action-bar__left">
-                <Tooltip content={t('Close this thread')}>
+                <Tooltip content={t('Close this thread')} placement="right">
                     <Button
                         onClick={unselectThread}
                         color="tertiary-text"

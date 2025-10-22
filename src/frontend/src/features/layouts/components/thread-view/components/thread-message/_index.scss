@@ -3,9 +3,25 @@
 .thread-message {
     border-radius: 8px;
     background-color: white;
-    padding: var(--c--theme--spacings--base);
+    padding-inline: var(--c--theme--spacings--base);
+    padding-top: var(--c--theme--spacings--2xs);
     outline: 3px solid transparent;
     transition: outline-color 0.1s ease;
+    max-width: 1600px;
+}
+
+.thread-message--folded {
+    .thread-message__header {
+        border-bottom: none;
+    }
+
+    .thread-message__footer {
+        height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        visibility: hidden;
+        display: none;
+    }
 }
 
 .thread-message[data-trashed="true"] .banner {
@@ -19,10 +35,46 @@
 .thread-message__header {
     border-bottom: 1px solid var(--c--theme--colors--greyscale-200);
     padding-bottom: var(--c--theme--spacings--base);
+    position: relative;
+}
+
+.thread-message__header-toggle {
+    background: none;
+    border-radius: 8px;
+    position: absolute;
+    left: calc(var(--c--theme--spacings--base) * -1);
+    right: calc(var(--c--theme--spacings--base) * -1);
+    top: calc(var(--c--theme--spacings--2xs) * -1);
+    bottom: 0;
+    border: none;
+    padding: 0;
+    margin: 0;
+    display: block;
+    cursor: pointer;
+    &:disabled {
+        cursor: default;
+        pointer-events: none;
+    }
+}
+
+.thread-message__header-toggle + div {
+    position: relative;
+    pointer-events: none;
+
+    // Enable pointer events for all interactive elements
+    button, a, input, textarea, select, .c__tooltip, [role="button"], [tabindex]:not([tabindex="-1"]) {
+        pointer-events: auto;
+    }
+}
+
+.thread-message__header-column--left {
+    min-width: 0;
+    flex: 1;
 }
 
 .thread-message__header-column--right {
     gap: var(--c--theme--spacings--xs);
+    flex-shrink: 0;
 }
 
 .thread-message__header-actions {
@@ -31,20 +83,50 @@
     gap: 0;
 }
 
+.thread-message__header-content {
+    display: flex;
+    flex-direction: row;
+    gap: var(--c--theme--spacings--base);
+    width: 100%;
+
+    & > .thread-message__header-content-avatar {
+        flex-shrink: 0;
+
+        .c__avatar {
+            height: 2.5rem;
+            width: 2.5rem;
+            font-size: 1.1rem;
+            line-height: 2.5rem;
+        }
+    }
+
+
+    & > .thread-message__header-content-info {
+        flex: 1;
+        min-width: 0;
+
+        & .thread-message__sender-chip {
+            min-width: 0;
+
+            .contact-chip__identity-email {
+                font-size: 0.875rem;
+            }
+
+            .contact-chip__identity-name {
+                font-size: 1.2rem;
+            }
+        }
+    }
+
+}
+
 .thread-message__header-rows {
     display: flex;
     flex-direction: row;
     justify-content: space-between;
-}
-
-@media screen and (max-width: breakpoint(tablet)) {
-    .thread-message__header-rows {
-        flex-direction: column-reverse;
-    }
-
-    .thread-message__header-column--right {
-        justify-content: space-between;
-    }
+    align-items: baseline;
+    gap: var(--c--theme--spacings--base);
+    min-width: 0;
 }
 
 .thread-message__header-rows > div > * {
@@ -68,17 +150,22 @@
     display: grid;
     grid-template-columns: max-content 1fr;
     margin: 0;
-    column-gap: var(--c--theme--spacings--base);
+    column-gap: var(--c--theme--spacings--2xs);
+    align-items: baseline;
 }
 
 .thread-message__correspondents dt {
-    font-weight: 600;
+    font-size: 0.875rem;
 }
-
 .thread-message__correspondents dd {
     margin: 0;
     word-break: break-word;
+
+    .contact-chip__identity-email {
+        color: var(--c--theme--colors--greyscale-500);
+    }
 }
+
 .thread-message__correspondents .recipient-chip-list {
     display: flex;
     flex-direction: row;
@@ -87,19 +174,33 @@
 
 .thread-message__body {
     width: 100%;
-    margin-block: 1em;
+    margin-block: var(--c--theme--spacings--base);
     height: auto;
     border: none;
+    display: block;
 }
 
 .thread-message__footer {
-    margin-top: var(--c--theme--spacings--base);
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--theme--spacings--xl);
+    margin-bottom: var(--c--theme--spacings--base);
 }
 
 .thread-message__footer-actions {
     display: flex;
     flex-direction: row;
     gap: var(--c--theme--spacings--base);
-    margin-top: var(--c--theme--spacings--4xl);
 }
 
+.thread-message__loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    margin-block: var(--c--theme--spacings--base);
+}
+
+.thread-message__reply-form {
+    margin-bottom: var(--c--theme--spacings--base);
+}

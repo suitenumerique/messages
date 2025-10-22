@@ -85,7 +85,7 @@ export const ThreadItem = ({ thread }: ThreadItemProps) => {
                             {thread.labels.length > 0 && (
                                 <div className="thread-item__labels">
                                     {thread.labels.map((label) => (
-                                        <LabelBadge key={label.id} label={label} />
+                                        <LabelBadge key={label.id} label={label} compact />
                                     ))}
                                 </div>
                             )}

@@ -24,6 +24,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import i18n from "@/features/i18n/initI18n";
 import { DropdownButton } from "@/features/ui/components/dropdown-button";
 import { PREFER_SEND_MODE_KEY, PreferSendMode } from "@/features/config/constants";
+import { useSearchParams } from "next/navigation";
 
 export type MessageFormMode = "new" |"reply" | "reply_all" | "forward";
 
@@ -79,6 +80,7 @@ export const MessageForm = ({
 }: MessageFormProps) => {
     const { t } = useTranslation();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [draft, setDraft] = useState<Message | undefined>(draftMessage);
     const [preferredSendMode, setPreferredSendMode] = useState<PreferSendMode>(() => {
         if (mode === 'new') return PreferSendMode.SEND;
@@ -261,16 +263,19 @@ export const MessageForm = ({
                 id: messageId
             }, {
                 onSuccess: () => {
+                    onClose?.();
                     setDraft(undefined);
-                    invalidateThreadMessages();
+                    invalidateThreadMessages({ type: 'delete', metadata: { ids: [messageId] }});
                     invalidateThreadsStats();
-                    unselectThread();
+                    // Unselect the thread if we are in the draft view
+                    if (searchParams.get('has_draft') === '1') {
+                        unselectThread();
+                    }
                     addToast(
                         <ToasterItem type="info">
                             <span>{t("Draft deleted")}</span>
                         </ToasterItem>
                     );
-                    onClose?.();
                 },
             });
         }

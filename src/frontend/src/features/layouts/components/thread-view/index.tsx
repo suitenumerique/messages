@@ -5,7 +5,7 @@ import { ThreadMessage } from "./components/thread-message"
 import { useMailboxContext } from "@/features/providers/mailbox"
 import useRead from "@/features/message/use-read"
 import { useDebounceCallback } from "@/hooks/use-debounce-callback"
-import { Message } from "@/features/api/gen/models"
+import { Message, Thread } from "@/features/api/gen/models"
 import { Spinner } from "@gouvfr-lasuite/ui-kit"
 import { useSearchParams } from "next/navigation"
 import { Banner } from "@/features/ui/components/banner"
@@ -13,93 +13,77 @@ import { Button } from "@openfun/cunningham-react"
 import { useTranslation } from "react-i18next"
 import { ThreadViewLabelsList } from "./components/thread-view-labels-list"
 import { ThreadSummary } from "./components/thread-summary";
+import clsx from "clsx";
+import ThreadViewProvider, { useThreadViewContext } from "./provider";
 
 type MessageWithDraftChild = Message & {
     draft_message?: Message;
 }
 
-export const ThreadView = () => {
+type ThreadViewComponentProps = {
+    messages: readonly MessageWithDraftChild[],
+    mailboxId: string,
+    thread: Thread,
+    showTrashedMessages: boolean,
+    setShowTrashedMessages: (show: boolean) => void,
+    searchParams: URLSearchParams,
+}
+
+const ThreadViewComponent = ({ messages, mailboxId, thread, showTrashedMessages, setShowTrashedMessages, searchParams }: ThreadViewComponentProps) => {
     const { t } = useTranslation();
-    const searchParams = useSearchParams();
     const toMarkAsReadQueue = useRef<string[]>([]);
-    const isTrashView = searchParams.get('has_trashed') === '1';
-    const [showTrashedMessages, setShowTrashedMessages] = useState(isTrashView);
+    const stickyContainerRef = useRef<HTMLDivElement>(null);
     const debouncedMarkAsRead = useDebounceCallback(() => {
         if (toMarkAsReadQueue.current.length === 0) return;
-        markAsRead({
-            messageIds: toMarkAsReadQueue.current,
-            onSuccess: () => {
-                toMarkAsReadQueue.current = [];
-            }
-        })
-    }, 300);
-    const { selectedMailbox, selectedThread, messages, queryStates } = useMailboxContext();
+        markAsRead({ messageIds: toMarkAsReadQueue.current });
+        toMarkAsReadQueue.current = [];
+    }, 150);
+
     const rootRef = useRef<HTMLDivElement>(null);
     const { markAsRead } = useRead();
-    // Nest draft messages under their parent messages
-    const messagesWithDraftChildren = useMemo(() => {
-        if (!messages?.results) return [];
-        const rootMessages: MessageWithDraftChild[] = messages.results.filter((m) => !m.is_draft || !m.parent_id);
-        const draftChildren  = messages.results.filter((m) => m.is_draft && m.parent_id);
-        draftChildren.forEach((m) => {
-            const parentMessage = rootMessages.find((um) => um.id === m.parent_id);
-            if (parentMessage) {
-                parentMessage.draft_message = m;
-            }
-        });
-        return rootMessages
-    }, [messages]);
     const isAISummaryEnabled = useFeatureFlag(FEATURE_KEYS.AI_SUMMARY);
-
-    /**
-     * If we are in the trash view, we only want to show trashed messages
-     * otherwise, we want to show only non-trashed messages
-     *
-     * If we are in the trash view and the user has clicked on the "show trashed messages" button,
-     * we want to show all messages.
-     */
-    const filteredMessages = useMemo(() => {
-        if(!isTrashView && showTrashedMessages) return messagesWithDraftChildren;
-        return messagesWithDraftChildren.filter((m) => m.is_trashed === isTrashView);
-    }, [messagesWithDraftChildren, isTrashView, showTrashedMessages]);
-
-    const latestMessage = messagesWithDraftChildren.filter((m) => m.is_trashed === isTrashView).reduce((acc, message) => {
-        if (message!.sent_at && acc!.sent_at && message!.sent_at > acc!.sent_at) {
-            return message;
-        }
-        return acc;
-    }, filteredMessages[0]);
-
+    const { isReady, reset } = useThreadViewContext();
     // Refs for all unread messages
     const unreadRefs = useRef<Record<string, HTMLElement | null>>({});
     // Find all unread message IDs
-    const unreadMessageIds = messages?.results?.filter((m) => !m.read_at).map((m) => m.id) || [];
-    const trashedMessageIds = messages?.results?.filter((m) => m.is_trashed).map((m) => m.id) || [];
-    const isThreadTrashed = trashedMessageIds.length === messages?.results?.length;
-    const archivedMessageIds = messages?.results?.filter((m) => m.is_archived).map((m) => m.id) || [];
-    const isThreadArchived = archivedMessageIds.length === messages?.results?.length;
+    const unreadMessageIds = messages.filter((m) => m.is_unread).map((m) => m.id) || [];
+    const draftMessageIds = messages.filter((m) => m.draft_message).map((m) => m.id) || [];
+    const trashedMessageIds = messages.filter((m) => m.is_trashed).map((m) => m.id) || [];
+    const archivedMessageIds = messages.filter((m) => m.is_archived).map((m) => m.id) || [];
+    const isThreadTrashed = trashedMessageIds.length === messages.length;
+    const isThreadArchived = archivedMessageIds.length === messages.length;
+    const isThreadSender = messages?.some((m) => m.is_sender);
+    const latestMessage = messages.reduce((acc, message) => {
+        if (message!.created_at && acc!.created_at && message!.created_at > acc!.created_at) {
+            return message;
+        }
+        return acc;
+    }, messages[0]);
 
     /**
      * Setup an intersection observer to mark messages as read when they are
      * scrolled into view.
      */
     useEffect(() => {
-        if (!unreadMessageIds.length) return;
+        if (!unreadMessageIds.length || !isReady) return;
 
+        const stickyContainerHeight = stickyContainerRef.current?.getBoundingClientRect().height || 125;
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 const messageId = entry.target.getAttribute('data-message-id');
-                const message = messages?.results.find(({ id }) => id === messageId);
+                const message = messages.find(({ id }) => id === messageId);
                 if (!message) return;
-                if (entry.isIntersecting &&!message.read_at) {
+
+                if (entry.isIntersecting && message.is_unread && toMarkAsReadQueue.current.indexOf(messageId!) === -1) {
                     toMarkAsReadQueue.current.push(messageId!);
+                    debouncedMarkAsRead();
                 }
             });
-            debouncedMarkAsRead();
-        }, { threshold: 0.3, root: rootRef.current, rootMargin: "0px 40px 0px 0px" });
 
-        unreadMessageIds.forEach(id => {
-            const el = unreadRefs.current[id];
+        }, { root: rootRef.current, rootMargin: `-${stickyContainerHeight}px 0px 0px 0px` });
+
+        unreadMessageIds.forEach(messageId => {
+            const el = unreadRefs.current[messageId];
             if (el) {
                 observer.observe(el);
             }
@@ -108,40 +92,56 @@ export const ThreadView = () => {
         return () => {
             observer.disconnect();
         };
-    }, [unreadMessageIds.join(","), messages]);
+    }, [isReady, unreadMessageIds.join(","), thread.id]);
 
-    useEffect(() => () => {
-        setShowTrashedMessages(isTrashView);
-    }, [selectedThread]);
+    useEffect(() => {
+        if (isReady) {
+            let messageToScroll = latestMessage?.id;
+            let selector = `#thread-message-${messageToScroll}`;
+            if (draftMessageIds.length > 0) {
+                messageToScroll = draftMessageIds[0];
+                selector = `#thread-message-${messageToScroll} > .thread-message__reply-form`;
+            } else if (unreadMessageIds.length > 0) {
+                messageToScroll = unreadMessageIds[0];
+                selector = `#thread-message-${messageToScroll}`;
+            }
 
-    if (!selectedThread) return null
+            const el = document.querySelector<HTMLElement>(selector);
+            if (el) {
+                rootRef.current?.scrollTo({ top: el.offsetTop - 225, behavior: 'instant' });
+            }
+        }
+    }, [isReady]);
 
-    if (queryStates.messages.isLoading) return (
-        <div className="thread-view thread-view--loading">
-            <Spinner />
-        </div>
-    )
+    useEffect(() => {
+        reset();
+    }, [thread.id]);
+
 
     return (
-        <div className="thread-view" ref={rootRef}>
-            <ActionBar canUndelete={isThreadTrashed} canUnarchive={isThreadArchived} />
-            <h2 className="thread-view__subject">{selectedThread.subject}</h2>
+        <div className={clsx("thread-view", { "thread-view--talk": isThreadSender })} ref={rootRef}>
+            <div className="thread-view__sticky-container" ref={stickyContainerRef}>
+                <ActionBar canUndelete={isThreadTrashed} canUnarchive={isThreadArchived} />
+                <header className="thread-view__header">
+                    <h2 className="thread-view__subject">{thread.subject || t('No subject')}</h2>
+                    {
+                        thread.labels.length > 0 && (
+                            <ThreadViewLabelsList labels={thread.labels} />
+                        )
+                    }
+                </header>
+            </div>
             {isAISummaryEnabled && (
                 <ThreadSummary
-                threadId={selectedThread.id}
-                summary={selectedThread.summary}
-                selectedMailboxId={selectedMailbox?.id}
-                searchParams={searchParams}
-                selectedThread={selectedThread}
+                    threadId={thread.id}
+                    summary={thread.summary}
+                    selectedMailboxId={mailboxId}
+                    searchParams={searchParams}
+                    selectedThread={thread}
                 />
             )}
             <div className="thread-view__messages-list">
-                {
-                    selectedThread!.labels.length > 0 && (
-                        <ThreadViewLabelsList labels={selectedThread!.labels} />
-                    )
-                }
-                {filteredMessages!.map((message) => {
+                {messages.map((message) => {
                     const isLatest = latestMessage?.id === message.id;
                     const isUnread = message.is_unread;
                     return (
@@ -182,5 +182,63 @@ export const ThreadView = () => {
                 )}
             </div>
         </div>
+    )
+}
+
+export const ThreadView = () => {
+    const searchParams = useSearchParams();
+    const isTrashView = searchParams.get('has_trashed') === '1';
+    const { selectedMailbox, selectedThread, messages, queryStates } = useMailboxContext();
+    const [showTrashedMessages, setShowTrashedMessages] = useState(isTrashView);
+    // Nest draft messages under their parent messages
+    const messagesWithDraftChildren = useMemo(() => {
+        if (!messages?.results) return [];
+        const rootMessages: MessageWithDraftChild[] = messages.results.filter((m) => !m.is_draft || !m.parent_id);
+        const draftChildren = messages.results.filter((m) => m.is_draft && m.parent_id);
+        draftChildren.forEach((m) => {
+            const parentMessage = rootMessages.find((um) => um.id === m.parent_id);
+            if (parentMessage) {
+                parentMessage.draft_message = m;
+            }
+        });
+        return rootMessages
+    }, [messages]);
+    /**
+     * If we are in the trash view, we only want to show trashed messages
+     * otherwise, we want to show only non-trashed messages
+     *
+     * If we are in the trash view and the user has clicked on the "show trashed messages" button,
+     * we want to show all messages.
+     */
+    const filteredMessages = useMemo(() => {
+        if (!isTrashView && showTrashedMessages) return messagesWithDraftChildren;
+        return messagesWithDraftChildren.filter((m) => m.is_trashed === isTrashView);
+    }, [messagesWithDraftChildren, isTrashView, showTrashedMessages]);
+
+    useEffect(() => () => {
+        setShowTrashedMessages(isTrashView);
+    }, [selectedThread]);
+
+    if (!selectedMailbox || !selectedThread) return null
+
+    if (queryStates.messages.isLoading) {
+        return (
+            <div className="thread-view thread-view--loading">
+                <Spinner />
+            </div>
+        )
+    }
+
+    return (
+        <ThreadViewProvider messageIds={filteredMessages.map((m) => m.id) || []}>
+            <ThreadViewComponent
+                mailboxId={selectedMailbox!.id}
+                thread={selectedThread!}
+                messages={filteredMessages}
+                showTrashedMessages={showTrashedMessages}
+                setShowTrashedMessages={setShowTrashedMessages}
+                searchParams={searchParams}
+            />
+        </ThreadViewProvider>
     )
 }
