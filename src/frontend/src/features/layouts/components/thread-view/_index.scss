@@ -5,6 +5,15 @@
     display: flex;
     flex-direction: column;
     max-height: 100%;
+    overflow-y: auto;
+}
+
+.thread-view--talk .thread-message:not(.thread-message--sender) {
+    margin-right: var(--c--theme--spacings--xxl);
+}
+
+.thread-view--talk .thread-message.thread-message--sender {
+    margin-left: var(--c--theme--spacings--xxl);
 }
 
 @media screen and (max-width: breakpoint(tablet)) {
@@ -37,9 +46,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--c--theme--spacings--base);
-    padding: var(--c--theme--spacings--base);;
-    overflow-y: auto;
-    max-height: 100%;
+    padding: var(--c--theme--spacings--base);
+    margin-bottom: 300px;
 }
 
 .thread-view__trashed-banner__content {
@@ -47,7 +55,6 @@
     flex-direction: row;
     gap: var(--c--theme--spacings--base);
     justify-content: space-between;
-    width: 100%;
 }
 
 .thread-view__trashed-banner__actions {
@@ -55,8 +62,20 @@
     gap: var(--c--theme--spacings--sm);
 }
 
-.thread-view__subject {
-    font-weight: bold;
-    margin: var(--c--theme--spacings--base);
+
+.thread-view__header {
+    padding: var(--c--theme--spacings--base);
+    padding-left: var(--c--theme--spacings--md);
+    background: linear-gradient(to top, #F6F6F600, #F6F6F6FF 15px,#F6F6F6FF 100%);
+    z-index: 10;
 }
 
+.thread-view__subject {
+    font-weight: bold;
+}
+
+.thread-view__sticky-container {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}

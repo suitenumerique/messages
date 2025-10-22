@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import DomPurify from "dompurify";
-import { useTranslation } from "react-i18next";
 import { Attachment } from "@/features/api/gen/models";
 import { getRequestUrl, getApiOrigin } from "@/features/api/utils";
 import { getBlobDownloadRetrieveUrl } from "@/features/api/gen/blob/blob";
@@ -10,6 +9,8 @@ type MessageBodyProps = {
     rawHtmlBody?: string;
     rawTextBody?: string;
     attachments?: readonly Attachment[];
+    isHidden?: boolean;
+    onLoad?: () => void;
 }
 
 const CSP = [
@@ -54,36 +55,40 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
         });
         return map;
     }, [attachments]);
+    const domPurify = useMemo(() => {
+        const instance = DomPurify();
+        instance.addHook(
+            'afterSanitizeAttributes',
+            function (node) {
+                // Allow anchor tags to be opened in the parent window if the href is an anchor
+                // Other links are opened in a new tab and safe rel attributes is set
 
-    DomPurify.addHook(
-        'afterSanitizeAttributes',
-        function (node) {
-            // Allow anchor tags to be opened in the parent window if the href is an anchor
-            // Other links are opened in a new tab and safe rel attributes is set
-            if(node.tagName === 'A') {
-                if (!node.getAttribute('href')?.startsWith('#')) {
-                    node.setAttribute('target', '_blank');
+                if(node.tagName === 'A') {
+                    if (!node.getAttribute('href')?.startsWith('#')) {
+                        node.setAttribute('target', '_blank');
+                    }
+                    node.setAttribute('rel', 'noopener noreferrer');
                 }
-                node.setAttribute('rel', 'noopener noreferrer');
-            }
 
-            // Transform CID references in img src attributes
-            if (node.tagName === 'IMG' && cidToBlobUrlMap.size > 0) {
-                const src = node.getAttribute('src');
-                if (src && src.startsWith('cid:')) {
-                    const cid = src.substring(4); // Remove 'cid:' prefix
-                    const blobUrl = cidToBlobUrlMap.get(cid);
-                    if (blobUrl) {
-                        node.setAttribute('src', blobUrl);
-                        node.setAttribute('loading', 'lazy');
+                // Transform CID references in img src attributes
+                if (node.tagName === 'IMG' && cidToBlobUrlMap.size > 0) {
+                    const src = node.getAttribute('src');
+                    if (src && src.startsWith('cid:')) {
+                        const cid = src.substring(4); // Remove 'cid:' prefix
+                        const blobUrl = cidToBlobUrlMap.get(cid);
+                        if (blobUrl) {
+                            node.setAttribute('src', blobUrl);
+                            node.setAttribute('loading', 'lazy');
+                        }
                     }
                 }
             }
-        }
-    );
+        );
+        return instance;
+    }, [cidToBlobUrlMap]);
 
     const sanitizedHtmlBody = useMemo(() => {
-        const sanitizedContent = DomPurify.sanitize(rawHtmlBody || rawTextBody, {
+        const sanitizedContent = domPurify.sanitize(rawHtmlBody || rawTextBody, {
             FORBID_TAGS: ['script', 'object', 'iframe', 'embed', 'audio', 'video'],
             ADD_ATTR: ['target', 'rel'],
         });
@@ -96,7 +101,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
 
         if (rawHtmlBody) return unquoteMessage.getHtml().content;
         return unquoteMessage.getText().content;
-    }, [rawHtmlBody, rawTextBody, cidToBlobUrlMap]);
+    }, [rawHtmlBody, rawTextBody, domPurify]);
 
     const wrappedHtml = useMemo(() => {
         return `
@@ -115,13 +120,20 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
                     color: #24292e;
                 }
                 body > *:first-child {
-                    margin-top: 0;
                     padding-top: 0 !important;
                 }
-                *:not(:last-child) {
-                    margin-bottom: 1em;
+                body > *:last-child {
+                    margin-bottom: 1rem;
                 }
-                img { max-width: 100%; height: auto; }
+                table, div {
+                    max-width: 100%;
+                }
+                p, ul, ol, li, blockquote, pre, code, h1, h2, h3, h4, h5, h6 {
+                    margin: 0;
+                }
+                p, ul {
+                    line-height: 1.3;
+                }
                 a { color: #0366d6; text-decoration: none; }
                 a:hover { text-decoration: underline; }
 
@@ -260,6 +272,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
     }, [resizeIframe]);
 
     const handleIframeLoad = useCallback(() => {
+        resizeIframe();
         if (iframeRef.current?.contentWindow?.document) {
             const doc = iframeRef.current.contentWindow.document;
 
@@ -268,9 +281,22 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
                 node.addEventListener('toggle', resizeIframe);
             });
         }
+        onLoad?.();
+    }, [onLoad, resizeIframe]);
+
+    useEffect(() => {
+        if (!isHidden) {
+            resizeIframe();
+        }
+    }, [isHidden]);
 
     return (
         <iframe
+            style={{
+                maxHeight: isHidden ? '0px' : undefined,
+                visibility: isHidden ? 'hidden' : 'visible',
+                margin: isHidden ? '0' : undefined,
+            }}
             ref={iframeRef}
             className="thread-message__body"
             srcDoc={wrappedHtml}

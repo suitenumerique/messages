@@ -1,8 +1,7 @@
 .thread-summary__container {
   display: flex;
   flex-direction: row;
-  padding-left: var(--c--theme--spacings--base);
-  margin-bottom: var(--c--theme--spacings--base);
+  padding-left: var(--c--theme--spacings--md);
 }
 .thread-summary__content {
   display: flex;
@@ -10,7 +9,6 @@
   justify-content: center;
   flex: 1;
   min-height: 40px;
-  padding-left: var(--c--theme--spacings--base);
   margin: 0;
 }
 

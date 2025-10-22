@@ -22,7 +22,7 @@ const MessageReplyForm = ({ handleClose, message, mode }: MessageReplyFormProps)
                     await queryClient.refetchQueries({ queryKey: ["messages", message.thread_id] });
                     handleClose();
                 }}
-                onClose={message.is_draft ? undefined : handleClose}
+                onClose={handleClose}
             />
         </div>
     );

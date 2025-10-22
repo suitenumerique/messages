@@ -1,7 +1,7 @@
-import { useMemo, useState, useCallback, forwardRef, useEffect } from "react";
+import { useMemo, useState, useCallback, forwardRef, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Tooltip } from "@openfun/cunningham-react";
-import { DropdownMenu } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenu, Icon, IconSize, IconType, Spinner, UserAvatar } from "@gouvfr-lasuite/ui-kit";
 import { Message, MessageDeliveryStatusChoices, MessageRecipient } from "@/features/api/gen/models";
 import useRead from "@/features/message/use-read";
 import { useMailboxContext } from "@/features/providers/mailbox";
@@ -17,6 +17,9 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import { getMessagesEmlRetrieveUrl } from "@/features/api/gen/messages/messages";
 import { getRequestUrl } from "@/features/api/utils";
 import { ContactChip, ContactChipDeliveryStatus } from "@/features/ui/components/contact-chip";
+import clsx from "clsx";
+import { useThreadViewContext } from "../../provider";
+import usePrevious from "@/hooks/use-previous";
 
 type ThreadMessageProps = {
     message: Message,
@@ -32,13 +35,17 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
             if (!message.is_draft || message.is_trashed) return null;
             return 'new';
         }
+        const replyFormRef = useRef<HTMLDivElement>(null);
+        const threadViewContext = useThreadViewContext()
+        const isMessageReady = threadViewContext.isMessageReady(message.id);
+        const [isFolded, setIsFolded] = useState(!isLatest && !message.is_unread && !draftMessage?.is_draft);
         const [replyFormMode, setReplyFormMode] = useState<MessageFormMode | null>(getReplyFormMode)
+        const previousReplyFormMode = usePrevious<MessageFormMode | null>(replyFormMode);
         const showReplyForm = replyFormMode !== null;
         const isSuspiciousSender = Boolean(message.stmsg_headers?.['sender-auth'] === 'none');
         const { markAsUnread } = useRead()
         const { markAsTrashed, markAsUntrashed } = useTrash()
-        const { unselectThread, selectedThread, messages, queryStates, selectedMailbox } = useMailboxContext()
-        const isFetchingMessages = queryStates.messages.isFetching;
+        const { unselectThread, selectedThread, messages, selectedMailbox } = useMailboxContext()
         const [isDropdownOpen, setIsDropdownOpen] = useState(false)
         const canSendMessages = useAbility(Abilities.CAN_SEND_MESSAGES, selectedMailbox);
         const hasSiblingMessages = useMemo(() => {
@@ -49,6 +56,9 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
             return message.to.length + message.cc.length > 1;
         }, [message])
         const showReplyButton = canSendMessages && isLatest && !showReplyForm && !message.is_draft && !message.is_trashed && !draftMessage
+        const toggleFold = () => {
+            setIsFolded(!isFolded);
+        }
 
         const [htmlBody, driveAttachments] = MailHelper.extractDriveAttachmentsFromHtmlBody(message.htmlBody[0]?.content as string);
         const [textBody,] = MailHelper.extractDriveAttachmentsFromTextBody(message.textBody[0]?.content as string);
@@ -56,16 +66,16 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         const getRecipientDeliveryStatus = (recipient: MessageRecipient): ContactChipDeliveryStatus | undefined => {
             // If the message has just been sent, it has not delivery status but for the sender it is useful to show that the message is being delivered
             if (message.is_sender && recipient.delivery_status === null) {
-                return {'status': 'delivering', 'timestamp': null, 'message': null};
+                return { 'status': 'delivering', 'timestamp': null, 'message': null };
             }
             switch (recipient.delivery_status) {
                 case MessageDeliveryStatusChoices.failed:
-                    return {'status': 'undelivered', 'timestamp': recipient.retry_at, 'message': recipient.delivery_message};
+                    return { 'status': 'undelivered', 'timestamp': recipient.retry_at, 'message': recipient.delivery_message };
                 case MessageDeliveryStatusChoices.retry:
-                    return {'status': 'delivering', 'timestamp': recipient.retry_at, 'message': recipient.delivery_message};
+                    return { 'status': 'delivering', 'timestamp': recipient.retry_at, 'message': recipient.delivery_message };
                 case MessageDeliveryStatusChoices.sent:
                 case MessageDeliveryStatusChoices.internal:
-                    return {'status': 'delivered', 'timestamp': recipient.delivered_at, 'message': recipient.delivery_message};
+                    return { 'status': 'delivered', 'timestamp': recipient.delivered_at, 'message': recipient.delivery_message };
                 default:
                     return undefined;
             }
@@ -78,200 +88,240 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         const markAsUnreadFrom = useCallback((messageId: Message['id']) => {
             const offestIndex = messages?.results.findIndex((m) => m.id === messageId);
             const messageIds = messages?.results.slice(offestIndex).map((m) => m.id);
-            return markAsUnread({ messageIds, onSuccess: unselectThread });
+            markAsUnread({ messageIds, onSuccess: unselectThread });
         }, [messages, unselectThread, markAsUnread])
 
         useEffect(() => {
             setReplyFormMode(getReplyFormMode())
         }, [message, draftMessage])
 
+        useEffect(() => {
+            setIsFolded(!isLatest && !message.is_unread && !draftMessage?.is_draft);
+        }, [isLatest, draftMessage?.is_draft])
+
+        // Smooth scroll to the reply form when it is opened by the user
+        useEffect(() => {
+            if (!threadViewContext.isReady) return;
+            if (previousReplyFormMode === null && showReplyForm !== null) {
+                if (replyFormRef.current) {
+                    const container = document.querySelector<HTMLElement>('.thread-view')!;
+                    container.scrollTo({ behavior: 'smooth', top: replyFormRef.current.offsetTop - 225 });
+                }
+            }
+        }, [showReplyForm, threadViewContext.isReady]);
+
         return (
-            <section ref={ref} className="thread-message" data-unread={message.is_unread} data-trashed={message.is_trashed} {...props}>
+            <section id={`thread-message-${message.id}`} className={clsx("thread-message", {
+                "thread-message--folded": isFolded || !isMessageReady,
+                "thread-message--sender": message.is_sender,
+            })} data-unread={message.is_unread} data-trashed={message.is_trashed} {...props}>
                 <header className="thread-message__header">
-                    {
-                        message.is_trashed && (
-                            <Banner type="info" icon={<span className="material-icons">info</span>}>
-                                <div className="thread-view__trashed-banner__content">
-                                    <p>{t('This message has been deleted.')}</p>
-                                    <div className="thread-view__trashed-banner__actions">
-                                        <Button
-                                            onClick={() => markAsUntrashed({ messageIds: [message.id] })}
-                                            color="primary-text"
-                                            size="small"
-                                            icon={<span className="material-icons">restore_from_trash</span>}
-                                        >
-                                            {t('Undelete')}
-                                        </Button>
+                    <button
+                        className="thread-message__header-toggle"
+                        onClick={toggleFold}
+                        disabled={isLatest}
+                        aria-hidden={isLatest}
+                        aria-label={isFolded ? t('Unfold message') : t('Fold message')}
+                        title={isFolded ? t('Unfold message') : t('Fold message')}
+                    />
+                    <div>
+                        {
+                            message.is_trashed && (
+                                <Banner type="info" icon={<Icon name="info" type={IconType.OUTLINED} />} fullWidth>
+                                    <div className="thread-view__trashed-banner__content">
+                                        <p>{t('This message has been deleted.')}</p>
+                                        <div className="thread-view__trashed-banner__actions">
+                                            <Button
+                                                onClick={() => markAsUntrashed({ messageIds: [message.id] })}
+                                                color="primary-text"
+                                                size="small"
+                                                icon={<span className="material-icons">restore_from_trash</span>}
+                                            >
+                                                {t('Undelete')}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </Banner>
+                            )}
+                        <div className="thread-message__header-rows" style={{ marginBottom: 'var(--c--theme--spacings--sm)' }}>
+                            {isSuspiciousSender && (
+                                <Banner type="warning" compact fullWidth>
+                                    <div className="thread-message__header-banner__content">
+                                        <p>{t("This contact's identity could not be verified. Proceed with caution.")}</p>
+                                    </div>
+                                </Banner>
+                            )}
+                        </div>
+                        <div className="thread-message__header-content">
+                            <div className="thread-message__header-content-avatar">
+                                <UserAvatar fullName={message.sender.name || message.sender.email} />
+                            </div>
+                            <div className="thread-message__header-content-info">
+                                <div className="thread-message__header-rows">
+                                    <div className="thread-message__header-column thread-message__header-column--left flex-row flex-align-center">
+                                        <ContactChip
+                                            className="thread-message__sender-chip"
+                                            contact={message.sender}
+                                            isUser={message.is_sender}
+                                            status={isSuspiciousSender ? 'unverified' : undefined}
+                                            displayEmail
+                                        />
+                                    </div>
+                                    <div className="thread-message__header-column thread-message__header-column--right flex-row flex-align-center">
+                                        <div className="thread-message__metadata">
+                                            {message.created_at && (
+                                                <p className="thread-message__date">{
+                                                    new Date(message.created_at).toLocaleString(i18n.resolvedLanguage, {
+                                                        minute: '2-digit',
+                                                        hour: '2-digit',
+                                                        day: 'numeric',
+                                                        month: 'short',
+                                                        year: 'numeric',
+                                                    })
+                                                }</p>
+                                            )}
+                                            {message.is_draft && (
+                                                <Badge>
+                                                    {t('Draft')}
+                                                </Badge>
+                                            )}
+                                            {
+                                                message.attachments.length > 0 && (
+                                                    <span className="material-icons">attachment</span>
+                                                )
+                                            }
+                                        </div>
+                                        <div className="thread-message__header-actions">
+                                            {!isFolded && (
+                                                <>
+                                                    {canSendMessages && (
+                                                        <Tooltip content={t('Reply')}>
+                                                            <Button
+                                                                color="tertiary-text"
+                                                                size="small"
+                                                                icon={<span className="material-icons">reply</span>}
+                                                                aria-label={t('Reply')}
+                                                                onClick={() => setReplyFormMode('reply')}
+                                                            />
+                                                        </Tooltip>
+                                                    )}
+                                                    <DropdownMenu
+                                                        isOpen={isDropdownOpen}
+                                                        onOpenChange={setIsDropdownOpen}
+                                                        options={[
+                                                            ...(canSendMessages && hasSeveralRecipients ? [{
+                                                                label: t('Reply all'),
+                                                                icon: <span className="material-icons">reply_all</span>,
+                                                                callback: () => setReplyFormMode('reply_all')
+                                                            }] : []),
+                                                            ...(canSendMessages ? [{
+                                                                label: t('Forward'),
+                                                                icon: <span className="material-icons">forward</span>,
+                                                                callback: () => setReplyFormMode('forward'),
+                                                                showSeparator: true
+                                                            }] : []),
+                                                            {
+                                                                label: hasSiblingMessages ? t('Mark as unread from here') : t('Mark as unread'),
+                                                                icon: <span className="material-icons">mark_email_unread</span>,
+                                                                callback: () => markAsUnreadFrom(message.id)
+                                                            },
+                                                            {
+                                                                label: t('Download raw email'),
+                                                                icon: <span className="material-icons">download</span>,
+                                                                callback: () => {
+                                                                    const downloadUrl = getRequestUrl(getMessagesEmlRetrieveUrl(message.id));
+                                                                    const link = document.createElement('a');
+                                                                    link.href = downloadUrl;
+                                                                    link.download = `message-${message.id}.eml`;
+                                                                    document.body.appendChild(link);
+                                                                    link.click();
+                                                                    document.body.removeChild(link);
+                                                                }
+                                                            },
+                                                            ...(message.is_trashed ? [] : [{
+                                                                label: t('Delete'),
+                                                                icon: <span className="material-icons">delete</span>,
+                                                                callback: () => markAsTrashed({ messageIds: [message.id] })
+                                                            }]),
+                                                        ]}
+                                                    >
+                                                        <Tooltip content={t('More options')}>
+                                                            <Button
+                                                                onClick={() => setIsDropdownOpen(true)}
+                                                                icon={<span className="material-icons">more_vert</span>}
+                                                                color="primary-text"
+                                                                aria-label={t('More options')}
+                                                                size="small"
+                                                            />
+                                                        </Tooltip>
+                                                    </DropdownMenu>
+                                                </>
+                                            )}
+                                            {
+                                                !isLatest && (
+                                                    <Tooltip content={isFolded ? t('Unfold message') : t('Fold message')}>
+                                                        <Button
+                                                            color="tertiary-text"
+                                                            size="small"
+                                                            icon={<Icon type={IconType.FILLED} name={isFolded ? "unfold_more" : "unfold_less"} size={IconSize.LARGE} />}
+                                                            aria-label={isFolded ? t('Unfold message') : t('Fold message')}
+                                                            onClick={toggleFold}
+                                                        />
+                                                    </Tooltip>
+                                                )
+                                            }
+                                        </div>
                                     </div>
                                 </div>
-                            </Banner>
-                        )}
-                    <div className="thread-message__header-rows">
-                        <div className="thread-message__header-column thread-message__header-column--left">
-                            <h2 className="thread-message__subject">{message.subject || selectedThread?.snippet || t('No subject')}</h2>
-                        </div>
-                        <div className="thread-message__header-column thread-message__header-column--right flex-row flex-align-center">
-                            <div className="thread-message__metadata">
-                                {message.sent_at && (
-                                    <p className="thread-message__date">{
-                                        new Date(message.sent_at).toLocaleString(i18n.resolvedLanguage, {
-                                            minute: '2-digit',
-                                            hour: '2-digit',
-                                            day: '2-digit',
-                                            month: '2-digit',
-                                            year: 'numeric',
-                                        })
-                                    }</p>
-                                )}
-                                {message.is_draft && (
-                                    <Badge>
-                                        {t('Draft')}
-                                    </Badge>
-                                )}
-                                {
-                                    message.attachments.length > 0 && (
-                                        <span className="material-icons">attachment</span>
-                                    )
-                                }
-                            </div>
-                            <div className="thread-message__header-actions">
-                                {canSendMessages && hasSeveralRecipients && (
-                                    <Tooltip content={t('Reply all')}>
-                                        <Button
-                                            color="tertiary-text"
-                                            size="small"
-                                            icon={<span className="material-icons">reply_all</span>}
-                                            aria-label={t('Reply all')}
-                                            onClick={() => setReplyFormMode('reply_all')}
-                                        />
-                                    </Tooltip>
-                                )}
-                                {canSendMessages && (
-                                    <Tooltip content={t('Reply')}>
-                                        <Button
-                                            color="tertiary-text"
-                                            size="small"
-                                            icon={<span className="material-icons">reply</span>}
-                                            aria-label={t('Reply')}
-                                            onClick={() => setReplyFormMode('reply')}
-                                        />
-                                    </Tooltip>
-                                )}
-                                {canSendMessages && (
-                                    <Tooltip content={t('Forward')}>
-                                        <Button
-                                            color="tertiary-text"
-                                            size="small"
-                                            icon={<span className="material-icons">forward</span>}
-                                            aria-label={t('Forward')}
-                                            onClick={() => setReplyFormMode('forward')}
-                                        />
-                                    </Tooltip>
-                                )}
-                                <DropdownMenu
-                                    isOpen={isDropdownOpen}
-                                    onOpenChange={setIsDropdownOpen}
-                                    options={[
-                                        {
-                                            label: hasSiblingMessages ? t('Mark as unread from here') : t('Mark as unread'),
-                                            icon: <span className="material-icons">mark_email_unread</span>,
-                                            callback: () => markAsUnreadFrom(message.id)
-                                        },
-                                        {
-                                            label: t('Download raw email'),
-                                            icon: <span className="material-icons">download</span>,
-                                            callback: () => {
-                                                const downloadUrl = getRequestUrl(getMessagesEmlRetrieveUrl(message.id));
-                                                const link = document.createElement('a');
-                                                link.href = downloadUrl;
-                                                link.download = `message-${message.id}.eml`;
-                                                document.body.appendChild(link);
-                                                link.click();
-                                                document.body.removeChild(link);
-                                            }
-                                        },
-                                        ...(message.is_trashed ? [] : [{
-                                            label: t('Delete'),
-                                            icon: <span className="material-icons">delete</span>,
-                                            callback: () => markAsTrashed({ messageIds: [message.id] })
-                                        }]),
-                                    ]}
-                                >
-                                    <Tooltip content={t('More options')}>
-                                        <Button
-                                            onClick={() => setIsDropdownOpen(true)}
-                                            icon={<span className="material-icons">more_vert</span>}
-                                            color="primary-text"
-                                            aria-label={t('More options')}
-                                            size="small"
-                                        />
-                                    </Tooltip>
-                                </DropdownMenu>
-                            </div>
-                        </div>
-                    </div>
-                    {isSuspiciousSender && (
-                        <div className="thread-message__header-rows" style={{ marginBlock: 'var(--c--theme--spacings--xs)' }}>
-                            <Banner type="warning" compact fullWidth>
-                                <div className="thread-message__header-banner__content">
-                                    <p>{t("This contact's identity could not be verified. Proceed with caution.")}</p>
+                                <div className="thread-message__header-rows">
+                                    <div className="thread-message__header-column thread-message__header-column--left">
+                                        <dl className="thread-message__correspondents">
+                                            {message.to.length > 0 && (
+                                                <>
+                                                    <dt>{t('To: ')}</dt>
+                                                    <dd className="recipient-chip-list">
+                                                        {message.to.map((recipient) => (
+                                                            <ContactChip
+                                                                key={`to-${recipient.contact.id}`}
+                                                                contact={recipient.contact}
+                                                                status={getRecipientDeliveryStatus(recipient)}
+                                                            />
+                                                        ))}
+                                                    </dd>
+                                                </>
+                                            )}
+                                            {message.cc.length > 0 && (
+                                                <>
+                                                    <dt>{t('Copy: ')}</dt>
+                                                    <dd className="recipient-chip-list">
+                                                        {message.cc.map((recipient) => (
+                                                            <ContactChip
+                                                                key={`cc-${recipient.contact.id}`}
+                                                                contact={recipient.contact}
+                                                                status={getRecipientDeliveryStatus(recipient)}
+                                                            />
+                                                        ))}
+                                                    </dd>
+                                                </>
+                                            )}
+                                            {message.bcc.length > 0 && (
+                                                <>
+                                                    <dt>{t('BCC: ')}</dt>
+                                                    <dd className="recipient-chip-list">
+                                                        {message.bcc.map((recipient) => (
+                                                            <ContactChip
+                                                                key={`bcc-${recipient.contact.id}`}
+                                                                contact={recipient.contact}
+                                                                status={getRecipientDeliveryStatus(recipient)}
+                                                            />
+                                                        ))}
+                                                    </dd>
+                                                </>
+                                            )}
+                                        </dl>
+                                    </div>
                                 </div>
-                            </Banner>
-                        </div>
-                    )}
-                    <div className="thread-message__header-rows">
-                        <div className="thread-message__header-column thread-message__header-column--left">
-                            <dl className="thread-message__correspondents">
-                                <dt>{t('From: ')}</dt>
-                                <dd className="recipient-chip-list">
-                                    <ContactChip
-                                        contact={message.sender}
-                                        status={isSuspiciousSender ? 'unverified' : undefined}
-                                    />
-                                </dd>
-                                {message.to.length > 0 && (
-                                    <>
-                                        <dt>{t('To: ')}</dt>
-                                        <dd className="recipient-chip-list">
-                                            {message.to.map((recipient) => (
-                                                <ContactChip
-                                                    key={`to-${recipient.contact.id}`}
-                                                    contact={recipient.contact}
-                                                    status={getRecipientDeliveryStatus(recipient)}
-                                                />
-                                            ))}
-                                        </dd>
-                                    </>
-                                )}
-                                {message.cc.length > 0 && (
-                                    <>
-                                        <dt>{t('Copy: ')}</dt>
-                                        <dd className="recipient-chip-list">
-                                            {message.cc.map((recipient) => (
-                                                <ContactChip
-                                                    key={`cc-${recipient.contact.id}`}
-                                                    contact={recipient.contact}
-                                                    status={getRecipientDeliveryStatus(recipient)}
-                                                />
-                                            ))}
-                                        </dd>
-                                    </>
-                                )}
-                                {message.bcc.length > 0 && (
-                                    <>
-                                        <dt>{t('BCC: ')}</dt>
-                                        <dd className="recipient-chip-list">
-                                            {message.bcc.map((recipient) => (
-                                                <ContactChip
-                                                    key={`bcc-${recipient.contact.id}`}
-                                                    contact={recipient.contact}
-                                                    status={getRecipientDeliveryStatus(recipient)}
-                                                />
-                                            ))}
-                                        </dd>
-                                    </>
-                                )}
-                            </dl>
+                            </div>
                         </div>
                     </div>
                 </header>
@@ -279,8 +329,13 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                     rawTextBody={textBody}
                     rawHtmlBody={htmlBody}
                     attachments={message.attachments}
+                    isHidden={isFolded || !isMessageReady}
+                    onLoad={() => {
+                        threadViewContext.setMessageReadiness(message.id, true)
+                    }}
                 />
                 <footer className="thread-message__footer">
+                    <span className="thread-message__intersection-trigger" ref={ref} data-message-id={message.id} />
                     {!message.is_draft && (message.attachments.length > 0 || driveAttachments.length > 0) && (
                         <AttachmentList attachments={[...message.attachments, ...driveAttachments]} />
                     )}
@@ -315,12 +370,21 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                             </div>
                         )
                     }
-                    {!isFetchingMessages && showReplyForm && <MessageReplyForm
-                        mode={replyFormMode}
-                        handleClose={handleCloseReplyForm}
-                        message={draftMessage || message}
-                    />}
                 </footer>
+                {showReplyForm &&
+                    <section className="thread-message__reply-form" ref={replyFormRef}>
+                        <MessageReplyForm
+                            mode={replyFormMode}
+                            handleClose={handleCloseReplyForm}
+                            message={draftMessage || message}
+                        />
+                    </section>
+                }
+                {!isFolded && !isMessageReady && (
+                    <div className="thread-message__loading">
+                        <Spinner />
+                    </div>
+                )}
             </section>
         )
     }

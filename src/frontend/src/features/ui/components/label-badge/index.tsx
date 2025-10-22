@@ -3,7 +3,7 @@ import { ColorHelper } from "@/features/utils/color-helper"
 import { ThreadLabel, useLabelsAddThreadsCreate, useLabelsRemoveThreadsCreate } from "@/features/api/gen"
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useTranslation } from "react-i18next";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconSize, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Tooltip } from "@openfun/cunningham-react";
 import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -11,14 +11,16 @@ import { useMemo } from "react";
 import { addToast, ToasterItem } from "../toaster";
 import { toast } from "react-toastify";
 import useAbility, { Abilities } from "@/hooks/use-ability";
+import clsx from "clsx";
 
 type LabelBadgeProps = {
     label: ThreadLabel;
     linkable?: boolean;
     removable?: boolean;
+    compact?: boolean;
 }
 
-export const LabelBadge = ({ label, removable = false, linkable = false }: LabelBadgeProps) => {
+export const LabelBadge = ({ label, removable = false, linkable = false, compact = false }: LabelBadgeProps) => {
     const { t } = useTranslation();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -30,7 +32,7 @@ export const LabelBadge = ({ label, removable = false, linkable = false }: Label
     const { invalidateThreadMessages, selectedThread, selectedMailbox } = useMailboxContext();
     const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
     const badgeColor = ColorHelper.getContrastColor(label.color!);
-    const {mutate: deleteLabelMutation, isPending: isDeletingLabel} = useLabelsRemoveThreadsCreate({
+    const { mutate: deleteLabelMutation, isPending: isDeletingLabel } = useLabelsRemoveThreadsCreate({
         mutation: {
             onSuccess: (_, variables) => {
                 invalidateThreadMessages();
@@ -52,7 +54,7 @@ export const LabelBadge = ({ label, removable = false, linkable = false }: Label
             }
         }
     });
-    const {mutate: addLabelMutation, } = useLabelsAddThreadsCreate({
+    const { mutate: addLabelMutation, } = useLabelsAddThreadsCreate({
         mutation: {
             onSuccess: (_, variables) => {
                 invalidateThreadMessages();
@@ -63,17 +65,17 @@ export const LabelBadge = ({ label, removable = false, linkable = false }: Label
     const showLink = linkable && !isActive;
 
     return (
-        <Badge title={label.name} className="label-badge" style={{ backgroundColor: label.color, color: badgeColor}}>
-            {showLink ? <Link href={link}>{label.name}</Link> : label.name}
-            {canManageLabels &&selectedThread?.id && removable && (
-                <Tooltip content={t('Delete')}>
+        <Badge title={label.name} className={clsx("label-badge", {"label-badge--compact": compact })} style={{ backgroundColor: label.color, color: badgeColor }}>
+            {showLink ? <Link className="label-badge__label" href={link}>{label.name}</Link> : <span className="label-badge__label">{label.name}</span>}
+            {canManageLabels && selectedThread?.id && removable && (
+                <Tooltip content={t('Delete')} placement="right">
                     <button
                         className="label-badge__remove-cta"
                         onClick={() => deleteLabelMutation({ id: label.id, data: { thread_ids: [selectedThread.id] } })}
                         disabled={isDeletingLabel}
                         aria-busy={isDeletingLabel}
                     >
-                        {isDeletingLabel ? <Spinner size="sm" /> : <span className="material-icons">close</span>}
+                        {isDeletingLabel ? <Spinner size="sm" /> : <Icon name="close" size={IconSize.SMALL} type={IconType.OUTLINED} />}
                         <span className="c__offscreen">{t('Delete')}</span>
                     </button>
                 </Tooltip>

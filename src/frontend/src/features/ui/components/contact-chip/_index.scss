@@ -1,10 +1,12 @@
 .contact-chip {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     position: relative;
     cursor: default;
     font-size: var(--c--theme--font--sizes--sm);
     white-space: nowrap;
+    min-width: 0;
+    max-width: 100%;
 
     &:not(:last-of-type):after {
         content: ", ";
@@ -28,12 +30,16 @@
     padding: 0;
     margin: 0;
     cursor: pointer;
-    display: inline-flex;
-    align-items: center;
+    display: flex;
+    align-items: baseline;
+    flex-direction: row;
+    flex-wrap: nowrap;
     gap: 0.25rem;
     position: relative;
     z-index: 1;
     transition: color 0.2s;
+    min-width: 0;
+    max-width: 100%;
 
     &:hover:before {
         content: "";
@@ -44,6 +50,23 @@
         background-color: var(--c--theme--colors--greyscale-200);
         z-index: -1;
     }
+}
+
+.contact-chip__identity-name {
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.contact-chip__identity-email {
+    min-width: 0;
+    max-width: 100%;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    flex: 0 1 auto;
 }
 
 .contact-chip__copied {
@@ -61,15 +84,18 @@
     opacity: 0;
 }
 
-.contact-chip__warning {
+.contact-chip__icon {
+    transform: translateY(2px);
+}
+.contact-chip__icon--warning {
     color: var(--c--theme--colors--warning-600);
 }
 
-.contact-chip__error {
+.contact-chip__icon--error {
     color: var(--c--theme--colors--danger-600);
 }
 
-.contact-chip__success {
+.contact-chip__icon--success {
     color: var(--c--theme--colors--success-600);
 }
 
