@@ -4,10 +4,11 @@ import { useTranslation } from "react-i18next";
 import { Attachment } from "@/features/api/gen/models";
 import { getRequestUrl, getApiOrigin } from "@/features/api/utils";
 import { getBlobDownloadRetrieveUrl } from "@/features/api/gen/blob/blob";
+import { UnquoteMessage } from '@/features/utils/unquote-message';
 
 type MessageBodyProps = {
-    rawHtmlBody: string;
-    rawTextBody: string;
+    rawHtmlBody?: string;
+    rawTextBody?: string;
     attachments?: readonly Attachment[];
 }
 
@@ -39,9 +40,8 @@ const CSP = [
     "frame-ancestors 'none'",
   ].join('; ');
 
-const MessageBody = ({ rawHtmlBody, rawTextBody, attachments = [] }: MessageBodyProps) => {
+const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden = false, onLoad }: MessageBodyProps) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
-    const { t } = useTranslation();
 
     // Create a mapping of CID to blob URL for CID image transformation
     const cidToBlobUrlMap = useMemo(() => {
@@ -66,7 +66,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody, attachments = [] }: MessageBody
                 }
                 node.setAttribute('rel', 'noopener noreferrer');
             }
-            
+
             // Transform CID references in img src attributes
             if (node.tagName === 'IMG' && cidToBlobUrlMap.size > 0) {
                 const src = node.getAttribute('src');
@@ -75,6 +75,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody, attachments = [] }: MessageBody
                     const blobUrl = cidToBlobUrlMap.get(cid);
                     if (blobUrl) {
                         node.setAttribute('src', blobUrl);
+                        node.setAttribute('loading', 'lazy');
                     }
                 }
             }
@@ -82,10 +83,19 @@ const MessageBody = ({ rawHtmlBody, rawTextBody, attachments = [] }: MessageBody
     );
 
     const sanitizedHtmlBody = useMemo(() => {
-        return DomPurify.sanitize(rawHtmlBody || rawTextBody, {
+        const sanitizedContent = DomPurify.sanitize(rawHtmlBody || rawTextBody, {
             FORBID_TAGS: ['script', 'object', 'iframe', 'embed', 'audio', 'video'],
             ADD_ATTR: ['target', 'rel'],
         });
+
+        const unquoteMessage = new UnquoteMessage(sanitizedContent, sanitizedContent, {
+            mode: 'wrap',
+            ignoreFirstForward: true,
+            depth: 0,
+        });
+
+        if (rawHtmlBody) return unquoteMessage.getHtml().content;
+        return unquoteMessage.getText().content;
     }, [rawHtmlBody, rawTextBody, cidToBlobUrlMap]);
 
     const wrappedHtml = useMemo(() => {
@@ -114,12 +124,32 @@ const MessageBody = ({ rawHtmlBody, rawTextBody, attachments = [] }: MessageBody
                 img { max-width: 100%; height: auto; }
                 a { color: #0366d6; text-decoration: none; }
                 a:hover { text-decoration: underline; }
+
                 blockquote {
-                    margin: 0 0 1rem;
-                    padding: 0 1em;
-                    color: #6a737d;
-                    border-left: 0.25em solid #dfe2e5;
+                    padding: 0 1rem !important;
+                    margin: 1rem 0 !important;
+                    border-left-width: 1px;
+                    border-left-style: solid;
+                    border-color: #7C7C7C !important;
                 }
+
+                blockquote blockquote {
+                    border-color: #929292 !important;
+                }
+
+                blockquote blockquote blockquote {
+                    border-left-width: 2px;
+                    border-color: #CECECE !important;
+                }
+
+                blockquote blockquote blockquote blockquote {
+                    border-color: #E5E5E5 !important;
+                }
+
+                blockquote blockquote blockquote blockquote blockquote {
+                    border-color: #eee !important;
+                }
+
                 pre {
                     background-color: #f6f8fa;
                     border-radius: 3px;
@@ -130,13 +160,73 @@ const MessageBody = ({ rawHtmlBody, rawTextBody, attachments = [] }: MessageBody
                     font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
                     font-size: 85%;
                 }
-                details > summary {
+
+                details.email-quoted-content > summary.email-quoted-summary {
+                    background-color: #ECECFE;
                     cursor: pointer;
                     user-select: none;
+                    padding: 0.25rem 0.5rem;
+                    border-radius: 0.25rem;
+                    display: grid;
+                    place-items: center;
+                    color: #000091;
+                    vertical-align: middle;
+                    list-style: none;
+                    outline: none;
+                    width: fit-content;
+                    position: relative;
+                    margin-top: 1rem;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                }
+
+                details.email-quoted-content:not([open]) > summary.email-quoted-summary::before {
+                    content: attr(data-content);
+                    position: absolute;
+                    left: 110%;
+                    top: 50%;
+                    width: 100%;
+                    height: 100%;
+                    background-color: #f0f1f2;
+                    border: 1px solid #d2d4d8;
+                    box-shadow: 0 1px 5.4px 0 rgba(0, 0, 0, 0.15);
+                    width: max-content;
+                    transform: translateY(-50%);
+                    color: #74777c;
+                    padding: 0.3rem 0.6rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 0.5rem;
+                    font-size: 0.75rem;
+                    visibility: hidden;
+                    opacity: 0;
+                    transition-property: visibility, opacity;
+                    transition-duration: 150ms;
+                    transition-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+                }
+
+                details.email-quoted-content > summary.email-quoted-summary > span {
+                    font-size: 18px;
+                    font-weight: bold;
+                    transform: translateY(-5px);
+                    line-height: 1ex;
+                }
+
+                details.email-quoted-content > summary.email-quoted-summary:hover {
+                    background-color: #cacafb;
+                }
+                details.email-quoted-content > summary.email-quoted-summary:hover::before {
+                    visibility: visible;
+                    opacity: 1;
+                    transition-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+                    transition-delay: 1000ms;
+                }
+                details.email-quoted-content > summary.email-quoted-summary::-webkit-details-marker {
+                    display: none;
                 }
                 </style>
             </head>
-            <body onload="window.parent.postMessage(document.body.scrollHeight, '*')">
+            <body>
                 ${sanitizedHtmlBody}
             </body>
             </html>
@@ -173,23 +263,11 @@ const MessageBody = ({ rawHtmlBody, rawTextBody, attachments = [] }: MessageBody
         if (iframeRef.current?.contentWindow?.document) {
             const doc = iframeRef.current.contentWindow.document;
 
-            // Replace all <blockquote data-type="quote-separator">...</blockquote> by
-            // a details element to automatically fold embedded messages
-            // TODO : Try to detect replies and forward messages coming form external sources
-            doc.querySelectorAll('blockquote[data-type="quote-separator"]').forEach(node => {
-                const parentElement = node.parentElement;
-                const details = doc.createElement('details');
-                details.addEventListener('toggle', resizeIframe);
-
-                const summary = doc.createElement('summary');
-                summary.textContent = t('Show embedded message');
-                details.appendChild(summary);
-                details.appendChild(node);
-                parentElement?.appendChild(details);
+            // When details element is toggled, resize the iframe to fit the content
+            doc.querySelectorAll('details.email-quoted-content').forEach(node => {
+                node.addEventListener('toggle', resizeIframe);
             });
         }
-        resizeIframe();
-    }, [resizeIframe]);
 
     return (
         <iframe
