@@ -243,11 +243,13 @@ back-test-parallel: ## run all back-end tests in parallel
 .PHONY: back-test-parallel
 
 front-test: ## run the frontend tests
-	@$(COMPOSE) run --rm frontend-tools npm run test
+	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
+	$(COMPOSE) run --rm frontend-tools npm run test -- $${args:-${1}}
 .PHONY: front-test
 
 front-test-amd64: ## run the frontend tests in amd64
-	@$(COMPOSE) run --rm frontend-tools-amd64 npm run test
+	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
+	$(COMPOSE) run --rm frontend-tools-amd64 npm run test -- $${args:-${1}}
 .PHONY: front-test-amd64
 
 mta-in-test: ## run the mta-in tests
