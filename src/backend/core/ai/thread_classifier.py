@@ -49,7 +49,8 @@ def get_most_relevant_labels(thread: Thread, labels: list) -> list[str]:
         best_labels = AIService().call_ai_api(prompt)
 
     # Get rid of surrounding text if present
-    best_labels = '["' + best_labels.split('["')[1].split('"]')[0] + '"]'
+    if best_labels.startswith('["') and best_labels.endswith('"]'):
+        best_labels = '["' + best_labels.split('["')[1].split('"]')[0] + '"]'
 
     try:
         labels_list = json.loads(best_labels)

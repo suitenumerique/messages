@@ -186,7 +186,7 @@ class MailHelper {
      * Extract drive attachments from text body.
      */
     static extractDriveAttachmentsFromTextBody(text: string = ''): [string, Pick<DriveFile, 'name' | 'url'>[]] {
-        const regex = new RegExp(`\n(${ATTACHMENT_SEPARATORS.join('|')})\n(.*)\n\n`, 's');
+        const regex = new RegExp(`\n(${ATTACHMENT_SEPARATORS.join('|')})[\n\r]*(.*)[\n\r]*`, 's');
         const matches = text.match(regex);
         if (!matches) return [text, []];
 
@@ -203,7 +203,7 @@ class MailHelper {
      * Extract drive attachments from html body.
      */
     static extractDriveAttachmentsFromHtmlBody(html: string = ''): [string, DriveFile[]] {
-        const regex = new RegExp(`\n(${ATTACHMENT_SEPARATORS.join('|')})\n<ul>\n(.*?)\n</ul>\n\n`, 's');
+        const regex = new RegExp(`(${ATTACHMENT_SEPARATORS.join('|')})[\n\r]*<ul>\s*(.*?)\s*</ul>[\n\r]*`, 's');
         const matches = html.match(regex);
         if (!matches) return [html, []];
 

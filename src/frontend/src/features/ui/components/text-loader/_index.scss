@@ -1,0 +1,32 @@
+.text-loader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  &__line {
+    height: 1rem;
+    background: linear-gradient(
+      90deg,
+      var(--c--theme--colors--greyscale-200) 25%,
+      var(--c--theme--colors--greyscale-100) 50%,
+      var(--c--theme--colors--greyscale-200) 75%
+    );
+    background-size: 200% 100%;
+    border-radius: 4px;
+    animation: text-loading 1.5s ease-in-out infinite;
+
+    &--short {
+      width: 85%;
+    }
+  }
+}
+
+@keyframes text-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
