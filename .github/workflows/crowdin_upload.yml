@@ -10,7 +10,8 @@ jobs:
 
   synchronize-with-crowdin:
     runs-on: ubuntu-latest
-
+    env:
+      DJANGO_CONFIGURATION: Build
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
