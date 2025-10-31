@@ -6,7 +6,7 @@ ARG DANTE_SHA256=1973c7732f1f9f0a4c0ccf2c1ce462c7c25060b25643ea90f9b98f53a813fae
 
 RUN <<EOR
 apt-get update
-apt-get install -y build-essential curl
+DEBIAN_FRONTEND="noninteractive" apt-get install -y build-essential curl
 EOR
 
 RUN <<EOR
@@ -23,8 +23,9 @@ EOR
 FROM debian:trixie-slim AS runtime
 
 COPY --from=base /usr/local/sbin/sockd /usr/local/sbin/sockd
-
 COPY --chmod=0755 entrypoint.sh /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
+HEALTHCHECK --interval=30s --timeout=3s --start-interval=5s \
+  CMD cat /proc/$(cat /var/run/sockd.pid)/status | grep State | grep -E 'R \(running\)|S \(sleeping\)'
 CMD ["/usr/local/sbin/sockd"]

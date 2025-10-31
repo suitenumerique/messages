@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 0077
 
 if [ -z "${PROXY_USERS:-}" ]; then
   echo "Error: PROXY_USERS env var is not set (format: user1:pass1,user2:pass2)"
@@ -59,6 +60,5 @@ done
 
 # Replace the placeholder with the generated configuration
 echo "$DANTE_CONFIG" > /etc/sockd.conf
-chmod 0600 /etc/sockd.conf
 
 exec "$@"
