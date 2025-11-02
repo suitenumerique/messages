@@ -983,7 +983,12 @@ class Production(Base):
     SECURE_HSTS_PRELOAD = True
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_SSL_REDIRECT = True
-    SECURE_REDIRECT_EXEMPT = ["^__lbheartbeat__", "^__heartbeat__", "^api/v1\\.0/mta/", "^api/v1\\.0/inbound/mta/"]
+    SECURE_REDIRECT_EXEMPT = [
+        "^__lbheartbeat__",
+        "^__heartbeat__",
+        "^api/v1\\.0/mta/",
+        "^api/v1\\.0/inbound/mta/",
+    ]
 
     # Modern browsers require to have the `secure` attribute on cookies with `Samesite=none`
     CSRF_COOKIE_SECURE = True

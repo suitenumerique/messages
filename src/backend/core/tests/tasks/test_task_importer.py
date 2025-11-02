@@ -89,7 +89,11 @@ class TestProcessMboxFileTask:
     def test_task_process_mbox_file_success(self, mailbox, sample_mbox_content):
         """Test successful MBOX file processing."""
         # Mock deliver_inbound_message to always succeed
-        with patch("core.mda.inbound.deliver_inbound_message", return_value=True):
+        mock_message = MagicMock()
+        mock_message.id = uuid.uuid4()
+        with patch(
+            "core.mda.inbound.deliver_inbound_message", return_value=mock_message
+        ):
             # Create a mock task instance
             mock_task = MagicMock()
             mock_task.update_state = MagicMock()
@@ -200,9 +204,9 @@ class TestProcessMboxFileTask:
             # Get the subject from the parsed email dictionary
             subject = parsed_email.get("headers", {}).get("subject", "")
 
-            # Return False for Test Message 2 without creating the message
+            # Return None for Test Message 2 without creating the message
             if subject == "Test Message 2":
-                return False
+                return None
 
             # For other messages, call the original function to create the message
             return original_deliver(recipient_email, parsed_email, raw_data, **kwargs)

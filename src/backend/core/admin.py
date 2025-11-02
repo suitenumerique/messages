@@ -227,11 +227,21 @@ class ThreadAccessInline(admin.TabularInline):
     autocomplete_fields = ("mailbox",)
 
 
+class ThreadEventInline(admin.TabularInline):
+    """Inline class for the ThreadEvent model"""
+
+    model = models.ThreadEvent
+    fields = ("type", "channel", "data", "created_at")
+    readonly_fields = ("created_at",)
+    autocomplete_fields = ("channel",)
+    extra = 0
+
+
 @admin.register(models.Thread)
 class ThreadAdmin(admin.ModelAdmin):
     """Admin class for the Thread model"""
 
-    inlines = [ThreadAccessInline]
+    inlines = [ThreadAccessInline, ThreadEventInline]
     list_display = (
         "id",
         "subject",

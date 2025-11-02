@@ -1,5 +1,5 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo } from "react";
-import { Mailbox, MailboxRoleChoices, Message, messagesListResponse200, PaginatedMessageList, PaginatedThreadList, Thread, useLabelsList, useMailboxesList, useMessagesList, useThreadsListInfinite } from "../api/gen";
+import { Mailbox, MailboxRoleChoices, Message, messagesListResponse200, PaginatedMessageList, PaginatedThreadList, Thread, useLabelsList, useMailboxesList, useMessagesList, useThreadsListInfinite, ThreadEvent, useThreadsEventsList, getThreadsEventsListQueryKey } from "../api/gen";
 import { FetchStatus, QueryStatus, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import usePrevious from "@/hooks/use-previous";
@@ -24,10 +24,18 @@ type MessageQueryInvalidationSource = {
     payload?: Partial<Message>;
 }
 
+
+type TimelineItem = {
+    type: 'message' | 'event';
+    data: Message | ThreadEvent;
+    created_at: string;
+};
+
 type MailboxContextType = {
     mailboxes: readonly Mailbox[] | null;
     threads: PaginatedThreadList | null;
     messages: PaginatedMessageList | null;
+    timelineItems: TimelineItem[] | null;
     selectedMailbox: Mailbox | null;
     selectedThread: Thread | null;
     unselectThread: () => void;
@@ -53,6 +61,7 @@ const MailboxContext = createContext<MailboxContextType>({
     mailboxes: null,
     threads: null,
     messages: null,
+    timelineItems: null,
     selectedMailbox: null,
     selectedThread: null,
     loadNextThreads: async () => {},
@@ -180,6 +189,50 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         }
     });
 
+    const threadEventsQuery = useThreadsEventsList(
+        selectedThread?.id ?? '',
+        undefined,
+        {
+            query: {
+                enabled: !!selectedThread,
+            }
+        }
+    );
+
+    // Merge messages and events into a single timeline sorted by created_at
+    const timelineItems = useMemo<TimelineItem[] | null>(() => {
+        if (!messagesQuery.data?.data?.results || !selectedThread) return null;
+
+        const items: TimelineItem[] = [];
+
+        // Add messages
+        messagesQuery.data.data.results.forEach((message) => {
+            items.push({
+                type: 'message',
+                data: message,
+                created_at: message.created_at,
+            });
+        });
+
+        // Add events
+        if (threadEventsQuery.data?.data?.results) {
+            threadEventsQuery.data.data.results.forEach((event) => {
+                items.push({
+                    type: 'event',
+                    data: event,
+                    created_at: event.created_at,
+                });
+            });
+        }
+
+        // Sort by created_at
+        return items.sort((a, b) => {
+            const dateA = new Date(a.created_at).getTime();
+            const dateB = new Date(b.created_at).getTime();
+            return dateA - dateB;
+        });
+    }, [messagesQuery.data?.data?.results, threadEventsQuery.data?.data?.results, selectedThread]);
+
     const labelsQuery = useLabelsList({ mailbox_id: selectedMailbox?.id ?? '' }, {
         query: {
             enabled: !!selectedMailbox,
@@ -233,6 +286,9 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         }
         if (selectedThread) {
             await queryClient.invalidateQueries({ queryKey: ['messages', selectedThread.id] });
+            await queryClient.invalidateQueries({ 
+                queryKey: getThreadsEventsListQueryKey(selectedThread.id)
+            });
             if (source && ((source.metadata.ids ?? []).length ?? 0) > 0) {
                 _updateThreadMessagesQueryData(selectedThread.id, source);
             }
@@ -271,6 +327,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         mailboxes: mailboxQuery.data?.data ?? null,
         threads: flattenThreads ?? null,
         messages: messagesQuery.data?.data ?? null,
+        timelineItems,
         selectedMailbox,
         selectedThread,
         unselectThread,
@@ -279,7 +336,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         invalidateThreadsStats,
         invalidateLabels,
         refetchMailboxes: mailboxQuery.refetch,
-        isPending: mailboxQuery.isPending || threadsQuery.isPending || messagesQuery.isPending,
+        isPending: mailboxQuery.isPending || threadsQuery.isPending || messagesQuery.isPending || threadEventsQuery.isPending,
         queryStates: {
             mailboxes: {
                 status: mailboxQuery.status,
@@ -311,6 +368,8 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         mailboxQuery,
         threadsQuery,
         messagesQuery,
+        threadEventsQuery,
+        timelineItems,
         selectedMailbox,
         selectedThread,
     ]);

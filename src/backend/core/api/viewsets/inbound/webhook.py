@@ -84,10 +84,10 @@ class InboundWebhookViewSet(viewsets.GenericViewSet):
     @action(
         detail=False,
         methods=["post"],
-        url_path="deliver",
-        url_name="inbound-webhook-deliver",
+        url_path="message",
+        url_name="inbound-webhook-message",
     )
-    def deliver(self, request):
+    def message(self, request):
         """Handle incoming webhook message."""
         # TODO: Add rate limiting/throttling
 
@@ -96,10 +96,10 @@ class InboundWebhookViewSet(viewsets.GenericViewSet):
         channel = auth_data["channel"]
 
         # Extract message data with standard field names
-        sender_email = data.get("email")
+        sender_email = data.get("from", {}).get("email")
+        sender_name = data.get("from", {}).get("name")
         message_text = data.get("message", "")
         subject = data.get("subject", "Message from webhook")
-        sender_name = data.get("name", "")
 
         # Validate required fields
         if not sender_email:
@@ -148,23 +148,6 @@ class InboundWebhookViewSet(viewsets.GenericViewSet):
         # Add webhook-specific headers
         prepend_headers = [("X-StMsg-Sender-Auth", "webhook")]
 
-        # Add source information
-        if request.META.get("HTTP_USER_AGENT"):
-            prepend_headers.append(
-                (
-                    "X-StMsg-Webhook-User-Agent",
-                    sanitize_header(request.META.get("HTTP_USER_AGENT")),
-                )
-            )
-
-        if request.META.get("HTTP_REFERER"):
-            prepend_headers.append(
-                (
-                    "X-StMsg-Webhook-Referer",
-                    sanitize_header(request.META.get("HTTP_REFERER")),
-                )
-            )
-
         prepend_headers.append(
             (
                 "Received",
@@ -183,28 +166,120 @@ class InboundWebhookViewSet(viewsets.GenericViewSet):
         }
 
         # Deliver the message
-        delivered = deliver_inbound_message(
+        message = deliver_inbound_message(
             target_email,
             parsed_email,
             compose_email(parsed_email, prepend_headers=prepend_headers),
             channel=channel,
         )
 
-        if not delivered:
+        if not message:
             return Response(
                 {"detail": "Failed to deliver message"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
         logger.info(
-            "Successfully created message from webhook for channel %s, sender: %s",
+            "Successfully created message from webhook for channel %s, sender: %s, message: %s, thread: %s",
             channel.id,
             sender_email,
+            message.id,
+            message.thread.id,
         )
 
         return Response(
             {
                 "success": True,
                 "message": "Message delivered successfully",
+                "message_id": str(message.id),
+                "thread_id": str(message.thread.id),
             }
+        )
+
+    @extend_schema(exclude=True)
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="threadevent",
+        url_name="inbound-webhook-threadevent",
+    )
+    def threadevent(self, request):
+        """Handle incoming webhook thread event."""
+        # TODO: Add rate limiting/throttling
+
+        data = request.data
+        auth_data = request.auth
+        channel = auth_data["channel"]
+
+        # Extract thread event data
+        thread_id = data.get("thread_id")
+        event_type = data.get("type")
+        event_data = data.get("data", {})
+
+        # Validate required fields
+        if not thread_id:
+            return Response(
+                {"detail": "Missing thread_id"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not event_type:
+            return Response(
+                {"detail": "Missing type"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate event type length
+        if len(event_type) > 36:
+            return Response(
+                {"detail": "Type exceeds maximum length of 36 characters"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Get the target mailbox
+        mailbox = channel.mailbox
+        if not mailbox:
+            return Response(
+                {"detail": "No mailbox configured for this channel"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Verify thread exists and mailbox has access to it
+        try:
+            thread = models.Thread.objects.get(id=thread_id)
+        except models.Thread.DoesNotExist:
+            return Response(
+                {"detail": "Thread not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check if mailbox has access to this thread
+        thread_access = models.ThreadAccess.objects.filter(
+            thread=thread, mailbox=mailbox
+        ).first()
+        if not thread_access:
+            return Response(
+                {"detail": "Mailbox does not have access to this thread"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Create the thread event
+        thread_event = models.ThreadEvent.objects.create(
+            thread=thread,
+            type=event_type,
+            channel=channel,
+            data=event_data,
+        )
+
+        logger.info(
+            "Successfully created thread event from webhook for channel %s, thread %s, type %s",
+            channel.id,
+            thread.id,
+            event_type,
+        )
+
+        return Response(
+            {
+                "success": True,
+                "message": "Thread event created successfully",
+                "event_id": str(thread_event.id),
+            },
+            status=status.HTTP_201_CREATED,
         )

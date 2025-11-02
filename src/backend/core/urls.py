@@ -36,6 +36,7 @@ from core.api.viewsets.send import SendMessageView
 from core.api.viewsets.task import TaskDetailView
 from core.api.viewsets.thread import ThreadViewSet
 from core.api.viewsets.thread_access import ThreadAccessViewSet
+from core.api.viewsets.thread_event import ThreadEventViewSet
 from core.api.viewsets.user import UserViewSet
 from core.authentication.urls import urlpatterns as oidc_urls
 
@@ -55,10 +56,13 @@ router.register(
     basename="messages-archive-upload",
 )
 
-# Router for /threads/{thread_id}/accesses/
+# Router for /threads/{thread_id}/accesses/ and /threads/{thread_id}/events/
 thread_access_nested_router = DefaultRouter()
 thread_access_nested_router.register(
     r"accesses", ThreadAccessViewSet, basename="thread-access"
+)
+thread_access_nested_router.register(
+    r"events", ThreadEventViewSet, basename="thread-event"
 )
 
 # Router for /mailboxes/{mailbox_id}/accesses/
@@ -125,7 +129,7 @@ urlpatterns = [
                     "threads/<uuid:thread_id>/",
                     include(
                         thread_access_nested_router.urls
-                    ),  # Includes /threads/{id}/accesses/
+                    ),  # Includes /threads/{id}/accesses/ and /threads/{id}/events/
                 ),
                 path(
                     "mailboxes/<uuid:mailbox_id>/",

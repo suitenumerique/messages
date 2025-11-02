@@ -8,7 +8,7 @@ import pytest
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.test import APIClient
 
-from core import factories
+from core import enums, factories, models
 from core.api.viewsets.inbound.webhook import (
     WebhookAuthentication,
 )
@@ -130,14 +130,14 @@ class TestWebhookAuthentication:
         assert auth.authenticate_header(request) == 'ApiKey realm="Webhook"'
 
 
-class TestInboundWebhookDeliver:
-    """Test webhook deliver endpoint."""
+class TestInboundWebhookMessage:
+    """Test webhook message endpoint."""
 
     @pytest.mark.django_db
-    def test_deliver_success(self, api_client, channel_with_api_key):
+    def test_message_success(self, api_client, channel_with_api_key):
         """Test successful message delivery."""
         response = api_client.post(
-            "/api/v1.0/inbound/webhook/deliver/",
+            "/api/v1.0/inbound/webhook/message/",
             data={
                 "email": "test@example.com",
                 "message": "Test message from webhook",
@@ -152,12 +152,17 @@ class TestInboundWebhookDeliver:
         data = response.json()
         assert data["success"] is True
         assert data["message"] == "Message delivered successfully"
+        assert "message_id" in data
+        assert "thread_id" in data
+        # Verify IDs are valid UUIDs
+        uuid.UUID(data["message_id"])
+        uuid.UUID(data["thread_id"])
 
     @pytest.mark.django_db
-    def test_deliver_missing_email(self, api_client, channel_with_api_key):
+    def test_message_missing_email(self, api_client, channel_with_api_key):
         """Test delivery fails when email is missing."""
         response = api_client.post(
-            "/api/v1.0/inbound/webhook/deliver/",
+            "/api/v1.0/inbound/webhook/message/",
             data={"message": "Test message"},
             HTTP_X_CHANNEL_ID=str(channel_with_api_key.id),
             HTTP_X_API_KEY="test-api-key-123",
@@ -167,10 +172,10 @@ class TestInboundWebhookDeliver:
         assert "Missing email" in response.json()["detail"]
 
     @pytest.mark.django_db
-    def test_deliver_invalid_email(self, api_client, channel_with_api_key):
+    def test_message_invalid_email(self, api_client, channel_with_api_key):
         """Test delivery fails with invalid email format."""
         response = api_client.post(
-            "/api/v1.0/inbound/webhook/deliver/",
+            "/api/v1.0/inbound/webhook/message/",
             data={
                 "email": "invalid-email",
                 "message": "Test message",
@@ -183,10 +188,10 @@ class TestInboundWebhookDeliver:
         assert "Invalid email format" in response.json()["detail"]
 
     @pytest.mark.django_db
-    def test_deliver_missing_message(self, api_client, channel_with_api_key):
+    def test_message_missing_message(self, api_client, channel_with_api_key):
         """Test delivery fails when message is missing."""
         response = api_client.post(
-            "/api/v1.0/inbound/webhook/deliver/",
+            "/api/v1.0/inbound/webhook/message/",
             data={"email": "test@example.com"},
             HTTP_X_CHANNEL_ID=str(channel_with_api_key.id),
             HTTP_X_API_KEY="test-api-key-123",
@@ -196,10 +201,10 @@ class TestInboundWebhookDeliver:
         assert "Missing message" in response.json()["detail"]
 
     @pytest.mark.django_db
-    def test_deliver_unauthorized(self, api_client, channel_with_api_key):
-        """Test deliver endpoint requires authentication."""
+    def test_message_unauthorized(self, api_client, channel_with_api_key):
+        """Test message endpoint requires authentication."""
         response = api_client.post(
-            "/api/v1.0/inbound/webhook/deliver/",
+            "/api/v1.0/inbound/webhook/message/",
             data={
                 "email": "test@example.com",
                 "message": "Test message",
@@ -208,3 +213,196 @@ class TestInboundWebhookDeliver:
         )
 
         assert response.status_code == 401
+
+
+class TestInboundWebhookThreadEvent:
+    """Test webhook threadevent endpoint."""
+
+    @pytest.fixture(name="thread_with_access")
+    def fixture_thread_with_access(self, channel_with_api_key):
+        """Create a thread with access for the channel's mailbox."""
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=channel_with_api_key.mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        return thread
+
+    @pytest.mark.django_db
+    def test_threadevent_success(
+        self, api_client, channel_with_api_key, thread_with_access
+    ):
+        """Test successful thread event creation."""
+        response = api_client.post(
+            "/api/v1.0/inbound/webhook/threadevent/",
+            data={
+                "thread_id": str(thread_with_access.id),
+                "type": "notification",
+                "data": {"message": "X read message Y", "user_id": "123"},
+            },
+            HTTP_X_CHANNEL_ID=str(channel_with_api_key.id),
+            HTTP_X_API_KEY="test-api-key-123",
+            format="json",
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["success"] is True
+        assert data["message"] == "Thread event created successfully"
+        assert "event_id" in data
+
+        # Verify the event was created
+        event = models.ThreadEvent.objects.get(id=data["event_id"])
+        assert event.thread == thread_with_access
+        assert event.type == "notification"
+        assert event.channel == channel_with_api_key
+        assert event.data == {"message": "X read message Y", "user_id": "123"}
+
+    @pytest.mark.django_db
+    def test_threadevent_missing_thread_id(self, api_client, channel_with_api_key):
+        """Test threadevent fails when thread_id is missing."""
+        response = api_client.post(
+            "/api/v1.0/inbound/webhook/threadevent/",
+            data={
+                "type": "notification",
+                "data": {},
+            },
+            HTTP_X_CHANNEL_ID=str(channel_with_api_key.id),
+            HTTP_X_API_KEY="test-api-key-123",
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert "Missing thread_id" in response.json()["detail"]
+
+    @pytest.mark.django_db
+    def test_threadevent_missing_type(
+        self, api_client, channel_with_api_key, thread_with_access
+    ):
+        """Test threadevent fails when type is missing."""
+        response = api_client.post(
+            "/api/v1.0/inbound/webhook/threadevent/",
+            data={
+                "thread_id": str(thread_with_access.id),
+                "data": {},
+            },
+            HTTP_X_CHANNEL_ID=str(channel_with_api_key.id),
+            HTTP_X_API_KEY="test-api-key-123",
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert "Missing type" in response.json()["detail"]
+
+    @pytest.mark.django_db
+    def test_threadevent_type_too_long(
+        self, api_client, channel_with_api_key, thread_with_access
+    ):
+        """Test threadevent fails when type exceeds max length."""
+        response = api_client.post(
+            "/api/v1.0/inbound/webhook/threadevent/",
+            data={
+                "thread_id": str(thread_with_access.id),
+                "type": "a" * 37,  # 37 chars, max is 36
+                "data": {},
+            },
+            HTTP_X_CHANNEL_ID=str(channel_with_api_key.id),
+            HTTP_X_API_KEY="test-api-key-123",
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert "exceeds maximum length" in response.json()["detail"]
+
+    @pytest.mark.django_db
+    def test_threadevent_thread_not_found(self, api_client, channel_with_api_key):
+        """Test threadevent fails when thread does not exist."""
+        response = api_client.post(
+            "/api/v1.0/inbound/webhook/threadevent/",
+            data={
+                "thread_id": str(uuid.uuid4()),
+                "type": "notification",
+                "data": {},
+            },
+            HTTP_X_CHANNEL_ID=str(channel_with_api_key.id),
+            HTTP_X_API_KEY="test-api-key-123",
+            format="json",
+        )
+
+        assert response.status_code == 404
+        assert "Thread not found" in response.json()["detail"]
+
+    @pytest.mark.django_db
+    def test_threadevent_no_access(self, api_client, channel_with_api_key):
+        """Test threadevent fails when mailbox has no access to thread."""
+        thread = factories.ThreadFactory()
+        # Don't create ThreadAccess, so mailbox has no access
+
+        response = api_client.post(
+            "/api/v1.0/inbound/webhook/threadevent/",
+            data={
+                "thread_id": str(thread.id),
+                "type": "notification",
+                "data": {},
+            },
+            HTTP_X_CHANNEL_ID=str(channel_with_api_key.id),
+            HTTP_X_API_KEY="test-api-key-123",
+            format="json",
+        )
+
+        assert response.status_code == 403
+        assert "does not have access" in response.json()["detail"]
+
+    @pytest.mark.django_db
+    def test_threadevent_unauthorized(
+        self, api_client, channel_with_api_key, thread_with_access
+    ):
+        """Test threadevent endpoint requires authentication."""
+        response = api_client.post(
+            "/api/v1.0/inbound/webhook/threadevent/",
+            data={
+                "thread_id": str(thread_with_access.id),
+                "type": "notification",
+                "data": {},
+            },
+            HTTP_X_CHANNEL_ID=str(channel_with_api_key.id),
+            format="json",
+        )
+
+        assert response.status_code == 401
+
+    @pytest.mark.django_db
+    def test_threadevent_with_complex_data(
+        self, api_client, channel_with_api_key, thread_with_access
+    ):
+        """Test threadevent with complex JSON data."""
+        complex_data = {
+            "type": "arbitrary_block",
+            "data": {
+                "type": "iframe",
+                "src": "https://example.com/widget",
+                "width": "100%",
+                "height": "400px",
+                "config": {"theme": "dark", "language": "en"},
+            },
+        }
+
+        response = api_client.post(
+            "/api/v1.0/inbound/webhook/threadevent/",
+            data={
+                "thread_id": str(thread_with_access.id),
+                **complex_data,
+            },
+            HTTP_X_CHANNEL_ID=str(channel_with_api_key.id),
+            HTTP_X_API_KEY="test-api-key-123",
+            format="json",
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["success"] is True
+
+        # Verify the complex data was stored
+        event = models.ThreadEvent.objects.get(id=data["event_id"])
+        assert event.data == complex_data["data"]

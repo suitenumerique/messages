@@ -5,7 +5,8 @@
 import datetime
 import hashlib
 import json
-from unittest.mock import ANY, patch
+import uuid
+from unittest.mock import ANY, MagicMock, patch
 
 from django.conf import settings
 from django.test import override_settings
@@ -135,7 +136,9 @@ class TestMTAInboundEmail:
             "to": [],
         }
         mock_parse.return_value = parsed_email_mock
-        mock_deliver.return_value = True
+        mock_message = MagicMock()
+        mock_message.id = uuid.uuid4()
+        mock_deliver.return_value = mock_message
 
         mailbox = factories.MailboxFactory()
         email = f"{mailbox.local_part}@{mailbox.domain.name}"
@@ -247,7 +250,7 @@ class TestMTAInboundEmail:
         """Test that if all deliveries fail, a 500 is returned."""
         parsed_email_mock = {"subject": "Test"}
         mock_parse.return_value = parsed_email_mock
-        mock_deliver.return_value = False  # Fails for all calls
+        mock_deliver.return_value = None  # Fails for all calls
 
         recipients = ["fail1@example.com", "fail2@example.com"]
         token = valid_jwt_token(sample_email, {"original_recipients": recipients})

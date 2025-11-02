@@ -149,14 +149,14 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             "textBody": [{"content": message_text}],
         }
 
-        delivered = deliver_inbound_message(
+        message = deliver_inbound_message(
             target_email,
             parsed_email,
             compose_email(parsed_email, prepend_headers=prepend_headers),
             channel=channel,
         )
 
-        if not delivered:
+        if not message:
             return Response(
                 {"detail": "Failed to deliver message"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

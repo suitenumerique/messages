@@ -1123,6 +1123,33 @@ class ThreadAccess(BaseModel):
         return f"{self.thread} - {self.mailbox} - {self.role}"
 
 
+class ThreadEvent(BaseModel):
+    """Thread event model to store different types of events in a thread."""
+
+    thread = models.ForeignKey(
+        "Thread", on_delete=models.CASCADE, related_name="events"
+    )
+    type = models.CharField(_("type"), max_length=36)
+    channel = models.ForeignKey(
+        "Channel",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="thread_events",
+        help_text=_("Channel that created this event"),
+    )
+    data = models.JSONField(_("data"), default=dict, blank=True)
+
+    class Meta:
+        db_table = "messages_threadevent"
+        verbose_name = _("thread event")
+        verbose_name_plural = _("thread events")
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.thread} - {self.type}"
+
+
 class Contact(BaseModel):
     """Contact model to store contact information."""
 

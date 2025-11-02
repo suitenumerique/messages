@@ -13,6 +13,7 @@ export * from "./placeholders/placeholders";
 export * from "./tasks/tasks";
 export * from "./threads/threads";
 export * from "./thread-access/thread-access";
+export * from "./thread-event/thread-event";
 export * from "./admin-users-list/admin-users-list";
 export * from "./users/users";
 export * from "./models";
