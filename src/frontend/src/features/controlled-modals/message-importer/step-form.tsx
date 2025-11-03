@@ -272,7 +272,6 @@ export const StepForm = ({ onUploading, onSuccess, onError, error}: StepFormProp
                         name="archive_file"
                         accept=".eml,.mbox"
                         icon={<span className="material-icons">inventory_2</span>}
-                        fileSelectedIcon={<span className="material-icons">inventory_2</span>}
                         bigText={t('Drag and drop an archive here')}
                         text={t('EML or MBOX')}
                         fullWidth
