@@ -14,7 +14,7 @@
     "fr-FR": {
         "from": ["de"],
         "to": ["a"],
-        "subject": ["sujet"],
+        "subject": ["objet", "sujet"],
         "text": ["text"],
         "in_trash": ["dans:corbeille"],
         "in_archives": ["dans:archives", "dans:archivés"],
@@ -22,5 +22,17 @@
         "in_drafts": ["dans:brouillons"],
         "is_read": ["est:lu"],
         "is_unread": ["est:nonlu"]
+    },
+    "nl-NL": {
+        "from": ["van"],
+        "to": ["aan"],
+        "subject": ["onderwerp"],
+        "text": ["tekst"],
+        "in_trash": ["in:prullenbak"],
+        "in_archives": ["in:archief"],
+        "in_sent": ["in:verzonden"],
+        "in_drafts": ["in:concepten"],
+        "is_read": ["is:gelezen"],
+        "is_unread": ["is:ongelezen"]
     }
 }

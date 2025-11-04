@@ -1,6 +1,6 @@
 import { APP_STORAGE_PREFIX } from "../config/constants";
 
-const DEFAULT_LANGUAGES = [["en-US","English"],["fr-FR","Français"]];
+const DEFAULT_LANGUAGES = [["en-US","English"],["fr-FR","Français"],["nl-NL","Nederlands"]];
 
 // TODO: Tackle async loading of languages from backend
 // to avoid declaring languages in multiple places (backend and frontend)

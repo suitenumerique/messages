@@ -318,7 +318,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     useEffect(() => {
         if (selectedMailbox) {
             if (router.pathname === '/' ||  (selectedMailbox.id !== router.query.mailboxId && !router.pathname.includes('new'))) {
-                const defaultFolder = MAILBOX_FOLDERS[0];
+                const defaultFolder = MAILBOX_FOLDERS()[0];
                 const hash = window.location.hash;
                 if (router.query.threadId) {
                     router.replace(`/mailbox/${selectedMailbox.id}/thread/${router.query.threadId}?${router.query.search}${hash}`);

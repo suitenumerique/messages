@@ -73,7 +73,7 @@ export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) =
                 value={parsedQuery.in as string ?? 'all_messages'}
                 showLabelWhenSelected={false}
                 onChange={handleChange}
-                options={MAILBOX_FOLDERS.filter((folder) => folder.searchable).map((folder) => ({
+                options={MAILBOX_FOLDERS().filter((folder) => folder.searchable).map((folder) => ({
                     label: t(folder.name),
                     render: () => <FolderOption label={t(folder.name)} icon={folder.icon} />,
                     value: folder.id

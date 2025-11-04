@@ -34,7 +34,7 @@ export const SearchInput = () => {
 
         let newSearchParams: URLSearchParams;
         if (query) newSearchParams = new URLSearchParams({'search': query});
-        else newSearchParams = new URLSearchParams(MAILBOX_FOLDERS[0].filter);
+        else newSearchParams = new URLSearchParams(MAILBOX_FOLDERS()[0].filter);
 
         if (submit) {
             closeLeftPanel();

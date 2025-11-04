@@ -58,7 +58,7 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
   const { isFolded, toggle } = useFold(foldKey, isFoldedByDefault);
   const foldTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const goToDefaultFolder = () => {
-    const defaultFolder = MAILBOX_FOLDERS[0];
+    const defaultFolder = MAILBOX_FOLDERS()[0];
     router.push(pathname + `?${new URLSearchParams(defaultFolder.filter).toString()}`);
   }
   const moveLabelMutation = useLabelsPartialUpdate();

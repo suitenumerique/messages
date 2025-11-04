@@ -23,7 +23,7 @@ export const ThreadPanel = () => {
         // Only show import button if there are no threads in inbox or all messages folders and user has ability to import messages
         if (!canImportMessages) return false;
         if (threads?.results.length) return false;
-        const importableMessageFolders = MAILBOX_FOLDERS.filter((folder) => ['inbox', 'all_messages'].includes(folder.id));
+        const importableMessageFolders = MAILBOX_FOLDERS().filter((folder) => ['inbox', 'all_messages'].includes(folder.id));
         return importableMessageFolders.some((folder) => searchParams.toString() === new URLSearchParams(folder.filter).toString());
     }, [canImportMessages, threads?.results, searchParams]);
 

@@ -21,7 +21,7 @@ const NewMessageFormPage = () => {
         } else if (!selectedMailbox) {
             router.push('/');
         } else {
-            const defaultFolder = MAILBOX_FOLDERS[0];
+            const defaultFolder = MAILBOX_FOLDERS()[0];
             router.push(`/mailbox/${selectedMailbox.id}` + `?${new URLSearchParams(defaultFolder.filter).toString()}`);
         }
     }

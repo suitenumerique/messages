@@ -18,7 +18,7 @@ type Folder = {
     searchable?: boolean;
 }
 
-export const MAILBOX_FOLDERS: Folder[] = [
+export const MAILBOX_FOLDERS = (): Folder[] => [
     {
         id: "inbox",
         name: i18n.t("Inbox"),
@@ -81,12 +81,13 @@ export const MAILBOX_FOLDERS: Folder[] = [
     //         is_spam: "1",
     //     },
     // },
-]
+];
 
 export const MailboxList = () => {
+
     return (
         <div className="mailbox-list">
-            {MAILBOX_FOLDERS.map((folder) => (
+            {MAILBOX_FOLDERS().map((folder) => (
                 <FolderItem
                     key={folder.icon}
                     folder={folder}
