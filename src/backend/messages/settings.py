@@ -384,6 +384,7 @@ class Base(Configuration):
         (
             ("en-us", _("English")),
             ("fr-fr", _("French")),
+            ("nl-nl", _("Dutch")),
         )
     )
 

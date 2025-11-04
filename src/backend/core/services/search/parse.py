@@ -38,19 +38,19 @@ def parse_search_query(query: str) -> Dict[str, Any]:
     # Define modifiers and their keywords
     modifiers = {
         # Value-taking modifiers
-        "from": ["from:", "de:"],
-        "to": ["to:", "a:", "à:"],
+        "from": ["from:", "de:", "van:"],
+        "to": ["to:", "a:", "à:", "aan:"],
         "cc": ["cc:", "copie:"],
         "bcc": ["bcc:", "cci:"],
-        "subject": ["subject:", "sujet:"],
+        "subject": ["subject:", "sujet:", "objet:", "onderwerp:"],
         # Flag modifiers
-        "in_trash": ["in:trash", "dans:corbeille"],
-        "in_sent": ["in:sent", "dans:envoyes", "dans:envoyés"],
-        "in_archives": ["in:archives", "dans:archives", "dans:archivés"],
-        "in_drafts": ["in:drafts", "dans:brouillons"],
-        "is_starred": ["is:starred", "est:suivi"],
-        "is_read_true": ["is:read", "est:lu"],
-        "is_read_false": ["is:unread", "est:nonlu"],
+        "in_trash": ["in:trash", "dans:corbeille", "in:prullenbak"],
+        "in_sent": ["in:sent", "dans:envoyes", "dans:envoyés", "in:verzonden"],
+        "in_archives": ["in:archives", "dans:archives", "dans:archivés", "in:archief"],
+        "in_drafts": ["in:drafts", "dans:brouillons", "in:concepten"],
+        "is_starred": ["is:starred", "est:suivi", "is:gemarkeerd"],
+        "is_read_true": ["is:read", "est:lu", "is:gelezen"],
+        "is_read_false": ["is:unread", "est:nonlu", "is:ongelezen"],
     }
 
     # Split modifiers into value-taking and flag modifiers
