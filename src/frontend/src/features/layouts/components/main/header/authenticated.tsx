@@ -9,10 +9,10 @@ import { useAuth, logout } from "@/features/auth";
 import { LanguagePicker } from "@/features/layouts/components/main/language-picker";
 import { LagaufreButton } from "@/features/ui/components/lagaufre";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { MESSAGE_IMPORT_TASK_KEY } from "@/features/config/constants";
 import { useImportTaskStatus } from "@/hooks/use-import-task";
 import { StatusEnum } from "@/features/api/gen";
 import { CircularProgress } from "@/features/ui/components/circular-progress";
+import { TaskImportCacheHelper } from "@/features/utils/task-import-cache";
 
 
 type AuthenticatedHeaderProps = HeaderProps & {
@@ -88,9 +88,9 @@ const ApplicationMenu = () => {
   const { t } = useTranslation();
   const router = useRouter();
   const taskId = useMemo(() => {
-    if (typeof window === undefined) return null;
-    return localStorage.getItem(MESSAGE_IMPORT_TASK_KEY);
-  }, [isDropdownOpen]);
+    const taskImportCacheHelper = new TaskImportCacheHelper(selectedMailbox?.id);
+    return taskImportCacheHelper.get();
+  }, [isDropdownOpen, selectedMailbox?.id]);
 
   const taskStatus = useImportTaskStatus(taskId, { enabled: canImportMessages && isDropdownOpen });
   const importMessageOption = useMemo(() => {
