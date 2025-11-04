@@ -1,1 +1,9 @@
-{}
+{
+    "mailbox_roles_admin": "Beheerder",
+    "mailbox_roles_editor": "Redacteur",
+    "mailbox_roles_sender": "Afzender",
+    "mailbox_roles_viewer": "Lezer",
+    "maildomain_roles_admin": "Beheerder",
+    "thread_roles_editor": "Redacteur",
+    "thread_roles_viewer": "Lezer"
+}
