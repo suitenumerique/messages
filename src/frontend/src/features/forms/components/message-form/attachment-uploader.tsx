@@ -34,7 +34,7 @@ export const AttachmentUploader = ({
     const [uploadingQueue, setUploadingQueue] = useState<File[]>([]);
     const [failedQueue, setFailedQueue] = useState<File[]>([]);
     const { mutateAsync: uploadBlob } = useBlobUploadCreate();
-    const debouncedOnChange = useDebounceCallback(onChange, 1000);
+    const debouncedOnChange = useDebounceCallback(onChange, 100);
     const { getRootProps, getInputProps, isDragActive, fileRejections } = useDropzone({
         onDrop: async (acceptedFiles) => {
             await Promise.all(acceptedFiles.map(uploadFile));

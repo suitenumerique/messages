@@ -26,7 +26,7 @@ import { DropdownButton } from "@/features/ui/components/dropdown-button";
 import { PREFER_SEND_MODE_KEY, PreferSendMode } from "@/features/config/constants";
 import { useSearchParams } from "next/navigation";
 
-export type MessageFormMode = "new" |"reply" | "reply_all" | "forward";
+export type MessageFormMode = "new" | "reply" | "reply_all" | "forward";
 
 interface MessageFormProps {
     // For reply mode
@@ -67,8 +67,6 @@ const messageFormSchema = z.object({
     signatureId: z.string().optional().nullable(),
 });
 
-type MessageFormFields = z.infer<typeof messageFormSchema>;
-
 const DRAFT_TOAST_ID = "MESSAGE_FORM_DRAFT_TOAST";
 
 export const MessageForm = ({
@@ -88,7 +86,25 @@ export const MessageForm = ({
     });
     const [showCCField, setShowCCField] = useState((draftMessage?.cc?.length ?? 0) > 0);
     const [showBCCField, setShowBCCField] = useState((draftMessage?.bcc?.length ?? 0) > 0);
-    const [pendingSubmit, setPendingSubmit] = useState<{ archive: boolean } | null>(null);
+    const [pendingMutation, setPendingMutation] = useState<Map<'delete' | 'send', () => void>>(new Map());
+    const dequeueMutation = (type: 'delete' | 'send') => {
+        setPendingMutation((prev) => {
+            const next = new Map(prev);
+            next.delete(type);
+            return next;
+        });
+    }
+    const queueMutation = (type: 'delete' | 'send', callback: () => void) => {
+        setPendingMutation((prev) => {
+            const next = new Map(prev);
+            next.set(type, () => {
+                callback();
+                dequeueMutation(type);
+            });
+            return next;
+        });
+    }
+    const hasQueuedMutation = pendingMutation.size > 0;
     const [currentTime, setCurrentTime] = useState(new Date());
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
     const quoteType: QuoteType | undefined = mode !== "new" ? (mode === "forward" ? "forward" : "reply") : undefined;
@@ -102,7 +118,7 @@ export const MessageForm = ({
     const { addQueuedMessage } = useSentBox();
 
     const getMailboxOptions = () => {
-        if(!mailboxes) return [];
+        if (!mailboxes) return [];
         return mailboxes.map((mailbox) => ({
             label: mailbox.email,
             value: mailbox.id
@@ -115,10 +131,10 @@ export const MessageForm = ({
 
         if (mode === "reply_all") {
             return [...new Set([
-                {contact: {email: parentMessage.sender.email}},
+                { contact: { email: parentMessage.sender.email } },
                 ...parentMessage.to,
                 ...parentMessage.cc
-                ]
+            ]
                 .filter(({ contact }) => contact.email !== selectedMailbox!.email)
                 .map(({ contact }) => contact.email)
             )]
@@ -215,6 +231,8 @@ export const MessageForm = ({
 
     const messageMutation = useSendCreate({
         mutation: {
+            onMutate: () => stopAutoSave(),
+            onError: () => startAutoSave(),
             onSettled: () => {
                 form.clearErrors();
                 toast.dismiss(DRAFT_TOAST_ID);
@@ -241,10 +259,12 @@ export const MessageForm = ({
     }
 
     const draftCreateMutation = useDraftCreate({
-        mutation: { onSuccess: () => {
-            invalidateThreadsStats();
-            handleDraftMutationSuccess();
-        }}
+        mutation: {
+            onSuccess: () => {
+                invalidateThreadsStats();
+                handleDraftMutationSuccess();
+            }
+        }
     });
 
     const draftUpdateMutation = useDraftUpdate2({
@@ -254,29 +274,30 @@ export const MessageForm = ({
 
     const deleteMessageMutation = useMessagesDestroy();
     const isSavingDraft = draftCreateMutation.isPending || draftUpdateMutation.isPending || deleteMessageMutation.isPending;
-    const isSubmittingMessage = pendingSubmit !== null || messageMutation.isPending;
+    const isSubmittingMessage = pendingMutation.has('send') || messageMutation.isPending;
 
     const handleDeleteMessage = (messageId: string) => {
-        if(window.confirm(t("Are you sure you want to delete this draft? This action cannot be undone."))) {
-            stopAutoSave();
-            deleteMessageMutation.mutate({
-                id: messageId
-            }, {
-                onSuccess: () => {
-                    onClose?.();
-                    setDraft(undefined);
-                    invalidateThreadMessages({ type: 'delete', metadata: { ids: [messageId] }});
-                    invalidateThreadsStats();
-                    // Unselect the thread if we are in the draft view
-                    if (searchParams.get('has_draft') === '1') {
-                        unselectThread();
-                    }
-                    addToast(
-                        <ToasterItem type="info">
-                            <span>{t("Draft deleted")}</span>
-                        </ToasterItem>
-                    );
-                },
+        if (window.confirm(t("Are you sure you want to delete this draft? This action cannot be undone."))) {
+            queueMutation('delete', () => {
+                deleteMessageMutation.mutate({
+                    id: messageId
+                }, {
+                    onSuccess: () => {
+                        onClose?.();
+                        setDraft(undefined);
+                        invalidateThreadMessages({ type: 'delete', metadata: { ids: [messageId] } });
+                        invalidateThreadsStats();
+                        // Unselect the thread if we are in the draft view
+                        if (searchParams.get('has_draft') === '1') {
+                            unselectThread();
+                        }
+                        addToast(
+                            <ToasterItem type="info">
+                                <span>{t("Draft deleted")}</span>
+                            </ToasterItem>
+                        );
+                    },
+                });
             });
         }
     }
@@ -290,15 +311,16 @@ export const MessageForm = ({
         if (draft && form.formState.dirtyFields.from) {
             await deleteMessageMutation.mutateAsync({ id: draft.id });
             const response = await draftCreateMutation.mutateAsync({ data }, {
-                onSuccess: () => {addToast(
-                    <ToasterItem type="info">
-                        <span>{t("Draft transferred to another mailbox")}</span>
-                    </ToasterItem>,
-                );
+                onSuccess: () => {
+                    addToast(
+                        <ToasterItem type="info">
+                            <span>{t("Draft transferred to another mailbox")}</span>
+                        </ToasterItem>,
+                    );
                 }
             });
 
-            if(router.asPath.includes("new")) {
+            if (router.asPath.includes("new")) {
                 setDraft(response.data as Message);
                 return;
             }
@@ -334,9 +356,9 @@ export const MessageForm = ({
     /**
      * Update or create a draft message if any field to change.
      */
-    const saveDraft = async (data: MessageFormFields) => {
-        if (!canWriteMessages || isSavingDraft) return;
-        stopAutoSave();
+    const saveDraft = async () => {
+        const data = form.getValues();
+        if (!canWriteMessages) return;
 
         const saveDraftNeeded = (
             Object.keys(form.formState.dirtyFields).length > 0
@@ -371,8 +393,9 @@ export const MessageForm = ({
         }
 
         let response;
-
         try {
+            stopAutoSave();
+            form.reset(form.getValues(), { keepSubmitCount: true, keepDirty: false, keepValues: true, keepDefaultValues: false });
             if (!draft) {
                 response = await draftCreateMutation.mutateAsync({
                     data: payload,
@@ -389,7 +412,6 @@ export const MessageForm = ({
 
             const newDraft = response.data as Message;
             setDraft(newDraft);
-            return newDraft;
         } catch (error) {
             console.error("Error in saveDraft:", error);
         } finally {
@@ -400,8 +422,8 @@ export const MessageForm = ({
     /**
      * Send the draft message
      */
-    const handleSubmit = async (data: MessageFormFields, { archive }: { archive: boolean }) => {
-        if (!canSendMessages) return;
+    const handleSubmit = async ({ archive }: { archive: boolean }) => {
+        const data = form.getValues();
 
         // recipients are optional to save the draft but required to send the message
         // so we have to manually check that at least one recipient is present.
@@ -410,28 +432,11 @@ export const MessageForm = ({
             form.setError("to", { message: t("At least one recipient is required.") });
             return;
         }
-        stopAutoSave(); // Stop auto-save when submitting
-
-        if (isSavingDraft) {
-            // Do not trigger the submit but mark the form as pending for submitting
-            setPendingSubmit({ archive });
-            return;
-        }
-        setPendingSubmit(null);
-
-        // Only save if there are unsaved changes, otherwise use existing draft
-        let draftToSend = draft;
-        if (Object.keys(form.formState.dirtyFields).length > 0 || !draft) {
-            draftToSend = await saveDraft(data);
-        }
-
-        if (!draftToSend) {
-            return;
-        }
+        if (!draft || !canSendMessages) return;
 
         messageMutation.mutate({
             data: {
-                messageId: draftToSend.id,
+                messageId: draft.id,
                 senderId: data.from,
                 htmlBody: MailHelper.attachDriveAttachmentsToHtmlBody(data.messageHtmlBody, data.driveAttachments),
                 textBody: MailHelper.attachDriveAttachmentsToTextBody(data.messageTextBody, data.driveAttachments),
@@ -454,34 +459,23 @@ export const MessageForm = ({
         else form.setFocus("to")
     }, []);
 
+    // Effect to trigger pending mutations (send or delete) once the draft save is completed.
     useEffect(() => {
-        if (draft) {
-            form.reset(undefined, { keepSubmitCount: true, keepDirty: false, keepValues: true, keepDefaultValues: false });
+        if (!isSavingDraft && hasQueuedMutation) {
+            if (pendingMutation.has('delete')) {
+                // If both send and delete are queued, we give priority to the delete mutation
+                pendingMutation.get('delete')!();
+                setPendingMutation(new Map());
+                return;
+            }
+            pendingMutation.get('send')?.();
         }
-    }, [draft]);
+    }, [isSavingDraft, hasQueuedMutation]);
 
-    // Start auto-save when component mounts
     useEffect(() => {
         startAutoSave();
-
-        // Cleanup on unmount
-        return stopAutoSave;
-    }, []);
-
-    // Effect to retriger handleSubmit if the form is pending for submit
-    // and the draft save state is updated to false
-    useEffect(() => {
-        if (pendingSubmit !== null && !isSavingDraft) {
-            handleSubmit(form.getValues(), pendingSubmit);
-        }
-    }, [isSavingDraft]);
-
-    // Restart auto-save when form becomes dirty
-    useEffect(() => {
-        if (Object.keys(form.formState.dirtyFields).length > 0) {
-            startAutoSave();
-        }
-    }, [form.formState.dirtyFields]);
+        return () => stopAutoSave();
+    }, [draft]);
 
     // Update current time every 15 seconds for relative time display
     useEffect(() => {
@@ -516,11 +510,11 @@ export const MessageForm = ({
         <FormProvider {...form}>
             <form
                 className="message-form"
-                onSubmit={form.handleSubmit(data => handleSubmit(data, { archive: preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE }))}
+                onSubmit={form.handleSubmit(() => queueMutation('send', () => handleSubmit({ archive: preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE })))}
                 onBlur={form.handleSubmit(saveDraft)}
                 onKeyDown={handleKeyDown}
             >
-                <div className={clsx("form-field-row", {'form-field-row--hidden': hideFromField})}>
+                <div className={clsx("form-field-row", { 'form-field-row--hidden': hideFromField })}>
                     <RhfSelect
                         name="from"
                         options={getMailboxOptions()}
@@ -538,7 +532,7 @@ export const MessageForm = ({
                         name="to"
                         label={t("To:")}
                         // icon={<span className="material-icons">group</span>}
-                        text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? form.formState.errors.to.message: t("Enter the email addresses of the recipients separated by commas")}
+                        text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? form.formState.errors.to.message : t("Enter the email addresses of the recipients separated by commas")}
                         textItems={Array.isArray(form.formState.errors.to) ? form.formState.errors.to?.map((error, index) => t(error!.message as string, { email: form.getValues('to')?.[index] })) : []}
                         disabled={!canWriteMessages}
                         fullWidth
@@ -578,15 +572,15 @@ export const MessageForm = ({
                     </div>
                 )}
 
-                <div className={clsx("form-field-row", {'form-field-row--hidden': hideSubjectField})}>
-                        <RhfInput
-                            name="subject"
-                            label={t("Subject: ")}
-                            text={form.formState.errors.subject && form.formState.errors.subject.message}
-                            disabled={!canWriteMessages}
-                            fullWidth
-                        />
-                    </div>
+                <div className={clsx("form-field-row", { 'form-field-row--hidden': hideSubjectField })}>
+                    <RhfInput
+                        name="subject"
+                        label={t("Subject: ")}
+                        text={form.formState.errors.subject && form.formState.errors.subject.message}
+                        disabled={!canWriteMessages}
+                        fullWidth
+                    />
+                </div>
 
                 <div className="form-field-row">
                     <MessageComposer
@@ -610,9 +604,9 @@ export const MessageForm = ({
                 />
 
                 {showAttachmentsForgetAlert &&
-                  <Banner type="warning">
-                    {t("Did you forget an attachment?")}
-                  </Banner>
+                    <Banner type="warning">
+                        {t("Did you forget an attachment?")}
+                    </Banner>
                 }
 
                 <div className="form-field-row form-field-save-time">
@@ -636,7 +630,7 @@ export const MessageForm = ({
                             ...(mode !== 'new' ? [{
                                 label: preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? t("Send") : t("Send and archive"),
                                 icon: <Icon name={preferredSendMode === PreferSendMode.SEND_AND_ARCHIVE ? "send" : "send_and_archive"} type={IconType.OUTLINED} />,
-                                callback: form.handleSubmit(data => handleSubmit(data, { archive: preferredSendMode !== PreferSendMode.SEND_AND_ARCHIVE })),
+                                callback:form.handleSubmit(() => queueMutation('send', () => handleSubmit({ archive: preferredSendMode !== PreferSendMode.SEND_AND_ARCHIVE }))),
                                 showSeparator: true,
                             }, {
                                 label: t("Use \"Send and archive\" by default"),

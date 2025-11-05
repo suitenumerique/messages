@@ -1,5 +1,6 @@
 .message-reply-form-container {
-    border: 1px solid var(--c--theme--colors--greyscale-200);
+    border: 2px solid var(--c--theme--colors--primary-600);
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
     border-radius: 4px;
     padding: var(--c--theme--spacings--base);
 }
