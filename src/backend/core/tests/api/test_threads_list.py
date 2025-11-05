@@ -1,12 +1,16 @@
 """Tests for the Thread API list endpoint."""
+# pylint: disable=unused-argument
 
+import time
 from datetime import timedelta
 
+from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
 
 import pytest
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from core import enums
 from core.factories import (
@@ -21,6 +25,12 @@ from core.factories import (
     UserFactory,
 )
 from core.models import MailboxAccess
+from core.services.search import (
+    create_index_if_not_exists,
+    delete_index,
+    get_opensearch_client,
+)
+from core.services.search.mapping import MESSAGE_INDEX
 
 pytestmark = pytest.mark.django_db
 
@@ -993,3 +1003,223 @@ class TestThreadListAPI:
         assert (
             MailboxAccess.objects.get(user=user2, mailbox=mailbox).accessed_at is None
         )
+
+
+@pytest.fixture(name="setup_search")
+def fixture_setup_search():
+    """Setup OpenSearch index for testing."""
+    delete_index()
+    create_index_if_not_exists()
+
+    # Check if OpenSearch is actually available
+    es = get_opensearch_client()
+    # pylint: disable=unexpected-keyword-arg
+    es.cluster.health(wait_for_status="yellow", timeout=10)
+    yield
+
+    # Teardown
+    try:
+        delete_index()
+    # pylint: disable=broad-exception-caught
+    except Exception:
+        pass
+
+
+@pytest.fixture(name="test_user")
+def fixture_test_user():
+    """Create a test user."""
+    return UserFactory()
+
+
+@pytest.fixture(name="test_mailbox")
+def fixture_test_mailbox(test_user):
+    """Create a test mailbox with user access."""
+    mailbox = MailboxFactory()
+    MailboxAccessFactory(user=test_user, mailbox=mailbox)
+    return mailbox
+
+
+@pytest.fixture(name="api_client")
+def fixture_api_client(test_user):
+    """Create an authenticated API client."""
+    client = APIClient()
+    client.force_authenticate(user=test_user)
+    return client
+
+
+@pytest.fixture(name="test_url")
+def fixture_test_url():
+    """Get the thread list API URL."""
+    return reverse("threads-list")
+
+
+@pytest.fixture(name="wait_for_indexing")
+def fixture_wait_for_indexing():
+    """Fixture to create a function that waits for indexing to complete."""
+
+    def _wait(max_retries=10, delay=0.5):
+        """Wait for indexing to complete by refreshing the index."""
+        es = get_opensearch_client()
+        for _ in range(max_retries):
+            try:
+                es.indices.refresh(index=MESSAGE_INDEX)
+                return True
+            # pylint: disable=broad-exception-caught
+            except Exception:
+                time.sleep(delay)
+        return False
+
+    return _wait
+
+
+@pytest.mark.skipif(
+    not settings.OPENSEARCH_HOSTS or not settings.OPENSEARCH_HOSTS[0],
+    reason="OpenSearch not configured",
+)
+@pytest.mark.django_db(transaction=True)
+class TestThreadSearchPagination:
+    """Test Thread search API pagination functionality."""
+
+    def test_search_pagination(
+        self,
+        setup_search,
+        api_client,
+        test_url,
+        test_mailbox,
+        wait_for_indexing,
+    ):
+        """Test that search results are properly paginated."""
+        threads = []
+        for i in range(58):
+            thread = ThreadFactory()
+            ThreadAccessFactory(
+                mailbox=test_mailbox,
+                thread=thread,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+            )
+            MessageFactory(
+                thread=thread,
+                subject=f"Test message {i}",
+                is_unread=True,
+            )
+            thread.update_stats()
+            threads.append(thread)
+
+        # Wait for indexing
+        wait_for_indexing()
+
+        response = api_client.get(
+            f"{test_url}?search=Test message&mailbox_id={test_mailbox.id}"
+        )
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 58  # total number of threads
+        # viewset paginator has page size set to 20
+        assert len(response.data["results"]) == 20
+        assert response.data["previous"] is None
+        assert response.data["next"] == 2  # Next page number
+
+        # Search page 2
+        response = api_client.get(
+            f"{test_url}?search=Test message&mailbox_id={test_mailbox.id}&page=2"
+        )
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 58  # total number of threads
+        assert len(response.data["results"]) == 20
+        assert response.data["previous"] == 1  # Previous page number
+        assert response.data["next"] == 3  # Next page number
+
+        # Search page 3
+        response = api_client.get(
+            f"{test_url}?search=Test message&mailbox_id={test_mailbox.id}&page=3"
+        )
+
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 58  # total number of threads
+        assert len(response.data["results"]) == 18
+        assert response.data["previous"] == 2  # Previous page number
+        assert response.data["next"] is None  # No more pages
+
+    def test_search_pagination_empty_results(
+        self,
+        setup_search,
+        api_client,
+        test_url,
+        test_mailbox,
+        wait_for_indexing,
+    ):
+        """Test pagination with no search results."""
+        # Create one thread that won't match
+        thread = ThreadFactory()
+        ThreadAccessFactory(
+            mailbox=test_mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        MessageFactory(
+            thread=thread,
+            subject="Different content",
+            is_unread=True,
+        )
+        thread.update_stats()
+
+        # Wait for indexing
+        wait_for_indexing()
+
+        # Search for something that doesn't exist
+        response = api_client.get(
+            f"{test_url}?search=NonExistentQuery&mailbox_id={test_mailbox.id}"
+        )
+
+        # Verify response
+        assert response.status_code == 200
+        assert response.data["count"] == 0
+        assert len(response.data["results"]) == 0
+        assert response.data["previous"] is None
+        assert response.data["next"] is None
+
+    def test_search_pagination_with_filters(
+        self,
+        setup_search,
+        api_client,
+        test_url,
+        test_mailbox,
+        wait_for_indexing,
+    ):
+        """Test that pagination works correctly with filters."""
+        # Create 10 threads, 5 unread and 5 read
+        threads = []
+        for i in range(58):
+            thread = ThreadFactory()
+            ThreadAccessFactory(
+                mailbox=test_mailbox,
+                thread=thread,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+            )
+            MessageFactory(
+                thread=thread,
+                subject=f"Test message {i}",
+                is_unread=(i < 25),  # First 25 are unread
+            )
+            thread.update_stats()
+            threads.append(thread)
+
+        # Wait for indexing
+        wait_for_indexing()
+
+        # Search with is_unread filter and pagination
+        response = api_client.get(
+            f"{test_url}?search=Test message&mailbox_id={test_mailbox.id}"
+            f"&has_unread=1&page_size=3"
+        )
+
+        # Verify response
+        assert response.status_code == 200
+        assert response.data["count"] == 25  # total number of unread threads
+        assert len(response.data["results"]) == 20  # Page size of 20
+        assert response.data["previous"] is None
+        assert response.data["next"] == 2  # Has next page
