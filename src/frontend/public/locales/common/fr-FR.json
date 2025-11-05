@@ -155,7 +155,7 @@
   "Import": "Importer",
   "Import failed": "Importation échouée",
   "Import messages": "Importer des messages",
-  "Import your old messages": "Importer vos anciens messages",
+  "Import your old messages in {{mailbox}}": "Importer vos anciens messages dans {{mailbox}}",
   "Imported messages": "Messages importés",
   "Importing messages...": "Importation des messages...",
   "Importing...": "Importation en cours...",

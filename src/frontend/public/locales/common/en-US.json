@@ -155,7 +155,7 @@
   "Import": "Import",
   "Import failed": "Import failed",
   "Import messages": "Import messages",
-  "Import your old messages": "Import your old messages",
+  "Import your old messages in {{mailbox}}": "Import your old messages in {{mailbox}}",
   "Imported messages": "Imported messages",
   "Importing messages...": "Importing messages...",
   "Importing...": "Importing...",

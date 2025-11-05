@@ -87,9 +87,12 @@ export const ModalMessageImporter = () => {
         return () => window.removeEventListener("beforeunload", unloadCallback);
     }, [step]);
 
+
+    if (!selectedMailbox) return null;
+
     return (
         <ControlledModal
-            title={t('Import your old messages')}
+            title={t('Import your old messages in {{mailbox}}', { mailbox: selectedMailbox.email })}
             modalId={MODAL_MESSAGE_IMPORTER_ID}
             size={ModalSize.LARGE}
             confirmFn={step !== 'uploading' ? undefined : handleConfirmCloseModal}
