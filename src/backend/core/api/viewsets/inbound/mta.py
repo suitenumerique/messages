@@ -180,9 +180,9 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
 
         for recipient in mta_metadata["original_recipients"]:
             try:
-                # Call the refactored delivery function which returns True/False
-                delivered = deliver_inbound_message(recipient, parsed_email, raw_data)
-                if delivered:
+                # Call the delivery function which returns Message or None
+                message = deliver_inbound_message(recipient, parsed_email, raw_data)
+                if message:
                     success_count += 1
                     delivery_results[recipient] = "Success"
                 else:

@@ -1,6 +1,7 @@
 """Tests for widget inbound API endpoints."""
 
-from unittest.mock import patch
+import uuid
+from unittest.mock import MagicMock, patch
 
 from django.core.exceptions import ValidationError
 
@@ -175,7 +176,9 @@ class TestInboundWidgetDeliver:
         self, mock_deliver, api_client, channel, channel_with_mailbox_contact
     ):
         """Test successful message delivery."""
-        mock_deliver.return_value = True
+        mock_message = MagicMock()
+        mock_message.id = uuid.uuid4()
+        mock_deliver.return_value = mock_message
 
         data = {
             "email": "sender@example.com",
@@ -266,7 +269,9 @@ class TestInboundWidgetDeliver:
     @patch("core.api.viewsets.inbound.widget.deliver_inbound_message")
     def test_deliver_with_custom_settings(self, mock_deliver, api_client):
         """Test deliver with custom channel settings."""
-        mock_deliver.return_value = True
+        mock_message = MagicMock()
+        mock_message.id = uuid.uuid4()
+        mock_deliver.return_value = mock_message
 
         channel = factories.ChannelFactory(
             type="widget",

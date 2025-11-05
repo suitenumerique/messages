@@ -260,11 +260,11 @@ class TestDeliverInboundMessage:
         assert models.Contact.objects.count() == 0
         assert models.Message.objects.count() == 0
 
-        success = deliver_inbound_message(
+        message = deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
-        assert success is True
+        assert message is not None
         mock_find_thread.assert_called_once_with(sample_parsed_email, target_mailbox)
 
         assert models.Thread.objects.count() == 1
@@ -324,11 +324,11 @@ class TestDeliverInboundMessage:
         assert models.Thread.objects.count() == 1
         assert models.Message.objects.count() == 0
 
-        success = deliver_inbound_message(
+        message = deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
-        assert success is True
+        assert message is not None
         mock_find_thread.assert_called_once_with(sample_parsed_email, target_mailbox)
         assert models.Thread.objects.count() == 1  # No new thread
         assert models.Message.objects.count() == 1
@@ -346,11 +346,11 @@ class TestDeliverInboundMessage:
             local_part="newuser", domain__name="autocreate.test"
         ).exists()
 
-        success = deliver_inbound_message(
+        message = deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
-        assert success is True
+        assert message is not None
         assert models.Mailbox.objects.filter(
             local_part="newuser", domain__name="autocreate.test"
         ).exists()
@@ -366,11 +366,11 @@ class TestDeliverInboundMessage:
             local_part="nonexistent", domain__name="disabled.test"
         ).exists()
 
-        success = deliver_inbound_message(
+        message = deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
-        assert success is False
+        assert message is None
         assert not models.Mailbox.objects.filter(
             local_part="nonexistent", domain__name="disabled.test"
         ).exists()
@@ -395,11 +395,11 @@ class TestDeliverInboundMessage:
             email="cc@example.com", mailbox=target_mailbox
         ).exists()
 
-        success = deliver_inbound_message(
+        message = deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
-        assert success is True
+        assert message is not None
         assert models.Contact.objects.filter(
             email=sender_email, mailbox=target_mailbox
         ).exists()
@@ -421,11 +421,11 @@ class TestDeliverInboundMessage:
             "email": "invalid-email-format",
         }
 
-        success = deliver_inbound_message(
+        message = deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
-        assert success is True  # Should still succeed using fallback
+        assert message is not None  # Should still succeed using fallback
         message = models.Message.objects.first()
         assert message is not None
         fallback_sender_email = f"invalid-sender@{target_mailbox.domain.name}"
@@ -440,11 +440,11 @@ class TestDeliverInboundMessage:
         recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
         del sample_parsed_email["from"]  # Remove From header
 
-        success = deliver_inbound_message(
+        message = deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
-        assert success is True
+        assert message is not None
         message = models.Message.objects.first()
         assert message is not None
         fallback_sender_email = f"unknown-sender@{target_mailbox.domain.name}"
@@ -467,11 +467,11 @@ class TestDeliverInboundMessage:
             {"name": "Another Invalid", "email": "@no-localpart.com"},  # Invalid
         ]
 
-        success = deliver_inbound_message(
+        message = deliver_inbound_message(
             recipient_addr, sample_parsed_email, raw_email_data
         )
 
-        assert success is True  # Delivery succeeds overall
+        assert message is not None  # Delivery succeeds overall
         message = models.Message.objects.first()
         assert message is not None
         # Only the valid recipient should have a MessageRecipient link
@@ -502,8 +502,8 @@ class TestDeliverInboundMessage:
         }
         raw_email_1 = b"Raw for message 1"
 
-        success1 = deliver_inbound_message(addr2, parsed_email_1, raw_email_1)
-        assert success1 is True
+        message1 = deliver_inbound_message(addr2, parsed_email_1, raw_email_1)
+        assert message1 is not None
         assert models.Thread.objects.filter(accesses__mailbox=mailbox1).count() == 0
         assert models.Thread.objects.filter(accesses__mailbox=mailbox2).count() == 1
         thread2 = models.Thread.objects.get(accesses__mailbox=mailbox2)
@@ -525,8 +525,8 @@ class TestDeliverInboundMessage:
         }
         raw_email_2 = b"Raw for message 2"
 
-        success2 = deliver_inbound_message(addr1, parsed_email_2, raw_email_2)
-        assert success2 is True
+        message2 = deliver_inbound_message(addr1, parsed_email_2, raw_email_2)
+        assert message2 is not None
         assert models.Thread.objects.filter(accesses__mailbox=mailbox1).count() == 1
         assert models.Thread.objects.filter(accesses__mailbox=mailbox2).count() == 1
         thread1 = models.Thread.objects.get(accesses__mailbox=mailbox1)
@@ -550,8 +550,8 @@ class TestDeliverInboundMessage:
         }
         raw_email_3 = b"Raw for message 3"
 
-        success3 = deliver_inbound_message(addr2, parsed_email_3, raw_email_3)
-        assert success3 is True
+        message3 = deliver_inbound_message(addr2, parsed_email_3, raw_email_3)
+        assert message3 is not None
         # Counts should remain 1 thread per mailbox
         assert models.Thread.objects.filter(accesses__mailbox=mailbox1).count() == 1
         assert models.Thread.objects.filter(accesses__mailbox=mailbox2).count() == 1
@@ -581,11 +581,11 @@ class TestDeliverInboundMessage:
             "date": timezone.now(),
         }
 
-        success = deliver_inbound_message(
+        message = deliver_inbound_message(
             recipient_addr, parsed_email_empty_subject, raw_email_data
         )
 
-        assert success is True
+        assert message is not None
         assert models.Message.objects.count() == 1
         assert models.Thread.objects.count() == 1
 
@@ -615,11 +615,11 @@ class TestDeliverInboundMessage:
             "date": timezone.now(),
         }
 
-        success = deliver_inbound_message(
+        message = deliver_inbound_message(
             recipient_addr, parsed_email_null_subject, raw_email_data
         )
 
-        assert success is True
+        assert message is not None
         assert models.Message.objects.count() == 1
         assert models.Thread.objects.count() == 1
 
@@ -651,11 +651,11 @@ class TestDeliverInboundMessage:
             "date": timezone.now(),
         }
 
-        success = deliver_inbound_message(
+        message = deliver_inbound_message(
             recipient_addr, parsed_email_no_subject, raw_email_data
         )
 
-        assert success is True
+        assert message is not None
         assert models.Message.objects.count() == 1
         assert models.Thread.objects.count() == 1
 
@@ -689,10 +689,10 @@ class TestDeliverInboundMessage:
         }
 
         # This should now succeed with truncated subject
-        success = deliver_inbound_message(
+        message = deliver_inbound_message(
             recipient_addr, parsed_email_long_subject, raw_email_data
         )
-        assert success is True
+        assert message is not None
         assert models.Message.objects.count() == 1
         assert models.Thread.objects.count() == 1
 
@@ -724,10 +724,10 @@ class TestDeliverInboundMessage:
             "date": timezone.now(),
         }
 
-        success1 = deliver_inbound_message(
+        message1 = deliver_inbound_message(
             recipient_addr, parsed_email_1, raw_email_data
         )
-        assert success1 is True
+        assert message1 is not None
 
         # Second message with empty subject (should join same thread)
         parsed_email_2 = {
@@ -740,10 +740,10 @@ class TestDeliverInboundMessage:
             "date": timezone.now(),
         }
 
-        success2 = deliver_inbound_message(
+        message2 = deliver_inbound_message(
             recipient_addr, parsed_email_2, raw_email_data
         )
-        assert success2 is True
+        assert message2 is not None
 
         # Verify both messages are in the same thread with empty subject
         assert models.Thread.objects.count() == 1

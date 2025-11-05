@@ -122,6 +122,18 @@ class MailDomainAccessFactory(factory.django.DjangoModelFactory):
     )
 
 
+class ChannelFactory(factory.django.DjangoModelFactory):
+    """A factory to create channels for testing purposes."""
+
+    class Meta:
+        model = models.Channel
+
+    name = factory.Sequence(lambda n: f"Test Channel {n}")
+    type = factory.fuzzy.FuzzyChoice(["widget", "mta"])
+    settings = factory.Dict({"config": {"enabled": True}})
+    mailbox = factory.SubFactory(MailboxFactory)
+
+
 class ThreadFactory(factory.django.DjangoModelFactory):
     """A factory to random threads for testing purposes."""
 
@@ -143,6 +155,20 @@ class ThreadAccessFactory(factory.django.DjangoModelFactory):
     role = factory.fuzzy.FuzzyChoice(
         [role[0] for role in models.ThreadAccessRoleChoices.choices]
     )
+
+
+class ThreadEventFactory(factory.django.DjangoModelFactory):
+    """A factory to create thread events for testing purposes."""
+
+    class Meta:
+        model = models.ThreadEvent
+
+    thread = factory.SubFactory(ThreadFactory)
+    type = factory.Faker(
+        "word", ext_word_list=["notification", "arbitrary_block", "action_button"]
+    )
+    channel = factory.SubFactory(ChannelFactory)
+    data = factory.Faker("pydict", nb_elements=3, value_types=["str", "int"])
 
 
 class ContactFactory(factory.django.DjangoModelFactory):
@@ -244,18 +270,6 @@ class AttachmentFactory(factory.django.DjangoModelFactory):
         kwargs = dict(kwargs)
         kwargs.pop("blob_size", None)
         return kwargs
-
-
-class ChannelFactory(factory.django.DjangoModelFactory):
-    """A factory to create channels for testing purposes."""
-
-    class Meta:
-        model = models.Channel
-
-    name = factory.Sequence(lambda n: f"Test Channel {n}")
-    type = factory.fuzzy.FuzzyChoice(["widget", "mta"])
-    settings = factory.Dict({"config": {"enabled": True}})
-    mailbox = factory.SubFactory(MailboxFactory)
 
 
 class BlobFactory(factory.django.DjangoModelFactory):

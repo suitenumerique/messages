@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { ActionBar } from "./components/thread-action-bar"
+import { ThreadEvent as ThreadEventComponent } from "./components/thread-event"
 import { ThreadMessage } from "./components/thread-message"
 import { useMailboxContext } from "@/features/providers/mailbox"
 import useRead from "@/features/message/use-read"
 import { useDebounceCallback } from "@/hooks/use-debounce-callback"
-import { Message, Thread } from "@/features/api/gen/models"
+import { Message, Thread, ThreadEvent } from "@/features/api/gen/models"
 import { Spinner } from "@gouvfr-lasuite/ui-kit"
 import { useSearchParams } from "next/navigation"
 import { Banner } from "@/features/ui/components/banner"
@@ -20,7 +21,14 @@ type MessageWithDraftChild = Message & {
     draft_message?: Message;
 }
 
+type TimelineItem = {
+    type: 'message' | 'event';
+    data: MessageWithDraftChild | ThreadEvent;
+    created_at: string;
+};
+
 type ThreadViewComponentProps = {
+    timelineItems: readonly TimelineItem[];
     messages: readonly MessageWithDraftChild[],
     mailboxId: string,
     thread: Thread,
@@ -29,7 +37,7 @@ type ThreadViewComponentProps = {
     searchParams: URLSearchParams,
 }
 
-const ThreadViewComponent = ({ messages, mailboxId, thread, showTrashedMessages, setShowTrashedMessages, searchParams }: ThreadViewComponentProps) => {
+const ThreadViewComponent = ({ timelineItems, messages, mailboxId, thread, showTrashedMessages, setShowTrashedMessages, searchParams }: ThreadViewComponentProps) => {
     const { t } = useTranslation();
     const toMarkAsReadQueue = useRef<string[]>([]);
     const stickyContainerRef = useRef<HTMLDivElement>(null);
@@ -141,19 +149,33 @@ const ThreadViewComponent = ({ messages, mailboxId, thread, showTrashedMessages,
                 />
             )}
             <div className="thread-view__messages-list">
-                {messages.map((message) => {
-                    const isLatest = latestMessage?.id === message.id;
-                    const isUnread = message.is_unread;
-                    return (
-                        <ThreadMessage
-                            key={message.id}
-                            message={message}
-                            isLatest={isLatest}
-                            ref={isUnread ? (el => { unreadRefs.current[message.id] = el; }) : undefined}
-                            data-message-id={message.id}
-                            draftMessage={message.draft_message}
-                        />
-                    );
+                {timelineItems.map((item) => {
+                    if (item.type === 'message') {
+                        const message = item.data as MessageWithDraftChild;
+                        const isLatest = latestMessage?.id === message.id;
+                        const isUnread = message.is_unread;
+                        return (
+                            <ThreadMessage
+                                key={`message-${message.id}`}
+                                message={message}
+                                isLatest={isLatest}
+                                ref={isUnread ? (el => { unreadRefs.current[message.id] = el; }) : undefined}
+                                data-message-id={message.id}
+                                draftMessage={message.draft_message}
+                            />
+                        );
+                    } else {
+                        const event = item.data as ThreadEvent;
+                        return (
+                            <ThreadEventComponent
+                                key={`event-${event.id}`}
+                                type={event.type}
+                                channel={event.channel ?? undefined}
+                                data={event.data as Record<string, unknown>}
+                                createdAt={event.created_at}
+                            />
+                        );
+                    }
                 })}
                 {trashedMessageIds.length > 0 && !showTrashedMessages && (
                     <Banner icon={<span className="material-icons">delete</span>} type="info">
@@ -188,7 +210,7 @@ const ThreadViewComponent = ({ messages, mailboxId, thread, showTrashedMessages,
 export const ThreadView = () => {
     const searchParams = useSearchParams();
     const isTrashView = searchParams.get('has_trashed') === '1';
-    const { selectedMailbox, selectedThread, messages, queryStates } = useMailboxContext();
+    const { selectedMailbox, selectedThread, messages, timelineItems, queryStates } = useMailboxContext();
     const [showTrashedMessages, setShowTrashedMessages] = useState(isTrashView);
     // Nest draft messages under their parent messages
     const messagesWithDraftChildren = useMemo(() => {
@@ -215,13 +237,38 @@ export const ThreadView = () => {
         return messagesWithDraftChildren.filter((m) => m.is_trashed === isTrashView);
     }, [messagesWithDraftChildren, isTrashView, showTrashedMessages]);
 
+    // Filter timeline items to match filtered messages and include all events
+    const filteredTimelineItems = useMemo(() => {
+        if (!timelineItems) return [];
+        const filteredMessageIds = new Set(filteredMessages.map((m) => m.id));
+        return timelineItems.filter((item: TimelineItem) => {
+            if (item.type === 'message') {
+                return filteredMessageIds.has((item.data as MessageWithDraftChild).id);
+            }
+            // Always include events
+            return true;
+        }).map((item: TimelineItem) => {
+            // Replace message data with the filtered version that has draft children
+            if (item.type === 'message') {
+                const message = filteredMessages.find((m) => m.id === (item.data as Message).id);
+                if (message) {
+                    return {
+                        ...item,
+                        data: message,
+                    };
+                }
+            }
+            return item;
+        });
+    }, [timelineItems, filteredMessages]);
+
     useEffect(() => () => {
         setShowTrashedMessages(isTrashView);
     }, [selectedThread]);
 
     if (!selectedMailbox || !selectedThread) return null
 
-    if (queryStates.messages.isLoading) {
+    if (queryStates.messages.isLoading || !timelineItems) {
         return (
             <div className="thread-view thread-view--loading">
                 <Spinner />
@@ -234,6 +281,7 @@ export const ThreadView = () => {
             <ThreadViewComponent
                 mailboxId={selectedMailbox!.id}
                 thread={selectedThread!}
+                timelineItems={filteredTimelineItems}
                 messages={filteredMessages}
                 showTrashedMessages={showTrashedMessages}
                 setShowTrashedMessages={setShowTrashedMessages}

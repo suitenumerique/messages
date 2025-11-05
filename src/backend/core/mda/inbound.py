@@ -347,10 +347,14 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
     imap_labels: Optional[List[str]] = None,
     imap_flags: Optional[List[str]] = None,
     channel: Optional[models.Channel] = None,
-) -> bool:  # Return True on success, False on failure
+) -> Optional[models.Message]:  # Return Message on success, None on failure
     """Deliver a parsed inbound email message to the correct mailbox and thread.
 
     raw_data is not parsed again, just stored as is.
+
+    Returns:
+        models.Message: The created or existing message on success
+        None: On failure
     """
     message_flags = {}
     thread_flags = {}
@@ -360,11 +364,11 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
         mailbox = check_local_recipient(recipient_email, create_if_missing=True)
     except Exception as e:
         logger.exception("Error checking local recipient: %s", e)
-        return False
+        return None
 
     if not mailbox:
         logger.warning("Invalid recipient address: %s", recipient_email)
-        return False
+        return None
 
     # --- 2. Check for Duplicate Message --- #
     mime_id = parsed_email.get("messageId", parsed_email.get("message_id"))
@@ -389,7 +393,7 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
                 mime_id,
                 mailbox.id,
             )
-            return True  # Return success since we handled the duplicate gracefully
+            return existing_message  # Return existing message since we handled the duplicate gracefully
 
     # --- 3. Find or Create Thread --- #
     try:
@@ -453,14 +457,14 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
             )
     except (DjangoDbError, ValidationError) as e:
         logger.error("Failed to find or create thread for %s: %s", recipient_email, e)
-        return False  # Indicate failure
+        return None  # Indicate failure
     except Exception as e:
         logger.exception(
             "Unexpected error finding/creating thread for %s: %s",
             recipient_email,
             e,
         )
-        return False
+        return None
 
     if is_import:
         # get labels from parsed_email
@@ -531,7 +535,7 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
             mailbox.id,
             e,
         )
-        return False  # Indicate failure
+        return None  # Indicate failure
     except Exception as e:
         logger.exception(
             "Unexpected error with sender contact %s in mailbox %s: %s",
@@ -539,7 +543,7 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
             mailbox.id,
             e,
         )
-        return False
+        return None
 
     # --- 5. Create Message --- #
     try:
@@ -598,14 +602,14 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
             thread.save(update_fields=thread_flags.keys())
     except (DjangoDbError, ValidationError) as e:
         logger.error("Failed to create message in thread %s: %s", thread.id, e)
-        return False  # Indicate failure
+        return None  # Indicate failure
     except Exception as e:
         logger.exception(
             "Unexpected error creating message in thread %s: %s",
             thread.id,
             e,
         )
-        return False
+        return None
 
     # --- 6. Create Recipient Contacts and Links --- #
     # deduplicate recipients
@@ -746,4 +750,4 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
         mailbox.id,
         thread.id,
     )
-    return True  # Indicate success
+    return message  # Return the created message

@@ -101,28 +101,32 @@ class IsAllowedToAccess(IsAuthenticated):
         if not IsAuthenticated.has_permission(self, request, view):
             return False
 
-        # This check is primarily for LIST actions based on query params
+        # This check is primarily for LIST actions based on query params or URL kwargs
         mailbox_id = request.query_params.get("mailbox_id")  # Used by Thread list
         thread_id = request.query_params.get("thread_id")  # Used by Message list
+        # Also check URL kwargs for nested resources (e.g., /threads/{thread_id}/events/)
+        thread_id_from_url = (
+            view.kwargs.get("thread_id") if hasattr(view, "kwargs") else None
+        )
+        thread_id = thread_id or thread_id_from_url
 
         # If it's a detail action (retrieve, update, destroy), object-level permission is checked
         # by has_object_permission. If it's a list action without filters, deny access.
-        is_list_action = hasattr(view, "action") and view.action == "list"
+        action_type = getattr(view, "action", None)
 
-        if not is_list_action:
+        if action_type not in ["list", "create"]:
             # Allow non-list actions (like detail views or specific APIViews like SendMessageView)
             # to proceed to object-level checks or handle permissions within the view.
             return True
 
-        # --- The following logic only applies if is_list_action is True --- #
-        # Check access based on query params for LIST action
+        # Check access based on query params or URL kwargs for LIST or CREATE action
         if mailbox_id:
             # Check if the user has access to this specific mailbox to list threads
             return models.Mailbox.objects.filter(
                 id=mailbox_id, accesses__user=request.user
             ).exists()
         if thread_id:
-            # Check if the user has access to this specific thread to list messages
+            # Check if the user has access to this specific thread to list messages/events
             return models.ThreadAccess.objects.filter(
                 thread_id=thread_id, mailbox__accesses__user=request.user
             ).exists()
@@ -130,15 +134,19 @@ class IsAllowedToAccess(IsAuthenticated):
         return False  # Should not be reached if logic above is correct
 
     def has_object_permission(self, request, view, obj):
-        """Check if user has permission to access the specific object (Message, Thread, Mailbox)."""
+        """Check if user has permission to access the specific object (Message, Thread, Mailbox, ThreadEvent)."""
         user = request.user
         if isinstance(obj, models.Mailbox):
             # Check access directly on the mailbox
             return models.MailboxAccess.objects.filter(mailbox=obj, user=user).exists()
 
-        if isinstance(obj, (models.Message, models.Thread)):
-            thread = obj.thread if isinstance(obj, models.Message) else obj
-            # Check access via the message's thread using ThreadAccess
+        if isinstance(obj, (models.Message, models.Thread, models.ThreadEvent)):
+            if isinstance(obj, models.Thread):
+                thread = obj
+            else:
+                thread = obj.thread
+
+            # Check access via the thread using ThreadAccess
             # First, just check if *any* access exists for the user to this thread.
             has_access = models.ThreadAccess.objects.filter(
                 thread=thread, mailbox__accesses__user=user
@@ -170,7 +178,7 @@ class IsAllowedToAccess(IsAuthenticated):
                     ).exists()
                 ):
                     return True
-            # for retrieve action has_access is already checked above
+            # for retrieve, create, update actions has_access is already checked above
             else:
                 return True
 

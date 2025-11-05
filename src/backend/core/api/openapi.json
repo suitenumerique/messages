@@ -4757,6 +4757,306 @@
                 }
             }
         },
+        "/api/v1.0/threads/{thread_id}/events/": {
+            "get": {
+                "operationId": "threads_events_list",
+                "description": "ViewSet for ThreadEvent model.",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "thread-event"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedThreadEventList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "threads_events_create",
+                "description": "ViewSet for ThreadEvent model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "thread-event"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ThreadEventCreateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ThreadEventCreateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ThreadEventCreate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/threads/{thread_id}/events/{id}/": {
+            "get": {
+                "operationId": "threads_events_retrieve",
+                "description": "ViewSet for ThreadEvent model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "thread-event"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ThreadEvent"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "threads_events_update",
+                "description": "ViewSet for ThreadEvent model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "thread-event"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ThreadEventRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ThreadEventRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ThreadEvent"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "threads_events_partial_update",
+                "description": "ViewSet for ThreadEvent model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "thread-event"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedThreadEventRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedThreadEventRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ThreadEvent"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "threads_events_destroy",
+                "description": "ViewSet for ThreadEvent model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "thread-event"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
         "/api/v1.0/threads/stats/": {
             "get": {
                 "operationId": "threads_stats_retrieve",
@@ -6665,6 +6965,37 @@
                     }
                 }
             },
+            "PaginatedThreadEventList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ThreadEvent"
+                        }
+                    }
+                }
+            },
             "PaginatedThreadList": {
                 "type": "object",
                 "required": [
@@ -6812,6 +7143,21 @@
                     "role": {
                         "$ref": "#/components/schemas/ThreadAccessRoleChoices"
                     }
+                }
+            },
+            "PatchedThreadEventRequest": {
+                "type": "object",
+                "description": "Serialize thread events.",
+                "properties": {
+                    "thread": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "channel": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "data": {}
                 }
             },
             "ReadOnlyMessageTemplate": {
@@ -7246,6 +7592,134 @@
                 "enum": [
                     "viewer",
                     "editor"
+                ]
+            },
+            "ThreadEvent": {
+                "type": "object",
+                "description": "Serialize thread events.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "thread": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "type": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "channel": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "data": {},
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "channel",
+                    "created_at",
+                    "id",
+                    "thread",
+                    "type",
+                    "updated_at"
+                ]
+            },
+            "ThreadEventCreate": {
+                "type": "object",
+                "description": "Serialize thread events for CREATE operations.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "thread": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "type": {
+                        "type": "string",
+                        "maxLength": 36
+                    },
+                    "channel": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "data": {},
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "channel",
+                    "created_at",
+                    "id",
+                    "thread",
+                    "type",
+                    "updated_at"
+                ]
+            },
+            "ThreadEventCreateRequest": {
+                "type": "object",
+                "description": "Serialize thread events for CREATE operations.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 36
+                    },
+                    "data": {}
+                },
+                "required": [
+                    "type"
+                ]
+            },
+            "ThreadEventRequest": {
+                "type": "object",
+                "description": "Serialize thread events.",
+                "properties": {
+                    "thread": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "channel": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "data": {}
+                },
+                "required": [
+                    "channel",
+                    "thread"
                 ]
             },
             "ThreadLabel": {

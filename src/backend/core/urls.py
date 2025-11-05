@@ -12,6 +12,7 @@ from core.api.viewsets.draft import DraftMessageView
 from core.api.viewsets.flag import ChangeFlagView
 from core.api.viewsets.import_message import ImportViewSet, MessagesArchiveUploadViewSet
 from core.api.viewsets.inbound.mta import InboundMTAViewSet
+from core.api.viewsets.inbound.webhook import InboundWebhookViewSet
 from core.api.viewsets.inbound.widget import InboundWidgetViewSet
 from core.api.viewsets.label import LabelViewSet
 from core.api.viewsets.mailbox import MailboxViewSet
@@ -35,6 +36,7 @@ from core.api.viewsets.send import SendMessageView
 from core.api.viewsets.task import TaskDetailView
 from core.api.viewsets.thread import ThreadViewSet
 from core.api.viewsets.thread_access import ThreadAccessViewSet
+from core.api.viewsets.thread_event import ThreadEventViewSet
 from core.api.viewsets.user import UserViewSet
 from core.authentication.urls import urlpatterns as oidc_urls
 
@@ -54,10 +56,13 @@ router.register(
     basename="messages-archive-upload",
 )
 
-# Router for /threads/{thread_id}/accesses/
+# Router for /threads/{thread_id}/accesses/ and /threads/{thread_id}/events/
 thread_access_nested_router = DefaultRouter()
 thread_access_nested_router.register(
     r"accesses", ThreadAccessViewSet, basename="thread-access"
+)
+thread_access_nested_router.register(
+    r"events", ThreadEventViewSet, basename="thread-event"
 )
 
 # Router for /mailboxes/{mailbox_id}/accesses/
@@ -82,6 +87,9 @@ maildomain_nested_router.register(
 # Router for /inbound/
 inbound_nested_router = DefaultRouter()
 inbound_nested_router.register(r"mta", InboundMTAViewSet, basename="inbound-mta")
+inbound_nested_router.register(
+    r"webhook", InboundWebhookViewSet, basename="inbound-webhook"
+)
 inbound_nested_router.register(
     r"widget", InboundWidgetViewSet, basename="inbound-widget"
 )
@@ -121,7 +129,7 @@ urlpatterns = [
                     "threads/<uuid:thread_id>/",
                     include(
                         thread_access_nested_router.urls
-                    ),  # Includes /threads/{id}/accesses/
+                    ),  # Includes /threads/{id}/accesses/ and /threads/{id}/events/
                 ),
                 path(
                     "mailboxes/<uuid:mailbox_id>/",

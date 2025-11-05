@@ -157,9 +157,8 @@ def test_import_file_eml_by_superuser_sync(admin_user, mailbox, eml_key):
     original_deliver = deliver_inbound_message
 
     def mock_deliver(recipient_email, parsed_email, raw_data, **kwargs):
-        # Call the original function to create the message
-        original_deliver(recipient_email, parsed_email, raw_data, **kwargs)
-        return True
+        # Call the original function to create the message and return it
+        return original_deliver(recipient_email, parsed_email, raw_data, **kwargs)
 
     with patch("core.mda.inbound.deliver_inbound_message", side_effect=mock_deliver):
         # Create a mock task instance
@@ -260,9 +259,8 @@ def test_import_file_eml_by_user_with_access_sync(user, mailbox, eml_key, mock_r
     original_deliver = deliver_inbound_message
 
     def mock_deliver(recipient_email, parsed_email, raw_data, **kwargs):
-        # Call the original function to create the message
-        original_deliver(recipient_email, parsed_email, raw_data, **kwargs)
-        return True
+        # Call the original function to create the message and return it
+        return original_deliver(recipient_email, parsed_email, raw_data, **kwargs)
 
     with patch("core.mda.inbound.deliver_inbound_message", side_effect=mock_deliver):
         # Create a mock task instance

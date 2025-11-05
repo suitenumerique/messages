@@ -792,6 +792,69 @@ class ThreadAccessSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
+class ThreadEventCreateSerializer(serializers.ModelSerializer):
+    """Serialize thread events for CREATE operations."""
+
+    thread = serializers.SerializerMethodField(read_only=True)
+    channel = serializers.SerializerMethodField(read_only=True)
+
+    def get_thread(self, obj):
+        """Return thread UUID as string."""
+        return str(obj.thread.id)
+
+    def get_channel(self, obj):
+        """Return channel UUID as string or None."""
+        return str(obj.channel.id) if obj.channel else None
+
+    class Meta:
+        model = models.ThreadEvent
+        fields = ["id", "thread", "type", "channel", "data", "created_at", "updated_at"]
+        read_only_fields = ["id", "thread", "channel", "created_at", "updated_at"]
+
+
+class ThreadEventSerializer(serializers.ModelSerializer):
+    """Serialize thread events."""
+
+    thread = serializers.UUIDField(source="thread.id", format="hex_verbose")
+    channel = serializers.UUIDField(source="channel.id", format="hex_verbose")
+
+    def validate(self, attrs):
+        """Ensure read-only fields cannot be updated."""
+        if self.instance:
+            request = self.context.get("request")
+            if request:
+                errors = {}
+                if "thread" in request.data:
+                    errors["thread"] = "This field cannot be updated."
+                if "channel" in request.data:
+                    errors["channel"] = "This field cannot be updated."
+                if "type" in request.data:
+                    errors["type"] = "This field cannot be updated."
+                if errors:
+                    raise serializers.ValidationError(errors)
+        return attrs
+
+    class Meta:
+        model = models.ThreadEvent
+        fields = [
+            "id",
+            "thread",
+            "type",
+            "channel",
+            "data",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "thread",
+            "type",
+            "channel",
+            "created_at",
+            "updated_at",
+        ]
+
+
 class MailboxAccessReadSerializer(serializers.ModelSerializer):
     """Serialize mailbox access information for read operations with nested user details.
     Mailbox context is implied by the URL, so mailbox details are not included here.

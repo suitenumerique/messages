@@ -342,10 +342,12 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                 try:
                     if parsed_email is None:
                         parsed_email = parse_email_message(blob_content)
-                    delivered = deliver_inbound_message(
+                    delivered_message = deliver_inbound_message(
                         recipient_email, parsed_email, blob_content
                     )
-                    _mark_delivered(recipient_email, delivered, True)
+                    _mark_delivered(
+                        recipient_email, delivered_message is not None, True
+                    )
                 except Exception as e:
                     logger.error(
                         "Failed to deliver internal message to %s: %s",
