@@ -255,12 +255,19 @@ def parse_message_content(message) -> Dict[str, Any]:
         default_type_str = f"{content_type_obj.main}/{content_type_obj.sub}"
         final_part_type = default_type_str  # Initialize with default
 
-        # 1. Prioritize parts with disposition or filename as potential attachments
-        if has_disposition or filename:
-            is_explicit_text = default_type_str in ["text/plain", "text/html"]
+        is_explicit_text = default_type_str in ["text/plain", "text/html"]
 
-            # Only treat as main body if explicitly text AND has NO disposition
-            if not (is_explicit_text and not has_disposition):
+        # Determine if this should be treated as an attachment:
+        # - Parts with 'attachment' disposition are always attachments
+        # - Parts with 'inline' disposition + text type should be treated as body
+        # - Parts with filename but no disposition might be attachments (depends on type)
+        is_actually_attachment = (
+            is_attachment_disposition or  # Explicit 'attachment' disposition
+            (filename and not (is_explicit_text and is_inline_disposition))  # Has filename but isn't inline text
+        )
+
+        # 1. Classify attachments
+        if is_actually_attachment:
                 # --- Classify as Attachment ---
 
                 # Override type if flanker reports text/plain for a part with 'attachment' disposition
