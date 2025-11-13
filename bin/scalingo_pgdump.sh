@@ -33,4 +33,5 @@ export RESTIC_REPOSITORY=s3:${BACKUP_PGSQL_S3_REPOSITORY}/${APP}
 ./restic snapshots -q || ./restic init
 
 ./restic backup ${FILENAME}
-./restic forget --keep-daily 30
+# Scalingo one-offs use a different hostname every time group only by paths and not by hosts,paths.
+./restic forget --keep-daily 30 --keep-last 30 --group-by 'paths'  --prune
