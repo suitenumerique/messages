@@ -496,6 +496,11 @@ i18n-generate-and-upload: \
   crowdin-upload
 .PHONY: i18n-generate-and-upload
 
+# -- Release
+release: ## Create a new release (interactive: asks for version and kind)
+	bin/release.py
+.PHONY: release
+
 # -- Misc
 clean: ## restore repository state as it was freshly cloned
 	git clean -idx
