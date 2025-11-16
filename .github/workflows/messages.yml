@@ -98,6 +98,34 @@ jobs:
           git diff --quiet || \
           (echo "API changes detected. Please run 'make api-update' then commit the changes." && exit 1)
 
+  check-changelog:
+    runs-on: ubuntu-latest
+    if: |
+      contains(github.event.pull_request.labels.*.name, 'noChangeLog') == false &&
+      github.event_name == 'pull_request'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch base branch
+        run: git fetch origin +refs/heads/${{ github.event.pull_request.base.ref }}:refs/remotes/origin/${{ github.event.pull_request.base.ref }}
+      - name: Check that the CHANGELOG has been modified in the current branch
+        run: git log --name-only --pretty="" origin/${{ github.event.pull_request.base.ref }}..HEAD | grep CHANGELOG
+
+  lint-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Check CHANGELOG max line length
+        run: |
+          max_line_length=$(cat CHANGELOG.md | grep -Ev "^\[.*\]: https://github.com" | wc -L)
+          if [ $max_line_length -ge 80 ]; then
+            echo "ERROR: CHANGELOG has lines longer than 80 characters."
+            exit 1
+          fi
+
   docker-publish-mta-in:
     uses: ./.github/workflows/docker-publish.yml
     permissions:
