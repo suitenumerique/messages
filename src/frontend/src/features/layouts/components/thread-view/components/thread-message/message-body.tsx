@@ -88,19 +88,40 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
     }, [cidToBlobUrlMap]);
 
     const sanitizedHtmlBody = useMemo(() => {
-        const sanitizedContent = domPurify.sanitize(rawHtmlBody || rawTextBody, {
-            FORBID_TAGS: ['script', 'object', 'iframe', 'embed', 'audio', 'video'],
-            ADD_ATTR: ['target', 'rel'],
-        });
+        if (rawHtmlBody) {
+            // For HTML content, sanitize as HTML
+            const sanitizedContent = domPurify.sanitize(rawHtmlBody, {
+                FORBID_TAGS: ['script', 'object', 'iframe', 'embed', 'audio', 'video'],
+                ADD_ATTR: ['target', 'rel'],
+            });
 
-        const unquoteMessage = new UnquoteMessage(sanitizedContent, sanitizedContent, {
-            mode: 'wrap',
-            ignoreFirstForward: true,
-            depth: 0,
-        });
+            const unquoteMessage = new UnquoteMessage(sanitizedContent, sanitizedContent, {
+                mode: 'wrap',
+                ignoreFirstForward: true,
+                depth: 0,
+            });
 
-        if (rawHtmlBody) return unquoteMessage.getHtml().content;
-        return unquoteMessage.getText().content;
+            return unquoteMessage.getHtml().content;
+        } else {
+            // For plain text, process with UnquoteMessage first (preserving newlines)
+            const unquoteMessage = new UnquoteMessage('', rawTextBody, {
+                mode: 'wrap',
+                ignoreFirstForward: true,
+                depth: 0,
+            });
+
+            const unquotedText = unquoteMessage.getText().content;
+
+            // Wrap in a div with class for CSS styling, and escape HTML entities
+            const textAsHtml = `<div class="text-plain-content">${unquotedText
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;')}</div>`;
+
+            return textAsHtml;
+        }
     }, [rawHtmlBody, rawTextBody, domPurify]);
 
     const wrappedHtml = useMemo(() => {
@@ -118,6 +139,10 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
                     font-size: 14px;
                     color: #24292e;
+                }
+                .text-plain-content {
+                    white-space: pre-wrap;
+                    word-wrap: break-word;
                 }
                 body > *:first-child {
                     padding-top: 0 !important;
