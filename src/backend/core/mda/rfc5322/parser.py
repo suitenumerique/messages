@@ -193,13 +193,6 @@ def parse_message_content(message) -> Dict[str, Any]:
         # Extract common attributes
         part_id = getattr(part, "message_id", "") or ""
         headers_dict = getattr(part, "headers", {})
-        disposition_header = headers_dict.get("Content-Disposition", "")
-        disposition_value = (
-            str(disposition_header).lower() if disposition_header else ""
-        )
-        is_attachment_disposition = "attachment" in disposition_value
-        is_inline_disposition = "inline" in disposition_value
-        has_disposition = bool(disposition_value)
 
         # --- Extract filename ---
         filename = None
@@ -250,123 +243,109 @@ def parse_message_content(message) -> Dict[str, Any]:
         content_id_header = headers_dict.get("Content-ID")
         content_id = str(content_id_header).strip("<>") if content_id_header else None
 
-        # --- Part Classification ---
+        # --- Part Classification using Flanker's built-in methods ---
 
-        # Calculate default type based on flanker's interpretation
         default_type_str = f"{content_type_obj.main}/{content_type_obj.sub}"
-        final_part_type = default_type_str  # Initialize with default
+        final_part_type = default_type_str
 
-        is_explicit_text = default_type_str in ["text/plain", "text/html"]
+        if part.is_attachment():
+            # Content-Disposition: attachment
 
-        # Determine if this should be treated as an attachment:
-        # - Parts with 'attachment' disposition are always attachments
-        # - Parts with 'inline' disposition + text type should be treated as body
-        # - Parts with filename but no disposition might be attachments (depends on type)
-        is_actually_attachment = (
-            is_attachment_disposition or  # Explicit 'attachment' disposition
-            (filename and not (is_explicit_text and is_inline_disposition))  # Has filename but isn't inline text
-        )
-
-        # 1. Classify attachments
-        if is_actually_attachment:
-                # --- Classify as Attachment ---
-
-                # Override type if flanker reports text/plain for a part with 'attachment' disposition
-                if is_attachment_disposition and default_type_str == "text/plain":
-                    final_part_type = "application/octet-stream"  # Override
-
-                elif (
-                    has_disposition
-                ):  # If disposition exists (but not the override case) try raw header
-                    raw_content_type_header = headers_dict.get("Content-Type", "")
-                    raw_type_str = (
-                        str(raw_content_type_header).split(";", maxsplit=1)[0].strip()
-                    )
-                    if raw_type_str:
-                        final_part_type = raw_type_str
-                # Else: final_part_type remains default_type_str
-
-                attach_disposition = "inline" if is_inline_disposition else "attachment"
-                final_filename = filename if filename else "unnamed"
-
-                # DEBUG LOGGING START
-                logger.debug(
-                    "Classifying as attachment: type='%s', name='%s', disposition='%s', cid='%s', part_id='%s'",
-                    final_part_type,
-                    final_filename,
-                    attach_disposition,
-                    content_id,
-                    part_id,
-                )
-                # DEBUG LOGGING END
-
-                # Convert body to bytes if it's a string
-                if isinstance(body, str):
-                    body_bytes = body.encode("utf-8")
-                else:
-                    body_bytes = body
-
-                content_hash = hashlib.sha256(body_bytes).hexdigest()
-
-                # Store attachment info for later processing
-                result["attachments"].append(
-                    {
-                        "type": final_part_type,
-                        "name": final_filename,
-                        "size": len(body_bytes),
-                        "disposition": attach_disposition,
-                        "cid": content_id,
-                        "content": body_bytes,
-                        "sha256": content_hash,
-                    }
-                )
-
-        # 2. Check for standard text/html body parts (only if not already classified)
-        elif isinstance(body, str) and body:
-            is_text_plain = default_type_str == "text/plain"
-            is_text_html = default_type_str == "text/html"
-
-            if is_text_plain:
-                result["textBody"].append(
-                    {"partId": part_id, "type": "text/plain", "content": body}
-                )
-            elif is_text_html:
-                result["htmlBody"].append(
-                    {"partId": part_id, "type": "text/html", "content": body}
-                )
+            if default_type_str == "text/plain":
+                final_part_type = "application/octet-stream"
             else:
-                # Fallback: Treat other string content as attachment
-                attach_disposition = "attachment"
-                final_filename = filename if filename else "unnamed"
-                result["attachments"].append(
-                    {
-                        "partId": part_id,
-                        "type": default_type_str,
-                        "name": final_filename,
-                        "size": len(body),
-                        "disposition": attach_disposition,
-                        "cid": content_id,
-                    }
+                raw_content_type_header = headers_dict.get("Content-Type", "")
+                raw_type_str = (
+                    str(raw_content_type_header).split(";", maxsplit=1)[0].strip()
                 )
+                if raw_type_str:
+                    final_part_type = raw_type_str
 
-        # 3. Fallback for bytes content (only if not already classified)
-        elif isinstance(body, bytes):
-            attach_disposition = "attachment"
             final_filename = filename if filename else "unnamed"
-            # Use default type determined by flanker for bytes without disposition
-            final_part_type = default_type_str
 
-            content_hash = hashlib.sha256(body).hexdigest()
+            if isinstance(body, str):
+                body_bytes = body.encode("utf-8")
+            else:
+                body_bytes = body
 
-            # Store attachment info for processing later
+            content_hash = hashlib.sha256(body_bytes).hexdigest()
+
             result["attachments"].append(
                 {
                     "type": final_part_type,
                     "name": final_filename,
-                    "size": len(body),
-                    "disposition": attach_disposition,
+                    "size": len(body_bytes),
+                    "disposition": "attachment",
                     "cid": content_id,
-                    "content": body,
+                    "content": body_bytes,
+                    "sha256": content_hash,
+                }
+            )
+
+        elif part.is_body():
+            # No filename AND (text/* or message/*)
+
+            if not isinstance(body, str):
+                body = body.decode("utf-8", errors="replace")
+
+            if default_type_str == "text/plain":
+                result["textBody"].append(
+                    {"partId": part_id, "type": "text/plain", "content": body}
+                )
+            elif default_type_str == "text/html":
+                result["htmlBody"].append(
+                    {"partId": part_id, "type": "text/html", "content": body}
+                )
+            else:
+                # Other text types (text/calendar, text/enriched, etc.)
+                result["textBody"].append(
+                    {"partId": part_id, "type": default_type_str, "content": body}
+                )
+
+        elif part.is_inline():
+            # Content-Disposition: inline
+
+            final_filename = filename if filename else "unnamed"
+
+            if isinstance(body, str):
+                body_bytes = body.encode("utf-8")
+            else:
+                body_bytes = body
+
+            content_hash = hashlib.sha256(body_bytes).hexdigest()
+
+            result["attachments"].append(
+                {
+                    "type": final_part_type,
+                    "name": final_filename,
+                    "size": len(body_bytes),
+                    "disposition": "inline",
+                    "cid": content_id,
+                    "content": body_bytes,
+                    "sha256": content_hash,
+                }
+            )
+
+        else:
+            # Fallback for parts that don't match any category
+
+            final_filename = filename if filename else "unnamed"
+
+            if isinstance(body, str):
+                body_bytes = body.encode("utf-8")
+            else:
+                body_bytes = body
+
+            content_hash = hashlib.sha256(body_bytes).hexdigest()
+
+            result["attachments"].append(
+                {
+                    "type": final_part_type,
+                    "name": final_filename,
+                    "size": len(body_bytes),
+                    "disposition": "attachment",
+                    "cid": content_id,
+                    "content": body_bytes,
                     "sha256": content_hash,
                 }
             )
