@@ -212,10 +212,8 @@ def parse_message_content(message) -> Dict[str, Any]:
 
         # 2. If not found via Flanker property, try parsing raw headers
         if not filename:
-            # headers_dict is already defined above
-
             # 2a. Try Content-Disposition header parsing (regex method)
-            # disposition_header is already defined above
+            disposition_header = headers_dict.get("Content-Disposition", "")
             if disposition_header and "filename=" in str(disposition_header):
                 match_disp = re.search(
                     r'filename\*?=(?:(["\'])(.*?)\1|([^;]+))',
