@@ -112,15 +112,14 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
 
             const unquotedText = unquoteMessage.getText().content;
 
-            // Wrap in a div with class for CSS styling, and escape HTML entities
-            const textAsHtml = `<div class="text-plain-content">${unquotedText
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;')}</div>`;
+            // Use browser-native HTML escaping for security
+            // textContent automatically escapes all HTML entities correctly
+            const tempDiv = document.createElement('div');
+            tempDiv.textContent = unquotedText;
+            const escapedText = tempDiv.innerHTML;
 
-            return textAsHtml;
+            // Wrap in a div with class for CSS styling
+            return `<div class="text-plain-content">${escapedText}</div>`;
         }
     }, [rawHtmlBody, rawTextBody, domPurify]);
 
