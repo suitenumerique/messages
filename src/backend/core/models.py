@@ -1138,6 +1138,14 @@ class ThreadEvent(BaseModel):
         related_name="thread_events",
         help_text=_("Channel that created this event"),
     )
+    message = models.ForeignKey(
+        "Message",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="thread_events",
+        help_text=_("Message linked to this event"),
+    )
     data = models.JSONField(_("data"), default=dict, blank=True)
 
     class Meta:

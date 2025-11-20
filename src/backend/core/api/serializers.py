@@ -797,6 +797,7 @@ class ThreadEventCreateSerializer(serializers.ModelSerializer):
 
     thread = serializers.SerializerMethodField(read_only=True)
     channel = serializers.SerializerMethodField(read_only=True)
+    message = serializers.SerializerMethodField(read_only=True)
 
     def get_thread(self, obj):
         """Return thread UUID as string."""
@@ -806,17 +807,22 @@ class ThreadEventCreateSerializer(serializers.ModelSerializer):
         """Return channel UUID as string or None."""
         return str(obj.channel.id) if obj.channel else None
 
+    def get_message(self, obj):
+        """Return message UUID as string or None."""
+        return str(obj.message.id) if obj.message else None
+
     class Meta:
         model = models.ThreadEvent
-        fields = ["id", "thread", "type", "channel", "data", "created_at", "updated_at"]
-        read_only_fields = ["id", "thread", "channel", "created_at", "updated_at"]
+        fields = ["id", "thread", "type", "channel", "message", "data", "created_at", "updated_at"]
+        read_only_fields = ["id", "thread", "channel", "message", "created_at", "updated_at"]
 
 
 class ThreadEventSerializer(serializers.ModelSerializer):
     """Serialize thread events."""
 
     thread = serializers.UUIDField(source="thread.id", format="hex_verbose")
-    channel = serializers.UUIDField(source="channel.id", format="hex_verbose")
+    channel = serializers.UUIDField(source="channel.id", format="hex_verbose", allow_null=True)
+    message = serializers.UUIDField(source="message.id", format="hex_verbose", allow_null=True)
 
     def validate(self, attrs):
         """Ensure read-only fields cannot be updated."""
@@ -828,6 +834,8 @@ class ThreadEventSerializer(serializers.ModelSerializer):
                     errors["thread"] = "This field cannot be updated."
                 if "channel" in request.data:
                     errors["channel"] = "This field cannot be updated."
+                if "message" in request.data:
+                    errors["message"] = "This field cannot be updated."
                 if "type" in request.data:
                     errors["type"] = "This field cannot be updated."
                 if errors:
@@ -841,6 +849,7 @@ class ThreadEventSerializer(serializers.ModelSerializer):
             "thread",
             "type",
             "channel",
+            "message",
             "data",
             "created_at",
             "updated_at",
@@ -850,6 +859,7 @@ class ThreadEventSerializer(serializers.ModelSerializer):
             "thread",
             "type",
             "channel",
+            "message",
             "created_at",
             "updated_at",
         ]

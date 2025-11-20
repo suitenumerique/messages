@@ -35,7 +35,7 @@ type MailboxContextType = {
     mailboxes: readonly Mailbox[] | null;
     threads: PaginatedThreadList | null;
     messages: PaginatedMessageList | null;
-    timelineItems: TimelineItem[] | null;
+    threadItems: TimelineItem[] | null;
     selectedMailbox: Mailbox | null;
     selectedThread: Thread | null;
     unselectThread: () => void;
@@ -61,7 +61,7 @@ const MailboxContext = createContext<MailboxContextType>({
     mailboxes: null,
     threads: null,
     messages: null,
-    timelineItems: null,
+    threadItems: null,
     selectedMailbox: null,
     selectedThread: null,
     loadNextThreads: async () => {},
@@ -200,7 +200,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     );
 
     // Merge messages and events into a single timeline sorted by created_at
-    const timelineItems = useMemo<TimelineItem[] | null>(() => {
+    const threadItems = useMemo<TimelineItem[] | null>(() => {
         if (!messagesQuery.data?.data?.results || !selectedThread) return null;
 
         const items: TimelineItem[] = [];
@@ -327,7 +327,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         mailboxes: mailboxQuery.data?.data ?? null,
         threads: flattenThreads ?? null,
         messages: messagesQuery.data?.data ?? null,
-        timelineItems,
+        threadItems,
         selectedMailbox,
         selectedThread,
         unselectThread,
@@ -369,7 +369,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         threadsQuery,
         messagesQuery,
         threadEventsQuery,
-        timelineItems,
+        threadItems,
         selectedMailbox,
         selectedThread,
     ]);

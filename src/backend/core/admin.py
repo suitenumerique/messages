@@ -231,9 +231,9 @@ class ThreadEventInline(admin.TabularInline):
     """Inline class for the ThreadEvent model"""
 
     model = models.ThreadEvent
-    fields = ("type", "channel", "data", "created_at")
+    fields = ("type", "channel", "message", "data", "created_at")
     readonly_fields = ("created_at",)
-    autocomplete_fields = ("channel",)
+    autocomplete_fields = ("channel", "message")
     extra = 0
 
 

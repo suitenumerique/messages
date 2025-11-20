@@ -29,6 +29,7 @@ class ThreadEventViewSet(
     queryset = (
         models.ThreadEvent.objects.select_related("thread")
         .select_related("channel")
+        .select_related("message")
         .all()
     )
 

@@ -168,6 +168,7 @@ class ThreadEventFactory(factory.django.DjangoModelFactory):
         "word", ext_word_list=["notification", "arbitrary_block", "action_button"]
     )
     channel = factory.SubFactory(ChannelFactory)
+    message = None  # Optional - can be set explicitly in tests
     data = factory.Faker("pydict", nb_elements=3, value_types=["str", "int"])
 
 
