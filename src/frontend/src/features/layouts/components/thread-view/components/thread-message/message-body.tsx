@@ -95,7 +95,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
                 ADD_ATTR: ['target', 'rel'],
             });
 
-            const unquoteMessage = new UnquoteMessage(sanitizedContent, sanitizedContent, {
+            const unquoteMessage = new UnquoteMessage(sanitizedContent, '', {
                 mode: 'wrap',
                 ignoreFirstForward: true,
                 depth: 0,
