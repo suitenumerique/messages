@@ -119,7 +119,9 @@ class ConfigView(drf.views.APIView):
         dict_settings["FEATURE_AI_AUTOLABELS"] = is_auto_labels_enabled()
 
         # Email size limits
-        dict_settings["MAX_OUTGOING_ATTACHMENT_SIZE"] = settings.MAX_OUTGOING_ATTACHMENT_SIZE
+        dict_settings["MAX_OUTGOING_ATTACHMENT_SIZE"] = (
+            settings.MAX_OUTGOING_ATTACHMENT_SIZE
+        )
         dict_settings["MAX_OUTGOING_BODY_SIZE"] = settings.MAX_OUTGOING_BODY_SIZE
         dict_settings["MAX_INCOMING_EMAIL_SIZE"] = settings.MAX_INCOMING_EMAIL_SIZE
 

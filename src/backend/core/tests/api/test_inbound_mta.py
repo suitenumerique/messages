@@ -1,6 +1,6 @@
 """Tests for MTA API endpoints."""
 
-# pylint: disable=too-many-positional-arguments
+# pylint: disable=too-many-positional-arguments,too-many-lines
 
 import datetime
 import hashlib
@@ -346,8 +346,7 @@ class TestMTAInboundEmail:
             b"From: sender@example.com\r\n"
             b"To: recipient@example.com\r\n"
             b"Subject: Large Email Test\r\n"
-            b"\r\n"
-            + b"x" * 2048  # Large body content
+            b"\r\n" + b"x" * 2048  # Large body content
         )
 
         recipients = ["recipient@example.com"]

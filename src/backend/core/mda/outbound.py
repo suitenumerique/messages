@@ -216,7 +216,9 @@ def prepare_outbound_message(
 
     # Validate the composed MIME size
     mime_size = len(raw_mime)
-    max_total_size = settings.MAX_OUTGOING_BODY_SIZE + settings.MAX_OUTGOING_ATTACHMENT_SIZE
+    max_total_size = (
+        settings.MAX_OUTGOING_BODY_SIZE + settings.MAX_OUTGOING_ATTACHMENT_SIZE
+    )
     if mime_size > max_total_size:
         # Use binary MB (MiB) to match frontend formatting
         mime_mb = mime_size / (1024 * 1024)

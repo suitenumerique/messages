@@ -778,8 +778,8 @@ class Base(Configuration):
         self.DATA_UPLOAD_MAX_MEMORY_SIZE = max(
             self.DATA_UPLOAD_MAX_MEMORY_SIZE,
             int(self.MAX_INCOMING_EMAIL_SIZE * 1.4),  # MIME encoding overhead
-            self.MAX_OUTGOING_BODY_SIZE,               # Raw JSON, minimal overhead
-            self.MAX_OUTGOING_ATTACHMENT_SIZE,         # Raw binary upload, no encoding
+            self.MAX_OUTGOING_BODY_SIZE,  # Raw JSON, minimal overhead
+            self.MAX_OUTGOING_ATTACHMENT_SIZE,  # Raw binary upload, no encoding
         )
 
         if self.ENABLE_PROMETHEUS:

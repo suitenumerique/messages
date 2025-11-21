@@ -150,7 +150,8 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
             return Response(
                 {
                     "status": "error",
-                    "detail": f"Incoming email size ({email_size} bytes) exceeds maximum allowed size ({settings.MAX_INCOMING_EMAIL_SIZE} bytes)",
+                    "detail": f"Incoming email size ({email_size} bytes) exceeds maximum allowed size "
+                    + f"({settings.MAX_INCOMING_EMAIL_SIZE} bytes)",
                 },
                 status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             )

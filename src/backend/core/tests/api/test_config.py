@@ -26,6 +26,7 @@ pytestmark = pytest.mark.django_db
     DRIVE_CONFIG={"base_url": None},
     MAX_OUTGOING_ATTACHMENT_SIZE=20971520,  # 20MB
     MAX_OUTGOING_BODY_SIZE=5242880,  # 5MB
+    MAX_INCOMING_EMAIL_SIZE=10485760,  # 10MB
 )
 @pytest.mark.parametrize("is_authenticated", [False, True])
 def test_api_config(is_authenticated):
@@ -47,6 +48,7 @@ def test_api_config(is_authenticated):
         "FEATURE_AI_AUTOLABELS": False,
         "SCHEMA_CUSTOM_ATTRIBUTES_USER": {},
         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN": {},
+        "MAX_INCOMING_EMAIL_SIZE": 10485760,
         "MAX_OUTGOING_ATTACHMENT_SIZE": 20971520,
         "MAX_OUTGOING_BODY_SIZE": 5242880,
     }
