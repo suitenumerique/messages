@@ -730,7 +730,7 @@ aW1hZ2UgZGF0YSBoZXJl
         assert not content["textBody"]
         assert len(content["attachments"]) == 1
         attachment = content["attachments"][0]
-        assert attachment["name"] == "image.png" or attachment["name"] == "unnamed"
+        assert attachment["name"] in ("image.png", "unnamed.png")
         assert attachment["type"] == "image/png"
         assert attachment["cid"] == "image1"
 
@@ -780,7 +780,7 @@ PDF data
         assert content["textBody"][0]["content"] == "Main body.\n"
         assert len(content["attachments"]) == 1
         attachment = content["attachments"][0]
-        assert attachment.get("name") == "unnamed"
+        assert attachment.get("name") == "unnamed.pdf"
         assert attachment["type"] == "application/pdf"
         assert attachment["content"] == b"PDF data"
 

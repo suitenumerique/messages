@@ -139,6 +139,72 @@ def parse_date(date_str: str) -> Optional[datetime]:
         return None
 
 
+def _infer_filename_from_content_type(content_type: str) -> str:
+    """
+    Infer a filename with extension from a MIME content type.
+    Uses the most commonly used file extensions for each MIME type.
+
+    Args:
+        content_type: MIME type string (e.g., "image/png", "application/pdf")
+
+    Returns:
+        Filename with appropriate extension (e.g., "unnamed.png", "unnamed.pdf")
+    """
+    extension_map = {
+        "text/plain": ".txt",
+        "text/html": ".html",
+        "text/csv": ".csv",
+        "application/pdf": ".pdf",
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "application/json": ".json",
+        "application/xml": ".xml",
+        "application/zip": ".zip",
+    }
+    ext = extension_map.get(content_type, "")
+    return f"unnamed{ext}"
+
+
+def _build_attachment_dict(
+    body: Any,
+    part_type: str,
+    filename: str,
+    disposition: str,
+    content_id: Optional[str],
+) -> Dict[str, Any]:
+    """
+    Helper function to build an attachment dictionary.
+    Converts body to bytes, computes SHA-256 hash, and constructs the attachment dict.
+
+    Args:
+        body: The part body (str or bytes)
+        part_type: MIME type of the part
+        filename: Name of the attachment file
+        disposition: Content-Disposition value ("attachment", "inline", etc.)
+        content_id: Content-ID if present
+
+    Returns:
+        Dictionary representing the attachment
+    """
+    if isinstance(body, str):
+        body_bytes = body.encode("utf-8")
+    else:
+        body_bytes = body
+
+    content_hash = hashlib.sha256(body_bytes).hexdigest()
+
+    return {
+        "type": part_type,
+        "name": filename,
+        "size": len(body_bytes),
+        "disposition": disposition,
+        "cid": content_id,
+        "content": body_bytes,
+        "sha256": content_hash,
+    }
+
+
 def parse_message_content(message) -> Dict[str, Any]:
     """
     Extract text, HTML, and attachments from a message, following JMAP format.
@@ -252,7 +318,7 @@ def parse_message_content(message) -> Dict[str, Any]:
             is_inline = part.is_inline()
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.warning("Error classifying part: %s", e, exc_info=True)
-            # Fallback to treating as attachment
+            # Fallback to generic attachment via final else branch
             is_attachment, is_body, is_inline = False, False, False
 
         if is_attachment:
@@ -265,43 +331,14 @@ def parse_message_content(message) -> Dict[str, Any]:
             if raw_type_str:
                 final_part_type = raw_type_str
 
-            if filename:
-                final_filename = filename
-            else:
-                # Infer extension from Content-Type when no filename is provided
-                # Using the most commonly used file extensions for each MIME type
-                extension_map = {
-                    "text/plain": ".txt",
-                    "text/html": ".html",
-                    "text/csv": ".csv",
-                    "application/pdf": ".pdf",
-                    "image/jpeg": ".jpg",
-                    "image/png": ".png",
-                    "image/gif": ".gif",
-                    "application/json": ".json",
-                    "application/xml": ".xml",
-                    "application/zip": ".zip",
-                }
-                ext = extension_map.get(final_part_type, "")
-                final_filename = f"unnamed{ext}"
-
-            if isinstance(body, str):
-                body_bytes = body.encode("utf-8")
-            else:
-                body_bytes = body
-
-            content_hash = hashlib.sha256(body_bytes).hexdigest()
+            final_filename = (
+                filename if filename else _infer_filename_from_content_type(final_part_type)
+            )
 
             result["attachments"].append(
-                {
-                    "type": final_part_type,
-                    "name": final_filename,
-                    "size": len(body_bytes),
-                    "disposition": "attachment",
-                    "cid": content_id,
-                    "content": body_bytes,
-                    "sha256": content_hash,
-                }
+                _build_attachment_dict(
+                    body, final_part_type, final_filename, "attachment", content_id
+                )
             )
 
         elif is_body:
@@ -327,49 +364,27 @@ def parse_message_content(message) -> Dict[str, Any]:
         elif is_inline:
             # Content-Disposition: inline
 
-            final_filename = filename if filename else "unnamed"
-
-            if isinstance(body, str):
-                body_bytes = body.encode("utf-8")
-            else:
-                body_bytes = body
-
-            content_hash = hashlib.sha256(body_bytes).hexdigest()
+            final_filename = (
+                filename if filename else _infer_filename_from_content_type(final_part_type)
+            )
 
             result["attachments"].append(
-                {
-                    "type": final_part_type,
-                    "name": final_filename,
-                    "size": len(body_bytes),
-                    "disposition": "inline",
-                    "cid": content_id,
-                    "content": body_bytes,
-                    "sha256": content_hash,
-                }
+                _build_attachment_dict(
+                    body, final_part_type, final_filename, "inline", content_id
+                )
             )
 
         else:
             # Fallback for parts that don't match any category
 
-            final_filename = filename if filename else "unnamed"
-
-            if isinstance(body, str):
-                body_bytes = body.encode("utf-8")
-            else:
-                body_bytes = body
-
-            content_hash = hashlib.sha256(body_bytes).hexdigest()
+            final_filename = (
+                filename if filename else _infer_filename_from_content_type(final_part_type)
+            )
 
             result["attachments"].append(
-                {
-                    "type": final_part_type,
-                    "name": final_filename,
-                    "size": len(body_bytes),
-                    "disposition": "attachment",
-                    "cid": content_id,
-                    "content": body_bytes,
-                    "sha256": content_hash,
-                }
+                _build_attachment_dict(
+                    body, final_part_type, final_filename, "attachment", content_id
+                )
             )
 
     return result
