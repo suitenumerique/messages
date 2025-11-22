@@ -246,20 +246,44 @@ def parse_message_content(message) -> Dict[str, Any]:
         default_type_str = f"{content_type_obj.main}/{content_type_obj.sub}"
         final_part_type = default_type_str
 
-        if part.is_attachment():
+        try:
+            is_attachment = part.is_attachment()
+            is_body = part.is_body()
+            is_inline = part.is_inline()
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.warning("Error classifying part: %s", e, exc_info=True)
+            # Fallback to treating as attachment
+            is_attachment, is_body, is_inline = False, False, False
+
+        if is_attachment:
             # Content-Disposition: attachment
 
-            if default_type_str == "text/plain":
-                final_part_type = "application/octet-stream"
-            else:
-                raw_content_type_header = headers_dict.get("Content-Type", "")
-                raw_type_str = (
-                    str(raw_content_type_header).split(";", maxsplit=1)[0].strip()
-                )
-                if raw_type_str:
-                    final_part_type = raw_type_str
+            raw_content_type_header = headers_dict.get("Content-Type", "")
+            raw_type_str = (
+                str(raw_content_type_header).split(";", maxsplit=1)[0].strip()
+            )
+            if raw_type_str:
+                final_part_type = raw_type_str
 
-            final_filename = filename if filename else "unnamed"
+            if filename:
+                final_filename = filename
+            else:
+                # Infer extension from Content-Type when no filename is provided
+                # Using the most commonly used file extensions for each MIME type
+                extension_map = {
+                    "text/plain": ".txt",
+                    "text/html": ".html",
+                    "text/csv": ".csv",
+                    "application/pdf": ".pdf",
+                    "image/jpeg": ".jpg",
+                    "image/png": ".png",
+                    "image/gif": ".gif",
+                    "application/json": ".json",
+                    "application/xml": ".xml",
+                    "application/zip": ".zip",
+                }
+                ext = extension_map.get(final_part_type, "")
+                final_filename = f"unnamed{ext}"
 
             if isinstance(body, str):
                 body_bytes = body.encode("utf-8")
@@ -280,7 +304,7 @@ def parse_message_content(message) -> Dict[str, Any]:
                 }
             )
 
-        elif part.is_body():
+        elif is_body:
             # No filename AND (text/* or message/*)
 
             if not isinstance(body, str):
@@ -300,7 +324,7 @@ def parse_message_content(message) -> Dict[str, Any]:
                     {"partId": part_id, "type": default_type_str, "content": body}
                 )
 
-        elif part.is_inline():
+        elif is_inline:
             # Content-Disposition: inline
 
             final_filename = filename if filename else "unnamed"
