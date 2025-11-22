@@ -21,7 +21,7 @@ from core.mda.rfc5322 import (
     create_reply_message,
     parse_email_message,
 )
-from core.mda.signing import sign_message_dkim
+from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
 
 logger = logging.getLogger(__name__)
@@ -424,6 +424,28 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                 external_recipients.add(recipient_email)
 
         if external_recipients:
+            # Verify DKIM signature if enabled (only for external recipients)
+            if settings.MESSAGES_DKIM_VERIFY_OUTGOING:
+                sender_domain = message.sender.mailbox.domain
+
+                if not verify_message_dkim(blob_content):
+                    error_msg = (
+                        f"DKIM verification failed for domain {sender_domain.name}"
+                    )
+                    logger.warning(
+                        "DKIM verification failed for message %s (domain: %s), marking recipients for retry",
+                        message.id,
+                        sender_domain.name,
+                    )
+                    for recipient_email in external_recipients:
+                        _mark_delivered(recipient_email, False, False, error_msg, True)
+                    return
+                logger.info(
+                    "DKIM verification successful for message %s (domain: %s)",
+                    message.id,
+                    sender_domain.name,
+                )
+
             try:
                 statuses = send_outbound_message(
                     external_recipients, message, blob_content

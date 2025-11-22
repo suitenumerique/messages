@@ -1,5 +1,5 @@
 """Tests for the core.mda.outbound module."""
-# pylint: disable=unused-argument
+# pylint: disable=unused-argument,too-many-lines
 
 import threading
 import time
@@ -13,6 +13,7 @@ import pytest
 
 from core import enums, factories, models
 from core.mda import outbound
+from core.mda.signing import generate_dkim_key, sign_message_dkim
 
 SCHEMA_CUSTOM_ATTRIBUTES = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -827,3 +828,224 @@ class TestPrepareOutboundMessageSignature:
             "Best regards,<br>John Doe<br>Software Engineer<br>Engineering</p>"
             in content
         )
+
+
+@pytest.mark.django_db
+class TestSendMessageDKIMVerification:
+    """Test DKIM verification in send_message."""
+
+    @override_settings(MESSAGES_DKIM_VERIFY_OUTGOING=True)
+    @patch("core.mda.signing.dns.resolver.resolve")
+    @patch("core.mda.outbound.send_outbound_message")
+    def test_dkim_verification_success(
+        self, mock_send_outbound, mock_dns_resolve, mailbox_sender
+    ):
+        """Test that DKIM verification succeeds and message is sent."""
+        # Create a message with external recipient
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_sender,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        sender_contact = factories.ContactFactory(mailbox=mailbox_sender)
+        message = factories.MessageFactory(
+            thread=thread,
+            sender=sender_contact,
+            is_draft=False,
+            is_sender=True,
+            subject="Test DKIM",
+        )
+
+        private_key, public_key = generate_dkim_key(key_size=1024)
+        dkim_key = models.DKIMKey.objects.create(
+            selector="testselector",
+            private_key=private_key,
+            public_key=public_key,
+            key_size=1024,
+            is_active=True,
+            domain=mailbox_sender.domain,
+        )
+
+        # Prepare and sign the message
+        domain_name = mailbox_sender.domain.name
+        raw_mime = f"From: test@{domain_name}\r\nTo: external@other.com\r\nSubject: Test\r\n\r\nBody\r\n".encode()
+        signature_header = sign_message_dkim(raw_mime, mailbox_sender.domain)
+        signed_mime = signature_header + b"\r\n" + raw_mime
+
+        # Create blob with signed message
+        blob = mailbox_sender.create_blob(
+            content=signed_mime, content_type="message/rfc822"
+        )
+        message.blob = blob
+        message.save()
+
+        # Add external recipient
+        external_contact = factories.ContactFactory(
+            mailbox=mailbox_sender, email="external@other.com"
+        )
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=external_contact,
+            type=models.MessageRecipientTypeChoices.TO,
+        )
+
+        # Mock DNS to return the DKIM public key
+        def mock_dns_resolve_func(query_name, record_type, **kwargs):
+            expected_fqdn = f"testselector._domainkey.{domain_name}"
+            if record_type == "TXT" and query_name == expected_fqdn:
+                mock_answer = MagicMock()
+                mock_answer.strings = [
+                    f"v=DKIM1; k=rsa; p={dkim_key.public_key}".encode()
+                ]
+                return [mock_answer]
+            raise dns.resolver.NoAnswer()
+
+        mock_dns_resolve.side_effect = mock_dns_resolve_func
+
+        # Mock successful send
+        mock_send_outbound.return_value = {"external@other.com": {"delivered": True}}
+
+        # Send the message
+        outbound.send_message(message)
+
+        # Verify DNS was queried for DKIM record
+        assert mock_dns_resolve.called
+
+        # Verify message was sent (not marked for retry)
+        message.refresh_from_db()
+        recipient = message.recipients.first()
+        assert recipient.delivery_status == enums.MessageDeliveryStatusChoices.SENT
+        assert mock_send_outbound.called
+
+    @override_settings(MESSAGES_DKIM_VERIFY_OUTGOING=True)
+    @patch("core.mda.signing.dns.resolver.resolve")
+    @patch("core.mda.outbound.send_outbound_message")
+    def test_dkim_verification_failure_marks_for_retry(
+        self, mock_send_outbound, mock_dns_resolve, mailbox_sender
+    ):
+        """Test that DKIM verification failure marks recipients for retry."""
+        # Create a message with external recipient
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_sender,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        sender_contact = factories.ContactFactory(mailbox=mailbox_sender)
+        message = factories.MessageFactory(
+            thread=thread,
+            sender=sender_contact,
+            is_draft=False,
+            is_sender=True,
+            subject="Test DKIM",
+        )
+
+        private_key, public_key = generate_dkim_key(key_size=1024)
+        _dkim_key = models.DKIMKey.objects.create(
+            selector="testselector",
+            private_key=private_key,
+            public_key=public_key,
+            key_size=1024,
+            is_active=True,
+            domain=mailbox_sender.domain,
+        )
+
+        # Prepare and sign the message
+        domain_name = mailbox_sender.domain.name
+        raw_mime = f"From: test@{domain_name}\r\nTo: external@other.com\r\nSubject: Test\r\n\r\nBody\r\n".encode()
+        signature_header = sign_message_dkim(raw_mime, mailbox_sender.domain)
+        signed_mime = signature_header + b"\r\n" + raw_mime
+
+        # Create blob with signed message
+        blob = mailbox_sender.create_blob(
+            content=signed_mime, content_type="message/rfc822"
+        )
+        message.blob = blob
+        message.save()
+
+        # Add external recipient
+        external_contact = factories.ContactFactory(
+            mailbox=mailbox_sender, email="external@other.com"
+        )
+        recipient = factories.MessageRecipientFactory(
+            message=message,
+            contact=external_contact,
+            type=models.MessageRecipientTypeChoices.TO,
+        )
+
+        # Mock DNS to fail (no DKIM record found)
+        mock_dns_resolve.side_effect = dns.resolver.NoAnswer()
+
+        # Send the message
+        outbound.send_message(message)
+
+        # Verify DNS was queried
+        assert mock_dns_resolve.called
+
+        # Verify message was NOT sent
+        assert not mock_send_outbound.called
+
+        # Verify recipient was marked for retry
+        recipient.refresh_from_db()
+        assert recipient.delivery_status == enums.MessageDeliveryStatusChoices.RETRY
+        assert recipient.retry_at is not None
+        assert "DKIM verification failed" in recipient.delivery_message
+
+    @override_settings(MESSAGES_DKIM_VERIFY_OUTGOING=True)
+    @patch("core.mda.signing.dns.resolver.resolve")
+    @patch("core.mda.outbound.deliver_inbound_message")
+    def test_dkim_verification_skipped_for_internal_recipients(
+        self, mock_deliver_inbound, mock_dns_resolve, mailbox_sender
+    ):
+        """Test that DKIM verification is skipped for internal recipients."""
+        # Create a message with internal recipient
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_sender,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        sender_contact = factories.ContactFactory(mailbox=mailbox_sender)
+        message = factories.MessageFactory(
+            thread=thread,
+            sender=sender_contact,
+            is_draft=False,
+            is_sender=True,
+            subject="Test DKIM",
+        )
+
+        # Create blob with message
+        domain_name = mailbox_sender.domain.name
+        raw_mime = f"From: test@{domain_name}\r\nTo: internal@{domain_name}\r\nSubject: Test\r\n\r\nBody\r\n".encode()
+        blob = mailbox_sender.create_blob(
+            content=raw_mime, content_type="message/rfc822"
+        )
+        message.blob = blob
+        message.save()
+
+        # Add internal recipient (same domain)
+        # Create mailbox with matching local_part
+        internal_mailbox = factories.MailboxFactory(
+            domain=mailbox_sender.domain, local_part="internal"
+        )
+        internal_contact = factories.ContactFactory(
+            mailbox=internal_mailbox, email=f"internal@{domain_name}"
+        )
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=internal_contact,
+            type=models.MessageRecipientTypeChoices.TO,
+        )
+
+        # Mock internal delivery
+        mock_deliver_inbound.return_value = True
+
+        # Send the message
+        outbound.send_message(message)
+
+        # Verify DNS was NOT queried (DKIM verification skipped for internal)
+        assert not mock_dns_resolve.called
+
+        # Verify internal delivery was attempted
+        assert mock_deliver_inbound.called

@@ -1,12 +1,14 @@
-"""Handles DKIM signing of email messages."""
+"""Handles DKIM signing and verification of email messages."""
 
 import base64
 import logging
 from typing import Optional
 
+import dns.resolver
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from dkim import sign as dkim_sign
+from dkim import verify as dkim_verify
 
 from core.enums import DKIMAlgorithmChoices
 
@@ -113,3 +115,60 @@ def sign_message_dkim(raw_mime_message: bytes, maildomain) -> Optional[bytes]:
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error during DKIM signing for domain %s: %s", domain, e)
         return None
+
+
+def verify_message_dkim(raw_mime_message: bytes) -> bool:
+    """Verify a DKIM signature on a raw MIME message using public DNS.
+
+    This verifies that the DKIM signature will pass validation when the receiving
+    server checks it via DNS, ensuring the signature is valid and the DNS records
+    are correctly configured.
+
+    Args:
+        raw_mime_message: The raw bytes of the MIME message with DKIM signature.
+
+    Returns:
+        True if the DKIM signature is valid, False otherwise.
+    """
+    try:
+        # Create a DNS function that performs actual DNS lookups
+        def get_dns_txt(fqdn, **kwargs):
+            # Convert FQDN to string if it's bytes
+            fqdn_str = fqdn.decode("ascii") if isinstance(fqdn, bytes) else fqdn
+            # Remove trailing dot if present
+            if fqdn_str.endswith("."):
+                fqdn_str = fqdn_str[:-1]
+
+            try:
+                # Query DNS for TXT records
+                answers = dns.resolver.resolve(fqdn_str, "TXT", lifetime=10)
+                # Combine all TXT record strings (TXT records can be split across multiple strings)
+                txt_values = []
+                for answer in answers:
+                    # answer.strings is a list of bytes, join them
+                    txt_value = b"".join(answer.strings)
+                    txt_values.append(txt_value)
+
+                # Return the first TXT record value (DKIM should only have one)
+                if txt_values:
+                    return txt_values[0]
+            except (
+                dns.resolver.NXDOMAIN,
+                dns.resolver.NoAnswer,
+                dns.resolver.NoNameservers,
+            ):
+                # Domain or record doesn't exist
+                logger.warning("DNS lookup error for %s", fqdn_str)
+                return None
+            except dns.resolver.Timeout:
+                logger.warning("DNS timeout while looking up DKIM record: %s", fqdn_str)
+                return None
+
+            return None
+
+        # Verify the DKIM signature using public DNS
+        return dkim_verify(raw_mime_message, dnsfunc=get_dns_txt)
+
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("Error during DKIM verification: %s", e, exc_info=True)
+        return False

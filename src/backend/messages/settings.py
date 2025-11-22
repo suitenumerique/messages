@@ -331,6 +331,13 @@ class Base(Configuration):
         "stmessages", environ_name="MESSAGES_DKIM_DEFAULT_SELECTOR", environ_prefix=None
     )
 
+    # DKIM verification settings
+    MESSAGES_DKIM_VERIFY_OUTGOING = values.BooleanValue(
+        default=False,
+        environ_name="MESSAGES_DKIM_VERIFY_OUTGOING",
+        environ_prefix=None,
+    )
+
     # Technical domain for DNS records (MX, SPF, DKIM hosting)
     MESSAGES_TECHNICAL_DOMAIN = values.Value(
         "localhost", environ_name="MESSAGES_TECHNICAL_DOMAIN", environ_prefix=None
