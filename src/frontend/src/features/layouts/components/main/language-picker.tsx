@@ -1,6 +1,7 @@
 import { LanguagePicker as BaseLanguagePicker, LanguagePickerProps } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { LANGUAGES } from "@/features/i18n/conf";
+import { handle } from "@/features/utils/errors";
 
 /**
  * @MARK: Those languages should be retrieved from the backend through conf API
@@ -18,8 +19,8 @@ export const LanguagePicker = (props: Pick<LanguagePickerProps, "size" | "color"
     <BaseLanguagePicker
       languages={languages}
       onChange={(value) => {
-        i18n.changeLanguage(value).catch((err) => {
-          console.error("Error changing language", err);
+        i18n.changeLanguage(value).catch((error) => {
+          handle(new Error("Error changing language."), { extra: { error, value } });
         });
       }}
       {...props}

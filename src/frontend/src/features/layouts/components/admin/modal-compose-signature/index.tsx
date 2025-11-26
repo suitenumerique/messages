@@ -11,6 +11,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { SignatureComposer } from "./signature-composer";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import i18n from "@/features/i18n/initI18n";
+import { handle } from "@/features/utils/errors";
 
 /**
  * Modal component to compose a signature for a mail domain.
@@ -121,7 +122,7 @@ const SignatureComposeForm = ({ domain, defaultValue, onSuccess }: SignatureComp
                 });
             }
         } catch (error) {
-            console.error(error);
+            handle(error);
         }
         onSuccess?.();
     }

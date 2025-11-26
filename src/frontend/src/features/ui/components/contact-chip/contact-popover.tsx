@@ -2,6 +2,7 @@ import { Contact } from "@/features/api/gen";
 import { Icon, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit";
 import { Popover, PopoverProps } from "react-aria-components";
 import { useEffect, useRef, useState } from "react";
+import { handle } from "@/features/utils/errors";
 
 type ContactPopoverProps = PopoverProps & {
     contact: Contact;
@@ -19,8 +20,8 @@ export const ContactPopover = ({ contact, ...popoverProps }: ContactPopoverProps
             await navigator.clipboard.writeText(contact.email);
             setCopied(true);
             timeoutRef.current = setTimeout(() => setCopied(false), 1000);
-        } catch (err) {
-            console.error('Failed to copy email:', err);
+        } catch (error) {
+            handle(new Error('Failed to copy email.'), { extra: { error } });
         }
     };
 

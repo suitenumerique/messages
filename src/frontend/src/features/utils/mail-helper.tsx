@@ -4,6 +4,7 @@ import DetectionMap from "@/features/i18n/attachments-detection-map.json";
 import React from "react";
 import z from "zod";
 import { DriveFile } from "../forms/components/message-form/drive-attachment-picker";
+import { handle } from "./errors";
 
 type ImapConfig = {
     host: string;
@@ -125,8 +126,8 @@ class MailHelper {
             if (isRegex) {
                 try {
                     return new RegExp(pattern.slice(1, -1), 'i').test(draftText);
-                } catch (e) {
-                    console.error('Invalid regex pattern', pattern, e);
+                } catch (error) {
+                    handle(new Error(`Invalid regex pattern "${pattern}".`), { extra: { error } });
                     return false;
                 }
             }
@@ -186,8 +187,8 @@ class MailHelper {
         let attachments = [];
         try {
             attachments = JSON.parse(driveAttachments);
-        } catch (e) {
-            console.error('Cannot parse drive attachments', e);
+        } catch (error) {
+            handle(new Error('Cannot parse drive attachments.'), { extra: { error } });
         }
         return [draftBody, attachments];
     }
@@ -254,7 +255,7 @@ class MailHelper {
                     url
                 });
             } else {
-                console.error('Cannot extract drive attachment from anchor element.', anchorElement)
+                handle(new Error('Cannot extract drive attachment from anchor element.'), { extra: { anchorElement } });
             }
         }
 

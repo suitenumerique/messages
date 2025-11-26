@@ -1,4 +1,5 @@
 import { fetchAPI } from "@/features/api/fetch-api";
+import { handle } from "@/features/utils/errors";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 
@@ -257,7 +258,7 @@ const multiPartUploadFile = async (
 
     return completeResponse.data;
   } catch (error) {
-    console.error("Failed to upload file:", error);
+    handle(new Error("Failed to upload file."), { extra: { error } });
     // If something went wrong, try to abort the multipart upload
     if (uploadId) {
       await abortUpload(uploadId, filename);
@@ -272,8 +273,8 @@ const abortUpload = async (uploadId: string, filename: string) => {
       method: "DELETE",
       body: JSON.stringify({ filename }),
     });
-  } catch (abortError) {
-    console.error("Failed to abort multipart upload:", abortError);
+  } catch (error) {
+    handle(new Error("Failed to abort multipart upload."), { extra: { error } });
   }
 };
 
@@ -347,7 +348,7 @@ export const useBucketUpload = (
         onError?.('Aborted');
         return;
       };
-      console.error("Failed to upload file:", error);
+      handle(new Error("Failed to upload file."), { extra: { error } });
       setState(BucketUploadState.ERROR);
       onError?.("An error occurred while uploading the file.");
       setUploadId(null);

@@ -15,6 +15,7 @@ import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { toast } from "react-toastify";
 import { useFold } from "@/features/providers/fold";
 import { SubLabelCreation } from "../label-form-modal";
+import { handle } from "@/features/utils/errors";
 
 export type LabelTransferData = {
   type: 'label';
@@ -198,7 +199,7 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
       if (data.type === 'thread') handleDropThread(data);
       else if (data.type === 'label') handleDropLabel(data);
     } catch (error) {
-      console.error('Error parsing drag data:', error);
+      handle(new Error('Error parsing drag data.'), { extra: { error } });
     }
   };
 

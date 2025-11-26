@@ -5,6 +5,7 @@ import { Modal, ModalSize } from "@openfun/cunningham-react";
 import { MessageTemplateTypeChoices, ReadOnlyMessageTemplate, useMailboxesMessageTemplatesAvailableList, mailboxesMessageTemplatesRenderRetrieve, MailboxesMessageTemplatesRenderRetrieveParams } from "@/features/api/gen";
 import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
 import { useModal } from "@openfun/cunningham-react";
+import { handle } from "@/features/utils/errors";
 
 type MessageTemplateSelectorProps = {
     mailboxId: string;
@@ -40,7 +41,7 @@ export const MessageTemplateSelector = ({ mailboxId, context = {} }: MessageTemp
                 context as MailboxesMessageTemplatesRenderRetrieveParams,
             );
             if (!renderedTemplate?.html_body) {
-                console.error("Failed to render template");
+                handle(new Error("Failed to render template."), { extra: { templateId: template.id, mailboxId: mailboxId } });
                 return;
             }
 
@@ -67,7 +68,7 @@ export const MessageTemplateSelector = ({ mailboxId, context = {} }: MessageTemp
 
             // Insert blocks at cursor position
             const currentBlock = editor.getTextCursorPosition().block;
-            
+
             // if the current block is empty, replace it with the template blocks
             const currentBlockContent = editor.getBlock(currentBlock)?.content;
             if (currentBlock && (!currentBlockContent || (Array.isArray(currentBlockContent) && currentBlockContent.length === 0))) {
@@ -78,7 +79,10 @@ export const MessageTemplateSelector = ({ mailboxId, context = {} }: MessageTemp
             }
             modal.close();
         } catch (error) {
-            console.error("Failed to insert template:", error);
+            handle(
+                new Error("Failed to insert template."),
+                { extra: { error, templateId: template.id, mailboxId: mailboxId } }
+            );
         }
     };
 

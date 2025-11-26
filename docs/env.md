@@ -208,6 +208,8 @@ _Those settings are deprecated and will be removed in the future._
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `SENTRY_DSN` | None | Sentry DSN for error tracking | Optional |
+| `NEXT_PUBLIC_SENTRY_DSN` | None | Sentry DSN for error tracking | Optional |
+| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | None | Sentry environment for error tracking | Optional ('production', 'development', 'staging') |
 
 ### Logging
 

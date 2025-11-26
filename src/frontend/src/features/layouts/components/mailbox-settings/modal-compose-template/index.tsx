@@ -10,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { TemplateComposer } from "./template-composer";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import i18n from "@/features/i18n/initI18n";
+import { handle } from "@/features/utils/errors";
 
 /**
  * Modal component to compose a template for a mailbox.
@@ -111,7 +112,7 @@ const TemplateComposeForm = ({ mailbox, defaultValue, onSuccess }: TemplateCompo
                 });
             }
         } catch (error) {
-            console.error(error);
+            handle(error);
             addToast(
                 <ToasterItem type="error">
                     <span>{t("Failed to save template. Please try again.")}</span>

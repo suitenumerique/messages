@@ -8,6 +8,7 @@ import AdminMailboxCredentials from "../mailbox-credentials";
 import { ResetPasswordResponse } from "@/features/api/gen/models/reset_password_response";
 import { Banner } from "@/features/ui/components/banner";
 import MailboxHelper from "@/features/utils/mailbox-helper";
+import { handle } from "@/features/utils/errors";
 
 type ModalMailboxResetPasswordProps = {
     isOpen: boolean;
@@ -27,7 +28,7 @@ const ModalMailboxResetPassword = ({ isOpen, onClose, mailbox, domainId }: Modal
             setOneTimePassword((response.data as ResetPasswordResponse).one_time_password);
             setState("success");
         } catch (error) {
-            console.error(error);
+            handle(error);
             setState("error");
         }
     }

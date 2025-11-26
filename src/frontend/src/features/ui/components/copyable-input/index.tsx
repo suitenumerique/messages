@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Button } from "@openfun/cunningham-react";
 import { useTranslation } from "react-i18next";
+import { handle } from "@/features/utils/errors";
 
 export type CopyableInputProps = {
   value: string;
@@ -17,8 +18,8 @@ export function CopyableInput({ value, readOnly = true }: CopyableInputProps) {
       await navigator.clipboard.writeText(value);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy text: ', err);
+    } catch (error) {
+      handle(new Error('Failed to copy text.'), { extra: { error } });
     }
   };
 
@@ -27,7 +28,7 @@ export function CopyableInput({ value, readOnly = true }: CopyableInputProps) {
   };
 
   return (
-    <div 
+    <div
       className="copyable-input"
       onMouseEnter={() => setShowCopyButton(true)}
       onMouseLeave={() => setShowCopyButton(false)}
@@ -55,4 +56,4 @@ export function CopyableInput({ value, readOnly = true }: CopyableInputProps) {
       )}
     </div>
   );
-} 
+}

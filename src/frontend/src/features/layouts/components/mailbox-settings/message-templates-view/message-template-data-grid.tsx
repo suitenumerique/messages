@@ -7,6 +7,7 @@ import { Mailbox, MessageTemplate, MessageTemplateTypeChoices, useMailboxesMessa
 import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ModalComposeTemplate } from "../modal-compose-template";
+import { handle } from "@/features/utils/errors";
 
 type MessageTemplateDataGridProps = {
     mailbox: Mailbox;
@@ -55,7 +56,7 @@ export const MessageTemplateDataGrid = ({ mailbox }: MessageTemplateDataGridProp
                     </ToasterItem>,
                 );
             } catch (error) {
-                console.error(error);
+                handle(error);
                 addToast(
                     <ToasterItem type="error">
                         <span>{t("Failed to delete template.")}</span>
@@ -71,7 +72,6 @@ export const MessageTemplateDataGrid = ({ mailbox }: MessageTemplateDataGridProp
             headerName: t("Name"),
             renderCell: ({ row }) => row.name,
         },
-        
         {
             id: "actions",
             size: 150,

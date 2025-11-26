@@ -1,4 +1,5 @@
 import { APP_STORAGE_PREFIX } from "../config/constants";
+import { handle } from "../utils/errors";
 
 const DEFAULT_LANGUAGES = [["en-US","English"],["fr-FR","Français"],["nl-NL","Nederlands"]];
 
@@ -10,7 +11,7 @@ function getLanguagesFromEnv() {
   try {
       return JSON.parse(languages);
   } catch (error) {
-    console.error("Error parsing languages from env", error);
+    handle(new Error("Error parsing languages from env."), { extra: { error, languages } });
     return DEFAULT_LANGUAGES;
   }
 }

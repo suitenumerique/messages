@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { FoldProvider, useFold } from "@/features/providers/fold";
 import { useQueryClient } from "@tanstack/react-query";
+import { handle } from "@/features/utils/errors";
 
 type MailboxLabelsProps = {
   mailbox: Mailbox;
@@ -83,7 +84,7 @@ export const MailboxLabelsBase = ({ mailbox }: MailboxLabelsProps) => {
 
       if (data.type === 'label') handleDropLabel(data);
     } catch (error) {
-      console.error('Error parsing drag data:', error);
+      handle(new Error('Error parsing drag data.'), { extra: { error } });
     }
   };
 

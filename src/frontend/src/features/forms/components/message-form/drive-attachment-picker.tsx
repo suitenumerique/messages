@@ -7,6 +7,7 @@ import { useConfig } from "@/features/providers/config";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { DriveIcon } from "./drive-icon";
 import { Attachment } from "@/features/api/gen/models/attachment";
+import { handle } from "@/features/utils/errors";
 
 export type DriveFile = { id: string, url: string } & Omit<Attachment, 'sha256' | 'blobId' | 'cid'>;
 
@@ -48,7 +49,7 @@ export const DriveAttachmentPicker = ({ onPick }: DriveAttachmentPickerProps) =>
                 apiUrl: config.DRIVE!.api_url,
             });
         } catch (error) {
-            console.error(error);
+            handle(new Error("Failed to open picker."), { extra: { error } });
         } finally {
             setIsLoading(false);
         }

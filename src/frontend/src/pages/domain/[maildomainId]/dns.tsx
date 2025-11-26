@@ -9,6 +9,7 @@ import { useMaildomainsCheckDnsCreate, useMaildomainsRetrieve } from "@/features
 import { useRouter } from "next/router";
 import { CopyableInput } from "@/features/ui/components/copyable-input";
 import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { handle } from "@/features/utils/errors";
 
 type DNSRecordWithId = DNSRecordCheck & { id: string };
 
@@ -179,7 +180,7 @@ export default function AdminDNSPage() {
         setDnsRecords(recordsWithIds);
       },
       onError: (error) => {
-        console.error('DNS check failed:', error);
+        handle(new Error('DNS check failed.'), { extra: { error } });
       },
     },
   });

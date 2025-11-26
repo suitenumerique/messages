@@ -1,5 +1,6 @@
 import { MailboxAdminCreate } from "@/features/api/gen/models/mailbox_admin_create";
 import { Banner } from "@/features/ui/components/banner";
+import { handle } from "@/features/utils/errors";
 import MailboxHelper from "@/features/utils/mailbox-helper";
 import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import { Button } from "@openfun/cunningham-react";
@@ -31,7 +32,7 @@ const AdminMailboxCredentials = ({ mailbox }: AdminMailboxCredentialsProps) => {
             setClipboardState('copied');
         } catch (error) {
             setClipboardState('error');
-            console.error(error);
+            handle(new Error("Failed to copy credentials to clipboard."), { extra: { error } });
         }
         setTimeout(() => setClipboardState('idle'), 1337);
     };

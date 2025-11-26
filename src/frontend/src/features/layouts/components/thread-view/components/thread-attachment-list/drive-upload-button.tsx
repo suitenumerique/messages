@@ -10,6 +10,7 @@ import clsx from "clsx";
 import { DrivePreviewLink } from "./drive-preview-link";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { useConfig } from "@/features/providers/config";
+import { handle } from "@/features/utils/errors";
 
 
 type DriveUploadButtonProps = {
@@ -81,7 +82,7 @@ export const DriveUploadButton = ({ attachment }: DriveUploadButtonProps) => {
             });
             setState('success');
         } catch (error) {
-            console.error(error);
+            handle(error);
             setState('error');
         }
     }
