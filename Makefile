@@ -231,6 +231,7 @@ test: \
   front-test \
   mta-in-test \
   mta-out-test \
+  mpa-test \
   socks-proxy-test
 .PHONY: test
 
@@ -261,6 +262,10 @@ mta-in-test: ## run the mta-in tests
 mta-out-test: ## run the mta-out tests
 	@$(COMPOSE) run --build --rm mta-out-test
 .PHONY: mta-out-test
+
+mpa-test: ## run the mpa tests
+	@$(COMPOSE) run --build --rm mpa-test
+.PHONY: mpa-test
 
 socks-proxy-test: ## run the socks-proxy tests
 	@$(COMPOSE) run --build --rm socks-proxy-test

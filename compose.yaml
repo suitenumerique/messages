@@ -355,3 +355,32 @@ services:
       - "8902:8802"
     depends_on:
       - postgresql
+
+  mpa:
+    build:
+      context: src/mpa/rspamd
+    environment:
+      - RSPAMD_password=password
+      - PORT=8010
+    ports:
+      - "8918:8010"
+    depends_on:
+      redis:
+        condition: service_started
+
+  mpa-test:
+    profiles:
+      - tools
+    build:
+      context: src/mpa/tests
+    environment:
+      - RSPAMD_URL=http://mpa:8010/_api
+      - RSPAMD_AUTH=Bearer password
+    command: pytest -vvs tests/
+    volumes:
+      - ./src/mpa/tests:/app/tests
+    depends_on:
+      mpa:
+        condition: service_started
+      redis:
+        condition: service_started

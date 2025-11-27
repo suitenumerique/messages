@@ -409,7 +409,10 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     if parsed_email is None:
                         parsed_email = parse_email_message(blob_content)
                     delivered = deliver_inbound_message(
-                        recipient_email, parsed_email, blob_content
+                        recipient_email,
+                        parsed_email,
+                        blob_content,
+                        skip_spam_check=True,
                     )
                     _mark_delivered(recipient_email, delivered, True)
                 except Exception as e:

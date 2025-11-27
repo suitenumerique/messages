@@ -339,57 +339,24 @@ def _handle_duplicate_message(
             continue
 
 
-def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-statements, too-many-locals
+def _create_message_from_inbound(
     recipient_email: str,
     parsed_email: Dict[str, Any],
     raw_data: bytes,
+    mailbox: models.Mailbox,
     is_import: bool = False,
     imap_labels: Optional[List[str]] = None,
     imap_flags: Optional[List[str]] = None,
     channel: Optional[models.Channel] = None,
-) -> bool:  # Return True on success, False on failure
-    """Deliver a parsed inbound email message to the correct mailbox and thread.
+    is_spam: bool = False,
+) -> bool:
+    """Create a message and thread from inbound message data.
 
-    raw_data is not parsed again, just stored as is.
+    This function contains the actual message/thread creation logic that was
+    extracted from deliver_inbound_message to be reused by the spam processing worker.
     """
     message_flags = {}
     thread_flags = {}
-
-    # --- 1. Find or Create Mailbox --- #
-    try:
-        mailbox = check_local_recipient(recipient_email, create_if_missing=True)
-    except Exception as e:
-        logger.exception("Error checking local recipient: %s", e)
-        return False
-
-    if not mailbox:
-        logger.warning("Invalid recipient address: %s", recipient_email)
-        return False
-
-    # --- 2. Check for Duplicate Message --- #
-    mime_id = parsed_email.get("messageId", parsed_email.get("message_id"))
-    if mime_id:
-        # Remove angle brackets if present
-        if mime_id.startswith("<") and mime_id.endswith(">"):
-            mime_id = mime_id[1:-1]
-
-        # Check if a message with this MIME ID already exists in this mailbox
-        existing_message = models.Message.objects.filter(
-            mime_id=mime_id, thread__accesses__mailbox=mailbox
-        ).first()
-
-        if existing_message:
-            if is_import and imap_labels:
-                _handle_duplicate_message(
-                    existing_message, parsed_email, imap_labels, imap_flags, mailbox
-                )
-            logger.info(
-                "Skipping duplicate message %s (MIME ID: %s) in mailbox %s",
-                existing_message.id,
-                mime_id,
-                mailbox.id,
-            )
-            return True  # Return success since we handled the duplicate gracefully
 
     # --- 3. Find or Create Thread --- #
     try:
@@ -576,6 +543,7 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
             is_starred=False,
             is_trashed=False,
             is_unread=True,
+            is_spam=is_spam,
             has_attachments=len(parsed_email.get("attachments", [])) > 0,
             channel=channel,
         )
@@ -749,3 +717,103 @@ def deliver_inbound_message(  # pylint: disable=too-many-branches, too-many-stat
         thread.id,
     )
     return True  # Indicate success
+
+
+def deliver_inbound_message(
+    recipient_email: str,
+    parsed_email: Dict[str, Any],
+    raw_data: bytes,
+    is_import: bool = False,
+    imap_labels: Optional[List[str]] = None,
+    imap_flags: Optional[List[str]] = None,
+    channel: Optional[models.Channel] = None,
+    skip_spam_check: bool = False,
+) -> bool:  # Return True on success, False on failure
+    """Deliver a parsed inbound email message.
+
+    For imports (is_import=True) or when skip_spam_check=True, messages are created
+    directly without spam checking. For regular messages, they are queued for spam
+    processing via rspamd.
+
+    raw_data is not parsed again, just stored as is.
+    """
+    # --- 1. Find or Create Mailbox --- #
+    try:
+        mailbox = check_local_recipient(recipient_email, create_if_missing=True)
+    except Exception as e:
+        logger.exception("Error checking local recipient: %s", e)
+        return False
+
+    if not mailbox:
+        logger.warning("Invalid recipient address: %s", recipient_email)
+        return False
+
+    # --- 2. Check for Duplicate Message --- #
+    mime_id = parsed_email.get("messageId", parsed_email.get("message_id"))
+    if mime_id:
+        # Remove angle brackets if present
+        if mime_id.startswith("<") and mime_id.endswith(">"):
+            mime_id = mime_id[1:-1]
+
+        # Check if a message with this MIME ID already exists in this mailbox
+        existing_message = models.Message.objects.filter(
+            mime_id=mime_id, thread__accesses__mailbox=mailbox
+        ).first()
+
+        if existing_message:
+            if is_import and imap_labels:
+                _handle_duplicate_message(
+                    existing_message, parsed_email, imap_labels, imap_flags, mailbox
+                )
+            logger.info(
+                "Skipping duplicate message %s (MIME ID: %s) in mailbox %s",
+                existing_message.id,
+                mime_id,
+                mailbox.id,
+            )
+            return True  # Return success since we handled the duplicate gracefully
+
+    # --- 3. Handle imports and internal messages directly, queue others for spam processing --- #
+    if is_import or skip_spam_check:
+        # Imports and internal messages bypass spam checking and create messages directly
+        return _create_message_from_inbound(
+            recipient_email=recipient_email,
+            parsed_email=parsed_email,
+            raw_data=raw_data,
+            mailbox=mailbox,
+            is_import=is_import,
+            imap_labels=imap_labels,
+            imap_flags=imap_flags,
+            channel=channel,
+            is_spam=False,  # Bypassed messages are never marked as spam
+        )
+
+    # Regular messages: queue for spam processing
+    try:
+        inbound_message = models.InboundMessage.objects.create(
+            mailbox=mailbox,
+            raw_data=raw_data,
+            channel=channel,
+        )
+        logger.info(
+            "Queued inbound message %s for spam processing (recipient: %s)",
+            inbound_message.id,
+            recipient_email,
+        )
+        # Queue the task immediately for processing (no lag)
+        # Import here to avoid circular import with core.mda.tasks
+        # pylint: disable=import-outside-toplevel
+        from core.mda.tasks import process_inbound_message_task
+
+        process_inbound_message_task.delay(str(inbound_message.id))
+        return True
+    except (DjangoDbError, ValidationError) as e:
+        logger.error("Failed to queue inbound message for %s: %s", recipient_email, e)
+        return False
+    except Exception as e:
+        logger.exception(
+            "Unexpected error queueing inbound message for %s: %s",
+            recipient_email,
+            e,
+        )
+        return False

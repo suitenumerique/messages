@@ -1352,6 +1352,41 @@ class Message(BaseModel):
         return len(counted_text.split())
 
 
+class InboundMessage(BaseModel):
+    """Temporary queue model for inbound messages waiting to be processed by spam filter."""
+
+    mailbox = models.ForeignKey(
+        "Mailbox",
+        on_delete=models.CASCADE,
+        related_name="inbound_messages",
+    )
+    raw_data = models.BinaryField(_("raw data"), help_text=_("Raw email message bytes"))
+    channel = models.ForeignKey(
+        "Channel",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inbound_messages",
+    )
+    error_message = models.TextField(
+        _("error message"),
+        blank=True,
+        help_text=_("Error message if processing failed"),
+    )
+
+    class Meta:
+        db_table = "messages_inboundmessage"
+        verbose_name = _("inbound message")
+        verbose_name_plural = _("inbound messages")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["created_at"]),
+        ]
+
+    def __str__(self):
+        return f"InboundMessage {self.id} - {self.mailbox}"
+
+
 class BlobManager(models.Manager):
     """Custom Manager for Blob model."""
 

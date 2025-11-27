@@ -40,4 +40,9 @@ if not settings.DISABLE_CELERY_BEAT_SCHEDULE:
             "schedule": settings.MESSAGES_SELFCHECK_INTERVAL,
             "options": {"queue": "default"},
         },
+        "process-inbound-messages-queue": {
+            "task": "core.mda.tasks.process_inbound_messages_queue_task",
+            "schedule": 300.0,  # Every 5 minutes
+            "options": {"queue": "default"},
+        },
     }

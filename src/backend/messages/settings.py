@@ -217,6 +217,10 @@ class Base(Configuration):
         "my-shared-secret-mda", environ_name="MDA_API_SECRET", environ_prefix=None
     )
 
+    # Rspamd settings for spam filtering
+    RSPAMD_URL = values.Value(None, environ_name="RSPAMD_URL", environ_prefix=None)
+    RSPAMD_AUTH = values.Value(None, environ_name="RSPAMD_AUTH", environ_prefix=None)
+
     # MTA settings
 
     # "direct" or "relay"

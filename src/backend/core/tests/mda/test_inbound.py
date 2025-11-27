@@ -261,7 +261,7 @@ class TestDeliverInboundMessage:
         assert models.Message.objects.count() == 0
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data
+            recipient_addr, sample_parsed_email, raw_email_data, skip_spam_check=True
         )
 
         assert success is True
@@ -325,7 +325,7 @@ class TestDeliverInboundMessage:
         assert models.Message.objects.count() == 0
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data
+            recipient_addr, sample_parsed_email, raw_email_data, skip_spam_check=True
         )
 
         assert success is True
@@ -347,7 +347,7 @@ class TestDeliverInboundMessage:
         ).exists()
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data
+            recipient_addr, sample_parsed_email, raw_email_data, skip_spam_check=True
         )
 
         assert success is True
@@ -367,7 +367,7 @@ class TestDeliverInboundMessage:
         ).exists()
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data
+            recipient_addr, sample_parsed_email, raw_email_data, skip_spam_check=True
         )
 
         assert success is False
@@ -396,7 +396,7 @@ class TestDeliverInboundMessage:
         ).exists()
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data
+            recipient_addr, sample_parsed_email, raw_email_data, skip_spam_check=True
         )
 
         assert success is True
@@ -422,7 +422,7 @@ class TestDeliverInboundMessage:
         }
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data
+            recipient_addr, sample_parsed_email, raw_email_data, skip_spam_check=True
         )
 
         assert success is True  # Should still succeed using fallback
@@ -441,7 +441,7 @@ class TestDeliverInboundMessage:
         del sample_parsed_email["from"]  # Remove From header
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data
+            recipient_addr, sample_parsed_email, raw_email_data, skip_spam_check=True
         )
 
         assert success is True
@@ -468,7 +468,7 @@ class TestDeliverInboundMessage:
         ]
 
         success = deliver_inbound_message(
-            recipient_addr, sample_parsed_email, raw_email_data
+            recipient_addr, sample_parsed_email, raw_email_data, skip_spam_check=True
         )
 
         assert success is True  # Delivery succeeds overall
@@ -502,7 +502,9 @@ class TestDeliverInboundMessage:
         }
         raw_email_1 = b"Raw for message 1"
 
-        success1 = deliver_inbound_message(addr2, parsed_email_1, raw_email_1)
+        success1 = deliver_inbound_message(
+            addr2, parsed_email_1, raw_email_1, skip_spam_check=True
+        )
         assert success1 is True
         assert models.Thread.objects.filter(accesses__mailbox=mailbox1).count() == 0
         assert models.Thread.objects.filter(accesses__mailbox=mailbox2).count() == 1
@@ -525,7 +527,9 @@ class TestDeliverInboundMessage:
         }
         raw_email_2 = b"Raw for message 2"
 
-        success2 = deliver_inbound_message(addr1, parsed_email_2, raw_email_2)
+        success2 = deliver_inbound_message(
+            addr1, parsed_email_2, raw_email_2, skip_spam_check=True
+        )
         assert success2 is True
         assert models.Thread.objects.filter(accesses__mailbox=mailbox1).count() == 1
         assert models.Thread.objects.filter(accesses__mailbox=mailbox2).count() == 1
@@ -550,7 +554,9 @@ class TestDeliverInboundMessage:
         }
         raw_email_3 = b"Raw for message 3"
 
-        success3 = deliver_inbound_message(addr2, parsed_email_3, raw_email_3)
+        success3 = deliver_inbound_message(
+            addr2, parsed_email_3, raw_email_3, skip_spam_check=True
+        )
         assert success3 is True
         # Counts should remain 1 thread per mailbox
         assert models.Thread.objects.filter(accesses__mailbox=mailbox1).count() == 1
@@ -582,7 +588,10 @@ class TestDeliverInboundMessage:
         }
 
         success = deliver_inbound_message(
-            recipient_addr, parsed_email_empty_subject, raw_email_data
+            recipient_addr,
+            parsed_email_empty_subject,
+            raw_email_data,
+            skip_spam_check=True,
         )
 
         assert success is True
@@ -616,7 +625,10 @@ class TestDeliverInboundMessage:
         }
 
         success = deliver_inbound_message(
-            recipient_addr, parsed_email_null_subject, raw_email_data
+            recipient_addr,
+            parsed_email_null_subject,
+            raw_email_data,
+            skip_spam_check=True,
         )
 
         assert success is True
@@ -652,7 +664,10 @@ class TestDeliverInboundMessage:
         }
 
         success = deliver_inbound_message(
-            recipient_addr, parsed_email_no_subject, raw_email_data
+            recipient_addr,
+            parsed_email_no_subject,
+            raw_email_data,
+            skip_spam_check=True,
         )
 
         assert success is True
@@ -690,7 +705,10 @@ class TestDeliverInboundMessage:
 
         # This should now succeed with truncated subject
         success = deliver_inbound_message(
-            recipient_addr, parsed_email_long_subject, raw_email_data
+            recipient_addr,
+            parsed_email_long_subject,
+            raw_email_data,
+            skip_spam_check=True,
         )
         assert success is True
         assert models.Message.objects.count() == 1
@@ -725,7 +743,7 @@ class TestDeliverInboundMessage:
         }
 
         success1 = deliver_inbound_message(
-            recipient_addr, parsed_email_1, raw_email_data
+            recipient_addr, parsed_email_1, raw_email_data, skip_spam_check=True
         )
         assert success1 is True
 
@@ -741,7 +759,7 @@ class TestDeliverInboundMessage:
         }
 
         success2 = deliver_inbound_message(
-            recipient_addr, parsed_email_2, raw_email_data
+            recipient_addr, parsed_email_2, raw_email_data, skip_spam_check=True
         )
         assert success2 is True
 

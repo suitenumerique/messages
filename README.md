@@ -145,6 +145,7 @@ When running the project, the following services are available:
 | **OpenSearch PA** | 8915 | Performance analyzer | No auth required |
 | **SOCKS Proxy** | 8916 | SOCKS5 proxy | `user1` / `pwd1` |
 | **Mailcatcher (SMTP)** | 8917 | SMTP server | No auth required |
+| **MPA (Rspamd)** | 8918 | Spam filtering service | `password` |
 
 
 ### OpenAPI client
