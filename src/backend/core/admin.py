@@ -11,7 +11,7 @@ from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
 from core.api.utils import get_file_key
-from core.services.importer import ImportService
+from core.services.importer.service import ImportService
 
 from . import models
 from .forms import IMAPImportForm, MessageImportForm

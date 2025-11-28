@@ -137,7 +137,7 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
     } else if (type === "shared") {
       return {
         type: "shared",
-        name: mailbox?.contact.name ?? "",
+        name: mailbox?.contact?.name ?? "",
         prefix: mailbox?.local_part ?? "",
       };
     } else {

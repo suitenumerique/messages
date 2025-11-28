@@ -16,7 +16,7 @@ from core.api.utils import get_file_key
 from core.enums import MailboxRoleChoices
 from core.mda.inbound import deliver_inbound_message
 from core.models import Mailbox, MailDomain, Message
-from core.services.importer import ImportService
+from core.services.importer.service import ImportService
 from core.services.importer.tasks import process_eml_file_task
 
 

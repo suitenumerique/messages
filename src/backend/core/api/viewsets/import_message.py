@@ -11,7 +11,7 @@ from rest_framework.response import Response
 
 from core.api.utils import generate_presigned_url, get_file_key
 from core.models import Mailbox
-from core.services.importer import ImportService
+from core.services.importer.service import ImportService
 
 from .. import permissions
 from ..serializers import (

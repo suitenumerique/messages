@@ -2,9 +2,8 @@
 
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught, too-many-lines
 
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
-from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
@@ -252,27 +251,112 @@ def retry_messages_task(self, message_id=None, force_mta_out=False, batch_size=1
     }
 
 
-def _check_spam_with_rspamd(raw_data: bytes) -> Tuple[bool, Optional[str]]:
+def _check_spam_with_hardcoded_rules(
+    parsed_email: Dict[str, Any], spam_config: Dict[str, Any]
+) -> Optional[bool]:
+    """Check if a message is spam using hardcoded rules.
+
+    Args:
+        parsed_email: Parsed email message
+        spam_config: Spam configuration
+
+    Returns:
+        is_spam: True if the message is spam, False otherwise. None if no rules matched.
+    """
+    rules = spam_config.get("rules", [])
+    headers = parsed_email.get("headers", {})
+
+    for rule in rules:
+        if rule.get("header_match"):
+            # Split on first colon only, in case value contains colons
+            header_match = rule.get("header_match")
+            if ":" not in header_match:
+                logger.warning(
+                    "Invalid header_match format (missing colon): %s", header_match
+                )
+                continue
+
+            key, value = header_match.split(":", 1)
+            key = key.lower().strip()
+            value = value.lower().strip()
+
+            # Get header value(s) - can be a string or list
+            header_value = headers.get(key)
+            if header_value is None:
+                continue
+
+            # Use headers_blocks to identify which headers to trust based on trusted_relays config.
+            # Each block ends with a Received header, marking everything above it as trusted.
+            # Block 0: headers before first Received (ours from MTA), ending with first Received
+            # Block 1: headers between first and second Received, ending with second Received (relay 1)
+            # Block 2+: headers after second Received, ending with third Received (relay 2+)
+            headers_blocks = parsed_email.get("headers_blocks", [])
+
+            # Get number of trusted relays (default: 1, meaning we trust block 0 and block 1)
+            trusted_relays = spam_config.get("trusted_relays", 1)
+            # Number of blocks to check: block 0 (before our Received) + trusted_relays blocks
+            blocks_to_check = trusted_relays + 1
+
+            # Check only the trusted blocks (slicing beyond list length just returns all blocks)
+            # Blocks are ordered from most recent to oldest, so we want the first match (most recent)
+            found_value = None
+            for block in headers_blocks[:blocks_to_check]:
+                if key in block:
+                    block_value = block[key]
+                    # Values are always lists in headers_blocks, use the first one (most recent in that block)
+                    if block_value:
+                        found_value = block_value[0]
+                    # Break after first match since blocks are ordered most recent to oldest
+                    break
+
+            if found_value is None:
+                continue
+            header_value = found_value
+
+            # Normalize header value for comparison
+            if isinstance(header_value, str):
+                header_value = header_value.lower().strip()
+            else:
+                header_value = str(header_value).lower().strip()
+
+            # Check if header matches
+            if header_value == value:
+                action = rule.get("action") or "spam"
+                if action in ["spam", "reject"]:
+                    return True
+                if action in ["ham", "no action"]:
+                    return False
+
+    return None
+
+
+def _check_spam_with_rspamd(
+    raw_data: bytes, spam_config: Dict[str, Any]
+) -> Tuple[bool, Optional[str]]:
     """Check if a message is spam using rspamd.
 
     Args:
         raw_data: Raw email message bytes
+        spam_config: Spam configuration
 
     Returns:
         Tuple of (is_spam, error_message). error_message is None on success.
     """
-    if not settings.RSPAMD_URL:
+
+    spam_url = spam_config.get("rspamd_url")
+    if not spam_url:
         # If rspamd is not configured, treat all messages as not spam
-        logger.warning("RSPAMD_URL not configured, skipping spam check")
+        logger.warning("SPAM_CONFIG.rspamd_url not configured, skipping spam check")
         return False, None
 
     try:
         headers = {"Content-Type": "message/rfc822"}
-        if settings.RSPAMD_AUTH:
-            headers["Authorization"] = settings.RSPAMD_AUTH
+        spam_auth = spam_config.get("rspamd_auth")
+        if spam_auth:
+            headers["Authorization"] = spam_auth
 
         response = requests.post(
-            f"{settings.RSPAMD_URL}/checkv2",
+            f"{spam_url}/checkv2",
             data=raw_data,
             headers=headers,
             timeout=10,
@@ -361,14 +445,23 @@ def process_inbound_message_task(self, inbound_message_id: str):
             # Keep the message for retry
             return {"success": False, "error": error_msg}
 
-        # Check spam with rspamd
-        is_spam, spam_check_error = _check_spam_with_rspamd(raw_data_bytes)
-        if spam_check_error:
-            logger.warning(
-                "Spam check error for inbound message %s: %s (treating as not spam)",
-                inbound_message_id,
-                spam_check_error,
+        # Get spam config from maildomain (includes global settings + domain-specific overrides)
+        spam_config = mailbox.domain.get_spam_config()
+
+        # If we have hardcoded rules, check them sequentially
+        is_spam = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
+
+        # If no rules matched, check with rspamd
+        if is_spam is None:
+            is_spam, spam_check_error = _check_spam_with_rspamd(
+                raw_data_bytes, spam_config
             )
+            if spam_check_error:
+                logger.warning(
+                    "Spam check error for inbound message %s: %s (treating as not spam)",
+                    inbound_message_id,
+                    spam_check_error,
+                )
 
         # Create the message using the extracted function
         success = _create_message_from_inbound(

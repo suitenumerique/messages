@@ -89,8 +89,7 @@ MDA_API_SECRET=my-shared-secret-mda
 SALT_KEY=ThisIsAnExampleSaltForDevPurposeOnly
 
 # Rspamd
-RSPAMD_URL=http://mpa:8010/_api
-RSPAMD_AUTH=
+SPAM_CONFIG={"rspamd_url": "http://mpa:8010/_api", "rspamd_auth": ""}
 
 # AI
 AI_BASE_URL=

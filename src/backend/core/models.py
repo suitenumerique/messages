@@ -271,6 +271,13 @@ class MailDomain(BaseModel):
         help_text=_("Sync mailboxes to an identity provider."),
     )
 
+    custom_settings = models.JSONField(
+        _("Custom settings"),
+        default=dict,
+        blank=True,
+        help_text=_("Custom settings for the mail domain."),
+    )
+
     custom_attributes = models.JSONField(
         _("Custom attributes"),
         default=dict,
@@ -305,6 +312,23 @@ class MailDomain(BaseModel):
             ) from exception
 
         super().clean()
+
+    def get_spam_config(self) -> Dict[str, Any]:
+        """Get spam configuration for this mail domain.
+
+        Returns a merged configuration dict that combines global SPAM_CONFIG settings
+        with domain-specific overrides from custom_settings. Domain-specific settings
+        override global settings on a key-by-key basis.
+
+        Returns:
+            Dict containing spam configuration (e.g., {"rspamd_url": "...", "rspamd_auth": "..."})
+        """
+        spam_config = settings.SPAM_CONFIG.copy()
+        if self.custom_settings and "SPAM_CONFIG" in self.custom_settings:
+            # Override with maildomain-specific config (key by key)
+            domain_spam_config = self.custom_settings.get("SPAM_CONFIG", {})
+            spam_config.update(domain_spam_config)
+        return spam_config
 
     def get_expected_dns_records(self) -> List[str]:
         """Get the list of DNS records we expect to be present for this domain."""

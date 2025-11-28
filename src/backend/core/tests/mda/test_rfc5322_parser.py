@@ -315,6 +315,29 @@ class TestEmailMessageParsing:
         assert not parsed.get("htmlBody"), "Expected no htmlBody"
         assert not parsed.get("attachments"), "Expected no attachments"
 
+        # Check headers_list
+        assert "headers_list" in parsed
+        headers_list = parsed["headers_list"]
+        assert isinstance(headers_list, list)
+        # Should contain from, to, subject at minimum
+        header_keys = [h[0] for h in headers_list]
+        assert "from" in header_keys
+        assert "to" in header_keys
+        assert "subject" in header_keys
+
+        # Check headers_blocks (no Received headers, so should have one block)
+        assert "headers_blocks" in parsed
+        headers_blocks = parsed["headers_blocks"]
+        assert isinstance(headers_blocks, list)
+        assert len(headers_blocks) == 1  # One block with all headers (no Received)
+        assert "from" in headers_blocks[0]
+        assert "to" in headers_blocks[0]
+        assert "subject" in headers_blocks[0]
+        # All values should be lists
+        assert isinstance(headers_blocks[0]["from"], list)
+        assert isinstance(headers_blocks[0]["to"], list)
+        assert isinstance(headers_blocks[0]["subject"], list)
+
     def test_parse_multipart_email(self, multipart_email):
         """Test parsing a multipart email."""
         parsed = parse_email_message(multipart_email)
@@ -329,6 +352,25 @@ class TestEmailMessageParsing:
         assert "This is the plain text version." in parsed["textBody"][0]["content"]
         assert len(parsed["htmlBody"]) == 1
         assert "<h1>Multipart Email</h1>" in parsed["htmlBody"][0]["content"]
+
+        # Check headers_list
+        assert "headers_list" in parsed
+        headers_list = parsed["headers_list"]
+        assert isinstance(headers_list, list)
+        header_keys = [h[0] for h in headers_list]
+        assert "from" in header_keys
+        assert "to" in header_keys
+        assert "subject" in header_keys
+        assert "mime-version" in header_keys
+        assert "content-type" in header_keys
+
+        # Check headers_blocks (no Received headers, so should have one block)
+        assert "headers_blocks" in parsed
+        headers_blocks = parsed["headers_blocks"]
+        assert isinstance(headers_blocks, list)
+        assert len(headers_blocks) == 1
+        assert "mime-version" in headers_blocks[0]
+        assert "content-type" in headers_blocks[0]
 
     def test_parse_complex_email(self, complex_email):
         """Test parsing a complex email with nested parts and attachments."""
@@ -408,6 +450,12 @@ class TestEmailMessageParsing:
         assert not parsed.get("htmlBody")
         assert not parsed.get("attachments")
 
+        # Check headers_list and headers_blocks are present
+        assert "headers_list" in parsed
+        assert "headers_blocks" in parsed
+        assert isinstance(parsed["headers_list"], list)
+        assert isinstance(parsed["headers_blocks"], list)
+
     def test_parse_invalid_message(self):
         """Test parsing an invalid (malformed multipart) message."""
         invalid_email_bytes = b"""From: sender@example.com
@@ -455,6 +503,22 @@ Text part.
         assert parsed["headers"]["x-priority"] == "1"
         assert parsed["headers"]["x-mailer"] == "Custom Mailer v1.0"
 
+        # Check headers_list contains custom headers in order
+        assert "headers_list" in parsed
+        headers_list = parsed["headers_list"]
+        header_keys = [h[0] for h in headers_list]
+        assert "x-custom-header" in header_keys
+        assert "x-priority" in header_keys
+        assert "x-mailer" in header_keys
+
+        # Check headers_blocks
+        assert "headers_blocks" in parsed
+        headers_blocks = parsed["headers_blocks"]
+        assert len(headers_blocks) == 1  # No Received headers
+        assert "x-custom-header" in headers_blocks[0]
+        assert isinstance(headers_blocks[0]["x-custom-header"], list)
+        assert headers_blocks[0]["x-custom-header"][0] == "Custom Value"
+
     def test_parse_email_with_missing_from(self):
         """Test parsing an email with missing From header."""
         message = create.text("plain", "Message with no From")
@@ -468,6 +532,94 @@ Text part.
         assert "from" in parsed
         assert parsed["from"]["email"] == ""
         assert parsed["from"]["name"] == ""
+
+    def test_parse_email_with_received_headers(self):
+        """Test parsing an email with Received headers to verify headers_blocks structure."""
+        # Email with multiple Received headers (simulating relay chain)
+        # Headers are prepended, so order in raw email is: most recent first
+        raw_email = b"""Received: from our_mta.example.com (our_mta.example.com [10.0.0.1])
+    by mail.example.com with SMTP id our_mta_id;
+    Mon, 1 Jan 2024 12:02:00 +0000
+X-Spam: Ham
+Received: from relay2.example.com (relay2.example.com [5.6.7.8])
+    by mail.example.com with SMTP id def456;
+    Mon, 1 Jan 2024 12:01:00 +0000
+X-Spam: Spam
+Received: from relay1.example.com (relay1.example.com [1.2.3.4])
+    by mail.example.com with SMTP id abc123;
+    Mon, 1 Jan 2024 12:00:00 +0000
+X-Spam: SenderSpam
+From: sender@example.com
+To: recipient@example.com
+Subject: Test Email
+Date: Mon, 1 Jan 2024 12:00:00 +0000
+
+This is a test email body.
+"""
+        parsed = parse_email_message(raw_email)
+        assert parsed is not None
+
+        # Check headers_list contains all headers in order (most recent first)
+        assert "headers_list" in parsed
+        headers_list = parsed["headers_list"]
+        assert isinstance(headers_list, list)
+
+        # Find positions of Received headers in headers_list
+        received_indices = [
+            i for i, (key, _) in enumerate(headers_list) if key == "received"
+        ]
+        assert len(received_indices) == 3
+
+        # Verify order: first Received should be our_mta (most recent)
+        assert "our_mta_id" in headers_list[received_indices[0]][1]
+        assert "def456" in headers_list[received_indices[1]][1]
+        assert "abc123" in headers_list[received_indices[2]][1]
+
+        # Check headers_blocks structure
+        # When iterating through headers_list (most recent first), Received headers mark the END of their block
+        # Block 0: First Received (our_mta) - marks end of block 0
+        # Block 1: X-Spam (Ham) + second Received (relay2) - marks end of block 1
+        # Block 2: X-Spam (Spam) + third Received (relay1) - marks end of block 2
+        # Block 3: X-Spam (SenderSpam) + From, To, Subject, Date (original message)
+        assert "headers_blocks" in parsed
+        headers_blocks = parsed["headers_blocks"]
+        assert isinstance(headers_blocks, list)
+        # Should have 4 blocks: 3 blocks ending with Received headers + 1 final block
+        assert len(headers_blocks) == 4
+
+        # Block 0: First Received (our MTA) only
+        assert "received" in headers_blocks[0]
+        assert "our_mta_id" in headers_blocks[0]["received"][0]
+
+        # Block 1: X-Spam (Ham) + second Received (relay2)
+        assert "x-spam" in headers_blocks[1]
+        assert headers_blocks[1]["x-spam"][0] == "Ham"
+        assert "received" in headers_blocks[1]
+        assert "def456" in headers_blocks[1]["received"][0]
+
+        # Block 2: X-Spam (Spam) + third Received (relay1)
+        assert "x-spam" in headers_blocks[2]
+        assert headers_blocks[2]["x-spam"][0] == "Spam"
+        assert "received" in headers_blocks[2]
+        assert "abc123" in headers_blocks[2]["received"][0]
+
+        # Block 3: Original message headers (X-Spam from sender, From, To, Subject, Date)
+        assert "x-spam" in headers_blocks[3]
+        assert headers_blocks[3]["x-spam"][0] == "SenderSpam"
+        assert "from" in headers_blocks[3]
+        assert "to" in headers_blocks[3]
+        assert "subject" in headers_blocks[3]
+        assert "date" in headers_blocks[3]
+
+        # Verify all values in headers_blocks are lists
+        for block in headers_blocks:
+            for key, value in block.items():
+                assert isinstance(value, list), (
+                    f"Header {key} in block should be a list, got {type(value)}"
+                )
+                assert len(value) > 0, (
+                    f"Header {key} in block should have at least one value"
+                )
 
     def test_parse_empty_message(self):
         """Test parsing an empty message raises an error."""

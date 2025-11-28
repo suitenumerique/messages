@@ -85,7 +85,7 @@ class Command(BaseCommand):
 
         # Get sender mailbox or use minimal setup
         sender_mailbox = None
-        custom_attributes = {}
+        maildomain_custom_settings = {}
 
         if from_email:
             try:
@@ -93,7 +93,7 @@ class Command(BaseCommand):
                     local_part=from_email.split("@")[0],
                     domain__name=from_email.split("@")[1],
                 )
-                custom_attributes = sender_mailbox.domain.custom_attributes or {}
+                maildomain_custom_settings = sender_mailbox.domain.custom_settings or {}
             except models.Mailbox.DoesNotExist:
                 # Use minimal setup without mailbox
                 logger.warning(
@@ -162,7 +162,7 @@ class Command(BaseCommand):
         # Send the message using send_outbound_email
         recipient_emails = {to_email}
         statuses = send_outbound_email(
-            recipient_emails, from_email, raw_mime_signed, custom_attributes
+            recipient_emails, from_email, raw_mime_signed, maildomain_custom_settings
         )
 
         # Display results

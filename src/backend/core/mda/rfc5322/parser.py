@@ -10,6 +10,7 @@ operations in the application.
 import hashlib
 import logging
 import re
+from collections import defaultdict
 from datetime import datetime
 from datetime import timezone as dt_timezone
 from email.header import decode_header
@@ -402,9 +403,16 @@ def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
 
         # Extract all headers, normalizing keys to lowercase
         headers = {}
+        # Also extract headers in order for position-based filtering (e.g., spam checks)
+        # Flanker's message.headers.items() preserves the order from the raw email
+        headers_list = []
+
         for k, v in message.headers.items():
             decoded_value = decode_email_header_text(v)
             key_lower = k.lower()
+            headers_list.append((key_lower, decoded_value))
+
+            # Build headers dict (for compatibility)
             if key_lower in headers:
                 current_value = headers[key_lower]
                 if isinstance(current_value, list):
@@ -413,6 +421,27 @@ def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
                     headers[key_lower] = [current_value, decoded_value]
             else:
                 headers[key_lower] = decoded_value
+
+        # Split headers into blocks based on Received headers
+        # Each Received header marks the END of its block - everything above it (before it in the list) is trusted
+        # All values in blocks are stored as lists for consistency
+        headers_blocks = []
+        current_block = defaultdict(list)
+
+        for header_name, header_value in headers_list:
+            if header_name == "received":
+                # Received header marks the end of the current block
+                # Add it to the current block, then finalize the block
+                current_block["received"].append(header_value)
+                headers_blocks.append(dict(current_block))
+                current_block = defaultdict(list)
+            else:
+                # Add header to current block (always as list)
+                current_block[header_name].append(header_value)
+
+        # Add the last block if it has any headers (headers after the last Received)
+        if current_block:
+            headers_blocks.append(dict(current_block))
 
         # Extract Gmail labels
         gmail_labels = []
@@ -465,7 +494,9 @@ def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
             "htmlBody": body_parts["htmlBody"],
             "attachments": body_parts["attachments"],
             # Raw MIME is passed in, no need to include decoded string version
-            "headers": headers,
+            "headers": headers,  # Dict for compatibility
+            "headers_list": headers_list,  # List of (name, value) tuples in order
+            "headers_blocks": headers_blocks,  # List of dicts, each block ends with a Received header
             "message_id": message_id,
             "references": references,
             "in_reply_to": in_reply_to,
