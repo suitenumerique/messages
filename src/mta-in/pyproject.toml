@@ -27,7 +27,7 @@ requires-python = ">=3.13,<4.0"
 
 # Note: after changing this list you must re-run `make mta-in-poetry-lock`
 dependencies = [
-    "requests==2.32.3",
+    "requests==2.32.5",
     "PyJWT==2.10.1",
     "pymilter==1.0.5"
 ]
@@ -40,13 +40,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest==8.3.5",
-    "pytest-cov==6.0.0",
-    "fastapi==0.115.12",
-    "uvicorn==0.34.1",
-    "ruff==0.9.3",
-    "pylint==3.3.4",
-    "types-requests==2.32.0.20241016",
+    "pytest==9.0.1",
+    "pytest-cov==7.0.0",
+    "fastapi==0.123.0",
+    "uvicorn==0.38.0",
+    "ruff==0.14.7",
+    "pylint==4.0.4",
+    "types-requests==2.32.4.20250913",
 ]
 
 [tool.poetry]
