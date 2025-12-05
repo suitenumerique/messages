@@ -88,7 +88,55 @@
       "vous trouverez (ci-joint|en pièce jointe)",
       "je (vous )?(joins|envoie) (le|la|les)? (fichier|document|pièce jointe)",
       "en pièce jointe(,)? (vous trouverez|je vous ai mis)",
-      "j[’']?ai oublié (de )?(joindre|mettre en pièce jointe)"
+      "j['']?ai oublié (de )?(joindre|mettre en pièce jointe)"
+    ]
+  },
+  "nl": {
+    "attachment": [
+      "bijlage",
+      "bijgevoegd bestand",
+      "bijgevoegd document",
+      "ingesloten",
+      "zie bijlage",
+      "in de bijlage",
+      "bijgevoegd is",
+      "bijgevoegd zijn"
+    ],
+    "find_attached": [
+      "bijgevoegd vindt u",
+      "zie bijgevoegd",
+      "je vindt bijgevoegd",
+      "u vindt bijgevoegd",
+      "hierbij vindt u",
+      "bijgevoegd vind je",
+      "in de bijlage vindt u",
+      "vind je bijgevoegd",
+      "vind bijgevoegd",
+      "zie je bijgevoegd",
+      "zie u bijgevoegd",
+      "in de bijlage vind je"
+    ],
+    "intent_to_attach": [
+      "ik voeg toe",
+      "ik stuur je",
+      "ik zal bijvoegen",
+      "ik voeg bij",
+      "ik stuur u",
+      "ik zend je",
+      "ik zal toevoegen",
+      "hierbij stuur ik",
+      "ik ben vergeten bij te voegen",
+      "ik was vergeten bij te voegen",
+      "ik ben vergeten toe te voegen",
+      "vergeten bij te voegen"
+    ],
+    "ambiguous_keywords": [
+      "bijgevoegd",
+      "zie bestand"
+    ],
+    "abbreviations": [
+      "bijl.",
+      "bgv."
     ]
   }
 }
