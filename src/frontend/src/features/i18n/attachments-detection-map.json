@@ -98,9 +98,7 @@
       "bijgevoegd document",
       "ingesloten",
       "zie bijlage",
-      "in de bijlage",
-      "bijgevoegd is",
-      "bijgevoegd zijn"
+      "in de bijlage"
     ],
     "find_attached": [
       "bijgevoegd vindt u",
@@ -109,12 +107,7 @@
       "u vindt bijgevoegd",
       "hierbij vindt u",
       "bijgevoegd vind je",
-      "in de bijlage vindt u",
-      "vind je bijgevoegd",
-      "vind bijgevoegd",
-      "zie je bijgevoegd",
-      "zie u bijgevoegd",
-      "in de bijlage vind je"
+      "in de bijlage vindt u"
     ],
     "intent_to_attach": [
       "ik voeg toe",
@@ -123,12 +116,7 @@
       "ik voeg bij",
       "ik stuur u",
       "ik zend je",
-      "ik zal toevoegen",
-      "hierbij stuur ik",
-      "ik ben vergeten bij te voegen",
-      "ik was vergeten bij te voegen",
-      "ik ben vergeten toe te voegen",
-      "vergeten bij te voegen"
+      "ik zal toevoegen"
     ],
     "ambiguous_keywords": [
       "bijgevoegd",
@@ -137,6 +125,13 @@
     "abbreviations": [
       "bijl.",
       "bgv."
+    ],
+    "patterns": [
+      "(zie|vind(t)?) (je |u )?bijgevoegd",
+      "bijgevoegd (is|zijn|vindt u|vind je)",
+      "in de bijlage (vindt u|vind je)",
+      "ik (ben|was) vergeten (bij te voegen|toe te voegen)",
+      "(hierbij|anbij) (stuur|zend) ik( je| u)?( het| de)?( bestand| document)?"
     ]
   }
 }
