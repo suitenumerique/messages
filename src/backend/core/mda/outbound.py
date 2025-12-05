@@ -317,6 +317,13 @@ def send_message(message: models.Message, force_mta_out: bool = False):
         return
 
     try:
+
+        blob_content = message.blob.get_content()
+        parsed_email = parse_email_message(blob_content)
+
+        if parsed_email["headers"]["from"] != message.sender.email:
+            raise ValueError("Mailbox email does not match the raw message sender")
+
         message.sent_at = timezone.now()
         message.save(update_fields=["sent_at"])
 
@@ -398,16 +405,12 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                 )
 
         external_recipients = set()
-        parsed_email = None
-        blob_content = message.blob.get_content()
         for recipient_email in envelope_to:
             if (
                 check_local_recipient(recipient_email, create_if_missing=True)
                 and not force_mta_out
             ):
                 try:
-                    if parsed_email is None:
-                        parsed_email = parse_email_message(blob_content)
                     delivered = deliver_inbound_message(
                         recipient_email,
                         parsed_email,
