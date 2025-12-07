@@ -1460,9 +1460,10 @@ class SendMessageSerializer(serializers.Serializer):
     archive = serializers.BooleanField(required=False, default=False)
     textBody = serializers.CharField(required=False, allow_blank=True)
     htmlBody = serializers.CharField(required=False, allow_blank=True)
+    delay = serializers.IntegerField(required=False, default=0, min_value=0, max_value=30)
 
     class Meta:
-        fields = ["messageId", "senderId", "archive", "textBody", "htmlBody"]
+        fields = ["messageId", "senderId", "archive", "textBody", "htmlBody", "delay"]
 
     def create(self, validated_data):
         """This serializer is only used to validate the data, not to create or update."""

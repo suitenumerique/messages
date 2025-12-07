@@ -262,11 +262,8 @@ def prepare_outbound_message(
         content_type="message/rfc822",
     )
 
-    draft_blob = message.draft_blob
-
+    # Keep draft_blob reference for potential undo - will be cleaned up in send_message()
     message.blob = blob
-    message.is_draft = False
-    message.draft_blob = None
     message.created_at = timezone.now()
     message.updated_at = timezone.now()
     message.save(
@@ -274,16 +271,13 @@ def prepare_outbound_message(
             "updated_at",
             "blob",
             "mime_id",
-            "is_draft",
-            "draft_blob",
             "created_at",
         ]
     )
     message.thread.update_stats()
 
-    # Clean up the draft blob and the attachment blobs
-    if draft_blob:
-        draft_blob.delete()
+    # Clean up attachment blobs (but keep draft_blob for potential undo)
+    # The draft_blob will be cleaned up later in send_message() once actually sent
     for attachment in message.attachments.all():
         if attachment.blob:
             attachment.blob.delete()
@@ -298,9 +292,26 @@ def send_message(message: models.Message, force_mta_out: bool = False):
     This part is called asynchronously from the celery worker.
     """
 
-    # Refuse to send messages that are draft or not senders
+    # Mark message as not draft (allows undo to keep as draft if cancelled)
     if message.is_draft:
-        raise ValueError("Cannot send a draft message")
+        logger.info(f"Message {message.id} is draft, marking as non-draft before sending")
+        message.is_draft = False
+        message.save(update_fields=["is_draft"])
+    else:
+        logger.info(f"Message {message.id} is already non-draft, proceeding with send")
+
+    # Clean up draft_blob now that message is being sent
+    # (it was preserved during prepare_outbound_message for potential undo)
+    if message.draft_blob:
+        try:
+            message.draft_blob.delete()
+            message.draft_blob = None
+            message.save(update_fields=["draft_blob"])
+            logger.info(f"Cleaned up draft_blob for message {message.id} after send")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup draft_blob for message {message.id}: {e}")
+
+    # Refuse to send messages we are not sender of
     if not message.is_sender:
         raise ValueError("Cannot send a message we are not sender of")
 
@@ -472,6 +483,8 @@ def send_message(message: models.Message, force_mta_out: bool = False):
     finally:
         # Always release the lock when done
         cache.delete(lock_key)
+        # Update thread stats after send completes (for delayed sends)
+        message.thread.update_stats()
 
 
 def send_outbound_message(
