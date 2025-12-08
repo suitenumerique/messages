@@ -118,10 +118,20 @@ class MailHelper {
     /**
      * Check if any attachment keyword is mentioned in the draft text.
      */
-    static areAttachmentsMentionedInDraft(draftText: string): boolean {
-        const keyWordsAttachments = MailHelper.getAttachmentKeywords(DetectionMap);
-        const messageEditorDraft = draftText?.toLowerCase() || "";
-        return keyWordsAttachments.some((keyword) => messageEditorDraft.includes(keyword));
+    static areAttachmentsMentionedInDraft(draftText: string = ''): boolean {
+        const patterns = MailHelper.getAttachmentKeywords(DetectionMap);
+        return patterns.some((pattern) => {
+            const isRegex = pattern.startsWith('/') && pattern.endsWith('/');
+            if (isRegex) {
+                try {
+                    return new RegExp(pattern.slice(1, -1), 'i').test(draftText);
+                } catch (e) {
+                    console.error('Invalid regex pattern', pattern, e);
+                    return false;
+                }
+            }
+            return draftText.toLowerCase().includes(pattern);
+        });
     }
 
     /**

@@ -1,4 +1,5 @@
 import MailHelper, { SUPPORTED_IMAP_DOMAINS, ATTACHMENT_SEPARATORS } from './mail-helper';
+import DetectionMap from '@/features/i18n/attachments-detection-map.json';
 
 describe('MailHelper', () => {
   describe('markdownToHtml', () => {
@@ -220,6 +221,12 @@ describe('MailHelper', () => {
 
     it('should handle empty safely', () => {
       expect(MailHelper.areAttachmentsMentionedInDraft('')).toBe(false);
+    });
+
+    it('should use regex patterns if present', () => {
+      const draftText = 'I didn\'t include the document.';
+      const result = MailHelper.areAttachmentsMentionedInDraft(draftText);
+      expect(result).toBe(true);
     });
   });
 
@@ -746,6 +753,16 @@ describe('MailHelper', () => {
           { id: '1', name: 'valid.pdf', url: 'https://example.com/valid.pdf', type: 'application/pdf', size: 100, created_at: '2021-01-01' }
         ]
       ]);
+    });
+  });
+
+  describe('DetectionMap', () => {
+    it('should not have invalid regex patterns', () => {
+      // A test guard to ensure that the detection map does not contain malformed regex patterns
+      const regexPatterns = MailHelper.getAttachmentKeywords(DetectionMap).filter((pattern) => pattern.startsWith('/') && pattern.endsWith('/'));
+      for (const pattern of regexPatterns) {
+        expect(() => new RegExp(pattern.slice(1, -1), 'i')).not.toThrowError();
+      }
     });
   });
 });

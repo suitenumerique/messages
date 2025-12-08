@@ -38,12 +38,12 @@
       "enc."
     ],
     "patterns": [
-      "please (see|find) (the )?attached",
-      "you will find (the )?attached",
-      "attached (is|are|you’ll find)",
-      "find (the )?attached file",
-      "enclosed (you will find|please find)?",
-      "I (forgot|didn’t) (to )?(attach|include)"
+      "/please (see|find) (the )?attached/",
+      "/you will find (the )?attached/",
+      "/attached (is|are|you['']ll find)/",
+      "/find (the )?attached file/",
+      "/enclosed (you will find|please find)?/",
+      "/I (forgot|didn['']t) (to )?(attach|include)/"
     ]
   },
   "fr": {
@@ -85,10 +85,10 @@
       "annexe"
     ],
     "patterns": [
-      "vous trouverez (ci-joint|en pièce jointe)",
-      "je (vous )?(joins|envoie) (le|la|les)? (fichier|document|pièce jointe)",
-      "en pièce jointe(,)? (vous trouverez|je vous ai mis)",
-      "j['']?ai oublié (de )?(joindre|mettre en pièce jointe)"
+      "/vous trouverez (ci-joint|en pièce jointe)/",
+      "/je (vous )?(joins|envoie) (le|la|les)? (fichier|document|pièce jointe)/",
+      "/en pièce jointe(,)? (vous trouverez|je vous ai mis)/",
+      "/j['']?ai oublié (de )?(joindre|mettre en pièce jointe)/"
     ]
   },
   "nl": {
@@ -127,11 +127,11 @@
       "bgv."
     ],
     "patterns": [
-      "(zie|vind(t)?) (je |u )?bijgevoegd",
-      "bijgevoegd (is|zijn|vindt u|vind je)",
-      "in de bijlage (vindt u|vind je)",
-      "ik (ben|was) vergeten (bij te voegen|toe te voegen)",
-      "(hierbij|anbij) (stuur|zend) ik( je| u)?( het| de)?( bestand| document)?"
+      "/(zie|vind(t)?) (je |u )?bijgevoegd/",
+      "/bijgevoegd (is|zijn|vindt u|vind je)/",
+      "/in de bijlage (vindt u|vind je)/",
+      "/ik (ben|was) vergeten (bij te voegen|toe te voegen)/",
+      "/(hierbij|anbij) (stuur|zend) ik( je| u)?( het| de)?( bestand| document)?/"
     ]
   }
 }
