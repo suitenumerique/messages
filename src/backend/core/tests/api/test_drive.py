@@ -118,14 +118,8 @@ class TestDriveAPIView:
 
         responses.add(
             responses.GET,
-            "http://drive.test/external_api/v1.0/items/",
-            status=status.HTTP_200_OK,
-            json={
-                "count": 0,
-                "next": None,
-                "previous": None,
-                "results": [],
-            },
+            "http://drive.test/external_api/v1.0/users/me/",
+            status=status.HTTP_401_UNAUTHORIZED,
         )
         client.get(reverse("drive") + "?title=test_document")
         assert mock.call_count == 1
@@ -145,19 +139,16 @@ class TestDriveAPIView:
         workspace_id = str(uuid.uuid4())
         responses.add(
             responses.GET,
-            "http://drive.test/external_api/v1.0/items/",
+            "http://drive.test/external_api/v1.0/users/me/",
             json={
-                "count": 1,
-                "next": None,
-                "previous": None,
-                "results": [
-                    {
-                        "id": workspace_id,
-                        "title": "My Workspace",
-                        "main_workspace": True,
-                        "type": "workspace",
-                    }
-                ],
+                "id": "123",
+                "email": "john.doe@test.local",
+                "main_workspace": {
+                    "id": workspace_id,
+                    "type": "folder",
+                    "title": "My Workspace",
+                    "main_workspace": True,
+                },
             },
             status=status.HTTP_200_OK,
         )
@@ -197,10 +188,10 @@ class TestDriveAPIView:
         # Verify the requests were made with correct parameters
         assert len(responses.calls) == 2
 
-        # First request should be to get workspaces
+        # First request should be to main workspace
         assert (
             responses.calls[0].request.url
-            == "http://drive.test/external_api/v1.0/items/"
+            == "http://drive.test/external_api/v1.0/users/me/"
         )
         assert (
             responses.calls[0].request.headers["Authorization"]
@@ -227,21 +218,8 @@ class TestDriveAPIView:
         # Mock the workspace listing with no main workspace
         responses.add(
             responses.GET,
-            "http://drive.test/external_api/v1.0/items/",
-            json={
-                "count": 1,
-                "next": None,
-                "previous": None,
-                "results": [
-                    {
-                        "id": str(uuid.uuid4()),
-                        "title": "Some Workspace",
-                        "main_workspace": False,
-                        "type": "workspace",
-                    }
-                ],
-            },
-            status=status.HTTP_200_OK,
+            "http://drive.test/external_api/v1.0/users/me/",
+            status=status.HTTP_401_UNAUTHORIZED,
         )
 
         response = client.get(reverse("drive") + "?title=test")
@@ -262,22 +240,19 @@ class TestDriveAPIView:
 
         workspace_id = str(uuid.uuid4())
 
-        # Mock the workspace listing response
+        # Mock the users me response
         responses.add(
             responses.GET,
-            "http://drive.test/external_api/v1.0/items/",
+            "http://drive.test/external_api/v1.0/users/me/",
             json={
-                "count": 1,
-                "next": None,
-                "previous": None,
-                "results": [
-                    {
-                        "id": workspace_id,
-                        "title": "My Workspace",
-                        "main_workspace": True,
-                        "type": "workspace",
-                    }
-                ],
+                "id": "123",
+                "email": "john.doe@test.local",
+                "main_workspace": {
+                    "id": workspace_id,
+                    "type": "folder",
+                    "title": "My Workspace",
+                    "main_workspace": True,
+                },
             },
             status=status.HTTP_200_OK,
         )
@@ -453,22 +428,19 @@ Test file content for Drive upload without access.
         file_id = str(uuid.uuid4())
         presigned_url = "http://s3.test/presigned-upload-url"
 
-        # Mock the workspace listing response
+        # Mock the users me response
         responses.add(
             responses.GET,
-            "http://drive.test/external_api/v1.0/items/",
+            "http://drive.test/external_api/v1.0/users/me/",
             json={
-                "count": 1,
-                "next": None,
-                "previous": None,
-                "results": [
-                    {
-                        "id": workspace_id,
-                        "title": "My Workspace",
-                        "main_workspace": True,
-                        "type": "workspace",
-                    }
-                ],
+                "id": "123",
+                "email": "john.doe@test.local",
+                "main_workspace": {
+                    "id": workspace_id,
+                    "type": "folder",
+                    "title": "My Workspace",
+                    "main_workspace": True,
+                },
             },
             status=status.HTTP_200_OK,
         )
@@ -527,7 +499,7 @@ Test file content for Drive upload without access.
         # Verify workspace listing request
         assert (
             responses.calls[0].request.url
-            == "http://drive.test/external_api/v1.0/items/"
+            == "http://drive.test/external_api/v1.0/users/me/"
         )
         assert (
             responses.calls[0].request.headers["Authorization"]
@@ -561,24 +533,11 @@ Test file content for Drive upload without access.
 
         blob_id = f"msg_{message.id}_0"
 
-        # Mock the workspace listing with no main workspace
+        # Mock the users me as unauthenticated
         responses.add(
             responses.GET,
-            "http://drive.test/external_api/v1.0/items/",
-            json={
-                "count": 1,
-                "next": None,
-                "previous": None,
-                "results": [
-                    {
-                        "id": str(uuid.uuid4()),
-                        "title": "Some Workspace",
-                        "main_workspace": False,
-                        "type": "workspace",
-                    }
-                ],
-            },
-            status=status.HTTP_200_OK,
+            "http://drive.test/external_api/v1.0/users/me/",
+            status=status.HTTP_401_UNAUTHORIZED,
         )
 
         response = client.post(
@@ -653,24 +612,21 @@ Test file content for Drive upload without access.
         file_id = str(uuid.uuid4())
         presigned_url = "http://s3.test/presigned-upload-url"
 
-        # Mock the workspace listing response
+        # Mock the users me response
         responses.add(
             responses.GET,
-            "http://drive.test/external_api/v1.0/items/",
+            "http://drive.test/external_api/v1.0/users/me/",
             json={
-                "count": 1,
-                "next": None,
-                "previous": None,
-                "results": [
-                    {
-                        "id": workspace_id,
-                        "title": "My Workspace",
-                        "main_workspace": True,
-                        "type": "workspace",
-                    }
-                ],
+                "id": "123",
+                "email": "john.doe@test.local",
+                "main_workspace": {
+                    "id": workspace_id,
+                    "type": "folder",
+                    "title": "My Workspace",
+                    "main_workspace": True,
+                },
             },
-            status=200,
+            status=status.HTTP_200_OK,
         )
 
         # Mock the file creation response

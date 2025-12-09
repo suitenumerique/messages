@@ -2,6 +2,8 @@
 DriveAPIView.
 """
 
+import logging
+
 from django.conf import settings
 from django.utils.decorators import method_decorator
 
@@ -22,6 +24,8 @@ from core import models
 from core.api import utils
 from core.api.serializers import PartialDriveItemSerializer
 
+logger = logging.getLogger(__name__)
+
 
 class DriveAPIView(APIView):
     """
@@ -38,25 +42,29 @@ class DriveAPIView(APIView):
         )
 
     def _retrieve_main_workspace(self, access_token):
+        """
+        Retrieve the main workspace for the authenticated user.
+        """
         response = requests.get(
-            f"{self.drive_external_api}/items/",
+            f"{self.drive_external_api}/users/me/",
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
             },
             timeout=5,
         )
-        response.raise_for_status()
+
+        if not response.ok:
+            logger.warning(
+                "Failed to retrieve main workspace. (%s - %s)",
+                response.status_code,
+                response.text,
+                exc_info=True,
+            )
+            return None
+
         data = response.json()
-        items = data.get("results", [])
-        main_workspace = None
-
-        for item in items:
-            if item["main_workspace"] is True:
-                main_workspace = item
-                break
-
-        return main_workspace
+        return data.get("main_workspace")
 
     @extend_schema(
         tags=["third-party/drive"],
@@ -104,7 +112,9 @@ class DriveAPIView(APIView):
         if not main_workspace:
             return Response(
                 status=status.HTTP_404_NOT_FOUND,
-                data={"error": "No Drive main workspace found"},
+                data={
+                    "error": f"No {settings.DRIVE_CONFIG.get('app_name')} main workspace found"
+                },
             )
 
         # Search for files at the root of the main workspace
@@ -166,7 +176,9 @@ class DriveAPIView(APIView):
         if not main_workspace:
             return Response(
                 status=status.HTTP_404_NOT_FOUND,
-                data={"error": "No Drive main workspace found"},
+                data={
+                    "error": f"No {settings.DRIVE_CONFIG.get('app_name')} main workspace found"
+                },
             )
 
         # Create a new file in the main workspace
