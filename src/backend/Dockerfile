@@ -2,22 +2,29 @@
 FROM python:3.13.7-slim-trixie AS base
 
 # Bump this to force an update of the apt repositories
-ENV MIN_UPDATE_DATE="2025-09-02"
+ENV MIN_UPDATE_DATE="2025-12-01"
 
-RUN apt-get update && apt-get upgrade -y \
-    && rm -rf /var/lib/apt/lists/*
+RUN <<EOR
+apt-get update
+DEBIAN_FRONTEND="noninteractive" apt-get upgrade -y
+rm -rf /var/lib/apt/lists/*
+EOR
 
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
 # ---- Poetry package manager and dev system deps ----
 FROM base AS poetry
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN <<EOR
+apt-get update
+DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
     curl \
     rdfind \
-    && rm -rf /var/lib/apt/lists/*
+    libmagic1
+rm -rf /var/lib/apt/lists/*
+EOR
 
 ENV POETRY_NO_INTERACTION=1
 ENV POETRY_VIRTUALENVS_CREATE=0
@@ -55,13 +62,11 @@ COPY . /app/
 WORKDIR /app
 
 # collectstatic
-RUN DJANGO_CONFIGURATION=Build \
-    python manage.py collectstatic --noinput
-
-# Replace duplicated file by a symlink to decrease the overall size of the
-# final image
-RUN rdfind -makesymlinks true -followsymlinks true -makeresultsfile false ${MESSAGES_STATIC_ROOT}
-
+RUN <<EOR
+DJANGO_CONFIGURATION=Build python manage.py collectstatic --noinput
+# Replace duplicated file by a symlink to decrease the overall size of the final image
+rdfind -makesymlinks true -followsymlinks true -makeresultsfile false ${MESSAGES_STATIC_ROOT}
+EOR
 
 # ---- Base runtime image ----
 FROM base AS runtime-base
@@ -72,10 +77,13 @@ FROM base AS runtime-base
 RUN chmod g=u /etc/passwd
 
 # Install required packages
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gettext \
-    libmagic1 \
-    && rm -rf /var/lib/apt/lists/*
+RUN <<EOR
+apt-get update
+DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
+  gettext \
+  libmagic1
+rm -rf /var/lib/apt/lists/*
+EOR
 
 # Un-privileged user running the application
 ARG DOCKER_USER
@@ -110,12 +118,14 @@ CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 
 # ---- Base runtime image for production ----
 FROM runtime-base AS runtime-prod
+ARG MESSAGES_STATIC_ROOT=/data/static
 
 COPY --from=base-with-deps /venv /venv
-
 COPY --from=link-collector ${MESSAGES_STATIC_ROOT} ${MESSAGES_STATIC_ROOT}
-
 COPY . /app/
 
 # The default command runs gunicorn WSGI server in messages's main module
 CMD ["gunicorn", "-c", "/app/gunicorn.conf.py", "messages.wsgi:application"]
+
+HEALTHCHECK --interval=30s --timeout=2s --start-period=30s \
+  CMD ["python", "-c", "import os; from urllib.request import Request, urlopen; urlopen(Request('http://localhost:8000/__heartbeat__/', headers={'Host': f'{os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost').split(',')[0].strip()}', 'X-Forwarded-Proto': 'https'}), timeout=2)"]

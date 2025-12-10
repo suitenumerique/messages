@@ -1,9 +1,13 @@
 """URL configuration for the messages project"""
 
+from logging import getLogger
+
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
+from django.db import connection
+from django.db.utils import OperationalError
 from django.http import HttpResponse
 from django.urls import include, path, re_path
 
@@ -13,12 +17,25 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+logger = getLogger(__name__)
+
+
+def heartbeat(request):
+    """Healthcheck endpoint to verify that the application is running and DB is reachable."""
+    try:
+        connection.ensure_connection()
+        return HttpResponse("OK")
+    except OperationalError as e:
+        logger.error("Database error: %s", e)
+        return HttpResponse("DB Unavailable", status=500)
+
+
 urlpatterns = [
     path(settings.ADMIN_URL, admin.site.urls),
     path("", include("core.urls")),
     path(
-        "healthz/",
-        lambda _: HttpResponse("OK"),
+        "__heartbeat__/",
+        heartbeat,
         name="healthcheck",
     ),
 ]

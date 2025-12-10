@@ -19,7 +19,7 @@ try:
     class QuietWSGIRequestHandler(django.core.servers.basehttp.WSGIRequestHandler):
         def log_message(self, format, *args):
             path = getattr(self, "path", "")
-            if path.strip("/") == "healthz":
+            if path.strip("/") == "__heartbeat__":
                 return
             super().log_message(format, *args)
 

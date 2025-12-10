@@ -48,8 +48,8 @@ server {
     }
 
     # Backend healthcheck
-    location /healthz/ {
-        proxy_pass http://backend:8000/healthz/;
+    location /__heartbeat__/ {
+        proxy_pass http://backend:8000/__heartbeat__/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
     }

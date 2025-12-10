@@ -1,18 +1,12 @@
-# ERB templated nginx configuration
-# see https://doc.scalingo.com/platform/deployment/buildpacks/nginx
-
 upstream backend_server {
-	server localhost:8000 fail_timeout=0;
+    server ${MESSAGES_FRONTEND_BACKEND_SERVER} fail_timeout=0;
 }
 
 server {
-	
-	listen <%= ENV["PORT"] %>;
-	server_name _;
+    listen ${PORT};
+    server_name _;
     server_tokens off;
-
-    root /app/build/frontend-out;
-    
+    root ${MESSAGES_FRONTEND_ROOT};
     error_page 404 /404.html;
 
     # Django rest framework
@@ -20,20 +14,31 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $remote_addr;
-
         proxy_redirect off;
-		proxy_pass http://backend_server;
-	}
-    
+        proxy_pass http://backend_server;
+    }
+
     # Django admin
-    location ^~ /<%= ENV["DJANGO_ADMIN_URL"] || "admin/" %> {
+    location /${DJANGO_ADMIN_URL} {
+        return 301 https://$host/${DJANGO_ADMIN_URL}/;
+    }
+
+    location ^~ /${DJANGO_ADMIN_URL}/ {
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $remote_addr;
-
         proxy_redirect off;
-		proxy_pass http://backend_server;
-	}
+        proxy_pass http://backend_server;
+    }
+
+    # Django statics
+    location ^~ /static/ {
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_redirect off;
+        proxy_pass http://backend_server;
+     }
 
     # Next static export
     location ~* ^/mailbox/[^/]+$ {
@@ -58,6 +63,22 @@ server {
         try_files /domain/[maildomainId]/signatures.html =404;
     }
 
+    location ~ ^/__lbheartbeat__/? {
+        access_log off;
+        error_log off;
+        return 200 'ok';
+    }
+
+    location ~ ^/__heartbeat__/? {
+        access_log off;
+        error_log off;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_redirect off;
+        proxy_pass http://backend_server;
+    }
+
     location = /404.html {
         internal;
     }
@@ -66,5 +87,4 @@ server {
     location / {
         try_files $uri index.html $uri/ =404;
     }
-
 }

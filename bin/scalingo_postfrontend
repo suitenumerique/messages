@@ -10,6 +10,16 @@ mkdir -p build/
 mv src/frontend/out build/frontend-out
 
 mv src/backend/* ./
-mv src/nginx/* ./
+
+# Replace ${MESSAGES_FRONTEND_BACKEND_SERVER} to the erb equivalent with the "localhost:8000" default value
+# Replace ${DJANGO_ADMIN_URL} to the erb equivalent with the "admin" default value
+# Replace ${MESSAGES_FRONTEND_ROOT} with the actual frontend root for scalingo
+# Replace every other shell variable to its erb equivalent
+sed \
+  -e 's/\${MESSAGES_FRONTEND_BACKEND_SERVER}/<%= ENV["MESSAGES_FRONTEND_BACKEND_SERVER"] || "localhost:8000" %>/g' \
+  -e 's/\${DJANGO_ADMIN_URL}/<%= ENV["DJANGO_ADMIN_URL"] || "admin" %>/g' \
+  -e 's|\${MESSAGES_FRONTEND_ROOT}|/app/build/frontend-out|g' \
+  -e 's/\${\([A-Z_][A-Z0-9_]*\)}/<%= ENV["\1"] %>/g' \
+  src/frontend/nginx/nginx.conf.template > ./servers.conf.erb
 
 echo "3.13" > .python-version

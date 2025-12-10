@@ -1,0 +1,84 @@
+name: Build and publish OCI images
+
+"on":
+  push:
+    branches:
+      - main
+
+jobs:
+
+  docker-publish-mta-in:
+    uses: ./.github/workflows/docker-publish.yml
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+    with:
+      image_name: "mta-in"
+      context: "src/mta-in"
+      target: runtime-prod
+
+  docker-publish-mta-out:
+    uses: ./.github/workflows/docker-publish.yml
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+    with:
+      image_name: "mta-out"
+      context: "src/mta-out"
+      target: runtime-prod
+
+  docker-publish-socks-proxy:
+    uses: ./.github/workflows/docker-publish.yml
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+    with:
+      image_name: "socks-proxy"
+      context: "src/socks-proxy"
+
+  docker-publish-frontend:
+    uses: ./.github/workflows/docker-publish.yml
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+    with:
+      image_name: "frontend"
+      context: "src/frontend"
+      target: runtime-prod
+
+  docker-publish-backend:
+    uses: ./.github/workflows/docker-publish.yml
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+    with:
+      image_name: "backend"
+      context: "src/backend"
+      target: runtime-prod
+
+  docker-publish-keycloak:
+    uses: ./.github/workflows/docker-publish.yml
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+    with:
+      image_name: "keycloak"
+      context: "src/keycloak"

@@ -1,6 +1,6 @@
-name: Build and Push Docker Image
+name: Build and Push Container Image
 
-on:
+"on":
   workflow_call:
     inputs:
       registry:
@@ -47,7 +47,6 @@ jobs:
           images: ${{ inputs.registry }}/${{ github.repository }}-${{ inputs.image_name }}
           tags: |
             type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
       - name: Build and push Docker image
@@ -71,11 +70,11 @@ jobs:
           package-name: messages-${{ inputs.image_name }}
           package-type: 'container'
           min-versions-to-keep: 0
-          delete-only-untagged-versions: 'true'
+          delete-only-untagged-versions: true
       - name: Container images retention
         uses: actions/delete-package-versions@v5
         with:
           package-name: messages-${{ inputs.image_name }}
           package-type: 'container'
           min-versions-to-keep: 30
-          ignore-versions: '^latest|main|(\\d+\\.\\d+(\\.\\d+)?)$'
+          ignore-versions: 'latest|main|(\\d+\\.\\d+(\\.\\d+)?)'

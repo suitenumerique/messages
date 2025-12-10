@@ -1,6 +1,6 @@
 name: Lint and tests
 
-on:
+"on":
   push:
     branches:
       - main
@@ -110,41 +110,3 @@ jobs:
         run: |
           git diff --quiet || \
           (echo "API changes detected. Please run 'make api-update' then commit the changes." && exit 1)
-
-  docker-publish-mta-in:
-    uses: ./.github/workflows/docker-publish.yml
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
-    with:
-      image_name: "mta-in"
-      context: "src/mta-in"
-      target: runtime-prod
-
-  docker-publish-mta-out:
-    uses: ./.github/workflows/docker-publish.yml
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
-    with:
-      image_name: "mta-out"
-      context: "src/mta-out"
-      target: runtime-prod
-
-  docker-publish-socks-proxy:
-    uses: ./.github/workflows/docker-publish.yml
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
-    with:
-      image_name: "socks-proxy"
-      context: "src/socks-proxy"
