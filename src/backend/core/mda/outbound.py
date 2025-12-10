@@ -262,7 +262,7 @@ def prepare_outbound_message(
         content_type="message/rfc822",
     )
 
-    # Keep draft_blob reference for potential undo - will be cleaned up in send_message()
+    # Preserve draft_blob for undo functionality (cleaned up in send_message)
     message.blob = blob
     message.created_at = timezone.now()
     message.updated_at = timezone.now()
@@ -276,8 +276,6 @@ def prepare_outbound_message(
     )
     message.thread.update_stats()
 
-    # Clean up attachment blobs (but keep draft_blob for potential undo)
-    # The draft_blob will be cleaned up later in send_message() once actually sent
     for attachment in message.attachments.all():
         if attachment.blob:
             attachment.blob.delete()
@@ -292,22 +290,15 @@ def send_message(message: models.Message, force_mta_out: bool = False):
     This part is called asynchronously from the celery worker.
     """
 
-    # Mark message as not draft (allows undo to keep as draft if cancelled)
     if message.is_draft:
-        logger.info(f"Message {message.id} is draft, marking as non-draft before sending")
         message.is_draft = False
         message.save(update_fields=["is_draft"])
-    else:
-        logger.info(f"Message {message.id} is already non-draft, proceeding with send")
 
-    # Clean up draft_blob now that message is being sent
-    # (it was preserved during prepare_outbound_message for potential undo)
     if message.draft_blob:
         try:
             message.draft_blob.delete()
             message.draft_blob = None
             message.save(update_fields=["draft_blob"])
-            logger.info(f"Cleaned up draft_blob for message {message.id} after send")
         except Exception as e:
             logger.warning(f"Failed to cleanup draft_blob for message {message.id}: {e}")
 
@@ -481,9 +472,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                         True,
                     )
     finally:
-        # Always release the lock when done
         cache.delete(lock_key)
-        # Update thread stats after send completes (for delayed sends)
         message.thread.update_stats()
 
 

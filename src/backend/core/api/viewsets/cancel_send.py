@@ -2,7 +2,6 @@
 
 import logging
 
-from celery.result import AsyncResult
 from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework import exceptions as drf_exceptions
 from rest_framework import serializers as drf_serializers
@@ -13,7 +12,7 @@ from rest_framework.views import APIView
 from core import models
 from core.mda.tasks import celery_app
 
-from .. import permissions, serializers
+from .. import permissions
 
 logger = logging.getLogger(__name__)
 
@@ -71,17 +70,19 @@ class CancelSendView(APIView):
         task_id = serializer.validated_data.get("taskId")
         message_id = serializer.validated_data.get("messageId")
 
-        # Revoke the Celery task
-        celery_app.control.revoke(task_id, terminate=True)
-        logger.info(f"Revoked Celery task {task_id} for message {message_id}")
-
         # Ensure message stays as draft
         try:
             message = models.Message.objects.get(id=message_id)
 
-            # Ensure message is marked as draft
-            # Note: draft_blob is preserved during prepare_outbound_message(),
-            # so it should still exist and doesn't need restoration
+            # Check if already sent - if draft_blob is gone, it's too late
+            if not message.draft_blob:
+                raise drf_exceptions.ValidationError(
+                    "Cannot cancel: message has already been sent."
+                )
+
+            celery_app.control.revoke(task_id, terminate=True)
+            logger.info(f"Revoked Celery task {task_id} for message {message_id}")
+
             needs_save = False
             update_fields = []
 
@@ -90,8 +91,7 @@ class CancelSendView(APIView):
                 needs_save = True
                 update_fields.append("is_draft")
 
-            # Remove the blob (MIME) if it exists - drafts shouldn't have a blob
-            # The blob was created by prepare_outbound_message() but we're cancelling
+            # Remove MIME blob - drafts shouldn't have one
             if message.blob:
                 try:
                     message.blob.delete()
@@ -105,14 +105,12 @@ class CancelSendView(APIView):
 
             if needs_save:
                 message.save(update_fields=update_fields)
-                # Update thread stats since message state changed
                 message.thread.update_stats()
-                logger.info(f"Message {message_id} reverted to draft state after send cancellation")
+                logger.info(f"Message {message_id} reverted to draft state")
             else:
-                logger.info(f"Message {message_id} was already in correct draft state")
+                logger.info(f"Message {message_id} was already in draft state")
         except models.Message.DoesNotExist as e:
-            # Message might have been deleted, but task was revoked anyway
-            logger.warning(f"Message {message_id} not found during cancel, but task {task_id} was revoked")
+            logger.warning(f"Message {message_id} not found, but task {task_id} was revoked")
             raise drf_exceptions.NotFound("Message not found.") from e
 
         return Response(

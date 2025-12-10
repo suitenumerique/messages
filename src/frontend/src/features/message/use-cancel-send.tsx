@@ -19,8 +19,6 @@ export const useCancelSend = () => {
     return useMutation({
         mutationFn: cancelSend,
         onSuccess: async () => {
-            // Refetch queries and wait for them to complete
-            // This ensures the UI has fresh data before navigation
             await Promise.all([
                 queryClient.refetchQueries({ queryKey: ["messages"] }),
                 queryClient.refetchQueries({ queryKey: ["threads"] }),

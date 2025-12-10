@@ -255,19 +255,14 @@ export const MessageForm = ({
                     const undoToastId = `undo-send-${taskId}`;
 
                     const handleUndo = async () => {
-                        // Dismiss the toast immediately
                         toast.dismiss(undoToastId);
 
-                        // Cancel the send task first, then navigate after queries refetch
                         try {
-                            // This will wait for both the cancel API call AND the query refetch to complete
                             await cancelSendMutation.mutateAsync({
                                 taskId,
                                 messageId: message.id,
                             });
 
-                            // Navigate to the draft
-                            // Use window.location for now since router.push has issues with this navigation
                             if (message?.thread_id) {
                                 const targetUrl = `/mailbox/${selectedMailbox?.id}/thread/${message.thread_id}?has_draft=1`;
                                 window.location.href = targetUrl;
@@ -279,8 +274,6 @@ export const MessageForm = ({
 
                     const handleComplete = () => {
                         toast.dismiss(undoToastId);
-                        // For delayed sends, show a simple success toast instead of using QueueMessage
-                        // This avoids polling issues with delayed Celery tasks
                         addToast(
                             <ToasterItem type="info">
                                 <span className="material-icons">check_circle</span>
@@ -290,7 +283,6 @@ export const MessageForm = ({
                                 autoClose: 2000,
                             }
                         );
-                        // Invalidate queries to refresh UI
                         if (shouldCloseThread) unselectThread();
                         invalidateThreadsStats();
                         invalidateThreadMessages();
@@ -308,10 +300,8 @@ export const MessageForm = ({
                         }
                     );
 
-                    // Navigate to inbox immediately (like Gmail)
                     onSuccess?.();
                 } else {
-                    // Immediate send (delay = 0) - use QueueMessage for status tracking
                     addQueuedMessage(taskId, shouldCloseThread);
                     onSuccess?.();
                 }
