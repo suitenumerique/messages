@@ -358,8 +358,31 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
             f"This is a message that was sent by the user. threadnine msgninetwo"
         ).encode("utf-8"),
     )
+
     MessageRecipientFactory(
         message=message10_2, contact=contact3, type=enums.MessageRecipientTypeChoices.TO
+    )
+
+    # Thread 11: A spam message
+    thread11 = ThreadFactory(subject="Boring ad")
+    ThreadAccessFactory(
+        mailbox=mailbox1, thread=thread11, role=enums.ThreadAccessRoleChoices.EDITOR
+    )
+    message11 = MessageFactory(
+        thread=thread11,
+        subject="Boring ad",
+        sender=contact3,
+        is_spam=True,
+        raw_mime=(
+            f"From: {contact3.email}\r\n"
+            f"To: {contact1.email}\r\n"
+            f"Subject: Boring ad\r\n"
+            f"Content-Type: text/plain\r\n\r\n"
+            f"This is a boring ad that should be in spam."
+        ).encode("utf-8"),
+    )
+    MessageRecipientFactory(
+        message=message11, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
     )
 
     # Wait for indexing to complete
@@ -376,6 +399,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
         "thread8": thread8,
         "thread9": thread9,
         "thread10": thread10,
+        "thread11": thread11,
     }
 
 
@@ -395,12 +419,13 @@ class TestSearchModifiersE2E:
         # No search
         response = api_client.get(f"{test_url}?search=")
         assert response.status_code == 200
-        assert len(response.data["results"]) == 10
+        assert len(response.data["results"]) == 11
 
-        # Now find all
+        # Now find all except spam
         response = api_client.get(f"{test_url}?search=example")
         assert response.status_code == 200
         assert len(response.data["results"]) == 10
+        assert any(t["is_spam"] is True for t in response.data["results"]) is False
 
         # Now find a single one
         response = api_client.get(f"{test_url}?search=msgninetwo")
@@ -618,6 +643,28 @@ class TestSearchModifiersE2E:
         assert response.status_code == 200
         thread_ids = [t["id"] for t in response.data["results"]]
         assert str(test_threads["thread5"].id) in thread_ids
+
+    def test_search_e2e_modifiers_in_spam_search_modifier(
+        self, setup_search, api_client, test_url, test_threads
+    ):
+        """Test searching with the 'in:spam' modifier."""
+        # Test English version
+        response = api_client.get(f"{test_url}?search=in:spam")
+
+        # Verify response
+        assert response.status_code == 200
+
+        # Check if the correct threads are found
+        thread_ids = [t["id"] for t in response.data["results"]]
+        assert str(test_threads["thread11"].id) in thread_ids
+
+        # Test French version
+        response = api_client.get(f"{test_url}?search=dans:spam")
+
+        # Verify the same results
+        assert response.status_code == 200
+        thread_ids = [t["id"] for t in response.data["results"]]
+        assert str(test_threads["thread11"].id) in thread_ids
 
     def test_search_e2e_modifiers_in_sent_search_modifier(
         self, setup_search, api_client, test_url, test_threads

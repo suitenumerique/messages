@@ -17,6 +17,7 @@ def parse_search_query(query: str) -> Dict[str, Any]:
     - "exact phrase" - quoted text for exact matching
     - in:trash (dans:corbeille) - in trash
     - in:archives (dans:archives or dans:archivés) - in archives
+    - in:spam (dans:spam) - in spam
     - in:sent (dans:envoyes or dans:envoyés) - sent items
     - in:drafts (dans:brouillons) - drafts
     - is:starred (est:suivi) - starred
@@ -47,6 +48,7 @@ def parse_search_query(query: str) -> Dict[str, Any]:
         "in_trash": ["in:trash", "dans:corbeille", "in:prullenbak"],
         "in_sent": ["in:sent", "dans:envoyes", "dans:envoyés", "in:verzonden"],
         "in_archives": ["in:archives", "dans:archives", "dans:archivés", "in:archief"],
+        "in_spam": ["in:spam", "dans:spam"],
         "in_drafts": ["in:drafts", "dans:brouillons", "in:concepten"],
         "is_starred": ["is:starred", "est:suivi", "is:gemarkeerd"],
         "is_read_true": ["is:read", "est:lu", "is:gelezen"],
@@ -59,6 +61,7 @@ def parse_search_query(query: str) -> Dict[str, Any]:
         "in_trash": "in_trash",
         "in_sent": "in_sent",
         "in_archives": "in_archives",
+        "in_spam": "in_spam",
         "in_drafts": "in_drafts",
         "is_starred": "is_starred",
         "is_read_true": "is_read",
@@ -68,6 +71,7 @@ def parse_search_query(query: str) -> Dict[str, Any]:
         "in_trash": True,
         "in_sent": True,
         "in_archives": True,
+        "in_spam": True,
         "in_drafts": True,
         "is_starred": True,
         "is_read_true": True,

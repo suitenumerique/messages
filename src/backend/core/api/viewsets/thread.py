@@ -369,8 +369,8 @@ class ThreadViewSet(
     def list(self, request, *args, **kwargs):
         """List threads with optional search functionality."""
         search_query = request.query_params.get("search", "").strip()
-
         mailbox_id = request.query_params.get("mailbox_id")
+
         if mailbox_id:
             mailbox_access = models.MailboxAccess.objects.filter(
                 mailbox=mailbox_id, user=request.user
@@ -438,6 +438,7 @@ class ThreadViewSet(
                 }
             )
         # Fall back to regular DB query if no search query or OpenSearch not available
+
         return super().list(request, *args, **kwargs)
 
     @extend_schema(

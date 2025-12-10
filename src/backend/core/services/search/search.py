@@ -158,6 +158,11 @@ def search_threads(
             search_body["query"]["bool"]["filter"].append(
                 {"term": {"is_archived": True}}
             )
+        if parsed_query.get("in_spam"):
+            search_body["query"]["bool"]["filter"].append({"term": {"is_spam": True}})
+        else:
+            # Spam messages should be excluded from search results until the user explicitly searches for spam
+            search_body["query"]["bool"]["filter"].append({"term": {"is_spam": False}})
 
         # Add is: filters (starred, read, unread)
         if parsed_query.get("is_starred", False):

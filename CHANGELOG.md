@@ -8,11 +8,14 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Allow to save an attachment into Drive workspace #408
+- Add a SPAM folder in mailbox panel
+- Allow to search for spam messages
+
 ### Changed
 
 - Configure Drive App Name through environment variable (DRIVE_APP_NAME)
 - Inherit OIDC Authentication backend from django-lasuite #408
 
-### Added
-
-- Allow to save an attachment into Drive workspace #408

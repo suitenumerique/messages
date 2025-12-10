@@ -65,6 +65,15 @@ export const MAILBOX_FOLDERS = (): Folder[] => [
         },
     },
     {
+        id: "spam",
+        name: i18n.t("Spam"),
+        icon: "report",
+        searchable: true,
+        filter: {
+            is_spam: "1",
+        },
+    },
+    {
         id: "trash",
         name: i18n.t("Trash"),
         icon: "delete",
@@ -73,14 +82,6 @@ export const MAILBOX_FOLDERS = (): Folder[] => [
             has_trashed: "1",
         },
     },
-    // {
-    //     id: "spam",
-    //     name: "folders.spam",
-    //     icon: "report",
-    //     filter: {
-    //         is_spam: "1",
-    //     },
-    // },
 ];
 
 export const MailboxList = () => {

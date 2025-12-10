@@ -8,6 +8,7 @@
         "in_archives": ["in:archives"],
         "in_sent": ["in:sent"],
         "in_drafts": ["in:drafts"],
+        "in_spam": ["in:spam"],
         "is_read": ["is:read"],
         "is_unread": ["is:unread"]
     },
@@ -20,6 +21,7 @@
         "in_archives": ["dans:archives", "dans:archivés"],
         "in_sent": ["dans:envoyes", "dans:envoyés"],
         "in_drafts": ["dans:brouillons"],
+        "in_spam": ["dans:spam"],
         "is_read": ["est:lu"],
         "is_unread": ["est:nonlu"]
     },
@@ -32,6 +34,7 @@
         "in_archives": ["in:archief"],
         "in_sent": ["in:verzonden"],
         "in_drafts": ["in:concepten"],
+        "in_spam": ["in:spam"],
         "is_read": ["is:gelezen"],
         "is_unread": ["is:ongelezen"]
     }

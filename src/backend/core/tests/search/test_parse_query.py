@@ -160,6 +160,22 @@ def test_search_parse_query_in_archives_modifier_french_without_accent():
     assert result == {"text": "some text", "in_archives": True}
 
 
+def test_search_parse_query_in_spam_modifier_english():
+    """Test parsing 'in:spam' modifier in English."""
+    query = "in:spam some text"
+    result = parse_search_query(query)
+
+    assert result == {"text": "some text", "in_spam": True}
+
+
+def test_search_parse_query_in_spam_modifier_french():
+    """Test parsing 'dans:spam' modifier in French."""
+    query = "dans:spam some text"
+    result = parse_search_query(query)
+
+    assert result == {"text": "some text", "in_spam": True}
+
+
 def test_search_parse_query_in_sent_modifier_english():
     """Test parsing 'in:sent' modifier in English."""
     query = "in:sent some text"
