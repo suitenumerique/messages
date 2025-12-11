@@ -42,7 +42,7 @@ const ThreadViewComponent = ({ messages, mailboxId, thread, showTrashedMessages,
     const rootRef = useRef<HTMLDivElement>(null);
     const { markAsRead } = useRead();
     const isAISummaryEnabled = useFeatureFlag(FEATURE_KEYS.AI_SUMMARY);
-    const { isReady, reset } = useThreadViewContext();
+    const { isReady, reset, hasBeenInitialized, setHasBeenInitialized } = useThreadViewContext();
     // Refs for all unread messages
     const unreadRefs = useRef<Record<string, HTMLElement | null>>({});
     // Find all unread message IDs
@@ -95,7 +95,7 @@ const ThreadViewComponent = ({ messages, mailboxId, thread, showTrashedMessages,
     }, [isReady, unreadMessageIds.join(","), thread.id]);
 
     useEffect(() => {
-        if (isReady) {
+        if (isReady && !hasBeenInitialized) {
             let messageToScroll = latestMessage?.id;
             let selector = `#thread-message-${messageToScroll}`;
             if (draftMessageIds.length > 0) {
@@ -109,14 +109,14 @@ const ThreadViewComponent = ({ messages, mailboxId, thread, showTrashedMessages,
             const el = document.querySelector<HTMLElement>(selector);
             if (el) {
                 rootRef.current?.scrollTo({ top: el.offsetTop - 225, behavior: 'instant' });
+                setHasBeenInitialized(true);
             }
         }
     }, [isReady]);
 
-    useEffect(() => {
+    useEffect(() => () => {
         reset();
     }, [thread.id]);
-
 
     return (
         <div className={clsx("thread-view", { "thread-view--talk": isThreadSender })} ref={rootRef}>

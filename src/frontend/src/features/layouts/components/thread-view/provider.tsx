@@ -9,6 +9,8 @@ type ThreadViewContextType = {
     isMessageReady: (messageId: string) => boolean | undefined;
     setMessageReadiness: (messageId: string, isReady: boolean) => void;
     reset: (messageId?: string) => void;
+    hasBeenInitialized: boolean;
+    setHasBeenInitialized: (hasBeenInitialized: boolean) => void;
 }
 
 const ThreadViewContext = createContext<ThreadViewContextType | undefined>(undefined);
@@ -19,6 +21,7 @@ const ThreadViewContext = createContext<ThreadViewContextType | undefined>(undef
  */
 const ThreadViewProvider = ({ messageIds, children }: ThreadViewProviderProps) => {
     const [messagesReadiness, setMessagesReadiness] = useState(new Map(messageIds.map((id) => [id, false])));
+    const [hasBeenInitialized, setHasBeenInitialized] = useState(false);
 
     const isReady = useMemo(() => {
         return Array.from(messagesReadiness.values()).every((isReady) => isReady === true);
@@ -48,6 +51,7 @@ const ThreadViewProvider = ({ messageIds, children }: ThreadViewProviderProps) =
             setMessageReadiness(messageId, false);
         } else {
             setMessagesReadiness(new Map(messageIds.map((id) => [id, false])));
+            setHasBeenInitialized(false);
         }
     }
 
@@ -56,8 +60,10 @@ const ThreadViewProvider = ({ messageIds, children }: ThreadViewProviderProps) =
         isMessageReady,
         setMessageReadiness,
         reset,
+        hasBeenInitialized,
+        setHasBeenInitialized,
         messagesReadiness,
-    }), [isReady, setMessageReadiness, isMessageReady, reset, messagesReadiness]);
+    }), [isReady, setMessageReadiness, isMessageReady, reset, messagesReadiness, hasBeenInitialized, setHasBeenInitialized]);
 
 
 

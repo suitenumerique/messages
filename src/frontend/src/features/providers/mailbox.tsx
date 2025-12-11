@@ -122,7 +122,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             ?? mailboxQuery.data.data[mailboxQuery.data.data.length - 1]
     }, [router.query.mailboxId, mailboxQuery.data])
 
-    const previousUnreadMessagesCount = usePrevious(selectedMailbox?.count_unread_messages || 0);
+    const previousUnreadMessagesCount = usePrevious(selectedMailbox?.count_unread_messages);
     const threadQueryKey = useMemo(() => {
         const queryKey = ['threads', selectedMailbox?.id];
         if (searchParams.get('search')) {
@@ -167,6 +167,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         const threadId = router.query.threadId;
         return threadsQuery.data?.pages.flatMap((page) => page.data.results).find((thread) => thread.id === threadId) ?? null;
     }, [router.query.threadId, flattenThreads])
+    const previousSelectedThreadMessagesCount = usePrevious(selectedThread?.messages.length);
 
     const messagesQuery = useMessagesList({
         query: {
@@ -335,12 +336,20 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
 
     // Invalidate the threads query to refresh the threads list when the unread messages count changes
     useEffect(() => {
-        if (!selectedMailbox) return;
-        if ((previousUnreadMessagesCount ?? 0) !== (selectedMailbox.count_unread_messages)) {
+        if (!selectedMailbox || previousUnreadMessagesCount === undefined) return;
+        if (previousUnreadMessagesCount !== selectedMailbox.count_unread_messages) {
             invalidateThreadsStats();
             queryClient.invalidateQueries({ queryKey: ['threads', selectedMailbox?.id] });
         }
     }, [selectedMailbox?.count_unread_messages]);
+
+    // Invalidate the thread messages query to refresh the thread messages when there is a new message
+    useEffect(() => {
+        if (!selectedThread || previousSelectedThreadMessagesCount === undefined) return;
+        if (previousSelectedThreadMessagesCount < (selectedThread?.messages.length ?? 0)) {
+            invalidateThreadMessages();
+        }
+    }, [selectedThread?.messages.length]);
 
     useEffect(() => {
         if (searchParams.get('search') !== previousSearchParams?.get('search')) {

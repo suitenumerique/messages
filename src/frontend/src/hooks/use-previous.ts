@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react';
  * @param value The value to track
  * @returns The previous value of the tracked variable
  */
-function usePrevious<T>(value: T): T | undefined {
+function usePrevious<T>(value: T): T {
   const ref = useRef<T>(value);
 
   useEffect(() => {

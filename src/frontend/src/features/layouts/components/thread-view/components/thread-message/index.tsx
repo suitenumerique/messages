@@ -38,7 +38,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         const replyFormRef = useRef<HTMLDivElement>(null);
         const threadViewContext = useThreadViewContext()
         const isMessageReady = threadViewContext.isMessageReady(message.id);
-        const [isMessageBodyLoaded, setIsMessageBodyLoaded] = useState(false);
+        const [isMessageBodyLoaded, setIsMessageBodyLoaded] = useState(isMessageReady);
         const [isFolded, setIsFolded] = useState(!isLatest && !message.is_unread && !draftMessage?.is_draft);
         const [replyFormMode, setReplyFormMode] = useState<MessageFormMode | null>(getReplyFormMode)
         const previousReplyFormMode = usePrevious<MessageFormMode | null>(replyFormMode);
@@ -96,10 +96,6 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
         useEffect(() => {
             setReplyFormMode(getReplyFormMode())
         }, [message, draftMessage])
-
-        useEffect(() => {
-            setIsFolded(!isLatest && !message.is_unread && !draftMessage?.is_draft);
-        }, [isLatest, draftMessage?.is_draft])
 
         // Smooth scroll to the reply form when it is opened by the user
         useEffect(() => {
