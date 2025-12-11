@@ -36,13 +36,17 @@ export type ThreadsListParams = {
    */
   has_starred?: number;
   /**
-   * Filter threads that are trashed (1=true, 0=false).
+   * Filter threads that have trashed messages (1=true, 0=false).
    */
   has_trashed?: number;
   /**
    * Filter threads that are spam (1=true, 0=false).
    */
   is_spam?: number;
+  /**
+   * Filter threads that have all messages trashed (1=true, 0=false).
+   */
+  is_trashed?: number;
   /**
    * Filter threads by label slug.
    */

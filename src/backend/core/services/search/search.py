@@ -154,6 +154,11 @@ def search_threads(
             search_body["query"]["bool"]["filter"].append(
                 {"term": {"is_trashed": True}}
             )
+        else:
+            # Fully trashed threads should be excluded from search results until the user explicitly searches for trashed threads
+            search_body["query"]["bool"]["filter"].append(
+                {"term": {"is_trashed": False}}
+            )
         if parsed_query.get("in_archives"):
             search_body["query"]["bool"]["filter"].append(
                 {"term": {"is_archived": True}}

@@ -173,7 +173,7 @@ class TestThreadFilterLabel:
 
         # Add some messages to make threads unread/starred
         factories.MessageFactory(thread=data["thread1"])
-        factories.MessageFactory(thread=data["thread2"], is_trashed=True)
+        factories.MessageFactory(thread=data["thread2"], is_archived=True)
         data["thread1"].update_stats()
         data["thread2"].update_stats()
 

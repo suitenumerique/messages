@@ -21,6 +21,8 @@ export interface Thread {
   readonly messages: string;
   readonly has_unread: boolean;
   readonly has_trashed: boolean;
+  /** Whether all messages in the thread are trashed */
+  readonly is_trashed: boolean;
   readonly has_archived: boolean;
   readonly has_draft: boolean;
   readonly has_starred: boolean;

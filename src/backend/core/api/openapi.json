@@ -4321,7 +4321,7 @@
                         "schema": {
                             "type": "integer"
                         },
-                        "description": "Filter threads that are trashed (1=true, 0=false)."
+                        "description": "Filter threads that have trashed messages (1=true, 0=false)."
                     },
                     {
                         "in": "query",
@@ -4330,6 +4330,14 @@
                             "type": "integer"
                         },
                         "description": "Filter threads that are spam (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "is_trashed",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads that have all messages trashed (1=true, 0=false)."
                     },
                     {
                         "in": "query",
@@ -7163,6 +7171,11 @@
                         "type": "boolean",
                         "readOnly": true
                     },
+                    "is_trashed": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "description": "Whether all messages in the thread are trashed"
+                    },
                     "has_archived": {
                         "type": "boolean",
                         "readOnly": true
@@ -7255,6 +7268,7 @@
                     "has_unread",
                     "id",
                     "is_spam",
+                    "is_trashed",
                     "labels",
                     "messaged_at",
                     "messages",

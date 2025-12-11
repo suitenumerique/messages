@@ -32,7 +32,7 @@ class ThreadViewSet(
     lookup_field = "pk"
     lookup_url_kwarg = "pk"
 
-    def get_queryset(self):
+    def get_queryset(self, exclude_spam: bool = True, exclude_trashed: bool = True):
         """Restrict results to threads accessible by the current user."""
         user = self.request.user
         mailbox_id = self.request.GET.get("mailbox_id")
@@ -83,11 +83,23 @@ class ThreadViewSet(
             "has_active": "has_active",
             "has_messages": "has_messages",
             "has_attachments": "has_attachments",
+            "is_trashed": "is_trashed",
             "is_spam": "is_spam",
         }
 
+        query_params = self.request.GET
         for param, filter_field in filter_mapping.items():
-            value = self.request.GET.get(param)
+            # Exclude fully trashed threads by default
+            if exclude_trashed and param == "is_trashed":
+                value = query_params.get(
+                    param, None if query_params.get("has_trashed") == "1" else "0"
+                )
+            # Exclude spam by default
+            elif exclude_spam and param == "is_spam":
+                value = query_params.get(param, "0")
+            else:
+                value = query_params.get(param)
+
             if value is not None:
                 if value == "1":
                     queryset = queryset.filter(**{filter_field: True})
@@ -202,7 +214,7 @@ class ThreadViewSet(
     )
     def stats(self, request):
         """Retrieve aggregated statistics for threads accessible by the user."""
-        queryset = self.get_queryset()
+        queryset = self.get_queryset(exclude_spam=False, exclude_trashed=False)
         stats_fields_param = request.query_params.get("stats_fields", "")
 
         if not stats_fields_param:
@@ -314,7 +326,13 @@ class ThreadViewSet(
                 name="has_trashed",
                 type=OpenApiTypes.INT,
                 location=OpenApiParameter.QUERY,
-                description="Filter threads that are trashed (1=true, 0=false).",
+                description="Filter threads that have trashed messages (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="is_trashed",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads that have all messages trashed (1=true, 0=false).",
             ),
             OpenApiParameter(
                 name="has_draft",

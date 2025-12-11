@@ -13,9 +13,11 @@ and this project adheres to
 - Allow to save an attachment into Drive workspace #408
 - Add a SPAM folder in mailbox panel
 - Allow to search for spam messages
+- Add `is_trashed` flag to thread model
 
 ### Changed
 
 - Configure Drive App Name through environment variable (DRIVE_APP_NAME)
 - Inherit OIDC Authentication backend from django-lasuite #408
+- Exclude `is_trashed` and `is_spam` threads from search results by default
 

@@ -573,6 +573,7 @@ class ThreadSerializer(serializers.ModelSerializer):
             "messages",
             "has_unread",
             "has_trashed",
+            "is_trashed",
             "has_archived",
             "has_draft",
             "has_starred",

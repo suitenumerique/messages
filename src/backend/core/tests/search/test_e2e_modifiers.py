@@ -104,6 +104,7 @@ def fixture_wait_for_indexing():
 @pytest.fixture(name="test_threads")
 def fixture_test_threads(test_mailboxes, wait_for_indexing):
     """Create test threads with various configurations for testing modifiers."""
+    threads = []
     mailbox1, mailbox2 = test_mailboxes
 
     contact1 = ContactFactory(
@@ -121,6 +122,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 
     # Thread 1: Standard thread with basic content
     thread1 = ThreadFactory(subject="Meeting Agenda")
+    threads.append(thread1)
     ThreadAccessFactory(
         mailbox=mailbox1, thread=thread1, role=enums.ThreadAccessRoleChoices.EDITOR
     )
@@ -142,6 +144,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 
     # Thread 2: Thread with CC and BCC recipients
     thread2 = ThreadFactory(subject="Team Update")
+    threads.append(thread2)
     ThreadAccessFactory(
         mailbox=mailbox1, thread=thread2, role=enums.ThreadAccessRoleChoices.EDITOR
     )
@@ -171,6 +174,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 
     # Thread 3: Draft message
     thread3 = ThreadFactory(subject="Draft Report")
+    threads.append(thread3)
     ThreadAccessFactory(
         mailbox=mailbox1, thread=thread3, role=enums.ThreadAccessRoleChoices.EDITOR
     )
@@ -193,6 +197,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 
     # Thread 4: Trashed message
     thread4 = ThreadFactory(subject="Old Newsletter")
+    threads.append(thread4)
     ThreadAccessFactory(
         mailbox=mailbox1, thread=thread4, role=enums.ThreadAccessRoleChoices.EDITOR
     )
@@ -215,6 +220,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 
     # Thread 5: Archived message
     thread5 = ThreadFactory(subject="Old Newsletter")
+    threads.append(thread5)
     ThreadAccessFactory(
         mailbox=mailbox1, thread=thread5, role=enums.ThreadAccessRoleChoices.EDITOR
     )
@@ -237,6 +243,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 
     # Thread 6: Starred and read message
     thread6 = ThreadFactory(subject="Important Announcement")
+    threads.append(thread6)
     ThreadAccessFactory(
         mailbox=mailbox1, thread=thread6, role=enums.ThreadAccessRoleChoices.EDITOR
     )
@@ -260,6 +267,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 
     # Thread 7: Unread message
     thread7 = ThreadFactory(subject="New Notification")
+    threads.append(thread7)
     ThreadAccessFactory(
         mailbox=mailbox1, thread=thread7, role=enums.ThreadAccessRoleChoices.EDITOR
     )
@@ -282,6 +290,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 
     # Thread 8: For testing exact phrases
     thread8 = ThreadFactory(subject="Project Feedback")
+    threads.append(thread8)
     ThreadAccessFactory(
         mailbox=mailbox1, thread=thread8, role=enums.ThreadAccessRoleChoices.EDITOR
     )
@@ -303,6 +312,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 
     # Thread 9: For testing in second mailbox
     thread9 = ThreadFactory(subject="Different Mailbox Message")
+    threads.append(thread9)
     ThreadAccessFactory(
         mailbox=mailbox2, thread=thread9, role=enums.ThreadAccessRoleChoices.EDITOR
     )
@@ -324,6 +334,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 
     # Thread 10: For testing sent messages
     thread10 = ThreadFactory(subject="Sent Message")
+    threads.append(thread10)
     ThreadAccessFactory(
         mailbox=mailbox1, thread=thread10, role=enums.ThreadAccessRoleChoices.EDITOR
     )
@@ -358,6 +369,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
             f"This is a message that was sent by the user. threadnine msgninetwo"
         ).encode("utf-8"),
     )
+    thread10.update_stats()
 
     MessageRecipientFactory(
         message=message10_2, contact=contact3, type=enums.MessageRecipientTypeChoices.TO
@@ -365,6 +377,7 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
 
     # Thread 11: A spam message
     thread11 = ThreadFactory(subject="Boring ad")
+    threads.append(thread11)
     ThreadAccessFactory(
         mailbox=mailbox1, thread=thread11, role=enums.ThreadAccessRoleChoices.EDITOR
     )
@@ -385,22 +398,14 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
         message=message11, contact=contact1, type=enums.MessageRecipientTypeChoices.TO
     )
 
+    # Update stats for all threads
+    for thread in threads:
+        thread.update_stats()
+
     # Wait for indexing to complete
     wait_for_indexing()
 
-    return {
-        "thread1": thread1,
-        "thread2": thread2,
-        "thread3": thread3,
-        "thread4": thread4,
-        "thread5": thread5,
-        "thread6": thread6,
-        "thread7": thread7,
-        "thread8": thread8,
-        "thread9": thread9,
-        "thread10": thread10,
-        "thread11": thread11,
-    }
+    return {f"thread{i}": thread for i, thread in enumerate(threads, start=1)}
 
 
 @pytest.mark.skipif(
@@ -416,15 +421,15 @@ class TestSearchModifiersE2E:
     ):
         """Test searching with empty query."""
 
-        # No search
+        # No search should return all threads except spam and fully trashed
         response = api_client.get(f"{test_url}?search=")
         assert response.status_code == 200
-        assert len(response.data["results"]) == 11
+        assert len(response.data["results"]) == 9
 
-        # Now find all except spam
+        # Now find all except spam and trashed
         response = api_client.get(f"{test_url}?search=example")
         assert response.status_code == 200
-        assert len(response.data["results"]) == 10
+        assert len(response.data["results"]) == 9
         assert any(t["is_spam"] is True for t in response.data["results"]) is False
 
         # Now find a single one
@@ -504,11 +509,11 @@ class TestSearchModifiersE2E:
         # Test substring search
         response = api_client.get(f"{test_url}?search=to:@example.com")
         assert response.status_code == 200
-        assert len(response.data["results"]) == 10
+        assert len(response.data["results"]) == 9
 
         response = api_client.get(f"{test_url}?search=to:example")
         assert response.status_code == 200
-        assert len(response.data["results"]) == 10
+        assert len(response.data["results"]) == 9
 
         response = api_client.get(f"{test_url}?search=to:examples")
         assert response.status_code == 200
