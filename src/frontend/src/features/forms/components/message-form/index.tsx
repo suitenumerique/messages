@@ -25,6 +25,8 @@ import i18n from "@/features/i18n/initI18n";
 import { DropdownButton } from "@/features/ui/components/dropdown-button";
 import { PREFER_SEND_MODE_KEY, PreferSendMode } from "@/features/config/constants";
 import { useSearchParams } from "next/navigation";
+import { UndoSendToast } from "@/features/message/components/undo-send-toast";
+import { useCancelSend } from "@/features/message/use-cancel-send";
 
 export type MessageFormMode = "new" | "reply" | "reply_all" | "forward";
 
@@ -116,6 +118,10 @@ export const MessageForm = ({
     })?.id ?? mailboxes?.[0]?.id;
     const hideFromField = defaultSenderId && (mailboxes?.length ?? 0) === 1;
     const { addQueuedMessage } = useSentBox();
+    const cancelSendMutation = useCancelSend();
+
+    // Hardcoded delay for Phase 1 testing (will be user setting in Phase 2)
+    const UNDO_SEND_DELAY = 5;
 
     const getMailboxOptions = () => {
         if (!mailboxes) return [];
@@ -240,9 +246,65 @@ export const MessageForm = ({
             onSuccess: async (response, { data: variables }) => {
                 const data = (response as sendCreateResponse200).data;
                 const taskId = data.task_id;
+                const message = data.message;
                 const shouldCloseThread = !!variables.archive;
-                addQueuedMessage(taskId, shouldCloseThread);
-                onSuccess?.();
+                const delay = variables.delay || 0;
+
+                if (delay > 0) {
+                    // Show undo toast with countdown
+                    const undoToastId = `undo-send-${taskId}`;
+
+                    const handleUndo = async () => {
+                        toast.dismiss(undoToastId);
+
+                        try {
+                            await cancelSendMutation.mutateAsync({
+                                taskId,
+                                messageId: message.id,
+                            });
+
+                            if (message?.thread_id) {
+                                const targetUrl = `/mailbox/${selectedMailbox?.id}/thread/${message.thread_id}?has_draft=1`;
+                                window.location.href = targetUrl;
+                            }
+                        } catch (error) {
+                            console.error('Failed to cancel send:', error);
+                        }
+                    };
+
+                    const handleComplete = () => {
+                        toast.dismiss(undoToastId);
+                        addToast(
+                            <ToasterItem type="info">
+                                <span className="material-icons">check_circle</span>
+                                <span>{t("Message sent successfully")}</span>
+                            </ToasterItem>,
+                            {
+                                autoClose: 2000,
+                            }
+                        );
+                        if (shouldCloseThread) unselectThread();
+                        invalidateThreadsStats();
+                        invalidateThreadMessages();
+                    };
+
+                    addToast(
+                        <UndoSendToast
+                            delay={delay}
+                            onUndo={handleUndo}
+                            onComplete={handleComplete}
+                        />,
+                        {
+                            toastId: undoToastId,
+                            autoClose: false,
+                        }
+                    );
+
+                    onSuccess?.();
+                } else {
+                    addQueuedMessage(taskId, shouldCloseThread);
+                    onSuccess?.();
+                }
             }
         }
     });
@@ -441,6 +503,7 @@ export const MessageForm = ({
                 htmlBody: MailHelper.attachDriveAttachmentsToHtmlBody(data.messageHtmlBody, data.driveAttachments),
                 textBody: MailHelper.attachDriveAttachmentsToTextBody(data.messageTextBody, data.driveAttachments),
                 archive,
+                delay: UNDO_SEND_DELAY,
             }
         });
     };

@@ -20,6 +20,7 @@ import { ContactChip, ContactChipDeliveryStatus } from "@/features/ui/components
 import clsx from "clsx";
 import { useThreadViewContext } from "../../provider";
 import usePrevious from "@/hooks/use-previous";
+import { useSearchParams } from "next/navigation";
 
 type ThreadMessageProps = {
     message: Message,
@@ -30,6 +31,7 @@ type ThreadMessageProps = {
 export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
     ({ message, isLatest, draftMessage, ...props }, ref) => {
         const { t, i18n } = useTranslation()
+        const searchParams = useSearchParams()
         const getReplyFormMode = () => {
             if (draftMessage?.is_draft) return 'reply';
             if (!message.is_draft || message.is_trashed) return null;

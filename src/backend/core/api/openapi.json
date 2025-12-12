@@ -4130,6 +4130,91 @@
                 }
             }
         },
+        "/api/v1.0/send/cancel/": {
+            "post": {
+                "operationId": "send_cancel_create",
+                "description": "\n    Cancel a queued send task and keep the message as a draft.\n\n    This endpoint revokes the Celery task responsible for sending the message\n    and ensures the message remains in draft state.\n    ",
+                "tags": [
+                    "messages"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CancelSendRequest"
+                            },
+                            "examples": {
+                                "CancelSend": {
+                                    "value": {
+                                        "taskId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+                                        "messageId": "123e4567-e89b-12d3-a456-426614174000"
+                                    },
+                                    "summary": "Cancel Send"
+                                }
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CancelSendRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                },
+                                "examples": {
+                                    "CancelSend": {
+                                        "value": {
+                                            "taskId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+                                            "messageId": "123e4567-e89b-12d3-a456-426614174000"
+                                        },
+                                        "summary": "Cancel Send"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/tasks/{task_id}/": {
             "get": {
                 "operationId": "tasks_retrieve",
@@ -5114,6 +5199,26 @@
                     "sha256",
                     "size",
                     "type"
+                ]
+            },
+            "CancelSendRequest": {
+                "type": "object",
+                "description": "Serializer for canceling send tasks.",
+                "properties": {
+                    "taskId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Celery task ID to cancel"
+                    },
+                    "messageId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Message ID to keep as draft"
+                    }
+                },
+                "required": [
+                    "messageId",
+                    "taskId"
                 ]
             },
             "ChangeFlagRequestRequest": {
@@ -7075,6 +7180,12 @@
                     },
                     "htmlBody": {
                         "type": "string"
+                    },
+                    "delay": {
+                        "type": "integer",
+                        "maximum": 30,
+                        "minimum": 0,
+                        "default": 0
                     }
                 },
                 "required": [

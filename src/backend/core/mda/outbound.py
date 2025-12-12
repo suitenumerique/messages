@@ -262,11 +262,8 @@ def prepare_outbound_message(
         content_type="message/rfc822",
     )
 
-    draft_blob = message.draft_blob
-
+    # Preserve draft_blob for undo functionality (cleaned up in send_message)
     message.blob = blob
-    message.is_draft = False
-    message.draft_blob = None
     message.created_at = timezone.now()
     message.updated_at = timezone.now()
     message.save(
@@ -274,16 +271,11 @@ def prepare_outbound_message(
             "updated_at",
             "blob",
             "mime_id",
-            "is_draft",
-            "draft_blob",
             "created_at",
         ]
     )
     message.thread.update_stats()
 
-    # Clean up the draft blob and the attachment blobs
-    if draft_blob:
-        draft_blob.delete()
     for attachment in message.attachments.all():
         if attachment.blob:
             attachment.blob.delete()
@@ -298,9 +290,19 @@ def send_message(message: models.Message, force_mta_out: bool = False):
     This part is called asynchronously from the celery worker.
     """
 
-    # Refuse to send messages that are draft or not senders
     if message.is_draft:
-        raise ValueError("Cannot send a draft message")
+        message.is_draft = False
+        message.save(update_fields=["is_draft"])
+
+    if message.draft_blob:
+        try:
+            message.draft_blob.delete()
+            message.draft_blob = None
+            message.save(update_fields=["draft_blob"])
+        except Exception as e:
+            logger.warning(f"Failed to cleanup draft_blob for message {message.id}: {e}")
+
+    # Refuse to send messages we are not sender of
     if not message.is_sender:
         raise ValueError("Cannot send a message we are not sender of")
 
@@ -470,8 +472,8 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                         True,
                     )
     finally:
-        # Always release the lock when done
         cache.delete(lock_key)
+        message.thread.update_stats()
 
 
 def send_outbound_message(

@@ -81,6 +81,7 @@ class SendMessageView(APIView):
         message_id = serializer.validated_data.get("messageId")
         sender_id = serializer.validated_data.get("senderId")
         must_archive = serializer.validated_data.get("archive", False) is True
+        delay = serializer.validated_data.get("delay", 0)
 
         try:
             mailbox_sender = models.Mailbox.objects.get(id=sender_id)
@@ -120,14 +121,31 @@ class SendMessageView(APIView):
             )
 
         # Launch async task for sending the message
-        task = send_message_task.delay(str(message.id), must_archive=must_archive)
+        if delay > 0:
+            # For delayed send, keep message as draft until task executes
+            task = send_message_task.apply_async(
+                args=[str(message.id)],
+                kwargs={"must_archive": must_archive},
+                countdown=delay,
+            )
+        else:
+            # For immediate send, mark as non-draft now (original behavior)
+            message.is_draft = False
+            message.save(update_fields=["is_draft"])
+            task = send_message_task.delay(str(message.id), must_archive=must_archive)
 
         # --- Finalize ---
-        # Message state should be updated by prepare_outbound_message/send_message
-        # Refresh from DB to get final state (e.g., is_draft=False)
+        # Refresh from DB to get final state
         message.refresh_from_db()
 
-        # Update thread stats after un-drafting
-        message.thread.update_stats()
+        # Update thread stats after un-drafting (only if not delayed)
+        if delay == 0:
+            message.thread.update_stats()
 
-        return Response({"task_id": task.id}, status=status.HTTP_200_OK)
+        # Serialize the message to return in response
+        message_serializer = serializers.MessageSerializer(message)
+
+        return Response(
+            {"task_id": task.id, "message": message_serializer.data},
+            status=status.HTTP_200_OK,
+        )

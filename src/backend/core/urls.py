@@ -33,6 +33,7 @@ from core.api.viewsets.message_template import (
 from core.api.viewsets.metrics import MailDomainUsersMetricsApiView
 from core.api.viewsets.placeholder import PlaceholderView
 from core.api.viewsets.send import SendMessageView
+from core.api.viewsets.cancel_send import CancelSendView
 from core.api.viewsets.task import TaskDetailView
 from core.api.viewsets.thread import ThreadViewSet
 from core.api.viewsets.thread_access import ThreadAccessViewSet
@@ -173,6 +174,11 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/send/",
         SendMessageView.as_view(),
         name="send-message",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/send/cancel/",
+        CancelSendView.as_view(),
+        name="cancel-send",
     ),
     path(
         f"api/{settings.API_VERSION}/tasks/<str:task_id>/",
