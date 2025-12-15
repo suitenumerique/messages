@@ -190,6 +190,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
         return {"success": False, "error": "Message already being processed"}
 
     try:
+        inbound_message = None
         try:
             inbound_message = models.InboundMessage.objects.get(id=inbound_message_id)
         except models.InboundMessage.DoesNotExist:

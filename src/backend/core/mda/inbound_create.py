@@ -203,7 +203,7 @@ def _create_message_from_inbound(
 
     Warning: messages imported here could be is_sender=True.
 
-    This method continues the logic of deliver_inbound_message, potentially asynchrounously.
+    This method continues the logic of deliver_inbound_message, potentially asynchronously.
 
     TODO: continue splitting this into smaller methods.
     """

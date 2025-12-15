@@ -64,7 +64,7 @@ def compute_labels_and_flags(
     parsed_email: Dict[str, Any],
     imap_labels: Optional[List[str]],
     imap_flags: Optional[List[str]],
-) -> Tuple[List[str], Dict[str, bool]]:
+) -> Tuple[set[str], Dict[str, bool]]:
     """Compute labels and flags for a parsed email."""
 
     # Combine both imap_labels and gmail_labels from parsed email
@@ -74,7 +74,7 @@ def compute_labels_and_flags(
     all_labels = list(imap_labels) + list(gmail_labels)
 
     message_flags = {}
-    labels_to_add = []
+    labels_to_add = set()
     for original_label in all_labels:
         cleaned_label = original_label.strip()
         if cleaned_label.startswith("INBOX/"):
@@ -92,7 +92,7 @@ def compute_labels_and_flags(
         if message_flag:
             message_flags[message_flag] = True
         elif cleaned_label not in IMAP_LABELS_TO_IGNORE:
-            labels_to_add.append(cleaned_label)
+            labels_to_add.add(cleaned_label)
 
     # Handle read/unread status via IMAP flags
     if imap_flags:
@@ -123,17 +123,19 @@ def handle_duplicate_message(
     labels, message_flags = compute_labels_and_flags(
         parsed_email, imap_labels, imap_flags
     )
+
+    for flag, value in message_flags.items():
+        if hasattr(existing_message, flag):
+            setattr(existing_message, flag, value)
+    existing_message.save(update_fields=message_flags.keys())
+
     for label in labels:
         try:
             label_obj, _ = models.Label.objects.get_or_create(
                 name=label, mailbox=mailbox
             )
             existing_message.thread.labels.add(label_obj)
-            for flag, value in message_flags.items():
-                if hasattr(existing_message, flag):
-                    setattr(existing_message, flag, value)
-                    existing_message.save(update_fields=[flag])
-            existing_message.save(update_fields=message_flags.keys())
+
         except Exception as e:
             logger.exception("Error creating label %s: %s", label, e)
             continue
