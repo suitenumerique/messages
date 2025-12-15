@@ -115,9 +115,6 @@ def compute_labels_and_flags(
     if message_flags.get("is_sender") or message_flags.get("is_draft"):
         message_flags["is_unread"] = False
 
-    if "is_sender" in imap_flags:
-        message_flags["is_sender"] = True
-
     return labels_to_add, message_flags, thread_flags
 
 

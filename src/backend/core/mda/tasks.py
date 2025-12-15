@@ -2,6 +2,7 @@
 
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught, too-many-lines
 
+import re
 from typing import Any, Dict, Optional, Tuple
 
 from django.core.cache import cache
@@ -267,9 +268,9 @@ def _check_spam_with_hardcoded_rules(
     headers = parsed_email.get("headers", {})
 
     for rule in rules:
-        if rule.get("header_match"):
+        if rule.get("header_match") or rule.get("header_match_regex"):
             # Split on first colon only, in case value contains colons
-            header_match = rule.get("header_match")
+            header_match = rule.get("header_match") or rule.get("header_match_regex")
             if ":" not in header_match:
                 logger.warning(
                     "Invalid header_match format (missing colon): %s", header_match
@@ -319,8 +320,15 @@ def _check_spam_with_hardcoded_rules(
             else:
                 header_value = str(header_value).lower().strip()
 
+            if rule.get("header_match"):
+                is_match = header_value == value
+            elif rule.get("header_match_regex"):
+                is_match = re.fullmatch(value, header_value) is not None
+            else:
+                raise ValueError("Invalid header match type")
+
             # Check if header matches
-            if header_value == value:
+            if is_match:
                 action = rule.get("action") or "spam"
                 if action in ["spam", "reject"]:
                     return True
@@ -346,7 +354,7 @@ def _check_spam_with_rspamd(
     spam_url = spam_config.get("rspamd_url")
     if not spam_url:
         # If rspamd is not configured, treat all messages as not spam
-        logger.warning("SPAM_CONFIG.rspamd_url not configured, skipping spam check")
+        logger.debug("SPAM_CONFIG.rspamd_url not configured, skipping spam check")
         return False, None
 
     try:
@@ -499,9 +507,9 @@ def process_inbound_message_task(self, inbound_message_id: str):
         logger.exception(
             "Error processing inbound message %s: %s", inbound_message_id, e
         )
-        inbound_message.error_message = str(e)
-        inbound_message.save(update_fields=["error_message"])
-        # Keep the message for retry
+        if inbound_message:
+            inbound_message.error_message = str(e)
+            inbound_message.save(update_fields=["error_message"])
         return {"success": False, "error": str(e)}
     finally:
         # Always release the lock

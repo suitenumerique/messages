@@ -537,8 +537,8 @@ def _create_message_from_inbound(
             thread.snippet = new_snippet
             thread.save(update_fields=["snippet"])
 
-        # Do not trigger AI features on import
-        if not is_import:
+        # Do not trigger AI features on import or spam
+        if not is_import and not is_spam:
             # Update summary if needed is ai is enabled
             if is_ai_summary_enabled():
                 messages = get_messages_from_thread(thread)

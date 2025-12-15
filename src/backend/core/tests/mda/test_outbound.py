@@ -841,6 +841,7 @@ class TestSendMessageDKIMVerification:
         self, mock_send_outbound, mock_dns_resolve, mailbox_sender
     ):
         """Test that DKIM verification succeeds and message is sent."""
+
         # Create a message with external recipient
         thread = factories.ThreadFactory()
         factories.ThreadAccessFactory(
@@ -868,8 +869,7 @@ class TestSendMessageDKIMVerification:
         )
 
         # Prepare and sign the message
-        domain_name = mailbox_sender.domain.name
-        raw_mime = f"From: test@{domain_name}\r\nTo: external@other.com\r\nSubject: Test\r\n\r\nBody\r\n".encode()
+        raw_mime = f"From: {sender_contact.email}\r\nTo: external@other.com\r\nSubject: Test\r\n\r\nBody\r\n".encode()
         signature_header = sign_message_dkim(raw_mime, mailbox_sender.domain)
         signed_mime = signature_header + b"\r\n" + raw_mime
 
@@ -892,7 +892,7 @@ class TestSendMessageDKIMVerification:
 
         # Mock DNS to return the DKIM public key
         def mock_dns_resolve_func(query_name, record_type, **kwargs):
-            expected_fqdn = f"testselector._domainkey.{domain_name}"
+            expected_fqdn = f"testselector._domainkey.{mailbox_sender.domain.name}"
             if record_type == "TXT" and query_name == expected_fqdn:
                 mock_answer = MagicMock()
                 mock_answer.strings = [
@@ -952,8 +952,7 @@ class TestSendMessageDKIMVerification:
         )
 
         # Prepare and sign the message
-        domain_name = mailbox_sender.domain.name
-        raw_mime = f"From: test@{domain_name}\r\nTo: external@other.com\r\nSubject: Test\r\n\r\nBody\r\n".encode()
+        raw_mime = f"From: {sender_contact.email}\r\nTo: external@other.com\r\nSubject: Test\r\n\r\nBody\r\n".encode()
         signature_header = sign_message_dkim(raw_mime, mailbox_sender.domain)
         signed_mime = signature_header + b"\r\n" + raw_mime
 
@@ -1016,8 +1015,7 @@ class TestSendMessageDKIMVerification:
         )
 
         # Create blob with message
-        domain_name = mailbox_sender.domain.name
-        raw_mime = f"From: test@{domain_name}\r\nTo: internal@{domain_name}\r\nSubject: Test\r\n\r\nBody\r\n".encode()
+        raw_mime = f"From: {sender_contact.email}\r\nTo: internal@{mailbox_sender.domain.name}\r\nSubject: Test\r\n\r\nBody\r\n".encode()
         blob = mailbox_sender.create_blob(
             content=raw_mime, content_type="message/rfc822"
         )
@@ -1030,7 +1028,7 @@ class TestSendMessageDKIMVerification:
             domain=mailbox_sender.domain, local_part="internal"
         )
         internal_contact = factories.ContactFactory(
-            mailbox=internal_mailbox, email=f"internal@{domain_name}"
+            mailbox=internal_mailbox, email=f"internal@{mailbox_sender.domain.name}"
         )
         factories.MessageRecipientFactory(
             message=message,

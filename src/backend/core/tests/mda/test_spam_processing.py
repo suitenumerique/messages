@@ -345,6 +345,78 @@ This is a test email body.
 
         assert result is True
 
+    def test_check_spam_with_hardcoded_rules_header_match_regex_spam(self):
+        """Test that spam messages are correctly identified by header_match_regex."""
+        raw_email = b"""From: sender@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Spam: this is spam content
+
+This is a test email body.
+"""
+        parsed_email = parse_email_message(raw_email)
+        spam_config = {
+            "rules": [{"header_match_regex": "X-Spam:.*spam.*", "action": "spam"}]
+        }
+
+        result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
+
+        assert result is True
+
+    def test_check_spam_with_hardcoded_rules_header_match_regex_spam_no_fullmatch(self):
+        """Test that spam messages are correctly identified by header_match_regex."""
+        raw_email = b"""From: sender@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Spam: this is spam content
+
+This is a test email body.
+"""
+        parsed_email = parse_email_message(raw_email)
+        spam_config = {
+            "rules": [{"header_match_regex": "X-Spam:spam", "action": "spam"}]
+        }
+
+        result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
+
+        assert result is None
+
+    def test_check_spam_with_hardcoded_rules_header_match_regex_case_insensitive(self):
+        """Test that header_match_regex matching is case-insensitive."""
+        raw_email = b"""From: sender@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Spam: THIS IS SPAM CONTENT
+
+This is a test email body.
+"""
+        parsed_email = parse_email_message(raw_email)
+        spam_config = {
+            "rules": [{"header_match_regex": "X-Spam:.*spam.*", "action": "spam"}]
+        }
+
+        result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
+
+        assert result is True
+
+    def test_check_spam_with_hardcoded_rules_header_match_regex_pattern(self):
+        """Test that regex patterns work correctly with header_match_regex."""
+        raw_email = b"""From: sender@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Spam-Level: 5
+
+This is a test email body.
+"""
+        parsed_email = parse_email_message(raw_email)
+        spam_config = {
+            "rules": [{"header_match_regex": "X-Spam-Level:[4-9]", "action": "spam"}]
+        }
+
+        result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
+
+        assert result is True
+
     def test_check_spam_with_hardcoded_rules_default_action(self):
         """Test that default action is spam when not specified."""
         raw_email = b"""From: sender@example.com
@@ -396,6 +468,59 @@ This is a test email body.
         result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
 
         assert result is False
+
+    def test_check_spam_with_hardcoded_rules_multiple_rules_order(self):
+        """Test that multiple rules are evaluated in order and first match wins."""
+        raw_email = b"""From: sender@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Spam: maybe
+X-Custom: ham
+
+This is a test email body.
+"""
+        parsed_email = parse_email_message(raw_email)
+        spam_config = {
+            "rules": [
+                # First rule: doesn't match (different header value)
+                {"header_match": "X-Spam:yes", "action": "spam"},
+                # Second rule: matches and should win (returns ham)
+                {"header_match": "X-Custom:ham", "action": "ham"},
+                # Third rule: also matches but shouldn't be evaluated (would return spam)
+                {"header_match": "X-Custom:ham", "action": "spam"},
+            ]
+        }
+
+        result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
+
+        # Should return False (ham) because second rule matched first
+        # Third rule should not be evaluated
+        assert result is False
+
+    def test_check_spam_with_hardcoded_rules_multiple_rules_first_match_wins(self):
+        """Test that the first matching rule stops evaluation."""
+        raw_email = b"""From: sender@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Spam: yes
+
+This is a test email body.
+"""
+        parsed_email = parse_email_message(raw_email)
+        spam_config = {
+            "rules": [
+                # First rule: matches and should win (returns spam)
+                {"header_match": "X-Spam:yes", "action": "spam"},
+                # Second rule: also matches but shouldn't be evaluated (would return ham)
+                {"header_match": "X-Spam:yes", "action": "ham"},
+            ]
+        }
+
+        result = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
+
+        # Should return True (spam) because first rule matched
+        # Second rule should not be evaluated
+        assert result is True
 
     def test_check_spam_with_hardcoded_rules_x_spam_single_relay(self):
         """Test that X-Spam header from relay is trusted when relay adds its own header."""

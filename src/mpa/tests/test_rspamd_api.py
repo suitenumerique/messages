@@ -4,11 +4,7 @@ import os
 
 import pytest
 import requests
-
-
-RSPAMD_URL = os.getenv("RSPAMD_URL", "http://localhost:8010/_api")
-RSPAMD_AUTH = os.getenv("RSPAMD_AUTH", "password")
-
+from conftest import RSPAMD_URL, RSPAMD_AUTH
 
 def test_rspamd_health(wait_for_rspamd):
     """Test that rspamd is running and accessible."""
@@ -87,7 +83,7 @@ This is a test email body.
     # Simple valid message should not be rejected
     # If required_score is None, just check that action is not reject
     if result["required_score"] is not None:
-        assert result["action"] != "reject" or result["score"] < result["required_score"]
+        assert result["action"] != "reject"
     else:
         # If no required_score, just verify action is valid
         assert result["action"] in ("reject", "add header", "greylist", "no action")

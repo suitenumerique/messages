@@ -317,11 +317,10 @@ def send_message(message: models.Message, force_mta_out: bool = False):
         return
 
     try:
-
         blob_content = message.blob.get_content()
         parsed_email = parse_email_message(blob_content)
 
-        if parsed_email["headers"]["from"] != message.sender.email:
+        if parsed_email.get("from", {}).get("email") != message.sender.email:
             raise ValueError("Mailbox email does not match the raw message sender")
 
         message.sent_at = timezone.now()
@@ -519,6 +518,8 @@ def send_outbound_email(
             custom_settings.get("MTA_OUT_RELAY_PASSWORD")
             or settings.MTA_OUT_RELAY_PASSWORD
         )
+        if not mta_out_smtp_host:
+            raise ValueError("MTA_OUT_RELAY_HOST is not configured")
 
         statuses = send_smtp_mail(
             smtp_host=(mta_out_smtp_host or "").split(":")[0],
