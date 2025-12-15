@@ -416,8 +416,9 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
 
             # Parse message
             parsed_email = parse_email_message(raw_email)
-            if parsed_email["from"]["email"] == username:
-                flags.append("is_sender")
+
+            # TODO: better heuristic to determine if the message is from the sender
+            is_sender = parsed_email["from"]["email"] == username
 
             # Deliver message
             if deliver_inbound_message(
@@ -425,6 +426,7 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
                 parsed_email,
                 raw_email,
                 is_import=True,
+                is_import_sender=is_sender,
                 imap_labels=[display_name],
                 imap_flags=flags,
             ):

@@ -1015,7 +1015,11 @@ class TestSendMessageDKIMVerification:
         )
 
         # Create blob with message
-        raw_mime = f"From: {sender_contact.email}\r\nTo: internal@{mailbox_sender.domain.name}\r\nSubject: Test\r\n\r\nBody\r\n".encode()
+        raw_mime = (
+            f"From: {sender_contact.email}\r\n"
+            + f"To: internal@{mailbox_sender.domain.name}\r\n"
+            + "Subject: Test\r\n\r\nBody\r\n"
+        ).encode()
         blob = mailbox_sender.create_blob(
             content=raw_mime, content_type="message/rfc822"
         )

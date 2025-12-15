@@ -349,3 +349,141 @@ def test_import_form_no_recipient(admin_client, eml_file):
     # The form should still be displayed with an error
     assert "Import Messages" in response.content.decode()
     assert "This field is required" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_import_message_to_different_mailbox_same_domain(domain):
+    """Test that importing a message addressed to another mailbox on the same domain
+    should ONLY deliver it to the importing mailbox, not to the recipient mailbox.
+
+    This test verifies correct behavior: even if a message is addressed to another
+    mailbox on the same domain, during import it should only be imported into the
+    importing mailbox. This prevents users from adding messages to their colleagues'
+    mailboxes.
+
+    The bug being tested: deliver_inbound_message calls check_local_recipient even
+    during imports, which might cause issues if the importing mailbox validation fails
+    or if there are edge cases with domain checking during import.
+    """
+    # Create two mailboxes on the same domain
+    mailbox_a = Mailbox.objects.create(local_part="mailbox_a", domain=domain)
+    mailbox_b = Mailbox.objects.create(local_part="mailbox_b", domain=domain)
+
+    # Create an EML message addressed to mailbox_b (but we're importing from mailbox_a)
+    eml_content = b"""From: sender@example.com
+To: mailbox_b@example.com
+Subject: Test message for mailbox_b
+Date: Mon, 26 May 2025 20:13:44 +0200
+Message-ID: <test-message-id@example.com>
+
+This is a test message addressed to mailbox_b.
+"""
+
+    # Create a mock task instance
+    mock_task = MagicMock()
+    mock_task.update_state = MagicMock()
+
+    # Mock storage
+    mock_storage = mock_storage_open(eml_content)
+
+    # Import from mailbox_a
+    with (
+        patch.object(process_eml_file_task, "update_state", mock_task.update_state),
+        patch("core.services.importer.tasks.storages") as mock_storages,
+    ):
+        mock_storages.__getitem__.return_value = mock_storage
+        # Run the task synchronously for testing, importing from mailbox_a
+        task_result = process_eml_file_task(
+            file_key="test-file-key.eml", recipient_id=str(mailbox_a.id)
+        )
+
+        # The import should succeed
+        assert task_result["status"] == "SUCCESS"
+        assert task_result["result"]["success_count"] == 1
+
+        # Verify correct behavior: message is ONLY in mailbox_a (the importing mailbox)
+        # and NOT in mailbox_b (the recipient mailbox)
+        messages_in_mailbox_a = Message.objects.filter(
+            thread__accesses__mailbox=mailbox_a
+        ).count()
+        messages_in_mailbox_b = Message.objects.filter(
+            thread__accesses__mailbox=mailbox_b
+        ).count()
+
+        # Correct behavior: message should be in importing mailbox only
+        assert messages_in_mailbox_a == 1, (
+            "Message was correctly delivered to importing mailbox"
+        )
+        assert messages_in_mailbox_b == 0, (
+            "Message was correctly NOT delivered to colleague's mailbox"
+        )
+
+        # Verify the message recipient contact is recorded correctly
+        message = Message.objects.filter(thread__accesses__mailbox=mailbox_a).first()
+        assert message is not None
+        # The recipient contact should be mailbox_b@example.com, but the message
+        # should be in mailbox_a's threads
+        recipient_emails = [
+            recipient.contact.email for recipient in message.recipients.all()
+        ]
+        assert "mailbox_b@example.com" in recipient_emails, (
+            "Recipient contact should be recorded"
+        )
+
+
+@pytest.mark.django_db
+def test_import_message_with_from_equal_to_mailbox_sets_is_sender(domain):
+    """Test that importing a message where From: equals the importing mailbox
+    correctly sets is_sender=True.
+    """
+    # Create a mailbox
+    mailbox = Mailbox.objects.create(local_part="testuser", domain=domain)
+    mailbox_email = str(mailbox)  # e.g., "testuser@example.com"
+
+    # Create an EML message with From: equal to the mailbox email
+    eml_content = f"""From: {mailbox_email}
+To: recipient@example.com
+Subject: Test sent message
+Date: Mon, 26 May 2025 20:13:44 +0200
+Message-ID: <test-sent-message-id@example.com>
+
+This is a test message sent from the mailbox.
+""".encode("utf-8")
+
+    # Create a mock task instance
+    mock_task = MagicMock()
+    mock_task.update_state = MagicMock()
+
+    # Mock storage
+    mock_storage = mock_storage_open(eml_content)
+
+    # Import the message
+    with (
+        patch.object(process_eml_file_task, "update_state", mock_task.update_state),
+        patch("core.services.importer.tasks.storages") as mock_storages,
+    ):
+        mock_storages.__getitem__.return_value = mock_storage
+        # Run the task synchronously for testing
+        task_result = process_eml_file_task(
+            file_key="test-file-key.eml", recipient_id=str(mailbox.id)
+        )
+
+        # The import should succeed
+        assert task_result["status"] == "SUCCESS"
+        assert task_result["result"]["success_count"] == 1
+
+        # Verify the message was created
+        assert Message.objects.count() == 1
+        message = Message.objects.filter(thread__accesses__mailbox=mailbox).first()
+        assert message is not None
+
+        # Verify is_sender is correctly set to True
+        assert message.is_sender is True, (
+            "Message with From: equal to importing mailbox should have is_sender=True"
+        )
+
+        # Verify is_unread is False for sent messages
+        assert message.is_unread is False, "Sent messages should not be unread"
+
+        # Verify the sender contact is correct
+        assert message.sender.email == mailbox_email

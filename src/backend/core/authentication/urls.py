@@ -1,4 +1,4 @@
-"""Authentication URLs for the People core app."""
+"""Authentication URLs for the Messages core app."""
 
 from django.urls import include, path
 

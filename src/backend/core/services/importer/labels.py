@@ -36,9 +36,6 @@ IMAP_LABEL_TO_MESSAGE_FLAG = {
     "INBOX.INBOX.Trash": "is_trashed",
     # TODO: '[Gmail]/Important'
     "OUTBOX": "is_sender",
-}
-
-IMAP_LABEL_TO_THREAD_FLAG = {
     "Spam": "is_spam",
     "QUARANTAINE": "is_spam",
     "INBOX.INBOX.Junk": "is_spam",
@@ -67,7 +64,7 @@ def compute_labels_and_flags(
     parsed_email: Dict[str, Any],
     imap_labels: Optional[List[str]],
     imap_flags: Optional[List[str]],
-) -> Tuple[List[str], Dict[str, bool], Dict[str, bool]]:
+) -> Tuple[List[str], Dict[str, bool]]:
     """Compute labels and flags for a parsed email."""
 
     # Combine both imap_labels and gmail_labels from parsed email
@@ -77,7 +74,6 @@ def compute_labels_and_flags(
     all_labels = list(imap_labels) + list(gmail_labels)
 
     message_flags = {}
-    thread_flags = {}
     labels_to_add = []
     for original_label in all_labels:
         cleaned_label = original_label.strip()
@@ -93,11 +89,8 @@ def compute_labels_and_flags(
                 message_flags["is_unread"] = True
             continue  # Skip further processing for this label
         message_flag = IMAP_LABEL_TO_MESSAGE_FLAG.get(cleaned_label)
-        thread_flag = IMAP_LABEL_TO_THREAD_FLAG.get(cleaned_label)
         if message_flag:
             message_flags[message_flag] = True
-        elif thread_flag:
-            thread_flags[thread_flag] = True
         elif cleaned_label not in IMAP_LABELS_TO_IGNORE:
             labels_to_add.append(cleaned_label)
 
@@ -115,7 +108,7 @@ def compute_labels_and_flags(
     if message_flags.get("is_sender") or message_flags.get("is_draft"):
         message_flags["is_unread"] = False
 
-    return labels_to_add, message_flags, thread_flags
+    return labels_to_add, message_flags
 
 
 def handle_duplicate_message(
@@ -127,7 +120,7 @@ def handle_duplicate_message(
 ) -> None:
     """Handle duplicate message by updating labels and flags."""
     # get labels from parsed_email
-    labels, message_flags, thread_flags = compute_labels_and_flags(
+    labels, message_flags = compute_labels_and_flags(
         parsed_email, imap_labels, imap_flags
     )
     for label in labels:
@@ -141,10 +134,6 @@ def handle_duplicate_message(
                     setattr(existing_message, flag, value)
                     existing_message.save(update_fields=[flag])
             existing_message.save(update_fields=message_flags.keys())
-            for flag, value in thread_flags.items():
-                if hasattr(existing_message.thread, flag):
-                    setattr(existing_message.thread, flag, value)
-            existing_message.thread.save(update_fields=thread_flags.keys())
         except Exception as e:
             logger.exception("Error creating label %s: %s", label, e)
             continue

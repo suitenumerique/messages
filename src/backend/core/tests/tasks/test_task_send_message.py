@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core import enums, factories
-from core.mda.tasks import send_message_task
+from core.mda.outbound_tasks import send_message_task
 
 
 @pytest.mark.django_db
@@ -65,7 +65,7 @@ class TestSendMessageTask:
         assert other_message2.archived_at is None
 
         # Mock the send_message function
-        with patch("core.mda.tasks.send_message") as mock_mda_send:
+        with patch("core.mda.outbound_tasks.send_message") as mock_mda_send:
             # Call the task with must_archive=True
             with patch.object(send_message_task, "update_state"):
                 result = send_message_task(str(draft_message.id), must_archive=True)
@@ -111,7 +111,7 @@ class TestSendMessageTask:
         assert other_message.archived_at is None
 
         # Mock the send_message function
-        with patch("core.mda.tasks.send_message") as mock_mda_send:
+        with patch("core.mda.outbound_tasks.send_message") as mock_mda_send:
             # Call the task with must_archive=False
             with patch.object(send_message_task, "update_state"):
                 result = send_message_task(str(draft_message.id), must_archive=False)
@@ -140,7 +140,7 @@ class TestSendMessageTask:
         assert draft_message.is_draft is True
 
         # Mock the send_message function
-        with patch("core.mda.tasks.send_message") as mock_mda_send:
+        with patch("core.mda.outbound_tasks.send_message") as mock_mda_send:
             # Mock the Message.objects.filter().update() to raise an exception
             with patch("core.models.Message.objects.filter") as mock_filter:
                 mock_queryset = MagicMock()
@@ -164,7 +164,7 @@ class TestSendMessageTask:
     ):
         """Test that thread stats are updated after archiving."""
         # Mock the send_message function
-        with patch("core.mda.tasks.send_message"):
+        with patch("core.mda.outbound_tasks.send_message"):
             # Mock thread.update_stats to verify it's called
             with patch("core.models.Thread.update_stats") as mock_update_stats:
                 # Call the task with must_archive=True

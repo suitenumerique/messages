@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines,too-many-public-methods
 """
 Tests for the RFC5322 email parser module.
 """

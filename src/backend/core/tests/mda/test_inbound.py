@@ -8,7 +8,8 @@ from django.utils import timezone
 import pytest
 
 from core import enums, factories, models
-from core.mda.inbound import deliver_inbound_message, find_thread_for_inbound_message
+from core.mda.inbound import deliver_inbound_message
+from core.mda.inbound_create import find_thread_for_inbound_message
 
 
 @pytest.mark.django_db
@@ -248,7 +249,7 @@ class TestDeliverInboundMessage:
         domain = factories.MailDomainFactory(name="deliver.test")
         return factories.MailboxFactory(local_part="recipient", domain=domain)
 
-    @patch("core.mda.inbound.find_thread_for_inbound_message")
+    @patch("core.mda.inbound_create.find_thread_for_inbound_message")
     def test_basic_delivery_new_thread(
         self, mock_find_thread, target_mailbox, sample_parsed_email, raw_email_data
     ):
@@ -302,7 +303,7 @@ class TestDeliverInboundMessage:
             enums.ThreadAccessRoleChoices.VIEWER,
         ],
     )
-    @patch("core.mda.inbound.find_thread_for_inbound_message")
+    @patch("core.mda.inbound_create.find_thread_for_inbound_message")
     def test_basic_delivery_existing_thread(
         self,
         mock_find_thread,

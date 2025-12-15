@@ -31,17 +31,17 @@ app.autodiscover_tasks()
 if not settings.DISABLE_CELERY_BEAT_SCHEDULE:
     app.conf.beat_schedule = {
         "retry-pending-messages": {
-            "task": "core.mda.tasks.retry_messages_task",
+            "task": "core.mda.outbound_tasks.retry_messages_task",
             "schedule": 300.0,  # Every 5 minutes (300 seconds)
             "options": {"queue": "default"},
         },
         "selfcheck": {
-            "task": "core.mda.tasks.selfcheck_task",
+            "task": "core.mda.outbound_tasks.selfcheck_task",
             "schedule": settings.MESSAGES_SELFCHECK_INTERVAL,
             "options": {"queue": "default"},
         },
         "process-inbound-messages-queue": {
-            "task": "core.mda.tasks.process_inbound_messages_queue_task",
+            "task": "core.mda.inbound_tasks.process_inbound_messages_queue_task",
             "schedule": 300.0,  # Every 5 minutes
             "options": {"queue": "default"},
         },

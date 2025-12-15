@@ -15,7 +15,7 @@ from rest_framework.views import APIView
 
 from core import models
 from core.mda.outbound import prepare_outbound_message
-from core.mda.tasks import send_message_task
+from core.mda.outbound_tasks import send_message_task
 
 from .. import permissions, serializers
 

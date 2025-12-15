@@ -10,20 +10,20 @@ import requests
 
 from core import factories, models
 from core.mda.inbound import deliver_inbound_message
-from core.mda.rfc5322 import parse_email_message
-from core.mda.tasks import (
+from core.mda.inbound_tasks import (
     _check_spam_with_hardcoded_rules,
     _check_spam_with_rspamd,
     process_inbound_message_task,
     process_inbound_messages_queue_task,
 )
+from core.mda.rfc5322 import parse_email_message
 
 
 @pytest.mark.django_db
 class TestDeliverInboundMessageQueueing:
     """Test that deliver_inbound_message queues messages instead of creating them directly."""
 
-    @patch("core.mda.tasks.process_inbound_message_task.delay")
+    @patch("core.mda.inbound_tasks.process_inbound_message_task.delay")
     def test_deliver_inbound_message_queues_message(self, mock_task_delay):
         """Test that deliver_inbound_message creates an InboundMessage in the queue."""
         mailbox = factories.MailboxFactory()
@@ -88,7 +88,7 @@ class TestRspamdSpamCheck:
     """Test rspamd spam checking functionality."""
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.tasks.requests.post")
+    @patch("core.mda.inbound_tasks.requests.post")
     def test_check_spam_with_rspamd_spam(self, mock_post):
         """Test that spam messages are correctly identified."""
         spam_config = {"rspamd_url": "http://rspamd:8010/_api"}
@@ -112,7 +112,7 @@ class TestRspamdSpamCheck:
         assert call_args[1]["data"] == raw_data
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.tasks.requests.post")
+    @patch("core.mda.inbound_tasks.requests.post")
     def test_check_spam_with_rspamd_not_spam(self, mock_post):
         """Test that non-spam messages are correctly identified."""
         spam_config = {"rspamd_url": "http://rspamd:8010/_api"}
@@ -137,7 +137,7 @@ class TestRspamdSpamCheck:
             "rspamd_auth": "Bearer token123",
         }
     )
-    @patch("core.mda.tasks.requests.post")
+    @patch("core.mda.inbound_tasks.requests.post")
     def test_check_spam_with_rspamd_auth_header(self, mock_post):
         """Test that Authorization header is included when configured."""
         spam_config = {
@@ -170,7 +170,7 @@ class TestRspamdSpamCheck:
         assert error is None
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.tasks.requests.post")
+    @patch("core.mda.inbound_tasks.requests.post")
     def test_check_spam_with_rspamd_error(self, mock_post):
         """Test that errors in rspamd check are handled gracefully."""
         spam_config = {"rspamd_url": "http://rspamd:8010/_api"}
@@ -189,7 +189,7 @@ class TestRspamdSpamCheck:
             "rspamd_auth": "Bearer global",
         }
     )
-    @patch("core.mda.tasks.requests.post")
+    @patch("core.mda.inbound_tasks.requests.post")
     def test_check_spam_with_maildomain_override(self, mock_post):
         """Test that maildomain custom_settings can override SPAM_CONFIG."""
         # Create a maildomain with custom spam config
@@ -695,8 +695,8 @@ class TestProcessInboundMessageTask:
     """Test the process_inbound_message_task."""
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.tasks._check_spam_with_rspamd")
-    @patch("core.mda.tasks._create_message_from_inbound")
+    @patch("core.mda.inbound_tasks._check_spam_with_rspamd")
+    @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_process_inbound_message_task_spam(
         self, mock_create_message, mock_check_spam
     ):
@@ -728,8 +728,8 @@ class TestProcessInboundMessageTask:
         assert not models.InboundMessage.objects.filter(id=inbound_message.id).exists()
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.tasks._check_spam_with_rspamd")
-    @patch("core.mda.tasks._create_message_from_inbound")
+    @patch("core.mda.inbound_tasks._check_spam_with_rspamd")
+    @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_process_inbound_message_task_not_spam(
         self, mock_create_message, mock_check_spam
     ):
@@ -757,8 +757,8 @@ class TestProcessInboundMessageTask:
         assert call_kwargs["is_spam"] is False
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
-    @patch("core.mda.tasks._check_spam_with_rspamd")
-    @patch("core.mda.tasks._create_message_from_inbound")
+    @patch("core.mda.inbound_tasks._check_spam_with_rspamd")
+    @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_process_inbound_message_task_failure(
         self, mock_create_message, mock_check_spam
     ):
@@ -790,7 +790,7 @@ class TestProcessInboundMessageTask:
 class TestProcessInboundMessagesQueueTask:
     """Test the process_inbound_messages_queue_task."""
 
-    @patch("core.mda.tasks.process_inbound_message_task.delay")
+    @patch("core.mda.inbound_tasks.process_inbound_message_task.delay")
     def test_process_inbound_messages_queue_task(self, mock_task_delay):
         """Test that the queue processing task triggers individual message processing."""
         mailbox = factories.MailboxFactory()

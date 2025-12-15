@@ -739,10 +739,10 @@ Test message body 2"""
         )
 
 
-@patch("core.mda.inbound.is_ai_summary_enabled", return_value=True)
-@patch("core.mda.inbound.is_auto_labels_enabled", return_value=True)
-@patch("core.mda.inbound.summarize_thread")
-@patch("core.mda.inbound.assign_label_to_thread")
+@patch("core.mda.inbound_create.is_ai_summary_enabled", return_value=True)
+@patch("core.mda.inbound_create.is_auto_labels_enabled", return_value=True)
+@patch("core.mda.inbound_create.summarize_thread")
+@patch("core.mda.inbound_create.assign_label_to_thread")
 def test_import_messages_do_not_trigger_ai_features(
     mock_assign_label_to_thread,
     mock_summarize_thread,

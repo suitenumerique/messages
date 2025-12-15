@@ -898,7 +898,7 @@ This is a regular message."""
 #     assert Thread.objects.count() == 0
 
 #     # First import
-#     with patch("core.mda.tasks.process_mbox_file_task.delay") as mock_task:
+#     with patch("core.mda.inbound_tasks.process_mbox_file_task.delay") as mock_task:
 #         mock_task.return_value.id = "fake-task-id-1"
 #         with open(mbox_file_path, "rb") as f:
 #             response = api_client.post(
@@ -945,7 +945,7 @@ This is a regular message."""
 #             assert messages[1].thread.messages.count() == 2
 
 #     # Second import of the same file
-#     with patch("core.mda.tasks.process_mbox_file_task.delay") as mock_task:
+#     with patch("core.mda.inbound_tasks.process_mbox_file_task.delay") as mock_task:
 #         mock_task.return_value.id = "fake-task-id-2"
 #         with open(mbox_file_path, "rb") as f:
 #             response = api_client.post(
@@ -1004,7 +1004,7 @@ This is a regular message."""
 
 # This is another reply to the same thread."""
 
-#     with patch("core.mda.tasks.process_mbox_file_task.delay") as mock_task:
+#     with patch("core.mda.inbound_tasks.process_mbox_file_task.delay") as mock_task:
 #         mock_task.return_value.id = "fake-task-id-3"
 #         # Create a new MBOX file with just the new message
 #         new_mbox_content = b"From \n" + new_message_content + b"\n\n"
