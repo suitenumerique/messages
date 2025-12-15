@@ -222,6 +222,16 @@
                                             "type": "integer",
                                             "description": "Maximum size in bytes for incoming email (including attachments and body)",
                                             "readOnly": true
+                                        },
+                                        "MAX_RECIPIENTS_PER_MESSAGE": {
+                                            "type": "integer",
+                                            "description": "Maximum number of recipients per message (to + cc + bcc) for the entire system. Cannot be exceeded.",
+                                            "readOnly": true
+                                        },
+                                        "MAX_DEFAULT_RECIPIENTS_PER_MESSAGE": {
+                                            "type": "integer",
+                                            "description": "Default maximum number of recipients per message (to + cc + bcc) for a mailbox or maildomain if no custom limit is set.",
+                                            "readOnly": true
                                         }
                                     },
                                     "required": [
@@ -235,7 +245,9 @@
                                         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN",
                                         "MAX_OUTGOING_ATTACHMENT_SIZE",
                                         "MAX_OUTGOING_BODY_SIZE",
-                                        "MAX_INCOMING_EMAIL_SIZE"
+                                        "MAX_INCOMING_EMAIL_SIZE",
+                                        "MAX_RECIPIENTS_PER_MESSAGE",
+                                        "MAX_DEFAULT_RECIPIENTS_PER_MESSAGE"
                                     ]
                                 }
                             }
@@ -3027,6 +3039,106 @@
                         "description": ""
                     }
                 }
+            },
+            "put": {
+                "operationId": "maildomains_update",
+                "description": "ViewSet for listing MailDomains the user administers.\nProvides a top-level entry for mail domain administration.\nEndpoint: /maildomains/<maildomain_pk>/",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailDomainAdminUpdateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MailDomainAdminUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailDomainAdminUpdate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "maildomains_partial_update",
+                "description": "ViewSet for listing MailDomains the user administers.\nProvides a top-level entry for mail domain administration.\nEndpoint: /maildomains/<maildomain_pk>/",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMailDomainAdminUpdateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMailDomainAdminUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailDomainAdminUpdate"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
             }
         },
         "/api/v1.0/maildomains/{maildomain_pk}/accesses/": {
@@ -3343,9 +3455,7 @@
                         "in": "path",
                         "name": "id",
                         "schema": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "primary key for the record as UUID"
+                            "type": "string"
                         },
                         "required": true
                     },
@@ -3388,9 +3498,7 @@
                         "in": "path",
                         "name": "id",
                         "schema": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "primary key for the record as UUID"
+                            "type": "string"
                         },
                         "required": true
                     },
@@ -3447,9 +3555,7 @@
                         "in": "path",
                         "name": "id",
                         "schema": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "primary key for the record as UUID"
+                            "type": "string"
                         },
                         "required": true
                     },
@@ -3487,9 +3593,7 @@
                         "in": "path",
                         "name": "id",
                         "schema": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "primary key for the record as UUID"
+                            "type": "string"
                         },
                         "required": true
                     },
@@ -3551,6 +3655,71 @@
                             }
                         },
                         "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/{id}/settings/": {
+            "patch": {
+                "operationId": "maildomains_mailboxes_settings_update",
+                "description": "Update mailbox settings (custom_settings).",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMailboxSettingsUpdateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedMailboxSettingsUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxSettingsUpdate"
+                                }
+                            }
+                        },
+                        "description": "Mailbox settings updated successfully."
+                    },
+                    "400": {
+                        "description": "Invalid settings data."
+                    },
+                    "403": {
+                        "description": "User does not have permission to manage settings."
                     }
                 }
             }
@@ -5550,6 +5719,19 @@
                         "type": "string",
                         "readOnly": true
                     },
+                    "custom_settings": {
+                        "type": "object",
+                        "properties": {
+                            "max_recipients_per_message": {
+                                "type": "integer",
+                                "nullable": true,
+                                "description": "Maximum number of recipients per message for this domain."
+                            }
+                        },
+                        "nullable": true,
+                        "readOnly": true,
+                        "description": "Limits applied to this mail domain (e.g. max recipients per message)."
+                    },
                     "abilities": {
                         "type": "object",
                         "description": "Instance permissions and capabilities",
@@ -5581,6 +5763,10 @@
                             "manage_mailboxes": {
                                 "type": "boolean",
                                 "description": "Can manage mailboxes"
+                            },
+                            "manage_settings": {
+                                "type": "boolean",
+                                "description": "Can manage settings"
                             }
                         },
                         "required": [
@@ -5590,7 +5776,8 @@
                             "patch",
                             "delete",
                             "manage_accesses",
-                            "manage_mailboxes"
+                            "manage_mailboxes",
+                            "manage_settings"
                         ],
                         "readOnly": true
                     }
@@ -5598,15 +5785,43 @@
                 "required": [
                     "abilities",
                     "created_at",
+                    "custom_settings",
                     "expected_dns_records",
                     "id",
                     "name",
                     "updated_at"
                 ]
             },
+            "MailDomainAdminUpdate": {
+                "type": "object",
+                "description": "Serialize mail domains for updating custom_settings only.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "custom_settings": {
+                        "description": "Custom settings for the mail domain."
+                    }
+                },
+                "required": [
+                    "id"
+                ]
+            },
+            "MailDomainAdminUpdateRequest": {
+                "type": "object",
+                "description": "Serialize mail domains for updating custom_settings only.",
+                "properties": {
+                    "custom_settings": {
+                        "description": "Custom settings for the mail domain."
+                    }
+                }
+            },
             "MailDomainAdminWrite": {
                 "type": "object",
-                "description": "Serialize mail domains for creating / editing admin view.",
+                "description": "Serialize mail domains for creating admin view.",
                 "properties": {
                     "id": {
                         "type": "string",
@@ -5654,7 +5869,7 @@
             },
             "MailDomainAdminWriteRequest": {
                 "type": "object",
-                "description": "Serialize mail domains for creating / editing admin view.",
+                "description": "Serialize mail domains for creating admin view.",
                 "properties": {
                     "name": {
                         "type": "string",
@@ -5708,6 +5923,10 @@
                         "type": "string",
                         "readOnly": true
                     },
+                    "max_recipients_per_message": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
                     "abilities": {
                         "type": "object",
                         "description": "Instance permissions and capabilities",
@@ -5755,6 +5974,10 @@
                             "import_messages": {
                                 "type": "boolean",
                                 "description": "Can import messages"
+                            },
+                            "manage_settings": {
+                                "type": "boolean",
+                                "description": "Can manage settings"
                             }
                         },
                         "required": [
@@ -5768,7 +5991,8 @@
                             "send_messages",
                             "manage_labels",
                             "manage_message_templates",
-                            "import_messages"
+                            "import_messages",
+                            "manage_settings"
                         ],
                         "readOnly": true
                     }
@@ -5779,6 +6003,7 @@
                     "count_unread_messages",
                     "email",
                     "id",
+                    "max_recipients_per_message",
                     "role"
                 ]
             },
@@ -5985,6 +6210,19 @@
                             }
                         ],
                         "readOnly": true
+                    },
+                    "custom_settings": {
+                        "type": "object",
+                        "properties": {
+                            "max_recipients_per_message": {
+                                "type": "integer",
+                                "nullable": true,
+                                "description": "Maximum number of recipients per message for this mailbox."
+                            }
+                        },
+                        "nullable": true,
+                        "readOnly": true,
+                        "description": "Limits applied to this mailbox (e.g. max recipients per message)."
                     }
                 },
                 "required": [
@@ -5992,6 +6230,7 @@
                     "can_reset_password",
                     "contact",
                     "created_at",
+                    "custom_settings",
                     "domain_name",
                     "id",
                     "is_identity",
@@ -6001,7 +6240,7 @@
             },
             "MailboxAdminCreate": {
                 "type": "object",
-                "description": "Serialize Mailbox details for create admin endpoint, including users with access and\nmetadata.",
+                "description": "Serialize Mailbox details for create admin endpoint, including users with access and\nmetadata.\n\nNote: custom_settings is excluded from the response as it cannot be set during creation.\nIt can only be modified via the dedicated /settings/ endpoint.",
                 "properties": {
                     "id": {
                         "type": "string",
@@ -6131,7 +6370,8 @@
                     "name": {
                         "type": "string"
                     },
-                    "custom_attributes": {}
+                    "custom_attributes": {},
+                    "custom_settings": {}
                 }
             },
             "MailboxLight": {
@@ -6166,6 +6406,24 @@
                     "editor",
                     "sender",
                     "admin"
+                ]
+            },
+            "MailboxSettingsUpdate": {
+                "type": "object",
+                "description": "Serialize mailbox settings (custom_settings) for update operations.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "custom_settings": {
+                        "description": "Custom settings for the mailbox."
+                    }
+                },
+                "required": [
+                    "id"
                 ]
             },
             "MaildomainAccessRead": {
@@ -6869,6 +7127,15 @@
                     }
                 }
             },
+            "PatchedMailDomainAdminUpdateRequest": {
+                "type": "object",
+                "description": "Serialize mail domains for updating custom_settings only.",
+                "properties": {
+                    "custom_settings": {
+                        "description": "Custom settings for the mail domain."
+                    }
+                }
+            },
             "PatchedMailboxAccessWriteRequest": {
                 "type": "object",
                 "description": "Serializer for creating and updating mailbox access records.\nMailbox is set from the view based on URL parameters.",
@@ -6888,6 +7155,15 @@
                 "properties": {
                     "metadata": {
                         "$ref": "#/components/schemas/MailboxAdminUpdateMetadataRequest"
+                    }
+                }
+            },
+            "PatchedMailboxSettingsUpdateRequest": {
+                "type": "object",
+                "description": "Serialize mailbox settings (custom_settings) for update operations.",
+                "properties": {
+                    "custom_settings": {
+                        "description": "Custom settings for the mailbox."
                     }
                 }
             },

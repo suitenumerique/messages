@@ -26,4 +26,8 @@ export type ConfigRetrieve200 = {
   readonly MAX_OUTGOING_BODY_SIZE: number;
   /** Maximum size in bytes for incoming email (including attachments and body) */
   readonly MAX_INCOMING_EMAIL_SIZE: number;
+  /** Maximum number of recipients per message (to + cc + bcc) for the entire system. Cannot be exceeded. */
+  readonly MAX_RECIPIENTS_PER_MESSAGE: number;
+  /** Default maximum number of recipients per message (to + cc + bcc) for a mailbox or maildomain if no custom limit is set. */
+  readonly MAX_DEFAULT_RECIPIENTS_PER_MESSAGE: number;
 };

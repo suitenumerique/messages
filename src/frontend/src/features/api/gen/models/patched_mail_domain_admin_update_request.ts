@@ -6,9 +6,10 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export interface MailboxAdminUpdateMetadataRequest {
-  full_name?: string;
-  name?: string;
-  custom_attributes?: unknown;
+/**
+ * Serialize mail domains for updating custom_settings only.
+ */
+export interface PatchedMailDomainAdminUpdateRequest {
+  /** Custom settings for the mail domain. */
   custom_settings?: unknown;
 }

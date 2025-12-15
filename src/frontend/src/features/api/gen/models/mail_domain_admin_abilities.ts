@@ -24,4 +24,6 @@ export type MailDomainAdminAbilities = {
   readonly manage_accesses: boolean;
   /** Can manage mailboxes */
   readonly manage_mailboxes: boolean;
+  /** Can manage settings */
+  readonly manage_settings: boolean;
 };

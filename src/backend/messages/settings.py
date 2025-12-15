@@ -254,6 +254,19 @@ class Base(Configuration):
         "may", environ_name="MTA_OUT_SMTP_TLS_SECURITY_LEVEL", environ_prefix=None
     )
 
+    # Outgoing email limits
+    # Maximum total recipients (to + cc + bcc) allowed per message for the entire system
+    # This is maximum allowed recipients per message for the entire system,
+    # mailboxes and maildomains can only have a lower limit than this value.
+    MAX_RECIPIENTS_PER_MESSAGE = values.PositiveIntegerValue(
+        200, environ_name="MAX_RECIPIENTS_PER_MESSAGE", environ_prefix=None
+    )
+    # Default maximum allowed recipients per message for a mailbox or maildomain
+    # if no custom limit is set.
+    MAX_DEFAULT_RECIPIENTS_PER_MESSAGE = values.PositiveIntegerValue(
+        200, environ_name="MAX_DEFAULT_RECIPIENTS_PER_MESSAGE", environ_prefix=None
+    )
+
     # Test domain settings
     MESSAGES_TESTDOMAIN = values.Value(
         None, environ_name="MESSAGES_TESTDOMAIN", environ_prefix=None

@@ -113,6 +113,7 @@ class TestMailboxModelAbilities:
         assert abilities["post"] is False
         assert abilities["delete"] is False
         assert abilities["manage_accesses"] is False
+        assert abilities["manage_settings"] is False
         assert abilities["view_messages"] is False
         assert abilities["send_messages"] is False
         assert abilities["manage_labels"] is False
@@ -135,6 +136,7 @@ class TestMailboxModelAbilities:
         assert abilities["post"] is False
         assert abilities["delete"] is False
         assert abilities["manage_accesses"] is False
+        assert abilities["manage_settings"] is False
         assert abilities["view_messages"] is True
         assert abilities["send_messages"] is False
         assert abilities["manage_labels"] is False
@@ -157,6 +159,7 @@ class TestMailboxModelAbilities:
         assert abilities["post"] is True
         assert abilities["delete"] is False
         assert abilities["manage_accesses"] is False
+        assert abilities["manage_settings"] is False
         assert abilities["view_messages"] is True
         assert abilities["send_messages"] is False
         assert abilities["manage_labels"] is True
@@ -165,7 +168,7 @@ class TestMailboxModelAbilities:
 
     @override_settings(FEATURE_MESSAGE_TEMPLATES=True, FEATURE_IMPORT_MESSAGES=True)
     def test_mailbox_get_abilities_admin(self, user, mailbox):
-        """Test Mailbox.get_abilities when user has admin access."""
+        """Test Mailbox.get_abilities when user has mailbox admin access (but not domain admin)."""
         models.MailboxAccess.objects.create(
             mailbox=mailbox,
             user=user,
@@ -180,6 +183,8 @@ class TestMailboxModelAbilities:
         assert abilities["post"] is True
         assert abilities["delete"] is True
         assert abilities["manage_accesses"] is True
+        # Only domain admins can manage settings for mailboxes
+        assert abilities["manage_settings"] is False
         assert abilities["view_messages"] is True
         assert abilities["send_messages"] is True
         assert abilities["manage_labels"] is True
@@ -202,6 +207,7 @@ class TestMailboxModelAbilities:
         assert abilities["post"] is True
         assert abilities["delete"] is False
         assert abilities["manage_accesses"] is False
+        assert abilities["manage_settings"] is False
         assert abilities["view_messages"] is True
         assert abilities["send_messages"] is True
         assert abilities["manage_labels"] is True

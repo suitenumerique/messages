@@ -7,6 +7,7 @@
  */
 import type { MailboxAccessNestedUser } from "./mailbox_access_nested_user";
 import type { Contact } from "./contact";
+import type { MailboxAdminCustomSettings } from "./mailbox_admin_custom_settings";
 
 /**
  * Serialize Mailbox details for admin view, including users with access.
@@ -34,4 +35,9 @@ export interface MailboxAdmin {
   readonly updated_at: string;
   readonly can_reset_password: boolean;
   readonly contact: Contact;
+  /**
+   * Limits applied to this mailbox (e.g. max recipients per message).
+   * @nullable
+   */
+  readonly custom_settings: MailboxAdminCustomSettings;
 }

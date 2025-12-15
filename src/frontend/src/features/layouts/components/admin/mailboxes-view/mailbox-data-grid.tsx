@@ -1,5 +1,6 @@
 import { MailboxAdmin, MailDomainAdmin, useMaildomainsMailboxesDestroy, useMaildomainsMailboxesList } from "@/features/api/gen";
 import { ModalMailboxManageAccesses } from "@/features/layouts/components/admin/modal-mailbox-manage-accesses";
+import { ModalMailboxManageSettings } from "@/features/layouts/components/admin/modal-mailbox-manage-settings";
 import { Banner } from "@/features/ui/components/banner";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { IconType, DropdownMenu, Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
@@ -20,6 +21,7 @@ enum MailboxEditAction {
     UPDATE = 'update',
     RESET_PASSWORD = 'resetPassword',
     MANAGE_ACCESS = 'manageAccess',
+    MANAGE_SETTINGS = 'manageSettings',
 }
 
 export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridProps) => {
@@ -52,6 +54,11 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
 
     const handleUpdate = (mailbox: MailboxAdmin) => {
         setEditAction(MailboxEditAction.UPDATE);
+        setEditedMailbox(mailbox);
+    }
+
+    const handleManageSettings = (mailbox: MailboxAdmin) => {
+        setEditAction(MailboxEditAction.MANAGE_SETTINGS);
         setEditedMailbox(mailbox);
     }
 
@@ -148,6 +155,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
                 onResetPassword={row.can_reset_password ? () => handleResetPassword(row) : undefined}
                 onDelete={() => handleDelete(row)}
                 onUpdate={() => handleUpdate(row)}
+                onManageSettings={() => handleManageSettings(row)}
             />,
         }] : []),
     ];
@@ -216,6 +224,14 @@ export const AdminMailboxDataGrid = ({ domain, pagination }: AdminUserDataGridPr
                         mailbox={editedMailbox}
                         domainId={domain.id}
                     />
+                    <ModalMailboxManageSettings
+                        key={`${editedMailbox.id}-${editedMailbox.updated_at}`}
+                        isOpen={editAction === MailboxEditAction.MANAGE_SETTINGS}
+                        onClose={() => handleCloseEditUserModal(false)}
+                        onSuccess={refetchMailboxes}
+                        mailbox={editedMailbox}
+                        domainId={domain.id}
+                    />
                 </>
             )}
         </div>
@@ -227,9 +243,10 @@ type ActionsRowProps = {
     onResetPassword?: () => void;
     onDelete: () => void;
     onUpdate: () => void;
+    onManageSettings: () => void;
 };
 
-const ActionsRow = ({ onManageAccess, onResetPassword, onDelete, onUpdate }: ActionsRowProps) => {
+const ActionsRow = ({ onManageAccess, onResetPassword, onDelete, onUpdate, onManageSettings }: ActionsRowProps) => {
     const [isMoreActionsOpen, setMoreActionsOpen] = useState<boolean>(false);
     const { t } = useTranslation();
 
@@ -252,6 +269,12 @@ const ActionsRow = ({ onManageAccess, onResetPassword, onDelete, onUpdate }: Act
                         label: t('Manage accesses'),
                         callback: onManageAccess,
                         showSeparator: onResetPassword ? false : true,
+                    },
+                    {
+                        label: t('Settings'),
+                        icon: <Icon name="tune" size={IconSize.SMALL} />,
+                        callback: onManageSettings,
+                        showSeparator: !onResetPassword,
                     },
                     ...(onResetPassword ? [{
                         icon: <Icon name="lock" size={IconSize.SMALL} />,

@@ -138,6 +138,7 @@ class TestMailDomainModelAbilities:
         assert abilities["delete"] is False
         assert abilities["manage_accesses"] is False
         assert abilities["manage_mailboxes"] is False
+        assert abilities["manage_settings"] is False
 
     def test_models_maildomain_get_abilities_admin(self, user, maildomain):
         """Test MailDomain.get_abilities when user has admin access."""
@@ -156,3 +157,21 @@ class TestMailDomainModelAbilities:
         assert abilities["delete"] is True
         assert abilities["manage_accesses"] is True
         assert abilities["manage_mailboxes"] is True
+        # Only superusers can manage settings for maildomains
+        assert abilities["manage_settings"] is False
+
+    def test_models_maildomain_get_abilities_superuser(self, user, maildomain):
+        """Test MailDomain.get_abilities when user is superuser."""
+        user.is_superuser = True
+        user.save()
+
+        abilities = maildomain.get_abilities(user)
+
+        assert abilities["get"] is True
+        assert abilities["patch"] is True
+        assert abilities["put"] is True
+        assert abilities["post"] is True
+        assert abilities["delete"] is True
+        assert abilities["manage_accesses"] is True
+        assert abilities["manage_mailboxes"] is True
+        assert abilities["manage_settings"] is True

@@ -12,6 +12,7 @@ import { CreateDomainAction } from "@/features/layouts/components/admin/domains-
 import { useQueryClient } from "@tanstack/react-query";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ModalMaildomainManageAccesses } from "@/features/layouts/components/admin/modal-maildomain-manage-accesses";
+import { ModalUpdateDomain } from "@/features/layouts/components/admin/modal-maildomain-manage-settings";
 
 type AdminDataGridProps = {
   pagination: ReturnType<typeof usePagination>;
@@ -20,12 +21,21 @@ type AdminDataGridProps = {
 
 enum MailDomainEditAction {
   MANAGE_ACCESS = 'manageAccess',
+  MANAGE_SETTINGS = 'manageSettings',
 }
 
 function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
   const router = useRouter();
   const { t, i18n } = useTranslation();
   const canManageMaildomainAccesses = useAbility(Abilities.CAN_MANAGE_SOME_MAILDOMAIN_ACCESSES);
+  const queryClient = useQueryClient();
+
+  const refetchMaildomains = () => {
+    queryClient.invalidateQueries({
+      queryKey: getMaildomainsListQueryOptions().queryKey,
+      exact: false,
+    });
+  };
   const [editedDomain, setEditedDomain] = useState<MailDomainAdmin | null>(null);
   const [editAction, setEditAction] = useState<MailDomainEditAction | null>(null);
   const columns = [
@@ -53,7 +63,7 @@ function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
       headerName: t("Updated at"),
       renderCell: ({ row }: { row: MailDomainAdmin }) => new Date(row.updated_at).toLocaleDateString(i18n.resolvedLanguage),
     },
-    ...(canManageMaildomainAccesses ? [{
+    {
       id: "actions",
       size: 200,
       renderCell: ({ row }: { row: MailDomainAdmin }) => (
@@ -62,9 +72,14 @@ function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
           onManageAccess={() => {
             setEditAction(MailDomainEditAction.MANAGE_ACCESS)
             setEditedDomain(row)
-          }} />
-      )
-    }] : []),
+          }}
+          onManageSettings={() => {
+            setEditAction(MailDomainEditAction.MANAGE_SETTINGS)
+            setEditedDomain(row)
+          }}
+        />
+      ),
+    },
   ];
 
   return (
@@ -86,6 +101,26 @@ function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
           }}
         />
       )}
+      {editedDomain && editAction === MailDomainEditAction.MANAGE_SETTINGS && (() => {
+        // Get fresh domain data from the list
+        const freshDomain = domains.find(d => d.id === editedDomain.id) || editedDomain;
+        return (
+          <ModalUpdateDomain
+            key={`${freshDomain.id}-${freshDomain.updated_at}`}
+            domain={freshDomain}
+            isOpen={true}
+            onClose={() => {
+              setEditedDomain(null)
+              setEditAction(null)
+            }}
+            onSuccess={() => {
+              refetchMaildomains();
+              setEditedDomain(null)
+              setEditAction(null)
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -161,18 +196,35 @@ export default function AdminPage() {
   );
 }
 
-const ActionsCell = ({ domain, onManageAccess }: { domain: MailDomainAdmin, onManageAccess: () => void }) => {
+const ActionsCell = ({ domain, onManageAccess, onManageSettings }: { domain: MailDomainAdmin, onManageAccess: () => void, onManageSettings: () => void }) => {
   const { t } = useTranslation();
   const canManageAccesses = useAbility(Abilities.CAN_MANAGE_MAILDOMAIN_ACCESSES, domain);
-  if (!canManageAccesses) return null;
+  const canManageSettings = useAbility(Abilities.CAN_MANAGE_MAILDOMAIN_SETTINGS, domain);
+
+  if (!canManageAccesses && !canManageSettings) return null;
 
   return (
-    <Button
-      size="nano"
-      variant="tertiary"
-      icon={<Icon name="group" type={IconType.FILLED} />}
-      onClick={onManageAccess}
-      style={{ paddingInline: "var(--c--globals--spacings--xs)" }}
-    >{t("Manage accesses")}</Button>
+    <div className="flex-row">
+      {canManageAccesses && (
+        <Button
+          size="nano"
+          variant="tertiary"
+          onClick={onManageAccess}
+          icon={<Icon name="group" type={IconType.FILLED} />}
+          style={{ paddingInline: "var(--c--globals--spacings--xxs)" }}
+        >{t("Manage accesses")}</Button>
+      )}
+      {canManageSettings && (
+        <Button
+          size="nano"
+          variant="tertiary"
+          onClick={onManageSettings}
+          icon={<Icon name="tune" type={IconType.FILLED} />}
+          style={{ paddingInline: "var(--c--globals--spacings--xxxs)" }}
+        >
+          {t("Settings")}
+        </Button>
+      )}
+    </div>
   )
 }

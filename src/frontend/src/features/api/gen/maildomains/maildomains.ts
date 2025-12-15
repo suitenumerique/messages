@@ -24,11 +24,14 @@ import type {
 import type {
   DNSCheckResponse,
   MailDomainAdmin,
+  MailDomainAdminUpdate,
+  MailDomainAdminUpdateRequest,
   MailDomainAdminWrite,
   MailDomainAdminWriteRequest,
   MailboxAdmin,
   MailboxAdminCreate,
   MailboxAdminCreatePayloadRequest,
+  MailboxSettingsUpdate,
   MaildomainsListParams,
   MaildomainsMailboxesListParams,
   MaildomainsMessageTemplatesListParams,
@@ -36,7 +39,9 @@ import type {
   MessageTemplateRequest,
   PaginatedMailDomainAdminList,
   PaginatedMailboxAdminList,
+  PatchedMailDomainAdminUpdateRequest,
   PatchedMailboxAdminPartialUpdatePayloadRequest,
+  PatchedMailboxSettingsUpdateRequest,
   PatchedMessageTemplateRequest,
   ResetPasswordError,
   ResetPasswordInternalServerError,
@@ -522,6 +527,214 @@ export function useMaildomainsRetrieve<
   return query;
 }
 
+/**
+ * ViewSet for listing MailDomains the user administers.
+Provides a top-level entry for mail domain administration.
+Endpoint: /maildomains/<maildomain_pk>/
+ */
+export type maildomainsUpdateResponse200 = {
+  data: MailDomainAdminUpdate;
+  status: 200;
+};
+
+export type maildomainsUpdateResponseComposite = maildomainsUpdateResponse200;
+
+export type maildomainsUpdateResponse = maildomainsUpdateResponseComposite & {
+  headers: Headers;
+};
+
+export const getMaildomainsUpdateUrl = (maildomainPk: string) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/`;
+};
+
+export const maildomainsUpdate = async (
+  maildomainPk: string,
+  mailDomainAdminUpdateRequest: MailDomainAdminUpdateRequest,
+  options?: RequestInit,
+): Promise<maildomainsUpdateResponse> => {
+  return fetchAPI<maildomainsUpdateResponse>(
+    getMaildomainsUpdateUrl(maildomainPk),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(mailDomainAdminUpdateRequest),
+    },
+  );
+};
+
+export const getMaildomainsUpdateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsUpdate>>,
+    TError,
+    { maildomainPk: string; data: MailDomainAdminUpdateRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsUpdate>>,
+  TError,
+  { maildomainPk: string; data: MailDomainAdminUpdateRequest },
+  TContext
+> => {
+  const mutationKey = ["maildomainsUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsUpdate>>,
+    { maildomainPk: string; data: MailDomainAdminUpdateRequest }
+  > = (props) => {
+    const { maildomainPk, data } = props ?? {};
+
+    return maildomainsUpdate(maildomainPk, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MaildomainsUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsUpdate>>
+>;
+export type MaildomainsUpdateMutationBody = MailDomainAdminUpdateRequest;
+export type MaildomainsUpdateMutationError = unknown;
+
+export const useMaildomainsUpdate = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof maildomainsUpdate>>,
+      TError,
+      { maildomainPk: string; data: MailDomainAdminUpdateRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsUpdate>>,
+  TError,
+  { maildomainPk: string; data: MailDomainAdminUpdateRequest },
+  TContext
+> => {
+  const mutationOptions = getMaildomainsUpdateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * ViewSet for listing MailDomains the user administers.
+Provides a top-level entry for mail domain administration.
+Endpoint: /maildomains/<maildomain_pk>/
+ */
+export type maildomainsPartialUpdateResponse200 = {
+  data: MailDomainAdminUpdate;
+  status: 200;
+};
+
+export type maildomainsPartialUpdateResponseComposite =
+  maildomainsPartialUpdateResponse200;
+
+export type maildomainsPartialUpdateResponse =
+  maildomainsPartialUpdateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMaildomainsPartialUpdateUrl = (maildomainPk: string) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/`;
+};
+
+export const maildomainsPartialUpdate = async (
+  maildomainPk: string,
+  patchedMailDomainAdminUpdateRequest: PatchedMailDomainAdminUpdateRequest,
+  options?: RequestInit,
+): Promise<maildomainsPartialUpdateResponse> => {
+  return fetchAPI<maildomainsPartialUpdateResponse>(
+    getMaildomainsPartialUpdateUrl(maildomainPk),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(patchedMailDomainAdminUpdateRequest),
+    },
+  );
+};
+
+export const getMaildomainsPartialUpdateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsPartialUpdate>>,
+    TError,
+    { maildomainPk: string; data: PatchedMailDomainAdminUpdateRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsPartialUpdate>>,
+  TError,
+  { maildomainPk: string; data: PatchedMailDomainAdminUpdateRequest },
+  TContext
+> => {
+  const mutationKey = ["maildomainsPartialUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsPartialUpdate>>,
+    { maildomainPk: string; data: PatchedMailDomainAdminUpdateRequest }
+  > = (props) => {
+    const { maildomainPk, data } = props ?? {};
+
+    return maildomainsPartialUpdate(maildomainPk, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MaildomainsPartialUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsPartialUpdate>>
+>;
+export type MaildomainsPartialUpdateMutationBody =
+  PatchedMailDomainAdminUpdateRequest;
+export type MaildomainsPartialUpdateMutationError = unknown;
+
+export const useMaildomainsPartialUpdate = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof maildomainsPartialUpdate>>,
+      TError,
+      { maildomainPk: string; data: PatchedMailDomainAdminUpdateRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsPartialUpdate>>,
+  TError,
+  { maildomainPk: string; data: PatchedMailDomainAdminUpdateRequest },
+  TContext
+> => {
+  const mutationOptions = getMaildomainsPartialUpdateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
 /**
  * Check DNS records for a specific mail domain.
  */
@@ -1542,6 +1755,147 @@ export const useMaildomainsMailboxesResetPassword = <
 > => {
   const mutationOptions =
     getMaildomainsMailboxesResetPasswordMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Update mailbox settings (custom_settings).
+ */
+export type maildomainsMailboxesSettingsUpdateResponse200 = {
+  data: MailboxSettingsUpdate;
+  status: 200;
+};
+
+export type maildomainsMailboxesSettingsUpdateResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type maildomainsMailboxesSettingsUpdateResponseComposite =
+  | maildomainsMailboxesSettingsUpdateResponse200
+  | maildomainsMailboxesSettingsUpdateResponse400;
+
+export type maildomainsMailboxesSettingsUpdateResponse =
+  maildomainsMailboxesSettingsUpdateResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMaildomainsMailboxesSettingsUpdateUrl = (
+  maildomainPk: string,
+  id: string,
+) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/mailboxes/${id}/settings/`;
+};
+
+export const maildomainsMailboxesSettingsUpdate = async (
+  maildomainPk: string,
+  id: string,
+  patchedMailboxSettingsUpdateRequest: PatchedMailboxSettingsUpdateRequest,
+  options?: RequestInit,
+): Promise<maildomainsMailboxesSettingsUpdateResponse> => {
+  return fetchAPI<maildomainsMailboxesSettingsUpdateResponse>(
+    getMaildomainsMailboxesSettingsUpdateUrl(maildomainPk, id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(patchedMailboxSettingsUpdateRequest),
+    },
+  );
+};
+
+export const getMaildomainsMailboxesSettingsUpdateMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsMailboxesSettingsUpdate>>,
+    TError,
+    {
+      maildomainPk: string;
+      id: string;
+      data: PatchedMailboxSettingsUpdateRequest;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsMailboxesSettingsUpdate>>,
+  TError,
+  {
+    maildomainPk: string;
+    id: string;
+    data: PatchedMailboxSettingsUpdateRequest;
+  },
+  TContext
+> => {
+  const mutationKey = ["maildomainsMailboxesSettingsUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsMailboxesSettingsUpdate>>,
+    {
+      maildomainPk: string;
+      id: string;
+      data: PatchedMailboxSettingsUpdateRequest;
+    }
+  > = (props) => {
+    const { maildomainPk, id, data } = props ?? {};
+
+    return maildomainsMailboxesSettingsUpdate(
+      maildomainPk,
+      id,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MaildomainsMailboxesSettingsUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsMailboxesSettingsUpdate>>
+>;
+export type MaildomainsMailboxesSettingsUpdateMutationBody =
+  PatchedMailboxSettingsUpdateRequest;
+export type MaildomainsMailboxesSettingsUpdateMutationError = void;
+
+export const useMaildomainsMailboxesSettingsUpdate = <
+  TError = void,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof maildomainsMailboxesSettingsUpdate>>,
+      TError,
+      {
+        maildomainPk: string;
+        id: string;
+        data: PatchedMailboxSettingsUpdateRequest;
+      },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsMailboxesSettingsUpdate>>,
+  TError,
+  {
+    maildomainPk: string;
+    id: string;
+    data: PatchedMailboxSettingsUpdateRequest;
+  },
+  TContext
+> => {
+  const mutationOptions =
+    getMaildomainsMailboxesSettingsUpdateMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };

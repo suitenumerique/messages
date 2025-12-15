@@ -25,6 +25,7 @@ import i18n from "@/features/i18n/initI18n";
 import { DropdownButton } from "@/features/ui/components/dropdown-button";
 import { PREFER_SEND_MODE_KEY, PreferSendMode } from "@/features/config/constants";
 import { useSearchParams } from "next/navigation";
+import { useConfig } from "@/features/providers/config";
 
 export type MessageFormMode = "new" | "reply" | "reply_all" | "forward";
 
@@ -53,7 +54,7 @@ const driveAttachmentSchema = z.object({
     size: z.number(),
     created_at: z.string(),
 });
-const messageFormSchema = z.object({
+const getMessageFormSchema = (maxRecipients?: number) => z.object({
     from: z.string().nonempty({ error: i18n.t("Mailbox is required.") }),
     to: emailArraySchema,
     cc: emailArraySchema.optional(),
@@ -65,6 +66,38 @@ const messageFormSchema = z.object({
     attachments: z.array(attachmentSchema).optional(),
     driveAttachments: z.array(driveAttachmentSchema).optional(),
     signatureId: z.string().optional().nullable(),
+}).superRefine((data, ctx) => {
+    if (!maxRecipients) return;
+
+    const totalRecipients = data.to.length + (data.cc?.length ?? 0) + (data.bcc?.length ?? 0);
+    if (totalRecipients > maxRecipients) {
+        const message = i18n.t("You can add up to {{max}} recipients in total (to + cc + bcc).", {
+            max: maxRecipients,
+        });
+
+        // Add issue to all recipient fields
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message,
+            path: ["to"],
+        });
+
+        if ((data.cc?.length ?? 0) > 0) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message,
+                path: ["cc"],
+            });
+        }
+
+        if ((data.bcc?.length ?? 0) > 0) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message,
+                path: ["bcc"],
+            });
+        }
+    }
 });
 
 const DRAFT_TOAST_ID = "MESSAGE_FORM_DRAFT_TOAST";
@@ -79,6 +112,10 @@ export const MessageForm = ({
     const { t } = useTranslation();
     const router = useRouter();
     const searchParams = useSearchParams();
+    const config = useConfig();
+
+    const { selectedMailbox, mailboxes, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
+
     const [draft, setDraft] = useState<Message | undefined>(draftMessage);
     const [preferredSendMode, setPreferredSendMode] = useState<PreferSendMode>(() => {
         if (mode === 'new') return PreferSendMode.SEND;
@@ -108,7 +145,6 @@ export const MessageForm = ({
     const [currentTime, setCurrentTime] = useState(new Date());
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
     const quoteType: QuoteType | undefined = mode !== "new" ? (mode === "forward" ? "forward" : "reply") : undefined;
-    const { selectedMailbox, mailboxes, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
     const hideSubjectField = Boolean(parentMessage);
     const defaultSenderId = mailboxes?.find((mailbox) => {
         if (draft?.sender) return draft.sender.email === mailbox.email;
@@ -189,13 +225,58 @@ export const MessageForm = ({
         }
     }, [draft, selectedMailbox])
 
+    // State to track the current max recipients limit
+    const [maxRecipientsLimit, setMaxRecipientsLimit] = useState<number>(() => {
+        const initialMailbox = mailboxes?.find((mb) => mb.id === formDefaultValues.from);
+        const defaultLimit = Number(config.MAX_DEFAULT_RECIPIENTS_PER_MESSAGE ?? config.MAX_RECIPIENTS_PER_MESSAGE);
+        const mailboxLimit = initialMailbox?.max_recipients_per_message ?? selectedMailbox?.max_recipients_per_message;
+        return mailboxLimit ? Number(mailboxLimit) : defaultLimit;
+    });
+
+    // Create schema with current limit
+    const schema = useMemo(() => getMessageFormSchema(maxRecipientsLimit), [maxRecipientsLimit]);
+
+    // Memoize the resolver so it updates when schema changes
+    const resolver = useMemo(() => zodResolver(schema), [schema]);
+
     const form = useForm({
-        resolver: zodResolver(messageFormSchema),
-        mode: "onBlur",
-        reValidateMode: "onBlur",
+        resolver,
+        mode: "onChange",
+        reValidateMode: "onChange",
         shouldFocusError: false,
         defaultValues: formDefaultValues,
     });
+
+    // Watch the "from" field to dynamically update max recipients limit
+    const selectedFromMailboxId = useWatch({
+        control: form.control,
+        name: "from",
+    });
+
+    // Update max recipients limit when sender mailbox changes
+    useEffect(() => {
+        if (!selectedFromMailboxId || !mailboxes) return;
+
+        const senderMailbox = mailboxes.find((mailbox) => mailbox.id === selectedFromMailboxId);
+        const defaultLimit = Number(config.MAX_DEFAULT_RECIPIENTS_PER_MESSAGE ?? config.MAX_RECIPIENTS_PER_MESSAGE);
+        const mailboxLimit = senderMailbox?.max_recipients_per_message;
+        const newLimit = mailboxLimit ? Number(mailboxLimit) : defaultLimit;
+
+        if (newLimit !== maxRecipientsLimit) {
+            setMaxRecipientsLimit(newLimit);
+        }
+    }, [selectedFromMailboxId, mailboxes, config, maxRecipientsLimit]);
+
+    // Revalidate recipient fields when max limit changes
+    useEffect(() => {
+        // Only trigger validation if fields have values
+        const values = form.getValues();
+        const hasRecipients = (values.to?.length ?? 0) > 0 || (values.cc?.length ?? 0) > 0 || (values.bcc?.length ?? 0) > 0;
+
+        if (hasRecipients) {
+            form.trigger(['to', 'cc', 'bcc']);
+        }
+    }, [maxRecipientsLimit, form]);
 
     const messageDraftBody = useWatch({
         control: form.control,
@@ -395,7 +476,7 @@ export const MessageForm = ({
         let response;
         try {
             stopAutoSave();
-            form.reset(form.getValues(), { keepSubmitCount: true, keepDirty: false, keepValues: true, keepDefaultValues: false });
+            form.reset(form.getValues(), { keepSubmitCount: true, keepDirty: false, keepValues: true, keepDefaultValues: false, keepErrors: true });
             if (!draft) {
                 response = await draftCreateMutation.mutateAsync({
                     data: payload,
@@ -432,6 +513,7 @@ export const MessageForm = ({
             form.setError("to", { message: t("At least one recipient is required.") });
             return;
         }
+
         if (!draft || !canSendMessages) return;
 
         messageMutation.mutate({
@@ -531,6 +613,7 @@ export const MessageForm = ({
                     <RhfContactComboBox
                         name="to"
                         label={t("To:")}
+                        maxRecipients={maxRecipientsLimit}
                         // icon={<span className="material-icons">group</span>}
                         text={form.formState.errors.to && !Array.isArray(form.formState.errors.to) ? form.formState.errors.to.message : t("Enter the email addresses of the recipients separated by commas")}
                         textItems={Array.isArray(form.formState.errors.to) ? form.formState.errors.to?.map((error, index) => t(error!.message as string, { email: form.getValues('to')?.[index] })) : []}
@@ -551,6 +634,7 @@ export const MessageForm = ({
                         <RhfContactComboBox
                             name="cc"
                             label={t("Copy: ")}
+                            maxRecipients={maxRecipientsLimit}
                             // icon={<span className="material-icons">group</span>}
                             text={form.formState.errors.cc && !Array.isArray(form.formState.errors.cc) ? t(form.formState.errors.cc.message as string) : t("Enter the email addresses of the recipients separated by commas")}
                             textItems={Array.isArray(form.formState.errors.cc) ? form.formState.errors.cc?.map((error, index) => t(error!.message as string, { email: form.getValues('cc')?.[index] })) : []}
@@ -566,6 +650,7 @@ export const MessageForm = ({
                         <RhfContactComboBox
                             name="bcc"
                             label={t("Blind copy: ")}
+                            maxRecipients={maxRecipientsLimit}
                             // icon={<span className="material-icons">visibility_off</span>}
                             text={form.formState.errors.bcc && !Array.isArray(form.formState.errors.bcc) ? t(form.formState.errors.bcc.message as string) : t("Enter the email addresses of the recipients separated by commas")}
                             textItems={Array.isArray(form.formState.errors.bcc) ? form.formState.errors.bcc?.map((error, index) => t(error!.message as string, { email: form.getValues('bcc')?.[index] })) : []}

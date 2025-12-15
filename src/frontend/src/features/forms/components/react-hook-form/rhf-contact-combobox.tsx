@@ -5,11 +5,14 @@ import { useMailboxContext } from "@/features/providers/mailbox";
 import { UserRow } from "@gouvfr-lasuite/ui-kit";
 import { Controller, useFormContext } from "react-hook-form";
 import MailHelper from "@/features/utils/mail-helper";
+import { useTranslation } from "react-i18next";
 
-export const RhfContactComboBox = (props: Omit<ComboBoxProps, 'options'> & { name: string }) => {
-    const { control, setValue } = useFormContext();
+export const RhfContactComboBox = (props: Omit<ComboBoxProps, 'options'> & { name: string; maxRecipients?: number }) => {
+    const { control, setValue, formState, trigger } = useFormContext();
     const [searchQuery, setSearchQuery] = useState("");
     const { selectedMailbox } = useMailboxContext();
+    const MAX_RECIPIENTS_PER_MESSAGE = props.maxRecipients ?? selectedMailbox?.max_recipients_per_message;
+    const { t } = useTranslation();
     const contactsQuery = useContactsList({ mailbox_id: selectedMailbox?.id }, {
         query: {
             enabled: !!selectedMailbox?.id,
@@ -45,20 +48,35 @@ export const RhfContactComboBox = (props: Omit<ComboBoxProps, 'options'> & { nam
         <Controller
             control={control}
             name={props.name}
-            render={({ field, fieldState }) => (
-                <ComboBox
-                    {...field}
-                    {...props}
-                    clearable
-                    state={fieldState.error ? "error" : "default"}
-                    aria-invalid={!!fieldState.error}
-                    value={field.value}
-                    valueValidator={MailHelper.isValidEmail}
-                    onChange={(value) => setValue(props.name, value, { shouldDirty: true })}
-                    onInputChange={(value) => setSearchQuery(value.trim())}
-                    options={contactsOptions}
-                />
-            )}
+            render={({ field }) => {
+                // Use formState.errors directly to ensure reactivity to external setError calls
+                const fieldError = formState.errors[props.name as keyof typeof formState.errors];
+                const baseHelperText =
+                    MAX_RECIPIENTS_PER_MESSAGE
+                        ? t("Enter the email addresses of the recipients, maximum {{max}} for all recipients (to + cc + bcc)", { max: MAX_RECIPIENTS_PER_MESSAGE })
+                        : t("Enter the email addresses of the recipients");
+
+                return (
+                    <ComboBox
+                        {...field}
+                        {...props}
+                        clearable
+                        state={fieldError ? "error" : "default"}
+                        aria-invalid={!!fieldError}
+                        value={field.value}
+                        valueValidator={MailHelper.isValidEmail}
+                        text={(fieldError?.message as string) || baseHelperText}
+                        onChange={(value) => {
+                            // Update the value of the field with validation
+                            setValue(props.name, value, { shouldDirty: true, shouldValidate: true });
+                            // Trigger validation for other recipient fields to update their error state
+                            trigger(['to', 'cc', 'bcc']);
+                        }}
+                        onInputChange={(value) => setSearchQuery(value.trim())}
+                        options={contactsOptions}
+                    />
+                );
+            }}
         />
     )
 }

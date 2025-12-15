@@ -11,6 +11,9 @@ import type { Contact } from "./contact";
 /**
  * Serialize Mailbox details for create admin endpoint, including users with access and
 metadata.
+
+Note: custom_settings is excluded from the response as it cannot be set during creation.
+It can only be modified via the dedicated /settings/ endpoint.
  */
 export interface MailboxAdminCreate {
   /** primary key for the record as UUID */
