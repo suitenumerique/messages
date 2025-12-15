@@ -279,7 +279,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                                                             color="brand"
                                                             variant="tertiary"
                                                             size="small"
-                                                            icon={<Icon type={IconType.FILLED} name={isFolded ? "unfold_more" : "unfold_less"} size={IconSize.LARGE} />}
+                                                            icon={<Icon type={IconType.FILLED} name={isFolded ? "unfold_more" : "unfold_less"} />}
                                                             aria-label={isFolded ? t('Unfold message') : t('Fold message')}
                                                             onClick={toggleFold}
                                                         />
