@@ -3,18 +3,29 @@ import { ComboBox, ComboBoxProps } from "../combobox";
 import { useMemo, useState } from "react";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { UserRow } from "@gouvfr-lasuite/ui-kit";
-import { Controller, useFormContext } from "react-hook-form";
+import { Controller, FieldValues, Path, useFormContext } from "react-hook-form";
 import MailHelper from "@/features/utils/mail-helper";
 
-export const RhfContactComboBox = (props: Omit<ComboBoxProps, 'options'> & { name: string }) => {
-    const { control, setValue } = useFormContext();
+export type RhfContactComboBoxProps<TFieldValues extends FieldValues = FieldValues> = Omit<ComboBoxProps, 'options' | 'onChange'> & {
+    name: string;
+    /** Custom onChange handler, if not provided uses default setValue */
+    onValueChange?: (value: string[], setValue: ReturnType<typeof useFormContext<TFieldValues>>['setValue']) => void;
+};
+
+export const RhfContactComboBox = <TFieldValues extends FieldValues = FieldValues>(
+    props: RhfContactComboBoxProps<TFieldValues>
+) => {
+    const { name, onValueChange, ...rest } = props;
+    const { control, setValue } = useFormContext<TFieldValues>();
     const [searchQuery, setSearchQuery] = useState("");
     const { selectedMailbox } = useMailboxContext();
+
     const contactsQuery = useContactsList({ mailbox_id: selectedMailbox?.id }, {
         query: {
             enabled: !!selectedMailbox?.id,
         }
     });
+
     // MARK: Currently the contact list endpoint is not paginated, so we get the full list of contact
     // At first it is good as we are able to filter locally so we have a really good reactive UI
     // But I don't sure this strategy scale well with a lot of contacts
@@ -44,17 +55,23 @@ export const RhfContactComboBox = (props: Omit<ComboBoxProps, 'options'> & { nam
     return (
         <Controller
             control={control}
-            name={props.name}
+            name={name as Path<TFieldValues>}
             render={({ field, fieldState }) => (
                 <ComboBox
                     {...field}
-                    {...props}
+                    {...rest}
                     clearable
                     state={fieldState.error ? "error" : "default"}
                     aria-invalid={!!fieldState.error}
                     value={field.value}
                     valueValidator={MailHelper.isValidEmail}
-                    onChange={(value) => setValue(props.name, value, { shouldDirty: true })}
+                    onChange={(value) => {
+                        if (onValueChange) {
+                            onValueChange(value, setValue);
+                        } else {
+                            setValue(name as Parameters<typeof setValue>[0], value as Parameters<typeof setValue>[1], { shouldDirty: true });
+                        }
+                    }}
                     onInputChange={(value) => setSearchQuery(value.trim())}
                     options={contactsOptions}
                 />

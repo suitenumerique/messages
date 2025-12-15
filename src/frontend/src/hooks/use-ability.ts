@@ -12,6 +12,7 @@ enum MailboxAbilities {
   CAN_MANAGE_MAILBOX_LABELS = "manage_labels",
   CAN_IMPORT_MESSAGES = "import_messages",
   CAN_MANAGE_MESSAGE_TEMPLATES = "manage_message_templates",
+  CAN_MANAGE_SETTINGS = "manage_settings",
 }
 
 enum UserAbilities {
@@ -23,6 +24,7 @@ enum UserAbilities {
 enum MaildomainAbilities {
   CAN_MANAGE_MAILDOMAIN_MAILBOXES = "manage_mailboxes",
   CAN_MANAGE_MAILDOMAIN_ACCESSES = "manage_accesses",
+  CAN_MANAGE_MAILDOMAIN_SETTINGS = "manage_settings",
 }
 
 enum ThreadAccessAbilities {
@@ -79,7 +81,9 @@ function useAbility(
     case Abilities.CAN_MANAGE_MESSAGE_TEMPLATES:
     case Abilities.CAN_MANAGE_MAILDOMAIN_MAILBOXES:
     case Abilities.CAN_MANAGE_MAILDOMAIN_ACCESSES:
+    case Abilities.CAN_MANAGE_MAILDOMAIN_SETTINGS:
     case Abilities.CAN_MANAGE_SOME_MAILDOMAIN_ACCESSES:
+    case Abilities.CAN_MANAGE_SETTINGS:
       return (resource as ResourceWithAbilities).abilities[ability] === true;
     case Abilities.CAN_MANAGE_THREAD_ACCESS:
       const [mailbox, thread] = resource as [Mailbox, Thread];

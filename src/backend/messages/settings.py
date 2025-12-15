@@ -254,6 +254,36 @@ class Base(Configuration):
         "may", environ_name="MTA_OUT_SMTP_TLS_SECURITY_LEVEL", environ_prefix=None
     )
 
+    # Outgoing email limits
+    # Maximum total recipients (to + cc + bcc) allowed per message for the entire system
+    # This is maximum allowed recipients per message for the entire system,
+    # mailboxes and maildomains can only have a lower limit than this value.
+    MAX_RECIPIENTS_PER_MESSAGE = values.PositiveIntegerValue(
+        200, environ_name="MAX_RECIPIENTS_PER_MESSAGE", environ_prefix=None
+    )
+    # Default maximum allowed recipients per message for a mailbox or maildomain
+    # if no custom limit is set.
+    MAX_DEFAULT_RECIPIENTS_PER_MESSAGE = values.PositiveIntegerValue(
+        200, environ_name="MAX_DEFAULT_RECIPIENTS_PER_MESSAGE", environ_prefix=None
+    )
+
+    # Maximum recipients per period for a domain (cannot be exceeded)
+    MAX_RECIPIENTS_FOR_DOMAIN = values.Value(
+        "1500/d", environ_name="MAX_RECIPIENTS_FOR_DOMAIN", environ_prefix=None
+    )
+    # Default maximum recipients per period for a domain if no custom limit is set
+    MAX_DEFAULT_RECIPIENTS_FOR_DOMAIN = values.Value(
+        "1000/d", environ_name="MAX_DEFAULT_RECIPIENTS_FOR_DOMAIN", environ_prefix=None
+    )
+    # Maximum recipients per period for a mailbox (cannot be exceeded)
+    MAX_RECIPIENTS_FOR_MAILBOX = values.Value(
+        "500/d", environ_name="MAX_RECIPIENTS_FOR_MAILBOX", environ_prefix=None
+    )
+    # Default maximum recipients per period for a mailbox if no custom limit is set
+    MAX_DEFAULT_RECIPIENTS_FOR_MAILBOX = values.Value(
+        "100/d", environ_name="MAX_DEFAULT_RECIPIENTS_FOR_MAILBOX", environ_prefix=None
+    )
+
     # Test domain settings
     MESSAGES_TESTDOMAIN = values.Value(
         None, environ_name="MESSAGES_TESTDOMAIN", environ_prefix=None
@@ -561,6 +591,11 @@ class Base(Configuration):
     # Frontend
     FRONTEND_THEME = values.Value(
         None, environ_name="FRONTEND_THEME", environ_prefix=None
+    )
+
+    # Redis URL (used by quota service and Celery)
+    REDIS_URL = values.Value(
+        "redis://redis:6379", environ_name="REDIS_URL", environ_prefix=None
     )
 
     # Celery

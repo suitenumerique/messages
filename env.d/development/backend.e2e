@@ -32,3 +32,7 @@ EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
 
 # Debug
 DJANGO_DEBUG=True
+
+# Max recipients per message settings for E2E tests
+MAX_RECIPIENTS_PER_MESSAGE=200
+MAX_DEFAULT_RECIPIENTS_PER_MESSAGE=150

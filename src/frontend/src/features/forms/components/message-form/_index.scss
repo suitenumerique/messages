@@ -200,3 +200,25 @@
     cursor: wait;
     pointer-events: auto;
 }
+
+// Recipient quota display
+.recipient-quota-display {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--4xs);
+    margin-left: auto;
+    padding: var(--c--globals--spacings--4xs) var(--c--globals--spacings--xs);
+    border-radius: var(--c--components--forms-input--border-radius);
+    color: var(--c--contextuals--text--semantic--neutral--primary);
+    background-color: var(--c--contextuals--background--semantic--neutral--secondary);
+}
+
+.recipient-quota-display--warning {
+    color: var(--c--contextuals--content--semantic--warning--primary);
+    background-color: var(--c--contextuals--background--semantic--warning--tertiary);
+}
+
+.recipient-quota-display--critical {
+    color: var(--c--contextuals--content--semantic--error--primary);
+    background-color: var(--c--contextuals--background--semantic--error--tertiary);
+}

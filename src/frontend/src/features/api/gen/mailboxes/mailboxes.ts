@@ -33,6 +33,7 @@ import type {
   MessageTemplateRequest,
   PatchedMessageTemplateRequest,
   ReadOnlyMessageTemplate,
+  RecipientQuota,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -1668,6 +1669,190 @@ export function useMailboxesRetrieve<
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
   const queryOptions = getMailboxesRetrieveQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Get the recipient quota status for this mailbox.
+ */
+export type mailboxesQuotaRetrieveResponse200 = {
+  data: RecipientQuota;
+  status: 200;
+};
+
+export type mailboxesQuotaRetrieveResponseComposite =
+  mailboxesQuotaRetrieveResponse200;
+
+export type mailboxesQuotaRetrieveResponse =
+  mailboxesQuotaRetrieveResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMailboxesQuotaRetrieveUrl = (id: string) => {
+  return `/api/v1.0/mailboxes/${id}/quota/`;
+};
+
+export const mailboxesQuotaRetrieve = async (
+  id: string,
+  options?: RequestInit,
+): Promise<mailboxesQuotaRetrieveResponse> => {
+  return fetchAPI<mailboxesQuotaRetrieveResponse>(
+    getMailboxesQuotaRetrieveUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMailboxesQuotaRetrieveQueryKey = (id: string) => {
+  return [`/api/v1.0/mailboxes/${id}/quota/`] as const;
+};
+
+export const getMailboxesQuotaRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getMailboxesQuotaRetrieveQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>
+  > = ({ signal }) => mailboxesQuotaRetrieve(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MailboxesQuotaRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>
+>;
+export type MailboxesQuotaRetrieveQueryError = unknown;
+
+export function useMailboxesQuotaRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesQuotaRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMailboxesQuotaRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMailboxesQuotaRetrieve<
+  TData = Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof mailboxesQuotaRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMailboxesQuotaRetrieveQueryOptions(id, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<
     TData,

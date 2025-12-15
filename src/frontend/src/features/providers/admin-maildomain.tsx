@@ -11,6 +11,7 @@ type AdminMailDomainContextType = {
     isLoading: boolean;
     error: unknown | null;
     pagination: ReturnType<typeof usePagination>;
+    refetchMailDomains: () => void;
 }
 
 const AdminMailDomainContext = createContext<AdminMailDomainContextType | undefined>(undefined)
@@ -22,22 +23,23 @@ const AdminMailDomainContext = createContext<AdminMailDomainContextType | undefi
 export const AdminMailDomainProvider = ({ children }: PropsWithChildren) => {
     const router = useRouter();
     const pagination = usePagination({ pageSize: DEFAULT_PAGE_SIZE });
-    const { data: maildomainsData, isLoading: isLoadingList, error: listError } = useMaildomainsList({ page: pagination.page });
+    const maildomainsQuery = useMaildomainsList({ page: pagination.page });
     const { data: selectedMaildomainData, isLoading: isLoadingItem, error: itemError } = useMaildomainsRetrieve(
         router.query.maildomainId as string, { query: { enabled: !!router.query.maildomainId } });
     const context = useMemo(() => ({
         selectedMailDomain: selectedMaildomainData?.data || null,
-        mailDomains: maildomainsData?.data.results || [],
-        isLoading: isLoadingList || isLoadingItem,
-        error: listError || itemError,
-        pagination
-    }), [selectedMaildomainData, maildomainsData, isLoadingList, isLoadingItem, listError, itemError, pagination]);
+        mailDomains: maildomainsQuery.data?.data.results || [],
+        isLoading: maildomainsQuery.isLoading || isLoadingItem,
+        error: maildomainsQuery.error || itemError,
+        pagination,
+        refetchMailDomains: maildomainsQuery.refetch,
+    }), [selectedMaildomainData, maildomainsQuery, isLoadingItem, itemError, pagination]);
 
     useEffect(() => {
-        if (maildomainsData?.data.count) {
-            pagination.setPagesCount(Math.ceil(maildomainsData.data.count / pagination.pageSize));
+        if (maildomainsQuery.data?.data.count) {
+            pagination.setPagesCount(Math.ceil(maildomainsQuery.data.data.count / pagination.pageSize));
         }
-    }, [maildomainsData?.data.count, pagination.pageSize, pagination.setPagesCount]);
+    }, [maildomainsQuery.data?.data.count, pagination.pageSize, pagination.setPagesCount]);
 
     return (
         <AdminMailDomainContext.Provider value={context}>{children}</AdminMailDomainContext.Provider>

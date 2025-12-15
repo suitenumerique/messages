@@ -6,6 +6,7 @@ import random
 import uuid
 from unittest.mock import patch
 
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -805,6 +806,276 @@ class TestApiDraftAndSendMessage:
 
         # Should fail due to max_length constraint
         assert draft_response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @override_settings(MAX_RECIPIENTS_PER_MESSAGE=2)
+    def test_draft_message_recipient_limit_exceeded(self, mailbox, authenticated_user):
+        """Test that creating a draft with too many recipients is rejected."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        # 3 recipients while limit is 2
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "Too many recipients",
+                "draftBody": "Test content",
+                "to": ["a@example.com"],
+                "cc": ["b@example.com"],
+                "bcc": ["c@example.com"],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @override_settings(MAX_RECIPIENTS_PER_MESSAGE=10)
+    def test_draft_message_recipient_limit_mailbox_override(self, authenticated_user):
+        """Test that mailbox custom_settings overrides global MAX_RECIPIENTS_PER_MESSAGE."""
+        # Create mailbox with custom limit of 2
+        mailbox = factories.MailboxFactory(
+            custom_settings={"max_recipients_per_message": 2}
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        # 3 recipients - should fail because mailbox limit is 2 (not global 10)
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "Too many recipients",
+                "draftBody": "Test content",
+                "to": ["a@example.com"],
+                "cc": ["b@example.com"],
+                "bcc": ["c@example.com"],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        # 2 recipients - should succeed
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "Within limit",
+                "draftBody": "Test content",
+                "to": ["a@example.com"],
+                "cc": ["b@example.com"],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+    @override_settings(MAX_RECIPIENTS_PER_MESSAGE=10)
+    def test_draft_message_recipient_limit_maildomain_override(
+        self, authenticated_user
+    ):
+        """Test that maildomain custom_settings overrides global MAX_RECIPIENTS_PER_MESSAGE."""
+        # Create domain with custom limit of 3
+        domain = factories.MailDomainFactory(
+            custom_settings={"max_recipients_per_message": 3}
+        )
+        mailbox = factories.MailboxFactory(domain=domain)
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        # 4 recipients - should fail because domain limit is 3 (not global 10)
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "Too many recipients",
+                "draftBody": "Test content",
+                "to": ["a@example.com", "b@example.com"],
+                "cc": ["c@example.com"],
+                "bcc": ["d@example.com"],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        # 3 recipients - should succeed
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "Within limit",
+                "draftBody": "Test content",
+                "to": ["a@example.com"],
+                "cc": ["b@example.com"],
+                "bcc": ["c@example.com"],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+    @override_settings(MAX_RECIPIENTS_PER_MESSAGE=10)
+    def test_draft_message_recipient_limit_mailbox_overrides_maildomain(
+        self, authenticated_user
+    ):
+        """Test that mailbox custom_settings takes priority over maildomain custom_settings."""
+        # Create domain with limit of 5
+        domain = factories.MailDomainFactory(
+            custom_settings={"max_recipients_per_message": 5}
+        )
+        # Create mailbox with limit of 2 (more restrictive)
+        mailbox = factories.MailboxFactory(
+            domain=domain, custom_settings={"max_recipients_per_message": 2}
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        # 3 recipients - should fail because mailbox limit is 2 (not domain's 5)
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "Too many recipients",
+                "draftBody": "Test content",
+                "to": ["a@example.com"],
+                "cc": ["b@example.com"],
+                "bcc": ["c@example.com"],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        # 2 recipients - should succeed
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "Within limit",
+                "draftBody": "Test content",
+                "to": ["a@example.com", "b@example.com"],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+    @override_settings(MAX_RECIPIENTS_PER_MESSAGE=2)
+    def test_update_draft_message_recipient_limit_exceeded(
+        self, authenticated_user, draft_detail_url
+    ):
+        """Test that updating a draft with too many recipients is rejected."""
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        # Create draft with 1 recipient (within limit)
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "Initial draft",
+                "draftBody": "Test content",
+                "to": ["a@example.com"],
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        draft_id = response.data["id"]
+
+        # Try to update with 3 recipients (exceeds limit of 2)
+        response = client.put(
+            draft_detail_url(draft_id),
+            {
+                "senderId": mailbox.id,
+                "subject": "Updated draft",
+                "draftBody": "Updated content",
+                "to": ["a@example.com"],
+                "cc": ["b@example.com"],
+                "bcc": ["c@example.com"],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @override_settings(
+        MAX_RECIPIENTS_PER_MESSAGE=10, MAX_DEFAULT_RECIPIENTS_PER_MESSAGE=2
+    )
+    def test_draft_message_recipient_limit_default_setting(
+        self, mailbox, authenticated_user
+    ):
+        """Test that MAX_DEFAULT_RECIPIENTS_PER_MESSAGE is enforced when no custom limits exist."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        # Create draft with 3 recipients (exceeds default limit of 2)
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "Too many recipients",
+                "draftBody": "Test content",
+                "to": ["a@example.com"],
+                "cc": ["b@example.com"],
+                "bcc": ["c@example.com"],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        # Create draft with 2 recipients (within default limit of 2)
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "Within limit",
+                "draftBody": "Test content",
+                "to": ["a@example.com"],
+                "cc": ["b@example.com"],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
 
     def test_send_nonexistent_message(self, mailbox, authenticated_user, send_url):
         """Test sending a message that does not exist."""

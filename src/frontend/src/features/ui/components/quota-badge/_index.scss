@@ -1,0 +1,39 @@
+// Quota badge component styles
+
+.quota-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    cursor: help;
+    font-size: 0.875rem;
+
+    &__indicator {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    &__count {
+        font-weight: 500;
+    }
+
+    &__percentage {
+        color: var(--c--contextuals--text--semantic--neutral--primary);
+    }
+
+    // Status colors for the indicator
+    &--ok &__indicator {
+        background-color: var(--c--contextuals--background--semantic--success--primary);
+    }
+
+    &--warning &__indicator {
+        background-color: #f59e0b; // amber-500 - distinct from red
+    }
+
+    &--critical &__indicator {
+        background-color: var(--c--contextuals--background--semantic--error--primary);
+    }
+}

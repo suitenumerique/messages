@@ -23,7 +23,13 @@ const DEFAULT_CONFIG: AppConfig = {
     MAX_OUTGOING_ATTACHMENT_SIZE: 0,
     MAX_OUTGOING_BODY_SIZE: 0,
     MAX_INCOMING_EMAIL_SIZE: 0,
-    DRIVE: DEFAULT_DRIVE_CONFIG
+    DRIVE: DEFAULT_DRIVE_CONFIG,
+    MAX_RECIPIENTS_PER_MESSAGE: 0, // Will be set by backend config
+    MAX_DEFAULT_RECIPIENTS_PER_MESSAGE: 0, // Will be set by backend config
+    MAX_RECIPIENTS_FOR_DOMAIN: '', // Will be set by backend config (format: "number/period" - max for domains)
+    MAX_DEFAULT_RECIPIENTS_FOR_DOMAIN: '', // Will be set by backend config (format: "number/period" - default for domains)
+    MAX_RECIPIENTS_FOR_MAILBOX: '', // Will be set by backend config (format: "number/period" - max for mailboxes)
+    MAX_DEFAULT_RECIPIENTS_FOR_MAILBOX: '', // Will be set by backend config (format: "number/period" - default for mailboxes)
 }
 
 const ConfigContext = createContext<AppConfig>(DEFAULT_CONFIG)

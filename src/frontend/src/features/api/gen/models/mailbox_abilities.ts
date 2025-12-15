@@ -32,4 +32,6 @@ export type MailboxAbilities = {
   readonly manage_message_templates: boolean;
   /** Can import messages */
   readonly import_messages: boolean;
+  /** Can manage settings */
+  readonly manage_settings: boolean;
 };

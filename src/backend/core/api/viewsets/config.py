@@ -3,7 +3,10 @@
 from django.conf import settings
 
 import rest_framework as drf
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import (
+    OpenApiResponse,
+    extend_schema,
+)
 from rest_framework.permissions import AllowAny
 
 from core.ai.utils import is_ai_enabled, is_ai_summary_enabled, is_auto_labels_enabled
@@ -82,7 +85,64 @@ class ConfigView(drf.views.APIView):
                         },
                         "MAX_INCOMING_EMAIL_SIZE": {
                             "type": "integer",
-                            "description": "Maximum size in bytes for incoming email (including attachments and body)",
+                            "description": (
+                                "Maximum size in bytes for incoming email "
+                                "(including attachments and body)"
+                            ),
+                            "readOnly": True,
+                        },
+                        "MAX_RECIPIENTS_PER_MESSAGE": {
+                            "type": "integer",
+                            "description": (
+                                "Maximum number of recipients per message "
+                                "(to + cc + bcc) for the entire system. "
+                                "Cannot be exceeded."
+                            ),
+                            "readOnly": True,
+                        },
+                        "MAX_DEFAULT_RECIPIENTS_PER_MESSAGE": {
+                            "type": "integer",
+                            "description": (
+                                "Default maximum number of recipients per message "
+                                "(to + cc + bcc) for a mailbox or maildomain "
+                                "if no custom limit is set."
+                            ),
+                            "readOnly": True,
+                        },
+                        "MAX_RECIPIENTS_FOR_DOMAIN": {
+                            "type": "string",
+                            "description": (
+                                "Maximum recipients per period for a domain "
+                                "(format: 'number/period', e.g., '1500/d' for 1500 per day). "
+                                "Cannot be exceeded."
+                            ),
+                            "readOnly": True,
+                        },
+                        "MAX_DEFAULT_RECIPIENTS_FOR_DOMAIN": {
+                            "type": "string",
+                            "description": (
+                                "Default maximum recipients per period for a domain "
+                                "(format: 'number/period', e.g., '1000/d' for 1000 per day) "
+                                "if no custom limit is set."
+                            ),
+                            "readOnly": True,
+                        },
+                        "MAX_RECIPIENTS_FOR_MAILBOX": {
+                            "type": "string",
+                            "description": (
+                                "Maximum recipients per period for a mailbox "
+                                "(format: 'number/period', e.g., '500/d' for 500 per day). "
+                                "Cannot be exceeded."
+                            ),
+                            "readOnly": True,
+                        },
+                        "MAX_DEFAULT_RECIPIENTS_FOR_MAILBOX": {
+                            "type": "string",
+                            "description": (
+                                "Default maximum recipients per period for a mailbox "
+                                "(format: 'number/period', e.g., '100/d' for 100 per day) "
+                                "if no custom limit is set."
+                            ),
                             "readOnly": True,
                         },
                     },
@@ -98,6 +158,12 @@ class ConfigView(drf.views.APIView):
                         "MAX_OUTGOING_ATTACHMENT_SIZE",
                         "MAX_OUTGOING_BODY_SIZE",
                         "MAX_INCOMING_EMAIL_SIZE",
+                        "MAX_RECIPIENTS_PER_MESSAGE",
+                        "MAX_DEFAULT_RECIPIENTS_PER_MESSAGE",
+                        "MAX_RECIPIENTS_FOR_DOMAIN",
+                        "MAX_DEFAULT_RECIPIENTS_FOR_DOMAIN",
+                        "MAX_RECIPIENTS_FOR_MAILBOX",
+                        "MAX_DEFAULT_RECIPIENTS_FOR_MAILBOX",
                     ],
                 },
             )
@@ -132,6 +198,22 @@ class ConfigView(drf.views.APIView):
         )
         dict_settings["MAX_OUTGOING_BODY_SIZE"] = settings.MAX_OUTGOING_BODY_SIZE
         dict_settings["MAX_INCOMING_EMAIL_SIZE"] = settings.MAX_INCOMING_EMAIL_SIZE
+        dict_settings["MAX_RECIPIENTS_PER_MESSAGE"] = (
+            settings.MAX_RECIPIENTS_PER_MESSAGE
+        )
+        dict_settings["MAX_DEFAULT_RECIPIENTS_PER_MESSAGE"] = (
+            settings.MAX_DEFAULT_RECIPIENTS_PER_MESSAGE
+        )
+        dict_settings["MAX_RECIPIENTS_FOR_DOMAIN"] = settings.MAX_RECIPIENTS_FOR_DOMAIN
+        dict_settings["MAX_DEFAULT_RECIPIENTS_FOR_DOMAIN"] = (
+            settings.MAX_DEFAULT_RECIPIENTS_FOR_DOMAIN
+        )
+        dict_settings["MAX_RECIPIENTS_FOR_MAILBOX"] = (
+            settings.MAX_RECIPIENTS_FOR_MAILBOX
+        )
+        dict_settings["MAX_DEFAULT_RECIPIENTS_FOR_MAILBOX"] = (
+            settings.MAX_DEFAULT_RECIPIENTS_FOR_MAILBOX
+        )
 
         # Drive service
         if base_url := settings.DRIVE_CONFIG.get("base_url"):

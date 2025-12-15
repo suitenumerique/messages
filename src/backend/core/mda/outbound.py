@@ -23,6 +23,7 @@ from core.mda.rfc5322 import (
 )
 from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
+from core.services.quota import quota_service
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,72 @@ RETRY_INTERVALS = [
 ]
 
 
+def check_and_update_recipient_quota(
+    mailbox: models.Mailbox, recipient_count: int
+) -> None:
+    """
+    Check if the mailbox and its domain can send to the specified number of recipients
+    and update both quotas if allowed using Redis.
+
+    This implementation uses a single atomic Lua script to check and increment both
+    mailbox and domain quotas simultaneously, avoiding the need for rollback logic.
+
+    Args:
+        mailbox: The sender mailbox
+        recipient_count: Number of recipients in the message
+
+    Raises:
+        drf.exceptions.PermissionDenied: If either quota would be exceeded
+    """
+    # Get quota limits
+    mailbox_limit, mailbox_period = mailbox.get_max_recipients()
+    domain_limit, domain_period = mailbox.domain.get_max_recipients()
+
+    # Atomic check and increment for mailbox and domain quotas
+    success, failed_entity, remaining = quota_service.check_and_increment(
+        mailbox_id=str(mailbox.id),
+        mailbox_period=mailbox_period,
+        mailbox_limit=mailbox_limit,
+        domain_id=str(mailbox.domain.id),
+        domain_period=domain_period,
+        domain_limit=domain_limit,
+        recipient_count=recipient_count,
+    )
+
+    if not success:
+        if failed_entity == "mailbox":
+            period_display = {"d": "day", "m": "month", "y": "year"}.get(
+                mailbox_period, mailbox_period
+            )
+            raise drf.exceptions.PermissionDenied(
+                _(
+                    "Recipient quota exceeded. You can send to %(remaining)s more recipients "
+                    "this %(period)s. Attempted to send to %(count)s recipients."
+                )
+                % {
+                    "remaining": remaining,
+                    "period": period_display,
+                    "count": recipient_count,
+                }
+            )
+
+        # Domain quota exceeded
+        period_display = {"d": "day", "m": "month", "y": "year"}.get(
+            domain_period, domain_period
+        )
+        raise drf.exceptions.PermissionDenied(
+            _(
+                "Domain recipient quota exceeded. The domain can send to %(remaining)s more "
+                "recipients this %(period)s. Attempted to send to %(count)s recipients."
+            )
+            % {
+                "remaining": remaining,
+                "period": period_display,
+                "count": recipient_count,
+            }
+        )
+
+
 def prepare_outbound_message(
     mailbox_sender: models.Mailbox,
     message: models.Message,
@@ -53,6 +120,10 @@ def prepare_outbound_message(
 
     This part is called synchronously from the API view.
     """
+
+    # Check recipient quota before preparing the message
+    recipient_count = message.recipients.count()
+    check_and_update_recipient_quota(mailbox_sender, recipient_count)
 
     # Get recipients from the MessageRecipient model
     recipients_by_type = {

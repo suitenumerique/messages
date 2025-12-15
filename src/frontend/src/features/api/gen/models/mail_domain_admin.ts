@@ -5,6 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { MailDomainAdminCustomSettings } from "./mail_domain_admin_custom_settings";
 import type { MailDomainAdminAbilities } from "./mail_domain_admin_abilities";
 
 /**
@@ -19,6 +20,11 @@ export interface MailDomainAdmin {
   /** date and time at which a record was last updated */
   readonly updated_at: string;
   readonly expected_dns_records: string;
+  /**
+   * Limits applied to this mail domain (e.g. max recipients per message).
+   * @nullable
+   */
+  readonly custom_settings: MailDomainAdminCustomSettings;
   /** Instance permissions and capabilities */
   readonly abilities: MailDomainAdminAbilities;
 }

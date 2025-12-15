@@ -7,7 +7,7 @@
  */
 
 /**
- * Serialize mail domains for creating / editing admin view.
+ * Serialize mail domains for creating admin view.
  */
 export interface MailDomainAdminWriteRequest {
   /**

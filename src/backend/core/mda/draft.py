@@ -98,6 +98,19 @@ def create_draft(
         drf.exceptions.PermissionDenied: If access denied to parent thread
     """
 
+    # Normalize recipient lists
+    to_emails = to_emails or []
+    cc_emails = cc_emails or []
+    bcc_emails = bcc_emails or []
+
+    # Enforce per-message recipient limit (to + cc + bcc)
+    max_recipients = mailbox.get_max_recipients_per_message()
+    total_recipients = len(to_emails) + len(cc_emails) + len(bcc_emails)
+    if total_recipients > max_recipients:
+        raise drf.exceptions.ValidationError(
+            f"Too many recipients: {total_recipients} (maximum is {max_recipients})."
+        )
+
     # Get or create sender contact
     mailbox_email = f"{mailbox.local_part}@{mailbox.domain.name}"
     sender_contact, _created = models.Contact.objects.get_or_create(
@@ -168,9 +181,9 @@ def create_draft(
 
     # Update draft details with recipients and attachments
     update_data = {
-        "to": to_emails or [],
-        "cc": cc_emails or [],
-        "bcc": bcc_emails or [],
+        "to": to_emails,
+        "cc": cc_emails,
+        "bcc": bcc_emails,
         "attachments": attachments or [],
     }
 
@@ -182,6 +195,7 @@ def create_draft(
     return message
 
 
+# pylint: disable=too-many-locals
 def update_draft(
     mailbox: models.Mailbox,
     message: models.Message,
@@ -235,6 +249,30 @@ def update_draft(
         if message.pk and message.thread.messages.count() == 1:
             message.thread.subject = update_data["subject"]
             thread_updated_fields.append("subject")
+
+    # Enforce per-message recipient limit (to + cc + bcc)
+    max_recipients = mailbox.get_max_recipients_per_message()
+    # Current counts per type
+    current_counts = {}
+    for kind, kind_choice in [
+        ("to", enums.MessageRecipientTypeChoices.TO),
+        ("cc", enums.MessageRecipientTypeChoices.CC),
+        ("bcc", enums.MessageRecipientTypeChoices.BCC),
+    ]:
+        current_counts[kind] = message.recipients.filter(type=kind_choice).count()
+
+    # Compute total after applying updates (partial updates allowed)
+    total_after_update = 0
+    for kind in ["to", "cc", "bcc"]:
+        if kind in update_data:
+            total_after_update += len(update_data.get(kind) or [])
+        else:
+            total_after_update += current_counts[kind]
+
+    if total_after_update > max_recipients:
+        raise drf.exceptions.ValidationError(
+            f"Too many recipients: {total_after_update} (maximum is {max_recipients})."
+        )
 
     # Update recipients if provided
     recipient_type_mapping = {

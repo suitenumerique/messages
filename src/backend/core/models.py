@@ -39,6 +39,7 @@ from core.enums import (
     MessageDeliveryStatusChoices,
     MessageRecipientTypeChoices,
     MessageTemplateTypeChoices,
+    QuotaPeriodChoices,
     ThreadAccessRoleChoices,
     UserAbilities,
 )
@@ -46,6 +47,84 @@ from core.mda.rfc5322 import parse_email_message
 from core.mda.signing import generate_dkim_key as _generate_dkim_key
 
 logger = getLogger(__name__)
+
+
+def parse_max_recipients(value: str) -> tuple[int, str]:
+    """
+    Parse a max_recipients value in the format "number/period".
+
+    Args:
+        value: String like "500/d", "1000/m", "100000/y" (d = day, m = month, y = year)
+
+    Returns:
+        Tuple of (limit, period) where period is 'd', 'm', or 'y'
+
+    Raises:
+        ValueError: If the format is invalid
+    """
+    if not value or not isinstance(value, str):
+        raise ValueError("max_recipients must be a non-empty string")
+
+    parts = value.strip().split("/")
+    if len(parts) != 2:
+        raise ValueError(
+            "max_recipients must be in format 'number/period' (e.g., '500/d')"
+        )
+
+    try:
+        limit = int(parts[0])
+    except ValueError:
+        raise ValueError("max_recipients limit must be a valid integer") from None
+
+    if limit < 1:
+        raise ValueError("max_recipients limit must be a positive integer")
+
+    period = parts[1].lower()
+    if period not in (
+        QuotaPeriodChoices.DAY,
+        QuotaPeriodChoices.MONTH,
+        QuotaPeriodChoices.YEAR,
+    ):
+        raise ValueError(
+            f"max_recipients period must be one of: "
+            f"'{QuotaPeriodChoices.DAY}' (day), "
+            f"'{QuotaPeriodChoices.MONTH}' (month)"
+            f"'{QuotaPeriodChoices.YEAR}' (year)"
+        )
+
+    return limit, period
+
+
+def validate_custom_settings(value):
+    """
+    Validator for custom_settings JSONField.
+
+    Validates the structure and values of custom_settings used by MailDomain and Mailbox.
+    """
+    if not value:
+        return
+
+    if not isinstance(value, dict):
+        raise ValidationError("custom_settings must be a dictionary")
+
+    # Validate max_recipients_per_message
+    if "max_recipients_per_message" in value:
+        max_per_msg = value["max_recipients_per_message"]
+        if max_per_msg is not None and (
+            not isinstance(max_per_msg, int) or max_per_msg < 1
+        ):
+            raise ValidationError(
+                "max_recipients_per_message must be a positive integer"
+            )
+
+    # Validate max_recipients (format: "number/period" like "500/d")
+    if "max_recipients" in value:
+        max_recipients = value["max_recipients"]
+        if max_recipients is not None:
+            try:
+                parse_max_recipients(max_recipients)
+            except ValueError as e:
+                raise ValidationError(str(e)) from e
 
 
 class DuplicateEmailError(Exception):
@@ -276,6 +355,7 @@ class MailDomain(BaseModel):
         default=dict,
         blank=True,
         help_text=_("Custom settings for the mail domain."),
+        validators=[validate_custom_settings],
     )
 
     custom_attributes = models.JSONField(
@@ -301,7 +381,8 @@ class MailDomain(BaseModel):
         super().save(*args, **kwargs)
 
     def clean(self):
-        """Validate custom attributes."""
+        """Validate custom attributes and settings."""
+        # Custom attributes schema
         try:
             jsonschema.validate(
                 self.custom_attributes, settings.SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN
@@ -392,13 +473,15 @@ class MailDomain(BaseModel):
         is_admin = role == MailDomainAccessRoleChoices.ADMIN or user.is_superuser
 
         return {
-            CRUDAbilities.CAN_READ: bool(role),
+            CRUDAbilities.CAN_READ: bool(role) or user.is_superuser,
             CRUDAbilities.CAN_CREATE: is_admin,
             CRUDAbilities.CAN_UPDATE: is_admin,
             CRUDAbilities.CAN_PARTIALLY_UPDATE: is_admin,
             CRUDAbilities.CAN_DELETE: is_admin,
             MailDomainAbilities.CAN_MANAGE_ACCESSES: is_admin,
             MailDomainAbilities.CAN_MANAGE_MAILBOXES: is_admin,
+            # For now, only superusers can manage settings for maildomains (custom_settings)
+            MailDomainAbilities.CAN_MANAGE_SETTINGS: user.is_superuser,
         }
 
     def generate_dkim_key(
@@ -437,6 +520,41 @@ class MailDomain(BaseModel):
                 domain=self, is_active=True
             ).first()  # Most recent due to ordering in model
         )
+
+    def get_max_recipients(self) -> tuple[int, str]:
+        """Return the effective max recipients per period for a mail domain.
+
+        Priority:
+        1. MailDomain custom_settings.max_recipients
+        2. Global setting MAX_DEFAULT_RECIPIENTS_FOR_DOMAIN
+        3. Capped by MAX_RECIPIENTS_FOR_DOMAIN (cannot be exceeded)
+
+        Returns:
+            Tuple of (limit, period) where period is 'd', 'm', or 'y'
+        """
+        # Parse global settings for domain
+        domain_max_limit, domain_max_period = parse_max_recipients(
+            settings.MAX_RECIPIENTS_FOR_DOMAIN
+        )
+        domain_default_limit, domain_default_period = parse_max_recipients(
+            settings.MAX_DEFAULT_RECIPIENTS_FOR_DOMAIN
+        )
+
+        # MailDomain-level override
+        if hasattr(self, "custom_settings") and self.custom_settings:
+            value = self.custom_settings.get("max_recipients")
+            if value:
+                try:
+                    limit, period = parse_max_recipients(value)
+                    if period == domain_max_period:
+                        return min(limit, domain_max_limit), period
+                    return limit, period
+                except ValueError:
+                    pass  # Invalid format, fall through to global
+
+        # Global fallback - ensure it never exceeds the domain maximum
+        effective_limit = min(domain_default_limit, domain_max_limit)
+        return effective_limit, domain_default_period
 
 
 class Channel(BaseModel):
@@ -521,6 +639,13 @@ class Mailbox(BaseModel):
     alias_of = models.ForeignKey(
         "self", on_delete=models.SET_NULL, null=True, blank=True
     )
+    custom_settings = models.JSONField(
+        _("Custom settings"),
+        default=dict,
+        blank=True,
+        help_text=_("Custom settings for the mailbox."),
+        validators=[validate_custom_settings],
+    )
 
     class Meta:
         db_table = "messages_mailbox"
@@ -531,6 +656,11 @@ class Mailbox(BaseModel):
 
     def __str__(self):
         return f"{self.local_part}@{self.domain.name}"
+
+    def save(self, *args, **kwargs):
+        """Enforce validation before saving."""
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     @property
     def can_reset_password(self) -> bool:
@@ -601,12 +731,24 @@ class Mailbox(BaseModel):
         """
         Compute and return abilities for a given user on the mailbox.
         """
-        role = None
+        role = 0
+        is_domain_admin = False
 
         if user.is_authenticated:
+            # Use the annotated is_domain_admin field if available (optimized N+1)
+            try:
+                is_domain_admin = self.is_domain_admin
+            except AttributeError:
+                # Fallback to query if not pre-calculated
+                is_domain_admin = MailDomainAccess.objects.filter(
+                    user=user,
+                    maildomain=self.domain,
+                    role=MailDomainAccessRoleChoices.ADMIN,
+                ).exists()
+
             # Use the annotated user_role field
             try:
-                role = self.user_role
+                role = self.user_role or 0
             # Fallback to query if not pre-calculated (should not happen with optimized ViewSet)
             except AttributeError:
                 if (
@@ -622,22 +764,7 @@ class Mailbox(BaseModel):
                     try:
                         role = self.accesses.filter(user=user).values("role")[0]["role"]
                     except (MailboxAccess.DoesNotExist, IndexError):
-                        role = None
-
-        if role is None:
-            return {
-                "get": False,
-                "patch": False,
-                "put": False,
-                "post": False,
-                "delete": False,
-                "manage_accesses": False,
-                "view_messages": False,
-                "send_messages": False,
-                "manage_labels": False,
-                "manage_message_templates": False,
-                "import_messages": False,
-            }
+                        role = 0
 
         is_admin = role == MailboxRoleChoices.ADMIN
         can_modify = role >= MailboxRoleChoices.EDITOR
@@ -652,6 +779,7 @@ class Mailbox(BaseModel):
             CRUDAbilities.CAN_UPDATE: can_modify,
             CRUDAbilities.CAN_DELETE: can_delete,
             MailboxAbilities.CAN_MANAGE_ACCESSES: is_admin,
+            MailboxAbilities.CAN_MANAGE_SETTINGS: is_domain_admin,
             MailboxAbilities.CAN_VIEW_MESSAGES: has_access,
             MailboxAbilities.CAN_SEND_MESSAGES: can_send,
             MailboxAbilities.CAN_MANAGE_LABELS: can_modify,
@@ -718,6 +846,84 @@ class Mailbox(BaseModel):
                 return None
 
         return signature
+
+    def get_max_recipients_per_message(self):
+        """Return the effective max recipients per message for a mailbox.
+
+        Priority:
+        1. Mailbox custom_settings.max_recipients_per_message
+        2. MailDomain custom_settings.max_recipients_per_message
+        3. Global setting MAX_DEFAULT_RECIPIENTS_PER_MESSAGE
+        4. Global setting MAX_RECIPIENTS_PER_MESSAGE (cannot be exceeded)
+        """
+        # Mailbox-level override
+        if hasattr(self, "custom_settings") and self.custom_settings:
+            value = self.custom_settings.get("max_recipients_per_message")
+            if isinstance(value, int) and value > 0:
+                return min(value, settings.MAX_RECIPIENTS_PER_MESSAGE)
+
+        # MailDomain-level override
+        if (
+            self.domain
+            and hasattr(self.domain, "custom_settings")
+            and self.domain.custom_settings
+        ):
+            value = self.domain.custom_settings.get("max_recipients_per_message")
+            if isinstance(value, int) and value > 0:
+                return min(value, settings.MAX_RECIPIENTS_PER_MESSAGE)
+
+        # Global fallback - ensure it never exceeds the global maximum
+        return min(
+            settings.MAX_DEFAULT_RECIPIENTS_PER_MESSAGE,
+            settings.MAX_RECIPIENTS_PER_MESSAGE,
+        )
+
+    def get_max_recipients(self) -> tuple[int, str]:
+        """Return the effective max recipients per period for a mailbox.
+
+        Priority:
+        1. Mailbox custom_settings.max_recipients
+        2. Global setting MAX_DEFAULT_RECIPIENTS_FOR_MAILBOX
+        3. Capped by MAX_RECIPIENTS_FOR_MAILBOX (cannot be exceeded)
+
+        Note: Domain's max_recipients is NOT inherited - it's for the aggregate
+        domain quota. Both mailbox and domain quotas are enforced independently
+        at send time via Redis.
+
+        Returns:
+            Tuple of (limit, period) where period is 'd', 'm', or 'y'
+        """
+        # Parse global settings for mailbox
+        mailbox_max_limit, mailbox_max_period = parse_max_recipients(
+            settings.MAX_RECIPIENTS_FOR_MAILBOX
+        )
+        mailbox_default_limit, mailbox_default_period = parse_max_recipients(
+            settings.MAX_DEFAULT_RECIPIENTS_FOR_MAILBOX
+        )
+
+        # Mailbox-level override
+        if hasattr(self, "custom_settings") and self.custom_settings:
+            value = self.custom_settings.get("max_recipients")
+            if value:
+                try:
+                    limit, period = parse_max_recipients(value)
+                    # Period must match mailbox max period
+                    if period == mailbox_max_period:
+                        return min(limit, mailbox_max_limit), period
+                    # If periods differ, use the mailbox value but log a warning
+                    logger.warning(
+                        "Mailbox %s has max_recipients period '%s' different from global '%s'",
+                        str(self),
+                        period,
+                        mailbox_max_period,
+                    )
+                    return limit, period
+                except ValueError:
+                    pass  # Invalid format, fall through to global
+
+        # Global fallback for mailbox - ensure it never exceeds the mailbox maximum
+        effective_limit = min(mailbox_default_limit, mailbox_max_limit)
+        return effective_limit, mailbox_default_period
 
 
 class MailboxAccess(BaseModel):

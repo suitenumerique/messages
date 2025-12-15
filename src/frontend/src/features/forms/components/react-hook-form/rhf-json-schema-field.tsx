@@ -103,7 +103,13 @@ const JSONSchemaInput = ({ name, type, choices, format, value, setValue, ...prop
                     {...props}
                     type="number"
                     name={name}
-                    onChange={(event) => { setValue(name, event.target.value, { shouldDirty: true })}}
+                    onChange={(event) => {
+                        const val = event.target.value;
+                        // Convert empty string to null to avoid validation error "expected number, received string"
+                        // Convert to number otherwise
+                        const numVal = val === "" ? null : Number(val);
+                        setValue(name, numVal, { shouldDirty: true })
+                    }}
                     value={value as InputProps['value']}
                 />
             );

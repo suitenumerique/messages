@@ -357,7 +357,7 @@ class TestMailDomainAbilitiesAPI:
     def test_maildomain_abilities_in_response(
         self, api_client, domain_admin_user, domain_admin_access1
     ):
-        """Test that abilities are included in mail domain API response."""
+        """Test that abilities are included in mail domain API response for domain admin."""
         api_client.force_authenticate(user=domain_admin_user)
         url = reverse(
             "admin-maildomains-detail",
@@ -375,11 +375,13 @@ class TestMailDomainAbilitiesAPI:
         assert abilities["delete"] is True
         assert abilities["manage_accesses"] is True
         assert abilities["manage_mailboxes"] is True
+        # Only superusers can manage settings for maildomains
+        assert abilities["manage_settings"] is False
 
     def test_maildomain_list_with_abilities(
         self, api_client, domain_admin_user, domain_admin_access1
     ):
-        """Test that mail domain list includes abilities for each domain."""
+        """Test that mail domain list includes abilities for each domain (for domain admin)."""
         api_client.force_authenticate(user=domain_admin_user)
         url = reverse("admin-maildomains-list")
         response = api_client.get(url)
@@ -397,6 +399,8 @@ class TestMailDomainAbilitiesAPI:
         assert abilities["delete"] is True
         assert abilities["manage_accesses"] is True
         assert abilities["manage_mailboxes"] is True
+        # Only superusers can manage settings for maildomains
+        assert abilities["manage_settings"] is False
 
     def test_maildomain_detail_permissions_user_without_access(
         self, api_client, other_user, mail_domain1

@@ -1,6 +1,6 @@
 """API ViewSet for Mailbox model."""
 
-from django.db.models import OuterRef, Q, Subquery
+from django.db.models import Exists, OuterRef, Q, Subquery
 
 from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework import mixins, viewsets
@@ -10,10 +10,14 @@ from rest_framework.response import Response
 from core import models
 
 from .. import permissions, serializers
+from .mixins import QuotaMixin
 
 
 class MailboxViewSet(
-    viewsets.GenericViewSet, mixins.ListModelMixin, mixins.RetrieveModelMixin
+    QuotaMixin,
+    viewsets.GenericViewSet,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
 ):
     """ViewSet for Mailbox model."""
 
@@ -24,7 +28,7 @@ class MailboxViewSet(
     def get_queryset(self):
         """Restrict results to the current user's mailboxes."""
         user = self.request.user
-        # For regular users, annotate with their actual role
+        # For regular users, annotate with their actual role and domain admin status
         return (
             models.Mailbox.objects.filter(accesses__user=user)
             .prefetch_related("accesses__user", "domain")
@@ -33,7 +37,15 @@ class MailboxViewSet(
                     models.MailboxAccess.objects.filter(
                         mailbox=OuterRef("pk"), user=user
                     ).values("role")[:1]
-                )
+                ),
+                # Annotate domain admin status to avoid N+1 queries in get_abilities()
+                is_domain_admin=Exists(
+                    models.MailDomainAccess.objects.filter(
+                        user=user,
+                        maildomain=OuterRef("domain"),
+                        role=models.MailDomainAccessRoleChoices.ADMIN,
+                    )
+                ),
             )
             .order_by("-created_at")
         )
@@ -77,3 +89,17 @@ class MailboxViewSet(
 
         serializer = serializers.MailboxLightSerializer(queryset, many=True)
         return Response(serializer.data)
+
+    def get_quota_entity_type(self) -> str:
+        """Return 'mailbox' for quota calculations."""
+        return "mailbox"
+
+    @extend_schema(
+        tags=["mailboxes"],
+        responses=serializers.RecipientQuotaSerializer(),
+        description="Get the recipient quota status for this mailbox.",
+    )
+    @action(detail=True, methods=["get"], url_path="quota")
+    def quota(self, request, **kwargs):
+        """Get the recipient quota status for this mailbox."""
+        return super().quota(request, **kwargs)

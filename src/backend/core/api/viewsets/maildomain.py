@@ -4,7 +4,7 @@ from logging import getLogger
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import F
+from django.db.models import Exists, F, OuterRef, Subquery
 from django.shortcuts import get_object_or_404
 
 from drf_spectacular.utils import (
@@ -31,13 +31,17 @@ from core.api import serializers as core_serializers
 from core.enums import MessageTemplateTypeChoices
 from core.services.dns.check import check_dns_records
 
+from .mixins import QuotaMixin
+
 logger = getLogger(__name__)
 
 
 class AdminMailDomainViewSet(
+    QuotaMixin,
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
     viewsets.GenericViewSet,
 ):
     """
@@ -55,12 +59,17 @@ class AdminMailDomainViewSet(
     def get_permissions(self):
         if self.action == "create":
             return [core_permissions.IsSuperUser()]
+        if self.action in ["update", "partial_update"]:
+            return [core_permissions.CanManageSettings()]
         return super().get_permissions()
 
     def get_serializer_class(self):
         """Select serializer based on action."""
         if self.action == "create":
             return core_serializers.MailDomainAdminWriteSerializer
+        if self.action in ["update", "partial_update"]:
+            # manage custom_settings here
+            return core_serializers.MailDomainAdminUpdateSerializer
         return super().get_serializer_class()
 
     def get_queryset(self):
@@ -136,8 +145,23 @@ class AdminMailDomainViewSet(
             }
         )
 
+    def get_quota_entity_type(self) -> str:
+        """Return 'domain' for quota calculations."""
+        return "domain"
+
+    @extend_schema(
+        tags=["maildomains"],
+        responses=core_serializers.RecipientQuotaSerializer(),
+        description="Get the recipient quota status for this mail domain.",
+    )
+    @action(detail=True, methods=["get"], url_path="quota")
+    def quota(self, request, **kwargs):
+        """Get the recipient quota status for this mail domain."""
+        return super().quota(request, **kwargs)
+
 
 class AdminMailDomainMailboxViewSet(
+    QuotaMixin,
     mixins.CreateModelMixin,
     mixins.RetrieveModelMixin,
     mixins.DestroyModelMixin,
@@ -159,9 +183,40 @@ class AdminMailDomainMailboxViewSet(
     ]
     serializer_class = core_serializers.MailboxAdminSerializer
 
+    def get_serializer_class(self):
+        """Select serializer based on action."""
+        if self.action == "update_settings":
+            return core_serializers.MailboxSettingsUpdateSerializer
+        return super().get_serializer_class()
+
+    def get_permissions(self):
+        """Override permissions for specific actions."""
+        if self.action == "update_settings":
+            # Domain admin + ability to manage settings
+            return [permission() for permission in self.permission_classes] + [
+                core_permissions.CanManageSettings()
+            ]
+        return super().get_permissions()
+
     def get_queryset(self):
         maildomain_pk = self.kwargs.get("maildomain_pk")
-        return models.Mailbox.objects.filter(domain_id=maildomain_pk)
+        user = self.request.user
+        return models.Mailbox.objects.filter(domain_id=maildomain_pk).annotate(
+            # Annotate user role for get_abilities() optimization
+            user_role=Subquery(
+                models.MailboxAccess.objects.filter(
+                    mailbox=OuterRef("pk"), user=user
+                ).values("role")[:1]
+            ),
+            # Annotate domain admin status to avoid N+1 queries in get_abilities()
+            is_domain_admin=Exists(
+                models.MailDomainAccess.objects.filter(
+                    user=user,
+                    maildomain=OuterRef("domain"),
+                    role=models.MailDomainAccessRoleChoices.ADMIN,
+                )
+            ),
+        )
 
     @extend_schema(
         description="Create new mailbox in a specific maildomain.",
@@ -238,6 +293,7 @@ class AdminMailDomainMailboxViewSet(
                             required=False, allow_blank=True
                         ),
                         "custom_attributes": drf_serializers.JSONField(required=False),
+                        "custom_settings": drf_serializers.JSONField(required=False),
                     },
                 ),
             },
@@ -331,6 +387,52 @@ class AdminMailDomainMailboxViewSet(
         return Response(
             {"one_time_password": mailbox_password}, status=status.HTTP_200_OK
         )
+
+    @extend_schema(
+        operation_id="maildomains_mailboxes_settings_update",
+        description="Update mailbox settings (custom_settings).",
+        request=core_serializers.MailboxSettingsUpdateSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=core_serializers.MailboxSettingsUpdateSerializer,
+                description="Mailbox settings updated successfully.",
+            ),
+            400: OpenApiResponse(
+                description="Invalid settings data.",
+            ),
+            403: OpenApiResponse(
+                description="User does not have permission to manage settings.",
+            ),
+        },
+    )
+    @action(detail=True, methods=["patch"], url_path="settings")
+    def update_settings(self, request, maildomain_pk=None, pk=None):  # pylint: disable=unused-argument
+        """
+        Update mailbox settings (custom_settings).
+
+        Only domain administrators can manage mailbox settings.
+        This endpoint is separate from the general mailbox update endpoint
+        to enforce proper permission checks at the viewset level.
+        """
+        mailbox = self.get_object()
+        serializer = self.get_serializer(mailbox, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def get_quota_entity_type(self) -> str:
+        """Return 'mailbox' for quota calculations."""
+        return "mailbox"
+
+    @extend_schema(
+        tags=["maildomains"],
+        responses=core_serializers.RecipientQuotaSerializer(),
+        description="Get the recipient quota status for this mailbox.",
+    )
+    @action(detail=True, methods=["get"], url_path="quota")
+    def quota(self, request, **kwargs):
+        """Get the recipient quota status for this mailbox."""
+        return super().quota(request, **kwargs)
 
 
 class AdminMailDomainMessageTemplateViewSet(

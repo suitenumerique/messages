@@ -10,4 +10,5 @@ export interface MailboxAdminUpdateMetadataRequest {
   full_name?: string;
   name?: string;
   custom_attributes?: unknown;
+  custom_settings?: unknown;
 }

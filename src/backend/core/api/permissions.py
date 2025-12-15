@@ -450,3 +450,33 @@ class HasAccessToMailbox(IsAuthenticated):
         return models.MailboxAccess.objects.filter(
             user=request.user, mailbox=view.kwargs.get("mailbox_id")
         ).exists()
+
+
+class CanManageSettings(permissions.BasePermission):
+    """
+    Permission class that checks if the user has CAN_MANAGE_SETTINGS ability
+    for the given MailDomain or Mailbox object.
+
+    This permission should be used for actions that modify custom_settings and other settings.
+    """
+
+    message = "You do not have permission to manage settings for this resource."
+
+    def has_object_permission(self, request, view, obj):
+        """
+        Check if user has CAN_MANAGE_SETTINGS ability for the object.
+        Works with both MailDomain and Mailbox objects.
+        """
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        # Get abilities for this object
+        abilities = obj.get_abilities(request.user)
+
+        # Check for the specific ability
+        if isinstance(obj, models.MailDomain):
+            return abilities[enums.MailDomainAbilities.CAN_MANAGE_SETTINGS]
+        if isinstance(obj, models.Mailbox):
+            return abilities[enums.MailboxAbilities.CAN_MANAGE_SETTINGS]
+
+        return False

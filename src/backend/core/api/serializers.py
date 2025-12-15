@@ -1,9 +1,9 @@
-# pylint: disable=too-many-lines
 """Client serializers for the messages core app."""
 # pylint: disable=too-many-lines
 
 import json
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q
 from django.utils.translation import gettext_lazy as _
@@ -13,6 +13,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from core import enums, models
+from core.models import parse_max_recipients
 
 
 class IntegerChoicesField(serializers.ChoiceField):
@@ -216,10 +217,18 @@ class MailboxSerializer(AbilitiesModelSerializer):
     role = serializers.SerializerMethodField(read_only=True)
     count_unread_messages = serializers.SerializerMethodField(read_only=True)
     count_messages = serializers.SerializerMethodField(read_only=True)
+    max_recipients_per_message = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = models.Mailbox
-        fields = ["id", "email", "role", "count_unread_messages", "count_messages"]
+        fields = [
+            "id",
+            "email",
+            "role",
+            "count_unread_messages",
+            "count_messages",
+            "max_recipients_per_message",
+        ]
 
     def get_email(self, instance):
         """Return the email of the mailbox."""
@@ -279,6 +288,11 @@ class MailboxSerializer(AbilitiesModelSerializer):
     def get_abilities(self, instance):
         """Get abilities for the instance."""
         return super().get_abilities(instance)
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_max_recipients_per_message(self, instance):
+        """Return the maximum number of recipients per message for the mailbox."""
+        return instance.get_max_recipients_per_message()
 
 
 class MailboxLightSerializer(serializers.ModelSerializer):
@@ -858,6 +872,10 @@ class MailDomainAdminSerializer(AbilitiesModelSerializer):
     """Serialize mail domains for admin view."""
 
     expected_dns_records = serializers.SerializerMethodField(read_only=True)
+    custom_settings = serializers.SerializerMethodField(
+        read_only=True,
+        help_text="Limits applied to this mail domain (e.g. max recipients per message).",
+    )
 
     def get_expected_dns_records(self, instance):
         """Return the expected DNS records for the mail domain, only in detail views."""
@@ -869,9 +887,41 @@ class MailDomainAdminSerializer(AbilitiesModelSerializer):
 
         return None
 
+    @extend_schema_field(
+        {
+            "type": "object",
+            "properties": {
+                "max_recipients_per_message": {
+                    "type": "integer",
+                    "nullable": True,
+                    "description": "Maximum number of recipients per message for this domain.",
+                },
+                "max_recipients": {
+                    "type": "string",
+                    "nullable": True,
+                    "description": (
+                        "Maximum recipients per period "
+                        "(format: 'number/period', e.g., '500/d' for 500 per day)."
+                    ),
+                },
+            },
+            "nullable": True,
+        }
+    )
+    def get_custom_settings(self, instance):
+        """Return custom_settings with proper structure."""
+        return instance.custom_settings or None
+
     class Meta:
         model = models.MailDomain
-        fields = ["id", "name", "created_at", "updated_at", "expected_dns_records"]
+        fields = [
+            "id",
+            "name",
+            "created_at",
+            "updated_at",
+            "expected_dns_records",
+            "custom_settings",
+        ]
         read_only_fields = fields
 
     @extend_schema_field(
@@ -938,7 +988,7 @@ class MaildomainAccessWriteSerializer(serializers.ModelSerializer):
 
 
 class MailDomainAdminWriteSerializer(serializers.ModelSerializer):
-    """Serialize mail domains for creating / editing admin view."""
+    """Serialize mail domains for creating admin view."""
 
     class Meta:
         model = models.MailDomain
@@ -952,6 +1002,89 @@ class MailDomainAdminWriteSerializer(serializers.ModelSerializer):
             "custom_attributes",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class CustomSettingsUpdateMixin:
+    """Mixin for validating custom_settings field."""
+
+    def validate_custom_settings(self, value):
+        """Validate that custom_settings does not exceed global maximum."""
+        if value and isinstance(value, dict):
+            # Validate max_recipients_per_message
+            max_recipients_per_msg = value.get("max_recipients_per_message")
+            if max_recipients_per_msg is not None and isinstance(
+                max_recipients_per_msg, int
+            ):
+                if max_recipients_per_msg <= 0:
+                    raise serializers.ValidationError(
+                        _("The limit must be greater than 0.")
+                    )
+                if max_recipients_per_msg > settings.MAX_RECIPIENTS_PER_MESSAGE:
+                    raise serializers.ValidationError(
+                        _(
+                            "The limit cannot exceed the global maximum of %(max)s recipients."
+                        )
+                        % {"max": settings.MAX_RECIPIENTS_PER_MESSAGE}
+                    )
+
+            # Validate max_recipients (format: "number/period" like "500/d")
+            max_recipients = value.get("max_recipients")
+            if max_recipients is not None:
+                try:
+                    limit, period = parse_max_recipients(max_recipients)
+
+                    # Determine which max to use based on model type
+                    # For mailboxes, use MAX_RECIPIENTS_FOR_MAILBOX
+                    # For domains, use MAX_RECIPIENTS_FOR_DOMAIN
+                    if self.Meta.model == models.Mailbox:
+                        max_setting = settings.MAX_RECIPIENTS_FOR_MAILBOX
+                    else:
+                        max_setting = settings.MAX_RECIPIENTS_FOR_DOMAIN
+
+                    global_limit, global_period = parse_max_recipients(max_setting)
+
+                    # Only compare if periods match
+                    if period == global_period and limit > global_limit:
+                        raise serializers.ValidationError(
+                            _("The limit cannot exceed the global maximum of %(max)s.")
+                            % {"max": max_setting}
+                        )
+
+                    # Note: With Redis-based quotas, mailbox and domain quotas are
+                    # independent. Domain capacity constraint is enforced at send time,
+                    # not at configuration time.
+
+                except ValueError:
+                    raise serializers.ValidationError(
+                        _("Invalid format for recipients limit.")
+                    ) from None
+
+        return value
+
+
+class MailDomainAdminUpdateSerializer(
+    CustomSettingsUpdateMixin, serializers.ModelSerializer
+):
+    """Serialize mail domains for updating custom_settings only."""
+
+    class Meta:
+        model = models.MailDomain
+        fields = [
+            "id",
+            "custom_settings",
+        ]
+        read_only_fields = ["id"]
+
+
+class MailboxSettingsUpdateSerializer(
+    CustomSettingsUpdateMixin, serializers.ModelSerializer
+):
+    """Serialize mailbox settings (custom_settings) for update operations."""
+
+    class Meta:
+        model = models.Mailbox
+        fields = ["id", "custom_settings"]
+        read_only_fields = ["id"]
 
 
 class MailboxAccessNestedUserSerializer(serializers.ModelSerializer):
@@ -983,6 +1116,35 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
     alias_of = serializers.PrimaryKeyRelatedField(
         required=False, allow_null=True, queryset=models.Mailbox.objects.none()
     )
+    custom_settings = serializers.SerializerMethodField(
+        read_only=True,
+        help_text="Limits applied to this mailbox (e.g. max recipients per message).",
+    )
+
+    @extend_schema_field(
+        {
+            "type": "object",
+            "properties": {
+                "max_recipients_per_message": {
+                    "type": "integer",
+                    "nullable": True,
+                    "description": "Maximum number of recipients per message for this mailbox.",
+                },
+                "max_recipients": {
+                    "type": "string",
+                    "nullable": True,
+                    "description": (
+                        "Maximum recipients per period "
+                        "(format: 'number/period', e.g., '500/d' for 500 per day)."
+                    ),
+                },
+            },
+            "nullable": True,
+        }
+    )
+    def get_custom_settings(self, instance):
+        """Return custom_settings with proper structure."""
+        return instance.custom_settings or None
 
     class Meta:
         model = models.Mailbox
@@ -997,6 +1159,7 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
             "updated_at",
             "can_reset_password",
             "contact",
+            "custom_settings",
         ]
         read_only_fields = [
             "id",
@@ -1007,6 +1170,7 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
             "updated_at",
             "can_reset_password",
             "contact",
+            "custom_settings",  # Read-only here, use /settings/ endpoint to update
         ]
 
     def __init__(self, *args, **kwargs):
@@ -1153,6 +1317,9 @@ class MailboxAdminCreateSerializer(MailboxAdminSerializer):
     """
     Serialize Mailbox details for create admin endpoint, including users with access and
     metadata.
+
+    Note: custom_settings is excluded from the response as it cannot be set during creation.
+    It can only be modified via the dedicated /settings/ endpoint.
     """
 
     one_time_password = serializers.SerializerMethodField(
@@ -1166,7 +1333,12 @@ class MailboxAdminCreateSerializer(MailboxAdminSerializer):
 
     class Meta:
         model = models.Mailbox
-        fields = MailboxAdminSerializer.Meta.fields + ["one_time_password"]
+        # Exclude custom_settings from creation response - it can only be set via /settings/
+        fields = [
+            field
+            for field in MailboxAdminSerializer.Meta.fields
+            if field != "custom_settings"
+        ] + ["one_time_password"]
         read_only_fields = fields
 
 
@@ -1493,3 +1665,45 @@ class PartialDriveItemSerializer(serializers.Serializer):
 
     def update(self, instance, validated_data):
         """This serializer is only used to validate the data, not to create or update."""
+
+
+class RecipientQuotaSerializer(serializers.Serializer):
+    """Serializer for recipient quota status (read-only)."""
+
+    period = serializers.CharField(help_text="The quota period type (d=day, m=month)")
+    period_display = serializers.CharField(help_text="Human-readable period name")
+    period_start = serializers.DateTimeField(
+        help_text="Start of the current quota period"
+    )
+    recipient_count = serializers.IntegerField(
+        help_text="Number of recipients sent during this period"
+    )
+    quota_limit = serializers.IntegerField(
+        help_text="Maximum number of recipients allowed during this period"
+    )
+    remaining = serializers.IntegerField(
+        help_text="Number of remaining recipients that can be sent to"
+    )
+    usage_percentage = serializers.FloatField(
+        help_text="Percentage of quota used (0-100)"
+    )
+
+    class Meta:
+        fields = [
+            "period",
+            "period_display",
+            "period_start",
+            "recipient_count",
+            "quota_limit",
+            "remaining",
+            "usage_percentage",
+        ]
+        read_only_fields = fields
+
+    def create(self, validated_data):
+        """This serializer is read-only, create/update are never called."""
+        raise NotImplementedError("RecipientQuotaSerializer is read-only")
+
+    def update(self, instance, validated_data):
+        """This serializer is read-only, create/update are never called."""
+        raise NotImplementedError("RecipientQuotaSerializer is read-only")

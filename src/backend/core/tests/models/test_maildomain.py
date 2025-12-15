@@ -7,7 +7,8 @@ from django.test import override_settings
 import pytest
 
 from core import models
-from core.factories import MailDomainFactory, UserFactory
+from core.factories import MailboxFactory, MailDomainFactory, UserFactory
+from core.models import validate_custom_settings
 
 pytestmark = pytest.mark.django_db
 
@@ -124,6 +125,76 @@ class TestMailDomainModel:
         )
 
 
+class TestValidateCustomSettings:
+    """Test the validate_custom_settings validator."""
+
+    def test_validate_custom_settings_empty_values(self):
+        """Empty or None values should be valid."""
+        validate_custom_settings(None)
+        validate_custom_settings({})
+
+    def test_validate_custom_settings_must_be_dict(self):
+        """custom_settings must be a dictionary."""
+        with pytest.raises(ValidationError) as exception_info:
+            validate_custom_settings("not a dict")
+        assert "must be a dictionary" in str(exception_info.value)
+
+        with pytest.raises(ValidationError):
+            validate_custom_settings(["list"])
+
+    def test_validate_custom_settings_max_recipients_per_message_valid(self):
+        """max_recipients_per_message accepts positive integers."""
+        validate_custom_settings({"max_recipients_per_message": 1})
+        validate_custom_settings({"max_recipients_per_message": 100})
+        validate_custom_settings({"max_recipients_per_message": None})
+
+    def test_validate_custom_settings_max_recipients_per_message_invalid(self):
+        """max_recipients_per_message must be a positive integer."""
+        with pytest.raises(ValidationError) as exception_info:
+            validate_custom_settings({"max_recipients_per_message": 0})
+        assert "positive integer" in str(exception_info.value)
+
+        with pytest.raises(ValidationError):
+            validate_custom_settings({"max_recipients_per_message": -1})
+
+        with pytest.raises(ValidationError):
+            validate_custom_settings({"max_recipients_per_message": "50"})
+
+        with pytest.raises(ValidationError):
+            validate_custom_settings({"max_recipients_per_message": 1.5})
+
+    def test_validate_custom_settings_max_recipients_valid(self):
+        """max_recipients accepts valid format 'number/period'."""
+        validate_custom_settings({"max_recipients": "100/d"})
+        validate_custom_settings({"max_recipients": "500/m"})
+        validate_custom_settings({"max_recipients": "10000/y"})
+        validate_custom_settings({"max_recipients": None})
+
+    def test_validate_custom_settings_max_recipients_invalid(self):
+        """max_recipients must follow 'number/period' format."""
+        with pytest.raises(ValidationError):
+            validate_custom_settings({"max_recipients": "invalid"})
+
+        with pytest.raises(ValidationError):
+            validate_custom_settings({"max_recipients": "100"})
+
+        with pytest.raises(ValidationError):
+            validate_custom_settings({"max_recipients": "100/x"})  # Invalid period
+
+        with pytest.raises(ValidationError):
+            validate_custom_settings({"max_recipients": "/d"})
+
+    def test_validate_custom_settings_on_maildomain(self):
+        """Validate custom_settings on MailDomain model."""
+        with pytest.raises(ValidationError):
+            MailDomainFactory(custom_settings={"max_recipients_per_message": -1})
+
+    def test_validate_custom_settings_on_mailbox(self):
+        """Validate custom_settings on Mailbox model."""
+        with pytest.raises(ValidationError):
+            MailboxFactory(custom_settings={"max_recipients_per_message": "invalid"})
+
+
 class TestMailDomainModelAbilities:
     """Test the get_abilities methods on MailDomain models."""
 
@@ -138,6 +209,7 @@ class TestMailDomainModelAbilities:
         assert abilities["delete"] is False
         assert abilities["manage_accesses"] is False
         assert abilities["manage_mailboxes"] is False
+        assert abilities["manage_settings"] is False
 
     def test_models_maildomain_get_abilities_admin(self, user, maildomain):
         """Test MailDomain.get_abilities when user has admin access."""
@@ -156,3 +228,21 @@ class TestMailDomainModelAbilities:
         assert abilities["delete"] is True
         assert abilities["manage_accesses"] is True
         assert abilities["manage_mailboxes"] is True
+        # Only superusers can manage settings for maildomains
+        assert abilities["manage_settings"] is False
+
+    def test_models_maildomain_get_abilities_superuser(self, user, maildomain):
+        """Test MailDomain.get_abilities when user is superuser."""
+        user.is_superuser = True
+        user.save()
+
+        abilities = maildomain.get_abilities(user)
+
+        assert abilities["get"] is True
+        assert abilities["patch"] is True
+        assert abilities["put"] is True
+        assert abilities["post"] is True
+        assert abilities["delete"] is True
+        assert abilities["manage_accesses"] is True
+        assert abilities["manage_mailboxes"] is True
+        assert abilities["manage_settings"] is True

@@ -367,7 +367,7 @@ class TestMailboxAbilitiesAPI:
 
     @override_settings(FEATURE_MESSAGE_TEMPLATES=True, FEATURE_IMPORT_MESSAGES=True)
     def test_mailbox_abilities_in_response(self, api_client, user, mailbox):
-        """Test that abilities are included in mailbox API response."""
+        """Test that abilities are included in mailbox API response (mailbox admin only)."""
         models.MailboxAccess.objects.create(
             mailbox=mailbox,
             user=user,
@@ -387,6 +387,8 @@ class TestMailboxAbilitiesAPI:
         assert abilities["post"] is True
         assert abilities["delete"] is True
         assert abilities["manage_accesses"] is True
+        # Only domain admins can manage settings for mailboxes
+        assert abilities["manage_settings"] is False
         assert abilities["view_messages"] is True
         assert abilities["send_messages"] is True
         assert abilities["manage_labels"] is True
@@ -417,6 +419,7 @@ class TestMailboxAbilitiesAPI:
         assert abilities["post"] is True
         assert abilities["delete"] is False
         assert abilities["manage_accesses"] is False
+        assert abilities["manage_settings"] is False
         assert abilities["view_messages"] is True
         assert abilities["send_messages"] is False
         assert abilities["manage_labels"] is True
@@ -464,6 +467,7 @@ class TestMailboxAbilitiesAPI:
         assert abilities["post"] is False
         assert abilities["delete"] is False
         assert abilities["manage_accesses"] is False
+        assert abilities["manage_settings"] is False
         assert abilities["view_messages"] is True
         assert abilities["send_messages"] is False
         assert abilities["manage_labels"] is False
