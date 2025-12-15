@@ -1,7 +1,7 @@
 """Label and flag processing for imported messages."""
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from core import models
 
@@ -64,7 +64,7 @@ def compute_labels_and_flags(
     parsed_email: Dict[str, Any],
     imap_labels: Optional[List[str]],
     imap_flags: Optional[List[str]],
-) -> Tuple[set[str], Dict[str, bool]]:
+) -> Tuple[Set[str], Dict[str, bool]]:
     """Compute labels and flags for a parsed email."""
 
     # Combine both imap_labels and gmail_labels from parsed email
