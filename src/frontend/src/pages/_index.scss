@@ -2,6 +2,8 @@
 
 .app__home {
     background-color: var(--c--theme--colors--greyscale-000);
+    overflow: auto;
+    max-height: 100%;
 
     .c__header {
         height: var(--header-height);
@@ -25,6 +27,10 @@
 
     .c__hero {
         height: calc(100vh - var(--header-height));
+
+    }
+    .c__hero__display img {
+        object-fit: contain;
     }
 
     @media (max-width: breakpoint(tablet)) {
