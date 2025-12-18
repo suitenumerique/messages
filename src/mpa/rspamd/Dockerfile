@@ -1,4 +1,4 @@
-FROM debian:12.10-slim
+FROM debian:13.2-slim
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends lsb-release wget gpg ruby nginx netcat-openbsd procps && \
