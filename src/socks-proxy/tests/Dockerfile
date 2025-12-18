@@ -15,5 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy test files
 COPY . .
 
+# Ensure nobody user can write pytest cache and coverage files
+RUN chown -R nobody:nogroup /app
+
+USER nobody
+
 # Default command (can be overridden)
 CMD ["pytest", "-v"]

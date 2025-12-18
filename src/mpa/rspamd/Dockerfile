@@ -1,7 +1,7 @@
 FROM debian:12.10-slim
 
 RUN apt-get update && \
-    apt-get install -y lsb-release wget gpg ruby nginx netcat-openbsd procps && \
+    apt-get install -y --no-install-recommends lsb-release wget gpg ruby nginx netcat-openbsd procps && \
     rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /etc/apt/keyrings
 RUN wget -O- https://rspamd.com/apt-stable/gpg.key | gpg --dearmor | tee /etc/apt/keyrings/rspamd.gpg > /dev/null
@@ -28,6 +28,11 @@ COPY start.sh /start.sh
 
 RUN chmod +x /start.sh
 
+# Ensure _rspamd user can write nginx config at runtime
+RUN chown -R _rspamd:_rspamd /etc/nginx
+
 ENV PORT=8010
+
+USER _rspamd
 
 CMD ["/start.sh"]
