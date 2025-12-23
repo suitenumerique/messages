@@ -37,6 +37,7 @@ i18n
 // Save language in local storage
 i18n.on("languageChanged", (lng) => {
   if (typeof window !== "undefined") {
+    document.documentElement.setAttribute("lang", lng);
     localStorage.setItem(LANGUAGE_LOCAL_STORAGE, lng);
   }
 });

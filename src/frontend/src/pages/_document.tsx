@@ -7,7 +7,7 @@ export default function Document() {
   const { t } = useTranslation();
 
   return (
-    <Html lang="en">
+    <Html>
       <Head>
         {/*
         PWA Attributes
