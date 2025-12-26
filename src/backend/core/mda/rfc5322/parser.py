@@ -223,14 +223,278 @@ def _build_attachment_dict(
     }
 
 
+def _is_inline_media_type(content_type: str) -> bool:
+    """
+    Check if the content type is an inline media type (image/*, audio/*, video/*).
+
+    Args:
+        content_type: MIME type string (e.g., "image/png", "audio/mp3")
+
+    Returns:
+        True if the type is an inline media type
+    """
+    return (
+        content_type.startswith("image/")
+        or content_type.startswith("audio/")
+        or content_type.startswith("video/")
+    )
+
+
+def _get_part_info(part) -> Dict[str, Any]:
+    """
+    Extract relevant information from a MIME part for classification.
+
+    Args:
+        part: A Flanker MIME part
+
+    Returns:
+        Dictionary with type, disposition, name, body, content_id, part_id
+    """
+    if not hasattr(part, "content_type") or not part.content_type:
+        return {"type": "text/plain", "disposition": None, "name": None, "body": None}
+
+    content_type_obj = part.content_type
+    part_type = f"{content_type_obj.main}/{content_type_obj.sub}"
+
+    # Get disposition
+    disposition = None
+    disposition_info = getattr(part, "content_disposition", None)
+    if disposition_info and isinstance(disposition_info, tuple) and disposition_info[0]:
+        disposition = disposition_info[0].lower()
+
+    # Get filename from disposition or content-type params
+    filename = None
+    if (
+        disposition_info
+        and isinstance(disposition_info, tuple)
+        and len(disposition_info) > 1
+    ):
+        params = disposition_info[1]
+        if isinstance(params, dict):
+            filename_raw = params.get("filename")
+            if filename_raw:
+                filename = decode_email_header_text(str(filename_raw).strip())
+
+    if not filename and hasattr(content_type_obj, "params"):
+        filename_param = content_type_obj.params.get("name")
+        if filename_param:
+            filename = decode_email_header_text(filename_param.strip())
+
+    # Get Content-ID
+    headers_dict = getattr(part, "headers", {})
+    content_id_header = headers_dict.get("Content-ID")
+    content_id = str(content_id_header).strip("<>") if content_id_header else None
+
+    # Get body
+    body = getattr(part, "body", None)
+
+    # Get part ID
+    part_id = getattr(part, "message_id", "") or ""
+
+    return {
+        "type": part_type,
+        "disposition": disposition,
+        "name": filename,
+        "body": body,
+        "content_id": content_id,
+        "part_id": part_id,
+    }
+
+
+def _build_body_part_dict(part_info: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build a body part dictionary for textBody/htmlBody arrays.
+
+    Args:
+        part_info: Dictionary from _get_part_info
+
+    Returns:
+        Dictionary with partId, type, content
+    """
+    body = part_info["body"]
+    if body is not None and not isinstance(body, str):
+        body = body.decode("utf-8", errors="replace")
+
+    return {
+        "partId": part_info["part_id"],
+        "type": part_info["type"],
+        "content": body or "",
+    }
+
+
+def _build_attachment_from_part_info(
+    part_info: Dict[str, Any], disposition_override: str = "attachment"
+) -> Dict[str, Any]:
+    """
+    Build an attachment dictionary from part info.
+
+    Args:
+        part_info: Dictionary from _get_part_info
+        disposition_override: Disposition to use if not set
+
+    Returns:
+        Dictionary representing the attachment
+    """
+    disposition = part_info["disposition"] or disposition_override
+    filename = part_info["name"] or _infer_filename_from_content_type(part_info["type"])
+
+    return _build_attachment_dict(
+        part_info["body"] or b"",
+        part_info["type"],
+        filename,
+        disposition,
+        part_info["content_id"],
+    )
+
+
+def _parse_body_structure(
+    parts: List,
+    multipart_type: str,
+    in_alternative: bool,
+    html_body: Optional[List],
+    text_body: Optional[List],
+    attachments: List,
+) -> None:
+    """
+    Recursively parse MIME structure following JMAP spec algorithm (Section 4.1).
+
+    This implements the parseStructure algorithm from the JMAP specification,
+    with a modification: inline media types are NOT added to attachments when
+    one of textBody/htmlBody is null (unlike the spec example).
+
+    Args:
+        parts: List of MIME parts to process
+        multipart_type: Type of parent multipart (mixed/alternative/related)
+        in_alternative: Whether we're inside a multipart/alternative
+        html_body: List to append HTML body parts (or None if nullified)
+        text_body: List to append text body parts (or None if nullified)
+        attachments: List to append attachment parts
+    """
+    # Track lengths for multipart/alternative fallback
+    text_length = len(text_body) if text_body is not None else -1
+    html_length = len(html_body) if html_body is not None else -1
+
+    for i, part in enumerate(parts):
+        if not hasattr(part, "content_type") or not part.content_type:
+            continue
+
+        content_type_obj = part.content_type
+        part_type = f"{content_type_obj.main}/{content_type_obj.sub}"
+        is_multipart = content_type_obj.is_multipart()
+
+        # Get part info for classification
+        part_info = _get_part_info(part)
+
+        # Determine if this is an inline body part (not attachment)
+        # Per JMAP spec: disposition != "attachment" AND
+        # (type is text/plain OR text/html OR inline media) AND
+        # (first part OR (not in related AND (is inline media OR no filename)))
+        is_inline = (
+            part_info["disposition"] != "attachment"
+            and (
+                part_type in {"text/plain", "text/html"}
+                or _is_inline_media_type(part_type)
+            )
+            and (
+                i == 0
+                or (
+                    multipart_type != "related"
+                    and (_is_inline_media_type(part_type) or not part_info["name"])
+                )
+            )
+        )
+
+        if is_multipart:
+            # Recurse into multipart
+            sub_multipart_type = content_type_obj.sub  # e.g., "alternative", "related"
+            sub_parts = getattr(part, "parts", []) or []
+            _parse_body_structure(
+                sub_parts,
+                sub_multipart_type,
+                in_alternative or sub_multipart_type == "alternative",
+                html_body,
+                text_body,
+                attachments,
+            )
+
+        elif is_inline:
+            # Handle inline parts based on context
+            if multipart_type == "alternative":
+                # In direct alternative: route based on type only
+                if part_type == "text/plain":
+                    if text_body is not None:
+                        text_body.append(_build_body_part_dict(part_info))
+                elif part_type == "text/html":
+                    if html_body is not None:
+                        html_body.append(_build_body_part_dict(part_info))
+                else:
+                    # Other types in alternative go to attachments
+                    attachments.append(_build_attachment_from_part_info(part_info))
+                continue
+
+            # Outside alternative but within an alternative ancestor
+            if in_alternative:
+                # text/plain nullifies htmlBody locally
+                if part_type == "text/plain":
+                    html_body = None
+                # text/html nullifies textBody locally
+                if part_type == "text/html":
+                    text_body = None
+
+            # Push to both arrays if not nullified
+            if text_body is not None:
+                text_body.append(_build_body_part_dict(part_info))
+            if html_body is not None:
+                html_body.append(_build_body_part_dict(part_info))
+
+            # NOTE: We intentionally skip the JMAP spec's condition:
+            # if ((!textBody || !htmlBody) && isInlineMediaType) attachments.push(part)
+            # This is our modification to not duplicate inline media in attachments
+
+        else:
+            # Non-inline parts go to attachments
+            attachments.append(_build_attachment_from_part_info(part_info))
+
+    # Handle multipart/alternative fallback:
+    # If only one type was found, copy to the other array
+    if (
+        multipart_type == "alternative"
+        and text_body is not None
+        and html_body is not None
+    ):
+        # Found HTML part only - copy to textBody
+        if text_length == len(text_body) and html_length != len(html_body):
+            for j in range(html_length, len(html_body)):
+                text_body.append(html_body[j])
+        # Found text part only - copy to htmlBody
+        if html_length == len(html_body) and text_length != len(text_body):
+            for j in range(text_length, len(text_body)):
+                html_body.append(text_body[j])
+
+
 def parse_message_content(message) -> Dict[str, Any]:
     """
     Extract text, HTML, and attachments from a message, following JMAP format.
+
+    This uses the JMAP spec's parseStructure algorithm (Section 4.1) to properly
+    handle multipart structures including alternative, related, and mixed.
+
+    Key behavior:
+    - text/plain parts go to textBody
+    - text/html parts go to htmlBody
+    - Inline media (images, audio, video) go to textBody/htmlBody, NOT attachments
+    - Explicit attachments (Content-Disposition: attachment) go to attachments
+    - Parts in multipart/related after the first go to attachments
+
+    Args:
+        message: A Flanker MIME message object
+
+    Returns:
+        Dictionary with textBody, htmlBody, and attachments arrays
     """
     result = {"textBody": [], "htmlBody": [], "attachments": []}
 
-    parts_to_process = []
-    # Initial check for valid message structure
+    # Handle invalid message structure
     if not hasattr(message, "content_type") or not message.content_type:
         if hasattr(message, "body") and isinstance(message.body, str):
             result["textBody"].append(
@@ -238,162 +502,19 @@ def parse_message_content(message) -> Dict[str, Any]:
             )
         return result
 
-    if not message.content_type.is_multipart():
-        parts_to_process.append(message)
-    else:
-        try:
-            for part in message.walk():
-                if (
-                    part is message
-                    or not hasattr(part, "content_type")
-                    or not part.content_type
-                    or (
-                        hasattr(part.content_type, "is_multipart")
-                        and part.content_type.is_multipart()
-                    )
-                ):
-                    continue
-                parts_to_process.append(part)
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.error("Error walking message parts: %s", e, exc_info=True)
-            return result  # Return potentially partial result on error
-
-    for part in parts_to_process:
-        # Safety checks for each part
-        if (
-            not hasattr(part, "content_type")
-            or not part.content_type
-            or not hasattr(part, "body")
-            or not hasattr(part, "headers")
-        ):
-            logger.warning("Skipping invalid or incomplete part during parsing.")
-            continue
-
-        content_type_obj = part.content_type
-        body = part.body
-        if body is None:
-            continue
-
-        # Extract common attributes
-        part_id = getattr(part, "message_id", "") or ""
-        headers_dict = getattr(part, "headers", {})
-
-        # --- Extract filename ---
-        filename = None
-
-        # 1. Try Flanker's parsed content_disposition property
-        disposition_info = getattr(part, "content_disposition", None)
-        if (
-            disposition_info
-            and isinstance(disposition_info, tuple)
-            and len(disposition_info) > 1
-        ):
-            params = disposition_info[1]
-            if isinstance(params, dict):
-                filename_raw = params.get("filename")
-                if filename_raw:
-                    # Flanker might already decode, but decode again for safety/consistency
-                    filename = decode_email_header_text(str(filename_raw).strip())
-
-        # 2. If not found via Flanker property, try parsing raw headers
-        if not filename:
-            # content_type_obj is already defined above
-            filename_param = (
-                content_type_obj.params.get("name")
-                if hasattr(content_type_obj, "params")
-                else None
-            )
-            if filename_param:
-                filename = decode_email_header_text(filename_param.strip())
-
-        # --- Get Content-ID ---
-        content_id_header = headers_dict.get("Content-ID")
-        content_id = str(content_id_header).strip("<>") if content_id_header else None
-
-        # --- Part Classification using Flanker's built-in methods ---
-
-        default_type_str = f"{content_type_obj.main}/{content_type_obj.sub}"
-        final_part_type = default_type_str
-
-        try:
-            is_attachment = part.is_attachment()
-            is_body = part.is_body()
-            is_inline = part.is_inline()
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.warning("Error classifying part: %s", e, exc_info=True)
-            is_attachment, is_body, is_inline = False, False, False
-
-        if is_attachment:
-            # Content-Disposition: attachment
-
-            raw_content_type_header = headers_dict.get("Content-Type", "")
-            raw_type_str = (
-                str(raw_content_type_header).split(";", maxsplit=1)[0].strip()
-            )
-            if raw_type_str:
-                final_part_type = raw_type_str
-
-            final_filename = (
-                filename
-                if filename
-                else _infer_filename_from_content_type(final_part_type)
-            )
-
-            result["attachments"].append(
-                _build_attachment_dict(
-                    body, final_part_type, final_filename, "attachment", content_id
-                )
-            )
-
-        elif is_body:
-            # No filename AND (text/* or message/*)
-
-            if not isinstance(body, str):
-                body = body.decode("utf-8", errors="replace")
-
-            if default_type_str == "text/plain":
-                result["textBody"].append(
-                    {"partId": part_id, "type": "text/plain", "content": body}
-                )
-            elif default_type_str == "text/html":
-                result["htmlBody"].append(
-                    {"partId": part_id, "type": "text/html", "content": body}
-                )
-            else:
-                # Other text types (text/calendar, text/enriched, etc.)
-                result["textBody"].append(
-                    {"partId": part_id, "type": default_type_str, "content": body}
-                )
-
-        elif is_inline:
-            # Content-Disposition: inline
-
-            final_filename = (
-                filename
-                if filename
-                else _infer_filename_from_content_type(final_part_type)
-            )
-
-            result["attachments"].append(
-                _build_attachment_dict(
-                    body, final_part_type, final_filename, "inline", content_id
-                )
-            )
-
-        else:
-            # Fallback for parts that don't match any category
-
-            final_filename = (
-                filename
-                if filename
-                else _infer_filename_from_content_type(final_part_type)
-            )
-
-            result["attachments"].append(
-                _build_attachment_dict(
-                    body, final_part_type, final_filename, "attachment", content_id
-                )
-            )
+    try:
+        # Use the JMAP-style recursive parser
+        # Wrap the message in a list and treat it as if inside multipart/mixed
+        _parse_body_structure(
+            [message],
+            "mixed",
+            False,
+            result["htmlBody"],
+            result["textBody"],
+            result["attachments"],
+        )
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("Error parsing message body structure: %s", e, exc_info=True)
 
     return result
 

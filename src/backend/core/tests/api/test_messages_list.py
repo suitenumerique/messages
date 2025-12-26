@@ -372,12 +372,12 @@ Content-Type: text/html
         assert msg2_data["sender"]["id"] == str(sender_contact2.id)
 
         # Check JMAP bodies (parsed from raw_mime)
-        assert msg2_data["textBody"] == []
+
         assert len(msg2_data["htmlBody"]) == 1
         assert msg2_data["htmlBody"][0]["type"] == "text/html"
-        assert (
-            msg2_data["htmlBody"][0]["content"] == "<p>Body 2</p>"
-        )  # Check content without headers
+        assert msg2_data["htmlBody"][0]["content"] == "<p>Body 2</p>"
+        # Per JMAP spec, text/html parts go to htmlBody AND textBody if no text/plain part is present
+        assert msg2_data["textBody"] == msg2_data["htmlBody"]
 
         # Check JMAP recipients (parsed from raw_mime)
         assert len(msg2_data["to"]) == 1
@@ -395,10 +395,9 @@ Content-Type: text/html
         # Check JMAP bodies (parsed from raw_mime)
         assert len(msg1_data["textBody"]) == 1
         assert msg1_data["textBody"][0]["type"] == "text/plain"
-        assert (
-            msg1_data["textBody"][0]["content"] == "Body 1"
-        )  # Check content without headers
-        assert msg1_data["htmlBody"] == []
+        assert msg1_data["textBody"][0]["content"] == "Body 1"
+        # Per JMAP spec, text/plain parts go to textBody AND htmlBody if no text/html part is present
+        assert msg1_data["htmlBody"] == msg1_data["textBody"]
 
         # Check JMAP recipients (parsed from raw_mime)
         assert len(msg1_data["to"]) == 1

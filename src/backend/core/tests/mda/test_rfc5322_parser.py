@@ -472,7 +472,10 @@ class TestEmailMessageParsing:
         assert len(parsed.get("textBody", [])) == 1, "Expected textBody"
         text_content = parsed["textBody"][0].get("content", "")
         assert "This is a test email body." in text_content
-        assert not parsed.get("htmlBody"), "Expected no htmlBody"
+        assert parsed["textBody"][0].get("type", "") == "text/plain"
+        # Per JMAP spec, text/plain outside alternative goes to both arrays
+        assert len(parsed.get("htmlBody", [])) == 1, "JMAP: text copies to htmlBody"
+        assert parsed["htmlBody"][0] == parsed["textBody"][0]
         assert not parsed.get("attachments"), "Expected no attachments"
 
         # Check headers_list
@@ -546,13 +549,16 @@ class TestEmailMessageParsing:
         assert parsed["to"][0]["name"] == "Recipient One"
         assert parsed["to"][1]["email"] == "recipient2@example.com"
         assert parsed["to"][1]["name"] == ""
-        assert len(parsed.get("textBody", [])) == 1
+        # textBody: text/plain from alternative + inline image
+        assert len(parsed.get("textBody", [])) == 2
         assert "Plain text body content." in parsed["textBody"][0]["content"]
-        assert len(parsed.get("htmlBody", [])) == 1
+        # htmlBody: text/html from alternative + inline image
+        assert len(parsed.get("htmlBody", [])) == 2
         assert "<h1>HTML Content</h1>" in parsed["htmlBody"][0]["content"]
-        assert len(parsed.get("attachments", [])) == 2
+        # Only the PDF attachment should be in attachments (inline image goes to body)
+        assert len(parsed.get("attachments", [])) == 1
 
-        # Check for PDF attachment more robustly
+        # Check for PDF attachment
         pdf_attachment = next(
             (
                 a
@@ -562,27 +568,19 @@ class TestEmailMessageParsing:
             ),
             None,
         )
-        # Check for inline image more robustly using cid and disposition
-        image = next(
-            (
-                a
-                for a in parsed["attachments"]
-                if a.get("cid") == "inline-image@example.com"
-                and a.get("disposition") == "inline"
-            ),
-            None,
-        )
 
         assert pdf_attachment is not None, (
             "PDF attachment not found or correctly classified"
         )
 
-        assert image is not None, (
-            "Inline image attachment not found or correctly classified"
+        # Inline image should be in htmlBody, not attachments (per JMAP algorithm)
+        inline_image_in_html = next(
+            (p for p in parsed["htmlBody"] if p.get("type") == "image/png"),
+            None,
         )
-        # assert image["name"] == "image.png" # Filename check is less reliable than CID
-        assert image["type"] == "image/png"
-        # assert image["cid"] == "inline-image@example.com" # Already checked in next()
+        assert inline_image_in_html is not None, (
+            "Inline image should be in htmlBody per JMAP algorithm"
+        )
 
         # Verify all top-level fields are present
         assert "subject" in parsed
@@ -636,7 +634,8 @@ class TestEmailMessageParsing:
         assert not parsed.get("cc")
         assert len(parsed["textBody"]) == 1
         assert "This is a test email body." in parsed["textBody"][0]["content"]
-        assert not parsed.get("htmlBody")
+        # Per JMAP spec, text/plain outside alternative copies to htmlBody
+        assert len(parsed.get("htmlBody", [])) == 1
         assert not parsed.get("attachments")
 
         # Check headers_list and headers_blocks are present
@@ -825,7 +824,8 @@ This is a test email body.
         content = parse_message_content(flanker_simple_message)
         assert len(content["textBody"]) == 1
         assert content["textBody"][0]["content"] == "This is a test email body."
-        assert not content["htmlBody"]
+        # Per JMAP spec, text/plain outside alternative copies to htmlBody
+        assert len(content["htmlBody"]) == 1
         assert not content["attachments"]
 
     def test_parse_message_content_multipart(self, flanker_multipart_message):
@@ -877,7 +877,8 @@ Body text.
         content = parse_message_content(message_obj)
         assert "textBody" in content
         assert content["textBody"][0]["content"] == "Body text.\n"
-        assert not content["htmlBody"]
+        # Per JMAP spec, text/plain outside alternative copies to htmlBody
+        assert len(content["htmlBody"]) == 1
         assert not content["attachments"]
 
     def test_parse_html_only_email(self):
@@ -891,7 +892,8 @@ Content-Type: text/html; charset="utf-8"
 """
         message_obj = create.from_string(raw_email)
         content = parse_message_content(message_obj)
-        assert not content["textBody"]
+        # Per JMAP spec, text/html outside alternative copies to textBody
+        assert len(content["textBody"]) == 1
         assert len(content["htmlBody"]) == 1
         assert content["htmlBody"][0]["content"] == "<p>HTML body only.</p>\n"
         assert not content["attachments"]
@@ -923,7 +925,9 @@ aW1hZ2UgZGF0YSBoZXJl
         content = parse_message_content(message_obj)
         assert len(content["htmlBody"]) == 1
         assert '<img src="cid:image1">' in content["htmlBody"][0]["content"]
-        assert not content["textBody"]
+        # Per JMAP spec, text/html outside alternative copies to textBody
+        assert len(content["textBody"]) == 1
+        # Image at position > 0 in multipart/related goes to attachments
         assert len(content["attachments"]) == 1
         attachment = content["attachments"][0]
         assert attachment["name"] == "image.png"
@@ -1503,7 +1507,12 @@ image data
         assert attachment["name"] == "unnamed.png"
 
     def test_attachment_vs_inline_classification(self):
-        """Test correct classification of attachment vs inline."""
+        """Test correct classification of attachment vs inline.
+
+        Per JMAP algorithm: inline images (Content-Disposition: inline) in
+        multipart/mixed go to body arrays, not attachments. Only explicit
+        attachments (Content-Disposition: attachment) go to attachments.
+        """
         raw_email = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Classification Test
@@ -1528,15 +1537,20 @@ Image content
 --boundary--"""
         message_obj = create.from_string(raw_email)
         content = parse_message_content(message_obj)
-        assert len(content["attachments"]) == 2
 
+        # Only the PDF should be in attachments (inline image goes to body)
+        assert len(content["attachments"]) == 1
         pdf = next((a for a in content["attachments"] if a["name"] == "doc.pdf"), None)
         assert pdf is not None
         assert pdf["disposition"] == "attachment"
 
-        img = next((a for a in content["attachments"] if a["name"] == "img.png"), None)
-        assert img is not None
-        assert img["disposition"] == "inline"
+        # Inline image should be in body arrays (textBody and htmlBody)
+        assert len(content["textBody"]) == 2  # text/plain body + inline image
+        assert len(content["htmlBody"]) == 2  # same parts copied
+        img_in_body = next(
+            (p for p in content["textBody"] if p.get("type") == "image/png"), None
+        )
+        assert img_in_body is not None, "Inline image should be in textBody"
 
     def test_email_with_many_parts(self):
         """Test parsing email with many MIME parts.
