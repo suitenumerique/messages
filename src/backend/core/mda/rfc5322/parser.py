@@ -15,6 +15,8 @@ from datetime import datetime
 from datetime import timezone as dt_timezone
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
+from ntpath import basename as nt_basename
+from posixpath import basename as posix_basename
 from typing import Any, Dict, List, Optional, Tuple
 
 from flanker.addresslib import address
@@ -166,6 +168,22 @@ def _infer_filename_from_content_type(content_type: str) -> str:
     return f"unnamed{ext}"
 
 
+def _sanitize_filename(filename: str, max_length: int = 255) -> str:
+    """Sanitize an attachment filename."""
+
+    filename = nt_basename(posix_basename(filename))
+
+    filename = filename.strip('"/.\\')
+
+    # Remove null bytes and control characters
+    filename = re.sub(r"[\x00-\x1f\x7f]", "", filename)
+
+    # Remove dangerous characters
+    filename = re.sub(r'[<>:"|?*\\/]', "_", filename)
+
+    return filename[:max_length]
+
+
 def _build_attachment_dict(
     body: Any,
     part_type: str,
@@ -196,7 +214,7 @@ def _build_attachment_dict(
 
     return {
         "type": part_type,
-        "name": filename,
+        "name": _sanitize_filename(filename) or "unnamed",
         "size": len(body_bytes),
         "disposition": disposition,
         "cid": content_id,
@@ -279,29 +297,14 @@ def parse_message_content(message) -> Dict[str, Any]:
 
         # 2. If not found via Flanker property, try parsing raw headers
         if not filename:
-            # 2a. Try Content-Disposition header parsing (regex method)
-            disposition_header = headers_dict.get("Content-Disposition", "")
-            if disposition_header and "filename=" in str(disposition_header):
-                match_disp = re.search(
-                    r'filename\*?=(?:(["\'])(.*?)\1|([^;]+))',
-                    str(disposition_header),
-                    re.IGNORECASE,
-                )
-                if match_disp:
-                    fname_raw = match_disp.group(2) or match_disp.group(3)
-                    if fname_raw:
-                        filename = decode_email_header_text(fname_raw.strip())
-
-            # 2b. Try Content-Type 'name' parameter
-            if not filename:
-                # content_type_obj is already defined above
-                filename_param = (
-                    content_type_obj.params.get("name")
-                    if hasattr(content_type_obj, "params")
-                    else None
-                )
-                if filename_param:
-                    filename = decode_email_header_text(filename_param.strip())
+            # content_type_obj is already defined above
+            filename_param = (
+                content_type_obj.params.get("name")
+                if hasattr(content_type_obj, "params")
+                else None
+            )
+            if filename_param:
+                filename = decode_email_header_text(filename_param.strip())
 
         # --- Get Content-ID ---
         content_id_header = headers_dict.get("Content-ID")
@@ -318,7 +321,6 @@ def parse_message_content(message) -> Dict[str, Any]:
             is_inline = part.is_inline()
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.warning("Error classifying part: %s", e, exc_info=True)
-            # Fallback to generic attachment via final else branch
             is_attachment, is_body, is_inline = False, False, False
 
         if is_attachment:
@@ -537,4 +539,4 @@ def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
         if isinstance(e, EmailParseError):
             raise e
         logger.exception("Unexpected error during email parsing: %s", str(e))
-        raise EmailParseError(f"Failed to parse email: {str(e)}") from e  # Add `from e`
+        raise EmailParseError("Failed to parse email") from e
