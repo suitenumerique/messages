@@ -217,9 +217,7 @@ Content-Disposition: attachment; filename="{attachment_data["filename"]}"
             "Attachment not found in message data"
         )
 
-        # TODO?
-        # assert attachment_data_from_api["type"] == attachment_data["content_type"]
-        assert attachment_data_from_api["type"] == "application/octet-stream"
+        assert attachment_data_from_api["type"] == attachment_data["content_type"]
         assert attachment_data_from_api["size"] == attachment_data["size"]
 
         # Step 4: Get the message directly to double-check attachment info
@@ -240,8 +238,7 @@ Content-Disposition: attachment; filename="{attachment_data["filename"]}"
         assert response.status_code == status.HTTP_200_OK
         assert response.content == attachment_data["content"]
 
-        # TODO: should we get a dynamic content type from the attachment?
-        assert response["Content-Type"] == "application/octet-stream"
+        assert response["Content-Type"] == attachment_data["content_type"]
         assert (
             response["Content-Disposition"]
             == f'attachment; filename="{attachment_data["filename"]}"'

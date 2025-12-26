@@ -332,7 +332,9 @@ def parse_message_content(message) -> Dict[str, Any]:
                 final_part_type = raw_type_str
 
             final_filename = (
-                filename if filename else _infer_filename_from_content_type(final_part_type)
+                filename
+                if filename
+                else _infer_filename_from_content_type(final_part_type)
             )
 
             result["attachments"].append(
@@ -365,7 +367,9 @@ def parse_message_content(message) -> Dict[str, Any]:
             # Content-Disposition: inline
 
             final_filename = (
-                filename if filename else _infer_filename_from_content_type(final_part_type)
+                filename
+                if filename
+                else _infer_filename_from_content_type(final_part_type)
             )
 
             result["attachments"].append(
@@ -378,7 +382,9 @@ def parse_message_content(message) -> Dict[str, Any]:
             # Fallback for parts that don't match any category
 
             final_filename = (
-                filename if filename else _infer_filename_from_content_type(final_part_type)
+                filename
+                if filename
+                else _infer_filename_from_content_type(final_part_type)
             )
 
             result["attachments"].append(

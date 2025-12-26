@@ -730,7 +730,7 @@ aW1hZ2UgZGF0YSBoZXJl
         assert not content["textBody"]
         assert len(content["attachments"]) == 1
         attachment = content["attachments"][0]
-        assert attachment["name"] in ("image.png", "unnamed.png")
+        assert attachment["name"] == "image.png"
         assert attachment["type"] == "image/png"
         assert attachment["cid"] == "image1"
 
