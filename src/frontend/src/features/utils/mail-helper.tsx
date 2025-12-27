@@ -13,9 +13,9 @@ type ImapConfig = {
 }
 
 export const IMAP_DOMAIN_REGEXES = new Map<string, string>([
-    ["orange", "orange.fr"],
-    ["wanadoo", "wanadoo.fr"],
-    ["gmail", "gmail.com"],
+    ["orange", "orange\.fr"],
+    ["wanadoo", "wanadoo\.fr"],
+    ["gmail", "(gmail\.com|googlemail\.com)"],
     ["yahoo", "yahoo\.(?:[a-z]{2,4}|[a-z]{2}\.[a-z]{2})"],
 ]);
 

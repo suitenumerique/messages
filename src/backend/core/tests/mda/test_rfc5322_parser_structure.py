@@ -6,6 +6,8 @@ JMAP spec Section 4.1, with our modification that inline media types
 are NOT added to attachments (unlike the spec example).
 """
 
+import base64
+
 import pytest
 from flanker.mime import create
 
@@ -320,6 +322,8 @@ Text after image.
         # All three parts should be in textBody (mixed context)
         assert len(content["textBody"]) == 3
         assert content["textBody"][1]["type"] == "image/jpeg"
+        # Image content is base64 encoded
+        assert content["textBody"][1]["content"]  # Non-empty base64 string
 
         # The inline image should NOT be in attachments
         assert len(content["attachments"]) == 0
@@ -352,6 +356,8 @@ PNG data
         assert len(content["attachments"]) == 0
         assert len(content["htmlBody"]) == 2
         assert content["htmlBody"][1]["type"] == "image/png"
+        # Image content is base64 encoded
+        assert content["htmlBody"][1]["content"]  # Non-empty base64 string
 
 
 class TestComplexNestedStructure:
@@ -476,8 +482,14 @@ K: Last text part
         message = create.from_string(complex_email)
         content = parse_message_content(message)
 
-        # Find parts by their content markers
-        text_contents = [p["content"] for p in content["textBody"]]
+        # Find text parts by their content markers
+        text_parts = content["textBody"]
+        text_contents = [
+            base64.b64decode(p["content"]).decode("utf-8")
+            if p["type"] == "image/jpeg"
+            else p["content"]
+            for p in text_parts
+        ]
 
         assert any("A:" in c for c in text_contents), "A should be in textBody"
         assert any("B:" in c for c in text_contents), "B should be in textBody"

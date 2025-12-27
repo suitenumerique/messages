@@ -7,6 +7,7 @@ parsing and is intended to be the central place for all email parsing
 operations in the application.
 """
 
+import base64
 import hashlib
 import logging
 import re
@@ -312,13 +313,27 @@ def _build_body_part_dict(part_info: Dict[str, Any]) -> Dict[str, Any]:
         Dictionary with partId, type, content
     """
     body = part_info["body"]
-    if body is not None and not isinstance(body, str):
-        body = body.decode("utf-8", errors="replace")
+    part_type = part_info["type"]
+
+    # Binary types (images, audio, video) need base64 encoding for JSON transport
+    if _is_inline_media_type(part_type):
+        if body is None:
+            content = ""
+        elif isinstance(body, bytes):
+            content = base64.b64encode(body).decode("ascii")
+        else:
+            # Already a string (unlikely for binary), encode it
+            content = base64.b64encode(body.encode("latin-1")).decode("ascii")
+    # Text types - decode as UTF-8
+    elif body is not None and not isinstance(body, str):
+        content = body.decode("utf-8", errors="replace")
+    else:
+        content = body or ""
 
     return {
         "partId": part_info["part_id"],
-        "type": part_info["type"],
-        "content": body or "",
+        "type": part_type,
+        "content": content,
     }
 
 

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import DomPurify from "dompurify";
 import { Attachment } from "@/features/api/gen/models";
 import { getRequestUrl, getApiOrigin } from "@/features/api/utils";
 import { getBlobDownloadRetrieveUrl } from "@/features/api/gen/blob/blob";
@@ -13,10 +12,11 @@ import { Icon } from "@gouvfr-lasuite/ui-kit";
 import { Banner } from "@/features/ui/components/banner";
 import { getMailboxesImageProxyListUrl } from "@/features/api/gen/mailboxes/mailboxes";
 import { EXTERNAL_IMAGES_CONSENT_KEY } from "@/features/config/constants";
+import { BodyPart, renderBodyParts } from "./renderers";
 
 type MessageBodyProps = {
-    rawHtmlBody?: string;
-    rawTextBody?: string;
+    /** Array of body parts to render (from htmlBody or textBody) */
+    bodyParts: readonly BodyPart[];
     attachments?: readonly Attachment[];
     messageId: string;
     isHidden?: boolean;
@@ -51,7 +51,7 @@ const CSP = [
     "frame-ancestors 'none'",
 ].join('; ');
 
-const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden = false, messageId, onLoad }: MessageBodyProps) => {
+const MessageBody = ({ bodyParts, attachments = [], isHidden = false, messageId, onLoad }: MessageBodyProps) => {
     const { t } = useTranslation();
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const { cunninghamTheme, variant } = useTheme();
@@ -72,7 +72,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
         setDisplayExternalImages(true);
     };
 
-    // Create a mapping of CID to blob URL for CID image transformation
+    // Build CID to blob URL mapping for inline image resolution
     const cidToBlobUrlMap = useMemo(() => {
         const map = new Map<string, string>();
         attachments.forEach(attachment => {
@@ -84,108 +84,56 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
         return map;
     }, [attachments]);
 
-    const domPurify = useMemo(() => {
-        const instance = DomPurify();
-        instance.addHook(
-            'afterSanitizeAttributes',
-            function (node: Element) {
-                // Allow anchor tags to be opened in the parent window if the href is an anchor
-                // Other links are opened in a new tab and safe rel attributes is set
-
-                if (node.tagName === 'A') {
-                    if (!node.getAttribute('href')?.startsWith('#')) {
-                        node.setAttribute('target', '_blank');
-                    }
-                    node.setAttribute('rel', 'noopener noreferrer');
-                }
-
-                // Remove pixel trackers,
-                // Transform CID references in img src attributes
-                // and add lazy loading to all images
-                if (node.tagName === 'IMG') {
-                    const MIN_IMAGE_SIZE = 4;
-                    if (node.getAttribute('width') || node.getAttribute('height')) {
-                        const width = parseInt(node.getAttribute('width') ?? '0');
-                        const height = parseInt(node.getAttribute('height') ?? '0');
-                        if (Math.max(width, height) < MIN_IMAGE_SIZE) {
-                            node.remove();
-                        }
-                    }
-                    // Add lazy loading to all images for better performance
-                    node.setAttribute('loading', 'lazy');
-
-                    // Transform CID references if applicable
-                    if (cidToBlobUrlMap.size > 0) {
-                        const src = node.getAttribute('src');
-                        if (src && src.startsWith('cid:')) {
-                            const cid = src.substring(4); // Remove 'cid:' prefix
-                            const blobUrl = cidToBlobUrlMap.get(cid);
-                            if (blobUrl) {
-                                node.setAttribute('src', blobUrl);
-                            }
-                        }
-                        return;
-                    }
-
-                    if (node.getAttribute('src')?.startsWith('http')) {
-                        hasExternalImagesRef.current = true;
-                        if (!canDisplayExternalImages || !displayExternalImages) {
-                            node.remove();
-                            return;
-                        }
-
-                        const src = node.getAttribute('src');
-                        if (src) {
-                            node.setAttribute(
-                                'src',
-                                getRequestUrl(getMailboxesImageProxyListUrl(
-                                    selectedMailbox!.id,
-                                    { url: src },
-                                )),
-                            );
-                        }
-                    }
-                }
-            }
-        );
-        return instance;
-    }, [cidToBlobUrlMap, selectedMailbox, canDisplayExternalImages, displayExternalImages]);
+    // Options for external image handling, passed to renderers
+    const externalImageOptions = useMemo(() => ({
+        canDisplayExternalImages,
+        displayExternalImages,
+        selectedMailboxId: selectedMailbox?.id,
+        onExternalImageDetected: () => { hasExternalImagesRef.current = true; },
+        getProxiedUrl: (url: string) => selectedMailbox
+            ? getRequestUrl(getMailboxesImageProxyListUrl(selectedMailbox.id, { url }))
+            : url,
+    }), [canDisplayExternalImages, displayExternalImages, selectedMailbox]);
 
     const sanitizedHtmlBody = useMemo(() => {
-        if (rawHtmlBody) {
-            // For HTML content, sanitize as HTML
-            const sanitizedContent = domPurify.sanitize(rawHtmlBody, {
-                FORBID_TAGS: ['script', 'object', 'iframe', 'embed', 'audio', 'video'],
-                ADD_ATTR: ['target', 'rel'],
-            });
+        const renderedContent = renderBodyParts(bodyParts, cidToBlobUrlMap, externalImageOptions);
 
-            const unquoteMessage = new UnquoteMessage(sanitizedContent, '', {
+        if (!renderedContent) {
+            return "";
+        }
+
+        // Check content types to determine processing mode
+        const hasHtmlPart = bodyParts.some(part => part.type === "text/html");
+        const hasOnlyPlainText = bodyParts.every(part => part.type === "text/plain");
+
+        if (hasHtmlPart) {
+            // Process HTML content with UnquoteMessage for quote detection
+            const unquoteMessage = new UnquoteMessage(renderedContent, '', {
                 mode: 'wrap',
                 ignoreFirstForward: true,
                 depth: 0,
             });
-
             return unquoteMessage.getHtml().content;
-        } else {
-            // For plain text, process with UnquoteMessage first (preserving newlines)
-            const unquoteMessage = new UnquoteMessage('', rawTextBody, {
+        }
+
+        if (hasOnlyPlainText) {
+            // Pure plain text - process original content through UnquoteMessage for quote detection
+            const rawTextContent = bodyParts.map(part => part.content).join("\n");
+            const unquoteMessage = new UnquoteMessage('', rawTextContent, {
                 mode: 'wrap',
                 ignoreFirstForward: true,
                 depth: 0,
             });
-
             const unquotedText = unquoteMessage.getText().content;
 
-            // Use browser-native HTML escaping for security
-            // textContent automatically escapes all HTML entities correctly
             const tempDiv = document.createElement('div');
             tempDiv.textContent = unquotedText;
-            const escapedText = tempDiv.innerHTML;
-
-            // Wrap in a div with class for CSS styling
-            return `<div class="text-plain-content">${escapedText}</div>`;
+            return `<p class="text-plain-content">${tempDiv.innerHTML}</p>`;
         }
-    }, [rawHtmlBody, rawTextBody, domPurify]);
+
+        // Mixed content (plain text + images, etc.) - use rendered content directly
+        return renderedContent;
+    }, [bodyParts, cidToBlobUrlMap, externalImageOptions]);
 
     const wrappedHtml = useMemo(() => {
         return `
@@ -208,6 +156,9 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
                 .text-plain-content {
                     white-space: pre-wrap;
                     word-wrap: break-word;
+                }
+                .body-part + .body-part {
+                    margin-top: ${tokens.themes[cunninghamTheme].globals.spacings.base};
                 }
                 body > *:first-child {
                     padding-top: 0 !important;
@@ -362,7 +313,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
             </body>
             </html>
       `;
-    }, [sanitizedHtmlBody, cunninghamTheme]);
+    }, [sanitizedHtmlBody, cunninghamTheme, variant]);
 
     const resizeIframe = useCallback(() => {
         if (iframeRef.current?.contentWindow) {
@@ -407,7 +358,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
         if (!isHidden) {
             resizeIframe();
         }
-    }, [isHidden, showExternalImages]);
+    }, [isHidden, resizeIframe, showExternalImages]);
 
     return (
         <>
