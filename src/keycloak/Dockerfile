@@ -16,7 +16,7 @@ EOR
 FROM quay.io/keycloak/keycloak:26.4.7 AS builder
 
 WORKDIR /opt/keycloak
-ADD --chown=keycloak:keycloak --chmod=644 themes/dsfr-2.2.1.jar /opt/keycloak/providers/dsfr.jar
+COPY --chown=keycloak:keycloak --chmod=644 themes/dsfr-2.2.1.jar /opt/keycloak/providers/dsfr.jar
 COPY --from=scripts --chown=keycloak:keycloak --chmod=644 /custom-scripts.jar /opt/keycloak/providers/custom-scripts.jar
 
 ARG KC_METRICS_ENABLED=true

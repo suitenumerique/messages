@@ -77,4 +77,4 @@ jobs:
           package-name: messages-${{ inputs.image_name }}
           package-type: 'container'
           min-versions-to-keep: 30
-          ignore-versions: 'latest|main|(\\d+\\.\\d+(\\.\\d+)?)'
+          ignore-versions: '^(latest|main|\\d+\\.\\d+(\\.\\d+)?)$'

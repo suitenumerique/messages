@@ -128,4 +128,4 @@ COPY . /app/
 CMD ["gunicorn", "-c", "/app/gunicorn.conf.py", "messages.wsgi:application"]
 
 HEALTHCHECK --interval=30s --timeout=2s --start-period=30s \
-  CMD ["python", "-c", "import os; from urllib.request import Request, urlopen; urlopen(Request('http://localhost:8000/__heartbeat__/', headers={'Host': f'{os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost').split(',')[0].strip()}', 'X-Forwarded-Proto': 'https'}), timeout=2)"]
+  CMD ["python", "-c", "import os; from urllib.request import Request, urlopen; urlopen(Request('http://localhost:8000/__heartbeat__/', headers={'Host': os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost').split(',')[0].strip(), 'X-Forwarded-Proto': 'https'}), timeout=2)"]
