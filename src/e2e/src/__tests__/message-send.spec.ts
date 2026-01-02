@@ -7,7 +7,6 @@ import { FIXTURES_PATH } from "../constants";
 test.describe("Send Message", () => {
 
   test.beforeEach(async ({ page, browserName }) => {
-    await page.goto("/");
     await signInKeycloakIfNeeded({ page, username: `user.e2e.${browserName}` });
   });
 
