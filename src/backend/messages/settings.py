@@ -544,18 +544,36 @@ class Base(Configuration):
         "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.URLPathVersioning",
         "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
         "DEFAULT_THROTTLE_RATES": {
-            "user_list_sustained": values.Value(
-                default="180/hour",
-                environ_name="API_USERS_LIST_THROTTLE_RATE_SUSTAINED",
+            # Outbound message throttling (limits send API calls per mailbox)
+            # Can be overridden per maildomain via custom_settings:
+            #   - outbound_message_throttle_rate_burst
+            #   - outbound_message_throttle_rate_sustained
+            "outbound_burst": values.Value(
+                default="10/minute",
+                environ_name="OUTBOUND_MESSAGE_THROTTLE_RATE_BURST",
                 environ_prefix=None,
             ),
-            "user_list_burst": values.Value(
-                default="30/minute",
-                environ_name="API_USERS_LIST_THROTTLE_RATE_BURST",
+            "outbound_sustained": values.Value(
+                default="100/hour",
+                environ_name="OUTBOUND_MESSAGE_THROTTLE_RATE_SUSTAINED",
+                environ_prefix=None,
+            ),
+            # Inbound message throttling (limits incoming messages per IP)
+            "inbound_burst": values.Value(
+                default="20/minute",
+                environ_name="INBOUND_MESSAGE_THROTTLE_RATE_BURST",
+                environ_prefix=None,
+            ),
+            "inbound_sustained": values.Value(
+                default="200/hour",
+                environ_name="INBOUND_MESSAGE_THROTTLE_RATE_SUSTAINED",
                 environ_prefix=None,
             ),
         },
     }
+
+    # Callback for monitoring throttle failures (sends to Sentry)
+    MONITORED_THROTTLE_FAILURE_CALLBACK = "core.api.throttling.sentry_throttle_failure"
 
     SPECTACULAR_SETTINGS = {
         "TITLE": "messages API",
@@ -1006,7 +1024,20 @@ class Development(Base):
     SESSION_CACHE_ALIAS = "session"
     CACHES = {
         "default": {
-            "BACKEND": "django.core.cache.backends.dummy.DummyCache",
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": values.Value(
+                "redis://redis:6379",
+                environ_name="REDIS_URL",
+                environ_prefix=None,
+            ),
+            "TIMEOUT": values.IntegerValue(
+                300,  # timeout in seconds
+                environ_name="CACHES_DEFAULT_TIMEOUT",
+                environ_prefix=None,
+            ),
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            },
         },
         "session": {
             "BACKEND": "django_redis.cache.RedisCache",
@@ -1017,7 +1048,7 @@ class Development(Base):
             ),
             "TIMEOUT": values.IntegerValue(
                 30,  # timeout in seconds
-                environ_name="CACHES_DEFAULT_TIMEOUT",
+                environ_name="CACHES_SESSION_TIMEOUT",
                 environ_prefix=None,
             ),
             "OPTIONS": {

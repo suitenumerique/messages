@@ -18,6 +18,7 @@ from core.mda.outbound import prepare_outbound_message
 from core.mda.outbound_tasks import send_message_task
 
 from .. import permissions, serializers
+from ..throttling import OutboundThrottleBurst, OutboundThrottleSustained
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,10 @@ logger = logging.getLogger(__name__)
             "Permission Error",
             value={"detail": "You do not have permission to send this message."},
         ),
+        429: OpenApiExample(
+            "Rate Limited",
+            value={"detail": "Request was throttled. Expected available in X seconds."},
+        ),
         503: OpenApiExample(
             "Service Unavailable",
             value={"detail": "Failed to prepare message for sending."},
@@ -52,6 +57,9 @@ logger = logging.getLogger(__name__)
     This endpoint finalizes and sends a message previously saved as a draft.
     The message content (subject, body, recipients) should be set when creating/updating the draft.
     Returns a task ID that can be used to track the sending status.
+
+    **Rate limiting:** This endpoint is throttled per mailbox.
+    Default: 10/minute (burst), 100/hour (sustained).
     """,
     examples=[
         OpenApiExample(
@@ -69,6 +77,7 @@ class SendMessageView(APIView):
     """Send a previously created draft message."""
 
     permission_classes = [permissions.IsAllowedToAccess]
+    throttle_classes = [OutboundThrottleBurst, OutboundThrottleSustained]
     # Note: IsAllowedToAccess checks object permission based on ThreadAccess now.
     # We still need senderId for the sending context.
 

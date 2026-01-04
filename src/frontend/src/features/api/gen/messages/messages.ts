@@ -38,6 +38,7 @@ import type {
   Message,
   SendCreate400,
   SendCreate403,
+  SendCreate429,
   SendCreate503,
   SendMessageRequest,
   SendMessageResponse,
@@ -1212,6 +1213,9 @@ export function useMessagesEmlRetrieve<
     This endpoint finalizes and sends a message previously saved as a draft.
     The message content (subject, body, recipients) should be set when creating/updating the draft.
     Returns a task ID that can be used to track the sending status.
+
+    **Rate limiting:** This endpoint is throttled per mailbox.
+    Default: 10/minute (burst), 100/hour (sustained).
     
  */
 export type sendCreateResponse200 = {
@@ -1229,6 +1233,11 @@ export type sendCreateResponse403 = {
   status: 403;
 };
 
+export type sendCreateResponse429 = {
+  data: SendCreate429;
+  status: 429;
+};
+
 export type sendCreateResponse503 = {
   data: SendCreate503;
   status: 503;
@@ -1238,6 +1247,7 @@ export type sendCreateResponseComposite =
   | sendCreateResponse200
   | sendCreateResponse400
   | sendCreateResponse403
+  | sendCreateResponse429
   | sendCreateResponse503;
 
 export type sendCreateResponse = sendCreateResponseComposite & {
@@ -1261,7 +1271,7 @@ export const sendCreate = async (
 };
 
 export const getSendCreateMutationOptions = <
-  TError = SendCreate400 | SendCreate403 | SendCreate503,
+  TError = SendCreate400 | SendCreate403 | SendCreate429 | SendCreate503,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1305,10 +1315,11 @@ export type SendCreateMutationBody = SendMessageRequest;
 export type SendCreateMutationError =
   | SendCreate400
   | SendCreate403
+  | SendCreate429
   | SendCreate503;
 
 export const useSendCreate = <
-  TError = SendCreate400 | SendCreate403 | SendCreate503,
+  TError = SendCreate400 | SendCreate403 | SendCreate429 | SendCreate503,
   TContext = unknown,
 >(
   options?: {

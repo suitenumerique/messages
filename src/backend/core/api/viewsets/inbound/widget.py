@@ -16,6 +16,7 @@ from rest_framework.response import Response
 
 from core import models
 from core.api.permissions import IsAuthenticated
+from core.api.throttling import InboundThrottleBurst, InboundThrottleSustained
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import compose_email
 
@@ -52,13 +53,14 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
 
     permission_classes = [IsAuthenticated]
     authentication_classes = [WidgetAuthentication]
+    throttle_classes = [InboundThrottleBurst, InboundThrottleSustained]
 
     @extend_schema(exclude=True)
     @action(
         detail=False,
         methods=["get"],
         url_path="config",
-        url_name="inbound-widget-config",
+        url_name="config",
     )
     def config(self, request):
         """Return the configuration for the widget."""
@@ -75,13 +77,10 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         detail=False,
         methods=["post"],
         url_path="deliver",
-        url_name="inbound-widget-deliver",
+        url_name="deliver",
     )
     def deliver(self, request):
         """Handle incoming widget message."""
-
-        # TODO: throttle
-
         data = request.data
         auth_data = request.auth
         channel = auth_data["channel"]

@@ -4346,7 +4346,7 @@
         "/api/v1.0/send/": {
             "post": {
                 "operationId": "send_create",
-                "description": "\n    Send a previously created draft message.\n\n    This endpoint finalizes and sends a message previously saved as a draft.\n    The message content (subject, body, recipients) should be set when creating/updating the draft.\n    Returns a task ID that can be used to track the sending status.\n    ",
+                "description": "\n    Send a previously created draft message.\n\n    This endpoint finalizes and sends a message previously saved as a draft.\n    The message content (subject, body, recipients) should be set when creating/updating the draft.\n    Returns a task ID that can be used to track the sending status.\n\n    **Rate limiting:** This endpoint is throttled per mailbox.\n    Default: 10/minute (burst), 100/hour (sustained).\n    ",
                 "tags": [
                     "messages"
                 ],
@@ -4416,6 +4416,18 @@
                         "description": ""
                     },
                     "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {},
+                                    "description": "Unspecified response body"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "429": {
                         "content": {
                             "application/json": {
                                 "schema": {

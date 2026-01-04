@@ -103,3 +103,9 @@ FEATURE_AI_AUTOLABELS=False
 # Third-party services
 # Drive - https://github.com/suitenumerique/drive
 DRIVE_BASE_URL=
+
+# Throttling settings for tests (high limits to avoid throttling during tests)
+OUTBOUND_MESSAGE_THROTTLE_RATE_BURST=200/minute
+OUTBOUND_MESSAGE_THROTTLE_RATE_SUSTAINED=1000/hour
+INBOUND_MESSAGE_THROTTLE_RATE_BURST=200/minute
+INBOUND_MESSAGE_THROTTLE_RATE_SUSTAINED=1000/hour

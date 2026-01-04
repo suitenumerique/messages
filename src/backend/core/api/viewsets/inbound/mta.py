@@ -16,6 +16,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core import models
+from core.api.throttling import InboundThrottleBurst, InboundThrottleSustained
 from core.mda.inbound import check_local_recipient, deliver_inbound_message
 from core.mda.rfc5322 import EmailParseError, parse_email_message
 
@@ -77,10 +78,11 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
 
     permission_classes = [IsAuthenticated]
     authentication_classes = [MTAJWTAuthentication]
+    throttle_classes = [InboundThrottleBurst, InboundThrottleSustained]
 
     @extend_schema(exclude=True)
     @action(
-        detail=False, methods=["post"], url_path="check", url_name="inbound-mta-check"
+        detail=False, methods=["post"], url_path="check", url_name="check"
     )
     def check(self, request):
         """Check recipients exist."""
@@ -102,7 +104,7 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
         detail=False,
         methods=["post"],
         url_path="deliver",
-        url_name="inbound-mta-deliver",
+        url_name="deliver",
     )
     def deliver(self, request):
         """Handle incoming raw email (message/rfc822) from MTA."""
