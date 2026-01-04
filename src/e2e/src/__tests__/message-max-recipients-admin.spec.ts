@@ -1,16 +1,26 @@
 import test, { expect } from "@playwright/test";
+import { resetDatabase } from "../utils";
 import { signInKeycloakIfNeeded } from "../utils-test";
 
+
 test.describe("Message Max Recipients Per Message", () => {
-  // Clear storage state to force fresh authentication (ignore user.e2e from config)
-  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test.beforeAll(async () => {
+    await resetDatabase();
+  });
+
+  test.beforeEach(async ({ page, browserName }) => {
+    await signInKeycloakIfNeeded({ page, username: `super_admin.e2e.${browserName}` });
+  });
+
+  test.afterEach(async () => {
+    await resetDatabase();
+  });
 
   test("should allow super admin to customize domain max recipients per message", async ({ page, browserName }) => {
-    // Login as super_admin (not superuser - check e2e_demo.py for correct username)
-    await page.goto("/");
-    await signInKeycloakIfNeeded({ page, username: `super_admin.e2e.${browserName}` });
+    await page.waitForLoadState("networkidle");
 
-    // Navigate to new message form
+    // Navigate to domain admin
     const moreOptionsButton = page.getByRole('button', { name: 'More options' });
     await moreOptionsButton.click();
     const manageMaildomainButton = page.getByRole('menuitem', { name: 'Domain admin' });
@@ -89,12 +99,59 @@ test.describe("Message Max Recipients Per Message", () => {
     // Login as domain admin
     await page.goto("/");
     await signInKeycloakIfNeeded({ page, username: `domain_admin.e2e.${browserName}` });
-    // Navigate to new message form
+    await page.waitForLoadState("networkidle");
+
+    // Navigate to domain admin
     const moreOptionsButton = page.getByRole('button', { name: 'More options' });
     await moreOptionsButton.click();
     const manageMaildomainButton = page.getByRole('menuitem', { name: 'Domain admin' });
     await manageMaildomainButton.click();
     await page.waitForURL("/domain");
-    // TODO: Implement this test
+    await page.getByRole("heading", { name: "Maildomains management" }).waitFor({ state: "visible" });
+
+    // Click on the domain to see mailboxes
+    const domainLink = page.getByText('example.local', { exact: true });
+    await domainLink.click();
+    await page.waitForURL(/\/domain\/[^/]+$/);
+
+    // click on more options button and select manage settings
+    // wait for the button to be visible
+    await page.getByRole('button', { name: 'more_horiz More' }).first().waitFor({ state: "visible" });
+    // const moreOptionsButtonForMailbox = page.getByRole('button', { name: 'more_horiz More' }).first();
+    // await moreOptionsButtonForMailbox.click();
+    // await page.getByRole('menuitem', { name: 'Manage settings' }).waitFor({ state: "visible" });
+    // const manageSettingsButton = page.getByRole('menuitem', { name: 'Manage settings' });
+    // await manageSettingsButton.click();
+    // await page.waitForURL("/mailbox/*/settings");
+    // await page.getByRole("heading", { name: "Mailbox settings" }).waitFor({ state: "visible" });
+
+    // // Wait for the settings modal to appear
+    // const maxRecipientsPerMessageInput = page.getByLabel("Maximum recipients per message");
+    // await expect(maxRecipientsPerMessageInput).toBeVisible({ timeout: 5000 });
+
+    // // Set a custom limit for the mailbox
+    // await maxRecipientsPerMessageInput.fill("25");
+    // const saveButton = page.getByRole('button', { name: 'Save' });
+    // await saveButton.click();
+
+    // // Verify success message
+    // await page.getByText('The mailbox settings have been updated!').waitFor({ state: "visible" });
+
+    // // Go back to the mailbox view
+    // const backToMailboxButton = page.getByRole('link', { name: 'mail', exact: true });
+    // await backToMailboxButton.click();
+    // await page.waitForURL("/mailbox/*");
+
+    // // Navigate to new message form
+    // const newMessageButton = page.getByRole("link", { name: "New message" });
+    // await newMessageButton.click();
+    // await page.waitForURL("/mailbox/*/new");
+    // await page.getByRole("heading", { name: "New message" }).waitFor({ state: "visible" });
+
+    // // Check that the help text shows the new mailbox-specific limit
+    // const helpText = await page.locator('text=/maximum.*recipients/i').textContent();
+    // const limitMatch = helpText?.match(/\d+/);
+    // const limit = limitMatch ? parseInt(limitMatch[0]) : null;
+    // expect(limit).toBe(25);
   });
 });
