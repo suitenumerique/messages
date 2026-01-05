@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-03 11:05+0000\n"
+"POT-Creation-Date: 2026-01-05 03:45+0000\n"
 "PO-Revision-Date: 2025-11-04 18:00\n"
 "Last-Translator: \n"
 "Language-Team: Russian\n"
@@ -10,7 +10,9 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=4; plural=((n%10==1 && n%100!=11) ? 0 : ((n%10 >= 2 && n%10 <=4 && (n%100 < 12 || n%100 > 14)) ? 1 : ((n%10 == 0 || (n%10 >= 5 && n%10 <=9)) || (n%100 >= 11 && n%100 <= 14)) ? 2 : 3));\n"
+"Plural-Forms: nplurals=4; plural=((n%10==1 && n%100!=11) ? 0 : ((n%10 >= 2 "
+"&& n%10 <=4 && (n%100 < 12 || n%100 > 14)) ? 1 : ((n%10 == 0 || (n%10 >= 5 "
+"&& n%10 <=9)) || (n%100 >= 11 && n%100 <= 14)) ? 2 : 3));\n"
 "X-Crowdin-Project: lasuite-messages\n"
 "X-Crowdin-Project-ID: 831182\n"
 "X-Crowdin-Language: ru\n"
@@ -47,6 +49,20 @@ msgstr "Импорт сообщений IMAP"
 msgid "Keys"
 msgstr "Ключи"
 
+msgid "The limit must be greater than 0."
+msgstr ""
+
+#, python-format
+msgid "The limit cannot exceed the global maximum of %(max)s recipients."
+msgstr ""
+
+#, python-format
+msgid "The limit cannot exceed the global maximum of %(max)s."
+msgstr ""
+
+msgid "Invalid format for recipients limit."
+msgstr ""
+
 msgid "A mailbox with this local part already exists in this domain."
 msgstr "Почтовый ящик с этой локальной частью уже существует в этом домене."
 
@@ -59,11 +75,45 @@ msgstr "Имя получателя"
 msgid "messages core application"
 msgstr "приложение для сообщений"
 
-msgid "Invalid response format or token verification failed"
-msgstr "Неверный формат ответа или проверка токена не удалась"
-
 msgid "User account is disabled"
 msgstr "Учётная запись пользователя отключена"
+
+#, python-format
+msgid ""
+"Message body size (%(body_size)s MB) exceeds the %(max_size)s MB limit. "
+"Please reduce message content."
+msgstr ""
+
+#, python-format
+msgid ""
+"Cannot add attachment(s) (%(new_size)s MB). Total attachments would be "
+"%(total_size)s MB, exceeding the %(max_size)s MB limit. Current attachments: "
+"%(current_size)s MB."
+msgstr ""
+
+#, python-format
+msgid ""
+"Recipient quota exceeded. You can send to %(remaining)s more recipients this "
+"%(period)s. Attempted to send to %(count)s recipients."
+msgstr ""
+
+#, python-format
+msgid ""
+"Domain recipient quota exceeded. The domain can send to %(remaining)s more "
+"recipients this %(period)s. Attempted to send to %(count)s recipients."
+msgstr ""
+
+#, python-format
+msgid ""
+"Total attachment size (%(total_size)s MB) exceeds the %(max_size)s MB limit. "
+"Please remove or reduce attachments."
+msgstr ""
+
+#, python-format
+msgid ""
+"The composed email (%(mime_size)s MB) exceeds the maximum allowed size of "
+"%(max_size)s MB. Please reduce message content or attachments."
+msgstr ""
 
 msgid "id"
 msgstr "id"
@@ -83,17 +133,28 @@ msgstr "обновлено"
 msgid "date and time at which a record was last updated"
 msgstr "дата и время последнего обновления записи"
 
-msgid "We couldn't find a user with this sub but the email is already associated with a registered user."
-msgstr "Мы не смогли найти пользователя с этими данными, но этот адрес уже связан с зарегистрированным пользователем."
+msgid ""
+"We couldn't find a user with this sub but the email is already associated "
+"with a registered user."
+msgstr ""
+"Мы не смогли найти пользователя с этими данными, но этот адрес уже связан с "
+"зарегистрированным пользователем."
 
-msgid "Enter a valid sub. This value may contain only letters, numbers, and @/./+/-/_/: characters."
-msgstr "Введите правильный префикс. Он может содержать только буквы, цифры и символы @/./+/-/_/."
+msgid ""
+"Enter a valid sub. This value may contain only letters, numbers, and @/./+/-/"
+"_/: characters."
+msgstr ""
+"Введите правильный префикс. Он может содержать только буквы, цифры и символы "
+"@/./+/-/_/."
 
 msgid "sub"
 msgstr "префикс"
 
-msgid "Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: characters only."
-msgstr "Обязательно. 255 символов или меньше. Только буквы, цифры и @/./+/-/_/: /."
+msgid ""
+"Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: "
+"characters only."
+msgstr ""
+"Обязательно. 255 символов или меньше. Только буквы, цифры и @/./+/-/_/: /."
 
 msgid "full name"
 msgstr "полное имя"
@@ -122,14 +183,20 @@ msgstr "Может ли пользователь войти на этот адм
 msgid "active"
 msgstr "активный"
 
-msgid "Whether this user should be treated as active. Unselect this instead of deleting accounts."
-msgstr "Должен ли пользователь рассматриваться как активный. Альтернатива удалению учётных записей."
+msgid ""
+"Whether this user should be treated as active. Unselect this instead of "
+"deleting accounts."
+msgstr ""
+"Должен ли пользователь рассматриваться как активный. Альтернатива удалению "
+"учётных записей."
 
 msgid "Custom attributes"
 msgstr "Настраиваемые атрибуты"
 
 msgid "Metadata to sync to the user in the identity provider."
-msgstr "Метаданные для синхронизации с пользователем в поставщике идентификационных данных."
+msgstr ""
+"Метаданные для синхронизации с пользователем в поставщике идентификационных "
+"данных."
 
 msgid "user"
 msgstr "пользователь"
@@ -137,8 +204,12 @@ msgstr "пользователь"
 msgid "users"
 msgstr "пользователи"
 
-msgid "Enter a valid domain name. This value may contain only lowercase letters, numbers, dots and - characters."
-msgstr "Введите правильное имя домена. Это значение может содержать только строчные буквы, цифры, точки и символы дефиса."
+msgid ""
+"Enter a valid domain name. This value may contain only lowercase letters, "
+"numbers, dots and - characters."
+msgstr ""
+"Введите правильное имя домена. Это значение может содержать только строчные "
+"буквы, цифры, точки и символы дефиса."
 
 msgid "name"
 msgstr "имя"
@@ -153,10 +224,21 @@ msgid "Identity sync"
 msgstr "Синхронизация личных данных"
 
 msgid "Sync mailboxes to an identity provider."
-msgstr "Синхронизировать почтовые ящики с поставщиком идентификационных данных."
+msgstr ""
+"Синхронизировать почтовые ящики с поставщиком идентификационных данных."
+
+#, fuzzy
+#| msgid "settings"
+msgid "Custom settings"
+msgstr "настройки"
+
+msgid "Custom settings for the mail domain."
+msgstr ""
 
 msgid "Metadata to sync to the maildomain group in the identity provider."
-msgstr "Метаданные для синхронизации с пользователем в поставщике идентификационных данных."
+msgstr ""
+"Метаданные для синхронизации с пользователем в поставщике идентификационных "
+"данных."
 
 msgid "mail domain"
 msgstr "почтовый домен"
@@ -197,8 +279,14 @@ msgstr "локальная часть"
 msgid "is identity"
 msgstr "является личностью"
 
-msgid "Whether this mailbox identifies a person (i.e. is not an alias or a group)"
-msgstr "Определяет ли этот почтовый ящик человека (т.е. не является псевдонимом или группой)"
+msgid ""
+"Whether this mailbox identifies a person (i.e. is not an alias or a group)"
+msgstr ""
+"Определяет ли этот почтовый ящик человека (т.е. не является псевдонимом или "
+"группой)"
+
+msgid "Custom settings for the mailbox."
+msgstr ""
 
 msgid "mailbox"
 msgstr "почтовый ящик"
@@ -229,6 +317,12 @@ msgstr "содержит непрочитанные"
 
 msgid "has trashed"
 msgstr "содержит удалённые"
+
+msgid "is trashed"
+msgstr "в корзине"
+
+msgid "Whether all messages in the thread are trashed"
+msgstr ""
 
 msgid "has archived"
 msgstr "заархивировано"
@@ -269,8 +363,12 @@ msgstr "обсуждение"
 msgid "threads"
 msgstr "обсуждения"
 
-msgid "Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/Projects')"
-msgstr "Имя ярлыка/папки (может использовать косую черту для задания иерархии, например 'Работа/Проекты')"
+msgid ""
+"Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/"
+"Projects')"
+msgstr ""
+"Имя ярлыка/папки (может использовать косую черту для задания иерархии, "
+"например 'Работа/Проекты')"
 
 msgid "slug"
 msgstr "псевдоним"
@@ -353,9 +451,6 @@ msgstr "отправитель"
 msgid "is starred"
 msgstr "помечено"
 
-msgid "is trashed"
-msgstr "в корзине"
-
 msgid "is unread"
 msgstr "непрочитано"
 
@@ -409,6 +504,32 @@ msgstr "Тема"
 
 msgid "Body"
 msgstr "Текст сообщения"
+
+#, fuzzy
+#| msgid "Metadata"
+msgid "raw data"
+msgstr "Метаданные"
+
+msgid "Raw email message bytes"
+msgstr ""
+
+#, fuzzy
+#| msgid "message"
+msgid "error message"
+msgstr "сообщение"
+
+msgid "Error message if processing failed"
+msgstr ""
+
+#, fuzzy
+#| msgid "message"
+msgid "inbound message"
+msgstr "сообщение"
+
+#, fuzzy
+#| msgid "messages"
+msgid "inbound messages"
+msgstr "сообщения"
 
 msgid "sha256 hash"
 msgstr "sha256 hash"
@@ -516,7 +637,8 @@ msgid "is active"
 msgstr "активный"
 
 msgid "Whether this DKIM key is active and should be used for signing"
-msgstr "Является ли этот ключ DKIM активным и должен использоваться для подписания"
+msgstr ""
+"Является ли этот ключ DKIM активным и должен использоваться для подписания"
 
 msgid "Domain that owns this DKIM key"
 msgstr "Домен, владеющий этим ключом DKIM"
@@ -527,11 +649,19 @@ msgstr "Ключ DKIM"
 msgid "DKIM keys"
 msgstr "Ключи DKIM"
 
-msgid "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')"
-msgstr "Название шаблона (например, 'Стандартный ответ', 'Не в офисе', 'Рабочая подпись')"
+msgid ""
+"Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work "
+"Signature')"
+msgstr ""
+"Название шаблона (например, 'Стандартный ответ', 'Не в офисе', 'Рабочая "
+"подпись')"
 
-msgid "Reference to the blob containing template content as JSON: {html: str, text: str, raw: any}"
-msgstr "Ссылка на блок, содержащий данные шаблона в формате JSON: {html: str, text: str, raw: any}"
+msgid ""
+"Reference to the blob containing template content as JSON: {html: str, text: "
+"str, raw: any}"
+msgstr ""
+"Ссылка на блок, содержащий данные шаблона в формате JSON: {html: str, text: "
+"str, raw: any}"
 
 msgid "Type of template (message, signature)"
 msgstr "Тип шаблона (сообщение, подпись)"
@@ -548,8 +678,12 @@ msgstr "Почтовый ящик, который может использов�
 msgid "is forced"
 msgstr "обязательно"
 
-msgid "Whether this template is forced; no other template of the same type can be used in the same scope"
-msgstr "Может ли этот шаблон применяться в обязательном порядке; будет невозможно использовать другой шаблон того же типа в той же области"
+msgid ""
+"Whether this template is forced; no other template of the same type can be "
+"used in the same scope"
+msgstr ""
+"Может ли этот шаблон применяться в обязательном порядке; будет невозможно "
+"использовать другой шаблон того же типа в той же области"
 
 msgid "message template"
 msgstr "шаблон сообщения"
@@ -578,3 +712,8 @@ msgstr "Английский"
 msgid "French"
 msgstr "Французский"
 
+msgid "Dutch"
+msgstr ""
+
+#~ msgid "Invalid response format or token verification failed"
+#~ msgstr "Неверный формат ответа или проверка токена не удалась"

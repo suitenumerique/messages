@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-03 11:05+0000\n"
+"POT-Creation-Date: 2026-01-05 03:45+0000\n"
 "PO-Revision-Date: 2025-11-04 18:00\n"
 "Last-Translator: \n"
 "Language-Team: Dutch\n"
@@ -47,6 +47,20 @@ msgstr "Berichten importeren van IMAP"
 msgid "Keys"
 msgstr "Keys"
 
+msgid "The limit must be greater than 0."
+msgstr ""
+
+#, python-format
+msgid "The limit cannot exceed the global maximum of %(max)s recipients."
+msgstr ""
+
+#, python-format
+msgid "The limit cannot exceed the global maximum of %(max)s."
+msgstr ""
+
+msgid "Invalid format for recipients limit."
+msgstr ""
+
 msgid "A mailbox with this local part already exists in this domain."
 msgstr "Er bestaat al een mailbox met dit lokale deel in dit domein."
 
@@ -59,11 +73,45 @@ msgstr "Naam van ontvanger"
 msgid "messages core application"
 msgstr "messages kern applicatie"
 
-msgid "Invalid response format or token verification failed"
-msgstr "Invalide response formaat of token verificatie gefaald"
-
 msgid "User account is disabled"
 msgstr "Gebruikersaccount is uitgeschakeld"
+
+#, python-format
+msgid ""
+"Message body size (%(body_size)s MB) exceeds the %(max_size)s MB limit. "
+"Please reduce message content."
+msgstr ""
+
+#, python-format
+msgid ""
+"Cannot add attachment(s) (%(new_size)s MB). Total attachments would be "
+"%(total_size)s MB, exceeding the %(max_size)s MB limit. Current attachments: "
+"%(current_size)s MB."
+msgstr ""
+
+#, python-format
+msgid ""
+"Recipient quota exceeded. You can send to %(remaining)s more recipients this "
+"%(period)s. Attempted to send to %(count)s recipients."
+msgstr ""
+
+#, python-format
+msgid ""
+"Domain recipient quota exceeded. The domain can send to %(remaining)s more "
+"recipients this %(period)s. Attempted to send to %(count)s recipients."
+msgstr ""
+
+#, python-format
+msgid ""
+"Total attachment size (%(total_size)s MB) exceeds the %(max_size)s MB limit. "
+"Please remove or reduce attachments."
+msgstr ""
+
+#, python-format
+msgid ""
+"The composed email (%(mime_size)s MB) exceeds the maximum allowed size of "
+"%(max_size)s MB. Please reduce message content or attachments."
+msgstr ""
 
 msgid "id"
 msgstr "id"
@@ -83,17 +131,29 @@ msgstr "bijgewerkt op"
 msgid "date and time at which a record was last updated"
 msgstr "datum en tijd waarop een record voor het laatst is bijgewerkt"
 
-msgid "We couldn't find a user with this sub but the email is already associated with a registered user."
-msgstr "Wij konden geen gebruiker vinden met dit id, maar de email is al geassocieerd met een geregistreerde gebruiker."
+msgid ""
+"We couldn't find a user with this sub but the email is already associated "
+"with a registered user."
+msgstr ""
+"Wij konden geen gebruiker vinden met dit id, maar de email is al "
+"geassocieerd met een geregistreerde gebruiker."
 
-msgid "Enter a valid sub. This value may contain only letters, numbers, and @/./+/-/_/: characters."
-msgstr "Voer een geldig id in. De waarde mag alleen letters, nummers en @/./.+/-/_: karakters bevatten."
+msgid ""
+"Enter a valid sub. This value may contain only letters, numbers, and @/./+/-/"
+"_/: characters."
+msgstr ""
+"Voer een geldig id in. De waarde mag alleen letters, nummers en @/./.+/-/_: "
+"karakters bevatten."
 
 msgid "sub"
 msgstr "id"
 
-msgid "Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: characters only."
-msgstr "Verplicht. 255 karakters of minder. Alleen letters, nummers en @/./+/-/_/: karakters zijn toegestaan."
+msgid ""
+"Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: "
+"characters only."
+msgstr ""
+"Verplicht. 255 karakters of minder. Alleen letters, nummers en @/./+/-/_/: "
+"karakters zijn toegestaan."
 
 msgid "full name"
 msgstr "volledige naam"
@@ -122,14 +182,19 @@ msgstr "Of de gebruiker kan inloggen in het beheer gedeelte."
 msgid "active"
 msgstr "actief"
 
-msgid "Whether this user should be treated as active. Unselect this instead of deleting accounts."
-msgstr "Of een gebruiker als actief moet worden beschouwd. Deselecteer dit in plaats van het account te deleten."
+msgid ""
+"Whether this user should be treated as active. Unselect this instead of "
+"deleting accounts."
+msgstr ""
+"Of een gebruiker als actief moet worden beschouwd. Deselecteer dit in plaats "
+"van het account te deleten."
 
 msgid "Custom attributes"
 msgstr "Aanpasbare attributen"
 
 msgid "Metadata to sync to the user in the identity provider."
-msgstr "Metagegevens om te synchroniseren met de gebruiker in de identiteitsprovider."
+msgstr ""
+"Metagegevens om te synchroniseren met de gebruiker in de identiteitsprovider."
 
 msgid "user"
 msgstr "gebruiker"
@@ -137,8 +202,12 @@ msgstr "gebruiker"
 msgid "users"
 msgstr "gebruikers"
 
-msgid "Enter a valid domain name. This value may contain only lowercase letters, numbers, dots and - characters."
-msgstr "Voer een geldige domeinnaam in. Deze waarde mag alleen kleine letters, cijfers, punten en - tekens bevatten."
+msgid ""
+"Enter a valid domain name. This value may contain only lowercase letters, "
+"numbers, dots and - characters."
+msgstr ""
+"Voer een geldige domeinnaam in. Deze waarde mag alleen kleine letters, "
+"cijfers, punten en - tekens bevatten."
 
 msgid "name"
 msgstr "naam"
@@ -155,8 +224,17 @@ msgstr "Identiteit synchronisatie"
 msgid "Sync mailboxes to an identity provider."
 msgstr "Synchroniseer mailboxen met een identity provider."
 
+#, fuzzy
+#| msgid "settings"
+msgid "Custom settings"
+msgstr "instellingen"
+
+msgid "Custom settings for the mail domain."
+msgstr ""
+
 msgid "Metadata to sync to the maildomain group in the identity provider."
-msgstr "Metagegevens om te synchroniseren met de gebruiker in de identiteitsprovider."
+msgstr ""
+"Metagegevens om te synchroniseren met de gebruiker in de identiteitsprovider."
 
 msgid "mail domain"
 msgstr "e-mail domein"
@@ -197,8 +275,13 @@ msgstr "lokaal deel"
 msgid "is identity"
 msgstr "is identiteit"
 
-msgid "Whether this mailbox identifies a person (i.e. is not an alias or a group)"
-msgstr "Of dit mailbox een persoon identificeert (bijv. is geen alias of groep)"
+msgid ""
+"Whether this mailbox identifies a person (i.e. is not an alias or a group)"
+msgstr ""
+"Of dit mailbox een persoon identificeert (bijv. is geen alias of groep)"
+
+msgid "Custom settings for the mailbox."
+msgstr ""
 
 msgid "mailbox"
 msgstr "mailbox"
@@ -229,6 +312,12 @@ msgstr "bevat ongelezen"
 
 msgid "has trashed"
 msgstr "bevat verwijderd"
+
+msgid "is trashed"
+msgstr "is verwijderd"
+
+msgid "Whether all messages in the thread are trashed"
+msgstr ""
 
 msgid "has archived"
 msgstr "bevat gearchiveerd"
@@ -269,8 +358,12 @@ msgstr "kanaal"
 msgid "threads"
 msgstr "kanalen"
 
-msgid "Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/Projects')"
-msgstr "Naam van de label/map (kan slashes voor de hiërarchie gebruiken, bijvoorbeeld 'Werk/Projecten')"
+msgid ""
+"Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/"
+"Projects')"
+msgstr ""
+"Naam van de label/map (kan slashes voor de hiërarchie gebruiken, "
+"bijvoorbeeld 'Werk/Projecten')"
 
 msgid "slug"
 msgstr "slug"
@@ -294,7 +387,8 @@ msgid "description"
 msgstr "beschrijving"
 
 msgid "Description of the label, used by AI to understand its purpose"
-msgstr "Beschrijving van het label, gebruikt door AI om het doel ervan te begrijpen"
+msgstr ""
+"Beschrijving van het label, gebruikt door AI om het doel ervan te begrijpen"
 
 msgid "auto labeling"
 msgstr "automatisch labelen"
@@ -353,9 +447,6 @@ msgstr "is afzender"
 msgid "is starred"
 msgstr "met ster"
 
-msgid "is trashed"
-msgstr "is verwijderd"
-
 msgid "is unread"
 msgstr "is ongelezen"
 
@@ -409,6 +500,32 @@ msgstr "Onderwerp"
 
 msgid "Body"
 msgstr "Bericht"
+
+#, fuzzy
+#| msgid "Metadata"
+msgid "raw data"
+msgstr "Metadata"
+
+msgid "Raw email message bytes"
+msgstr ""
+
+#, fuzzy
+#| msgid "message"
+msgid "error message"
+msgstr "bericht"
+
+msgid "Error message if processing failed"
+msgstr ""
+
+#, fuzzy
+#| msgid "message"
+msgid "inbound message"
+msgstr "bericht"
+
+#, fuzzy
+#| msgid "messages"
+msgid "inbound messages"
+msgstr "berichten"
 
 msgid "sha256 hash"
 msgstr "sha256 hash"
@@ -516,7 +633,8 @@ msgid "is active"
 msgstr "is actief"
 
 msgid "Whether this DKIM key is active and should be used for signing"
-msgstr "Of deze DKIM-sleutel actief is en moet worden gebruikt voor het ondertekenen"
+msgstr ""
+"Of deze DKIM-sleutel actief is en moet worden gebruikt voor het ondertekenen"
 
 msgid "Domain that owns this DKIM key"
 msgstr "Domein dat eigenaar is van deze DKIM-sleutel"
@@ -527,11 +645,19 @@ msgstr "DKIM sleutel"
 msgid "DKIM keys"
 msgstr "DKIM sleutels"
 
-msgid "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')"
-msgstr "Naam van de template (bijv. 'Standaard antwoord', 'Niet op kantoor', 'Ondertekening')"
+msgid ""
+"Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work "
+"Signature')"
+msgstr ""
+"Naam van de template (bijv. 'Standaard antwoord', 'Niet op kantoor', "
+"'Ondertekening')"
 
-msgid "Reference to the blob containing template content as JSON: {html: str, text: str, raw: any}"
-msgstr "Referentie naar de blob met sjablooninhoud als JSON: {html: str, text: str, raw: any}"
+msgid ""
+"Reference to the blob containing template content as JSON: {html: str, text: "
+"str, raw: any}"
+msgstr ""
+"Referentie naar de blob met sjablooninhoud als JSON: {html: str, text: str, "
+"raw: any}"
 
 msgid "Type of template (message, signature)"
 msgstr "Type template (bericht, handtekening)"
@@ -548,8 +674,12 @@ msgstr "Mailbox die dit sjabloon kan gebruiken"
 msgid "is forced"
 msgstr "is afgedwongen"
 
-msgid "Whether this template is forced; no other template of the same type can be used in the same scope"
-msgstr "Of deze template wordt geforceerd; geen andere sjabloon van hetzelfde type kan worden gebruikt in dezelfde scope"
+msgid ""
+"Whether this template is forced; no other template of the same type can be "
+"used in the same scope"
+msgstr ""
+"Of deze template wordt geforceerd; geen andere sjabloon van hetzelfde type "
+"kan worden gebruikt in dezelfde scope"
 
 msgid "message template"
 msgstr "bericht template"
@@ -578,3 +708,8 @@ msgstr "Engels"
 msgid "French"
 msgstr "Frans"
 
+msgid "Dutch"
+msgstr ""
+
+#~ msgid "Invalid response format or token verification failed"
+#~ msgstr "Invalide response formaat of token verificatie gefaald"

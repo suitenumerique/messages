@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-03 11:05+0000\n"
+"POT-Creation-Date: 2026-01-05 03:45+0000\n"
 "PO-Revision-Date: 2025-11-04 18:00\n"
 "Last-Translator: \n"
 "Language-Team: Portuguese\n"
@@ -47,6 +47,20 @@ msgstr ""
 msgid "Keys"
 msgstr ""
 
+msgid "The limit must be greater than 0."
+msgstr ""
+
+#, python-format
+msgid "The limit cannot exceed the global maximum of %(max)s recipients."
+msgstr ""
+
+#, python-format
+msgid "The limit cannot exceed the global maximum of %(max)s."
+msgstr ""
+
+msgid "Invalid format for recipients limit."
+msgstr ""
+
 msgid "A mailbox with this local part already exists in this domain."
 msgstr ""
 
@@ -59,10 +73,44 @@ msgstr ""
 msgid "messages core application"
 msgstr ""
 
-msgid "Invalid response format or token verification failed"
+msgid "User account is disabled"
 msgstr ""
 
-msgid "User account is disabled"
+#, python-format
+msgid ""
+"Message body size (%(body_size)s MB) exceeds the %(max_size)s MB limit. "
+"Please reduce message content."
+msgstr ""
+
+#, python-format
+msgid ""
+"Cannot add attachment(s) (%(new_size)s MB). Total attachments would be "
+"%(total_size)s MB, exceeding the %(max_size)s MB limit. Current attachments: "
+"%(current_size)s MB."
+msgstr ""
+
+#, python-format
+msgid ""
+"Recipient quota exceeded. You can send to %(remaining)s more recipients this "
+"%(period)s. Attempted to send to %(count)s recipients."
+msgstr ""
+
+#, python-format
+msgid ""
+"Domain recipient quota exceeded. The domain can send to %(remaining)s more "
+"recipients this %(period)s. Attempted to send to %(count)s recipients."
+msgstr ""
+
+#, python-format
+msgid ""
+"Total attachment size (%(total_size)s MB) exceeds the %(max_size)s MB limit. "
+"Please remove or reduce attachments."
+msgstr ""
+
+#, python-format
+msgid ""
+"The composed email (%(mime_size)s MB) exceeds the maximum allowed size of "
+"%(max_size)s MB. Please reduce message content or attachments."
 msgstr ""
 
 msgid "id"
@@ -83,16 +131,22 @@ msgstr ""
 msgid "date and time at which a record was last updated"
 msgstr ""
 
-msgid "We couldn't find a user with this sub but the email is already associated with a registered user."
+msgid ""
+"We couldn't find a user with this sub but the email is already associated "
+"with a registered user."
 msgstr ""
 
-msgid "Enter a valid sub. This value may contain only letters, numbers, and @/./+/-/_/: characters."
+msgid ""
+"Enter a valid sub. This value may contain only letters, numbers, and @/./+/-/"
+"_/: characters."
 msgstr ""
 
 msgid "sub"
 msgstr ""
 
-msgid "Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: characters only."
+msgid ""
+"Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: "
+"characters only."
 msgstr ""
 
 msgid "full name"
@@ -122,7 +176,9 @@ msgstr ""
 msgid "active"
 msgstr ""
 
-msgid "Whether this user should be treated as active. Unselect this instead of deleting accounts."
+msgid ""
+"Whether this user should be treated as active. Unselect this instead of "
+"deleting accounts."
 msgstr ""
 
 msgid "Custom attributes"
@@ -137,7 +193,9 @@ msgstr ""
 msgid "users"
 msgstr ""
 
-msgid "Enter a valid domain name. This value may contain only lowercase letters, numbers, dots and - characters."
+msgid ""
+"Enter a valid domain name. This value may contain only lowercase letters, "
+"numbers, dots and - characters."
 msgstr ""
 
 msgid "name"
@@ -153,6 +211,12 @@ msgid "Identity sync"
 msgstr ""
 
 msgid "Sync mailboxes to an identity provider."
+msgstr ""
+
+msgid "Custom settings"
+msgstr ""
+
+msgid "Custom settings for the mail domain."
 msgstr ""
 
 msgid "Metadata to sync to the maildomain group in the identity provider."
@@ -197,7 +261,11 @@ msgstr ""
 msgid "is identity"
 msgstr ""
 
-msgid "Whether this mailbox identifies a person (i.e. is not an alias or a group)"
+msgid ""
+"Whether this mailbox identifies a person (i.e. is not an alias or a group)"
+msgstr ""
+
+msgid "Custom settings for the mailbox."
 msgstr ""
 
 msgid "mailbox"
@@ -228,6 +296,12 @@ msgid "has unread"
 msgstr ""
 
 msgid "has trashed"
+msgstr ""
+
+msgid "is trashed"
+msgstr ""
+
+msgid "Whether all messages in the thread are trashed"
 msgstr ""
 
 msgid "has archived"
@@ -269,7 +343,9 @@ msgstr ""
 msgid "threads"
 msgstr ""
 
-msgid "Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/Projects')"
+msgid ""
+"Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/"
+"Projects')"
 msgstr ""
 
 msgid "slug"
@@ -353,9 +429,6 @@ msgstr ""
 msgid "is starred"
 msgstr ""
 
-msgid "is trashed"
-msgstr ""
-
 msgid "is unread"
 msgstr ""
 
@@ -408,6 +481,24 @@ msgid "Subject"
 msgstr ""
 
 msgid "Body"
+msgstr ""
+
+msgid "raw data"
+msgstr ""
+
+msgid "Raw email message bytes"
+msgstr ""
+
+msgid "error message"
+msgstr ""
+
+msgid "Error message if processing failed"
+msgstr ""
+
+msgid "inbound message"
+msgstr ""
+
+msgid "inbound messages"
 msgstr ""
 
 msgid "sha256 hash"
@@ -527,10 +618,14 @@ msgstr ""
 msgid "DKIM keys"
 msgstr ""
 
-msgid "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')"
+msgid ""
+"Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work "
+"Signature')"
 msgstr ""
 
-msgid "Reference to the blob containing template content as JSON: {html: str, text: str, raw: any}"
+msgid ""
+"Reference to the blob containing template content as JSON: {html: str, text: "
+"str, raw: any}"
 msgstr ""
 
 msgid "Type of template (message, signature)"
@@ -548,7 +643,9 @@ msgstr ""
 msgid "is forced"
 msgstr ""
 
-msgid "Whether this template is forced; no other template of the same type can be used in the same scope"
+msgid ""
+"Whether this template is forced; no other template of the same type can be "
+"used in the same scope"
 msgstr ""
 
 msgid "message template"
@@ -578,3 +675,5 @@ msgstr ""
 msgid "French"
 msgstr ""
 
+msgid "Dutch"
+msgstr ""
