@@ -70,9 +70,9 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
             // Process each HTML body part for drive attachments
             const allDriveAttachments: ReturnType<typeof MailHelper.extractDriveAttachmentsFromHtmlBody>[1] = [];
             const processedParts = message.htmlBody.map(part => {
-                const partContent = (part as { content?: string }).content ?? "";
-                const partType = (part as { type?: string }).type ?? "text/html";
-                const partId = (part as { partId?: string }).partId ?? "";
+                const partContent = part?.content ?? "";
+                const partType = part?.type ?? "text/html";
+                const partId = part?.partId ?? "";
                 const [content, attachments] = MailHelper.extractDriveAttachmentsFromHtmlBody(partContent);
                 allDriveAttachments.push(...attachments);
                 return { partId, type: partType, content };
@@ -86,9 +86,9 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                 return [];
             }
             return message.textBody.map(part => {
-                const partContent = (part as { content?: string }).content ?? "";
-                const partType = (part as { type?: string }).type ?? "text/plain";
-                const partId = (part as { partId?: string }).partId ?? "";
+                const partContent = part?.content ?? "";
+                const partType = part?.type ?? "text/plain";
+                const partId = part?.partId ?? "";
                 const [content] = MailHelper.extractDriveAttachmentsFromTextBody(partContent);
                 return { partId, type: partType, content };
             });

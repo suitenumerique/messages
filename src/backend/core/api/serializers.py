@@ -616,6 +616,15 @@ class MessageRecipientSerializer(serializers.ModelSerializer):
             "delivered_at",
         ]
 
+class MessageBodyItemSerializer(serializers.Serializer):
+    """Message body item serializer."""
+    partId = serializers.CharField(required=False)
+    type = serializers.CharField(required=False)
+    content = serializers.CharField(required=False)
+
+    class Meta:
+        fields = ["partId", "type", "content"]
+        read_only_fields = fields
 
 class MessageSerializer(serializers.ModelSerializer):
     """
@@ -653,12 +662,12 @@ class MessageSerializer(serializers.ModelSerializer):
         """Return the STMSG headers of the message."""
         return instance.get_stmsg_headers()
 
-    @extend_schema_field(serializers.ListField(child=serializers.DictField()))
+    @extend_schema_field(MessageBodyItemSerializer(many=True))
     def get_textBody(self, instance):  # pylint: disable=invalid-name
         """Return the list of text body parts (JMAP style)."""
         return instance.get_parsed_field("textBody") or []
 
-    @extend_schema_field(serializers.ListField(child=serializers.DictField()))
+    @extend_schema_field(MessageBodyItemSerializer(many=True))
     def get_htmlBody(self, instance):  # pylint: disable=invalid-name
         """Return the list of HTML body parts (JMAP style)."""
         return instance.get_parsed_field("htmlBody") or []

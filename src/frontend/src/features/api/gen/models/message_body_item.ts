@@ -6,4 +6,11 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export type MessageTextBodyItem = { [key: string]: unknown };
+/**
+ * Message body item serializer.
+ */
+export interface MessageBodyItem {
+  partId?: string;
+  type?: string;
+  content?: string;
+}

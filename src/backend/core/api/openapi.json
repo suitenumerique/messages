@@ -6383,16 +6383,14 @@
                     "htmlBody": {
                         "type": "array",
                         "items": {
-                            "type": "object",
-                            "additionalProperties": {}
+                            "$ref": "#/components/schemas/MessageBodyItem"
                         },
                         "readOnly": true
                     },
                     "textBody": {
                         "type": "array",
                         "items": {
-                            "type": "object",
-                            "additionalProperties": {}
+                            "$ref": "#/components/schemas/MessageBodyItem"
                         },
                         "readOnly": true
                     },
@@ -6520,6 +6518,21 @@
                     "to",
                     "updated_at"
                 ]
+            },
+            "MessageBodyItem": {
+                "type": "object",
+                "description": "Message body item serializer.",
+                "properties": {
+                    "partId": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string"
+                    },
+                    "content": {
+                        "type": "string"
+                    }
+                }
             },
             "MessageDeliveryStatusChoices": {
                 "type": "string",

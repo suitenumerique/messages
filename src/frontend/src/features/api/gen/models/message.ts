@@ -5,8 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { MessageHtmlBodyItem } from "./message_html_body_item";
-import type { MessageTextBodyItem } from "./message_text_body_item";
+import type { MessageBodyItem } from "./message_body_item";
 import type { Attachment } from "./attachment";
 import type { Contact } from "./contact";
 import type { MessageRecipient } from "./message_recipient";
@@ -30,8 +29,8 @@ export interface Message {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-  readonly htmlBody: readonly MessageHtmlBodyItem[];
-  readonly textBody: readonly MessageTextBodyItem[];
+  readonly htmlBody: readonly MessageBodyItem[];
+  readonly textBody: readonly MessageBodyItem[];
   /** @nullable */
   readonly draftBody: string | null;
   readonly attachments: readonly Attachment[];
