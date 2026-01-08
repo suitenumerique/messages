@@ -128,3 +128,16 @@ MBOX_SUPPORTED_MIME_TYPES = [
     "application/mbox",
 ]
 ARCHIVE_SUPPORTED_MIME_TYPES = EML_SUPPORTED_MIME_TYPES + MBOX_SUPPORTED_MIME_TYPES
+
+BLACKLISTED_PROXY_IMAGE_MIME_TYPES = [
+    "image/svg+xml",  # Can contain JavaScript and external references
+    "image/x-wmf",  # Windows Metafile - can contain executable code
+    "image/wmf",
+    "image/x-emf",  # Enhanced Metafile - same risks as WMF
+    "image/emf",
+    "image/x-icon",  # Icon files - can contain executable code
+    "image/vnd.microsoft.icon",
+    "image/x-icns",  # Apple Icon Image format - can contain executable code
+    "image/cgm",
+    "image/x-cut",
+]

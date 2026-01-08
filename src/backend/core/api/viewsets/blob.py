@@ -185,6 +185,8 @@ class BlobViewSet(ViewSet):
                     f'attachment; filename="{attachment["name"]}"'
                 )
                 response["Content-Length"] = attachment["size"]
+                # Enable browser caching for 30 days (inline images benefit from this)
+                response["Cache-Control"] = "private, max-age=2592000"
 
             else:
                 # Get the blob
@@ -211,6 +213,8 @@ class BlobViewSet(ViewSet):
                 # Add appropriate headers for download
                 response["Content-Disposition"] = f'attachment; filename="{filename}"'
                 response["Content-Length"] = blob.size
+                # Enable browser caching for 30 days (inline images benefit from this)
+                response["Cache-Control"] = "private, max-age=2592000"
 
             return response
 

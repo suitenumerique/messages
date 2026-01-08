@@ -28,4 +28,6 @@ export type ConfigRetrieve200 = {
   readonly MAX_INCOMING_EMAIL_SIZE: number;
   /** Maximum number of recipients per message (to + cc + bcc) */
   readonly MAX_RECIPIENTS_PER_MESSAGE: number;
+  /** Whether external images should be proxied */
+  readonly IMAGE_PROXY_ENABLED: boolean;
 };

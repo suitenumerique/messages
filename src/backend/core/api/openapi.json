@@ -227,6 +227,11 @@
                                             "type": "integer",
                                             "description": "Maximum number of recipients per message (to + cc + bcc)",
                                             "readOnly": true
+                                        },
+                                        "IMAGE_PROXY_ENABLED": {
+                                            "type": "boolean",
+                                            "description": "Whether external images should be proxied",
+                                            "readOnly": true
                                         }
                                     },
                                     "required": [
@@ -241,7 +246,8 @@
                                         "MAX_OUTGOING_ATTACHMENT_SIZE",
                                         "MAX_OUTGOING_BODY_SIZE",
                                         "MAX_INCOMING_EMAIL_SIZE",
-                                        "MAX_RECIPIENTS_PER_MESSAGE"
+                                        "MAX_RECIPIENTS_PER_MESSAGE",
+                                        "IMAGE_PROXY_ENABLED"
                                     ]
                                 }
                             }
@@ -2414,6 +2420,57 @@
                 "responses": {
                     "204": {
                         "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/image-proxy/": {
+            "get": {
+                "operationId": "mailboxes_image_proxy_list",
+                "description": "Proxy an external image through the server.\n\n        This endpoint fetches images from external sources and serves them\n        through the application to protect user privacy. Requires the\n        IMAGE_PROXY_ENABLED environment variable to be set to true.\n        ",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "ID of the mailbox",
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "url",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "The external image URL to proxy",
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "mailboxes"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Image content"
+                    },
+                    "400": {
+                        "description": "Invalid request"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    },
+                    "413": {
+                        "description": "Image too large"
+                    },
+                    "502": {
+                        "description": "Failed to fetch external image"
                     }
                 }
             }

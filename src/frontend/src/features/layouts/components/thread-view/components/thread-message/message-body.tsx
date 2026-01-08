@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DomPurify from "dompurify";
 import { Attachment } from "@/features/api/gen/models";
 import { getRequestUrl, getApiOrigin } from "@/features/api/utils";
@@ -7,11 +7,18 @@ import { UnquoteMessage } from '@/features/utils/unquote-message';
 import { useTranslation } from "react-i18next";
 import { tokens } from '@/styles/cunningham-tokens'
 import { useTheme } from "@/features/providers/theme";
+import { useConfig } from "@/features/providers/config";
+import { useMailboxContext } from "@/features/providers/mailbox";
+import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { Banner } from "@/features/ui/components/banner";
+import { getMailboxesImageProxyListUrl } from "@/features/api/gen/mailboxes/mailboxes";
+import { EXTERNAL_IMAGES_CONSENT_KEY } from "@/features/config/constants";
 
 type MessageBodyProps = {
     rawHtmlBody?: string;
     rawTextBody?: string;
     attachments?: readonly Attachment[];
+    messageId: string;
     isHidden?: boolean;
     onLoad?: () => void;
 }
@@ -42,12 +49,28 @@ const CSP = [
     "worker-src 'none'",
     // No frame ancestors
     "frame-ancestors 'none'",
-  ].join('; ');
+].join('; ');
 
-const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden = false, onLoad }: MessageBodyProps) => {
+const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden = false, messageId, onLoad }: MessageBodyProps) => {
     const { t } = useTranslation();
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const { cunninghamTheme, variant } = useTheme();
+    const { selectedMailbox } = useMailboxContext();
+    const { IMAGE_PROXY_ENABLED: canDisplayExternalImages } = useConfig();
+    const [displayExternalImages, setDisplayExternalImages] = useState(() => {
+        const consentMessageIds = sessionStorage.getItem(EXTERNAL_IMAGES_CONSENT_KEY);
+        if (consentMessageIds) {
+            return consentMessageIds.split('|').includes(messageId);
+        }
+        return false;
+    });
+    const hasExternalImagesRef = useRef(false);
+    const showExternalImages = () => {
+        const oldConsentMessageIds = new Set(sessionStorage.getItem(EXTERNAL_IMAGES_CONSENT_KEY)?.split('|') ?? []);
+        oldConsentMessageIds.add(messageId);
+        sessionStorage.setItem(EXTERNAL_IMAGES_CONSENT_KEY, Array.from(oldConsentMessageIds).join('|'));
+        setDisplayExternalImages(true);
+    };
 
     // Create a mapping of CID to blob URL for CID image transformation
     const cidToBlobUrlMap = useMemo(() => {
@@ -60,37 +83,73 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
         });
         return map;
     }, [attachments]);
+
     const domPurify = useMemo(() => {
         const instance = DomPurify();
         instance.addHook(
             'afterSanitizeAttributes',
-            function (node) {
+            function (node: Element) {
                 // Allow anchor tags to be opened in the parent window if the href is an anchor
                 // Other links are opened in a new tab and safe rel attributes is set
 
-                if(node.tagName === 'A') {
+                if (node.tagName === 'A') {
                     if (!node.getAttribute('href')?.startsWith('#')) {
                         node.setAttribute('target', '_blank');
                     }
                     node.setAttribute('rel', 'noopener noreferrer');
                 }
 
+                // Remove pixel trackers,
                 // Transform CID references in img src attributes
-                if (node.tagName === 'IMG' && cidToBlobUrlMap.size > 0) {
-                    const src = node.getAttribute('src');
-                    if (src && src.startsWith('cid:')) {
-                        const cid = src.substring(4); // Remove 'cid:' prefix
-                        const blobUrl = cidToBlobUrlMap.get(cid);
-                        if (blobUrl) {
-                            node.setAttribute('src', blobUrl);
-                            node.setAttribute('loading', 'lazy');
+                // and add lazy loading to all images
+                if (node.tagName === 'IMG') {
+                    const MIN_IMAGE_SIZE = 4;
+                    if (node.getAttribute('width') || node.getAttribute('height')) {
+                        const width = parseInt(node.getAttribute('width') ?? '0');
+                        const height = parseInt(node.getAttribute('height') ?? '0');
+                        if (Math.max(width, height) < MIN_IMAGE_SIZE) {
+                            node.remove();
+                        }
+                    }
+                    // Add lazy loading to all images for better performance
+                    node.setAttribute('loading', 'lazy');
+
+                    // Transform CID references if applicable
+                    if (cidToBlobUrlMap.size > 0) {
+                        const src = node.getAttribute('src');
+                        if (src && src.startsWith('cid:')) {
+                            const cid = src.substring(4); // Remove 'cid:' prefix
+                            const blobUrl = cidToBlobUrlMap.get(cid);
+                            if (blobUrl) {
+                                node.setAttribute('src', blobUrl);
+                            }
+                        }
+                        return;
+                    }
+
+                    if (node.getAttribute('src')?.startsWith('http')) {
+                        hasExternalImagesRef.current = true;
+                        if (!canDisplayExternalImages || !displayExternalImages) {
+                            node.remove();
+                            return;
+                        }
+
+                        const src = node.getAttribute('src');
+                        if (src) {
+                            node.setAttribute(
+                                'src',
+                                getRequestUrl(getMailboxesImageProxyListUrl(
+                                    selectedMailbox!.id,
+                                    { url: src },
+                                )),
+                            );
                         }
                     }
                 }
             }
         );
         return instance;
-    }, [cidToBlobUrlMap]);
+    }, [cidToBlobUrlMap, selectedMailbox, canDisplayExternalImages, displayExternalImages]);
 
     const sanitizedHtmlBody = useMemo(() => {
         if (rawHtmlBody) {
@@ -142,6 +201,7 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
                 body {
                     font-family: ${tokens.themes[cunninghamTheme].globals.font.families.base};
                     padding: ${tokens.themes[cunninghamTheme].globals.spacings.base};
+                    padding-top: 0;
                     font-size: ${tokens.themes[cunninghamTheme].globals.font.sizes.sm};
                     color: ${tokens.themes[cunninghamTheme].contextuals.content.semantic.neutral.primary};
                 }
@@ -306,10 +366,23 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
 
     const resizeIframe = useCallback(() => {
         if (iframeRef.current?.contentWindow) {
-          const height = iframeRef.current.contentWindow.document.documentElement.getBoundingClientRect().height;
-          iframeRef.current.style.height = `${height}px`;
+            const height = iframeRef.current.contentWindow.document.documentElement.getBoundingClientRect().height;
+            iframeRef.current.style.height = `${height}px`;
         }
     }, [iframeRef]);
+
+    const handleIframeLoad = useCallback(() => {
+        resizeIframe();
+        if (iframeRef.current?.contentWindow?.document) {
+            const doc = iframeRef.current.contentWindow.document;
+
+            // When details element is toggled, resize the iframe to fit the content
+            doc.querySelectorAll('details.email-quoted-content').forEach(node => {
+                node.addEventListener('toggle', resizeIframe);
+            });
+        }
+        onLoad?.();
+    }, [onLoad, resizeIframe]);
 
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
@@ -330,39 +403,43 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
         };
     }, [resizeIframe]);
 
-    const handleIframeLoad = useCallback(() => {
-        resizeIframe();
-        if (iframeRef.current?.contentWindow?.document) {
-            const doc = iframeRef.current.contentWindow.document;
-
-            // When details element is toggled, resize the iframe to fit the content
-            doc.querySelectorAll('details.email-quoted-content').forEach(node => {
-                node.addEventListener('toggle', resizeIframe);
-            });
-        }
-        onLoad?.();
-    }, [onLoad, resizeIframe]);
-
     useEffect(() => {
         if (!isHidden) {
             resizeIframe();
         }
-    }, [isHidden]);
+    }, [isHidden, showExternalImages]);
 
     return (
-        <iframe
-            title={t("Message content")}
-            style={{
-                maxHeight: isHidden ? '0px' : undefined,
-                visibility: isHidden ? 'hidden' : 'visible',
-                margin: isHidden ? '0' : undefined,
-            }}
-            ref={iframeRef}
-            className="thread-message__body"
-            srcDoc={wrappedHtml}
-            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
-            onLoad={handleIframeLoad}
-        />
+        <>
+            {canDisplayExternalImages && hasExternalImagesRef.current && !displayExternalImages &&
+                <Banner
+                    type="neutral"
+                    icon={<Icon name="security" />}
+                    compact
+                    actions={[
+                        {
+                            label: t("Display those images"),
+                            onClick: showExternalImages,
+                        }
+                    ]}
+                >
+                    {t("For your security and privacy, external images are not displayed.")}
+                </Banner>
+            }
+            <iframe
+                title={t("Message content")}
+                style={{
+                    maxHeight: isHidden ? '0px' : undefined,
+                    visibility: isHidden ? 'hidden' : 'visible',
+                    margin: isHidden ? '0' : undefined,
+                }}
+                ref={iframeRef}
+                className="thread-message__body"
+                srcDoc={wrappedHtml}
+                sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
+                onLoad={handleIframeLoad}
+            />
+        </>
     )
 }
 

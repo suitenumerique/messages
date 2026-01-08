@@ -286,6 +286,17 @@ _Those settings are deprecated and will be removed in the future._
 | `FEATURE_AI_SUMMARY` | `False` | Default enabled mode for summary AI features | Required |
 | `FEATURE_AI_AUTOLABELS` | `False` | Default enabled mode for label AI features | Required |
 
+### Image Proxy
+
+**Note**: By default `IMAGE_PROXY_MAX_SIZE` is set to 5MB. We do not encourage to increase this value as
+it can lead to memory exhaustion, increase at your own risk.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `IMAGE_PROXY_ENABLED` | `False` | Whether external images should be proxied | Optional |
+| `IMAGE_PROXY_MAX_SIZE` | `5242880` (5MB) | Maximum size in bytes for external images | Optional |
+| `IMAGE_PROXY_CACHE_TTL` | `2592000` (30 days) | Cache TTL in seconds for external images | Optional |
+
 ### Third-party Services
 
 #### Drive

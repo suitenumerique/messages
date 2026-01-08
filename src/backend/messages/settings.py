@@ -116,6 +116,21 @@ class Base(Configuration):
         500, environ_name="MAX_RECIPIENTS_PER_MESSAGE", environ_prefix=None
     )
 
+    # Image Proxy
+    IMAGE_PROXY_ENABLED = values.BooleanValue(
+        False, environ_name="IMAGE_PROXY_ENABLED", environ_prefix=None
+    )
+    IMAGE_PROXY_MAX_SIZE = values.PositiveIntegerValue(
+        5 * 1024 * 1024,  # 5 MiB
+        environ_name="IMAGE_PROXY_MAX_SIZE",
+        environ_prefix=None,
+    )
+    IMAGE_PROXY_CACHE_TTL = values.PositiveIntegerValue(
+        60 * 60 * 24 * 30,  # 30 days in seconds
+        environ_name="IMAGE_PROXY_CACHE_TTL",
+        environ_prefix=None,
+    )
+
     # Security
     ALLOWED_HOSTS = values.ListValue([])
     SECRET_KEY = values.Value(None)

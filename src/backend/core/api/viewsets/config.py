@@ -96,6 +96,11 @@ class ConfigView(drf.views.APIView):
                             ),
                             "readOnly": True,
                         },
+                        "IMAGE_PROXY_ENABLED": {
+                            "type": "boolean",
+                            "description": "Whether external images should be proxied",
+                            "readOnly": True,
+                        },
                     },
                     "required": [
                         "ENVIRONMENT",
@@ -110,6 +115,7 @@ class ConfigView(drf.views.APIView):
                         "MAX_OUTGOING_BODY_SIZE",
                         "MAX_INCOMING_EMAIL_SIZE",
                         "MAX_RECIPIENTS_PER_MESSAGE",
+                        "IMAGE_PROXY_ENABLED",
                     ],
                 },
             )
@@ -127,6 +133,7 @@ class ConfigView(drf.views.APIView):
             "LANGUAGE_CODE",
             "SCHEMA_CUSTOM_ATTRIBUTES_USER",
             "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN",
+            "IMAGE_PROXY_ENABLED",
         ]
         dict_settings = {}
         for setting in array_settings:

@@ -37,6 +37,7 @@
     border-bottom: 1px solid var(--c--contextuals--border--surface--primary);
     padding-bottom: var(--c--globals--spacings--base);
     position: relative;
+    margin-bottom: var(--c--globals--spacings--base);
 }
 
 .thread-message__header-toggle {
@@ -201,4 +202,13 @@
 
 .thread-message__reply-form {
     margin-bottom: var(--c--globals--spacings--base);
+}
+
+.banner:has(.thread-message__external-images-banner) {
+    margin-bottom: var(--c--globals--spacings--2xs);
+}
+
+.banner:has(+ .thread-message__body) {
+    margin-top: calc(var(--c--globals--spacings--xs) * -1);
+    margin-bottom: var(--c--globals--spacings--xs);
 }

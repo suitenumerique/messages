@@ -11,6 +11,7 @@ from core.api.viewsets.contacts import ContactViewSet
 from core.api.viewsets.draft import DraftMessageView
 from core.api.viewsets.drive import DriveAPIView
 from core.api.viewsets.flag import ChangeFlagView
+from core.api.viewsets.image_proxy import ImageProxyViewSet
 from core.api.viewsets.import_message import ImportViewSet, MessagesArchiveUploadViewSet
 from core.api.viewsets.inbound.mta import InboundMTAViewSet
 from core.api.viewsets.inbound.widget import InboundWidgetViewSet
@@ -65,6 +66,12 @@ thread_access_nested_router.register(
 mailbox_access_nested_router = DefaultRouter()
 mailbox_access_nested_router.register(
     r"accesses", MailboxAccessViewSet, basename="mailboxaccess"
+)
+
+# Router for /mailboxes/{mailbox_id}/image-proxy/
+mailbox_image_proxy_nested_router = DefaultRouter()
+mailbox_image_proxy_nested_router.register(
+    r"image-proxy", ImageProxyViewSet, basename="image-proxy"
 )
 
 # Router for /maildomains/{maildomain_pk}/**/
@@ -128,6 +135,12 @@ urlpatterns = [
                     include(
                         mailbox_access_nested_router.urls
                     ),  # Includes /mailboxes/{id}/accesses/
+                ),
+                path(
+                    "mailboxes/<uuid:mailbox_id>/",
+                    include(
+                        mailbox_image_proxy_nested_router.urls
+                    ),  # Includes /mailboxes/{id}/image-proxy/
                 ),
                 path(
                     "mailboxes/<uuid:mailbox_id>/",

@@ -15,6 +15,7 @@ and this project adheres to
 - Allow to search for spam messages
 - Add `is_trashed` flag to thread model
 - Add to select multiple threads in thread panel
+- Add image proxy endpoint to display external images in messages
 
 ### Changed
 
