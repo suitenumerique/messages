@@ -4,6 +4,14 @@
   display: flex;
   flex-direction: column;
   height: 100dvh;
+
+  &--resizing {
+    .c__left-panel__mobile,
+    .c__right-panel__mobile,
+    .c__right-panel {
+      transition: none !important;
+    }
+  }
 }
 
 .c__main-layout__header {

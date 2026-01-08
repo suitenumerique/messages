@@ -1,5 +1,5 @@
 import { MainLayout } from "@/features/layouts/components/main";
-import { useResponsive } from "@/features/layouts/components/main/hooks/useResponsive";
+import { useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { ThreadPanel } from "@/features/layouts/components/thread-panel";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import Image from "next/image";

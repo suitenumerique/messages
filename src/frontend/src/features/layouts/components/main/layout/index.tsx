@@ -1,15 +1,15 @@
-import { PropsWithChildren, useEffect, useState } from "react";
+import { PropsWithChildren, useEffect, useRef, useState } from "react";
 import { Header } from "../header";
-import { useResponsive } from "../hooks/useResponsive";
 import {
   Panel,
   Group,
   Separator,
   useDefaultLayout,
 } from "react-resizable-panels";
-import { DropdownMenuOption, LeftPanel } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenuOption, LeftPanel, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { useControllableState } from "../hooks/useControllableState";
 import { Toaster } from "@/features/ui/components/toaster";
+import clsx from "clsx";
 export type MainLayoutProps = {
   icon?: React.ReactNode;
   leftPanelContent?: React.ReactNode;
@@ -50,6 +50,16 @@ export const AppLayout = ({
   });
 
   const { isDesktop } = useResponsive();
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeTimeoutRef = useRef<number>(undefined);
+
+  // We need to have two different states for the left panel, we want to always keep the
+  // left panel mounted on mobile in order to show the animation when it opens or closes, instead
+  // of abruptly disappearing when closing the panel.
+  // On desktop, we want to hide the left panel when the prop is set to true, so we need to
+  // completely unmount it as it will never be visible.
+  const mountLeftPanel = isDesktop ? !hideLeftPanelOnDesktop : true;
+  const showLeftPanel = isDesktop ? !hideLeftPanelOnDesktop : isLeftPanelOpen;
 
   const [minPanelSize, setMinPanelSize] = useState(
     calculateDefaultSize(300, isDesktop)
@@ -69,7 +79,7 @@ export const AppLayout = ({
         Math.min(calculateDefaultSize(450, isDesktop), 40)
       );
 
-      setMinPanelSize(isDesktop || min > max ? min : 0);
+      setMinPanelSize(isDesktop ? min : 0);
       if (enableResize) {
         setMaxPanelSize(max);
       } else {
@@ -78,25 +88,38 @@ export const AppLayout = ({
     };
 
     updatePanelSize();
-    window.addEventListener("resize", () => {
-      updatePanelSize();
-    });
+    window.addEventListener("resize", updatePanelSize);
 
     return () => {
       window.removeEventListener("resize", updatePanelSize);
     };
   }, [isDesktop, enableResize]);
 
-  // We need to have two different states for the left panel, we want to always keep the
-  // left panel mounted on mobile in order to show the animation when it opens or closes, instead
-  // of abruptly disappearing when closing the panel.
-  // On desktop, we want to hide the left panel when the prop is set to true, so we need to
-  // completely unmount it as it will never be visible.
-  const mountLeftPanel = isDesktop ? !hideLeftPanelOnDesktop : true;
-  const showLeftPanel = isDesktop ? !hideLeftPanelOnDesktop : isLeftPanelOpen;
+  // Disable transitions during window resize to prevent panels from being visible
+  useEffect(() => {
+    const handleResizeStart = () => {
+      setIsResizing(true);
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+      resizeTimeoutRef.current = window.setTimeout(() => {
+        setIsResizing(false);
+      }, 150);
+    };
+
+    window.addEventListener("resize", handleResizeStart);
+
+    return () => {
+      window.removeEventListener("resize", handleResizeStart);
+
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
-    <div className="c__main-layout">
+    <div className={clsx("c__main-layout", isResizing && "c__main-layout--resizing")}>
       <div className="c__main-layout__header">
         <Header
           onTogglePanel={onTogglePanel}
