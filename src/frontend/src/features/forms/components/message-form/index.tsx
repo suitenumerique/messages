@@ -84,8 +84,6 @@ export const MessageForm = ({
         if (mode === 'new') return PreferSendMode.SEND;
         return localStorage.getItem(PREFER_SEND_MODE_KEY) as PreferSendMode ?? PreferSendMode.SEND;
     });
-    const [showCCField, setShowCCField] = useState((draftMessage?.cc?.length ?? 0) > 0);
-    const [showBCCField, setShowBCCField] = useState((draftMessage?.bcc?.length ?? 0) > 0);
     const [pendingMutation, setPendingMutation] = useState<Map<'delete' | 'send', () => void>>(new Map());
     const dequeueMutation = (type: 'delete' | 'send') => {
         setPendingMutation((prev) => {
@@ -109,7 +107,7 @@ export const MessageForm = ({
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
     const quoteType: QuoteType | undefined = mode !== "new" ? (mode === "forward" ? "forward" : "reply") : undefined;
     const { selectedMailbox, mailboxes, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
-    const hideSubjectField = Boolean(parentMessage);
+    const hideSubjectField = Boolean(draftMessage?.parent_id ?? parentMessage);
     const defaultSenderId = mailboxes?.find((mailbox) => {
         if (draft?.sender) return draft.sender.email === mailbox.email;
         return selectedMailbox?.id === mailbox.id;
@@ -125,15 +123,14 @@ export const MessageForm = ({
         }));
     }
 
-    const recipients = useMemo(() => {
+    const toRecipients = useMemo(() => {
         if (draft) return draft.to.map(({ contact }) => contact.email);
         if (!mode.startsWith("reply") || !parentMessage) return [];
 
         if (mode === "reply_all") {
             return [...new Set([
                 { contact: { email: parentMessage.sender.email } },
-                ...parentMessage.to,
-                ...parentMessage.cc
+                ...parentMessage.to
             ]
                 .filter(({ contact }) => contact.email !== selectedMailbox!.email)
                 .map(({ contact }) => contact.email)
@@ -154,6 +151,19 @@ export const MessageForm = ({
         }
         return [parentMessage.sender.email];
     }, [parentMessage, mode, selectedMailbox]);
+
+    const ccRecipients = useMemo(() => {
+        if (draft) return draft.cc.map(({ contact }) => contact.email);
+        if (mode === "reply_all" && parentMessage) {
+            return parentMessage.cc
+                .filter(({ contact }) => contact.email !== selectedMailbox!.email)
+                .map(({ contact }) => contact.email);
+        }
+        return [];
+    }, [parentMessage, mode, draft, selectedMailbox]);
+
+    const [showCCField, setShowCCField] = useState(ccRecipients.length > 0);
+    const [showBCCField, setShowBCCField] = useState((draftMessage?.bcc?.length ?? 0) > 0);
 
     const getDefaultSubject = () => {
         if (draft?.subject) return draft.subject
@@ -176,8 +186,8 @@ export const MessageForm = ({
         const [draftBody, draftDriveAttachments] = MailHelper.extractDriveAttachmentsFromDraft(draft?.draftBody ?? '');
         return {
             from: defaultSenderId ?? '',
-            to: draft?.to?.map(({ contact }) => contact.email) ?? recipients,
-            cc: draft?.cc?.map(({ contact }) => contact.email) ?? [],
+            to: toRecipients,
+            cc: ccRecipients,
             bcc: draft?.bcc?.map(({ contact }) => contact.email) ?? [],
             subject: getDefaultSubject(),
             messageDraftBody: draftBody,
