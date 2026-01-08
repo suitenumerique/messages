@@ -348,6 +348,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                     attachments={message.attachments}
                     messageId={message.id}
                     isHidden={isFolded || !isMessageReady}
+                    senderEmail={message.sender.email}
                     onLoad={() => {
                         setIsMessageBodyLoaded(true);
                     }}

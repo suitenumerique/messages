@@ -21,6 +21,7 @@ type MessageBodyProps = {
     messageId: string;
     isHidden?: boolean;
     onLoad?: () => void;
+    senderEmail: string;
 }
 
 const CSP = [
@@ -51,7 +52,11 @@ const CSP = [
     "frame-ancestors 'none'",
 ].join('; ');
 
+<<<<<<< Updated upstream
 const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden = false, messageId, onLoad }: MessageBodyProps) => {
+=======
+const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden = false, onLoad, senderEmail }: MessageBodyProps) => {
+>>>>>>> Stashed changes
     const { t } = useTranslation();
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const { cunninghamTheme, variant } = useTheme();
@@ -417,8 +422,24 @@ const MessageBody = ({ rawHtmlBody, rawTextBody = '', attachments = [], isHidden
                     actions={[
                         {
                             label: t("Display those images"),
+<<<<<<< Updated upstream
                             onClick: showExternalImages,
                         }
+=======
+                            onClick: () => setShowExternalImages(!showExternalImages),
+                        },
+                        {
+                            label: t("Always display images from {{sender_email}}", { sender_email: senderEmail }),
+                            onClick: () => setShowExternalImages(!showExternalImages),
+                            style: {
+                                // As this button label can be very long, we need to allow it to wrap
+                                whiteSpace: 'inherit',
+                                textWrap: 'balance',
+                                textAlign: 'left',
+                                height: 'auto',
+                            }
+                        },
+>>>>>>> Stashed changes
                     ]}
                 >
                     {t("For your security and privacy, external images are not displayed.")}
