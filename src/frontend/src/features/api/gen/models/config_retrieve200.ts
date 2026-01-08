@@ -26,4 +26,6 @@ export type ConfigRetrieve200 = {
   readonly MAX_OUTGOING_BODY_SIZE: number;
   /** Maximum size in bytes for incoming email (including attachments and body) */
   readonly MAX_INCOMING_EMAIL_SIZE: number;
+  /** Whether external images should be proxied */
+  readonly IMAGE_PROXY_ENABLED: boolean;
 };

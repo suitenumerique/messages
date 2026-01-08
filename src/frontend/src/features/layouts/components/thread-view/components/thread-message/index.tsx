@@ -132,20 +132,18 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                     <div>
                         {
                             message.is_trashed && (
-                                <Banner type="info" icon={<span className="material-icons">restore_from_trash</span>} fullWidth>
-                                    <div className="thread-view__trashed-banner__content">
-                                        <p>{t('This message has been deleted.')}</p>
-                                        <div className="thread-view__trashed-banner__actions">
-                                            <Button
-                                                onClick={() => markAsUntrashed({ messageIds: [message.id] })}
-                                                color="info"
-                                                variant="tertiary"
-                                                size="nano"
-                                            >
-                                                {t('Undelete')}
-                                            </Button>
-                                        </div>
-                                    </div>
+                                <Banner
+                                    type="info"
+                                    icon={<span className="material-icons">restore_from_trash</span>}
+                                    fullWidth
+                                    actions={[
+                                        {
+                                            label: t('Undelete'),
+                                            onClick: () => markAsUntrashed({ messageIds: [message.id] }),
+                                        }
+                                    ]}
+                                >
+                                    <p>{t('This message has been deleted.')}</p>
                                 </Banner>
                             )}
                         <div className="thread-message__header-rows" style={{ marginBottom: 'var(--c--globals--spacings--sm)' }}>
@@ -348,6 +346,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                     rawTextBody={textBody}
                     rawHtmlBody={htmlBody}
                     attachments={message.attachments}
+                    messageId={message.id}
                     isHidden={isFolded || !isMessageReady}
                     onLoad={() => {
                         setIsMessageBodyLoaded(true);
