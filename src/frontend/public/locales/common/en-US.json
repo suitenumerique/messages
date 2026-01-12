@@ -382,6 +382,7 @@
   "You cannot delete the last editor of this thread": "You cannot delete the last editor of this thread",
   "You cannot modify it.": "You cannot modify it.",
   "You have aborted the upload.": "You have aborted the upload.",
+  "You have {{count}} recipients, which exceeds the maximum of {{max}} recipients per message. The message cannot be sent until you reduce the number of recipients.": "You have {{count}} recipients, which exceeds the maximum of {{max}} recipients per message. The message cannot be sent until you reduce the number of recipients.",
   "You must confirm this statement.": "You must confirm this statement.",
   "Your email...": "Your email...",
   "Your messages have been imported successfully!": "Your messages have been imported successfully!",

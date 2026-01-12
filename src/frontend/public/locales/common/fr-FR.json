@@ -399,6 +399,7 @@
   "You cannot delete the last editor of this thread": "Vous ne pouvez pas supprimer le dernier éditeur de cette conversation",
   "You cannot modify it.": "Vous ne pouvez pas la modifier.",
   "You have aborted the upload.": "Vous avez annulé le téléversement.",
+  "You have {{count}} recipients, which exceeds the maximum of {{max}} recipients per message. The message cannot be sent until you reduce the number of recipients.": "Vous avez {{count}} destinataires, ce qui dépasse le maximum de {{max}} destinataires par message. Le message ne peut pas être envoyé tant que vous n'avez pas réduit le nombre de destinataires.",
   "You must confirm this statement.": "Vous devez confirmer cette déclaration.",
   "Your email...": "Renseigner votre email...",
   "Your messages have been imported successfully!": "Vos messages ont été importés avec succès !",

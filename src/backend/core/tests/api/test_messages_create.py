@@ -6,6 +6,7 @@ import random
 import uuid
 from unittest.mock import patch
 
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -805,6 +806,92 @@ class TestApiDraftAndSendMessage:
 
         # Should fail due to max_length constraint
         assert draft_response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @override_settings(MAX_RECIPIENTS_PER_MESSAGE=3)
+    @patch("core.mda.outbound.send_outbound_message")
+    def test_send_message_recipient_limit_enforced_at_send_time(
+        self, mock_send_outbound_message, mailbox, authenticated_user, send_url
+    ):
+        """Test that recipient limit is enforced at send time."""
+        mock_send_outbound_message.side_effect = (
+            lambda recipient_emails, message, blob_content: {
+                recipient_email: {
+                    "delivered": True,
+                    "error": None,
+                }
+                for recipient_email in recipient_emails
+            }
+        )
+
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.SENDER,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        # Step 1: Create draft with 4 recipients (exceeds limit of 3) - should succeed
+        # Drafts can be created with any number of recipients
+        draft_response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "Test message",
+                "draftBody": "Test content",
+                "to": ["a@example.com"],
+                "cc": ["b@example.com", "c@example.com"],
+                "bcc": ["d@example.com"],
+            },
+            format="json",
+        )
+
+        assert draft_response.status_code == status.HTTP_201_CREATED
+        draft_message_id = draft_response.data["id"]
+
+        # Step 2: Try to send the draft - should fail due to recipient limit
+        send_response = client.post(
+            send_url,
+            {
+                "messageId": draft_message_id,
+                "senderId": str(mailbox.id),
+                "textBody": "Test content",
+            },
+            format="json",
+        )
+
+        assert send_response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Too many recipients" in str(send_response.data.get("message", ""))
+
+        # Step 3: Update draft to remove one recipient (now 3 recipients, within limit) - should succeed
+        update_response = client.put(
+            f"{reverse('draft-message')}{draft_message_id}/",
+            {
+                "senderId": mailbox.id,
+                "subject": "Test message",
+                "draftBody": "Test content",
+                "to": ["a@example.com"],
+                "cc": ["b@example.com"],  # remove one recipient
+                "bcc": ["d@example.com"],
+            },
+            format="json",
+        )
+
+        assert update_response.status_code == status.HTTP_200_OK
+
+        # Step 4: Try to send the updated draft - should succeed now
+        send_response = client.post(
+            send_url,
+            {
+                "messageId": draft_message_id,
+                "senderId": str(mailbox.id),
+                "textBody": "Test content",
+            },
+            format="json",
+        )
+
+        assert send_response.status_code == status.HTTP_200_OK
 
     def test_send_nonexistent_message(self, mailbox, authenticated_user, send_url):
         """Test sending a message that does not exist."""

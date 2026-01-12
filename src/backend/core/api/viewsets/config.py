@@ -82,7 +82,18 @@ class ConfigView(drf.views.APIView):
                         },
                         "MAX_INCOMING_EMAIL_SIZE": {
                             "type": "integer",
-                            "description": "Maximum size in bytes for incoming email (including attachments and body)",
+                            "description": (
+                                "Maximum size in bytes for incoming email "
+                                "(including attachments and body)"
+                            ),
+                            "readOnly": True,
+                        },
+                        "MAX_RECIPIENTS_PER_MESSAGE": {
+                            "type": "integer",
+                            "description": (
+                                "Maximum number of recipients per message "
+                                "(to + cc + bcc)"
+                            ),
                             "readOnly": True,
                         },
                     },
@@ -98,6 +109,7 @@ class ConfigView(drf.views.APIView):
                         "MAX_OUTGOING_ATTACHMENT_SIZE",
                         "MAX_OUTGOING_BODY_SIZE",
                         "MAX_INCOMING_EMAIL_SIZE",
+                        "MAX_RECIPIENTS_PER_MESSAGE",
                     ],
                 },
             )
@@ -132,6 +144,9 @@ class ConfigView(drf.views.APIView):
         )
         dict_settings["MAX_OUTGOING_BODY_SIZE"] = settings.MAX_OUTGOING_BODY_SIZE
         dict_settings["MAX_INCOMING_EMAIL_SIZE"] = settings.MAX_INCOMING_EMAIL_SIZE
+        dict_settings["MAX_RECIPIENTS_PER_MESSAGE"] = (
+            settings.MAX_RECIPIENTS_PER_MESSAGE
+        )
 
         # Drive service
         if base_url := settings.DRIVE_CONFIG.get("base_url"):

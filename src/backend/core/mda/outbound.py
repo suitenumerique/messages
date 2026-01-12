@@ -54,6 +54,20 @@ def prepare_outbound_message(
     This part is called synchronously from the API view.
     """
 
+    # Enforce per-message recipient limit (to + cc + bcc)
+    recipient_count = message.recipients.count()
+    max_recipients = settings.MAX_RECIPIENTS_PER_MESSAGE
+    if recipient_count > max_recipients:
+        raise drf.exceptions.ValidationError(
+            {
+                "message": _(
+                    "Too many recipients: %(count)s (maximum is %(max)s). "
+                    "Please reduce the number of recipients before sending."
+                )
+                % {"count": recipient_count, "max": max_recipients}
+            }
+        )
+
     # Get recipients from the MessageRecipient model
     recipients_by_type = {
         kind: [{"name": contact.name, "email": contact.email} for contact in contacts]

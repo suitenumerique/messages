@@ -222,6 +222,11 @@
                                             "type": "integer",
                                             "description": "Maximum size in bytes for incoming email (including attachments and body)",
                                             "readOnly": true
+                                        },
+                                        "MAX_RECIPIENTS_PER_MESSAGE": {
+                                            "type": "integer",
+                                            "description": "Maximum number of recipients per message (to + cc + bcc)",
+                                            "readOnly": true
                                         }
                                     },
                                     "required": [
@@ -235,7 +240,8 @@
                                         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN",
                                         "MAX_OUTGOING_ATTACHMENT_SIZE",
                                         "MAX_OUTGOING_BODY_SIZE",
-                                        "MAX_INCOMING_EMAIL_SIZE"
+                                        "MAX_INCOMING_EMAIL_SIZE",
+                                        "MAX_RECIPIENTS_PER_MESSAGE"
                                     ]
                                 }
                             }

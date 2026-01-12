@@ -111,6 +111,11 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    # Maximum total recipients (to + cc + bcc) allowed per message for the entire system
+    MAX_RECIPIENTS_PER_MESSAGE = values.PositiveIntegerValue(
+        500, environ_name="MAX_RECIPIENTS_PER_MESSAGE", environ_prefix=None
+    )
+
     # Security
     ALLOWED_HOSTS = values.ListValue([])
     SECRET_KEY = values.Value(None)

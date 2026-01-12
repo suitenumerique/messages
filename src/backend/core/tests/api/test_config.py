@@ -27,6 +27,7 @@ pytestmark = pytest.mark.django_db
     MAX_OUTGOING_ATTACHMENT_SIZE=20971520,  # 20MB
     MAX_OUTGOING_BODY_SIZE=5242880,  # 5MB
     MAX_INCOMING_EMAIL_SIZE=10485760,  # 10MB
+    MAX_RECIPIENTS_PER_MESSAGE=42,
 )
 @pytest.mark.parametrize("is_authenticated", [False, True])
 def test_api_config(is_authenticated):
@@ -51,6 +52,7 @@ def test_api_config(is_authenticated):
         "MAX_INCOMING_EMAIL_SIZE": 10485760,
         "MAX_OUTGOING_ATTACHMENT_SIZE": 20971520,
         "MAX_OUTGOING_BODY_SIZE": 5242880,
+        "MAX_RECIPIENTS_PER_MESSAGE": 42,
     }
 
 

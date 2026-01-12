@@ -25,6 +25,7 @@ import i18n from "@/features/i18n/initI18n";
 import { DropdownButton } from "@/features/ui/components/dropdown-button";
 import { PREFER_SEND_MODE_KEY, PreferSendMode } from "@/features/config/constants";
 import { useSearchParams } from "next/navigation";
+import { useConfig } from "@/features/providers/config";
 
 export type MessageFormMode = "new" | "reply" | "reply_all" | "forward";
 
@@ -79,6 +80,7 @@ export const MessageForm = ({
     const { t } = useTranslation();
     const router = useRouter();
     const searchParams = useSearchParams();
+    const config = useConfig();
     const [draft, setDraft] = useState<Message | undefined>(draftMessage);
     const [preferredSendMode, setPreferredSendMode] = useState<PreferSendMode>(() => {
         if (mode === 'new') return PreferSendMode.SEND;
@@ -222,6 +224,21 @@ export const MessageForm = ({
         name: "driveAttachments",
     }) || [];
 
+    const currentToRecipients = useWatch({
+        control: form.control,
+        name: "to",
+    }) || [];
+
+    const currentCcRecipients = useWatch({
+        control: form.control,
+        name: "cc",
+    }) || [];
+
+    const currentBccRecipients = useWatch({
+        control: form.control,
+        name: "bcc",
+    }) || [];
+
     const currentSenderId = useWatch({
         control: form.control,
         name: "from",
@@ -238,6 +255,15 @@ export const MessageForm = ({
     const showAttachmentsForgetAlert = useMemo(() => {
         return MailHelper.areAttachmentsMentionedInDraft(messageDraftBody) && attachments.length === 0 && driveAttachments.length === 0;
     }, [messageDraftBody, attachments, driveAttachments]);
+
+    const totalRecipients = useMemo(() => {
+        return (currentToRecipients?.length || 0) + (currentCcRecipients?.length || 0) + (currentBccRecipients?.length || 0);
+    }, [currentToRecipients, currentCcRecipients, currentBccRecipients]);
+
+    const showRecipientLimitWarning = useMemo(() => {
+        const maxRecipients = config.MAX_RECIPIENTS_PER_MESSAGE;
+        return maxRecipients > 0 && totalRecipients > maxRecipients;
+    }, [config.MAX_RECIPIENTS_PER_MESSAGE, totalRecipients]);
 
     const messageMutation = useSendCreate({
         mutation: {
@@ -617,6 +643,12 @@ export const MessageForm = ({
                     </Banner>
                 }
 
+                {showRecipientLimitWarning &&
+                    <Banner type="warning">
+                        {t("You have {{count}} recipients, which exceeds the maximum of {{max}} recipients per message. The message cannot be sent until you reduce the number of recipients.", { count: totalRecipients, max: config.MAX_RECIPIENTS_PER_MESSAGE })}
+                    </Banner>
+                }
+
                 <AttachmentUploader
                     initialAttachments={initialAttachments}
                     onChange={form.handleSubmit(saveDraft)}
@@ -639,7 +671,7 @@ export const MessageForm = ({
                 <footer className="form-footer">
                     <DropdownButton
                         variant="primary"
-                        disabled={!canSendMessages || isSubmittingMessage}
+                        disabled={!canSendMessages || isSubmittingMessage || showRecipientLimitWarning}
                         type="submit"
                         dropdownOptions={[
                             ...(mode !== 'new' ? [{
