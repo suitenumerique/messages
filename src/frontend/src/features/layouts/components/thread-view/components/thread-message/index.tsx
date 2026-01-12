@@ -80,7 +80,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
             return [processedParts, allDriveAttachments] as const;
         }, [message.htmlBody]);
 
-        // Process text body parts (for drive attachments if no HTML)
+        // Process text body parts
         const processedTextBody = useMemo(() => {
             if (message.textBody.length === 0) {
                 return [];
@@ -89,6 +89,7 @@ export const ThreadMessage = forwardRef<HTMLElement, ThreadMessageProps>(
                 const partContent = part?.content ?? "";
                 const partType = part?.type ?? "text/plain";
                 const partId = part?.partId ?? "";
+                // Extract and process drive attachment URLs from text content
                 const [content] = MailHelper.extractDriveAttachmentsFromTextBody(partContent);
                 return { partId, type: partType, content };
             });

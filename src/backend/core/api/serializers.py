@@ -618,13 +618,9 @@ class MessageRecipientSerializer(serializers.ModelSerializer):
 
 class MessageBodyItemSerializer(serializers.Serializer):
     """Message body item serializer."""
-    partId = serializers.CharField(required=False)
-    type = serializers.CharField(required=False)
-    content = serializers.CharField(required=False)
-
-    class Meta:
-        fields = ["partId", "type", "content"]
-        read_only_fields = fields
+    partId = serializers.CharField()
+    type = serializers.CharField()
+    content = serializers.CharField(allow_blank=True)
 
 class MessageSerializer(serializers.ModelSerializer):
     """

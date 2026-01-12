@@ -10,7 +10,7 @@
  * Message body item serializer.
  */
 export interface MessageBodyItem {
-  partId?: string;
-  type?: string;
-  content?: string;
+  partId: string;
+  type: string;
+  content: string;
 }

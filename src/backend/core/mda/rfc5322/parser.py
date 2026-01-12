@@ -170,7 +170,7 @@ def _infer_filename_from_content_type(content_type: str) -> str:
 
 
 def _sanitize_filename(filename: str, max_length: int = 255) -> str:
-    """Sanitize an attachment filename."""
+    """Sanitize an attachment filename, preserving the extension when truncating."""
 
     filename = nt_basename(posix_basename(filename))
 
@@ -182,7 +182,21 @@ def _sanitize_filename(filename: str, max_length: int = 255) -> str:
     # Remove dangerous characters
     filename = re.sub(r'[<>:"|?*\\/]', "_", filename)
 
-    return filename[:max_length]
+    # Truncate while preserving extension
+    if len(filename) > max_length:
+        # Find the last dot for extension (but not at the start like .gitignore)
+        last_dot = filename.rfind(".")
+        if last_dot > 0:
+            name = filename[:last_dot]
+            ext = filename[last_dot:]
+            # Only preserve extension if it's reasonable length (up to 10 chars including dot)
+            if len(ext) <= 10:
+                max_name_length = max_length - len(ext)
+                if max_name_length > 0:
+                    return name[:max_name_length] + ext
+        return filename[:max_length]
+
+    return filename
 
 
 def _build_attachment_dict(

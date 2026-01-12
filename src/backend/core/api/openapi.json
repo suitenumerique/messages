@@ -6532,7 +6532,12 @@
                     "content": {
                         "type": "string"
                     }
-                }
+                },
+                "required": [
+                    "content",
+                    "partId",
+                    "type"
+                ]
             },
             "MessageDeliveryStatusChoices": {
                 "type": "string",

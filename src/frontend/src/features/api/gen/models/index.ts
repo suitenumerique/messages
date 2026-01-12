@@ -91,7 +91,6 @@ export * from "./message_stmsg_headers";
 export * from "./message_template";
 export * from "./message_template_request";
 export * from "./message_template_type_choices";
-export * from "./messages_list_params";
 export * from "./paginated_drive_item_response";
 export * from "./paginated_mail_domain_admin_list";
 export * from "./paginated_mailbox_access_read_list";
