@@ -483,29 +483,37 @@ class TestSearchModifiersE2E:
     def test_search_e2e_modifiers_to_search_modifier(
         self, setup_search, api_client, test_url, test_threads
     ):
-        """Test searching with the 'to:' modifier."""
+        """
+        Test searching with the 'to:' modifier.
+        It looks for messages where recipient fields (to, cc, bcc) contain the given email address.
+        """
 
         # Test English version
-        response = api_client.get(f"{test_url}?search=to:sarah@example.com")
+        response = api_client.get(f"{test_url}?search=to:robert@example.com")
 
         # Verify response
         assert response.status_code == 200
 
         # Check if the correct threads are found
+        assert len(response.data["results"]) == 2
         thread_ids = [t["id"] for t in response.data["results"]]
-        assert str(test_threads["thread1"].id) in thread_ids
+        assert str(test_threads["thread2"].id) in thread_ids
+        assert str(test_threads["thread10"].id) in thread_ids
 
         # Test French version
-        response = api_client.get(f"{test_url}?search=à:sarah@example.com")
+        response = api_client.get(f"{test_url}?search=à:robert@example.com")
 
         # Verify the same results
         assert response.status_code == 200
+        assert len(response.data["results"]) == 2
         thread_ids = [t["id"] for t in response.data["results"]]
-        assert str(test_threads["thread1"].id) in thread_ids
+        assert str(test_threads["thread2"].id) in thread_ids
+        assert str(test_threads["thread10"].id) in thread_ids
 
     def test_search_e2e_modifiers_to_search_modifier_substring(
         self, setup_search, api_client, test_url, test_threads
     ):
+        """Test searching with the 'to:' modifier with substring search."""
         # Test substring search
         response = api_client.get(f"{test_url}?search=to:@example.com")
         assert response.status_code == 200
@@ -518,6 +526,31 @@ class TestSearchModifiersE2E:
         response = api_client.get(f"{test_url}?search=to:examples")
         assert response.status_code == 200
         assert len(response.data["results"]) == 0
+
+    def test_search_e2e_modifiers_to_exact_search_modifier(
+        self, setup_search, api_client, test_url, test_threads
+    ):
+        """Test searching with the 'to_exact:' modifier."""
+
+        # Test English version
+        response = api_client.get(f"{test_url}?search=to_exact:robert@example.com")
+
+        # Verify response
+        assert response.status_code == 200
+
+        # Check if the correct threads are found
+        assert len(response.data["results"]) == 1
+        thread_ids = [t["id"] for t in response.data["results"]]
+        assert str(test_threads["thread10"].id) in thread_ids
+
+        # Test French version
+        response = api_client.get(f"{test_url}?search=à_exact:robert@example.com")
+
+        # Verify the same results
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 1
+        thread_ids = [t["id"] for t in response.data["results"]]
+        assert str(test_threads["thread10"].id) in thread_ids
 
     def test_search_e2e_modifiers_cc_search_modifier(
         self, setup_search, api_client, test_url, test_threads

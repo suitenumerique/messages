@@ -87,14 +87,24 @@ def test_search_threads_with_multiple_modifiers(mock_es_client):
     assert sender_query_found, "Sender query was not found in the OpenSearch query"
 
     # Check for to filter
-    to_query_found = False
-    for filter_item in call_args["body"]["query"]["bool"]["filter"]:
-        if "term" in filter_item and "to_email" in filter_item["term"]:
-            to_query_found = True
-            assert filter_item["term"]["to_email"] == "sarah@example.com"
+    to_query_found = 0
+    for filter_item in call_args["body"]["query"]["bool"]["should"]:
+        if "term" in filter_item:
+            if "to_email" in filter_item["term"]:
+                to_query_found += 1
+                assert filter_item["term"]["to_email"] == "sarah@example.com"
+            elif "cc_email" in filter_item["term"]:
+                to_query_found += 1
+                assert filter_item["term"]["cc_email"] == "sarah@example.com"
+            elif "bcc_email" in filter_item["term"]:
+                to_query_found += 1
+                assert filter_item["term"]["bcc_email"] == "sarah@example.com"
+        if to_query_found == 3:
             break
 
-    assert to_query_found, "To query was not found in the OpenSearch query"
+    assert to_query_found == 3, (
+        "Not all expected queries were found in the OpenSearch query (3 expected - to, cc, bcc)"
+    )
 
     # Check for subject filter
     subject_query_found = False

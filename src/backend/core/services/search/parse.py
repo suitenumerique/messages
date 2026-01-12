@@ -10,7 +10,8 @@ def parse_search_query(query: str) -> Dict[str, Any]:
 
     Supports Gmail-style modifiers:
     - from: (de:) - sender email/name
-    - to: (a:) - recipient
+    - to: (a:) - recipient (includes `to`, `cc`, `bcc` fields)
+    - to_exact: (a_exact:) - exact recipient match (`to` field only)
     - cc: (copie:) - carbon copy
     - bcc: (cci:) - blind carbon copy
     - subject: (sujet:) - subject text
@@ -41,6 +42,7 @@ def parse_search_query(query: str) -> Dict[str, Any]:
         # Value-taking modifiers
         "from": ["from:", "de:", "van:"],
         "to": ["to:", "a:", "à:", "aan:"],
+        "to_exact": ["to_exact:", "a_exact:", "à_exact:", "aan_exact:"],
         "cc": ["cc:", "copie:"],
         "bcc": ["bcc:", "cci:"],
         "subject": ["subject:", "sujet:", "objet:", "onderwerp:"],
@@ -56,7 +58,7 @@ def parse_search_query(query: str) -> Dict[str, Any]:
     }
 
     # Split modifiers into value-taking and flag modifiers
-    value_modifiers = ["from", "to", "cc", "bcc", "subject"]
+    value_modifiers = ["from", "to", "cc", "bcc", "to_exact", "subject"]
     flag_modifiers = {
         "in_trash": "in_trash",
         "in_sent": "in_sent",

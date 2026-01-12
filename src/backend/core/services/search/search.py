@@ -116,26 +116,38 @@ def search_threads(
 
         # Add recipient filters (to, cc, bcc) using new mapping fields
         recipient_fields = {
-            "to": ("to_email", "to_name"),
-            "cc": ("cc_email", "cc_name"),
-            "bcc": ("bcc_email", "bcc_name"),
+            "to": (
+                ("to_email", "cc_email", "bcc_email"),
+                ("to_name", "cc_name", "bcc_name"),
+            ),
+            "to_exact": (("to_email",), ("to_name",)),
+            "cc": (("cc_email",), ("cc_name",)),
+            "bcc": (("bcc_email",), ("bcc_name",)),
         }
-        for recipient_type, (email_field, name_field) in recipient_fields.items():
+        for recipient_type, (email_fields, name_fields) in recipient_fields.items():
             if recipient_type in parsed_query:
                 for recipient in parsed_query[recipient_type]:
                     if "@" in recipient and not recipient.startswith("@"):
-                        # Exact email match
-                        search_body["query"]["bool"]["filter"].append(
-                            {"term": {email_field: recipient.lower()}}
-                        )
-                    else:
-                        # Substring match on email and name
+                        # Exact email match - must match at least one of the email fields
                         search_body["query"]["bool"]["should"].extend(
                             [
-                                {"match": {email_field + ".text": recipient.lower()}},
-                                {"wildcard": {name_field: f"*{recipient}*"}},
+                                {"term": {field: recipient.lower()}}
+                                for field in email_fields
                             ]
                         )
+                        search_body["query"]["bool"]["minimum_should_match"] = 1
+                    else:
+                        # Substring match on email and name fields
+                        should_clauses = []
+                        for field in email_fields:
+                            should_clauses.append(
+                                {"match": {field + ".text": recipient.lower()}}
+                            )
+                        for field in name_fields:
+                            should_clauses.append(
+                                {"wildcard": {field: f"*{recipient}*"}}
+                            )
+                        search_body["query"]["bool"]["should"].extend(should_clauses)
                         search_body["query"]["bool"]["minimum_should_match"] = 1
 
         # Add subject filter
