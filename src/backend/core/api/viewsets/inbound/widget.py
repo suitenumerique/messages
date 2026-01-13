@@ -2,6 +2,7 @@
 
 import logging
 from html import escape as html_escape
+from urllib.parse import urlparse
 
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
@@ -125,13 +126,17 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             return header.replace("\r", "").replace("\n", "")[0:1000]
 
         prepend_headers = [("X-StMsg-Sender-Auth", "none")]
+        source_name = "widget"
         if request.META.get("HTTP_REFERER"):
-            prepend_headers.append(
-                (
-                    "X-StMsg-Widget-Referer",
-                    sanitize_header(request.META.get("HTTP_REFERER")),
-                ),
-            )
+            referer = sanitize_header(request.META.get("HTTP_REFERER"))
+            prepend_headers.append(("X-StMsg-Widget-Referer", referer))
+            try:
+                parsed_referer = urlparse(referer)
+                if parsed_referer.netloc:
+                    source_name = parsed_referer.netloc
+            except ValueError as e:
+                logger.warning("Cannot retrieve netloc from referer %s: %s", referer, e)
+
         prepend_headers.append(
             (
                 "Received",
@@ -140,8 +145,9 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         )
 
         # Build a JMAP-like structured format that we could have got from parse_email_message()
+
         parsed_email = {
-            "subject": "Message from widget",
+            "subject": f"Message from {source_name}",
             "from": {"email": sender_email},
             "to": [{"name": target_name, "email": target_email}],
             "date": timezone.now(),

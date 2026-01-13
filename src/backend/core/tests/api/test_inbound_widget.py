@@ -57,7 +57,7 @@ def fixture_channel_without_mailbox():
 
 
 @pytest.mark.django_db
-def test_channel_model():
+def test_inbound_widget_channel_model():
     """Test the Channel model."""
     with pytest.raises(ValidationError):
         factories.ChannelFactory(
@@ -76,7 +76,7 @@ def test_channel_model():
 class TestWidgetAuthentication:
     """Test the WidgetAuthentication class."""
 
-    def test_authenticate_with_valid_channel_id(self, channel):
+    def test_inbound_widget_authenticate_with_valid_channel_id(self, channel):
         """Test authentication with valid channel ID."""
         auth = WidgetAuthentication()
 
@@ -95,7 +95,7 @@ class TestWidgetAuthentication:
         assert user is None
         assert auth_data["channel"] == channel
 
-    def test_authenticate_with_missing_channel_id(self):
+    def test_inbound_widget_authenticate_with_missing_channel_id(self):
         """Test authentication fails with missing channel ID."""
         auth = WidgetAuthentication()
 
@@ -112,7 +112,7 @@ class TestWidgetAuthentication:
         with pytest.raises(AuthenticationFailed, match="Missing channel_id"):
             auth.authenticate(request)
 
-    def test_authenticate_with_invalid_channel_id(self):
+    def test_inbound_widget_authenticate_with_invalid_channel_id(self):
         """Test authentication fails with invalid channel ID."""
         auth = WidgetAuthentication()
 
@@ -134,7 +134,7 @@ class TestWidgetAuthentication:
 class TestInboundWidgetConfig:
     """Test the config endpoint."""
 
-    def test_config_success(self, api_client, channel):
+    def test_inbound_widget_config_success(self, api_client, channel):
         """Test successful config retrieval."""
         response = api_client.get(
             "/api/v1.0/inbound/widget/config/",
@@ -147,7 +147,7 @@ class TestInboundWidgetConfig:
             "config": {"enabled": True, "theme": "light"},
         }
 
-    def test_config_with_empty_settings(self, api_client):
+    def test_inbound_widget_config_with_empty_settings(self, api_client):
         """Test config with empty settings."""
         channel = factories.ChannelFactory(type="widget", settings={})
 
@@ -159,7 +159,7 @@ class TestInboundWidgetConfig:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {"success": True, "config": {}}
 
-    def test_config_without_authentication(self, api_client):
+    def test_inbound_widget_config_without_authentication(self, api_client):
         """Test config endpoint without authentication."""
         response = api_client.get("/api/v1.0/inbound/widget/config/")
 
@@ -171,7 +171,7 @@ class TestInboundWidgetDeliver:
     """Test the deliver endpoint."""
 
     @patch("core.api.viewsets.inbound.widget.deliver_inbound_message")
-    def test_deliver_success(
+    def test_inbound_widget_deliver_success(
         self, mock_deliver, api_client, channel, channel_with_mailbox_contact
     ):
         """Test successful message delivery."""
@@ -205,7 +205,7 @@ class TestInboundWidgetDeliver:
 
             mock_deliver.reset_mock()
 
-    def test_deliver_missing_email(self, api_client, channel):
+    def test_inbound_widget_deliver_missing_email(self, api_client, channel):
         """Test deliver with missing email."""
         data = {"textBody": "This is a test message."}
 
@@ -218,7 +218,7 @@ class TestInboundWidgetDeliver:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.json() == {"detail": "Missing email"}
 
-    def test_deliver_invalid_email(self, api_client, channel):
+    def test_inbound_widget_deliver_invalid_email(self, api_client, channel):
         """Test deliver with invalid email format."""
         data = {
             "email": "invalid-email",
@@ -234,7 +234,7 @@ class TestInboundWidgetDeliver:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.json() == {"detail": "Invalid email format"}
 
-    def test_deliver_missing_message(self, api_client, channel):
+    def test_inbound_widget_deliver_missing_message(self, api_client, channel):
         """Test deliver with missing message."""
         data = {"email": "sender@example.com"}
 
@@ -247,7 +247,9 @@ class TestInboundWidgetDeliver:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.json() == {"detail": "Missing message"}
 
-    def test_deliver_no_mailbox_configured(self, api_client, channel_without_mailbox):
+    def test_inbound_widget_deliver_no_mailbox_configured(
+        self, api_client, channel_without_mailbox
+    ):
         """Test deliver when no mailbox is configured for the channel."""
         data = {
             "email": "sender@example.com",
@@ -264,7 +266,9 @@ class TestInboundWidgetDeliver:
         assert response.json() == {"detail": "No mailbox configured for this channel"}
 
     @patch("core.api.viewsets.inbound.widget.deliver_inbound_message")
-    def test_deliver_with_custom_settings(self, mock_deliver, api_client):
+    def test_inbound_widget_deliver_with_custom_settings(
+        self, mock_deliver, api_client
+    ):
         """Test deliver with custom channel settings."""
         mock_deliver.return_value = True
 
@@ -298,7 +302,7 @@ class TestInboundWidgetDeliver:
             in parsed_email["htmlBody"][0]["content"]
         )
 
-    def test_deliver_message_e2e(self, api_client, channel):
+    def test_inbound_widget_deliver_message_e2e(self, api_client, channel):
         """Test that message is properly formatted with HTML and metadata."""
 
         assert models.Message.objects.count() == 0
@@ -313,6 +317,92 @@ class TestInboundWidgetDeliver:
             data=data,
             HTTP_X_CHANNEL_ID=str(channel.id),
             HTTP_REFERER="https://example.com/contact",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        assert models.Message.objects.count() == 1
+        mailbox = channel.mailbox
+        message = models.Message.objects.first()
+        # Check we have a threadaccess on the right mailbox
+        assert message.thread.accesses.first().mailbox == mailbox
+        assert message.sender.email == "sender@example.com"
+        assert message.subject == "Message from example.com"
+
+        authenticated_user = factories.UserFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=models.MailboxRoleChoices.VIEWER,
+        )
+        api_client.force_authenticate(user=authenticated_user)
+
+        # Check the STMSG headers in the REST API
+        apimsg = api_client.get(f"/api/v1.0/messages/{message.id}/")
+        assert apimsg.status_code == status.HTTP_200_OK
+        assert apimsg.json()["stmsg_headers"] == {
+            "sender-auth": "none",
+            "widget-referer": "https://example.com/contact",
+        }
+        assert apimsg.json()["htmlBody"][0]["content"] == "Line 1<br/>Line 2<br/>Line 3"
+        assert apimsg.json()["textBody"][0]["content"] == "Line 1\r\nLine 2\r\nLine 3"
+
+    def test_inbound_widget_deliver_message_e2e_no_referer(self, api_client, channel):
+        """Test that message is well delivered without referer."""
+
+        assert models.Message.objects.count() == 0
+
+        data = {
+            "email": "sender@example.com",
+            "textBody": "Line 1\nLine 2\nLine 3",
+        }
+
+        response = api_client.post(
+            "/api/v1.0/inbound/widget/deliver/",
+            data=data,
+            HTTP_X_CHANNEL_ID=str(channel.id),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        assert models.Message.objects.count() == 1
+        mailbox = channel.mailbox
+        message = models.Message.objects.first()
+        # Check we have a threadaccess on the right mailbox
+        assert message.thread.accesses.first().mailbox == mailbox
+        assert message.sender.email == "sender@example.com"
+        assert message.subject == "Message from widget"
+
+        authenticated_user = factories.UserFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=models.MailboxRoleChoices.VIEWER,
+        )
+        api_client.force_authenticate(user=authenticated_user)
+
+        # Check the STMSG headers in the REST API
+        apimsg = api_client.get(f"/api/v1.0/messages/{message.id}/")
+        assert apimsg.status_code == status.HTTP_200_OK
+        assert apimsg.json()["stmsg_headers"] == {"sender-auth": "none"}
+
+    def test_inbound_widget_deliver_message_e2e_referer_not_url(
+        self, api_client, channel
+    ):
+        """Test that message is well delivered with a referer that is not a URL."""
+
+        assert models.Message.objects.count() == 0
+
+        data = {
+            "email": "sender@example.com",
+            "textBody": "Line 1\nLine 2\nLine 3",
+        }
+
+        response = api_client.post(
+            "/api/v1.0/inbound/widget/deliver/",
+            data=data,
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_REFERER="javascript:void(0)",
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -338,12 +428,10 @@ class TestInboundWidgetDeliver:
         assert apimsg.status_code == status.HTTP_200_OK
         assert apimsg.json()["stmsg_headers"] == {
             "sender-auth": "none",
-            "widget-referer": "https://example.com/contact",
+            "widget-referer": "javascript:void(0)",
         }
-        assert apimsg.json()["htmlBody"][0]["content"] == "Line 1<br/>Line 2<br/>Line 3"
-        assert apimsg.json()["textBody"][0]["content"] == "Line 1\r\nLine 2\r\nLine 3"
 
-    def test_deliver_without_authentication(self, api_client):
+    def test_inbound_widget_deliver_without_authentication(self, api_client):
         """Test deliver endpoint without authentication."""
         data = {
             "email": "sender@example.com",
