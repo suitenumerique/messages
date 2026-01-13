@@ -79,6 +79,7 @@ dev = [
     "django-extensions==3.2.3",
     "drf-spectacular-sidecar==2024.12.1",
     "flower==2.0.1",
+    "jmapc==0.2.23",
     "pip-audit==2.9.0",
     "pipdeptree==2.28.0",
     "pylint-django==2.6.1",
