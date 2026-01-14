@@ -141,7 +141,7 @@ describe('MailHelper', () => {
         [
           "orange.fr",
           "wanadoo.fr",
-          "gmail.com",
+          "(gmail.com|googlemail.com)",
           "yahoo.(?:[a-z]{2,4}|[a-z]{2}.[a-z]{2})",
         ]
       `);
