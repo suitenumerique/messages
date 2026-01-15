@@ -168,8 +168,7 @@
     flex-wrap: wrap;
 }
 .thread-message__body {
-    width: calc(100% + 2 * var(--c--globals--spacings--base));
-    margin-inline: calc(-1 * var(--c--globals--spacings--base));
+    width: 100%;
     height: auto;
     border: none;
     display: block;

@@ -175,12 +175,14 @@ def prepare_outbound_message(
             total_attachment_size += blob.size
 
             # Add the attachment to the MIME data
+            # Use inline disposition if attachment has a Content-ID (for inline images)
             attachments.append(
                 {
                     "content": blob.get_content(),  # Decompressed binary content
                     "type": blob.content_type,  # MIME type
                     "name": attachment.name,  # Original filename
-                    "disposition": "attachment",  # Default to attachment disposition
+                    "disposition": "inline" if attachment.cid else "attachment",
+                    "cid": attachment.cid,  # Content-ID for inline images
                     "size": blob.size,  # Size in bytes
                 }
             )

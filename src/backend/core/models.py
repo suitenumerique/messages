@@ -1616,6 +1616,14 @@ class Attachment(BaseModel):
         help_text=_("Messages that use this attachment"),
     )
 
+    cid = models.CharField(
+        _("content ID"),
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text=_("Content-ID for inline images"),
+    )
+
     class Meta:
         db_table = "messages_attachment"
         verbose_name = _("attachment")

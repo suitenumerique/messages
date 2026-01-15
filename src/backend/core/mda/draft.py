@@ -11,6 +11,7 @@ from django.utils.translation import gettext_lazy as _
 import rest_framework as drf
 
 from core import enums, models
+from core.api.utils import get_attachment_from_blob_id
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,203 @@ def validate_attachment_size(current_total_size: int, new_total_size: int) -> No
         )
 
 
+def _get_or_create_attachment_from_message_blob(
+    mailbox: models.Mailbox,
+    attachment_data: dict,
+    user: models.User,
+) -> Optional[models.Attachment]:
+    """
+    Get or create an attachment from message raw data (msg_* format blobId).
+
+    Args:
+        mailbox: The mailbox to associate the attachment with
+        attachment_data: Dictionary containing blobId, name, and optional cid
+        user: The user making the request
+
+    Returns:
+        The created Attachment or None if processing failed
+    """
+    blob_id = attachment_data.get("blobId")
+    name = attachment_data.get("name", "unnamed")
+    cid = attachment_data.get("cid")
+
+    try:
+        # Extract attachment from original message MIME
+        parsed_attachment = get_attachment_from_blob_id(blob_id, user)
+
+        # Create a real Blob from the extracted content
+        blob = mailbox.create_blob(
+            content=parsed_attachment["content"],
+            content_type=parsed_attachment["type"],
+        )
+
+        # Use cid from parsed attachment if not provided
+        if not cid:
+            cid = parsed_attachment.get("cid")
+
+        # Use name from parsed attachment if not provided
+        if name == "unnamed":
+            name = parsed_attachment.get("name", "unnamed")
+
+        attachment, created = models.Attachment.objects.get_or_create(
+            blob=blob, mailbox=mailbox, defaults={"name": name, "cid": cid}
+        )
+
+        if created:
+            logger.debug(
+                "Created new attachment %s for forwarded blob %s",
+                attachment.id,
+                blob_id,
+            )
+
+        return attachment
+
+    except (ValueError, models.Blob.DoesNotExist) as e:
+        logger.warning("Failed to extract forwarded attachment %s: %s", blob_id, e)
+        return None
+
+
+def _get_or_create_attachment_from_blob(
+    mailbox: models.Mailbox,
+    attachment_data: dict,
+) -> Optional[models.Attachment]:
+    """
+    Get or create an attachment from a blobId.
+
+    Args:
+        mailbox: The mailbox to associate the attachment with
+        attachment_data: Dictionary containing blobId, name, and optional cid
+
+    Returns:
+        The created/existing Attachment or None if processing failed
+    """
+    blob_id = attachment_data.get("blobId")
+    name = attachment_data.get("name", "unnamed")
+    cid = attachment_data.get("cid")
+
+    try:
+        # Convert blob_id to UUID if it's a string
+        if isinstance(blob_id, str):
+            blob_id = uuid.UUID(blob_id)
+
+        # Try to get the blob
+        blob = models.Blob.objects.get(id=blob_id)
+        if blob.mailbox != mailbox:
+            logger.warning(
+                "Blob %s is not associated with mailbox %s",
+                blob_id,
+                mailbox.id,
+            )
+            return None
+
+        attachment, created = models.Attachment.objects.get_or_create(
+            blob=blob, mailbox=mailbox, defaults={"name": name, "cid": cid}
+        )
+
+        if created:
+            logger.debug(
+                "Created new attachment %s for blob %s",
+                attachment.id,
+                blob_id,
+            )
+
+        return attachment
+
+    except (ValueError, models.Blob.DoesNotExist) as e:
+        logger.warning("Invalid or missing blob %s: %s", blob_id, str(e))
+        return None
+
+
+def _update_message_attachments(
+    message: models.Message,
+    mailbox: models.Mailbox,
+    attachments_data: list,
+    user: Optional[models.User] = None,
+) -> None:
+    """
+    Update message attachments based on provided attachment data.
+
+    Args:
+        message: The message to update attachments for
+        mailbox: The mailbox making the update
+        attachments_data: List of attachment data dictionaries
+        user: The user making the update (needed for forwarded attachments)
+    """
+    if not message.pk:
+        return
+
+    # Get the current attachment IDs
+    current_attachment_ids = set(message.attachments.values_list("id", flat=True))
+
+    # Process the new attachments
+    new_attachment_ids = []
+
+    for attachment_data in attachments_data:
+        if not attachment_data:  # Skip empty values
+            continue
+
+        blob_id = attachment_data.get("blobId")
+        if not blob_id:
+            logger.warning("Missing blobId in attachment data: %s", attachment_data)
+            continue
+
+        # Handle msg_* format blobId (from forwarded message)
+        if isinstance(blob_id, str) and blob_id.startswith("msg_"):
+            if not user:
+                logger.warning(
+                    "Cannot process forwarded attachment %s without user", blob_id
+                )
+                continue
+            attachment = _get_or_create_attachment_from_message_blob(
+                mailbox, attachment_data, user
+            )
+        else:
+            attachment = _get_or_create_attachment_from_blob(mailbox, attachment_data)
+
+        if attachment:
+            new_attachment_ids.append(attachment.id)
+
+    # Combine all valid attachment IDs
+    new_attachments = set(new_attachment_ids)
+
+    # Add new attachments and remove old ones
+    to_add = new_attachments - current_attachment_ids
+    to_remove = current_attachment_ids - new_attachments
+
+    # Validate total attachment size before adding
+    if to_add:
+        # Calculate current total (excluding attachments about to be removed)
+        current_attachments = message.attachments.exclude(id__in=to_remove)
+        current_total_size = sum(
+            att.blob.size for att in current_attachments.select_related("blob")
+        )
+
+        # Calculate size of new attachments being added
+        new_attachments_objs = models.Attachment.objects.filter(
+            id__in=to_add
+        ).select_related("blob")
+        new_total_size = sum(att.blob.size for att in new_attachments_objs)
+
+        # Check if adding these would exceed the attachment limit
+        validate_attachment_size(current_total_size, new_total_size)
+
+    # Remove attachments no longer in the list
+    if to_remove:
+        message.attachments.remove(*to_remove)
+
+    # Add new attachments
+    if to_add:
+        valid_attachments = models.Attachment.objects.filter(id__in=to_add)
+        message.attachments.add(*valid_attachments)
+
+        # Log if some attachments weren't found
+        if len(valid_attachments) != len(to_add):
+            logger.warning(
+                "Some attachments were not found: %s",
+                set(to_add) - {a.id for a in valid_attachments},
+            )
+
+
 def create_draft(
     mailbox: models.Mailbox,
     subject: str = "",
@@ -75,6 +273,7 @@ def create_draft(
     bcc_emails: Optional[list] = None,
     attachments: Optional[list] = None,
     signature_id: Optional[str] = None,
+    user: Optional[models.User] = None,
 ) -> models.Message:
     """
     Create a new draft message.
@@ -89,6 +288,7 @@ def create_draft(
         bcc_emails: List of BCC recipient emails
         attachments: List of attachment objects with blobId, partId, and name
         signature_id: Optional signature template ID
+        user: The user creating the draft (needed for forwarded attachments)
 
     Returns:
         The created draft message
@@ -174,7 +374,7 @@ def create_draft(
         "attachments": attachments or [],
     }
 
-    message = update_draft(mailbox, message, update_data)
+    message = update_draft(mailbox, message, update_data, user=user)
 
     # Update thread stats
     thread.update_stats()
@@ -186,6 +386,7 @@ def update_draft(
     mailbox: models.Mailbox,
     message: models.Message,
     update_data: dict,
+    user: Optional[models.User] = None,
 ) -> models.Message:
     """
     Update draft details (subject, recipients, body, attachments).
@@ -194,6 +395,7 @@ def update_draft(
         mailbox: The mailbox making the update
         message: The draft message to update
         update_data: Dictionary containing fields to update
+        user: The user making the update (needed for forwarded attachments)
 
     Returns:
         The updated message
@@ -291,102 +493,12 @@ def update_draft(
 
     # Update attachments if provided
     if "attachments" in update_data:
-        # Only process attachments if message has been saved
-        if message.pk:
-            # Get the current attachment IDs
-            current_attachment_ids = set(
-                message.attachments.values_list("id", flat=True)
-            )
-
-            # Process the new attachments from update_data
-            new_attachment_ids = []
-
-            for attachment_data in update_data.get("attachments", []):
-                if not attachment_data:  # Skip empty values
-                    continue
-
-                # Get the blob ID
-                blob_id = attachment_data.get("blobId")
-                name = attachment_data.get("name", "unnamed")
-
-                if not blob_id:
-                    logger.warning(
-                        "Missing blobId in attachment data: %s",
-                        attachment_data,
-                    )
-                    continue
-
-                try:
-                    # Convert blob_id to UUID if it's a string
-                    if isinstance(blob_id, str):
-                        blob_id = uuid.UUID(blob_id)
-
-                    # Try to get the blob
-                    blob = models.Blob.objects.get(id=blob_id)
-                    if blob.mailbox != mailbox:
-                        logger.warning(
-                            "Blob %s is not associated with mailbox %s",
-                            blob_id,
-                            mailbox.id,
-                        )
-                        continue
-
-                    # Create an attachment for this blob if it doesn't exist
-                    attachment, created = models.Attachment.objects.get_or_create(
-                        blob=blob, mailbox=mailbox, defaults={"name": name}
-                    )
-
-                    if created:
-                        logger.debug(
-                            "Created new attachment %s for blob %s",
-                            attachment.id,
-                            blob_id,
-                        )
-
-                    new_attachment_ids.append(attachment.id)
-
-                except (ValueError, models.Blob.DoesNotExist) as e:
-                    logger.warning("Invalid or missing blob %s: %s", blob_id, str(e))
-
-            # Combine all valid attachment IDs
-            new_attachments = set(new_attachment_ids)
-
-            # Add new attachments and remove old ones
-            to_add = new_attachments - current_attachment_ids
-            to_remove = current_attachment_ids - new_attachments
-
-            # Validate total attachment size before adding
-            if to_add:
-                # Calculate current total (excluding attachments about to be removed)
-                current_attachments = message.attachments.exclude(id__in=to_remove)
-                current_total_size = sum(
-                    att.blob.size for att in current_attachments.select_related("blob")
-                )
-
-                # Calculate size of new attachments being added
-                new_attachments_objs = models.Attachment.objects.filter(
-                    id__in=to_add
-                ).select_related("blob")
-                new_total_size = sum(att.blob.size for att in new_attachments_objs)
-
-                # Check if adding these would exceed the attachment limit
-                validate_attachment_size(current_total_size, new_total_size)
-
-            # Remove attachments no longer in the list
-            if to_remove:
-                message.attachments.remove(*to_remove)
-
-            # Add new attachments
-            if to_add:
-                valid_attachments = models.Attachment.objects.filter(id__in=to_add)
-                message.attachments.add(*valid_attachments)
-
-                # Log if some attachments weren't found
-                if len(valid_attachments) != len(to_add):
-                    logger.warning(
-                        "Some attachments were not found: %s",
-                        set(to_add) - {a.id for a in valid_attachments},
-                    )
+        _update_message_attachments(
+            message=message,
+            mailbox=mailbox,
+            attachments_data=update_data.get("attachments", []),
+            user=user,
+        )
 
     has_attachments = message.attachments.exists()
     if has_attachments != message.has_attachments:

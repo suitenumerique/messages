@@ -43,8 +43,9 @@ interface MessageFormProps {
 // Zod schema for form validation
 const emailArraySchema = z.array(z.email({ error: i18n.t("The email {{email}} is invalid.") }));
 const attachmentSchema = z.object({
-    blobId: z.uuid(),
+    blobId: z.string(), // Can be UUID or msg_{messageId}_{index} format
     name: z.string(),
+    cid: z.string().optional().nullable(),
 });
 const driveAttachmentSchema = z.object({
     id: z.string(),
@@ -249,8 +250,12 @@ export const MessageForm = ({
     const canChangeSender = !draft || canWriteMessages;
 
     const initialAttachments = useMemo((): (Attachment | DriveFile)[] => {
-        return [...(draft?.attachments ?? []), ...(driveAttachments ?? [])];
-    }, [draft, driveAttachments]);
+        // Include parent message attachments when forwarding
+        const forwardedAttachments = (mode === "forward" && !draft && parentMessage?.attachments) 
+            ? parentMessage.attachments 
+            : [];
+        return [...(draft?.attachments ?? []), ...forwardedAttachments, ...(driveAttachments ?? [])];
+    }, [draft, driveAttachments, mode, parentMessage]);
 
     const showAttachmentsForgetAlert = useMemo(() => {
         return MailHelper.areAttachmentsMentionedInDraft(messageDraftBody) && attachments.length === 0 && driveAttachments.length === 0;

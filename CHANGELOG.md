@@ -11,6 +11,7 @@ and this project adheres to
 ### Added
 
 - Allow to retry send Message in Django Admin and filter Message by delivery status
+- When forwarding a message, the attachments are added to the draft as new attachments.
 
 
 ## [0.1.1] - 2026-01-22
