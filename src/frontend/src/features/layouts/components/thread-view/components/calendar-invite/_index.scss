@@ -1,0 +1,227 @@
+.calendar-invite {
+    border: 1px solid var(--c--contextuals--border--surface--primary);
+    border-radius: 8px;
+    background-color: var(--c--contextuals--background--surface--tertiary);
+    padding: var(--c--globals--spacings--base);
+    margin-bottom: var(--c--globals--spacings--base);
+
+    &--loading,
+    &--error,
+    &--empty {
+        display: flex;
+        align-items: center;
+        gap: var(--c--globals--spacings--sm);
+        padding: var(--c--globals--spacings--base);
+        color: var(--c--contextuals--content--semantic--neutral--secondary);
+    }
+
+    &--error {
+        border-color: var(--c--contextuals--border--semantic--error--primary);
+        background-color: var(--c--contextuals--background--semantic--error--tertiary);
+        color: var(--c--contextuals--content--semantic--error--primary);
+    }
+}
+
+.calendar-invite__header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--c--globals--spacings--sm);
+    margin-bottom: var(--c--globals--spacings--base);
+}
+
+.calendar-invite__icon {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--c--contextuals--background--semantic--brand--tertiary);
+    border-radius: 8px;
+    color: var(--c--contextuals--content--semantic--brand--primary);
+
+    .material-icon {
+        font-size: 24px;
+    }
+}
+
+.calendar-invite__title-section {
+    flex: 1;
+    min-width: 0;
+}
+
+.calendar-invite__title {
+    margin: 0;
+    font-size: var(--c--globals--font--sizes--lg);
+    font-weight: 600;
+    color: var(--c--contextuals--content--semantic--neutral--primary);
+    word-break: break-word;
+}
+
+.calendar-invite__event-status {
+    display: inline-block;
+    font-size: var(--c--globals--font--sizes--xs);
+    padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--xs);
+    border-radius: 4px;
+    margin-top: var(--c--globals--spacings--2xs);
+    text-transform: uppercase;
+    font-weight: 500;
+
+    &--confirmed {
+        background-color: var(--c--contextuals--background--semantic--success--tertiary);
+        color: var(--c--contextuals--content--semantic--success--primary);
+    }
+
+    &--tentative {
+        background-color: var(--c--contextuals--background--semantic--warning--tertiary);
+        color: var(--c--contextuals--content--semantic--warning--primary);
+    }
+
+    &--cancelled {
+        background-color: var(--c--contextuals--background--semantic--error--tertiary);
+        color: var(--c--contextuals--content--semantic--error--primary);
+    }
+}
+
+.calendar-invite__details {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--sm);
+}
+
+.calendar-invite__detail-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--c--globals--spacings--sm);
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--primary);
+}
+
+.calendar-invite__detail-icon {
+    flex-shrink: 0;
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+    font-size: 18px;
+    margin-top: 2px;
+}
+
+.calendar-invite__organizer-email {
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+}
+
+.calendar-invite__description {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--c--globals--spacings--sm);
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+
+    p {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+}
+
+.calendar-invite__attendees {
+    margin-top: var(--c--globals--spacings--xs);
+}
+
+.calendar-invite__attendees-header {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--sm);
+    font-size: var(--c--globals--font--sizes--sm);
+    font-weight: 500;
+    color: var(--c--contextuals--content--semantic--neutral--primary);
+    margin-bottom: var(--c--globals--spacings--xs);
+}
+
+.calendar-invite__attendee-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    padding-left: calc(18px + var(--c--globals--spacings--sm));
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--2xs);
+}
+
+.calendar-invite__attendee {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--c--globals--spacings--sm);
+    font-size: var(--c--globals--font--sizes--sm);
+    padding: var(--c--globals--spacings--2xs) 0;
+}
+
+.calendar-invite__attendee-name {
+    color: var(--c--contextuals--content--semantic--neutral--primary);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.calendar-invite__attendee-status {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--3xs);
+    font-size: var(--c--globals--font--sizes--xs);
+    flex-shrink: 0;
+
+    .material-icon {
+        font-size: 16px;
+    }
+
+    &--accepted {
+        color: var(--c--contextuals--content--semantic--success--primary);
+    }
+
+    &--declined {
+        color: var(--c--contextuals--content--semantic--error--primary);
+    }
+
+    &--tentative {
+        color: var(--c--contextuals--content--semantic--warning--primary);
+    }
+
+    &--pending,
+    &--delegated {
+        color: var(--c--contextuals--content--semantic--neutral--secondary);
+    }
+}
+
+.calendar-invite__link {
+    color: var(--c--contextuals--content--semantic--brand--primary);
+    text-decoration: none;
+    word-break: break-all;
+
+    &:hover {
+        text-decoration: underline;
+    }
+}
+
+.calendar-invite__show-more {
+    background: none;
+    border: none;
+    padding: var(--c--globals--spacings--2xs) 0;
+    margin-left: calc(18px + var(--c--globals--spacings--sm));
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--brand--primary);
+    cursor: pointer;
+    font-weight: 500;
+
+    &:hover {
+        text-decoration: underline;
+    }
+}
+
+.calendar-invite__actions {
+    margin-top: var(--c--globals--spacings--base);
+    padding-top: var(--c--globals--spacings--base);
+    border-top: 1px solid var(--c--contextuals--border--surface--primary);
+    display: flex;
+    gap: var(--c--globals--spacings--sm);
+}
