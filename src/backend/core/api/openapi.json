@@ -2424,6 +2424,313 @@
                 }
             }
         },
+        "/api/v1.0/mailboxes/{mailbox_id}/channels/": {
+            "get": {
+                "operationId": "mailboxes_channels_list",
+                "description": "Manage integration channels for a mailbox",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Channel"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "mailboxes_channels_create",
+                "description": "Manage integration channels for a mailbox",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChannelRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChannelRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Channel"
+                                }
+                            }
+                        },
+                        "description": "Channel created successfully"
+                    },
+                    "400": {
+                        "description": "Invalid input data"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/channels/{id}/": {
+            "get": {
+                "operationId": "mailboxes_channels_retrieve",
+                "description": "Manage integration channels for a mailbox",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Channel"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "mailboxes_channels_update",
+                "description": "Manage integration channels for a mailbox",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChannelRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChannelRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Channel"
+                                }
+                            }
+                        },
+                        "description": "Channel updated successfully"
+                    },
+                    "400": {
+                        "description": "Invalid input data"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Channel not found"
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "mailboxes_channels_partial_update",
+                "description": "Manage integration channels for a mailbox",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedChannelRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedChannelRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Channel"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "mailboxes_channels_destroy",
+                "description": "Manage integration channels for a mailbox",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Channel deleted successfully"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Channel not found"
+                    }
+                }
+            }
+        },
         "/api/v1.0/mailboxes/{mailbox_id}/image-proxy/": {
             "get": {
                 "operationId": "mailboxes_image_proxy_list",
@@ -5218,6 +5525,101 @@
                     "value"
                 ]
             },
+            "Channel": {
+                "type": "object",
+                "description": "Serialize Channel model.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Human-readable name for this channel",
+                        "maxLength": 255
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "Type of channel",
+                        "maxLength": 255
+                    },
+                    "settings": {
+                        "description": "Channel-specific configuration settings"
+                    },
+                    "mailbox": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Mailbox that receives messages from this channel",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "maildomain": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Mail domain that owns this channel",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    },
+                    "abilities": {
+                        "type": "object",
+                        "description": "Instance permissions and capabilities",
+                        "additionalProperties": {
+                            "type": "boolean"
+                        },
+                        "nullable": true,
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "abilities",
+                    "created_at",
+                    "id",
+                    "mailbox",
+                    "maildomain",
+                    "name",
+                    "updated_at"
+                ]
+            },
+            "ChannelRequest": {
+                "type": "object",
+                "description": "Serialize Channel model.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Human-readable name for this channel",
+                        "maxLength": 255
+                    },
+                    "type": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Type of channel",
+                        "maxLength": 255
+                    },
+                    "settings": {
+                        "description": "Channel-specific configuration settings"
+                    }
+                },
+                "required": [
+                    "name"
+                ]
+            },
             "Contact": {
                 "type": "object",
                 "description": "Serialize contacts.",
@@ -6919,6 +7321,27 @@
                     "mimetype",
                     "size"
                 ]
+            },
+            "PatchedChannelRequest": {
+                "type": "object",
+                "description": "Serialize Channel model.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Human-readable name for this channel",
+                        "maxLength": 255
+                    },
+                    "type": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Type of channel",
+                        "maxLength": 255
+                    },
+                    "settings": {
+                        "description": "Channel-specific configuration settings"
+                    }
+                }
             },
             "PatchedLabelRequest": {
                 "type": "object",

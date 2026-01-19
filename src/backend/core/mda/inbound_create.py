@@ -249,6 +249,20 @@ def _create_message_from_inbound(
                 logger.exception("Error creating label %s: %s", label, e)
                 continue
 
+    # Apply labels from channel settings (e.g., widget channel tags)
+    if channel and channel.settings:
+        channel_tags = channel.settings.get("tags", [])
+        for tag_id in channel_tags:
+            try:
+                label_obj = models.Label.objects.get(id=tag_id, mailbox=mailbox)
+                thread.labels.add(label_obj)
+            except models.Label.DoesNotExist:
+                logger.warning(
+                    "Label %s not found for channel %s, skipping", tag_id, channel.id
+                )
+            except Exception as e:
+                logger.exception("Error adding label %s from channel: %s", tag_id, e)
+
     # --- 4. Get or Create Sender Contact --- #
     sender_info = parsed_email.get("from", {})
     sender_email = sender_info.get("email")

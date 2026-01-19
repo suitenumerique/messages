@@ -1323,7 +1323,7 @@ class ImportIMAPSerializer(ImportBaseSerializer):
     )
 
 
-class ChannelSerializer(AbilitiesModelSerializer):
+class ChannelSerializer(serializers.ModelSerializer):
     """Serialize Channel model."""
 
     class Meta:
@@ -1338,10 +1338,18 @@ class ChannelSerializer(AbilitiesModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "mailbox", "maildomain", "created_at", "updated_at"]
 
     def validate(self, attrs):
-        """Validate channel data."""
+        """Validate channel data.
+
+        When used in the nested mailbox context (via ChannelViewSet),
+        the mailbox is set from context and doesn't need to be validated here.
+        """
+        # If we have a mailbox in context (from ChannelViewSet), skip validation
+        if self.context.get("mailbox"):
+            return attrs
+
         mailbox = attrs.get("mailbox")
         maildomain = attrs.get("maildomain")
 

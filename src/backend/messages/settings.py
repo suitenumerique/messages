@@ -756,6 +756,9 @@ class Base(Configuration):
     FEATURE_IMPORT_MESSAGES = values.BooleanValue(
         default=True, environ_name="FEATURE_IMPORT_MESSAGES", environ_prefix=None
     )
+    FEATURE_INTEGRATIONS = values.BooleanValue(
+        default=True, environ_name="FEATURE_INTEGRATIONS", environ_prefix=None
+    )
 
     # Logging
     # We want to make it easy to log to console but by default we log production

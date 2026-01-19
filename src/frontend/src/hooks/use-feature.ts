@@ -4,6 +4,7 @@ export enum FEATURE_KEYS {
     DRIVE = 'drive',
     AI_SUMMARY = 'ai_summary',
     AI_AUTOLABELS = 'ai_autolabels',
+    INTEGRATIONS = 'integrations',
 }
 
 /**
@@ -23,6 +24,8 @@ export const useFeatureFlag = (featureKey: FEATURE_KEYS) => {
             return config.AI_ENABLED === true && config.FEATURE_AI_SUMMARY === true;
         case FEATURE_KEYS.AI_AUTOLABELS:
             return config.AI_ENABLED === true && config.FEATURE_AI_AUTOLABELS === true;
+        case FEATURE_KEYS.INTEGRATIONS:
+            return config.FEATURE_INTEGRATIONS === true;
         default:
             throw new Error(`Unknown feature key: ${featureKey}`);
     }

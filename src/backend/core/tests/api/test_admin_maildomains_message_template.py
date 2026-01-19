@@ -739,7 +739,9 @@ class TestAdminMailDomainMessageTemplateUpdate:
         assert signature.is_forced is False
         assert signature.is_active is False
 
-    def test_default_template_becomes_inactive(self, user, maildomain, admin_detail_url):
+    def test_default_template_becomes_inactive(
+        self, user, maildomain, admin_detail_url
+    ):
         """Test that when a default template is updated to be inactive, it should also become non-default."""
         factories.MailDomainAccessFactory(
             maildomain=maildomain,

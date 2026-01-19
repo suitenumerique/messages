@@ -6,6 +6,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from core.api.viewsets.blob import BlobViewSet
+from core.api.viewsets.channel import ChannelViewSet
 from core.api.viewsets.config import ConfigView
 from core.api.viewsets.contacts import ContactViewSet
 from core.api.viewsets.draft import DraftMessageView
@@ -118,6 +119,15 @@ mailbox_message_template_nested_router.register(
     basename="mailbox-message-templates",
 )
 
+# Router for /mailboxes/{mailbox_id}/channels/
+# allow to manage integration channels for a mailbox
+mailbox_channel_nested_router = DefaultRouter()
+mailbox_channel_nested_router.register(
+    r"channels",
+    ChannelViewSet,
+    basename="mailbox-channels",
+)
+
 urlpatterns = [
     path(
         f"api/{settings.API_VERSION}/",
@@ -147,6 +157,12 @@ urlpatterns = [
                     include(
                         mailbox_message_template_nested_router.urls
                     ),  # Includes /mailboxes/{id}/message-templates/
+                ),
+                path(
+                    "mailboxes/<uuid:mailbox_id>/",
+                    include(
+                        mailbox_channel_nested_router.urls
+                    ),  # Includes /mailboxes/{id}/channels/
                 ),
                 path(
                     "maildomains/<uuid:maildomain_pk>/",
