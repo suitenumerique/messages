@@ -90,7 +90,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
             await updateSignature({
                 maildomainPk: domain.id,
                 id: signature.id,
-                data: { is_forced: !signature.is_forced },
+                data: { is_forced: !signature.is_forced, is_active: true },
             });
             invalidateMessageTemplates();
             addUpdateSucceededToast();
@@ -107,7 +107,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
             await updateSignature({
                 maildomainPk: domain.id,
                 id: signature.id,
-                data: { is_default: !signature.is_default },
+                data: { is_default: !signature.is_default, is_active: true },
             });
             invalidateMessageTemplates();
             addUpdateSucceededToast();
@@ -144,7 +144,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
                     <Checkbox
                         checked={row.is_default}
                         onChange={() => toggleDefault(row)}
-                        disabled={!row.is_active || isUpdating}
+                        disabled={isUpdating}
                         aria-label={t("Default")}
                     />
                 </div>
@@ -159,7 +159,7 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
                     <Checkbox
                         checked={row.is_forced}
                         onChange={() => toggleForced(row)}
-                        disabled={!row.is_active || isUpdating}
+                        disabled={isUpdating}
                         aria-label={t("Forced")}
                     />
                 </div>

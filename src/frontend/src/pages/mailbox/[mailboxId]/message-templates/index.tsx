@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { ManageMessageTemplatesViewPageContent } from "@/features/layouts/components/mailbox-settings/message-templates-view/page-content";
 import { ComposeTemplateAction } from "@/features/layouts/components/mailbox-settings/message-templates-view/compose-template-action";
+import { Banner } from "@/features/ui/components/banner";
 
 const MailboxMessageTemplatesPage = () => {
     const { t } = useTranslation();
@@ -17,17 +18,24 @@ const MailboxMessageTemplatesPage = () => {
         }
     }, [queryStates.mailboxes.isLoading, selectedMailbox, router]);
 
+    if (!selectedMailbox) return null;
+
     return (
         <div className="admin-page">
             <div className="admin-page__header">
-                <h1 className="title">{t("Message templates")}</h1>
+                <h1 className="title">{t("Message templates for {{mailbox}}", { mailbox: selectedMailbox.email })}</h1>
                 <div className="admin-page__actions">
                     <ComposeTemplateAction />
                 </div>
             </div>
 
             <div className="admin-page__content">
-                {selectedMailbox && <ManageMessageTemplatesViewPageContent />}
+                <div className="mb-sm mt-base">
+                    <Banner type="info">
+                        {t('Those message templates are linked to the mailbox "{{mailbox}}". In case of a shared mailbox, all other mailbox users will be able to use them.', { mailbox: selectedMailbox.email })}
+                    </Banner>
+                </div>
+                <ManageMessageTemplatesViewPageContent />
             </div>
         </div>
     );

@@ -1,6 +1,15 @@
-import test, { expect } from "@playwright/test";
+import test, { expect, Locator, Page } from "@playwright/test";
 import { resetDatabase } from "../utils";
 import { signInKeycloakIfNeeded } from "../utils-test";
+
+// Helper to click checkbox and wait for toast to be visible
+const clickAndWaitForToast = async (page: Page, checkbox: Locator) => {
+  await checkbox.click({ force: true });
+  // Toast should be visible and closable
+  const toast = page.getByText("Signature updated!close").first()
+  await expect(toast).toBeVisible();
+  await toast.getByRole("button", { name: "Close" }).click();
+};
 
 test.describe("Mailbox Signatures", () => {
   test.beforeAll(async () => {
@@ -429,43 +438,63 @@ test.describe("Maildomain Signatures (Admin)", () => {
     await expect(defaultCheckbox).not.toBeChecked();
     await expect(forcedCheckbox).not.toBeChecked();
 
-    // Default and Forced should be enabled when active
-    await expect(defaultCheckbox).toBeEnabled();
-    await expect(forcedCheckbox).toBeEnabled();
-
     // Toggle Default ON
-    await defaultCheckbox.click({ force: true });
-    await expect(page.getByText("Signature updated!").first()).toBeVisible();
+    await clickAndWaitForToast(page, defaultCheckbox);
     await expect(defaultCheckbox).toBeChecked();
 
     // Toggle Default OFF
-    await defaultCheckbox.click({ force: true });
-    await expect(page.getByText("Signature updated!").first()).toBeVisible();
+    await clickAndWaitForToast(page, defaultCheckbox);
     await expect(defaultCheckbox).not.toBeChecked();
 
     // Toggle Forced ON
-    await forcedCheckbox.click({ force: true });
-    await expect(page.getByText("Signature updated!").first()).toBeVisible();
+    await clickAndWaitForToast(page, forcedCheckbox);
     await expect(forcedCheckbox).toBeChecked();
 
     // Toggle Forced OFF
-    await forcedCheckbox.click({ force: true });
-    await expect(page.getByText("Signature updated!").first()).toBeVisible();
+    await clickAndWaitForToast(page, forcedCheckbox);
     await expect(forcedCheckbox).not.toBeChecked();
 
-    // Toggle Active OFF - Default and Forced should become disabled
-    await activeCheckbox.click({ force: true });
-    await expect(page.getByText("Signature updated!").first()).toBeVisible();
+    // Toggle Active OFF
+    await clickAndWaitForToast(page, activeCheckbox);
     await expect(activeCheckbox).not.toBeChecked();
-    await expect(defaultCheckbox).toBeDisabled();
-    await expect(forcedCheckbox).toBeDisabled();
+    await expect(defaultCheckbox).not.toBeChecked();
+    await expect(forcedCheckbox).not.toBeChecked();
 
-    // Toggle Active ON again - Default and Forced should become enabled again
-    await activeCheckbox.click({ force: true });
-    await expect(page.getByText("Signature updated!").first()).toBeVisible();
+    // Toggle Active ON again
+    await clickAndWaitForToast(page, activeCheckbox);
     await expect(activeCheckbox).toBeChecked();
-    await expect(defaultCheckbox).toBeEnabled();
-    await expect(forcedCheckbox).toBeEnabled();
+    await expect(defaultCheckbox).not.toBeChecked();
+    await expect(forcedCheckbox).not.toBeChecked();
+
+    // Toggle Default and Forced ON again
+    await clickAndWaitForToast(page, defaultCheckbox);
+    await expect(defaultCheckbox).toBeChecked();
+    await clickAndWaitForToast(page, forcedCheckbox);
+    await expect(forcedCheckbox).toBeChecked();
+
+    // Toggle Active OFF again - Default and Forced should be unchecked
+    await clickAndWaitForToast(page, activeCheckbox);
+    await expect(activeCheckbox).not.toBeChecked();
+    await expect(defaultCheckbox).not.toBeChecked();
+    await expect(forcedCheckbox).not.toBeChecked();
+
+    // Toggle Force ON again - Forced AND Active should be enabled again
+    await clickAndWaitForToast(page, forcedCheckbox);
+    await expect(forcedCheckbox).toBeChecked();
+    await expect(activeCheckbox).toBeChecked();
+    await expect(defaultCheckbox).not.toBeChecked();
+
+    // Toggle Active OFF again - Default and Forced should be unchecked
+    await clickAndWaitForToast(page, activeCheckbox);
+    await expect(activeCheckbox).not.toBeChecked();
+    await expect(defaultCheckbox).not.toBeChecked();
+    await expect(forcedCheckbox).not.toBeChecked();
+
+    // Toggle Default ON again - Default AND Active should be enabled again
+    await clickAndWaitForToast(page, defaultCheckbox);
+    await expect(defaultCheckbox).toBeChecked();
+    await expect(activeCheckbox).toBeChecked();
+    await expect(forcedCheckbox).not.toBeChecked();
   });
 
   test("should only have one default signature at a time", async ({ page }) => {
@@ -525,8 +554,7 @@ test.describe("Maildomain Signatures (Admin)", () => {
     await expect(thirdRow.getByRole("checkbox", { name: "Default" })).toBeEnabled();
 
     // Set first signature as default
-    await firstRow.getByRole("checkbox", { name: "Default" }).click({ force: true });
-    await expect(page.getByText("Signature updated!").first()).toBeVisible();
+    await clickAndWaitForToast(page, firstRow.getByRole("checkbox", { name: "Default" }));
 
     // Verify only first is default
     await expect(firstRow.getByRole("checkbox", { name: "Default" })).toBeChecked();
@@ -534,8 +562,7 @@ test.describe("Maildomain Signatures (Admin)", () => {
     await expect(thirdRow.getByRole("checkbox", { name: "Default" })).not.toBeChecked();
 
     // Set second signature as default
-    await secondRow.getByRole("checkbox", { name: "Default" }).click({ force: true });
-    await expect(page.getByText("Signature updated!").first()).toBeVisible();
+    await clickAndWaitForToast(page, secondRow.getByRole("checkbox", { name: "Default" }));
 
     // Verify only second is default (first should be unchecked now)
     await expect(firstRow.getByRole("checkbox", { name: "Default" })).not.toBeChecked();
@@ -543,8 +570,7 @@ test.describe("Maildomain Signatures (Admin)", () => {
     await expect(thirdRow.getByRole("checkbox", { name: "Default" })).not.toBeChecked();
 
     // Set third signature as default
-    await thirdRow.getByRole("checkbox", { name: "Default" }).click({ force: true });
-    await expect(page.getByText("Signature updated!").first()).toBeVisible();
+    await clickAndWaitForToast(page, thirdRow.getByRole("checkbox", { name: "Default" }));
 
     // Verify only third is default
     await expect(firstRow.getByRole("checkbox", { name: "Default" })).not.toBeChecked();
