@@ -6,6 +6,7 @@
  */
 
 import DomPurify from "dompurify";
+import { parseDimension } from "./utils";
 
 /** Options for handling external images. */
 export interface ExternalImageOptions {
@@ -15,6 +16,9 @@ export interface ExternalImageOptions {
     onExternalImageDetected: () => void;
     getProxiedUrl: (url: string) => string;
 }
+
+export const MIN_IMAGE_SIZE = 4;
+
 
 /**
  * Render HTML content with sanitization and CID resolution.
@@ -31,7 +35,6 @@ export function renderTextHtml(
     }
 
     const domPurify = DomPurify();
-    const MIN_IMAGE_SIZE = 4;
 
     domPurify.addHook("afterSanitizeAttributes", function (node) {
         // Open external links in new tabs with safe rel attributes
@@ -44,27 +47,42 @@ export function renderTextHtml(
 
         // Handle images: pixel tracker removal, CID resolution, external image handling
         if (node.tagName === "IMG") {
-            // Remove pixel trackers (very small images)
-            if (node.getAttribute("width") || node.getAttribute("height")) {
-                const width = parseInt(node.getAttribute("width") ?? "0");
-                const height = parseInt(node.getAttribute("height") ?? "0");
-                if (Math.max(width, height) < MIN_IMAGE_SIZE) {
-                    node.remove();
-                    return;
-                }
+            const imageNode = node as HTMLImageElement;
+
+            // Detect and remove pixel trackers (hidden images or very small images)
+            const isHidden = imageNode.style.display === "none" || imageNode.style.visibility === "hidden";
+
+            // Prefer attribute width/height over styles, but evaluate both
+            let width = Infinity, height = Infinity;
+
+            if (imageNode.hasAttribute("width")) {
+                width = parseInt(imageNode.getAttribute("width")!, 10);
+            } else if (imageNode.style.width) {
+                width = parseDimension(imageNode.style.width);
+            }
+
+            if (imageNode.hasAttribute("height")) {
+                height = parseInt(imageNode.getAttribute("height")!, 10);
+            } else if (imageNode.style.height) {
+                height = parseDimension(imageNode.style.height);
+            }
+
+            if (isHidden || Math.max(width, height) < MIN_IMAGE_SIZE) {
+                imageNode.remove();
+                return;
             }
 
             // Add lazy loading to all images
-            node.setAttribute("loading", "lazy");
+            imageNode.setAttribute("loading", "lazy");
 
-            const src = node.getAttribute("src");
+            const src = imageNode.getAttribute("src");
 
             // Transform CID references to blob URLs
             if (src && src.startsWith("cid:") && cidToBlobUrlMap.size > 0) {
                 const cid = src.substring(4); // Remove 'cid:' prefix
                 const blobUrl = cidToBlobUrlMap.get(cid);
                 if (blobUrl) {
-                    node.setAttribute("src", blobUrl);
+                    imageNode.setAttribute("src", blobUrl);
                 }
                 return;
             }
@@ -74,12 +92,12 @@ export function renderTextHtml(
                 externalImageOptions.onExternalImageDetected();
 
                 if (!externalImageOptions.canDisplayExternalImages || !externalImageOptions.displayExternalImages) {
-                    node.remove();
+                    imageNode.remove();
                     return;
                 }
 
                 // Proxy external images
-                node.setAttribute("src", externalImageOptions.getProxiedUrl(src));
+                imageNode.setAttribute("src", externalImageOptions.getProxiedUrl(src));
             }
         }
     });
