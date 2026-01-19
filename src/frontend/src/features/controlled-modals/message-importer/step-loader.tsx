@@ -31,7 +31,10 @@ export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => 
         } else if (importStatus?.state === StatusEnum.FAILURE) {
             const error = importStatus?.error || '';
             let errorKey = t('An error occurred while importing messages.');
-            if (error.includes("AUTHENTICATIONFAILED")) {
+            if (
+                error.includes("AUTHENTICATIONFAILED") ||
+                error.includes("IMAP authentication failed")
+            ) {
                 errorKey = t('Authentication failed. Please check your credentials and ensure you have enabled IMAP connections in your account.');
             }
             onError(errorKey);

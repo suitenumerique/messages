@@ -5,6 +5,7 @@ import codecs
 import imaplib
 import re
 import socket
+import ssl
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -75,9 +76,19 @@ class IMAPConnectionManager:
 
             if self.use_ssl and not use_starttls:
                 # SSL direct (typically port 993)
-                self.connection = imaplib.IMAP4_SSL(
-                    self.server, self.port, timeout=settings.IMAP_TIMEOUT
-                )
+                try:
+                    self.connection = imaplib.IMAP4_SSL(
+                        self.server, self.port, timeout=settings.IMAP_TIMEOUT
+                    )
+                except ssl.SSLError as e:
+                    # SSL handshake failed - likely wrong port or server doesn't support SSL
+                    error_msg = (
+                        f"SSL handshake failed for {self.server}:{self.port}: {e}. "
+                        f"If using port {self.port}, the server may not support SSL direct. "
+                        "Try port 143 with STARTTLS instead."
+                    )
+                    logger.error(error_msg)
+                    raise IMAPSecurityError(error_msg) from e
             else:
                 # Non-encrypted connection initially (will upgrade to TLS if use_ssl=True)
                 self.connection = imaplib.IMAP4(
@@ -113,7 +124,13 @@ class IMAPConnectionManager:
             self.connection._encoding = "utf-8"  # noqa: SLF001
 
             # Login
-            self.connection.login(self.username, self.password)
+            try:
+                self.connection.login(self.username, self.password)
+            except imaplib.IMAP4.error as e:
+                error_msg = f"IMAP authentication failed for {self.username}: {e}"
+                logger.error(error_msg)
+                raise
+
             return self.connection
         except Exception as e:
             logger.error(
