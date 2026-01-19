@@ -18,6 +18,21 @@ from core.mda.rfc5322 import parse_email_message
 logger = get_task_logger(__name__)
 
 
+class IMAPSecurityError(RuntimeError):
+    """
+    Raised when an IMAP connection violates required security constraints.
+
+    This exception is raised when:
+    - Encrypted connection is required but cannot be established
+    - STARTTLS is required but not supported by the server
+    - STARTTLS negotiation fails
+    - Any security downgrade is detected or attempted
+
+    Failing fast and explicitly prevents credentials leakage
+    and protects against STARTTLS stripping attacks.
+    """
+
+
 def decode_imap_utf7(s):
     """Decode IMAP UTF-7 encoded string to UTF-8.
 
@@ -54,14 +69,45 @@ class IMAPConnectionManager:
 
     def __enter__(self):
         try:
-            if self.use_ssl:
+            # Port 143 typically uses STARTTLS, port 993 uses SSL direct
+            # If use_ssl=True and port is 143, use STARTTLS instead of SSL direct
+            use_starttls = self.use_ssl and self.port == 143
+
+            if self.use_ssl and not use_starttls:
+                # SSL direct (typically port 993)
                 self.connection = imaplib.IMAP4_SSL(
                     self.server, self.port, timeout=settings.IMAP_TIMEOUT
                 )
             else:
+                # Non-encrypted connection initially (will upgrade to TLS if use_ssl=True)
                 self.connection = imaplib.IMAP4(
                     self.server, self.port, timeout=settings.IMAP_TIMEOUT
                 )
+
+                if use_starttls:
+                    # use_ssl=True on port 143: must upgrade to TLS via STARTTLS
+                    # Check if server supports STARTTLS
+                    typ, data = self.connection.capability()
+                    if typ != "OK" or "STARTTLS" not in data[0].decode().upper():
+                        error_msg = (
+                            f"Server {self.server}:{self.port} does not support STARTTLS. "
+                            "Encrypted connection required."
+                        )
+                        logger.error(error_msg)
+                        self.connection.logout()
+                        raise IMAPSecurityError(error_msg)
+
+                    # Attempt STARTTLS
+                    status, response = self.connection.starttls()
+                    if status != "OK":
+                        error_msg = (
+                            f"STARTTLS failed for {self.server}:{self.port}: {response}. "
+                            "Encrypted connection required."
+                        )
+                        logger.error(error_msg)
+                        self.connection.logout()
+                        raise IMAPSecurityError(error_msg)
+                # else: use_ssl=False, connection remains unencrypted (explicit user choice)
 
             # Set UTF-8 encoding for the IMAP connection
             self.connection._encoding = "utf-8"  # noqa: SLF001
