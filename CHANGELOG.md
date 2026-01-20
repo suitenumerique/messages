@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-01-20
+
 ### Added
 
 - Allow to save an attachment into Drive workspace #408
@@ -26,3 +28,5 @@ and this project adheres to
 - Exclude `is_trashed` and `is_spam` threads from search results by default
 - `to` search modifier now looks for messages where recipient fields (to, cc, bcc) contain the given email address.
 
+[unreleased]: https://github.com/suitenumerique/django-lasuite/compare/v0.1.0...main
+[v0.1.0]: https://github.com/suitenumerique/django-lasuite/releases/v0.1.0
