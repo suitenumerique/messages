@@ -4,6 +4,7 @@
 from typing import Any, Dict, Generator
 
 from django.core.files.storage import storages
+from sentry_sdk import capture_exception
 
 import magic
 from celery.utils.log import get_task_logger
@@ -132,6 +133,7 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
                         recipient_id,
                         e,
                     )
+                    capture_exception(e)
                     failure_count += 1
 
         result = {
@@ -163,6 +165,7 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
             recipient_id,
             e,
         )
+        capture_exception(e)
         error_msg = str(e)
         result = {
             "message_status": "Failed to process messages",
@@ -278,7 +281,21 @@ def import_imap_messages_task(
             imap_server, imap_port, username, password, use_ssl
         ) as imap:
             # Get selectable folders
-            selectable_folders = get_selectable_folders(imap, username, imap_server)
+            try:
+                selectable_folders = get_selectable_folders(imap, username, imap_server)
+            except Exception as e:
+                logger.warning(
+                    "Failed to get folder list: %s. Falling back to INBOX only.", e
+                )
+                capture_exception(e)
+                selectable_folders = []
+
+            # Fallback: if no folders found, try at least INBOX
+            if not selectable_folders:
+                logger.warning(
+                    "No selectable folders found. Attempting to use INBOX as fallback."
+                )
+                selectable_folders = ["INBOX"]
 
             # Process all folders
             folders_to_process = selectable_folders
@@ -331,8 +348,14 @@ def import_imap_messages_task(
                     total_messages=total_messages,
                 )
 
+        # Check if we actually processed any messages
+        if total_messages == 0:
+            logger.warning(
+                "No messages were imported. All folders may have failed to be selected or were empty."
+            )
+            message_status = "Completed but no messages were found or imported"
         # Determine appropriate message status
-        if len(folders_to_process) == 1:
+        elif len(folders_to_process) == 1:
             # If only one folder was processed, show which folder it was
             actual_folder = folders_to_process[0]
             message_status = (
@@ -372,6 +395,7 @@ def import_imap_messages_task(
 
     except Exception as e:
         logger.exception("Error in import_imap_messages_task: %s", e)
+        capture_exception(e)
 
         error_msg = str(e)
         result = {
@@ -500,6 +524,7 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             recipient_id,
             e,
         )
+        capture_exception(e)
         error_msg = str(e)
         result = {
             "message_status": "Failed to process message",

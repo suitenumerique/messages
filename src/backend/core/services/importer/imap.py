@@ -4,12 +4,14 @@ import base64
 import codecs
 import imaplib
 import re
+import shlex
 import socket
 import ssl
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from django.conf import settings
+from sentry_sdk import capture_exception
 
 from celery.utils.log import get_task_logger
 
@@ -162,21 +164,37 @@ def _parse_imap_folder_info(folder_info: str) -> Optional[str]:
         if "\\Noselect" in folder_info:
             return None
 
-        # Parse IMAP folder info format: (flags) "delimiter" "folder_name"
-        parts = folder_info.split('"')
-        if len(parts) < 3:
-            return None
-
-        if parts[-1] == "":
-            folder_name = parts[-2]  # Last quoted string
-        else:
-            folder_name = parts[-1]  # Last quoted string
+        # Extract folder name from IMAP LIST response
+        # Format: (flags) "delimiter" "folder_name"
+        # Use shlex to properly handle quoted strings with escapes
+        try:
+            # shlex properly handles quoted strings with escapes
+            parts = shlex.split(folder_info)
+            if len(parts) >= 3:
+                # Format is typically: (flags) delimiter folder_name
+                # folder_name is the last element
+                folder_name = parts[-1]
+            else:
+                # Fallback to manual parsing
+                parts = folder_info.split('"')
+                if len(parts) < 3:
+                    return None
+                folder_name = parts[-2] if parts[-1] == "" else parts[-1]
+        except ValueError:
+            # shlex failed, use manual parsing
+            parts = folder_info.split('"')
+            if len(parts) < 3:
+                return None
+            folder_name = parts[-2] if parts[-1] == "" else parts[-1]
 
         if not folder_name or folder_name == "/":
             return None
+
+        # Return the exact folder name without any manipulation
         return folder_name
     except Exception as e:
         logger.error("Error parsing folder info '%s': %s", folder_info, e)
+        capture_exception(e)
 
     return None
 
@@ -191,9 +209,14 @@ def get_selectable_folders(
 
     selectable_folders = []
     for folder_info in folder_list:
-        folder_name = _parse_imap_folder_info(folder_info.decode())
+        decoded = folder_info.decode()
+        logger.debug("Raw folder info: %s", decoded)
+        folder_name = _parse_imap_folder_info(decoded)
         if folder_name:
+            logger.debug("Parsed folder name: %s", folder_name)
             selectable_folders.append(folder_name)
+        else:
+            logger.debug("Skipped folder (non-selectable or parsing failed)")
 
     return selectable_folders
 
@@ -227,55 +250,50 @@ def create_folder_mapping(
 def select_imap_folder(imap_connection, folder: str) -> bool:
     """Select an IMAP folder with proper encoding handling."""
     try:
-        # Try different folder name variations for compatibility
-        folder_variations = [
-            folder,  # Original folder name
-            f'"{folder}"',  # Quoted folder name
-        ]
+        logger.debug("Attempting to select folder: %s", folder)
 
-        # For folders that might need INBOX/ prefix
-        if not folder.startswith("INBOX/"):
-            folder_variations.extend(
-                [
-                    f"INBOX/{folder}",
-                    f'"{folder}"',
-                    f'"INBOX/{folder}"',
-                ]
-            )
+        # Try folder name as-is first (what LIST returned should work)
+        try:
+            status, response = imap_connection.select(folder, readonly=True)
+            if status == "OK":
+                logger.info("Successfully selected folder: %s", folder)
+                return True
+            else:
+                logger.debug("SELECT returned non-OK status for %s: %s", folder, response)
+        except Exception as e:
+            logger.debug("Direct SELECT failed for %s: %s", folder, e)
+
+        # If direct selection failed, try common variations
+        folder_variations = []
+
+        # Try quoted version
+        folder_variations.append(f'"{folder}"')
+
+        # Try with INBOX prefix if not already there
+        if not folder.startswith("INBOX"):
+            folder_variations.append(f"INBOX.{folder}")  # Some servers use .
+            folder_variations.append(f"INBOX/{folder}")  # Some servers use /
+
+        logger.debug("Direct SELECT failed, trying %d variations", len(folder_variations))
 
         for folder_variant in folder_variations:
             try:
-                status, _ = imap_connection.select(folder_variant)
+                status, _ = imap_connection.select(folder_variant, readonly=True)
                 if status == "OK":
-                    logger.info("Successfully selected folder: %s", folder_variant)
+                    logger.info("Successfully selected folder with variation: %s", folder_variant)
                     return True
-            except UnicodeEncodeError:
-                # If UTF-8 fails, try with UTF-7 encoding (IMAP standard)
-                try:
-                    utf7_folder = codecs.encode(
-                        folder_variant.encode("utf-8"), "utf-7"
-                    ).decode("ascii")
-                    status, _ = imap_connection.select(utf7_folder)
-                    if status == "OK":
-                        logger.info(
-                            "Successfully selected folder with UTF-7: %s",
-                            folder_variant,
-                        )
-                        return True
-                except Exception as e:
-                    logger.debug("Failed to select folder with UTF-7 encoding: %s", e)
-                    continue
             except Exception as e:
-                logger.debug(
-                    "Failed to select folder variant %s: %s", folder_variant, e
-                )
-                continue
+                logger.debug("Failed to select folder variant %s: %s", folder_variant, e)
 
-        logger.error("Failed to select folder %s with any variation", folder)
+        # Log as warning since this is somewhat expected (server says selectable but isn't)
+        # and we continue processing other folders
+        logger.warning("Failed to select folder %s with any variation", folder)
         return False
 
     except Exception as e:
+        # Unexpected error during folder selection - this should be investigated
         logger.exception("Error selecting folder %s: %s", folder, e)
+        capture_exception(e)
         return False
 
 
@@ -289,6 +307,9 @@ def get_message_numbers(
     if status != "OK":
         logger.error(
             "Failed to search messages in folder %s: %s", folder, message_numbers
+        )
+        capture_exception(
+            Exception(f"IMAP search failed in folder {folder}: {message_numbers}")
         )
         return []
 
@@ -504,6 +525,7 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
                 folder,
                 e,
             )
+            capture_exception(e)
             failure_count += 1
 
         # Update task state after processing the message
