@@ -435,7 +435,7 @@ def _create_message_from_inbound(
                     data["delivery_status"] = enums.MessageDeliveryStatusChoices.SENT
                 models.MessageRecipient.objects.create(**data)
             except ValidationError as e:
-                logger.error(
+                logger.warning(
                     "Validation error creating recipient contact/link (%s) for message %s: %s",
                     email,
                     message.id,
