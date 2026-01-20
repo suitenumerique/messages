@@ -185,7 +185,7 @@ def test_import_file_eml_by_superuser_sync(admin_user, mailbox, eml_key):
             assert task_result["status"] == "SUCCESS"
             assert (
                 task_result["result"]["message_status"]
-                == "Completed processing message"
+                == "Successfully imported message"
             )
             assert task_result["result"]["type"] == "eml"
             assert task_result["result"]["total_messages"] == 1
@@ -288,7 +288,7 @@ def test_import_file_eml_by_user_with_access_sync(user, mailbox, eml_key, mock_r
             assert task_result["status"] == "SUCCESS"
             assert (
                 task_result["result"]["message_status"]
-                == "Completed processing message"
+                == "Successfully imported message"
             )
             assert task_result["result"]["type"] == "eml"
             assert task_result["result"]["total_messages"] == 1
