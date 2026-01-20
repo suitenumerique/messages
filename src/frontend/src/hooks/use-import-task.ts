@@ -45,5 +45,6 @@ export function useImportTaskStatus(
     state: taskQuery.data?.data.status,
     loading: taskQuery.isPending || !progress,
     error: taskQuery.data?.data.error,
+    result: taskMetadata,
   };
 }

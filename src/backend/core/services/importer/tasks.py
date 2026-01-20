@@ -136,8 +136,30 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
                     capture_exception(e)
                     failure_count += 1
 
+        # Determine task status based on results
+        if total_messages == 0:
+            task_status = "SUCCESS"
+            message_status = "Completed but no messages were found"
+        elif failure_count == total_messages:
+            task_status = "FAILURE"
+            message_status = f"Failed to import all {total_messages} messages"
+            logger.error("All %d messages failed to import from MBOX", total_messages)
+        elif failure_count > 0:
+            task_status = "SUCCESS"
+            message_status = (
+                f"Completed with partial success: {success_count}/{total_messages} "
+                f"messages imported, {failure_count} failed"
+            )
+            logger.warning(
+                "Partial MBOX import: %d succeeded, %d failed out of %d total",
+                success_count, failure_count, total_messages
+            )
+        else:
+            task_status = "SUCCESS"
+            message_status = f"Successfully imported all {success_count} messages"
+
         result = {
-            "message_status": "Completed processing messages",
+            "message_status": message_status,
             "total_messages": total_messages,
             "success_count": success_count,
             "failure_count": failure_count,
@@ -146,17 +168,17 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
         }
 
         self.update_state(
-            state="SUCCESS",
+            state=task_status,
             meta={
                 "result": result,
-                "error": None,
+                "error": None if task_status == "SUCCESS" else "Partial or complete failure",
             },
         )
 
         return {
-            "status": "SUCCESS",
+            "status": task_status,
             "result": result,
-            "error": None,
+            "error": None if task_status == "SUCCESS" else "Some messages failed to import",
         }
 
     except Exception as e:
@@ -348,21 +370,44 @@ def import_imap_messages_task(
                     total_messages=total_messages,
                 )
 
-        # Check if we actually processed any messages
+        # Determine task status based on results
         if total_messages == 0:
+            # No messages found at all
             logger.warning(
                 "No messages were imported. All folders may have failed to be selected or were empty."
             )
+            task_status = "SUCCESS"  # Not a failure, just nothing to import
             message_status = "Completed but no messages were found or imported"
-        # Determine appropriate message status
-        elif len(folders_to_process) == 1:
-            # If only one folder was processed, show which folder it was
-            actual_folder = folders_to_process[0]
+        elif failure_count == total_messages:
+            # All messages failed
+            logger.error(
+                "All %d messages failed to import", total_messages
+            )
+            task_status = "FAILURE"
+            message_status = f"Failed to import all {total_messages} messages"
+        elif failure_count > 0:
+            # Partial success
+            logger.warning(
+                "Partial import: %d succeeded, %d failed out of %d total",
+                success_count, failure_count, total_messages
+            )
+            task_status = "SUCCESS"  # Celery doesn't have PARTIAL status
             message_status = (
-                f"Completed processing messages from folder '{actual_folder}'"
+                f"Completed with partial success: {success_count}/{total_messages} "
+                f"messages imported, {failure_count} failed"
             )
         else:
-            message_status = "Completed processing messages from all folders"
+            # All succeeded
+            if len(folders_to_process) == 1:
+                actual_folder = folders_to_process[0]
+                message_status = (
+                    f"Successfully imported all {success_count} messages from '{actual_folder}'"
+                )
+            else:
+                message_status = (
+                    f"Successfully imported all {success_count} messages from all folders"
+                )
+            task_status = "SUCCESS"
 
         result = {
             "message_status": message_status,
@@ -374,11 +419,11 @@ def import_imap_messages_task(
         }
 
         self.update_state(
-            state="SUCCESS",
-            meta={"status": "SUCCESS", "result": result, "error": None},
+            state=task_status,
+            meta={"status": task_status, "result": result, "error": None if task_status == "SUCCESS" else "Partial or complete failure"},
         )
 
-        return {"status": "SUCCESS", "result": result, "error": None}
+        return {"status": task_status, "result": result, "error": None if task_status == "SUCCESS" else "Some messages failed to import"}
 
     except Mailbox.DoesNotExist:
         error_msg = f"Recipient mailbox {recipient_id} not found"
@@ -481,16 +526,15 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             str(recipient), parsed_email, file_content, is_import=True
         )
 
-        result = {
-            "message_status": "Completed processing message",
-            "total_messages": 1,
-            "success_count": 1 if success else 0,
-            "failure_count": 0 if success else 1,
-            "type": "eml",
-            "current_message": 1,
-        }
-
         if success:
+            result = {
+                "message_status": "Successfully imported message",
+                "total_messages": 1,
+                "success_count": 1,
+                "failure_count": 0,
+                "type": "eml",
+                "current_message": 1,
+            }
             self.update_state(
                 state="SUCCESS",
                 meta={
@@ -504,6 +548,15 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
                 "error": None,
             }
 
+        # Failed to deliver
+        result = {
+            "message_status": "Failed to import message",
+            "total_messages": 1,
+            "success_count": 0,
+            "failure_count": 1,
+            "type": "eml",
+            "current_message": 1,
+        }
         error_msg = "Failed to deliver message"
         self.update_state(
             state="FAILURE",
