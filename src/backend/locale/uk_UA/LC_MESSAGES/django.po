@@ -2,8 +2,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-03 11:05+0000\n"
-"PO-Revision-Date: 2025-11-04 18:00\n"
+"POT-Creation-Date: 2026-01-16 09:10+0000\n"
+"PO-Revision-Date: 2026-01-20 13:46\n"
 "Last-Translator: \n"
 "Language-Team: Ukrainian\n"
 "Language: uk_UA\n"
@@ -59,11 +59,28 @@ msgstr "Ім`я отримувача"
 msgid "messages core application"
 msgstr "повідомлення основної програми"
 
-msgid "Invalid response format or token verification failed"
-msgstr "Неправильний формат відповіді або перевірка токену не вдалася"
-
 msgid "User account is disabled"
 msgstr "Обліковий запис користувача вимкнено"
+
+#, python-format
+msgid "Message body size (%(body_size)s MB) exceeds the %(max_size)s MB limit. Please reduce message content."
+msgstr "Розмір тіла повідомлення (%(body_size)s МБ) перевищує ліміт у %(max_size)s МБ. Будь ласка, зменште вміст повідомлення."
+
+#, python-format
+msgid "Cannot add attachment(s) (%(new_size)s MB). Total attachments would be %(total_size)s MB, exceeding the %(max_size)s MB limit. Current attachments: %(current_size)s MB."
+msgstr "Неможливо додати вкладення (одне чи декілька) (%(new_size)s МБ). Загальний розмір вкладень - %(total_size)s МБ, що перевищує ліміт %(max_size)s МБ. Поточних вкладень: %(current_size)s МБ."
+
+#, python-format
+msgid "Too many recipients: %(count)s (maximum is %(max)s). Please reduce the number of recipients before sending."
+msgstr "Занадто багато отримувачів: %(count)s (максимум %(max)s). Зменште кількість одержувачів, перш ніж надсилати."
+
+#, python-format
+msgid "Total attachment size (%(total_size)s MB) exceeds the %(max_size)s MB limit. Please remove or reduce attachments."
+msgstr "Загальний розмір вкладення (%(total_size)s МБ) перевищує ліміт %(max_size)s MB. Будь ласка, видаліть або зменште вкладення."
+
+#, python-format
+msgid "The composed email (%(mime_size)s MB) exceeds the maximum allowed size of %(max_size)s MB. Please reduce message content or attachments."
+msgstr "Розмір сформованого електронного листа (%(mime_size)s МБ) перевищує максимально дозволений розмір у %(max_size)s МБ. Будь ласка, зменште вміст повідомлення або вкладення."
 
 msgid "id"
 msgstr "id"
@@ -155,6 +172,12 @@ msgstr "Синхронізація ідентифікації"
 msgid "Sync mailboxes to an identity provider."
 msgstr "Синхронізація поштових скриньок для постачальника ідентифікації."
 
+msgid "Custom settings"
+msgstr "Користувацькі налаштування"
+
+msgid "Custom settings for the mail domain."
+msgstr "Користувацькі налаштування для поштового домену."
+
 msgid "Metadata to sync to the maildomain group in the identity provider."
 msgstr "Метадані для синхронізації користувача в провайдері ідентифікації."
 
@@ -229,6 +252,12 @@ msgstr "має непрочитані"
 
 msgid "has trashed"
 msgstr "у кошику"
+
+msgid "is trashed"
+msgstr "у кошику"
+
+msgid "Whether all messages in the thread are trashed"
+msgstr "Чи всі повідомлення в обговоренні видалені"
 
 msgid "has archived"
 msgstr "заархівовано"
@@ -353,9 +382,6 @@ msgstr "відправник"
 msgid "is starred"
 msgstr "позначено зірочкою"
 
-msgid "is trashed"
-msgstr "у кошику"
-
 msgid "is unread"
 msgstr "непрочитане"
 
@@ -409,6 +435,24 @@ msgstr "Тема"
 
 msgid "Body"
 msgstr "Вміст"
+
+msgid "raw data"
+msgstr "необроблені дані"
+
+msgid "Raw email message bytes"
+msgstr "Необроблені байти повідомлення"
+
+msgid "error message"
+msgstr "повідомлення про помилку"
+
+msgid "Error message if processing failed"
+msgstr "Повідомлення про помилку, якщо не вдалося обробити"
+
+msgid "inbound message"
+msgstr "вхідне повідомлення"
+
+msgid "inbound messages"
+msgstr "вхідні повідомлення"
 
 msgid "sha256 hash"
 msgstr "sha256 hash"
@@ -551,6 +595,12 @@ msgstr "обов'язковий"
 msgid "Whether this template is forced; no other template of the same type can be used in the same scope"
 msgstr "Чи є цей шаблон обов'язковим; жоден інший шаблон того ж типу не може використовуватися в тій же області"
 
+msgid "is default"
+msgstr "за замовчуванням"
+
+msgid "Whether this template is the default; it will be automatically loaded when composing a new message"
+msgstr "Чи є цей шаблон за замовчуванням; він буде автоматично завантажений під час додання нового повідомлення"
+
 msgid "message template"
 msgstr "шаблон повідомлення"
 
@@ -577,4 +627,7 @@ msgstr "Англійська"
 
 msgid "French"
 msgstr "Французька"
+
+msgid "Dutch"
+msgstr "Нідерландська"
 

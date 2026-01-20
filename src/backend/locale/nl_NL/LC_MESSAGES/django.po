@@ -2,8 +2,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-03 11:05+0000\n"
-"PO-Revision-Date: 2025-11-04 18:00\n"
+"POT-Creation-Date: 2026-01-16 09:10+0000\n"
+"PO-Revision-Date: 2026-01-20 13:46\n"
 "Last-Translator: \n"
 "Language-Team: Dutch\n"
 "Language: nl_NL\n"
@@ -59,11 +59,28 @@ msgstr "Naam van ontvanger"
 msgid "messages core application"
 msgstr "messages kern applicatie"
 
-msgid "Invalid response format or token verification failed"
-msgstr "Invalide response formaat of token verificatie gefaald"
-
 msgid "User account is disabled"
 msgstr "Gebruikersaccount is uitgeschakeld"
+
+#, python-format
+msgid "Message body size (%(body_size)s MB) exceeds the %(max_size)s MB limit. Please reduce message content."
+msgstr "Berichtinhoud (%(body_size)s MB) overschrijdt de MB-limiet %(max_size)s . Verminder berichteninhoud."
+
+#, python-format
+msgid "Cannot add attachment(s) (%(new_size)s MB). Total attachments would be %(total_size)s MB, exceeding the %(max_size)s MB limit. Current attachments: %(current_size)s MB."
+msgstr "Kan bijlagen niet toevoegen (%(new_size)s MB). Totale bijlagen zouden %(total_size)s MB zijn, die de limiet van de %(max_size)s MB overschrijden. Huidige bijlagen: %(current_size)s MB."
+
+#, python-format
+msgid "Too many recipients: %(count)s (maximum is %(max)s). Please reduce the number of recipients before sending."
+msgstr ""
+
+#, python-format
+msgid "Total attachment size (%(total_size)s MB) exceeds the %(max_size)s MB limit. Please remove or reduce attachments."
+msgstr "Totale grootte van bijlagen (%(total_size)s MB) overschrijdt de MB-limiet %(max_size)s. Verwijder of reduceer bijlagen."
+
+#, python-format
+msgid "The composed email (%(mime_size)s MB) exceeds the maximum allowed size of %(max_size)s MB. Please reduce message content or attachments."
+msgstr "De e-mail (%(mime_size)s MB) overschrijdt de maximaal toegestane grootte van %(max_size)s MB. Beperk de inhoud van berichten of bijlagen."
 
 msgid "id"
 msgstr "id"
@@ -155,6 +172,12 @@ msgstr "Identiteit synchronisatie"
 msgid "Sync mailboxes to an identity provider."
 msgstr "Synchroniseer mailboxen met een identity provider."
 
+msgid "Custom settings"
+msgstr "Aangepaste instellingen"
+
+msgid "Custom settings for the mail domain."
+msgstr "Aangepaste instellingen voor het e-maildomein."
+
 msgid "Metadata to sync to the maildomain group in the identity provider."
 msgstr "Metagegevens om te synchroniseren met de gebruiker in de identiteitsprovider."
 
@@ -229,6 +252,12 @@ msgstr "bevat ongelezen"
 
 msgid "has trashed"
 msgstr "bevat verwijderd"
+
+msgid "is trashed"
+msgstr "is verwijderd"
+
+msgid "Whether all messages in the thread are trashed"
+msgstr "Of alle berichten in de thread naar de prullenbak zijn verplaatst"
 
 msgid "has archived"
 msgstr "bevat gearchiveerd"
@@ -353,9 +382,6 @@ msgstr "is afzender"
 msgid "is starred"
 msgstr "met ster"
 
-msgid "is trashed"
-msgstr "is verwijderd"
-
 msgid "is unread"
 msgstr "is ongelezen"
 
@@ -409,6 +435,24 @@ msgstr "Onderwerp"
 
 msgid "Body"
 msgstr "Bericht"
+
+msgid "raw data"
+msgstr "ruwe gegevens"
+
+msgid "Raw email message bytes"
+msgstr "Ruwe e-mail bericht bytes"
+
+msgid "error message"
+msgstr "Foutmelding"
+
+msgid "Error message if processing failed"
+msgstr "Foutmelding bij verwerking mislukt"
+
+msgid "inbound message"
+msgstr "inkomende bericht"
+
+msgid "inbound messages"
+msgstr "inkomende berichten"
 
 msgid "sha256 hash"
 msgstr "sha256 hash"
@@ -551,6 +595,12 @@ msgstr "is afgedwongen"
 msgid "Whether this template is forced; no other template of the same type can be used in the same scope"
 msgstr "Of deze template wordt geforceerd; geen andere sjabloon van hetzelfde type kan worden gebruikt in dezelfde scope"
 
+msgid "is default"
+msgstr ""
+
+msgid "Whether this template is the default; it will be automatically loaded when composing a new message"
+msgstr ""
+
 msgid "message template"
 msgstr "bericht template"
 
@@ -577,4 +627,7 @@ msgstr "Engels"
 
 msgid "French"
 msgstr "Frans"
+
+msgid "Dutch"
+msgstr "Nederlands"
 

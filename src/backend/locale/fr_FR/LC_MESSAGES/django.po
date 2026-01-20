@@ -2,8 +2,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-03 11:05+0000\n"
-"PO-Revision-Date: 2025-11-04 18:00\n"
+"POT-Creation-Date: 2026-01-16 09:10+0000\n"
+"PO-Revision-Date: 2026-01-20 13:46\n"
 "Last-Translator: \n"
 "Language-Team: French\n"
 "Language: fr_FR\n"
@@ -59,11 +59,28 @@ msgstr "Nom du destinataire"
 msgid "messages core application"
 msgstr "Messages : Application \"Core\""
 
-msgid "Invalid response format or token verification failed"
-msgstr "Mauvais format de réponse ou la vérification de jeton a échoué"
-
 msgid "User account is disabled"
 msgstr "Le compte de l'utilisateur est désactivé"
+
+#, python-format
+msgid "Message body size (%(body_size)s MB) exceeds the %(max_size)s MB limit. Please reduce message content."
+msgstr "La taille du corps du message (%(body_size)s Mo) dépasse la limite %(max_size)s Mo. Veuillez réduire le contenu du message."
+
+#, python-format
+msgid "Cannot add attachment(s) (%(new_size)s MB). Total attachments would be %(total_size)s MB, exceeding the %(max_size)s MB limit. Current attachments: %(current_size)s MB."
+msgstr "Impossible d'ajouter des pièces jointes (%(new_size)s Mo). Le total des pièces jointes serait %(total_size)s Mo, dépassant la limite %(max_size)s Mo. Pièces jointes actuelles : %(current_size)s Mo."
+
+#, python-format
+msgid "Too many recipients: %(count)s (maximum is %(max)s). Please reduce the number of recipients before sending."
+msgstr "Trop de destinataires : %(count)s (le maximum est %(max)s). Veuillez réduire le nombre de destinataires avant l'envoi."
+
+#, python-format
+msgid "Total attachment size (%(total_size)s MB) exceeds the %(max_size)s MB limit. Please remove or reduce attachments."
+msgstr "La taille totale des pièces jointes (%(total_size)s Mo) dépasse la limite %(max_size)s Mo. Veuillez supprimer ou réduire les pièces jointes."
+
+#, python-format
+msgid "The composed email (%(mime_size)s MB) exceeds the maximum allowed size of %(max_size)s MB. Please reduce message content or attachments."
+msgstr "L'e-mail composé (%(mime_size)s Mo) dépasse la taille maximale autorisée de %(max_size)s Mo. Veuillez réduire le contenu du message ou les pièces jointes."
 
 msgid "id"
 msgstr "id"
@@ -155,6 +172,12 @@ msgstr "Synchronisation de l'identité"
 msgid "Sync mailboxes to an identity provider."
 msgstr "Synchroniser les boîtes aux lettres avec un fournisseur d'identité."
 
+msgid "Custom settings"
+msgstr "Paramètres personnalisés"
+
+msgid "Custom settings for the mail domain."
+msgstr "Paramètres personnalisés pour le domaine de messagerie."
+
 msgid "Metadata to sync to the maildomain group in the identity provider."
 msgstr "Métadonnées à synchroniser avec le groupe de domaine de messagerie du fournisseur d'identité."
 
@@ -229,6 +252,12 @@ msgstr "a des non lus"
 
 msgid "has trashed"
 msgstr "a des mis à la corbeille"
+
+msgid "is trashed"
+msgstr "est mis à la corbeille"
+
+msgid "Whether all messages in the thread are trashed"
+msgstr "Si tous les messages de la conversation sont supprimés"
 
 msgid "has archived"
 msgstr "a des archives"
@@ -353,9 +382,6 @@ msgstr "est expéditeur"
 msgid "is starred"
 msgstr "est favori"
 
-msgid "is trashed"
-msgstr "est mis à la corbeille"
-
 msgid "is unread"
 msgstr "est non lu"
 
@@ -409,6 +435,24 @@ msgstr "Objet"
 
 msgid "Body"
 msgstr "Corps"
+
+msgid "raw data"
+msgstr "données brutes"
+
+msgid "Raw email message bytes"
+msgstr "Octets des messages bruts"
+
+msgid "error message"
+msgstr "message d'erreur"
+
+msgid "Error message if processing failed"
+msgstr "Message d'erreur si le traitement a échoué"
+
+msgid "inbound message"
+msgstr "message entrant"
+
+msgid "inbound messages"
+msgstr "messages entrants"
 
 msgid "sha256 hash"
 msgstr "hash sha256"
@@ -583,4 +627,7 @@ msgstr "Anglais"
 
 msgid "French"
 msgstr "Français"
+
+msgid "Dutch"
+msgstr "Néerlandais"
 
