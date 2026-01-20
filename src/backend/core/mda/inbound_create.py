@@ -425,15 +425,16 @@ def _create_message_from_inbound(
                         mailbox.id,
                     )
 
-                # Create the link between message and contact
-                data = {
-                    "message": message,
-                    "contact": recipient_contact,
-                    "type": recipient_type,
-                }
+                # Create the link between message and contact (use get_or_create to handle duplicates)
+                defaults = {}
                 if is_import and not message.is_draft:
-                    data["delivery_status"] = enums.MessageDeliveryStatusChoices.SENT
-                models.MessageRecipient.objects.create(**data)
+                    defaults["delivery_status"] = enums.MessageDeliveryStatusChoices.SENT
+                models.MessageRecipient.objects.get_or_create(
+                    message=message,
+                    contact=recipient_contact,
+                    type=recipient_type,
+                    defaults=defaults,
+                )
             except ValidationError as e:
                 logger.warning(
                     "Validation error creating recipient contact/link (%s) for message %s: %s",
