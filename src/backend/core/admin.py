@@ -3,6 +3,8 @@
 from django.contrib import admin, messages
 from django.contrib.auth import admin as auth_admin
 from django.core.files.storage import storages
+from django.db.models import Q
+from django.http import HttpResponseNotAllowed
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.urls import path
@@ -11,10 +13,31 @@ from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
 from core.api.utils import get_file_key
+from core.mda.outbound_tasks import retry_messages_task
 from core.services.importer.service import ImportService
 
 from . import models
+from .enums import MessageDeliveryStatusChoices
 from .forms import IMAPImportForm, MessageImportForm
+
+
+class RecipientDeliveryStatusFilter(admin.SimpleListFilter):
+    """Filter messages by their recipients' delivery status."""
+
+    title = _("delivery status")
+    parameter_name = "recipient_delivery_status"
+
+    def lookups(self, request, model_admin):
+        """Return a list of delivery status choices."""
+        return MessageDeliveryStatusChoices.choices
+
+    def queryset(self, request, queryset):
+        """Filter queryset by recipient delivery status."""
+        if self.value():
+            return queryset.filter(
+                recipients__delivery_status=int(self.value())
+            ).distinct()
+        return queryset
 
 
 def reset_keycloak_password_action(_, request, queryset):
@@ -51,6 +74,31 @@ def reset_keycloak_password_action(_, request, queryset):
 
 reset_keycloak_password_action.short_description = (
     "Reset Keycloak password for selected mailboxes"
+)
+
+
+def retry_send_messages_action(__, request, queryset):
+    """Admin action to retry sending selected messages with retryable recipients."""
+    message_ids = [
+        str(message_id) for message_id in queryset.values_list("id", flat=True)
+    ]
+    task = retry_messages_task.delay(message_ids=message_ids)
+
+    messages.info(
+        request,
+        _(
+            "%(message_count)d messages - "
+            "Retry send message task queued (id: %(task_id)s)."
+        )
+        % {
+            "message_count": len(message_ids),
+            "task_id": task.id,
+        },
+    )
+
+
+retry_send_messages_action.short_description = _(
+    "Retry to send selected messages to pending recipients"
 )
 
 
@@ -356,6 +404,7 @@ class MessageAdmin(admin.ModelAdmin):
     """Admin class for the Message model"""
 
     inlines = [MessageRecipientInline, AttachmentInline]
+    actions = [retry_send_messages_action]
     list_display = (
         "id",
         "subject",
@@ -376,6 +425,7 @@ class MessageAdmin(admin.ModelAdmin):
         "is_spam",
         "is_archived",
         "has_attachments",
+        RecipientDeliveryStatusFilter,
         "created_at",
         "sent_at",
         "read_at",
@@ -384,6 +434,7 @@ class MessageAdmin(admin.ModelAdmin):
     )
     search_fields = ("subject", "sender__name", "sender__email", "mime_id")
     change_list_template = "admin/core/message/change_list.html"
+    change_form_template = "admin/core/message/change_form.html"
     raw_id_fields = ("thread", "blob", "draft_blob", "parent", "channel")
     autocomplete_fields = ("sender", "signature")
     readonly_fields = ("mime_id", "created_at", "updated_at")
@@ -404,6 +455,11 @@ class MessageAdmin(admin.ModelAdmin):
                 "import-imap/",
                 self.admin_site.admin_view(self.import_imap_view),
                 name="core_message_import_imap",
+            ),
+            path(
+                "<path:object_id>/retry/",
+                self.admin_site.admin_view(self.retry_message_view),
+                name="core_message_retry",
             ),
         ]
         return custom_urls + urls
@@ -486,6 +542,69 @@ class MessageAdmin(admin.ModelAdmin):
         extra_context = extra_context or {}
         extra_context["has_import_permission"] = self.has_add_permission(request)
         return super().changelist_view(request, extra_context=extra_context)
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        """Add retry availability context to the change form."""
+        context = extra_context.copy() if extra_context else {}
+
+        try:
+            message = self.get_object(request, object_id)
+            if message.is_draft is False and message.is_sender is True:
+                # Check if message has recipients with retry status
+                has_retryable_recipients = message.recipients.filter(
+                    Q(delivery_status=MessageDeliveryStatusChoices.RETRY)
+                    | Q(delivery_status__isnull=True)
+                ).exists()
+                context["has_retryable_recipients"] = has_retryable_recipients
+        except Exception:  # pylint: disable=broad-except
+            context["has_retryable_recipients"] = False
+
+        return super().change_view(
+            request,
+            object_id,
+            form_url,
+            extra_context=context,
+        )
+
+    def retry_message_view(self, request, object_id):
+        """View for retrying to send a message to recipients with retry status."""
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+
+        message = self.get_object(request, object_id)
+
+        if message is None:
+            messages.error(request, _("Message not found."))
+            return redirect("..")
+
+        # Check if message has recipients with retry status
+        retryable_recipients_count = message.recipients.filter(
+            Q(delivery_status=MessageDeliveryStatusChoices.RETRY)
+            | Q(delivery_status__isnull=True)
+        ).count()
+
+        if retryable_recipients_count == 0:
+            messages.warning(
+                request,
+                _("No pending recipients found for this message."),
+            )
+            return redirect("..")
+
+        # Trigger the retry task
+        task = retry_messages_task.delay(message_ids=[str(message.id)])
+
+        messages.success(
+            request,
+            _(
+                "Retry task has been queued for "
+                "%(retryable_recipients_count)d pending recipient(s) (id: %(task_id)s)."
+            )
+            % {
+                "retryable_recipients_count": retryable_recipients_count,
+                "task_id": task.id,
+            },
+        )
+        return redirect("..")
 
 
 @admin.register(models.Contact)

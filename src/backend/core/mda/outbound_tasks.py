@@ -2,6 +2,8 @@
 
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught, too-many-lines
 
+import math
+
 from django.db.models import Q
 from django.utils import timezone
 
@@ -120,11 +122,11 @@ def selfcheck_task(self):
 
 
 @celery_app.task(bind=True)
-def retry_messages_task(self, message_id=None, force_mta_out=False, batch_size=100):
+def retry_messages_task(self, message_ids=None, force_mta_out=False, batch_size=100):
     """Retry sending messages with retryable recipients (respects retry timing).
 
     Args:
-        message_id: Optional specific message ID to retry
+        message_ids: Optional message IDs list to retry
         force_mta_out: Whether to force sending via MTA
         batch_size: Number of messages to process in each batch
 
@@ -132,44 +134,30 @@ def retry_messages_task(self, message_id=None, force_mta_out=False, batch_size=1
         dict: A dictionary with task status and results
     """
     # Get messages to process
-    if message_id:
-        # Single message mode
-        try:
-            message = models.Message.objects.get(id=message_id)
-        except models.Message.DoesNotExist:
-            error_msg = f"Message with ID '{message_id}' does not exist"
-            return {"success": False, "error": error_msg}
-
-        if message.is_draft:
-            error_msg = f"Message '{message_id}' is still a draft and cannot be sent"
-            return {"success": False, "error": error_msg}
-
-        messages_to_process = [message]
-        total_messages = 1
-    else:
-        # Bulk mode - find all messages with retryable recipients that are ready for retry
-        message_filter_q = (
-            Q(
-                is_draft=False,
-                is_sender=True,
-            )
-            & (
-                Q(recipients__delivery_status=MessageDeliveryStatusChoices.RETRY)
-                | Q(recipients__delivery_status__isnull=True)
-            )
-            & (
-                Q(recipients__retry_at__isnull=True)
-                | Q(recipients__retry_at__lte=timezone.now())
-            )
+    # Bulk mode - find all messages with retryable recipients that are ready for retry
+    message_filter_q = (
+        Q(
+            is_draft=False,
+            is_sender=True,
         )
-
-        messages_to_process = list(
-            models.Message.objects.filter(message_filter_q).distinct()
+        & (
+            Q(recipients__delivery_status=MessageDeliveryStatusChoices.RETRY)
+            | Q(recipients__delivery_status__isnull=True)
         )
-        total_messages = len(messages_to_process)
+        & (
+            Q(recipients__retry_at__isnull=True)
+            | Q(recipients__retry_at__lte=timezone.now())
+        )
+    )
+
+    if message_ids is not None:
+        message_filter_q &= Q(id__in=message_ids)
+
+    messages_to_process = models.Message.objects.filter(message_filter_q).distinct()
+    total_messages = messages_to_process.count()
 
     if total_messages == 0:
-        return {
+        result = {
             "success": True,
             "total_messages": 0,
             "processed_messages": 0,
@@ -177,22 +165,25 @@ def retry_messages_task(self, message_id=None, force_mta_out=False, batch_size=1
             "error_count": 0,
             "message": "No messages ready for retry",
         }
+        if message_ids is not None:
+            result["message_ids"] = message_ids
+        return result
 
     # Process messages in batches
     processed_count = 0
     success_count = 0
     error_count = 0
 
-    for batch_start in range(0, total_messages, batch_size):
-        batch_messages = messages_to_process[batch_start : batch_start + batch_size]
-
+    for index, message in enumerate(
+        messages_to_process.iterator(chunk_size=batch_size)
+    ):
         # Update progress for bulk operations
-        if not message_id:
+        if index % batch_size == 0:
             self.update_state(
                 state="PROGRESS",
                 meta={
-                    "current_batch": batch_start // batch_size + 1,
-                    "total_batches": (total_messages + batch_size - 1) // batch_size,
+                    "current_batch": index // batch_size + 1,
+                    "total_batches": math.ceil(total_messages / batch_size),
                     "processed_messages": processed_count,
                     "total_messages": total_messages,
                     "success_count": success_count,
@@ -200,46 +191,40 @@ def retry_messages_task(self, message_id=None, force_mta_out=False, batch_size=1
                 },
             )
 
-        for message in batch_messages:
-            try:
-                # Get recipients with retry status that are ready for retry
-                retry_filter_q = (
-                    Q(delivery_status=MessageDeliveryStatusChoices.RETRY)
-                    | Q(delivery_status__isnull=True)
-                ) & (Q(retry_at__isnull=True) | Q(retry_at__lte=timezone.now()))
-                retry_recipients = message.recipients.filter(retry_filter_q)
+        try:
+            # Get recipients with retry status that are ready for retry
+            retry_filter_q = (
+                Q(delivery_status=MessageDeliveryStatusChoices.RETRY)
+                | Q(delivery_status__isnull=True)
+            ) & (Q(retry_at__isnull=True) | Q(retry_at__lte=timezone.now()))
+            retry_recipients = message.recipients.filter(retry_filter_q)
 
-                if retry_recipients.exists():
-                    # Process this message
-                    send_message(message, force_mta_out=force_mta_out)
-                    success_count += 1
-                    logger.info(
-                        "Successfully retried message %s (%d recipients)",
-                        message.id,
-                        retry_recipients.count(),
-                    )
+            if retry_recipients.exists():
+                # Process this message
+                send_message(message, force_mta_out=force_mta_out)
+                success_count += 1
+                logger.info(
+                    "Successfully retried message %s (%d recipients)",
+                    message.id,
+                    retry_recipients.count(),
+                )
 
-                processed_count += 1
+            processed_count += 1
 
-            except Exception as e:
-                error_count += 1
-                logger.exception("Failed to retry message %s: %s", message.id, e)
+        except Exception as e:
+            error_count += 1
+            logger.exception("Failed to retry message %s: %s", message.id, e)
 
     # Return appropriate result format
-    if message_id:
-        return {
-            "success": True,
-            "message_id": str(message_id),
-            "recipients_processed": success_count,
-            "processed_messages": processed_count,
-            "success_count": success_count,
-            "error_count": error_count,
-        }
-
-    return {
+    result = {
         "success": True,
         "total_messages": total_messages,
         "processed_messages": processed_count,
         "success_count": success_count,
         "error_count": error_count,
     }
+
+    if message_ids is not None:
+        result["message_ids"] = message_ids
+
+    return result

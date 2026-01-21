@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-01-16 09:10+0000\n"
+"POT-Creation-Date: 2026-01-22 11:32+0000\n"
 "PO-Revision-Date: 2026-01-22 09:05\n"
 "Last-Translator: \n"
 "Language-Team: French\n"
@@ -16,6 +16,20 @@ msgstr ""
 "X-Crowdin-Language: fr\n"
 "X-Crowdin-File: backend.pot\n"
 "X-Crowdin-File-ID: 40\n"
+
+msgid "delivery status"
+msgstr "statut de livraison"
+
+#, python-format
+msgid ""
+"%(message_count)d messages - Retry send message task queued (id: "
+"%(task_id)s)."
+msgstr ""
+"%(message_count)d messages - Réexpédition mise en file d'attente (id: %(task_id)s)."
+
+msgid "Retry to send selected messages to pending recipients"
+msgstr ""
+"Réexpédier les messages sélectionnés aux destinataires en attente"
 
 msgid "Personal info"
 msgstr "Informations personnelles"
@@ -43,6 +57,19 @@ msgstr "Importer des messages"
 
 msgid "Import Messages from IMAP"
 msgstr "Importer des messages via IMAP"
+
+msgid "Message not found."
+msgstr "Aucun message trouvé."
+
+msgid "No pending recipients found for this message."
+msgstr "Aucun destinataire en attente d'envoie trouvé pour ce message."
+
+#, python-format
+msgid ""
+"Retry task has been queued for %(retryable_recipients_count)d pending "
+"recipient(s) (id: %(task_id)s)."
+msgstr ""
+"Réexpédition mise en file d'attente pour %(retryable_recipients_count)d destinataire(s) en attente (id: %(task_id)s)."
 
 msgid "Keys"
 msgstr "Clés"
@@ -355,9 +382,6 @@ msgstr "contacts"
 msgid "delivered at"
 msgstr "délivré à"
 
-msgid "delivery status"
-msgstr "statut de livraison"
-
 msgid "delivery message"
 msgstr "message de livraison"
 
@@ -607,6 +631,9 @@ msgstr "modèle de message"
 msgid "message templates"
 msgstr "modèles de message"
 
+msgid "Retry to send to pending recipients"
+msgstr "Réessayer d'envoyer aux destinataires en attente"
+
 msgid "Import from IMAP"
 msgstr "Importer via IMAP"
 
@@ -630,4 +657,3 @@ msgstr "Français"
 
 msgid "Dutch"
 msgstr "Néerlandais"
-

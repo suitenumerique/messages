@@ -8,6 +8,11 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Allow to retry send Message in Django Admin and filter Message by delivery status
+
+
 ## [0.1.1] - 2026-01-22
 
 ### Fixed

@@ -99,44 +99,56 @@ class TestRetryMessagesTask:
         return message
 
     @patch("core.mda.outbound_tasks.send_message")
-    def test_retry_single_message_success(
+    def test_retry_messages_set_success(
         self, mock_send_message, message_with_recipients
     ):
         """Test retrying a single message by ID."""
-        message = message_with_recipients
+        message_ids = [str(message_with_recipients.id)]
 
         # Mock successful send
         mock_send_message.return_value = None
 
-        result = retry_messages_task.apply(args=[str(message.id)]).get()
+        result = retry_messages_task.apply(args=[message_ids]).get()
 
         # Verify the result
         assert result["success"] is True
-        assert result["message_id"] == str(message.id)
+        assert result["message_ids"] == message_ids
         assert result["success_count"] == 1
         assert result["error_count"] == 0
         assert result["processed_messages"] == 1
 
         # Verify send_message was called
-        mock_send_message.assert_called_once_with(message, force_mta_out=False)
+        mock_send_message.assert_called_once_with(
+            message_with_recipients, force_mta_out=False
+        )
 
     def test_retry_nonexistent_message(self):
         """Test retrying a non-existent message."""
         fake_message_id = "00000000-0000-0000-0000-000000000000"
 
-        result = retry_messages_task.apply(args=[fake_message_id]).get()
+        result = retry_messages_task.apply(args=[[fake_message_id]]).get()
 
         # Verify the result
-        assert result["success"] is False
-        assert "does not exist" in result["error"]
+        assert result["success"] is True
+        assert result["message_ids"] == [fake_message_id]
+        assert result["total_messages"] == 0
+        assert result["success_count"] == 0
+        assert result["error_count"] == 0
+        assert result["processed_messages"] == 0
+        assert result["message"] == "No messages ready for retry"
 
     def test_retry_draft_message(self, draft_message):
         """Test retrying a draft message (should fail)."""
-        result = retry_messages_task.apply(args=[str(draft_message.id)]).get()
+        result = retry_messages_task.apply(args=[[str(draft_message.id)]]).get()
 
         # Verify the result
-        assert result["success"] is False
-        assert "is still a draft" in result["error"]
+        assert result["success"] is True
+        assert result["message_ids"] == [str(draft_message.id)]
+        assert result["total_messages"] == 0
+        assert result["success_count"] == 0
+        assert result["error_count"] == 0
+        assert result["processed_messages"] == 0
+        assert result["message"] == "No messages ready for retry"
 
     @patch("core.mda.outbound_tasks.send_message")
     def test_retry_bulk_mode(self, mock_send_message, message_with_recipients):
@@ -236,11 +248,11 @@ class TestRetryMessagesTask:
         # Mock successful send
         mock_send_message.return_value = None
 
-        result = retry_messages_task.apply(args=[str(message.id)]).get()
+        result = retry_messages_task.apply(args=[[str(message.id)]]).get()
 
         # Verify the result
         assert result["success"] is True
-        assert result["message_id"] == str(message.id)
+        assert result["message_ids"] == [str(message.id)]
         assert result["success_count"] == 1
         assert result["error_count"] == 0
 
@@ -290,7 +302,7 @@ class TestRetryMessagesTask:
         # Mock successful send
         mock_send_message.return_value = None
 
-        result = retry_messages_task.apply(args=[str(message.id)]).get()
+        result = retry_messages_task.apply(args=[[str(message.id)]]).get()
 
         # Verify the result - should only process the ready recipient
         assert result["success"] is True
@@ -414,11 +426,11 @@ class TestRetryMessagesTask:
         # Mock successful send
         mock_send_message.return_value = None
 
-        result = retry_messages_task.apply(args=[str(message.id)]).get()
+        result = retry_messages_task.apply(args=[[str(message.id)]]).get()
 
         # Verify the result - should process 2 recipients (RETRY and NULL)
         assert result["success"] is True
-        assert result["message_id"] == str(message.id)
+        assert result["message_ids"] == [str(message.id)]
         assert result["success_count"] == 1  # One message processed successfully
         assert result["error_count"] == 0
         assert result["processed_messages"] == 1
@@ -466,14 +478,167 @@ class TestRetryMessagesTask:
             delivery_message="Permanent failure",
         )
 
-        result = retry_messages_task.apply(args=[str(message.id)]).get()
+        result = retry_messages_task.apply(args=[[str(message.id)]]).get()
 
         # Verify the result - should process the message but not call send_message
         assert result["success"] is True
-        assert result["message_id"] == str(message.id)
+        assert result["message_ids"] == [str(message.id)]
         assert result["success_count"] == 0  # No recipients to retry
         assert result["error_count"] == 0
-        assert result["processed_messages"] == 1
+        assert result["processed_messages"] == 0
 
         # Verify send_message was NOT called because no recipients were retryable
         mock_send_message.assert_not_called()
+
+    @patch("core.mda.outbound_tasks.send_message")
+    def test_retry_message_with_empty_message_ids_list(
+        self, mock_send_message, mailbox_sender, thread
+    ):
+        """Test retry when message_ids list is empty."""
+        sender_contact = factories.ContactFactory(mailbox=mailbox_sender)
+
+        # Create a message that could be retried but do not include it in the message_ids list
+        # It should be not processed
+        message = factories.MessageFactory(
+            thread=thread,
+            sender=sender_contact,
+            is_draft=False,
+            is_sender=True,
+            subject="A Message without delivery status",
+        )
+
+        # Create one recipient with no delivery status
+        sent_contact = factories.ContactFactory(
+            mailbox=mailbox_sender, email="sent@example.com"
+        )
+
+        # SENT status - should not be retried
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=sent_contact,
+            type=models.MessageRecipientTypeChoices.TO,
+        )
+
+        result = retry_messages_task.apply(args=[[]]).get()
+
+        # Verify the result - should process the message but not call send_message
+        assert result["success"] is True
+        assert result["message_ids"] == []
+        assert result["success_count"] == 0  # No recipients to retry
+        assert result["error_count"] == 0
+        assert result["processed_messages"] == 0
+
+        # Verify send_message was NOT called because no recipients were retryable
+        mock_send_message.assert_not_called()
+
+    @patch("core.mda.outbound_tasks.send_message")
+    def test_retry_update_state_called_once_per_batch(
+        self, mock_send_message, mailbox_sender, thread
+    ):
+        """Test that update_state is called once per batch, not per message."""
+        # Create 5 messages with retryable recipients
+        messages = []
+        for i in range(5):
+            sender_contact = factories.ContactFactory(mailbox=mailbox_sender)
+            message = factories.MessageFactory(
+                thread=thread,
+                sender=sender_contact,
+                is_draft=False,
+                is_sender=True,
+                subject=f"Batch State Test Message {i}",
+            )
+
+            # Add recipients ready for retry
+            to_contact = factories.ContactFactory(
+                mailbox=mailbox_sender, email=f"to_state{i}@example.com"
+            )
+            factories.MessageRecipientFactory(
+                message=message,
+                contact=to_contact,
+                type=models.MessageRecipientTypeChoices.TO,
+                delivery_status=enums.MessageDeliveryStatusChoices.RETRY,
+                retry_at=timezone.now() - timezone.timedelta(minutes=1),
+                retry_count=1,
+            )
+            messages.append(message)
+
+        # Mock successful send
+        mock_send_message.return_value = None
+
+        # Patch update_state to track calls
+        with patch.object(retry_messages_task, "update_state") as mock_update_state:
+            result = retry_messages_task.apply(kwargs={"batch_size": 2}).get()
+
+        # Verify the result
+        assert result["success"] is True
+        assert result["total_messages"] == 5
+        assert result["success_count"] == 5
+
+        # With 5 messages and batch_size=2, we should have 3 update_state calls:
+        # - At index 0 (start of batch 1)
+        # - At index 2 (start of batch 2)
+        # - At index 4 (start of batch 3)
+        assert mock_update_state.call_count == 3
+
+        # Verify the calls have correct batch information
+        calls = mock_update_state.call_args_list
+
+        # First call at index 0 (batch 1)
+        assert calls[0].kwargs["state"] == "PROGRESS"
+        assert calls[0].kwargs["meta"]["current_batch"] == 1
+        assert calls[0].kwargs["meta"]["total_batches"] == 3
+
+        # Second call at index 2 (batch 2)
+        assert calls[1].kwargs["state"] == "PROGRESS"
+        assert calls[1].kwargs["meta"]["current_batch"] == 2
+        assert calls[1].kwargs["meta"]["total_batches"] == 3
+
+        # Third call at index 4 (batch 3)
+        assert calls[2].kwargs["state"] == "PROGRESS"
+        assert calls[2].kwargs["meta"]["current_batch"] == 3
+        assert calls[2].kwargs["meta"]["total_batches"] == 3
+
+    @patch("core.mda.outbound_tasks.send_message")
+    def test_retry_update_state_not_called_every_message(
+        self, mock_send_message, mailbox_sender, thread
+    ):
+        """Test that update_state is NOT called for every message when batch_size > 1."""
+        # Create 10 messages with retryable recipients
+        messages = []
+        for i in range(10):
+            sender_contact = factories.ContactFactory(mailbox=mailbox_sender)
+            message = factories.MessageFactory(
+                thread=thread,
+                sender=sender_contact,
+                is_draft=False,
+                is_sender=True,
+                subject=f"No Per-Message Update Test {i}",
+            )
+
+            to_contact = factories.ContactFactory(
+                mailbox=mailbox_sender, email=f"to_noupdate{i}@example.com"
+            )
+            factories.MessageRecipientFactory(
+                message=message,
+                contact=to_contact,
+                type=models.MessageRecipientTypeChoices.TO,
+                delivery_status=enums.MessageDeliveryStatusChoices.RETRY,
+                retry_at=timezone.now() - timezone.timedelta(minutes=1),
+                retry_count=1,
+            )
+            messages.append(message)
+
+        mock_send_message.return_value = None
+
+        with patch.object(retry_messages_task, "update_state") as mock_update_state:
+            result = retry_messages_task.apply(kwargs={"batch_size": 3}).get()
+
+        assert result["success"] is True
+        assert result["total_messages"] == 10
+        assert result["success_count"] == 10
+
+        # With 10 messages and batch_size=3, update_state should be called 4 times:
+        # At indices 0, 3, 6, 9 (not 10 times for each message)
+        assert mock_update_state.call_count == 4
+        # Verify it's significantly less than total messages
+        assert mock_update_state.call_count < result["total_messages"]
