@@ -8,6 +8,10 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- Now `DJANGO_ADMIN_URL` must not end with `/`.
+
 ## [0.1.0] - 2026-01-20
 
 ### Added

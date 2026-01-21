@@ -69,7 +69,7 @@ class Base(Configuration):
     API_VERSION = "v1.0"
 
     # Admin URL configuration
-    ADMIN_URL = values.Value("admin/")
+    ADMIN_URL = values.Value("admin")
 
     # OpenSearch configuration
     OPENSEARCH_HOSTS = values.ListValue(
