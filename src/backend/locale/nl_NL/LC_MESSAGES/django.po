@@ -3,7 +3,7 @@ msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-01-16 09:10+0000\n"
-"PO-Revision-Date: 2026-01-20 13:46\n"
+"PO-Revision-Date: 2026-01-22 09:05\n"
 "Last-Translator: \n"
 "Language-Team: Dutch\n"
 "Language: nl_NL\n"
@@ -72,7 +72,7 @@ msgstr "Kan bijlagen niet toevoegen (%(new_size)s MB). Totale bijlagen zouden %(
 
 #, python-format
 msgid "Too many recipients: %(count)s (maximum is %(max)s). Please reduce the number of recipients before sending."
-msgstr ""
+msgstr "Te veel ontvangers: %(count)s (maximum is %(max)s). Beperk het aantal ontvangers voordat u verzendt."
 
 #, python-format
 msgid "Total attachment size (%(total_size)s MB) exceeds the %(max_size)s MB limit. Please remove or reduce attachments."
@@ -596,10 +596,10 @@ msgid "Whether this template is forced; no other template of the same type can b
 msgstr "Of deze template wordt geforceerd; geen andere sjabloon van hetzelfde type kan worden gebruikt in dezelfde scope"
 
 msgid "is default"
-msgstr ""
+msgstr "is standaard"
 
 msgid "Whether this template is the default; it will be automatically loaded when composing a new message"
-msgstr ""
+msgstr "Of deze sjabloon standaard is; het zal automatisch worden geladen bij het opstellen van een nieuw bericht"
 
 msgid "message template"
 msgstr "bericht template"
