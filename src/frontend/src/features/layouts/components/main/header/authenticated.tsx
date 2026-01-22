@@ -90,7 +90,7 @@ const ApplicationMenu = () => {
   const canAccessDomainAdmin = useAbility(Abilities.CAN_VIEW_DOMAIN_ADMIN);
   const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
   const canManageMessageTemplates = useAbility(Abilities.CAN_MANAGE_MESSAGE_TEMPLATES, selectedMailbox);
-  const isIntegrationsEnabled = useFeatureFlag(FEATURE_KEYS.INTEGRATIONS);
+  const isIntegrationsEnabled = useFeatureFlag(FEATURE_KEYS.MAILBOX_ADMIN_CHANNELS);
   const { t } = useTranslation();
   const router = useRouter();
   const taskId = useMemo(() => {

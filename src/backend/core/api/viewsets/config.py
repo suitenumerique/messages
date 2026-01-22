@@ -38,8 +38,9 @@ class ConfigView(drf.views.APIView):
                             "type": "boolean",
                             "readOnly": True,
                         },
-                        "FEATURE_INTEGRATIONS": {
-                            "type": "boolean",
+                        "FEATURE_MAILBOX_ADMIN_CHANNELS": {
+                            "type": "array",
+                            "items": {"type": "string"},
                             "readOnly": True,
                         },
                         "DRIVE": {
@@ -113,7 +114,7 @@ class ConfigView(drf.views.APIView):
                         "AI_ENABLED",
                         "FEATURE_AI_SUMMARY",
                         "FEATURE_AI_AUTOLABELS",
-                        "FEATURE_INTEGRATIONS",
+                        "FEATURE_MAILBOX_ADMIN_CHANNELS",
                         "SCHEMA_CUSTOM_ATTRIBUTES_USER",
                         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN",
                         "MAX_OUTGOING_ATTACHMENT_SIZE",
@@ -150,8 +151,10 @@ class ConfigView(drf.views.APIView):
         dict_settings["FEATURE_AI_SUMMARY"] = is_ai_summary_enabled()
         dict_settings["FEATURE_AI_AUTOLABELS"] = is_auto_labels_enabled()
 
-        # Feature flags
-        dict_settings["FEATURE_INTEGRATIONS"] = settings.FEATURE_INTEGRATIONS
+        # Feature flags - return as list
+        dict_settings["FEATURE_MAILBOX_ADMIN_CHANNELS"] = list(
+            settings.FEATURE_MAILBOX_ADMIN_CHANNELS
+        )
 
         # Email size limits
         dict_settings["MAX_OUTGOING_ATTACHMENT_SIZE"] = (

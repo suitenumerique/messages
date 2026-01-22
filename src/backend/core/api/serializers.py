@@ -4,6 +4,7 @@
 
 import json
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q
 from django.utils.translation import gettext_lazy as _
@@ -1326,6 +1327,10 @@ class ImportIMAPSerializer(ImportBaseSerializer):
 class ChannelSerializer(serializers.ModelSerializer):
     """Serialize Channel model."""
 
+    # Explicitly mark nullable fields to fix OpenAPI schema
+    mailbox = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
+    maildomain = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
+
     class Meta:
         model = models.Channel
         fields = [
@@ -1346,6 +1351,18 @@ class ChannelSerializer(serializers.ModelSerializer):
         When used in the nested mailbox context (via ChannelViewSet),
         the mailbox is set from context and doesn't need to be validated here.
         """
+        # Validate channel type is authorized
+        channel_type = attrs.get("type")
+        if channel_type:
+            allowed_types = settings.FEATURE_MAILBOX_ADMIN_CHANNELS
+            if channel_type not in allowed_types:
+                raise serializers.ValidationError(
+                    {
+                        "type": f"Channel type '{channel_type}' is not authorized. "
+                        f"Allowed types: {', '.join(allowed_types)}"
+                    }
+                )
+
         # If we have a mailbox in context (from ChannelViewSet), skip validation
         if self.context.get("mailbox"):
             return attrs

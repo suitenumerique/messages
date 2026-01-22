@@ -1,5 +1,5 @@
-import { Button, Input } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Icon, IconType, IconSize } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -19,6 +19,12 @@ import { Banner } from "@/features/ui/components/banner";
 import { handle } from "@/features/utils/errors";
 import { TagsSelector } from "./tags-selector";
 
+type WidgetChannelSettings = {
+    tags?: string[];
+    subject_template?: string;
+    config?: { enabled: boolean };
+};
+
 type WidgetIntegrationFormProps = {
     channel?: Channel;
     onSuccess: (channel: Channel) => void;
@@ -27,7 +33,7 @@ type WidgetIntegrationFormProps = {
 
 const createFormSchema = (t: (key: string) => string) => z.object({
     name: z.string().min(1, { message: t("Name is required.") }),
-    subject_template: z.string().optional(),
+    subject_template: z.string().min(1, { message: t("Subject template is required.") }),
 });
 
 type FormFields = z.infer<ReturnType<typeof createFormSchema>>;
@@ -41,8 +47,9 @@ export const WidgetIntegrationForm = ({
     const { selectedMailbox } = useMailboxContext();
     const queryClient = useQueryClient();
     const [error, setError] = useState<string | null>(null);
+    const widgetSettings = (channel?.settings as WidgetChannelSettings | undefined);
     const [selectedTags, setSelectedTags] = useState<string[]>(
-        channel?.settings?.tags || []
+        widgetSettings?.tags || []
     );
     const isEditing = !!channel;
 
@@ -55,7 +62,7 @@ export const WidgetIntegrationForm = ({
         resolver: zodResolver(formSchema),
         defaultValues: {
             name: channel?.name || "",
-            subject_template: channel?.settings?.subject_template || "Message from {{{referer_domain}}}",
+            subject_template: widgetSettings?.subject_template || t("Message from {{{referer_domain}}}"),
         },
     });
 
@@ -72,7 +79,7 @@ export const WidgetIntegrationForm = ({
         setError(null);
 
         const settings = {
-            subject_template: data.subject_template || "Message from {{{referer_domain}}}",
+            subject_template: data.subject_template,
             tags: selectedTags,
             config: { enabled: true },
         };
@@ -110,7 +117,9 @@ export const WidgetIntegrationForm = ({
                     </ToasterItem>
                 );
                 await invalidateChannels();
-                onSuccess(newChannel);
+                if (newChannel.status === 201) {
+                    onSuccess(newChannel.data);
+                }
             }
         } catch (err) {
             handle(err);
@@ -150,7 +159,8 @@ _lasuite_widget.push(["loader", "init", {
                 <RhfInput
                     label={t("Subject template")}
                     name="subject_template"
-                    text={t("Use {{{referer_domain}}} to include the website domain in the subject.")}
+                    text={errors.subject_template?.message || t("Use {{{referer_domain}}} to include the website domain in the subject.")}
+                    state={errors.subject_template ? "error" : "default"}
                     fullWidth
                 />
                 <TagsSelector
@@ -216,7 +226,7 @@ _lasuite_widget.push(["loader", "init", {
                             rel="noopener noreferrer"
                         >
                             {t("View full documentation")}
-                            <Icon name="open_in_new" type={IconType.OUTLINED} />
+                            <Icon name="open_in_new" type={IconType.OUTLINED} size={IconSize.SMALL} />
                         </a>
                     </p>
                 </div>

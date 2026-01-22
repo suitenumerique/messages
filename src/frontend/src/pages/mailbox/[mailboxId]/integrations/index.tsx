@@ -11,7 +11,7 @@ const MailboxIntegrationsPage = () => {
     const { t } = useTranslation();
     const router = useRouter();
     const { queryStates, selectedMailbox } = useMailboxContext();
-    const isIntegrationsEnabled = useFeatureFlag(FEATURE_KEYS.INTEGRATIONS);
+    const isIntegrationsEnabled = useFeatureFlag(FEATURE_KEYS.MAILBOX_ADMIN_CHANNELS);
 
     useEffect(() => {
         if (!queryStates.mailboxes.isLoading && !selectedMailbox) {

@@ -45,7 +45,7 @@ export const TagsSelector = ({ selectedTags, onTagsChange }: TagsSelectorProps) 
     const containerRef = useRef<HTMLDivElement>(null);
 
     const { data: labelsList, isLoading } = useLabelsList(
-        { mailbox_id: selectedMailbox!.id },
+        { mailbox_id: selectedMailbox?.id ?? '' },
         { query: { enabled: !!selectedMailbox } }
     );
 

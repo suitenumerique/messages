@@ -154,6 +154,9 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         # Replace template variables
         subject = subject_template.replace("{{{referer_domain}}}", source_name)
 
+        # Sanitize subject to prevent header injection (strip newlines/carriage returns)
+        subject = subject.replace("\r", "").replace("\n", "")
+
         # Build a JMAP-like structured format that we could have got from parse_email_message()
 
         parsed_email = {

@@ -1,9 +1,10 @@
 import { Modal, ModalSize, Button } from "@gouvfr-lasuite/cunningham-react";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconType, IconSize } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { useState, useEffect } from "react";
 import { Channel } from "@/features/api/gen";
 import { WidgetIntegrationForm } from "./widget-integration-form";
+import { useConfig } from "@/features/providers/config";
 
 type ModalComposeIntegrationProps = {
     isOpen: boolean;
@@ -24,6 +25,30 @@ type ChannelTypeCardProps = {
     onClick: () => void;
 };
 
+type ChannelTypeMetadata = {
+    type: ChannelType;
+    title: string;
+    description: string;
+    icon: string;
+    disabled?: boolean;
+};
+
+const CHANNEL_TYPE_METADATA: Record<ChannelType, ChannelTypeMetadata> = {
+    widget: {
+        type: "widget",
+        title: "Website Widget",
+        description: "Add a contact form widget to your website to receive messages directly in your mailbox.",
+        icon: "widgets",
+    },
+    api_key: {
+        type: "api_key",
+        title: "API Key",
+        description: "Generate an API key to send messages programmatically from your applications.",
+        icon: "key",
+        disabled: true
+    },
+};
+
 const ChannelTypeCard = ({ title, description, icon, disabled, onClick }: ChannelTypeCardProps) => {
     const { t } = useTranslation();
 
@@ -38,7 +63,7 @@ const ChannelTypeCard = ({ title, description, icon, disabled, onClick }: Channe
                 <span className="channel-type-card__badge">{t("Coming soon")}</span>
             )}
             <div className="channel-type-card__icon">
-                <Icon name={icon} type={IconType.OUTLINED} />
+                <Icon name={icon} type={IconType.OUTLINED} size={IconSize.LARGE} />
             </div>
             <div className="channel-type-card__content">
                 <h3 className="channel-type-card__title">{title}</h3>
@@ -69,12 +94,15 @@ export const ModalComposeIntegration = ({
     onSuccess,
 }: ModalComposeIntegrationProps) => {
     const { t } = useTranslation();
+    const config = useConfig();
     const [currentChannel, setCurrentChannel] = useState<Channel | undefined>(initialChannel);
     const isEditing = !!currentChannel;
     const [viewState, setViewState] = useState<ViewState>(isEditing ? "form" : "select_type");
     const [selectedType, setSelectedType] = useState<ChannelType | null>(
         currentChannel?.type as ChannelType | null
     );
+
+    const enabledChannelTypes = (config.FEATURE_MAILBOX_ADMIN_CHANNELS || []) as string[];
 
     // Reset state when modal opens/closes or channel changes
     useEffect(() => {
@@ -135,21 +163,22 @@ export const ModalComposeIntegration = ({
                             {t("Choose the type of integration you want to create")}
                         </p>
                         <div className="channel-type-selector__cards">
-                            <ChannelTypeCard
-                                type="widget"
-                                title={t("Website Widget")}
-                                description={t("Add a contact form widget to your website to receive messages directly in your mailbox.")}
-                                icon="widgets"
-                                onClick={() => handleSelectType("widget")}
-                            />
-                            <ChannelTypeCard
-                                type="api_key"
-                                title={t("API Key")}
-                                description={t("Generate an API key to send messages programmatically from your applications.")}
-                                icon="key"
-                                disabled
-                                onClick={() => {}}
-                            />
+                            {enabledChannelTypes.map((channelType) => {
+                                const metadata = CHANNEL_TYPE_METADATA[channelType as ChannelType];
+                                if (!metadata) return null;
+                                
+                                return (
+                                    <ChannelTypeCard
+                                        key={channelType}
+                                        type={metadata.type}
+                                        title={t(metadata.title)}
+                                        description={t(metadata.description)}
+                                        icon={metadata.icon}
+                                        onClick={() => handleSelectType(metadata.type)}
+                                        disabled={metadata.disabled}
+                                    />
+                                );
+                            })}
                         </div>
                     </div>
                 )}

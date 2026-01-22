@@ -11,7 +11,6 @@ export * from "./blob_upload_create201";
 export * from "./blob_upload_create_body";
 export * from "./change_flag_request_request";
 export * from "./channel";
-export * from "./channel_abilities";
 export * from "./channel_request";
 export * from "./config_retrieve200";
 export * from "./config_retrieve200_driv_e";

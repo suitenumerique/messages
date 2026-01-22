@@ -756,8 +756,8 @@ class Base(Configuration):
     FEATURE_IMPORT_MESSAGES = values.BooleanValue(
         default=True, environ_name="FEATURE_IMPORT_MESSAGES", environ_prefix=None
     )
-    FEATURE_INTEGRATIONS = values.BooleanValue(
-        default=True, environ_name="FEATURE_INTEGRATIONS", environ_prefix=None
+    FEATURE_MAILBOX_ADMIN_CHANNELS = values.ListValue(
+        default=["widget", "api_key"], environ_name="FEATURE_MAILBOX_ADMIN_CHANNELS", environ_prefix=None
     )
 
     # Logging

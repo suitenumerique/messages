@@ -2,6 +2,7 @@
 
 # pylint: disable=redefined-outer-name, unused-argument, too-many-public-methods
 
+from django.test import override_settings
 from django.urls import reverse
 
 import pytest
@@ -162,6 +163,30 @@ class TestChannelCreate:
         response = api_client.post(url, data, format="json")
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
+    def test_create_channel_unauthorized_type(self, api_client, mailbox):
+        """Test creating a channel with an unauthorized type."""
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        data = {"name": "Test API Key", "type": "api_key", "settings": {}}
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "type" in response.data
+        assert "not authorized" in str(response.data["type"]).lower()
+        assert "api_key" in str(response.data["type"])
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget", "api_key"])
+    def test_create_channel_authorized_type(self, api_client, mailbox):
+        """Test creating a channel with an authorized type."""
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        data = {"name": "Test Widget", "type": "widget", "settings": {}}
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["type"] == "widget"
 
 
 @pytest.mark.django_db

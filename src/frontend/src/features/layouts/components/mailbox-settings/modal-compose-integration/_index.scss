@@ -65,11 +65,7 @@
     background: var(--c--contextuals--background--surface--brand--soft);
     border-radius: 50%;
     flex-shrink: 0;
-
-    .material-icons {
-        font-size: 1.75rem;
-        color: var(--c--contextuals--content--semantic--brand--primary);
-    }
+    color: var(--c--contextuals--content--semantic--brand--primary);
 }
 
 .channel-type-card__content {
@@ -195,10 +191,6 @@
 
         &:hover {
             text-decoration: underline;
-        }
-
-        .material-icons {
-            font-size: 1rem;
         }
     }
 }

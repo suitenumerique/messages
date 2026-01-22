@@ -19,7 +19,7 @@ type IntegrationsDataGridProps = {
     mailbox: Mailbox;
 }
 
-const getChannelTypeLabel = (type: string, t: (key: string) => string) => {
+const getChannelTypeLabel = (type: string | undefined, t: (key: string) => string) => {
     switch (type) {
         case "widget":
             return t("Widget");
@@ -30,7 +30,7 @@ const getChannelTypeLabel = (type: string, t: (key: string) => string) => {
     }
 };
 
-const getChannelTypeIcon = (type: string) => {
+const getChannelTypeIcon = (type: string | undefined) => {
     switch (type) {
         case "widget":
             return "widgets";
@@ -171,6 +171,7 @@ export const IntegrationsDataGrid = ({ mailbox }: IntegrationsDataGridProps) => 
                         setSelectedChannel(undefined);
                     }}
                     channel={selectedChannel}
+                    onSuccess={invalidateChannels}
                 />
             </div>
         </section>

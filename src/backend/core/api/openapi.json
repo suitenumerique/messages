@@ -171,6 +171,13 @@
                                             "type": "boolean",
                                             "readOnly": true
                                         },
+                                        "FEATURE_MAILBOX_ADMIN_CHANNELS": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            },
+                                            "readOnly": true
+                                        },
                                         "DRIVE": {
                                             "type": "object",
                                             "description": "The URLs of the Drive external service.",
@@ -241,6 +248,7 @@
                                         "AI_ENABLED",
                                         "FEATURE_AI_SUMMARY",
                                         "FEATURE_AI_AUTOLABELS",
+                                        "FEATURE_MAILBOX_ADMIN_CHANNELS",
                                         "SCHEMA_CUSTOM_ATTRIBUTES_USER",
                                         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN",
                                         "MAX_OUTGOING_ATTACHMENT_SIZE",
@@ -5551,14 +5559,14 @@
                     "mailbox": {
                         "type": "string",
                         "format": "uuid",
-                        "description": "Mailbox that receives messages from this channel",
+                        "description": "primary key for the record as UUID",
                         "readOnly": true,
                         "nullable": true
                     },
                     "maildomain": {
                         "type": "string",
                         "format": "uuid",
-                        "description": "Mail domain that owns this channel",
+                        "description": "primary key for the record as UUID",
                         "readOnly": true,
                         "nullable": true
                     },
@@ -5575,19 +5583,9 @@
                         "readOnly": true,
                         "title": "Updated on",
                         "description": "date and time at which a record was last updated"
-                    },
-                    "abilities": {
-                        "type": "object",
-                        "description": "Instance permissions and capabilities",
-                        "additionalProperties": {
-                            "type": "boolean"
-                        },
-                        "nullable": true,
-                        "readOnly": true
                     }
                 },
                 "required": [
-                    "abilities",
                     "created_at",
                     "id",
                     "mailbox",

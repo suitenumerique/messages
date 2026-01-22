@@ -5,7 +5,6 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { ChannelAbilities } from "./channel_abilities";
 
 /**
  * Serialize Channel model.
@@ -26,12 +25,12 @@ export interface Channel {
   /** Channel-specific configuration settings */
   settings?: unknown;
   /**
-   * Mailbox that receives messages from this channel
+   * primary key for the record as UUID
    * @nullable
    */
   readonly mailbox: string | null;
   /**
-   * Mail domain that owns this channel
+   * primary key for the record as UUID
    * @nullable
    */
   readonly maildomain: string | null;
@@ -39,9 +38,4 @@ export interface Channel {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
-  /**
-   * Instance permissions and capabilities
-   * @nullable
-   */
-  readonly abilities: ChannelAbilities;
 }

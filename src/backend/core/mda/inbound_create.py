@@ -515,8 +515,11 @@ def _create_message_from_inbound(
                         thread.summary = new_summary
                         thread.save(update_fields=["summary"])
 
-            # Assign labels to the thread
-            if is_auto_labels_enabled():
+            # Assign labels to the thread (skip if channel already applied tags)
+            has_channel_tags = (
+                channel and channel.settings and channel.settings.get("tags")
+            )
+            if is_auto_labels_enabled() and not has_channel_tags:
                 assign_label_to_thread(thread, mailbox.id)
 
     except Exception as e:

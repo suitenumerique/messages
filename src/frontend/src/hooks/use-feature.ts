@@ -4,7 +4,7 @@ export enum FEATURE_KEYS {
     DRIVE = 'drive',
     AI_SUMMARY = 'ai_summary',
     AI_AUTOLABELS = 'ai_autolabels',
-    INTEGRATIONS = 'integrations',
+    MAILBOX_ADMIN_CHANNELS = 'mailbox_admin_channels',
 }
 
 /**
@@ -24,8 +24,8 @@ export const useFeatureFlag = (featureKey: FEATURE_KEYS) => {
             return config.AI_ENABLED === true && config.FEATURE_AI_SUMMARY === true;
         case FEATURE_KEYS.AI_AUTOLABELS:
             return config.AI_ENABLED === true && config.FEATURE_AI_AUTOLABELS === true;
-        case FEATURE_KEYS.INTEGRATIONS:
-            return config.FEATURE_INTEGRATIONS === true;
+        case FEATURE_KEYS.MAILBOX_ADMIN_CHANNELS:
+            return Array.isArray(config.FEATURE_MAILBOX_ADMIN_CHANNELS) && config.FEATURE_MAILBOX_ADMIN_CHANNELS.length > 0;
         default:
             throw new Error(`Unknown feature key: ${featureKey}`);
     }
