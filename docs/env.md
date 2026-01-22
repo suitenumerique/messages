@@ -34,6 +34,7 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `DJANGO_SETTINGS_MODULE` | `messages.settings` | Django settings module | Required |
 | `DJANGO_SUPERUSER_PASSWORD` | `admin` | Default superuser password for development | Dev |
 | `DJANGO_DATA_DIR` | `/data` | Base directory for data storage | Optional |
+| `DJANGO_ADMIN_URL` | `admin` | admin route (must not be ended by `/`) | Optional |
 
 ### Database Configuration
 

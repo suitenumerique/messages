@@ -18,8 +18,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
     const { mutate: createMailboxAccess } = useMailboxesAccessesCreate({ mutation: { onSuccess: onAccessChange } });
     const { mutate: updateMailboxAccess } = useMailboxesAccessesUpdate({ mutation: { onSuccess: onAccessChange } });
     const { mutate: deleteMailboxAccess } = useMailboxesAccessesDestroy({ mutation: { onSuccess: onAccessChange } });
-    const mailbox_write_roles: MailboxRoleChoices[] = [MailboxRoleChoices.admin, MailboxRoleChoices.editor];
-    const hasOnlyOneEditor = (mailbox?.accesses || []).filter((a) => mailbox_write_roles.includes(a.role)).length === 1;
+    const hasOnlyOneAdmin = (mailbox?.accesses || []).filter((a) => a.role === MailboxRoleChoices.admin).length === 1;
     const searchUsersQuery = useUsersList({ maildomain_pk: domainId, q: searchQuery }, { query: { enabled: !!searchQuery.length } });
 
     const getAccessUser = (user: UserWithoutAbilities) => {
@@ -32,7 +31,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
     const searchResults = searchUsersQuery.data?.data.filter((result) => !(mailbox?.accesses||[]).some(access => access.user.id === result.id)).map(getAccessUser) ?? [];
     const normalizedAccesses = (mailbox?.accesses || []).map(access => ({
         ...access,
-        user: getAccessUser(access.user)
+        user: getAccessUser(access.user),
     }));
 
 
@@ -60,6 +59,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
     }
 
     const handleDeleteAccess = (access: MailboxAccessNestedUser) => {
+        if (hasOnlyOneAdmin && access.role === MailboxRoleChoices.admin) return;
         deleteMailboxAccess({
             mailboxId: mailbox!.id,
             id: access.id,
@@ -71,7 +71,7 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
         return {
             label: t(`mailbox_roles_${role}`, { ns: 'roles' }),
             value: role,
-            isDisabled: isDisabled ?? (hasOnlyOneEditor && role !== MailboxRoleChoices.editor),
+            isDisabled: isDisabled,
         }
     });
 
@@ -94,7 +94,13 @@ export const ModalMailboxManageAccesses = ({ domainId, isOpen, onClose, mailbox,
             canUpdate={true}
             onClose={onClose}
             invitationRoles={accessRoleOptions(false)}
-            getAccessRoles={() => accessRoleOptions()}
+            hideInvitations
+            getAccessRoles={(access) => accessRoleOptions(hasOnlyOneAdmin && access.role === MailboxRoleChoices.admin)}
+            accessRoleTopMessage={(access) => {
+                if (hasOnlyOneAdmin && access.role === MailboxRoleChoices.admin) {
+                    return t('This is the only admin of this mailbox, you cannot therefore modify its access.');
+                }
+            }}
             onInviteUser={handleCreateAccesses}
             onUpdateAccess={handleUpdateAccess}
             onDeleteAccess={handleDeleteAccess}

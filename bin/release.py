@@ -106,17 +106,19 @@ def check_changelog_has_unreleased() -> bool:
 def update_files(version: str) -> None:
     """Update all files needed with new release version."""
     # pyproject.toml
-    sys.stdout.write("Updating pyproject.toml...\n")
-    pyproject_path = Path("src/backend/pyproject.toml")
-    content = pyproject_path.read_text()
-    content = re.sub(
-        r'^(version\s*=\s*)"[^"]+"', f'\\1"{version}"', content, flags=re.MULTILINE
-    )
-    pyproject_path.write_text(content)
+    sys.stdout.write("Updating pyproject.toml files...\n")
+    src_path = Path("src")
+    for pyproject_toml in src_path.rglob("pyproject.toml"):
+        content = pyproject_toml.read_text()
+        content = re.sub(
+            r'^(version\s*=\s*)"[^"]+"', f'\\1"{version}"', content, flags=re.MULTILINE
+        )
+        pyproject_toml.write_text(content)
+        sys.stdout.write(f"  → {pyproject_toml}\n")
 
     # frontend and e2e package.json files
     sys.stdout.write("Updating package.json files...\n")
-    src_path = Path("src")
+
     for package_json in src_path.rglob("package.json"):
         if "node_modules" in package_json.parts or ".next" in package_json.parts:
             continue
