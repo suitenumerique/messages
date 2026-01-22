@@ -8,7 +8,9 @@ and this project adheres to
 
 ## [Unreleased]
 
-### Changed
+## [0.1.1] - 2026-01-22
+
+### Fixed
 
 - Now `DJANGO_ADMIN_URL` must not end with `/`.
 
@@ -32,5 +34,6 @@ and this project adheres to
 - Exclude `is_trashed` and `is_spam` threads from search results by default
 - `to` search modifier now looks for messages where recipient fields (to, cc, bcc) contain the given email address.
 
-[unreleased]: https://github.com/suitenumerique/messages/compare/v0.1.0...main
+[unreleased]: https://github.com/suitenumerique/messages/compare/v0.1.1...main
+[0.1.1]: https://github.com/suitenumerique/messages/releases/v0.1.1
 [0.1.0]: https://github.com/suitenumerique/messages/releases/v0.1.0
