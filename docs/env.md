@@ -285,7 +285,7 @@ _Those settings are deprecated and will be removed in the future._
 | `AI_MODEL` | None | Default model used for AI features | Optional |
 | `FEATURE_AI_SUMMARY` | `False` | Default enabled mode for summary AI features | Required |
 | `FEATURE_AI_AUTOLABELS` | `False` | Default enabled mode for label AI features | Required |
-| `FEATURE_MAILBOX_ADMIN_CHANNELS` | `widget,api_key` | Comma-separated list of channel types enabled for mailbox admin (e.g., `widget`, `api_key`). Empty list disables all channel types. | Optional |
+| `FEATURE_MAILBOX_ADMIN_CHANNELS` | `` | Comma-separated list of channel types enabled for mailbox admin (e.g., `widget,api_key`). Empty list disables all channel types. | Optional |
 
 ### Image Proxy
 

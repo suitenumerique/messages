@@ -95,6 +95,7 @@ class TestChannelList:
 class TestChannelCreate:
     """Test the channel creation endpoint."""
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_create_widget_channel(self, api_client, mailbox):
         """Test creating a widget channel."""
         url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
@@ -123,6 +124,7 @@ class TestChannelCreate:
         assert channel.mailbox == mailbox
         assert channel.type == "widget"
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_create_channel_with_tags(self, api_client, mailbox):
         """Test creating a widget channel with tags."""
         label = LabelFactory(mailbox=mailbox, name="Widget Inquiries")
@@ -142,6 +144,7 @@ class TestChannelCreate:
         assert response.status_code == status.HTTP_201_CREATED
         assert str(label.id) in response.data["settings"]["tags"]
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_create_channel_no_access(self, api_client):
         """Test creating a channel for a mailbox the user has no access to."""
         other_mailbox = MailboxFactory()
@@ -152,6 +155,7 @@ class TestChannelCreate:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_create_channel_viewer_access(self, api_client, user):
         """Test creating a channel with viewer role (should fail)."""
         mailbox = MailboxFactory()
@@ -223,6 +227,7 @@ class TestChannelRetrieve:
 class TestChannelUpdate:
     """Test the channel update endpoint."""
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_update_channel(self, api_client, mailbox, channel):
         """Test updating a channel."""
         url = reverse(
@@ -250,6 +255,7 @@ class TestChannelUpdate:
         channel.refresh_from_db()
         assert channel.name == "Updated Widget Name"
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_partial_update_channel(self, api_client, mailbox, channel):
         """Test partially updating a channel."""
         url = reverse(
@@ -263,6 +269,7 @@ class TestChannelUpdate:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["name"] == "Partially Updated Name"
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_update_channel_no_access(self, api_client, mailbox, channel):
         """Test updating a channel for a mailbox the user has no admin access to."""
         # Remove admin access
@@ -283,6 +290,7 @@ class TestChannelUpdate:
 class TestChannelDelete:
     """Test the channel deletion endpoint."""
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_delete_channel(self, api_client, mailbox, channel):
         """Test deleting a channel."""
         channel_id = channel.id
@@ -296,6 +304,7 @@ class TestChannelDelete:
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert not models.Channel.objects.filter(id=channel_id).exists()
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_delete_channel_no_access(self, api_client, mailbox, channel):
         """Test deleting a channel without admin access."""
         # Remove admin access
@@ -315,6 +324,7 @@ class TestChannelDelete:
 class TestChannelDomainAdminAccess:
     """Test that domain admins can also manage channels."""
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_domain_admin_can_list_channels(self, api_client, user):
         """Test that domain admin can list channels."""
         domain = MailDomainFactory()
@@ -333,6 +343,7 @@ class TestChannelDomainAdminAccess:
         assert len(response.data) == 1
         assert response.data[0]["id"] == str(channel.id)
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_domain_admin_can_create_channel(self, api_client, user):
         """Test that domain admin can create a channel."""
         domain = MailDomainFactory()
