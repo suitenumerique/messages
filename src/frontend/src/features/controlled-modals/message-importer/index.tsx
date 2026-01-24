@@ -3,7 +3,7 @@ import { ControlledModal, useModalStore } from "@/features/providers/modal-store
 import { ModalSize, useModals } from "@gouvfr-lasuite/cunningham-react";
 import { useTranslation } from "react-i18next";
 import { StepForm } from "./step-form";
-import { StepLoader } from "./step-loader";
+import { StepLoader, TaskMetadata } from "./step-loader";
 import { StepCompleted } from "./step-completed";
 import clsx from "clsx";
 import { useEffect, useState } from "react";
@@ -30,14 +30,16 @@ export const ModalMessageImporter = () => {
     const [taskId, setTaskId] = useState<string | null>(taskImportCacheHelper.get());
     const [step, setStep] = useState<IMPORT_STEP>(taskId ? 'importing' : 'idle');
     const [error, setError] = useState<string | null>(null);
+    const [importMetadata, setImportMetadata] = useState<TaskMetadata | undefined>(undefined);
     const { closeModal } = useModalStore();
     const handleCompletedStepClose = () => {
         closeModal(MODAL_MESSAGE_IMPORTER_ID);
     }
 
-    const handleImportingStepComplete = async () => {
+    const handleImportingStepComplete = async (metadata?: TaskMetadata) => {
         taskImportCacheHelper.remove();
         setTaskId(null);
+        setImportMetadata(metadata);
         setStep('completed');
         await Promise.all([
             invalidateThreadMessages(),
@@ -121,7 +123,10 @@ export const ModalMessageImporter = () => {
                     />
                 )}
                 {step === 'completed' && (
-                    <StepCompleted onClose={handleCompletedStepClose} />
+                    <StepCompleted
+                        onClose={handleCompletedStepClose}
+                        metadata={importMetadata}
+                    />
                 )}
             </div>
         </ControlledModal>

@@ -114,7 +114,7 @@ class TestProcessMboxFileTask:
                 assert task_result["status"] == "SUCCESS"
                 assert (
                     task_result["result"]["message_status"]
-                    == "Completed processing messages"
+                    == "Successfully imported all 3 messages"
                 )
                 assert task_result["result"]["type"] == "mbox"
                 assert task_result["result"]["total_messages"] == 3
@@ -232,7 +232,7 @@ class TestProcessMboxFileTask:
             assert task_result["status"] == "SUCCESS"
             assert (
                 task_result["result"]["message_status"]
-                == "Completed processing messages"
+                == "Completed with partial success: 2/3 messages imported, 1 failed"
             )
             assert task_result["result"]["type"] == "mbox"
             assert task_result["result"]["total_messages"] == 3
@@ -385,8 +385,8 @@ class TestProcessMboxFileTask:
             # Call the task
             task_result = process_mbox_file_task("test-file-key.mbox", str(mailbox.id))
 
-            # Verify the result
-            assert task_result["status"] == "SUCCESS"
+            # Verify the result - when all messages fail, status is FAILURE
+            assert task_result["status"] == "FAILURE"
             assert task_result["result"]["total_messages"] == 3
             assert (
                 task_result["result"]["success_count"] == 0
@@ -395,9 +395,14 @@ class TestProcessMboxFileTask:
                 task_result["result"]["failure_count"] == 3
             )  # All messages should fail
             assert task_result["result"]["type"] == "mbox"
+            assert (
+                task_result["result"]["message_status"]
+                == "Failed to import all 3 messages"
+            )
 
             # Verify progress updates were called for all messages
-            assert mock_task.update_state.call_count == 5  # 4 PROGRESS + 1 SUCCESS
+            # 1 PROGRESS for counting + 3 PROGRESS for each message + 1 FAILURE
+            assert mock_task.update_state.call_count == 5
 
             # The first update should be for message 1 with failure_count 0
             mock_task.update_state.assert_any_call(
@@ -447,12 +452,12 @@ class TestProcessMboxFileTask:
                 },
             )
 
-            # Verify final success update
+            # Verify final failure update
             mock_task.update_state.assert_called_with(
-                state="SUCCESS",
+                state="FAILURE",
                 meta={
                     "result": task_result["result"],
-                    "error": None,
+                    "error": "Partial or complete failure",
                 },
             )
 
@@ -486,7 +491,7 @@ class TestProcessMboxFileTask:
             assert task_result["status"] == "SUCCESS"
             assert (
                 task_result["result"]["message_status"]
-                == "Completed processing messages"
+                == "Completed but no messages were found"
             )
             assert task_result["result"]["type"] == "mbox"
             assert task_result["result"]["total_messages"] == 0

@@ -203,7 +203,7 @@ def test_imap_import_task_success(
         assert task["status"] == "SUCCESS"
         assert (
             task["result"]["message_status"]
-            == "Completed processing messages from folder 'INBOX'"
+            == "Successfully imported all 3 messages from 'INBOX'"
         )
         assert task["result"]["type"] == "imap"
         assert task["result"]["total_messages"] == 3
@@ -348,10 +348,10 @@ def test_imap_import_task_message_fetch_failure(
         )
 
         # Verify all messages failed
-        assert task["status"] == "SUCCESS"
+        assert task["status"] == "FAILURE"
         assert (
             task["result"]["message_status"]
-            == "Completed processing messages from folder 'INBOX'"
+            == "Failed to import all 3 messages"
         )
         assert task["result"]["type"] == "imap"
         assert task["result"]["total_messages"] == 3
@@ -360,7 +360,7 @@ def test_imap_import_task_message_fetch_failure(
         assert task["result"]["current_message"] == 3
 
         # Verify progress updates were called correctly
-        assert mock_task.update_state.call_count == 4  # 3 PROGRESS + 1 SUCCESS
+        assert mock_task.update_state.call_count == 4  # 3 PROGRESS + 1 FAILURE
 
         # Verify progress updates
         for i in range(1, 4):
@@ -379,10 +379,14 @@ def test_imap_import_task_message_fetch_failure(
                 },
             )
 
-        # Verify success update
+        # Verify failure update (all messages failed)
         mock_task.update_state.assert_any_call(
-            state="SUCCESS",
-            meta=task,
+            state="FAILURE",
+            meta={
+                "status": "FAILURE",
+                "result": task["result"],
+                "error": "Partial or complete failure",
+            },
         )
 
 
@@ -421,7 +425,7 @@ def test_imap_import_task_duplicate_recipients(
         assert task["status"] == "SUCCESS"
         assert (
             task["result"]["message_status"]
-            == "Completed processing messages from folder 'INBOX'"
+            == "Successfully imported all 1 messages from 'INBOX'"
         )
         assert task["result"]["type"] == "imap"
         assert task["result"]["total_messages"] == 1

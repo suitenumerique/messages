@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 
 type StepLoaderProps = {
     taskId: string;
-    onComplete: () => void;
+    onComplete: (metadata?: TaskMetadata) => void;
     onError: (error: string) => void;
 }
 
@@ -27,16 +27,21 @@ export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => 
 
     useEffect(() => {
         if (importStatus?.state === StatusEnum.SUCCESS) {
-            onComplete();
+            // Pass metadata to completion screen
+            const metadata = importStatus?.result as TaskMetadata | undefined;
+            onComplete(metadata);
         } else if (importStatus?.state === StatusEnum.FAILURE) {
             const error = importStatus?.error || '';
             let errorKey = t('An error occurred while importing messages.');
-            if (error.includes("AUTHENTICATIONFAILED")) {
+            if (
+                error.includes("AUTHENTICATIONFAILED") ||
+                error.includes("IMAP authentication failed")
+            ) {
                 errorKey = t('Authentication failed. Please check your credentials and ensure you have enabled IMAP connections in your account.');
             }
             onError(errorKey);
         }
-    }, [importStatus?.state]);
+    }, [importStatus?.state, importStatus?.result]);
 
     return (
         <div className="task-loader">

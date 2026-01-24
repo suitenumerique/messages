@@ -99,6 +99,10 @@
         font-size: 10rem;
         color: var(--c--contextuals--content--semantic--success--tertiary);
     }
+
+    .importer-completed__icon--partial {
+        color: var(--c--contextuals--content--semantic--warning--secondary) !important;
+    }
     .importer-completed__description > p {
         text-align: center;
         font-weight: bold;

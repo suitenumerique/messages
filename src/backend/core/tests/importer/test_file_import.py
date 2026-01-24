@@ -135,7 +135,7 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
             )
             assert (
                 task_result["result"]["message_status"]
-                == "Completed processing message"
+                == "Successfully imported message"
             )
             assert task_result["result"]["type"] == "eml"
             assert task_result["result"]["total_messages"] == 1
@@ -203,7 +203,8 @@ def test_process_mbox_file_task(mailbox, mbox_file):
         )
         assert task_result["status"] == "SUCCESS"
         assert (
-            task_result["result"]["message_status"] == "Completed processing messages"
+            task_result["result"]["message_status"]
+            == "Successfully imported all 3 messages"
         )
         assert task_result["result"]["type"] == "mbox"
         assert (
