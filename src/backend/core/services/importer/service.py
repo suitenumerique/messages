@@ -8,6 +8,7 @@ from django.core.files.storage import storages
 from django.http import HttpRequest
 
 from core import enums
+from core.api.viewsets.task import register_task_owner
 from core.models import Mailbox
 
 from .tasks import (
@@ -40,8 +41,13 @@ class ImportService:
         Returns:
             Tuple of (success, response_data)
         """
-        # Check user has access to mailbox in case of non superuser
-        if not user.is_superuser and not recipient.accesses.filter(user=user).exists():
+        # Check user has edit access to mailbox in case of non superuser
+        if (
+            not user.is_superuser
+            and not recipient.accesses.filter(
+                user=user, role__in=enums.MAILBOX_ROLES_CAN_EDIT
+            ).exists()
+        ):
             return False, {"detail": "You do not have access to this mailbox."}
 
         message_imports_storage = storages["message-imports"]
@@ -70,6 +76,7 @@ class ImportService:
             if unsafe_content_type in enums.MBOX_SUPPORTED_MIME_TYPES:
                 # Process MBOX file asynchronously
                 task = process_mbox_file_task.delay(file_key, str(recipient.id))
+                register_task_owner(task.id, user.id)
                 response_data = {"task_id": task.id, "type": "mbox"}
                 if request:
                     messages.info(
@@ -82,6 +89,7 @@ class ImportService:
             elif unsafe_content_type in enums.EML_SUPPORTED_MIME_TYPES:
                 # Process EML file asynchronously
                 task = process_eml_file_task.delay(file_key, str(recipient.id))
+                register_task_owner(task.id, user.id)
                 response_data = {"task_id": task.id, "type": "eml"}
                 if request:
                     messages.info(
@@ -123,8 +131,13 @@ class ImportService:
         Returns:
             Tuple of (success, response_data)
         """
-        # Check user has access to mailbox in case of non superuser
-        if not user.is_superuser and not recipient.accesses.filter(user=user).exists():
+        # Check user has edit access to mailbox in case of non superuser
+        if (
+            not user.is_superuser
+            and not recipient.accesses.filter(
+                user=user, role__in=enums.MAILBOX_ROLES_CAN_EDIT
+            ).exists()
+        ):
             return False, {"detail": "You do not have access to this mailbox."}
 
         try:
@@ -137,6 +150,7 @@ class ImportService:
                 use_ssl=use_ssl,
                 recipient_id=str(recipient.id),
             )
+            register_task_owner(task.id, user.id)
             response_data = {"task_id": task.id, "type": "imap"}
             if request:
                 messages.info(

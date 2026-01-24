@@ -21,11 +21,37 @@ from core.factories import (
     ThreadFactory,
     UserFactory,
 )
-from core.models import MailboxAccess
+from core.models import MailboxAccess, Thread
 
 pytestmark = pytest.mark.django_db
 
 API_URL = reverse("threads-list")
+
+
+def test_delete_thread_viewer_should_be_forbidden(api_client):
+    """Test that a user with only VIEWER access cannot delete a thread, but EDITOR can."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])  # VIEWER role
+    thread = ThreadFactory()
+    thread_access = ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=thread,
+        role=enums.ThreadAccessRoleChoices.VIEWER,
+    )
+    MessageFactory(thread=thread)
+
+    url = reverse("threads-detail", kwargs={"pk": str(thread.id)})
+    response = api_client.delete(url)
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert Thread.objects.filter(pk=thread.pk).exists()
+
+    # Elevate to EDITOR and verify delete succeeds
+    thread_access.role = enums.ThreadAccessRoleChoices.EDITOR
+    thread_access.save()
+    response = api_client.delete(url)
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    assert not Thread.objects.filter(pk=thread.pk).exists()
 
 
 def test_list_threads_success(api_client):

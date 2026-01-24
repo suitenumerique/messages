@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core import models
+from core.api.viewsets.task import register_task_owner
 from core.mda.outbound import prepare_outbound_message
 from core.mda.outbound_tasks import send_message_task
 
@@ -121,6 +122,7 @@ class SendMessageView(APIView):
 
         # Launch async task for sending the message
         task = send_message_task.delay(str(message.id), must_archive=must_archive)
+        register_task_owner(task.id, request.user.id)
 
         # --- Finalize ---
         # Message state should be updated by prepare_outbound_message/send_message

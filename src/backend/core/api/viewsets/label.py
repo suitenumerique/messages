@@ -17,7 +17,7 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from core import models
+from core import enums, models
 
 from .. import permissions, serializers
 
@@ -70,11 +70,7 @@ class LabelViewSet(
         """Check if user has EDITOR, SENDER or ADMIN role for the mailbox."""
         if not mailbox.accesses.filter(
             user=self.request.user,
-            role__in=[
-                models.MailboxRoleChoices.ADMIN,
-                models.MailboxRoleChoices.EDITOR,
-                models.MailboxRoleChoices.SENDER,
-            ],
+            role__in=enums.MAILBOX_ROLES_CAN_EDIT,
         ).exists():
             raise PermissionDenied(
                 "You need EDITOR, SENDER or ADMIN role to manage labels"

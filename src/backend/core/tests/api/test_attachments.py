@@ -116,6 +116,48 @@ class TestBlobAPI:
         # Should be denied
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    @pytest.mark.parametrize(
+        "role",
+        [
+            MailboxRoleChoices.EDITOR,
+            MailboxRoleChoices.SENDER,
+            MailboxRoleChoices.ADMIN,
+        ],
+    )
+    def test_upload_blob_with_edit_roles(self, role):
+        """Test that EDITOR, SENDER, and ADMIN can all upload blobs."""
+        user = factories.UserFactory()
+        client = APIClient()
+        client.force_authenticate(user=user)
+        mailbox = factories.MailboxFactory()
+
+        def _post():
+            url = reverse("blob-upload", kwargs={"mailbox_id": mailbox.id})
+            return client.post(
+                url, {"file": self._create_test_file()}, format="multipart"
+            )
+
+        response = _post()
+
+        # Should be denied if there is no access
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        access = factories.MailboxAccessFactory(
+            mailbox=mailbox, user=user, role=MailboxRoleChoices.VIEWER
+        )
+
+        # Should be denied if there is only VIEWER access
+        response = _post()
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        # Elevate to the parametrized role and verify success
+        access.role = role
+        access.save()
+
+        # Should be allowed if there is access
+        response = _post()
+        assert response.status_code == status.HTTP_201_CREATED
+
     def test_upload_permission_denied(self, api_client):
         """Test permission check when user doesn't have access to the mailbox."""
         client, _ = api_client

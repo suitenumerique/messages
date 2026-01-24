@@ -251,7 +251,7 @@ def test_api_flag_mark_messages_no_permission(api_client):
     data = {"flag": "unread", "value": False, "message_ids": [str(msg.id)]}
     response = api_client.post(API_URL, data=data, format="json")
 
-    # The endpoint should process successfully but update 0 messages as the filter excludes them
+    # User without edit access: returns 200 but no threads updated
     assert response.status_code == status.HTTP_200_OK
     assert response.data["updated_threads"] == 0
 

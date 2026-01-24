@@ -481,11 +481,7 @@ class LabelSerializer(serializers.ModelSerializer):
         user = self.context["request"].user
         if not value.accesses.filter(
             user=user,
-            role__in=[
-                models.MailboxRoleChoices.ADMIN,
-                models.MailboxRoleChoices.EDITOR,
-                models.MailboxRoleChoices.SENDER,
-            ],
+            role__in=enums.MAILBOX_ROLES_CAN_EDIT,
         ).exists():
             raise PermissionDenied("You don't have access to this mailbox")
         return value
