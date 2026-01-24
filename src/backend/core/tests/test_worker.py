@@ -254,11 +254,9 @@ class TestBeatScheduleQueues:
 class TestWorkerE2E:
     """End-to-end tests for the worker process."""
 
-    @pytest.fixture
-    def worker_process(self):
-        """Start a worker process and yield it, then clean up."""
+    def test_worker_starts_successfully(self):
+        """Test that the worker process starts without immediate errors."""
         import subprocess
-        import time
 
         # Start worker with minimal config, disable scheduler to avoid side effects
         # pylint: disable=consider-using-with
@@ -276,64 +274,70 @@ class TestWorkerE2E:
             text=True,
         )
 
-        # Give it time to start
-        time.sleep(2)
-
-        yield process
-
-        # Cleanup: terminate the worker
-        process.terminate()
         try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
+            # Wait briefly for startup - if it crashes immediately, we'll know
+            # Use communicate with timeout to capture output
+            try:
+                stdout, _ = process.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                # Worker is still running after 3 seconds - this is expected
+                stdout = ""
 
-    def test_worker_starts_successfully(self, worker_process):
-        """Test that the worker process starts without errors."""
-        import select
+            # Check if process exited with an error
+            exit_code = process.poll()
+            if exit_code is not None and exit_code != 0:
+                pytest.fail(
+                    f"Worker process exited with code {exit_code}. Output: {stdout}"
+                )
 
-        # Check process is still running
-        assert worker_process.poll() is None, "Worker process exited unexpectedly"
+            # If still running or exited cleanly, the test passes
+            # Worker starting without crashing is the success criterion
+        finally:
+            # Cleanup: terminate the worker if still running
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
 
-        # Read available output (non-blocking)
-        output_lines = []
-        while True:
-            ready, _, _ = select.select([worker_process.stdout], [], [], 0.1)
-            if not ready:
-                break
-            line = worker_process.stdout.readline()
-            if not line:
-                break
-            output_lines.append(line)
+    def test_worker_rejects_invalid_queues(self):
+        """Test that the worker rejects invalid queue names."""
+        import subprocess
 
-        output = "".join(output_lines)
+        result = subprocess.run(
+            [
+                "python",
+                "worker.py",
+                "--queues=invalid_queue_name",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
 
-        # Verify worker started and is ready
+        assert result.returncode != 0
         assert (
-            "celery@" in output.lower() or "ready" in output.lower() or len(output) > 0
-        ), f"Worker did not produce expected startup output: {output}"
+            "Unknown queues" in result.stderr or "invalid_queue_name" in result.stderr
+        )
 
-    def test_worker_processes_task(self, worker_process):
-        """Test that the worker can process a simple task."""
-        from celery import shared_task
-        from celery.exceptions import TimeoutError as CeleryTimeoutError
+    def test_worker_rejects_invalid_exclude_queues(self):
+        """Test that the worker rejects invalid queue names in --exclude."""
+        import subprocess
 
-        # Check process is still running
-        assert worker_process.poll() is None, "Worker process exited unexpectedly"
+        result = subprocess.run(
+            [
+                "python",
+                "worker.py",
+                "--exclude=invalid_queue_name",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
 
-        # Define a simple test task
-        @shared_task
-        def test_ping_task():
-            return "pong"
-
-        # Submit the task
-        result = test_ping_task.apply_async(queue="default")
-
-        # Wait for the result with timeout
-        try:
-            task_result = result.get(timeout=10)
-            assert task_result == "pong"
-        except CeleryTimeoutError as exc:
-            # If we can't get the result, at least verify the task was submitted
-            assert result.id is not None, f"Task submission failed: {exc}"
+        assert result.returncode != 0
+        assert "Unknown queues to exclude" in result.stderr

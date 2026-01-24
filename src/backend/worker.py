@@ -38,6 +38,19 @@ ALL_QUEUES = ["management", "inbound", "outbound", "default", "imports", "reinde
 DEFAULT_QUEUES = ALL_QUEUES  # By default, process all queues
 
 
+def get_default_concurrency():
+    """Get default concurrency from environment variables."""
+    env_value = os.environ.get("WORKER_CONCURRENCY") or os.environ.get(
+        "CELERY_CONCURRENCY"
+    )
+    if env_value:
+        try:
+            return int(env_value)
+        except ValueError:
+            return None
+    return None
+
+
 def parse_args():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
@@ -63,8 +76,7 @@ def parse_args():
         "--concurrency",
         "-c",
         type=int,
-        default=os.environ.get("WORKER_CONCURRENCY")
-        or os.environ.get("CELERY_CONCURRENCY"),
+        default=get_default_concurrency(),
         help="Number of worker processes. Default: WORKER_CONCURRENCY env var or number of CPUs.",
     )
     parser.add_argument(
@@ -102,6 +114,14 @@ def main():
     # Apply exclusions
     if args.exclude:
         exclude = [q.strip() for q in args.exclude.split(",")]
+        # Validate excluded queue names
+        invalid_exclude = set(exclude) - set(ALL_QUEUES)
+        if invalid_exclude:
+            sys.stderr.write(
+                f"Error: Unknown queues to exclude: {', '.join(invalid_exclude)}\n"
+            )
+            sys.stderr.write(f"Valid queues are: {', '.join(ALL_QUEUES)}\n")
+            sys.exit(1)
         queues = [q for q in queues if q not in exclude]
 
     if not queues:

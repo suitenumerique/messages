@@ -64,7 +64,7 @@ Tasks are automatically routed to queues based on their module:
 
 ### Scalingo (Procfile)
 
-```
+```text
 worker: python worker.py
 ```
 
