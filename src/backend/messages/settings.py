@@ -502,7 +502,6 @@ class Base(Configuration):
         "django_celery_results",
         "django_filters",
         "rest_framework",
-        "parler",
         # Django
         "django.contrib.admin",
         "django.contrib.auth",

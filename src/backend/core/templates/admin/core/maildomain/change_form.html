@@ -1,0 +1,44 @@
+{% extends "admin/change_form.html" %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .object-tools button.historylink {
+        appearance: none;
+        background: var(--object-tools-bg);
+        border-radius: 15px;
+        border: none;
+        color: var(--object-tools-fg);
+        cursor: pointer;
+        display: block;
+        float: left;
+        font-size: 0.6875rem;
+        font-weight: 400;
+        letter-spacing: 0.5px;
+        line-height: inherit;
+        padding: 3px 12px;
+        text-transform: uppercase;
+        transition: color 0.15s, background 0.15s;
+    }
+
+    .object-tools button:focus,
+    .object-tools button:hover {
+        background-color: var(--object-tools-hover-bg);
+    }
+</style>
+{% endblock %}
+{% load i18n admin_urls %}
+
+{% block object-tools-items %}
+{% if original %}
+<li>
+    <form method="post" action="{% url 'admin:core_maildomain_dns_provision' original.pk %}" style="display: inline;">
+        {% csrf_token %}
+        <button type="submit" class="historylink">
+            {% translate "Provision DNS records" %}
+        </button>
+    </form>
+</li>
+{% endif %}
+{{ block.super }}
+{% endblock %}

@@ -14,6 +14,7 @@ from django.utils.translation import gettext_lazy as _
 
 from core.api.utils import get_file_key
 from core.mda.outbound_tasks import retry_messages_task
+from core.services.dns.provisioning import provision_domain_dns
 from core.services.importer.service import ImportService
 
 from . import models
@@ -204,6 +205,59 @@ class MailDomainAdmin(admin.ModelAdmin):
     list_filter = ("identity_sync",)
     search_fields = ("name",)
     autocomplete_fields = ("alias_of",)
+    change_form_template = "admin/core/maildomain/change_form.html"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "<path:object_id>/dns-provision/",
+                self.admin_site.admin_view(self.dns_provision_view),
+                name="core_maildomain_dns_provision",
+            ),
+        ]
+        return custom_urls + urls
+
+    def dns_provision_view(self, request, object_id):
+        """View for provisioning DNS records for a mail domain."""
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+
+        maildomain = self.get_object(request, object_id)
+
+        if maildomain is None:
+            messages.error(request, _("Mail domain not found."))
+            return redirect("..")
+
+        # Run DNS provisioning
+        results = provision_domain_dns(maildomain)
+
+        if results["success"]:
+            provider_used = results.get("provider", "unknown")
+            changes = results.get("changes", [])
+            if changes:
+                changes_text = ", ".join(changes)
+                messages.success(
+                    request,
+                    _("DNS provisioning successful via %(provider)s: %(changes)s")
+                    % {"provider": provider_used, "changes": changes_text},
+                )
+            else:
+                messages.success(
+                    request,
+                    _(
+                        "DNS provisioning successful via %(provider)s (no changes needed)."
+                    )
+                    % {"provider": provider_used},
+                )
+        else:
+            error_msg = results.get("error", "Unknown error")
+            messages.error(
+                request,
+                _("DNS provisioning failed: %(error)s") % {"error": error_msg},
+            )
+
+        return redirect("..")
 
 
 class MailboxAccessInline(admin.TabularInline):
@@ -219,7 +273,7 @@ class MailboxAdmin(admin.ModelAdmin):
 
     inlines = [MailboxAccessInline]
     list_display = ("__str__", "is_identity", "contact", "alias_of", "updated_at")
-    list_filter = ("is_identity", "domain", "created_at", "updated_at")
+    list_filter = ("is_identity", "created_at", "updated_at")
     search_fields = ("local_part", "domain__name", "contact__name", "contact__email")
     actions = [reset_keycloak_password_action]
     autocomplete_fields = ("domain", "contact", "alias_of")
@@ -290,7 +344,17 @@ class ThreadAdmin(admin.ModelAdmin):
         "updated_at",
     )
     search_fields = ("subject", "snippet", "labels__name")
-    list_filter = ("labels",)
+    list_filter = (
+        "has_unread",
+        "has_trashed",
+        "has_archived",
+        "has_draft",
+        "has_starred",
+        "has_sender",
+        "has_attachments",
+        "is_spam",
+        "created_at",
+    )
     fieldsets = (
         (None, {"fields": ("subject", "snippet", "display_labels", "summary")}),
         (
@@ -650,11 +714,6 @@ class MessageRecipientAdmin(admin.ModelAdmin):
 class LabelAdmin(admin.ModelAdmin):
     """Admin class for the Label model"""
 
-    list_display = ("id", "name", "slug", "mailbox", "color")
-    search_fields = ("name", "mailbox__local_part", "mailbox__domain__name")
-    filter_horizontal = ("threads",)
-    list_filter = ("mailbox",)
-    readonly_fields = ("slug",)
     list_display = (
         "id",
         "name",
@@ -665,7 +724,8 @@ class LabelAdmin(admin.ModelAdmin):
         "basename",
         "parent_name",
     )
-    list_filter = ("mailbox",)
+    search_fields = ("name", "mailbox__local_part", "mailbox__domain__name")
+    readonly_fields = ("slug",)
     autocomplete_fields = ("mailbox",)
     raw_id_fields = ("threads",)
 
@@ -739,7 +799,7 @@ class DKIMKeyAdmin(admin.ModelAdmin):
         "created_at",
     )
     search_fields = ("selector", "domain__name")
-    list_filter = ("algorithm", "is_active", "domain")
+    list_filter = ("algorithm", "is_active")
     readonly_fields = ("public_key", "created_at", "updated_at")
     autocomplete_fields = ("domain",)
     fieldsets = (
@@ -765,6 +825,44 @@ class DKIMKeyAdmin(admin.ModelAdmin):
             },
         ),
     )
+
+
+@admin.register(models.InboundMessage)
+class InboundMessageAdmin(admin.ModelAdmin):
+    """Admin class for the InboundMessage model (spam filter queue)."""
+
+    list_display = (
+        "id",
+        "mailbox",
+        "channel",
+        "has_error",
+        "created_at",
+    )
+    list_filter = ("created_at",)
+    search_fields = (
+        "mailbox__local_part",
+        "mailbox__domain__name",
+        "error_message",
+    )
+    autocomplete_fields = ("mailbox", "channel")
+    readonly_fields = ("created_at", "updated_at")
+    fields = ("mailbox", "channel", "error_message", "created_at", "updated_at")
+
+    def has_error(self, obj):
+        """Return whether the message has an error."""
+        return bool(obj.error_message)
+
+    has_error.boolean = True
+    has_error.short_description = _("Error")
+
+    def get_queryset(self, request):
+        """Optimize queryset with select_related for better performance."""
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("mailbox", "mailbox__domain", "channel")
+            .defer("raw_data")  # Exclude large binary content from list view
+        )
 
 
 @admin.register(models.MessageTemplate)
