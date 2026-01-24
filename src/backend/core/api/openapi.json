@@ -4496,7 +4496,7 @@
             },
             "delete": {
                 "operationId": "threads_destroy",
-                "description": "ViewSet for Thread model.",
+                "description": "Delete a thread, requiring EDITOR role on the thread.",
                 "parameters": [
                     {
                         "in": "path",

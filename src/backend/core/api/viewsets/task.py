@@ -76,7 +76,9 @@ class TaskDetailView(APIView):
     def get(self, request, task_id):
         """Get the status of a Celery task."""
         owner_id = cache.get(f"task_owner:{task_id}")
-        if owner_id and str(request.user.id) != owner_id:
+        if owner_id is None:
+            raise PermissionDenied("Task not found or access expired.")
+        if str(request.user.id) != owner_id:
             raise PermissionDenied("You do not have access to this task.")
 
         task_result = AsyncResult(task_id, app=celery_app)

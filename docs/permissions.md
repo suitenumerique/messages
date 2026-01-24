@@ -4,7 +4,7 @@
 
 ### Entity Relationships
 
-```
+```text
 User
 ├── MailboxAccess (role: VIEWER|EDITOR|SENDER|ADMIN)
 │   └── Mailbox
