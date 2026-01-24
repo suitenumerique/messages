@@ -169,12 +169,11 @@ class TestApiDraftAndSendMessage:
         task_id = send_response.data["task_id"]
         assert task_id is not None
 
-        # Check with an unknown task_id
+        # Check with an unknown task_id - should return 403 (task not found or access expired)
         task_response = client.get(
             reverse("task-detail", kwargs={"task_id": "unknown-task-id"})
         )
-        assert task_response.status_code == status.HTTP_200_OK
-        assert task_response.data["status"] == "PENDING"
+        assert task_response.status_code == status.HTTP_403_FORBIDDEN
 
         # Call the task API
         task_response = client.get(reverse("task-detail", kwargs={"task_id": task_id}))

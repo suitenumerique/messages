@@ -33,6 +33,18 @@ def api_client(user):
 class TestTaskDetailViewPermissions:
     """Test that TaskDetailView enforces ownership checks."""
 
+    def test_api_task_detail_unknown_task_should_be_forbidden(self):
+        """Test that accessing an unknown task (not in cache) returns 403."""
+        user = factories.UserFactory()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        # Try to access a task that was never registered
+        url = reverse("task-detail", kwargs={"task_id": "unknown-task-id"})
+        response = client.get(url)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "not found or access expired" in response.data["detail"].lower()
+
     def test_api_task_detail_other_user_should_be_forbidden(self):
         """Test that a user cannot access another user's task, but the owner can."""
 
