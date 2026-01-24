@@ -69,11 +69,12 @@ class IMAPConnectionManager:
         self.connection = None
 
     def __enter__(self):
-        try:
-            # Port 143 typically uses STARTTLS, port 993 uses SSL direct
-            # If use_ssl=True and port is 143, use STARTTLS instead of SSL direct
-            use_starttls = self.use_ssl and self.port == 143
+        # Port 143 typically uses STARTTLS, port 993 uses SSL direct
+        # If use_ssl=True and port is 143, use STARTTLS instead of SSL direct
+        use_starttls = self.use_ssl and self.port == 143
+        success = False
 
+        try:
             if self.use_ssl and not use_starttls:
                 # SSL direct (typically port 993)
                 try:
@@ -106,7 +107,6 @@ class IMAPConnectionManager:
                             "Encrypted connection required."
                         )
                         logger.error(error_msg)
-                        self.connection.logout()
                         raise IMAPSecurityError(error_msg)
 
                     # Attempt STARTTLS
@@ -117,7 +117,6 @@ class IMAPConnectionManager:
                             "Encrypted connection required."
                         )
                         logger.error(error_msg)
-                        self.connection.logout()
                         raise IMAPSecurityError(error_msg)
                 # else: use_ssl=False, connection remains unencrypted (explicit user choice)
 
@@ -125,23 +124,21 @@ class IMAPConnectionManager:
             self.connection._encoding = "utf-8"  # noqa: SLF001
 
             # Login
-            try:
-                self.connection.login(self.username, self.password)
-            except imaplib.IMAP4.error as e:
-                error_msg = f"IMAP authentication failed for {self.username}: {e}"
-                logger.error(error_msg)
-                try:
-                    self.connection.logout()
-                except Exception as logout_err:
-                    logger.debug("Error during cleanup logout: %s", logout_err)
-                raise
+            self.connection.login(self.username, self.password)
 
+            success = True
             return self.connection
         except Exception as e:
             logger.error(
                 "Failed to connect to IMAP server %s:%d: %s", self.server, self.port, e
             )
             raise
+        finally:
+            if not success and self.connection:
+                try:
+                    self.connection.logout()
+                except Exception as logout_err:
+                    logger.debug("Error during cleanup logout: %s", logout_err)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.connection:
