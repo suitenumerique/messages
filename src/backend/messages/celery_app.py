@@ -33,16 +33,16 @@ if not settings.DISABLE_CELERY_BEAT_SCHEDULE:
         "retry-pending-messages": {
             "task": "core.mda.outbound_tasks.retry_messages_task",
             "schedule": 300.0,  # Every 5 minutes (300 seconds)
-            "options": {"queue": "default"},
+            "options": {"queue": "outbound"},
         },
         "selfcheck": {
             "task": "core.mda.outbound_tasks.selfcheck_task",
             "schedule": settings.MESSAGES_SELFCHECK_INTERVAL,
-            "options": {"queue": "default"},
+            "options": {"queue": "outbound"},
         },
         "process-inbound-messages-queue": {
             "task": "core.mda.inbound_tasks.process_inbound_messages_queue_task",
             "schedule": 300.0,  # Every 5 minutes
-            "options": {"queue": "default"},
+            "options": {"queue": "inbound"},
         },
     }
