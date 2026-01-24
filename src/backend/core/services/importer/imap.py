@@ -99,7 +99,8 @@ class IMAPConnectionManager:
                     # use_ssl=True on port 143: must upgrade to TLS via STARTTLS
                     # Check if server supports STARTTLS
                     typ, data = self.connection.capability()
-                    if typ != "OK" or "STARTTLS" not in data[0].decode().upper():
+                    capabilities = data[0].decode().upper() if data and data[0] else ""
+                    if typ != "OK" or "STARTTLS" not in capabilities:
                         error_msg = (
                             f"Server {self.server}:{self.port} does not support STARTTLS. "
                             "Encrypted connection required."
@@ -129,6 +130,10 @@ class IMAPConnectionManager:
             except imaplib.IMAP4.error as e:
                 error_msg = f"IMAP authentication failed for {self.username}: {e}"
                 logger.error(error_msg)
+                try:
+                    self.connection.logout()
+                except Exception as logout_err:
+                    logger.debug("Error during cleanup logout: %s", logout_err)
                 raise
 
             return self.connection
