@@ -17,7 +17,6 @@ type ChannelType = "widget" | "api_key";
 type ViewState = "select_type" | "form";
 
 type ChannelTypeCardProps = {
-    type: ChannelType;
     title: string;
     description: string;
     icon: string;
@@ -170,7 +169,6 @@ export const ModalComposeIntegration = ({
                                 return (
                                     <ChannelTypeCard
                                         key={channelType}
-                                        type={metadata.type}
                                         title={t(metadata.title)}
                                         description={t(metadata.description)}
                                         icon={metadata.icon}

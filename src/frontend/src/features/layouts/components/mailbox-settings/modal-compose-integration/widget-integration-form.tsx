@@ -62,7 +62,7 @@ export const WidgetIntegrationForm = ({
         resolver: zodResolver(formSchema),
         defaultValues: {
             name: channel?.name || "",
-            subject_template: widgetSettings?.subject_template || t("Message from {{{referer_domain}}}"),
+            subject_template: widgetSettings?.subject_template || t("Message from {referer_domain}"),
         },
     });
 
@@ -127,15 +127,15 @@ export const WidgetIntegrationForm = ({
         }
     };
 
-    const widgetSnippet = channel ? `<script src="`+process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH+`loader.js" async></script>
+    const widgetSnippet = channel ? `<script src="${process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH}loader.js" async></script>
 <script>
 window._lasuite_widget = window._lasuite_widget || [];
 _lasuite_widget.push(["loader", "init", {
   "params": {
-    "api": "`+process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL+`",
-    "channel": "`+channel.id+`"
+    "api": "${process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL}",
+    "channel": "${channel.id}"
   },
-  "script": "`+process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH+`feedback.js",
+  "script": "${process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH}feedback.js",
   "widget": "feedback",
 }]);
 </script>` : "";
@@ -159,7 +159,7 @@ _lasuite_widget.push(["loader", "init", {
                 <RhfInput
                     label={t("Subject template")}
                     name="subject_template"
-                    text={errors.subject_template?.message || t("Use {{{referer_domain}}} to include the website domain in the subject.")}
+                    text={errors.subject_template?.message || t("Use {referer_domain} to include the website domain in the subject.")}
                     state={errors.subject_template ? "error" : "default"}
                     fullWidth
                 />
@@ -207,13 +207,21 @@ _lasuite_widget.push(["loader", "init", {
                             variant="tertiary"
                             size="small"
                             icon={<Icon name="content_copy" type={IconType.OUTLINED} />}
-                            onClick={() => {
-                                navigator.clipboard.writeText(widgetSnippet);
-                                addToast(
-                                    <ToasterItem type="info">
-                                        <span>{t("Copied to clipboard")}</span>
-                                    </ToasterItem>
-                                );
+                            onClick={async () => {
+                                try {
+                                    await navigator.clipboard.writeText(widgetSnippet);
+                                    addToast(
+                                        <ToasterItem type="info">
+                                            <span>{t("Copied to clipboard")}</span>
+                                        </ToasterItem>
+                                    );
+                                } catch {
+                                    addToast(
+                                        <ToasterItem type="error">
+                                            <span>{t("Unable to copy to clipboard.")}</span>
+                                        </ToasterItem>
+                                    );
+                                }
                             }}
                         >
                             {t("Copy")}

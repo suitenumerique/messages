@@ -317,7 +317,7 @@ class TestInboundWidgetDeliver:
             settings={
                 "config": {"enabled": True},
                 "tags": [str(label1.id), str(label2.id)],
-                "subject_template": "Contact from {{{referer_domain}}}",
+                "subject_template": "Contact from {referer_domain}",
             },
         )
 

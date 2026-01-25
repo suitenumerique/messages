@@ -3,6 +3,7 @@
 # pylint: disable=too-many-lines
 
 import json
+import uuid
 
 from django.conf import settings
 from django.db import transaction
@@ -1345,26 +1346,73 @@ class ChannelSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "mailbox", "maildomain", "created_at", "updated_at"]
 
+    def validate_settings(self, value):
+        """Validate settings, including tags if present."""
+        if not value:
+            return value
+
+        tags = value.get("tags", [])
+        if not tags:
+            return value
+
+        # Get mailbox from context or instance
+        mailbox = self.context.get("mailbox")
+        if not mailbox and self.instance:
+            mailbox = self.instance.mailbox
+
+        if not mailbox:
+            # Tags require a mailbox - can't use tags without one
+            raise serializers.ValidationError(
+                {"tags": "Tags can only be used when a mailbox is configured."}
+            )
+
+        # Validate each tag
+        invalid_tags = []
+        missing_tags = []
+
+        for tag_id in tags:
+            # Validate UUID format
+            try:
+                tag_uuid = uuid.UUID(str(tag_id))
+            except (ValueError, TypeError):
+                invalid_tags.append(tag_id)
+                continue
+
+            # Check if label exists in the mailbox
+            if not models.Label.objects.filter(id=tag_uuid, mailbox=mailbox).exists():
+                missing_tags.append(tag_id)
+
+        errors = []
+        if invalid_tags:
+            errors.append(f"Invalid tag IDs (not valid UUIDs): {invalid_tags}")
+        if missing_tags:
+            errors.append(f"Tags not found in mailbox: {missing_tags}")
+
+        if errors:
+            raise serializers.ValidationError({"tags": errors})
+
+        return value
+
     def validate(self, attrs):
         """Validate channel data.
 
         When used in the nested mailbox context (via ChannelViewSet),
         the mailbox is set from context and doesn't need to be validated here.
         """
-        # Validate channel type is authorized
-        channel_type = attrs.get("type")
-        if channel_type:
-            allowed_types = settings.FEATURE_MAILBOX_ADMIN_CHANNELS
-            if channel_type not in allowed_types:
-                raise serializers.ValidationError(
-                    {
-                        "type": f"Channel type '{channel_type}' is not authorized. "
-                        f"Allowed types: {', '.join(allowed_types)}"
-                    }
-                )
-
-        # If we have a mailbox in context (from ChannelViewSet), skip validation
+        # If we have a mailbox in context (from ChannelViewSet), validate channel type
+        # and skip mailbox/maildomain validation.
+        # This allows Django admin to create any channel type.
         if self.context.get("mailbox"):
+            channel_type = attrs.get("type")
+            if channel_type:
+                allowed_types = settings.FEATURE_MAILBOX_ADMIN_CHANNELS
+                if channel_type not in allowed_types:
+                    raise serializers.ValidationError(
+                        {
+                            "type": f"Channel type '{channel_type}' is not authorized. "
+                            f"Allowed types: {', '.join(allowed_types)}"
+                        }
+                    )
             return attrs
 
         mailbox = attrs.get("mailbox")

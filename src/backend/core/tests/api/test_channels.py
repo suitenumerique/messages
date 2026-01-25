@@ -2,6 +2,8 @@
 
 # pylint: disable=redefined-outer-name, unused-argument, too-many-public-methods
 
+import uuid
+
 from django.test import override_settings
 from django.urls import reverse
 
@@ -103,7 +105,7 @@ class TestChannelCreate:
             "name": "My Widget",
             "type": "widget",
             "settings": {
-                "subject_template": "New inquiry from {{{referer_domain}}}",
+                "subject_template": "New inquiry from {referer_domain}",
                 "config": {"enabled": True},
             },
         }
@@ -115,7 +117,7 @@ class TestChannelCreate:
         assert response.data["type"] == "widget"
         assert (
             response.data["settings"]["subject_template"]
-            == "New inquiry from {{{referer_domain}}}"
+            == "New inquiry from {referer_domain}"
         )
         assert str(response.data["mailbox"]) == str(mailbox.id)
 
@@ -134,7 +136,7 @@ class TestChannelCreate:
             "name": "My Widget with Tags",
             "type": "widget",
             "settings": {
-                "subject_template": "Message from {{{referer_domain}}}",
+                "subject_template": "Message from {referer_domain}",
                 "tags": [str(label.id)],
             },
         }
@@ -143,6 +145,64 @@ class TestChannelCreate:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert str(label.id) in response.data["settings"]["tags"]
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
+    def test_create_channel_with_invalid_tag_uuid(self, api_client, mailbox):
+        """Test creating a channel with an invalid tag UUID fails."""
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        data = {
+            "name": "Widget with Invalid Tags",
+            "type": "widget",
+            "settings": {
+                "tags": ["not-a-valid-uuid", "also-invalid"],
+            },
+        }
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "settings" in response.data
+        assert "tags" in response.data["settings"]
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
+    def test_create_channel_with_nonexistent_tag(self, api_client, mailbox):
+        """Test creating a channel with a tag that doesn't exist fails."""
+        nonexistent_id = str(uuid.uuid4())
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        data = {
+            "name": "Widget with Missing Tags",
+            "type": "widget",
+            "settings": {
+                "tags": [nonexistent_id],
+            },
+        }
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "settings" in response.data
+        assert "tags" in response.data["settings"]
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
+    def test_create_channel_with_tag_from_other_mailbox(self, api_client, mailbox):
+        """Test creating a channel with a tag from another mailbox fails."""
+        other_mailbox = MailboxFactory()
+        other_label = LabelFactory(mailbox=other_mailbox, name="Other Label")
+
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        data = {
+            "name": "Widget with Wrong Mailbox Tag",
+            "type": "widget",
+            "settings": {
+                "tags": [str(other_label.id)],
+            },
+        }
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "settings" in response.data
+        assert "tags" in response.data["settings"]
 
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_create_channel_no_access(self, api_client):
@@ -238,7 +298,7 @@ class TestChannelUpdate:
             "name": "Updated Widget Name",
             "type": "widget",
             "settings": {
-                "subject_template": "Updated subject from {{{referer_domain}}}",
+                "subject_template": "Updated subject from {referer_domain}",
             },
         }
 
@@ -248,7 +308,7 @@ class TestChannelUpdate:
         assert response.data["name"] == "Updated Widget Name"
         assert (
             response.data["settings"]["subject_template"]
-            == "Updated subject from {{{referer_domain}}}"
+            == "Updated subject from {referer_domain}"
         )
 
         # Verify in database

@@ -145,14 +145,14 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
         )
 
         # Build subject from template or use default
-        # Template can use {{{referer_domain}}} placeholder
-        default_subject_template = "Message from {{{referer_domain}}}"
+        # Template can use {referer_domain} placeholder (same format as signature templates)
+        default_subject_template = "Message from {referer_domain}"
         subject_template = (channel.settings or {}).get(
             "subject_template", default_subject_template
         )
 
         # Replace template variables
-        subject = subject_template.replace("{{{referer_domain}}}", source_name)
+        subject = subject_template.replace("{referer_domain}", source_name)
 
         # Sanitize subject to prevent header injection (strip newlines/carriage returns)
         subject = subject.replace("\r", "").replace("\n", "")
