@@ -257,7 +257,7 @@ class TestEmailAddressParsing:
     def test_parse_empty_addresses(self):
         """Test parsing an empty address list."""
         addresses = parse_email_addresses("")
-        assert addresses == []
+        assert not addresses
 
     def test_parse_address_with_dot_in_name(self):
         """Test parsing an email address with dots in the display name."""
@@ -278,6 +278,135 @@ class TestEmailAddressParsing:
         name, email_addr = parse_email_address("José García <jose@example.es>")
         assert name == "José García"
         assert email_addr == "jose@example.es"
+
+    # RFC 5322 Group Syntax Tests
+    # These test cases handle email headers like "undisclosed-recipients:;"
+    # which are valid RFC 5322 group syntax used to hide recipients.
+
+    def test_parse_address_undisclosed_recipients(self):
+        """Test parsing undisclosed-recipients:; returns empty."""
+        name, email_addr = parse_email_address("undisclosed-recipients:;")
+        assert name == ""
+        assert email_addr == ""
+
+    def test_parse_address_empty_group(self):
+        """Test parsing empty group :; returns empty."""
+        name, email_addr = parse_email_address(":;")
+        assert name == ""
+        assert email_addr == ""
+
+    def test_parse_address_group_with_space(self):
+        """Test parsing group with space in name."""
+        name, email_addr = parse_email_address("undisclosed recipients:;")
+        assert name == ""
+        assert email_addr == ""
+
+    def test_parse_address_malformed_group_colon_gt(self):
+        """Test parsing malformed group syntax with :> instead of :;"""
+        name, email_addr = parse_email_address("undisclosed-recipients:>")
+        assert name == ""
+        assert email_addr == ""
+
+    def test_parse_addresses_undisclosed_recipients(self):
+        """Test parsing undisclosed-recipients:; returns empty list."""
+        addresses = parse_email_addresses("undisclosed-recipients:;")
+        assert not addresses
+
+    def test_parse_addresses_group_with_members(self):
+        """Test parsing group syntax extracts member addresses."""
+        addresses = parse_email_addresses(
+            "Group: user1@example.com, user2@example.com;"
+        )
+        assert len(addresses) == 2
+        assert addresses[0] == ("", "user1@example.com")
+        assert addresses[1] == ("", "user2@example.com")
+
+    def test_parse_addresses_mixed_normal_and_group(self):
+        """Test parsing mix of normal addresses and group syntax."""
+        addresses = parse_email_addresses("test@example.com, undisclosed-recipients:;")
+        assert len(addresses) == 1
+        assert addresses[0] == ("", "test@example.com")
+
+    def test_parse_addresses_normal_group_normal(self):
+        """Test parsing normal, group, normal pattern."""
+        addresses = parse_email_addresses(
+            "First <a@b.com>, undisclosed-recipients:;, Last <z@y.com>"
+        )
+        assert len(addresses) == 2
+        assert addresses[0] == ("First", "a@b.com")
+        assert addresses[1] == ("Last", "z@y.com")
+
+    def test_parse_addresses_complex_group_with_addresses(self):
+        """Test parsing complex case with addresses before and after group."""
+        addresses = parse_email_addresses("a@b.com, Group: c@d.com, e@f.com;, g@h.com")
+        assert len(addresses) == 4
+        assert ("", "a@b.com") in addresses
+        assert ("", "c@d.com") in addresses
+        assert ("", "e@f.com") in addresses
+        assert ("", "g@h.com") in addresses
+
+    def test_parse_addresses_malformed_group_colon_gt(self):
+        """Test parsing malformed group syntax :> returns empty."""
+        addresses = parse_email_addresses("undisclosed-recipients:>")
+        assert not addresses
+
+    def test_parse_addresses_malformed_group_mixed(self):
+        """Test parsing mix of normal addresses and malformed :> group."""
+        addresses = parse_email_addresses("test@example.com, undisclosed-recipients:>")
+        assert len(addresses) == 1
+        assert addresses[0] == ("", "test@example.com")
+
+    def test_parse_addresses_empty_group(self):
+        """Test parsing various empty group patterns."""
+        assert not parse_email_addresses(":;")
+        assert not parse_email_addresses(":>")
+        assert not parse_email_addresses("test:;")
+        assert not parse_email_addresses("Empty Group:;")
+
+    def test_parse_address_unquoted_name_no_quotes_added(self):
+        """Test that unquoted display names don't get quotes added."""
+        name, email = parse_email_address("City of Example <contact@example.org>")
+        assert name == "City of Example"
+        assert email == "contact@example.org"
+        # Ensure no quotes in name
+        assert "'" not in name
+        assert '"' not in name
+
+    def test_parse_addresses_encoded_names_with_parentheses(self):
+        """Test parsing encoded names containing parentheses."""
+        to_header = (
+            "=?UTF-8?Q?John_DOE_=28Organization_A=29?= <john@example.com>, "
+            "=?UTF-8?Q?John_DOE_=28Organization_B=29?= <john@example.org>"
+        )
+        addresses = parse_email_addresses(to_header)
+        assert len(addresses) == 2
+        assert addresses[0] == ("John DOE (Organization A)", "john@example.com")
+        assert addresses[1] == ("John DOE (Organization B)", "john@example.org")
+
+    def test_parse_address_strips_single_quotes(self):
+        """Test that single quotes around display names are stripped.
+
+        Some email clients incorrectly use single quotes instead of double quotes
+        for display names. We strip them for consistency.
+        """
+        # Single quotes should be stripped
+        name, email = parse_email_address("'City of Example' <contact@example.org>")
+        assert name == "City of Example"
+        assert email == "contact@example.org"
+
+        # Apostrophe inside name should be preserved
+        name, email = parse_email_address("'John's Company' <john@example.org>")
+        assert name == "John's Company"
+        assert email == "john@example.org"
+
+    def test_parse_addresses_strips_single_quotes(self):
+        """Test that single quotes are stripped from multiple addresses."""
+        addresses = parse_email_addresses(
+            "'Company A' <a@example.com>, 'Company B' <b@example.com>"
+        )
+        assert len(addresses) == 2
+        assert addresses[0] == ("Company A", "a@example.com")
+        assert addresses[1] == ("Company B", "b@example.com")
 
 
 class TestHeaderDecoding:
@@ -1835,6 +1964,56 @@ This is a test email.
         assert "Ouvert" in parsed["gmail_labels"]
         assert "Culture, associations, événements" in parsed["gmail_labels"]
         assert "Catégorie : E-mails personnels" in parsed["gmail_labels"]
+
+
+class TestMalformedTransferEncoding:
+    """Tests for emails with malformed transfer encoding."""
+
+    def test_quoted_printable_with_non_ascii_chars(self):
+        """Test email claiming quoted-printable but containing raw non-ASCII bytes.
+
+        This tests the case where Content-Transfer-Encoding says quoted-printable
+        but the body contains raw non-ASCII characters, which causes Python's
+        quopri.decodestring() to raise ValueError.
+        """
+        # Email with quoted-printable encoding but raw UTF-8 bytes in body
+        email_content = b"""From: sender@example.com
+To: recipient@example.com
+Subject: Test Email
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+This contains raw non-ASCII: \xc3\xa9\xc3\xa0\xc3\xbc (should be accented chars)
+"""
+        # Should not raise an exception
+        parsed = parse_email_message(email_content)
+        assert parsed is not None
+        assert parsed["from"]["email"] == "sender@example.com"
+
+    def test_quoted_printable_multipart_with_non_ascii(self):
+        """Test multipart email with malformed quoted-printable part."""
+        email_content = b"""From: sender@example.com
+To: recipient@example.com
+Subject: Multipart with malformed QP
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="boundary123"
+
+--boundary123
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Raw bytes here: \xe9\xe0\xfc
+--boundary123
+Content-Type: text/html; charset="utf-8"
+
+<html><body>Normal HTML</body></html>
+--boundary123--
+"""
+        # Should not crash, should still parse what it can
+        parsed = parse_email_message(email_content)
+        assert parsed is not None
+        assert "htmlBody" in parsed
 
 
 if __name__ == "__main__":

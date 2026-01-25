@@ -793,10 +793,16 @@ class TestDeliverInboundMessage:
             "from": {"name": "Sender", "email": "sender@test.com"},
             "to": [
                 {"name": "Recipient", "email": "duplicate@test.com"},
-                {"name": "Recipient Again", "email": "duplicate@test.com"},  # Duplicate!
+                {
+                    "name": "Recipient Again",
+                    "email": "duplicate@test.com",
+                },  # Duplicate!
             ],
             "cc": [
-                {"name": "CC Recipient", "email": "duplicate@test.com"},  # Same email in CC!
+                {
+                    "name": "CC Recipient",
+                    "email": "duplicate@test.com",
+                },  # Same email in CC!
             ],
             "bcc": [],
             "textBody": [{"content": "Test with duplicates."}],
@@ -839,11 +845,13 @@ class TestDeliverInboundMessage:
         # With get_or_create, duplicates are handled silently without logging errors
         # With create(), we would see "Validation error creating recipient contact/link" logs
         warning_calls = [
-            call for call in mock_logger.warning.call_args_list
+            call
+            for call in mock_logger.warning.call_args_list
             if "recipient contact/link" in str(call).lower()
         ]
         error_calls = [
-            call for call in mock_logger.error.call_args_list
+            call
+            for call in mock_logger.error.call_args_list
             if "recipient contact/link" in str(call).lower()
         ]
         assert not warning_calls, (

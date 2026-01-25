@@ -442,7 +442,9 @@ def _create_message_from_inbound(
                 # Create the link between message and contact (use get_or_create to handle duplicates)
                 defaults = {}
                 if is_import and not message.is_draft:
-                    defaults["delivery_status"] = enums.MessageDeliveryStatusChoices.SENT
+                    defaults["delivery_status"] = (
+                        enums.MessageDeliveryStatusChoices.SENT
+                    )
                 models.MessageRecipient.objects.get_or_create(
                     message=message,
                     contact=recipient_contact,

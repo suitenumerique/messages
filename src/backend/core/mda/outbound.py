@@ -16,6 +16,7 @@ from core.enums import MessageDeliveryStatusChoices
 from core.mda.inbound import check_local_recipient, deliver_inbound_message
 from core.mda.outbound_direct import send_message_via_mx
 from core.mda.rfc5322 import (
+    EmailParseError,
     compose_email,
     create_forward_message,
     create_reply_message,
@@ -334,7 +335,19 @@ def send_message(message: models.Message, force_mta_out: bool = False):
 
     try:
         blob_content = message.blob.get_content()
-        parsed_email = parse_email_message(blob_content)
+        try:
+            parsed_email = parse_email_message(blob_content)
+        except EmailParseError as e:
+            logger.error(
+                "Failed to parse email for message %s: %s",
+                message.id,
+                e,
+            )
+            # Mark all recipients as failed
+            for recipient in message.recipients.all():
+                recipient.delivery_status = MessageDeliveryStatusChoices.FAILED
+                recipient.save(update_fields=["delivery_status"])
+            return
 
         if parsed_email.get("from", {}).get("email") != message.sender.email:
             raise ValueError("Mailbox email does not match the raw message sender")

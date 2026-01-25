@@ -69,6 +69,83 @@ def decode_email_header_text(header_text: str) -> str:
     return " ".join(cleaned_result.split())
 
 
+def _strip_name_quotes(name: str) -> str:
+    """
+    Strip surrounding single quotes from display names.
+
+    RFC 5322 uses double quotes for display names with special characters,
+    and flanker correctly strips those. However, some email clients incorrectly
+    use single quotes, which flanker preserves. We strip them for consistency.
+
+    Examples:
+        "'John Doe'" -> "John Doe"
+        "John Doe" -> "John Doe"
+        "'John's Name'" -> "John's Name" (only strips surrounding quotes)
+    """
+    if name and len(name) >= 2 and name.startswith("'") and name.endswith("'"):
+        return name[1:-1]
+    return name
+
+
+def _contains_group_syntax(address_str: str) -> bool:
+    """
+    Check if the address string contains RFC 5322 group syntax or malformed variants.
+
+    Group syntax format: "Group Name: addr1, addr2;" or "undisclosed-recipients:;"
+    Also handles malformed variants like "undisclosed-recipients:>" (using > instead of ;)
+    Returns True if any group-like syntax pattern is found.
+
+    The pattern is: word(s) followed by : then addresses/empty then ; or >
+    Key insight: the group name comes AFTER any comma separator, so we look for
+    patterns like "name:...;" where "name" doesn't contain @.
+    """
+    stripped = address_str.strip()
+    # Check for proper group syntax (;) or malformed variant (>)
+    if ";" not in stripped and ":>" not in stripped:
+        return False
+
+    # Use regex to find group patterns: non-@ chars followed by : then anything then ; or >
+    # This handles "undisclosed-recipients:;", "Group: addr1, addr2;", ":;", and ":>"
+    # Pattern: optional non-@ non-: chars, then :, then anything, then ; or just :>
+    group_pattern = re.compile(r"[^@:,]*:([^;]*;|>)")
+    return bool(group_pattern.search(stripped))
+
+
+def _remove_group_syntax(address_str: str) -> str:
+    """
+    Remove RFC 5322 group syntax from address string, extracting inner addresses.
+
+    "Group: addr1, addr2;" -> "addr1, addr2"
+    "undisclosed-recipients:;" -> ""
+    "user@a.com, Group: b@c.com;" -> "user@a.com, b@c.com"
+    "user@a.com, undisclosed-recipients:;" -> "user@a.com"
+    "undisclosed-recipients:>" -> "" (malformed variant)
+    """
+    stripped = address_str.strip()
+    if ";" not in stripped and ":>" not in stripped:
+        return stripped
+
+    # Use regex to find and process group patterns
+    # Group pattern: optional word(s) without @ or : or ,, followed by :, then content, then ;
+    # Also handle malformed :> variant (empty group with > instead of ;)
+    # We replace "GroupName: content;" with just "content"
+    group_pattern = re.compile(r"[^@:,]*:([^;]*);")
+
+    def replace_group(match):
+        inner = match.group(1).strip()
+        return inner if inner else ""
+
+    result = group_pattern.sub(replace_group, stripped)
+
+    # Handle malformed :> pattern (remove "name:>" entirely as it's an empty malformed group)
+    malformed_pattern = re.compile(r"[^@:,]*:>")
+    result = malformed_pattern.sub("", result)
+
+    # Clean up: remove empty entries, extra commas, whitespace
+    parts = [p.strip() for p in result.split(",") if p.strip()]
+    return ", ".join(parts)
+
+
 def parse_email_address(address_str: str) -> Tuple[str, str]:
     """
     Parse an email address that might include a display name.
@@ -88,6 +165,12 @@ def parse_email_address(address_str: str) -> Tuple[str, str]:
     if not address_str:
         return "", ""
 
+    # Handle RFC 5322 group syntax (e.g., "undisclosed-recipients:;")
+    # These cause flanker warnings and should return empty for single address parsing
+    if _contains_group_syntax(address_str):
+        # For single address parsing, group syntax means no valid single address
+        return "", ""
+
     # Use flanker to parse the address
     parsed = address.parse(address_str)
 
@@ -95,12 +178,23 @@ def parse_email_address(address_str: str) -> Tuple[str, str]:
         return "", address_str.strip()
 
     # If parsed successfully, extract name and address
-    return parsed.display_name or "", parsed.address  # pylint: disable=no-member
+    # Check for display_name attribute (UrlAddress objects from flanker don't have it)
+    if not hasattr(parsed, "display_name"):
+        # UrlAddress or other non-standard parsed object - return address only
+        addr = getattr(parsed, "address", str(parsed))
+        return "", addr
+
+    # Strip single quotes from display name (flanker only strips double quotes per RFC 5322)
+    display_name = _strip_name_quotes(parsed.display_name or "")  # pylint: disable=no-member
+    return display_name, parsed.address  # pylint: disable=no-member
 
 
 def parse_email_addresses(addresses_str: str) -> List[Tuple[str, str]]:
     """
     Parse multiple email addresses from a comma-separated string.
+
+    Handles RFC 5322 group syntax (e.g., "Group: addr1, addr2;") by extracting
+    the addresses within groups.
 
     Args:
         addresses_str: Comma-separated string of email addresses
@@ -111,6 +205,13 @@ def parse_email_addresses(addresses_str: str) -> List[Tuple[str, str]]:
     if not addresses_str:
         return []
 
+    # Handle RFC 5322 group syntax (e.g., "undisclosed-recipients:;" or "Group: a@b.com;")
+    # Extract addresses from within groups to avoid flanker warnings
+    if _contains_group_syntax(addresses_str):
+        addresses_str = _remove_group_syntax(addresses_str)
+        if not addresses_str:
+            return []  # Empty group like "undisclosed-recipients:;"
+
     # Use flanker to parse the address list
     parsed = address.parse_list(addresses_str)
 
@@ -118,7 +219,19 @@ def parse_email_addresses(addresses_str: str) -> List[Tuple[str, str]]:
         return []
 
     # Extract name and address for each parsed address
-    return [(addr.display_name or "", addr.address) for addr in parsed]  # pylint: disable=no-member
+    # Strip single quotes from display names (flanker only strips double quotes per RFC 5322)
+    # Handle UrlAddress objects which don't have display_name attribute
+    result = []
+    for addr in parsed:
+        if hasattr(addr, "display_name"):
+            name = _strip_name_quotes(addr.display_name or "")
+            email = addr.address
+        else:
+            # UrlAddress or other non-standard parsed object
+            name = ""
+            email = getattr(addr, "address", str(addr))
+        result.append((name, email))
+    return result
 
 
 def parse_date(date_str: str) -> Optional[datetime]:
@@ -300,8 +413,23 @@ def _get_part_info(part) -> Dict[str, Any]:
     content_id_header = headers_dict.get("Content-ID")
     content_id = str(content_id_header).strip("<>") if content_id_header else None
 
-    # Get body
-    body = getattr(part, "body", None)
+    # Get body - may fail if flanker can't decode the transfer encoding
+    # (e.g., quoted-printable with non-ASCII characters)
+    try:
+        body = getattr(part, "body", None)
+    except ValueError:
+        # Flanker's quopri decoder failed - try to get raw body
+        try:
+            container = getattr(part, "_container", None)
+            if container and hasattr(container, "stream"):
+                body_start = getattr(container, "_body_start", 0)
+                body_end = getattr(container, "end", 0)
+                container.stream.seek(body_start)
+                body = container.stream.read(body_end - body_start + 1)
+            else:
+                body = None
+        except Exception:  # pylint: disable=broad-exception-caught
+            body = None
 
     # Get part ID
     part_id = getattr(part, "message_id", "") or ""

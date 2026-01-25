@@ -42,7 +42,7 @@ from core.enums import (
     ThreadAccessRoleChoices,
     UserAbilities,
 )
-from core.mda.rfc5322 import parse_email_message
+from core.mda.rfc5322 import EmailParseError, parse_email_message
 from core.mda.signing import generate_dkim_key as _generate_dkim_key
 
 logger = getLogger(__name__)
@@ -1297,7 +1297,14 @@ class Message(BaseModel):
             return self._parsed_email_cache
 
         if self.blob:
-            self._parsed_email_cache = parse_email_message(self.blob.get_content())
+            try:
+                self._parsed_email_cache = parse_email_message(self.blob.get_content())
+            except EmailParseError:
+                logger.warning(
+                    "Failed to parse email for message %s, returning empty data",
+                    self.id,
+                )
+                self._parsed_email_cache = {}
         else:
             self._parsed_email_cache = {}
         return self._parsed_email_cache

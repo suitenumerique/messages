@@ -78,6 +78,7 @@ dev = [
     "django-extensions==3.2.3",
     "drf-spectacular-sidecar==2024.12.1",
     "flower==2.0.1",
+    "hypothesis==6.131.1",
     "pip-audit==2.9.0",
     "pipdeptree==2.28.0",
     "pylint-django==2.6.1",
@@ -141,8 +142,14 @@ addopts = [
     "term-missing",
     # Allow test files to have the same name in different directories.
     "--import-mode=importlib",
+    # Exclude fuzz tests by default (run with: pytest -m fuzz)
+    "-m",
+    "not fuzz",
 ]
 python_files = [
     "test_*.py",
     "tests.py",
+]
+markers = [
+    "fuzz: marks tests as fuzz tests (run with: pytest -m fuzz)",
 ]

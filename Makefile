@@ -245,6 +245,11 @@ back-test-parallel: ## run all back-end tests in parallel
 	bin/pytest -n auto $${args:-${1}}
 .PHONY: back-test-parallel
 
+back-fuzz: ## run back-end fuzz tests
+	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
+	bin/pytest -m fuzz $${args:-${1}}
+.PHONY: back-fuzz
+
 front-test: ## run the frontend tests
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	$(COMPOSE) run --rm frontend-tools npm run test -- $${args:-${1}}
