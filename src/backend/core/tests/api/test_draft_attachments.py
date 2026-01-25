@@ -1,5 +1,7 @@
 """Tests for draft attachments API."""
 
+# pylint: disable=too-many-lines
+
 import base64
 import email
 import json

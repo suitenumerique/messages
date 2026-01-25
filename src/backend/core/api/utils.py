@@ -113,7 +113,12 @@ def get_attachment_from_blob_id(blob_id, user):
 
     # Parse the raw mime message to get the attachment
     parsed_email = message.get_parsed_data()
-    attachment = parsed_email.get("attachments", [])[attachment_number]
+    attachments = parsed_email.get("attachments", [])
+
+    if attachment_number < 0 or attachment_number >= len(attachments):
+        raise models.Blob.DoesNotExist()
+
+    attachment = attachments[attachment_number]
 
     if not attachment:
         raise models.Blob.DoesNotExist()
