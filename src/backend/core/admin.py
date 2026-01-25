@@ -22,6 +22,7 @@ from core.mda.outbound_tasks import retry_messages_task
 from core.services.dns.provisioning import provision_domain_dns
 from core.services.exporter.tasks import export_mailbox_task
 from core.services.importer.service import ImportService
+from core.services.throttle import get_throttle_status
 
 from . import models
 from .enums import MessageDeliveryStatusChoices
@@ -211,7 +212,24 @@ class MailDomainAdmin(admin.ModelAdmin):
     list_filter = ("identity_sync",)
     search_fields = ("name",)
     autocomplete_fields = ("alias_of",)
+    readonly_fields = ("throttle_status_display",)
     change_form_template = "admin/core/maildomain/change_form.html"
+
+    @admin.display(description=_("Throttle Status (External Recipients)"))
+    def throttle_status_display(self, obj):
+        """Display current throttle usage for this maildomain."""
+        status = get_throttle_status(maildomain=obj)
+        if "maildomain" not in status:
+            return _("No throttle configured")
+
+        info = status["maildomain"]
+        return format_html(
+            "<strong>{}/{}</strong> this {} (resets in {})",
+            info["current"],
+            info["limit"],
+            info["period"],
+            info["reset_in_human"],
+        )
 
     def get_urls(self):
         urls = super().get_urls()
@@ -284,6 +302,7 @@ class MailboxAdmin(admin.ModelAdmin):
     actions = [reset_keycloak_password_action]
     autocomplete_fields = ("domain", "contact", "alias_of")
     change_form_template = "admin/core/mailbox/change_form.html"
+    readonly_fields = ("throttle_status_display",)
 
     def get_queryset(self, request):
         """Optimize queryset with select_related for better performance"""
@@ -340,6 +359,37 @@ class MailboxAdmin(admin.ModelAdmin):
         )
 
         return redirect("..")
+
+    @admin.display(description=_("Throttle Status (External Recipients)"))
+    def throttle_status_display(self, obj):
+        """Display current throttle usage for this mailbox and its domain."""
+        status = get_throttle_status(mailbox=obj, maildomain=obj.domain)
+
+        parts = []
+        if "mailbox" in status:
+            info = status["mailbox"]
+            parts.append(
+                format_html(
+                    "Mailbox: <strong>{}/{}</strong> this {} (resets in {})",
+                    info["current"],
+                    info["limit"],
+                    info["period"],
+                    info["reset_in_human"],
+                )
+            )
+        if "maildomain" in status:
+            info = status["maildomain"]
+            parts.append(
+                format_html(
+                    "Domain: <strong>{}/{}</strong> this {} (resets in {})",
+                    info["current"],
+                    info["limit"],
+                    info["period"],
+                    info["reset_in_human"],
+                )
+            )
+
+        return format_html("<br>".join(parts)) if parts else _("No throttle configured")
 
 
 @admin.register(models.Channel)

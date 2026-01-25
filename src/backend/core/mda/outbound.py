@@ -26,6 +26,7 @@ from core.mda.rfc5322 import (
 )
 from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
+from core.services.throttle import check_and_increment_throttle
 from core.utils import ThreadStatsUpdateDeferrer
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,14 @@ def prepare_outbound_message(
                 % {"count": recipient_count, "max": max_recipients}
             }
         )
+
+    # Throttle external recipients per mailbox/maildomain
+    # ThrottleLimitExceeded propagates to the DRF exception handler (HTTP 429)
+    check_and_increment_throttle(
+        mailbox=mailbox_sender,
+        maildomain=mailbox_sender.domain,
+        message=message,
+    )
 
     # Get recipients from the MessageRecipient model
     recipients_by_type = {

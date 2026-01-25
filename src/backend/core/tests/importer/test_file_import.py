@@ -362,7 +362,7 @@ def test_import_message_to_different_mailbox_same_domain(domain):
     importing mailbox. This prevents users from adding messages to their colleagues'
     mailboxes.
 
-    The bug being tested: deliver_inbound_message calls check_local_recipient even
+    The bug being tested: deliver_inbound_message calls get_or_create_mailbox even
     during imports, which might cause issues if the importing mailbox validation fails
     or if there are edge cases with domain checking during import.
     """

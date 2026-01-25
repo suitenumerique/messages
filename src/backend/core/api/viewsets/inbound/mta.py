@@ -16,7 +16,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core import models
-from core.mda.inbound import check_local_recipient, deliver_inbound_message
+from core.mda.inbound import check_local_recipients, deliver_inbound_message
 from core.mda.rfc5322 import EmailParseError, parse_email_message
 
 logger = logging.getLogger(__name__)
@@ -91,10 +91,8 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
                 {"detail": "Missing addresses"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        results = {
-            address: check_local_recipient(address, create_if_missing=False)
-            for address in addresses
-        }
+        local_addresses = check_local_recipients(addresses)
+        results = {address: address in local_addresses for address in addresses}
         return Response(results)
 
     @extend_schema(exclude=True)

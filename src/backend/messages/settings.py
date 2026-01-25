@@ -23,7 +23,7 @@ import sentry_sdk
 from configurations import Configuration, values
 from sentry_sdk.integrations.django import DjangoIntegration
 
-from core.utils import JSONValue
+from core.utils import JSONValue, ThrottleRateValue
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +120,19 @@ class Base(Configuration):
     # Maximum total recipients (to + cc + bcc) allowed per message for the entire system
     MAX_RECIPIENTS_PER_MESSAGE = values.PositiveIntegerValue(
         500, environ_name="MAX_RECIPIENTS_PER_MESSAGE", environ_prefix=None
+    )
+
+    # Throttling - limits external recipients per mailbox/maildomain per time period
+    # Format: "count/period" where period is minute, hour, or day. None to disable.
+    THROTTLE_MAILBOX_OUTBOUND_EXTERNAL_RECIPIENTS = ThrottleRateValue(
+        None,
+        environ_name="THROTTLE_MAILBOX_OUTBOUND_EXTERNAL_RECIPIENTS",
+        environ_prefix=None,
+    )
+    THROTTLE_MAILDOMAIN_OUTBOUND_EXTERNAL_RECIPIENTS = ThrottleRateValue(
+        None,
+        environ_name="THROTTLE_MAILDOMAIN_OUTBOUND_EXTERNAL_RECIPIENTS",
+        environ_prefix=None,
     )
 
     # Image Proxy

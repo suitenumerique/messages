@@ -294,6 +294,16 @@ _Those settings are deprecated and will be removed in the future._
 | `FEATURE_AI_AUTOLABELS` | `False` | Default enabled mode for label AI features | Required |
 | `FEATURE_MAILBOX_ADMIN_CHANNELS` | `` | Comma-separated list of channel types enabled for mailbox admin (e.g., `widget,api_key`). Empty list disables all channel types. | Optional |
 
+### Throttling
+
+Outbound message throttling limits the number of **external recipients** (recipients whose domain is not managed by this instance) that can be sent from a mailbox or maildomain within a time period, using simple fixed time windows.
+
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `THROTTLE_MAILBOX_OUTBOUND_EXTERNAL_RECIPIENTS` | None | Rate limit per mailbox. Format: `count/period` where period is `minute`, `hour`, or `day`. Example: `1000/day` limits each mailbox to 1000 external recipients per day. | Optional |
+| `THROTTLE_MAILDOMAIN_OUTBOUND_EXTERNAL_RECIPIENTS` | None | Rate limit per maildomain. Format: `count/period`. Example: `10000/day` limits each domain to 10000 external recipients per day. | Optional |
+
 ### Image Proxy
 
 **Note**: By default `IMAGE_PROXY_MAX_SIZE` is set to 5MB. We do not encourage to increase this value as

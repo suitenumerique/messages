@@ -60,6 +60,75 @@ def check_local_recipient(
     return True
 
 
+def check_local_recipients(email_addresses: list[str]) -> set[str]:
+    """
+    Check which email addresses are locally deliverable (batch version).
+
+    Returns a set of email addresses that are deliverable locally.
+    An email is deliverable if:
+    - MESSAGES_ACCEPT_ALL_EMAILS is True (test mode), or
+    - The domain matches MESSAGES_TESTDOMAIN (catch-all), or
+    - A mailbox exists for that email address
+    """
+    if not email_addresses:
+        return set()
+
+    # For unit testing, all emails are deliverable
+    if settings.MESSAGES_ACCEPT_ALL_EMAILS:
+        return set(email_addresses)
+
+    deliverable = set()
+
+    # Parse emails and collect unique domains
+    email_parts = {}  # email -> (local_part, domain)
+    domains = set()
+
+    for email in email_addresses:
+        try:
+            local_part, domain = email.rsplit("@", 1)
+            email_parts[email] = (local_part, domain)
+            domains.add(domain)
+        except ValueError:
+            pass  # Invalid email format, not deliverable
+
+    # Handle MESSAGES_TESTDOMAIN - acts as catch-all
+    test_domain = settings.MESSAGES_TESTDOMAIN
+    if test_domain:
+        for email, (_, domain) in email_parts.items():
+            if domain == test_domain:
+                deliverable.add(email)
+        domains.discard(test_domain)
+
+    # Query all mailboxes on the relevant domains in a single query
+    if domains:
+        existing_mailboxes = set(
+            models.Mailbox.objects.filter(domain__name__in=domains).values_list(
+                "local_part", "domain__name"
+            )
+        )
+
+        for email, (local_part, domain) in email_parts.items():
+            if email not in deliverable and (local_part, domain) in existing_mailboxes:
+                deliverable.add(email)
+
+    return deliverable
+
+
+def count_external_recipients(message) -> int:
+    """
+    Count recipients whose domain is NOT managed by this instance.
+
+    Uses check_local_recipients() to efficiently batch-check all recipients.
+    """
+    recipient_emails = list(message.recipients.values_list("contact__email", flat=True))
+
+    if not recipient_emails:
+        return 0
+
+    local_emails = check_local_recipients(recipient_emails)
+    return len(recipient_emails) - len(local_emails)
+
+
 def deliver_inbound_message(
     recipient_email: str,
     parsed_email: Dict[str, Any],
