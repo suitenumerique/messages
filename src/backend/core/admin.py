@@ -13,8 +13,10 @@ from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
 from core.api.utils import get_file_key
+from core.api.viewsets.task import register_task_owner
 from core.mda.outbound_tasks import retry_messages_task
 from core.services.dns.provisioning import provision_domain_dns
+from core.services.exporter.tasks import export_mailbox_task
 from core.services.importer.service import ImportService
 
 from . import models
@@ -277,6 +279,7 @@ class MailboxAdmin(admin.ModelAdmin):
     search_fields = ("local_part", "domain__name", "contact__name", "contact__email")
     actions = [reset_keycloak_password_action]
     autocomplete_fields = ("domain", "contact", "alias_of")
+    change_form_template = "admin/core/mailbox/change_form.html"
 
     def get_queryset(self, request):
         """Optimize queryset with select_related for better performance"""
@@ -285,6 +288,44 @@ class MailboxAdmin(admin.ModelAdmin):
             .get_queryset(request)
             .select_related("domain", "contact", "alias_of")
         )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "<path:object_id>/export/",
+                self.admin_site.admin_view(self.export_messages_view),
+                name="core_mailbox_export",
+            ),
+        ]
+        return custom_urls + urls
+
+    def export_messages_view(self, request, object_id):
+        """View for exporting all messages from a mailbox."""
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+
+        mailbox_obj = self.get_object(request, object_id)
+
+        if mailbox_obj is None:
+            messages.error(request, _("Mailbox not found."))
+            return redirect("..")
+
+        # Start the export task
+        task = export_mailbox_task.delay(str(mailbox_obj.id), str(request.user.id))
+        register_task_owner(task.id, request.user.id)
+
+        messages.success(
+            request,
+            _(
+                "Export task has been queued for mailbox %(mailbox)s. "
+                "You will receive a message with the download link when the export "
+                "is complete (task id: %(task_id)s)."
+            )
+            % {"mailbox": mailbox_obj, "task_id": task.id},
+        )
+
+        return redirect("..")
 
 
 @admin.register(models.Channel)

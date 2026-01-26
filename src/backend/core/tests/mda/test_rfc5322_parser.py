@@ -1999,6 +1999,74 @@ This is a test email.
         assert "Culture, associations, événements" in parsed["gmail_labels"]
         assert "Catégorie : E-mails personnels" in parsed["gmail_labels"]
 
+    def test_x_keywords_comma_separated(self):
+        """Test parsing X-Keywords header with comma-separated values."""
+        email_content = """From: test@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Keywords: work, important, project
+
+This is a test email.
+"""
+        parsed = parse_email_message(email_content.encode("utf-8"))
+        assert "work" in parsed["gmail_labels"]
+        assert "important" in parsed["gmail_labels"]
+        assert "project" in parsed["gmail_labels"]
+
+    def test_x_keywords_space_separated(self):
+        """Test parsing X-Keywords header with space-separated values (Dovecot format)."""
+        email_content = """From: test@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Keywords: work important project
+
+This is a test email.
+"""
+        parsed = parse_email_message(email_content.encode("utf-8"))
+        assert "work" in parsed["gmail_labels"]
+        assert "important" in parsed["gmail_labels"]
+        assert "project" in parsed["gmail_labels"]
+
+    def test_x_keywords_with_quoted_strings(self):
+        """Test parsing X-Keywords header with quoted strings containing spaces."""
+        email_content = """From: test@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Keywords: work, "project alpha", important
+
+This is a test email.
+"""
+        parsed = parse_email_message(email_content.encode("utf-8"))
+        assert "work" in parsed["gmail_labels"]
+        assert "project alpha" in parsed["gmail_labels"]
+        assert "important" in parsed["gmail_labels"]
+
+    def test_x_keywords_combined_with_gmail_labels(self):
+        """Test that X-Keywords and X-Gmail-Labels are combined."""
+        email_content = """From: test@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Gmail-Labels: gmail-label
+X-Keywords: keyword-label
+
+This is a test email.
+"""
+        parsed = parse_email_message(email_content.encode("utf-8"))
+        assert "gmail-label" in parsed["gmail_labels"]
+        assert "keyword-label" in parsed["gmail_labels"]
+
+    def test_x_keywords_empty(self):
+        """Test parsing empty X-Keywords header."""
+        email_content = """From: test@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Keywords:
+
+This is a test email.
+"""
+        parsed = parse_email_message(email_content.encode("utf-8"))
+        assert len(parsed["gmail_labels"]) == 0
+
 
 class TestMalformedTransferEncoding:
     """Tests for emails with malformed transfer encoding."""
