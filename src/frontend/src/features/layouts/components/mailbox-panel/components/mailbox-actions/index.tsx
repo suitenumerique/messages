@@ -4,7 +4,8 @@ import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useLayoutContext } from "../../../main";
 import useAbility, { Abilities } from "@/hooks/use-ability";
-import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { useState } from "react";
 
 export const MailboxPanelActions = () => {
     const { t } = useTranslation();
@@ -12,6 +13,16 @@ export const MailboxPanelActions = () => {
     const { selectedMailbox, refetchMailboxes } = useMailboxContext();
     const { closeLeftPanel } = useLayoutContext();
     const canWriteMessages = useAbility(Abilities.CAN_WRITE_MESSAGES, selectedMailbox);
+    const [showSpinner, setShowSpinner] = useState(false);
+
+    const handleRefresh = async () => {
+        setShowSpinner(true);
+        try {
+            await refetchMailboxes();
+        } finally {
+            setShowSpinner(false);
+        }
+    };
 
     const goToNewMessageForm = (event: React.MouseEvent<HTMLButtonElement | HTMLAnchorElement>) => {
         event.preventDefault();
@@ -38,10 +49,18 @@ export const MailboxPanelActions = () => {
             </div>
             <div className="mailbox-panel-actions__extra">
                 <Button
-                    icon={<span className="material-icons">autorenew</span>}
+                    icon={
+                        <span className="mailbox-panel-actions__refresh-wrapper">
+                            <span className={`material-icons mailbox-panel-actions__refresh-icon${showSpinner ? ' mailbox-panel-actions__refresh-icon--hidden' : ''}`}>autorenew</span>
+                            <span className={`mailbox-panel-actions__refresh-spinner${showSpinner ? ' mailbox-panel-actions__refresh-spinner--visible' : ''}`}>
+                                <Spinner size="sm" />
+                            </span>
+                        </span>
+                    }
                     variant="tertiary"
-                    aria-label={t('Refresh')}
-                    onClick={refetchMailboxes}
+                    aria-label={showSpinner ? t('Loading…') : t('Refresh')}
+                    onClick={handleRefresh}
+                    disabled={showSpinner}
                 />
             </div>
         </div>

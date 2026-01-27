@@ -1,6 +1,6 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo } from "react";
 import { Mailbox, MailboxRoleChoices, Message, messagesListResponse200, PaginatedThreadList, Thread, useLabelsList, useMailboxesList, useMessagesList, useThreadsListInfinite } from "../api/gen";
-import { FetchStatus, QueryStatus, useQueryClient } from "@tanstack/react-query";
+import { FetchStatus, QueryStatus, RefetchOptions, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
 import usePrevious from "@/hooks/use-previous";
 import { useSearchParams } from "next/navigation";
@@ -35,7 +35,7 @@ type MailboxContextType = {
     invalidateThreadMessages: (source?: MessageQueryInvalidationSource) => Promise<void>;
     invalidateThreadsStats: () => Promise<void>;
     invalidateLabels: () => Promise<void>;
-    refetchMailboxes: () => void;
+    refetchMailboxes: (options?: RefetchOptions) => Promise<unknown>;
     isPending: boolean;
     queryStates: {
         mailboxes: QueryState,
@@ -60,7 +60,7 @@ const MailboxContext = createContext<MailboxContextType>({
     invalidateThreadMessages: async () => {},
     invalidateThreadsStats: async () => {},
     invalidateLabels: async () => {},
-    refetchMailboxes: () => {},
+    refetchMailboxes: async () => {},
     isPending: false,
     queryStates: {
         mailboxes: {
