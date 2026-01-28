@@ -5,6 +5,7 @@ These tests replicate the workflow from jmapc's recent_threads.py example.
 
 import uuid
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.utils import timezone
 
@@ -18,7 +19,12 @@ from jmapc.methods import (
     ThreadGet,
 )
 
-from core import enums, factories
+from core import enums, factories, models
+from core.tests.api.jmap.test_jmap_methods import (
+    EmailSet,
+    EmailSubmissionSet,
+    IdentityGet,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -252,3 +258,88 @@ class TestRecentThreadsWorkflow:
 
         # Should only get inbox emails
         assert len(inbox_result.ids) == 1
+
+
+class TestSendWorkflow:
+    """Tests for the full message sending workflow."""
+
+    @patch("core.api.jmap.methods.send_message_task")
+    def test_full_send_workflow(self, mock_send_task, jmap_client, user):
+        """
+        Test the complete send workflow:
+        1. Identity/get - discover sending identities
+        2. Email/set create - create a draft
+        3. EmailSubmission/set create - submit for delivery
+        4. Verify message is no longer a draft
+        """
+        mailbox = factories.MailboxFactory(users_read=[user])
+
+        # Step 1: Get identities
+        identity_result = jmap_client.request(IdentityGet())
+
+        assert len(identity_result.list) >= 1
+        identity = next(
+            i for i in identity_result.list if i["id"] == str(mailbox.id)
+        )
+        identity_id = identity["id"]
+        sender_email = identity["email"]
+
+        # Step 2: Create a draft
+        create_result = jmap_client.request(
+            EmailSet(
+                create={
+                    "draft1": {
+                        "mailboxIds": {identity_id: True},
+                        "subject": "Workflow Test Email",
+                        "from": [{"name": "Me", "email": sender_email}],
+                        "to": [
+                            {"name": "Recipient", "email": "recipient@example.com"}
+                        ],
+                        "bodyValues": {
+                            "text": {"value": "Hello from the workflow test!"},
+                            "html": {
+                                "value": "<p>Hello from the workflow test!</p>"
+                            },
+                        },
+                        "textBody": [{"partId": "text", "type": "text/plain"}],
+                        "htmlBody": [{"partId": "html", "type": "text/html"}],
+                        "keywords": {"$draft": True},
+                    }
+                }
+            )
+        )
+
+        assert create_result.data["created"] is not None
+        draft = create_result.data["created"]["draft1"]
+        email_id = draft["id"]
+        thread_id = draft["threadId"]
+
+        # Verify draft was created correctly
+        message = models.Message.objects.get(id=email_id)
+        assert message.is_draft is True
+        assert message.subject == "Workflow Test Email"
+
+        # Step 3: Submit for delivery
+        submit_result = jmap_client.request(
+            EmailSubmissionSet(
+                create={
+                    "sub1": {
+                        "emailId": email_id,
+                        "identityId": identity_id,
+                    }
+                }
+            )
+        )
+
+        assert submit_result.data["created"] is not None
+        submission = submit_result.data["created"]["sub1"]
+        assert submission["emailId"] == email_id
+        assert submission["threadId"] == thread_id
+        assert submission["undoStatus"] == "final"
+
+        # Step 4: Verify message is no longer a draft
+        message.refresh_from_db()
+        assert message.is_draft is False
+
+        # Verify send task was queued
+        mock_send_task.delay.assert_called_once_with(email_id)

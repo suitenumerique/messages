@@ -1,19 +1,27 @@
 """JMAP method registry and handlers."""
 
+import json
+import logging
 from datetime import datetime
 from datetime import timezone as dt_timezone
 from typing import Any
 
 from django.db.models import OuterRef, Subquery, Value
 from django.db.models.functions import Concat
+from django.utils import timezone
 
 from core import models
+from core.mda.draft import create_draft
+from core.mda.outbound import prepare_outbound_message
+from core.mda.outbound_tasks import send_message_task
 
 from .errors import (
     InvalidArgumentsError,
     InvalidResultReferenceError,
     UnknownMethodError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MethodRegistry:
@@ -51,6 +59,8 @@ class JMAPContext:
     def __init__(self, user, results_by_call_id: dict[str, dict]):
         self.user = user
         self.results_by_call_id = results_by_call_id
+        self.implicit_responses: list[list] = []
+        self.current_call_id: str = ""
 
 
 class BaseMethod:
@@ -492,6 +502,356 @@ class ThreadGet(BaseMethod):
 
         found_ids = {str(t.id) for t in threads}
         not_found = [tid for tid in ids if tid not in found_ids]
+
+        return {
+            "accountId": account_id,
+            "state": self._get_state(),
+            "list": result_list,
+            "notFound": not_found,
+        }
+
+
+# ---------- Email/set Method ----------
+
+
+@MethodRegistry.register("Email/set")
+class EmailSetMethod(BaseMethod):
+    """Create, update, and destroy emails."""
+
+    def execute(self, args: dict) -> dict:
+        account_id = self._get_account_id(args)
+        create = args.get("create", {})
+        update = args.get("update", {})
+        destroy = args.get("destroy", [])
+
+        created = {}
+        not_created = {}
+        updated = {}
+        not_updated = {}
+        destroyed = []
+        not_destroyed = {}
+
+        # --- create ---
+        for creation_id, email_data in create.items():
+            try:
+                created[creation_id] = self._create_email(email_data)
+            except Exception as e:
+                not_created[creation_id] = {
+                    "type": "invalidArguments",
+                    "description": str(e),
+                }
+
+        # --- update ---
+        for email_id, patch in update.items():
+            try:
+                self._update_email(email_id, patch)
+                updated[email_id] = None
+            except Exception as e:
+                not_updated[email_id] = {
+                    "type": "invalidArguments",
+                    "description": str(e),
+                }
+
+        # --- destroy ---
+        for email_id in destroy:
+            try:
+                self._destroy_email(email_id)
+                destroyed.append(email_id)
+            except Exception as e:
+                not_destroyed[email_id] = {
+                    "type": "invalidArguments",
+                    "description": str(e),
+                }
+
+        return {
+            "accountId": account_id,
+            "oldState": self._get_state(),
+            "newState": self._get_state(),
+            "created": created or None,
+            "notCreated": not_created or None,
+            "updated": updated or None,
+            "notUpdated": not_updated or None,
+            "destroyed": destroyed or None,
+            "notDestroyed": not_destroyed or None,
+        }
+
+    def _create_email(self, email_data: dict) -> dict:
+        """Create a draft email from JMAP Email data."""
+        mailbox_ids = email_data.get("mailboxIds", {})
+        if not mailbox_ids:
+            raise InvalidArgumentsError("mailboxIds is required")
+
+        # Get the first mailbox the user has access to
+        mailbox_id = next(iter(mailbox_ids))
+        try:
+            mailbox = models.Mailbox.objects.get(
+                id=mailbox_id, accesses__user=self.context.user
+            )
+        except models.Mailbox.DoesNotExist:
+            raise InvalidArgumentsError(f"Mailbox not found: {mailbox_id}")
+
+        # Extract fields
+        subject = email_data.get("subject", "")
+        to_list = email_data.get("to", [])
+        cc_list = email_data.get("cc", [])
+        bcc_list = email_data.get("bcc", [])
+
+        to_emails = [addr["email"] for addr in to_list if "email" in addr]
+        cc_emails = [addr["email"] for addr in cc_list if "email" in addr]
+        bcc_emails = [addr["email"] for addr in bcc_list if "email" in addr]
+
+        # Extract body content from JMAP bodyValues / textBody / htmlBody
+        text_body = ""
+        html_body = ""
+        body_values = email_data.get("bodyValues", {})
+        for part in email_data.get("textBody", []):
+            part_id = part.get("partId")
+            if part_id and part_id in body_values:
+                text_body = body_values[part_id].get("value", "")
+        for part in email_data.get("htmlBody", []):
+            part_id = part.get("partId")
+            if part_id and part_id in body_values:
+                html_body = body_values[part_id].get("value", "")
+
+        # Store body as JSON in draft_blob so EmailSubmission can read it back
+        draft_body = json.dumps(
+            {"format": "jmap", "textBody": text_body, "htmlBody": html_body}
+        )
+
+        message = create_draft(
+            mailbox=mailbox,
+            subject=subject,
+            draft_body=draft_body,
+            to_emails=to_emails,
+            cc_emails=cc_emails,
+            bcc_emails=bcc_emails,
+        )
+
+        return {
+            "id": str(message.id),
+            "blobId": str(message.draft_blob.id) if message.draft_blob else None,
+            "threadId": str(message.thread_id),
+            "size": message.draft_blob.size if message.draft_blob else 0,
+        }
+
+    def _update_email(self, email_id: str, patch: dict) -> None:
+        """Update email keywords/flags via JMAP patch syntax."""
+        message = models.Message.objects.filter(
+            id=email_id,
+            thread__accesses__mailbox__accesses__user=self.context.user,
+        ).first()
+        if not message:
+            raise InvalidArgumentsError(f"Email not found: {email_id}")
+
+        updated_fields = []
+
+        # Handle full keywords replacement
+        if "keywords" in patch:
+            keywords = patch["keywords"]
+            is_seen = keywords.get("$seen", False)
+            is_flagged = keywords.get("$flagged", False)
+            is_draft = keywords.get("$draft", False)
+
+            message.is_unread = not is_seen
+            message.is_starred = is_flagged
+            message.is_draft = is_draft
+            updated_fields.extend(["is_unread", "is_starred", "is_draft"])
+
+        # Handle individual keyword patches (e.g. "keywords/$seen": True)
+        for key, value in patch.items():
+            if key == "keywords/$seen":
+                message.is_unread = not value
+                if "is_unread" not in updated_fields:
+                    updated_fields.append("is_unread")
+            elif key == "keywords/$flagged":
+                message.is_starred = value
+                if "is_starred" not in updated_fields:
+                    updated_fields.append("is_starred")
+            elif key == "keywords/$draft":
+                message.is_draft = value
+                if "is_draft" not in updated_fields:
+                    updated_fields.append("is_draft")
+
+        if updated_fields:
+            message.save(update_fields=updated_fields + ["updated_at"])
+
+    def _destroy_email(self, email_id: str) -> None:
+        """Trash a message (sets is_trashed=True)."""
+        message = models.Message.objects.filter(
+            id=email_id,
+            thread__accesses__mailbox__accesses__user=self.context.user,
+        ).first()
+        if not message:
+            raise InvalidArgumentsError(f"Email not found: {email_id}")
+
+        message.is_trashed = True
+        message.trashed_at = timezone.now()
+        message.save(update_fields=["is_trashed", "trashed_at", "updated_at"])
+
+
+# ---------- EmailSubmission/set Method ----------
+
+
+@MethodRegistry.register("EmailSubmission/set")
+class EmailSubmissionSetMethod(BaseMethod):
+    """Submit emails for delivery."""
+
+    def execute(self, args: dict) -> dict:
+        account_id = self._get_account_id(args)
+        create = args.get("create", {})
+        on_success_update = args.get("onSuccessUpdateEmail", {})
+
+        created = {}
+        not_created = {}
+
+        for creation_id, submission_data in create.items():
+            try:
+                result = self._create_submission(submission_data)
+                created[creation_id] = result
+
+                # Handle onSuccessUpdateEmail
+                if on_success_update:
+                    self._apply_on_success(
+                        result["emailId"], creation_id, on_success_update
+                    )
+            except Exception as e:
+                logger.exception(
+                    "Failed to create email submission %s: %s", creation_id, e
+                )
+                not_created[creation_id] = {
+                    "type": "invalidArguments",
+                    "description": str(e),
+                }
+
+        return {
+            "accountId": account_id,
+            "oldState": self._get_state(),
+            "newState": self._get_state(),
+            "created": created or None,
+            "notCreated": not_created or None,
+        }
+
+    def _create_submission(self, submission_data: dict) -> dict:
+        """Submit a draft email for delivery."""
+        email_id = submission_data.get("emailId")
+        identity_id = submission_data.get("identityId")
+
+        if not email_id:
+            raise InvalidArgumentsError("emailId is required")
+        if not identity_id:
+            raise InvalidArgumentsError("identityId is required")
+
+        # Validate identity (mailbox)
+        try:
+            mailbox = models.Mailbox.objects.get(
+                id=identity_id, accesses__user=self.context.user
+            )
+        except models.Mailbox.DoesNotExist:
+            raise InvalidArgumentsError(f"Identity not found: {identity_id}")
+
+        # Get the draft message
+        message = models.Message.objects.filter(
+            id=email_id,
+            thread__accesses__mailbox__accesses__user=self.context.user,
+        ).select_related("thread", "sender", "draft_blob", "signature").first()
+        if not message:
+            raise InvalidArgumentsError(f"Email not found: {email_id}")
+        if not message.is_draft:
+            raise InvalidArgumentsError("Email is not a draft")
+
+        # Read body from draft_blob
+        text_body = ""
+        html_body = ""
+        if message.draft_blob:
+            try:
+                blob_content = message.draft_blob.get_content()
+                body_data = json.loads(blob_content)
+                if body_data.get("format") == "jmap":
+                    text_body = body_data.get("textBody", "")
+                    html_body = body_data.get("htmlBody", "")
+                else:
+                    # Legacy format - treat as plain text
+                    text_body = blob_content.decode("utf-8")
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                text_body = message.draft_blob.get_content().decode(
+                    "utf-8", errors="replace"
+                )
+
+        # Prepare and queue the message for sending
+        prepare_outbound_message(
+            mailbox_sender=mailbox,
+            message=message,
+            text_body=text_body,
+            html_body=html_body,
+            user=self.context.user,
+        )
+
+        # Queue async send task
+        send_message_task.delay(str(message.id))
+
+        return {
+            "id": str(message.id),
+            "emailId": str(message.id),
+            "threadId": str(message.thread_id),
+            "undoStatus": "final",
+        }
+
+    def _apply_on_success(
+        self, email_id: str, creation_id: str, on_success_update: dict
+    ) -> None:
+        """Apply onSuccessUpdateEmail patches as an implicit Email/set response."""
+        # Build the update map, replacing #emailSubmission/foo references with the email_id
+        update_map = {}
+        for ref_key, patch in on_success_update.items():
+            # ref_key is like "#emailSubmission/creation_id"
+            update_map[email_id] = patch
+
+        # Execute the implicit Email/set
+        implicit_args = {
+            "accountId": str(self.context.user.id),
+            "update": update_map,
+        }
+        handler = EmailSetMethod(self.context)
+        result = handler.execute(implicit_args)
+
+        # Add to implicit responses
+        call_id = self.context.current_call_id
+        self.context.implicit_responses.append(
+            ["Email/set", result, call_id]
+        )
+
+
+# ---------- Identity Methods ----------
+
+
+@MethodRegistry.register("Identity/get")
+class IdentityGetMethod(BaseMethod):
+    """Get sending identities (user's mailboxes)."""
+
+    def execute(self, args: dict) -> dict:
+        account_id = self._get_account_id(args)
+        ids = args.get("ids")
+
+        mailboxes = models.Mailbox.objects.filter(
+            accesses__user=self.context.user
+        ).select_related("domain")
+
+        if ids is not None:
+            mailboxes = mailboxes.filter(id__in=ids)
+
+        result_list = []
+        for mailbox in mailboxes:
+            full_email = f"{mailbox.local_part}@{mailbox.domain.name}"
+            result_list.append({
+                "id": str(mailbox.id),
+                "name": full_email,
+                "email": full_email,
+                "replyTo": None,
+                "mayDelete": False,
+            })
+
+        found_ids = {str(m.id) for m in mailboxes}
+        not_found = [mid for mid in (ids or []) if mid not in found_ids]
 
         return {
             "accountId": account_id,

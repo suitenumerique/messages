@@ -1,6 +1,8 @@
 """Tests for JMAP methods using jmapc library."""
 
+import json
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.utils import timezone
 
@@ -14,9 +16,45 @@ from jmapc.methods import (
     ThreadGet,
 )
 
-from core import enums, factories
+from dataclasses import dataclass, field
+from typing import Any
+
+from core import enums, factories, models
+from core.tests.api.jmap.conftest import JMAPTestError
 
 pytestmark = pytest.mark.django_db
+
+
+# ---------- Helper method classes for testing new JMAP methods ----------
+
+
+@dataclass
+class EmailSet:
+    """Test helper for Email/set."""
+
+    jmap_method_name: str = field(default="Email/set", init=False, repr=False)
+    create: dict[str, Any] | None = None
+    update: dict[str, Any] | None = None
+    destroy: list[str] | None = None
+
+
+@dataclass
+class EmailSubmissionSet:
+    """Test helper for EmailSubmission/set."""
+
+    jmap_method_name: str = field(
+        default="EmailSubmission/set", init=False, repr=False
+    )
+    create: dict[str, Any] | None = None
+    on_success_update_email: dict[str, Any] | None = None
+
+
+@dataclass
+class IdentityGet:
+    """Test helper for Identity/get."""
+
+    jmap_method_name: str = field(default="Identity/get", init=False, repr=False)
+    ids: list[str] | None = None
 
 
 class TestMailboxQuery:
@@ -303,6 +341,300 @@ class TestThreadGet:
         fake_id = "00000000-0000-0000-0000-000000000000"
 
         result = jmap_client.request(ThreadGet(ids=[fake_id]))
+
+        assert len(result.list) == 0
+        assert fake_id in result.not_found
+
+
+class TestEmailSet:
+    """Tests for Email/set method."""
+
+    def test_create_draft(self, jmap_client, user):
+        """Test creating a draft email via Email/set."""
+        mailbox = factories.MailboxFactory(users_read=[user])
+
+        result = jmap_client.request(
+            EmailSet(
+                create={
+                    "draft1": {
+                        "mailboxIds": {str(mailbox.id): True},
+                        "subject": "Test Draft",
+                        "from": [
+                            {
+                                "name": "Sender",
+                                "email": f"{mailbox.local_part}@{mailbox.domain.name}",
+                            }
+                        ],
+                        "to": [{"name": "Recipient", "email": "to@example.com"}],
+                        "bodyValues": {"1": {"value": "Hello, world!"}},
+                        "textBody": [{"partId": "1", "type": "text/plain"}],
+                        "keywords": {"$draft": True},
+                    }
+                }
+            )
+        )
+
+        assert result.data["created"] is not None
+        created = result.data["created"]["draft1"]
+        assert "id" in created
+        assert "threadId" in created
+
+        # Verify the message was actually created
+        message = models.Message.objects.get(id=created["id"])
+        assert message.is_draft is True
+        assert message.subject == "Test Draft"
+
+    def test_create_draft_with_html_body(self, jmap_client, user):
+        """Test creating a draft with HTML body."""
+        mailbox = factories.MailboxFactory(users_read=[user])
+
+        result = jmap_client.request(
+            EmailSet(
+                create={
+                    "draft1": {
+                        "mailboxIds": {str(mailbox.id): True},
+                        "subject": "HTML Draft",
+                        "to": [{"name": "Recipient", "email": "to@example.com"}],
+                        "bodyValues": {
+                            "t1": {"value": "Plain text body"},
+                            "h1": {"value": "<p>HTML body</p>"},
+                        },
+                        "textBody": [{"partId": "t1", "type": "text/plain"}],
+                        "htmlBody": [{"partId": "h1", "type": "text/html"}],
+                    }
+                }
+            )
+        )
+
+        created = result.data["created"]["draft1"]
+        message = models.Message.objects.get(id=created["id"])
+        assert message.is_draft is True
+
+        # Verify body stored in draft_blob
+        blob_content = json.loads(message.draft_blob.get_content())
+        assert blob_content["format"] == "jmap"
+        assert blob_content["textBody"] == "Plain text body"
+        assert blob_content["htmlBody"] == "<p>HTML body</p>"
+
+    def test_create_draft_missing_mailbox(self, jmap_client, user):
+        """Test creating a draft with a nonexistent mailbox returns error."""
+        fake_id = "00000000-0000-0000-0000-000000000000"
+
+        result = jmap_client.request(
+            EmailSet(
+                create={
+                    "draft1": {
+                        "mailboxIds": {fake_id: True},
+                        "subject": "Test",
+                    }
+                }
+            ),
+            raise_errors=False,
+        )
+
+        assert result.data["notCreated"] is not None
+        assert "draft1" in result.data["notCreated"]
+
+    def test_update_keywords(self, jmap_client, user):
+        """Test updating email keywords via Email/set."""
+        mailbox = factories.MailboxFactory(users_read=[user])
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+        )
+        sender = factories.ContactFactory(mailbox=mailbox)
+        message = factories.MessageFactory(
+            thread=thread,
+            sender=sender,
+            is_unread=True,
+            is_starred=False,
+        )
+
+        result = jmap_client.request(
+            EmailSet(
+                update={
+                    str(message.id): {
+                        "keywords/$seen": True,
+                        "keywords/$flagged": True,
+                    }
+                }
+            )
+        )
+
+        assert result.data["updated"] is not None
+        assert str(message.id) in result.data["updated"]
+
+        message.refresh_from_db()
+        assert message.is_unread is False
+        assert message.is_starred is True
+
+    def test_destroy_email(self, jmap_client, user):
+        """Test destroying (trashing) an email via Email/set."""
+        mailbox = factories.MailboxFactory(users_read=[user])
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+        )
+        sender = factories.ContactFactory(mailbox=mailbox)
+        message = factories.MessageFactory(thread=thread, sender=sender)
+
+        result = jmap_client.request(
+            EmailSet(destroy=[str(message.id)])
+        )
+
+        assert result.data["destroyed"] is not None
+        assert str(message.id) in result.data["destroyed"]
+
+        message.refresh_from_db()
+        assert message.is_trashed is True
+
+
+class TestEmailSubmission:
+    """Tests for EmailSubmission/set method."""
+
+    @patch("core.api.jmap.methods.send_message_task")
+    def test_submit_draft(self, mock_send_task, jmap_client, user):
+        """Test submitting a draft for delivery."""
+        mailbox = factories.MailboxFactory(users_read=[user])
+
+        # First create a draft via Email/set
+        create_result = jmap_client.request(
+            EmailSet(
+                create={
+                    "draft1": {
+                        "mailboxIds": {str(mailbox.id): True},
+                        "subject": "Send Test",
+                        "to": [{"name": "Recipient", "email": "to@example.com"}],
+                        "bodyValues": {"1": {"value": "Message body"}},
+                        "textBody": [{"partId": "1", "type": "text/plain"}],
+                    }
+                }
+            )
+        )
+        email_id = create_result.data["created"]["draft1"]["id"]
+
+        # Submit it
+        result = jmap_client.request(
+            EmailSubmissionSet(
+                create={
+                    "sub1": {
+                        "emailId": email_id,
+                        "identityId": str(mailbox.id),
+                    }
+                }
+            )
+        )
+
+        assert result.data["created"] is not None
+        submission = result.data["created"]["sub1"]
+        assert submission["emailId"] == email_id
+        assert submission["undoStatus"] == "final"
+
+        # Verify the message is no longer a draft
+        message = models.Message.objects.get(id=email_id)
+        assert message.is_draft is False
+
+        # Verify send_message_task was queued
+        mock_send_task.delay.assert_called_once_with(email_id)
+
+    def test_submit_non_draft_fails(self, jmap_client, user):
+        """Test that submitting a non-draft email fails."""
+        mailbox = factories.MailboxFactory(users_read=[user])
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+        )
+        sender = factories.ContactFactory(mailbox=mailbox)
+        message = factories.MessageFactory(
+            thread=thread, sender=sender, is_draft=False
+        )
+
+        result = jmap_client.request(
+            EmailSubmissionSet(
+                create={
+                    "sub1": {
+                        "emailId": str(message.id),
+                        "identityId": str(mailbox.id),
+                    }
+                }
+            ),
+            raise_errors=False,
+        )
+
+        assert result.data["notCreated"] is not None
+        assert "sub1" in result.data["notCreated"]
+
+    def test_submit_invalid_identity_fails(self, jmap_client, user):
+        """Test that submitting with an invalid identity fails."""
+        mailbox = factories.MailboxFactory(users_read=[user])
+
+        # Create a draft first
+        create_result = jmap_client.request(
+            EmailSet(
+                create={
+                    "draft1": {
+                        "mailboxIds": {str(mailbox.id): True},
+                        "subject": "Test",
+                        "to": [{"name": "R", "email": "r@example.com"}],
+                        "bodyValues": {"1": {"value": "body"}},
+                        "textBody": [{"partId": "1", "type": "text/plain"}],
+                    }
+                }
+            )
+        )
+        email_id = create_result.data["created"]["draft1"]["id"]
+
+        fake_identity = "00000000-0000-0000-0000-000000000000"
+        result = jmap_client.request(
+            EmailSubmissionSet(
+                create={
+                    "sub1": {
+                        "emailId": email_id,
+                        "identityId": fake_identity,
+                    }
+                }
+            ),
+            raise_errors=False,
+        )
+
+        assert result.data["notCreated"] is not None
+        assert "sub1" in result.data["notCreated"]
+
+
+class TestIdentityGet:
+    """Tests for Identity/get method."""
+
+    def test_list_identities(self, jmap_client, user):
+        """Test listing all identities."""
+        mailbox = factories.MailboxFactory(users_read=[user])
+
+        result = jmap_client.request(IdentityGet())
+
+        assert len(result.list) >= 1
+        identity_ids = [i["id"] for i in result.list]
+        assert str(mailbox.id) in identity_ids
+
+        # Check identity fields
+        identity = next(i for i in result.list if i["id"] == str(mailbox.id))
+        expected_email = f"{mailbox.local_part}@{mailbox.domain.name}"
+        assert identity["email"] == expected_email
+        assert identity["name"] == expected_email
+        assert identity["mayDelete"] is False
+
+    def test_filter_by_id(self, jmap_client, user):
+        """Test getting a specific identity by ID."""
+        mailbox = factories.MailboxFactory(users_read=[user])
+
+        result = jmap_client.request(IdentityGet(ids=[str(mailbox.id)]))
+
+        assert len(result.list) == 1
+        assert result.list[0]["id"] == str(mailbox.id)
+
+    def test_identity_not_found(self, jmap_client, user):
+        """Test that nonexistent identity IDs appear in notFound."""
+        fake_id = "00000000-0000-0000-0000-000000000000"
+
+        result = jmap_client.request(IdentityGet(ids=[fake_id]))
 
         assert len(result.list) == 0
         assert fake_id in result.not_found

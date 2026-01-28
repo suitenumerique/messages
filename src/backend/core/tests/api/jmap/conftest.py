@@ -130,6 +130,8 @@ class JMAPTestClient:
                 or "Thread" in method_name
             ):
                 using.add("urn:ietf:params:jmap:mail")
+            if "Submission" in method_name or "Identity" in method_name:
+                using.add("urn:ietf:params:jmap:submission")
 
         request_data = {
             "using": list(using),
@@ -165,7 +167,7 @@ class JMAPTestClient:
         # Fallback: construct from class name
         class_name = method.__class__.__name__
         # Convert CamelCase to JMAP format (e.g., MailboxQuery -> Mailbox/query)
-        for noun in ["Mailbox", "Email", "Thread", "Identity"]:
+        for noun in ["Mailbox", "EmailSubmission", "Email", "Thread", "Identity"]:
             if class_name.startswith(noun):
                 verb = class_name[len(noun) :].lower()
                 return f"{noun}/{verb}"

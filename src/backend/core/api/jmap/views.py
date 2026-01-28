@@ -37,6 +37,10 @@ JMAP_CAPABILITIES = {
         "emailQuerySortOptions": ["receivedAt", "sentAt", "size", "subject"],
         "mayCreateTopLevelMailbox": True,
     },
+    "urn:ietf:params:jmap:submission": {
+        "maxDelayedSend": 0,
+        "submissionExtensions": {},
+    },
 }
 
 
@@ -166,6 +170,10 @@ class JMAPAPIView(APIView):
                 # Resolve back-references in arguments
                 resolved_args = resolve_args(args, context)
 
+                # Set current call_id for implicit responses
+                context.current_call_id = call_id
+                context.implicit_responses = []
+
                 # Get and execute the method handler
                 handler_class = MethodRegistry.get_handler(method_name)
                 handler = handler_class(context)
@@ -175,6 +183,10 @@ class JMAPAPIView(APIView):
                 results_by_call_id[call_id] = result
 
                 method_responses.append([method_name, result, call_id])
+
+                # Append any implicit responses (e.g. from onSuccessUpdateEmail)
+                for implicit in context.implicit_responses:
+                    method_responses.append(implicit)
 
             except JMAPError as e:
                 method_responses.append(e.to_response(call_id))
