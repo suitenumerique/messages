@@ -1,5 +1,6 @@
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
 import {
@@ -7,239 +8,27 @@ import {
     IcsCalendar,
     IcsEvent,
     IcsAttendee,
-    IcsDuration,
-    IcsRecurrenceRule,
 } from "ts-ics";
-import { Attachment, Contact } from "@/features/api/gen/models";
+import { Attachment } from "@/features/api/gen/models";
 import { AttachmentHelper } from "@/features/utils/attachment-helper";
 import { ContactChip } from "@/features/ui/components/contact-chip";
 import { Badge } from "@/features/ui/components/badge";
+import {
+    getEventEnd,
+    linkifyText,
+    formatEventDateRange,
+    formatRecurrenceRule,
+    getAttendeeStatusInfo,
+    createContactFromAttendee,
+} from "./calendar-helper";
 
 type CalendarInviteProps = {
     attachment: Attachment;
     canDownload?: boolean;
 };
 
-type LoadingState = "loading" | "success" | "error";
-
 const MAX_VISIBLE_ATTENDEES = 3;
 const MAX_DESCRIPTION_LENGTH = 200;
-const MAX_CACHE_SIZE = 50;
-
-// Module-level cache for parsed calendars to avoid re-fetching on remount
-const calendarCache = new Map<string, IcsCalendar>();
-
-/**
- * Convert an ICS duration to milliseconds
- */
-function durationToMs(d: IcsDuration): number {
-    let ms = 0;
-    if (d.weeks) ms += d.weeks * 7 * 86400000;
-    if (d.days) ms += d.days * 86400000;
-    if (d.hours) ms += d.hours * 3600000;
-    if (d.minutes) ms += d.minutes * 60000;
-    if (d.seconds) ms += d.seconds * 1000;
-    return ms;
-}
-
-/**
- * Compute the end Date from an event that may use end or duration
- */
-function getEventEnd(event: IcsEvent): Date | undefined {
-    if (event.end) return event.end.date;
-    if (event.duration && event.start) {
-        return new Date(event.start.date.getTime() + durationToMs(event.duration));
-    }
-    return undefined;
-}
-
-/**
- * Convert URL strings in text to clickable links
- */
-function linkifyText(text: string): React.ReactNode[] {
-    const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/i;
-    const parts = text.split(urlRegex);
-
-    return parts.map((part, index) => {
-        if (urlRegex.test(part)) {
-            return (
-                <a
-                    key={index}
-                    href={part}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="calendar-invite__link"
-                >
-                    {part}
-                </a>
-            );
-        }
-        return part;
-    });
-}
-
-/**
- * Detect all-day events by checking if start/end are both at midnight
- */
-function isAllDayEvent(start: Date, end?: Date): boolean {
-    const startMidnight =
-        start.getHours() === 0 &&
-        start.getMinutes() === 0 &&
-        start.getSeconds() === 0;
-    if (!startMidnight) return false;
-    if (!end) return false;
-    return (
-        end.getHours() === 0 &&
-        end.getMinutes() === 0 &&
-        end.getSeconds() === 0
-    );
-}
-
-/**
- * Format a date range for display, handling all-day events and same-day events
- */
-function formatEventDateRange(
-    start: Date,
-    end: Date | undefined,
-    language: string,
-): string {
-    const allDay = isAllDayEvent(start, end);
-
-    const dateFormatter = new Intl.DateTimeFormat(language, {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-    });
-
-    if (allDay) {
-        const startDate = dateFormatter.format(start);
-        if (!end) return startDate;
-        // All-day events: end date is exclusive in ICS (next day at midnight)
-        const adjustedEnd = new Date(end.getTime() - 86400000);
-        if (start.toDateString() === adjustedEnd.toDateString()) {
-            return startDate; // Single all-day event
-        }
-        return `${startDate} – ${dateFormatter.format(adjustedEnd)}`;
-    }
-
-    const timeFormatter = new Intl.DateTimeFormat(language, {
-        hour: "numeric",
-        minute: "2-digit",
-    });
-
-    const startDate = dateFormatter.format(start);
-    const startTime = timeFormatter.format(start);
-
-    if (!end) {
-        return `${startDate} ${startTime}`;
-    }
-
-    const endTime = timeFormatter.format(end);
-    const sameDay = start.toDateString() === end.toDateString();
-
-    if (sameDay) {
-        return `${startDate}, ${startTime} – ${endTime}`;
-    }
-
-    return `${startDate} ${startTime} – ${dateFormatter.format(end)} ${endTime}`;
-}
-
-/**
- * Format a recurrence rule into a human-readable string
- */
-function formatRecurrenceRule(
-    rule: IcsRecurrenceRule,
-    t: (key: string, options?: Record<string, unknown>) => string,
-    language: string,
-): string {
-    const interval = rule.interval || 1;
-
-    let text: string;
-    if (interval === 1) {
-        switch (rule.frequency) {
-            case "DAILY": text = t("Daily"); break;
-            case "WEEKLY": text = t("Weekly"); break;
-            case "MONTHLY": text = t("Monthly"); break;
-            case "YEARLY": text = t("Yearly"); break;
-            default: text = t("Recurring");
-        }
-    } else {
-        switch (rule.frequency) {
-            case "DAILY": text = t("Every {{count}} days", { count: interval }); break;
-            case "WEEKLY": text = t("Every {{count}} weeks", { count: interval }); break;
-            case "MONTHLY": text = t("Every {{count}} months", { count: interval }); break;
-            case "YEARLY": text = t("Every {{count}} years", { count: interval }); break;
-            default: text = t("Recurring");
-        }
-    }
-
-    if (rule.count) {
-        text += ` · ${t("{{count}} occurrences", { count: rule.count })}`;
-    } else if (rule.until) {
-        const dateFormatter = new Intl.DateTimeFormat(language, {
-            dateStyle: "long",
-        });
-        text += ` · ${t("until {{date}}", { date: dateFormatter.format(rule.until.date) })}`;
-    }
-
-    return text;
-}
-
-/**
- * Get the appropriate icon and label for an attendee's participation status
- */
-function getAttendeeStatusInfo(
-    partstat: IcsAttendee["partstat"],
-    t: (key: string) => string,
-): { icon: string; label: string; className: string } {
-    switch (partstat) {
-        case "ACCEPTED":
-            return {
-                icon: "check_circle",
-                label: t("Accepted"),
-                className: "calendar-invite__attendee-status--accepted",
-            };
-        case "DECLINED":
-            return {
-                icon: "cancel",
-                label: t("Declined"),
-                className: "calendar-invite__attendee-status--declined",
-            };
-        case "TENTATIVE":
-            return {
-                icon: "help",
-                label: t("Tentative"),
-                className: "calendar-invite__attendee-status--tentative",
-            };
-        case "DELEGATED":
-            return {
-                icon: "forward",
-                label: t("Delegated"),
-                className: "calendar-invite__attendee-status--delegated",
-            };
-        case "NEEDS-ACTION":
-        default:
-            return {
-                icon: "schedule",
-                label: t("Awaiting response"),
-                className: "calendar-invite__attendee-status--pending",
-            };
-    }
-}
-
-/**
- * Create a Contact-like object from ICS attendee/organizer data for ContactChip
- */
-function createContactFromAttendee(
-    attendee: { email: string; name?: string },
-): Contact {
-    return {
-        id: `calendar-${attendee.email}`,
-        email: attendee.email,
-        name: attendee.name || null,
-    };
-}
 
 /**
  * Extracted download button to avoid duplication
@@ -262,7 +51,7 @@ const DownloadButton = ({
             href={downloadUrl}
             download={name}
         >
-            {t("Download .ics file")}
+            {t("Download invitation")}
         </Button>
     );
 };
@@ -495,16 +284,13 @@ const EventCard = ({
     );
 };
 
-// Exported for testing
-export {
-    durationToMs,
-    getEventEnd,
-    linkifyText,
-    isAllDayEvent,
-    formatEventDateRange,
-    formatRecurrenceRule,
-    getAttendeeStatusInfo,
-    createContactFromAttendee,
+const fetchAndParseCalendar = async (url: string): Promise<IcsCalendar> => {
+    const response = await fetch(url, { credentials: "include" });
+    if (!response.ok) {
+        throw new Error(`HTTP error: ${response.status}`);
+    }
+    const icsContent = await response.text();
+    return convertIcsCalendar(undefined, icsContent);
 };
 
 export const CalendarInvite = ({
@@ -512,75 +298,20 @@ export const CalendarInvite = ({
     canDownload = true,
 }: CalendarInviteProps) => {
     const { t, i18n } = useTranslation();
-    const [loadingState, setLoadingState] = useState<LoadingState>("loading");
-    const [calendar, setCalendar] = useState<IcsCalendar | null>(null);
-    const [retryCount, setRetryCount] = useState(0);
 
     const downloadUrl = AttachmentHelper.getDownloadUrl(attachment);
     const language = i18n.resolvedLanguage || "en";
 
-    useEffect(() => {
-        const cached = calendarCache.get(downloadUrl);
-        if (cached) {
-            setCalendar(cached);
-            setLoadingState("success");
-            return;
-        }
-
-        const abortController = new AbortController();
-
-        const fetchAndParse = async () => {
-            try {
-                setLoadingState("loading");
-                const response = await fetch(downloadUrl, {
-                    credentials: "include",
-                    signal: abortController.signal,
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error: ${response.status}`);
-                }
-
-                const icsContent = await response.text();
-                const parsedCalendar = convertIcsCalendar(
-                    undefined,
-                    icsContent,
-                );
-                if (calendarCache.size >= MAX_CACHE_SIZE) {
-                    const oldest = calendarCache.keys().next().value;
-                    if (oldest) calendarCache.delete(oldest);
-                }
-                calendarCache.set(downloadUrl, parsedCalendar);
-                setCalendar(parsedCalendar);
-                setLoadingState("success");
-            } catch (error) {
-                if (
-                    error instanceof Error &&
-                    error.name === "AbortError"
-                ) {
-                    return;
-                }
-                console.error("Failed to parse calendar invite:", error);
-                setLoadingState("error");
-            }
-        };
-
-        fetchAndParse();
-
-        return () => {
-            abortController.abort();
-        };
-    }, [downloadUrl, retryCount]);
-
-    const handleRetry = () => {
-        calendarCache.delete(downloadUrl);
-        setRetryCount((c) => c + 1);
-    };
+    const { data: calendar, isLoading, isError, refetch } = useQuery<IcsCalendar>({
+        queryKey: ["calendar-invite", downloadUrl],
+        queryFn: () => fetchAndParseCalendar(downloadUrl),
+        meta: { noGlobalError: true },
+    });
 
     const events = calendar?.events ?? [];
     const isCancellation = calendar?.method === "CANCEL";
 
-    if (loadingState === "loading") {
+    if (isLoading) {
         return (
             <div
                 className="calendar-invite calendar-invite--loading"
@@ -593,7 +324,7 @@ export const CalendarInvite = ({
         );
     }
 
-    if (loadingState === "error" || !calendar) {
+    if (isError || !calendar) {
         return (
             <div
                 className="calendar-invite calendar-invite--error"
@@ -604,7 +335,7 @@ export const CalendarInvite = ({
                 <Button
                     size="small"
                     variant="tertiary"
-                    onClick={handleRetry}
+                    onClick={() => refetch()}
                 >
                     {t("Try again")}
                 </Button>

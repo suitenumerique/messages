@@ -15,7 +15,7 @@ import {
     formatRecurrenceRule,
     getAttendeeStatusInfo,
     createContactFromAttendee,
-} from "./index";
+} from "./calendar-helper";
 
 // Simple pass-through translation mock
 const t = (key: string, options?: Record<string, unknown>): string => {

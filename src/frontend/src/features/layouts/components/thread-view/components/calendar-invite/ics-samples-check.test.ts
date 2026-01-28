@@ -11,7 +11,7 @@ import {
     formatRecurrenceRule,
     getAttendeeStatusInfo,
     createContactFromAttendee,
-} from "./index";
+} from "./calendar-helper";
 
 const t = (key: string, options?: Record<string, unknown>): string => {
     let result = key;
