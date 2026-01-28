@@ -22,11 +22,35 @@
     }
 }
 
+.calendar-invite__method-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--sm);
+    padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--sm);
+    border-radius: 4px;
+    font-size: var(--c--globals--font--sizes--sm);
+    font-weight: 500;
+    margin-bottom: var(--c--globals--spacings--sm);
+
+    &--cancel {
+        background-color: var(--c--contextuals--background--semantic--error--tertiary);
+        color: var(--c--contextuals--content--semantic--error--primary);
+    }
+}
+
+.calendar-invite__event {
+    & + & {
+        margin-top: var(--c--globals--spacings--sm);
+        padding-top: var(--c--globals--spacings--sm);
+        border-top: 1px solid var(--c--contextuals--border--surface--primary);
+    }
+}
+
 .calendar-invite__header {
     display: flex;
     align-items: flex-start;
     gap: var(--c--globals--spacings--sm);
-    margin-bottom: var(--c--globals--spacings--base);
+    margin-bottom: var(--c--globals--spacings--sm);
 }
 
 .calendar-invite__icon {
@@ -59,13 +83,8 @@
 }
 
 .calendar-invite__event-status {
-    display: inline-block;
-    font-size: var(--c--globals--font--sizes--xs);
-    padding: var(--c--globals--spacings--3xs) var(--c--globals--spacings--xs);
-    border-radius: 4px;
     margin-top: var(--c--globals--spacings--2xs);
     text-transform: uppercase;
-    font-weight: 500;
 
     &--confirmed {
         background-color: var(--c--contextuals--background--semantic--success--tertiary);
@@ -86,7 +105,7 @@
 .calendar-invite__details {
     display: flex;
     flex-direction: column;
-    gap: var(--c--globals--spacings--sm);
+    gap: var(--c--globals--spacings--xs);
 }
 
 .calendar-invite__detail-row {
@@ -104,10 +123,6 @@
     margin-top: 2px;
 }
 
-.calendar-invite__organizer-email {
-    color: var(--c--contextuals--content--semantic--neutral--secondary);
-}
-
 .calendar-invite__description {
     display: flex;
     align-items: flex-start;
@@ -123,7 +138,11 @@
 }
 
 .calendar-invite__attendees {
-    margin-top: var(--c--globals--spacings--xs);
+    margin-top: var(--c--globals--spacings--2xs);
+
+    .calendar-invite__show-more {
+        margin-left: calc(18px + var(--c--globals--spacings--sm));
+    }
 }
 
 .calendar-invite__attendees-header {
@@ -133,7 +152,7 @@
     font-size: var(--c--globals--font--sizes--sm);
     font-weight: 500;
     color: var(--c--contextuals--content--semantic--neutral--primary);
-    margin-bottom: var(--c--globals--spacings--xs);
+    margin-bottom: var(--c--globals--spacings--2xs);
 }
 
 .calendar-invite__attendee-list {
@@ -153,15 +172,6 @@
     gap: var(--c--globals--spacings--sm);
     font-size: var(--c--globals--font--sizes--sm);
     padding: var(--c--globals--spacings--2xs) 0;
-}
-
-.calendar-invite__attendee-name {
-    color: var(--c--contextuals--content--semantic--neutral--primary);
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .calendar-invite__attendee-status {
@@ -207,7 +217,6 @@
     background: none;
     border: none;
     padding: var(--c--globals--spacings--2xs) 0;
-    margin-left: calc(18px + var(--c--globals--spacings--sm));
     font-size: var(--c--globals--font--sizes--sm);
     color: var(--c--contextuals--content--semantic--brand--primary);
     cursor: pointer;
@@ -219,8 +228,8 @@
 }
 
 .calendar-invite__actions {
-    margin-top: var(--c--globals--spacings--base);
-    padding-top: var(--c--globals--spacings--base);
+    margin-top: var(--c--globals--spacings--sm);
+    padding-top: var(--c--globals--spacings--sm);
     border-top: 1px solid var(--c--contextuals--border--surface--primary);
     display: flex;
     gap: var(--c--globals--spacings--sm);

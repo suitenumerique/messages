@@ -30,7 +30,7 @@ const ThreadMessageFooter = ({
             (att) => !CALENDAR_MIME_TYPES.includes(att.type)
         );
 
-        // Deduplicate by SHA256 hash
+        // Deduplicate by SHA256 hash (Google Calendar sends the same ICS as both inline and attachment)
         const seenHashes = new Set<string>();
         const uniqueCalendar = calendar.filter((att) => {
             if (seenHashes.has(att.sha256)) {

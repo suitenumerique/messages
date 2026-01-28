@@ -2,10 +2,18 @@ import { useEffect, useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { convertIcsCalendar, IcsCalendar, IcsEvent, IcsAttendee } from "ts-ics";
+import {
+    convertIcsCalendar,
+    IcsCalendar,
+    IcsEvent,
+    IcsAttendee,
+    IcsDuration,
+    IcsRecurrenceRule,
+} from "ts-ics";
 import { Attachment, Contact } from "@/features/api/gen/models";
 import { AttachmentHelper } from "@/features/utils/attachment-helper";
 import { ContactChip } from "@/features/ui/components/contact-chip";
+import { Badge } from "@/features/ui/components/badge";
 
 type CalendarInviteProps = {
     attachment: Attachment;
@@ -15,18 +23,45 @@ type CalendarInviteProps = {
 type LoadingState = "loading" | "success" | "error";
 
 const MAX_VISIBLE_ATTENDEES = 3;
+const MAX_DESCRIPTION_LENGTH = 200;
+const MAX_CACHE_SIZE = 50;
+
+// Module-level cache for parsed calendars to avoid re-fetching on remount
+const calendarCache = new Map<string, IcsCalendar>();
+
+/**
+ * Convert an ICS duration to milliseconds
+ */
+function durationToMs(d: IcsDuration): number {
+    let ms = 0;
+    if (d.weeks) ms += d.weeks * 7 * 86400000;
+    if (d.days) ms += d.days * 86400000;
+    if (d.hours) ms += d.hours * 3600000;
+    if (d.minutes) ms += d.minutes * 60000;
+    if (d.seconds) ms += d.seconds * 1000;
+    return ms;
+}
+
+/**
+ * Compute the end Date from an event that may use end or duration
+ */
+function getEventEnd(event: IcsEvent): Date | undefined {
+    if (event.end) return event.end.date;
+    if (event.duration && event.start) {
+        return new Date(event.start.date.getTime() + durationToMs(event.duration));
+    }
+    return undefined;
+}
 
 /**
  * Convert URL strings in text to clickable links
  */
 function linkifyText(text: string): React.ReactNode[] {
-    const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi;
+    const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/i;
     const parts = text.split(urlRegex);
 
     return parts.map((part, index) => {
         if (urlRegex.test(part)) {
-            // Reset regex lastIndex since we're reusing it
-            urlRegex.lastIndex = 0;
             return (
                 <a
                     key={index}
@@ -44,19 +79,49 @@ function linkifyText(text: string): React.ReactNode[] {
 }
 
 /**
+ * Detect all-day events by checking if start/end are both at midnight
+ */
+function isAllDayEvent(start: Date, end?: Date): boolean {
+    const startMidnight =
+        start.getHours() === 0 &&
+        start.getMinutes() === 0 &&
+        start.getSeconds() === 0;
+    if (!startMidnight) return false;
+    if (!end) return false;
+    return (
+        end.getHours() === 0 &&
+        end.getMinutes() === 0 &&
+        end.getSeconds() === 0
+    );
+}
+
+/**
  * Format a date range for display, handling all-day events and same-day events
  */
 function formatEventDateRange(
     start: Date,
     end: Date | undefined,
-    language: string
+    language: string,
 ): string {
+    const allDay = isAllDayEvent(start, end);
+
     const dateFormatter = new Intl.DateTimeFormat(language, {
         weekday: "long",
         year: "numeric",
         month: "long",
         day: "numeric",
     });
+
+    if (allDay) {
+        const startDate = dateFormatter.format(start);
+        if (!end) return startDate;
+        // All-day events: end date is exclusive in ICS (next day at midnight)
+        const adjustedEnd = new Date(end.getTime() - 86400000);
+        if (start.toDateString() === adjustedEnd.toDateString()) {
+            return startDate; // Single all-day event
+        }
+        return `${startDate} – ${dateFormatter.format(adjustedEnd)}`;
+    }
 
     const timeFormatter = new Intl.DateTimeFormat(language, {
         hour: "numeric",
@@ -70,17 +135,55 @@ function formatEventDateRange(
         return `${startDate} ${startTime}`;
     }
 
-    const endDate = dateFormatter.format(end);
     const endTime = timeFormatter.format(end);
-
-    // Check if same day
     const sameDay = start.toDateString() === end.toDateString();
 
     if (sameDay) {
-        return `${startDate}, ${startTime} - ${endTime}`;
+        return `${startDate}, ${startTime} – ${endTime}`;
     }
 
-    return `${startDate} ${startTime} - ${endDate} ${endTime}`;
+    return `${startDate} ${startTime} – ${dateFormatter.format(end)} ${endTime}`;
+}
+
+/**
+ * Format a recurrence rule into a human-readable string
+ */
+function formatRecurrenceRule(
+    rule: IcsRecurrenceRule,
+    t: (key: string, options?: Record<string, unknown>) => string,
+    language: string,
+): string {
+    const interval = rule.interval || 1;
+
+    let text: string;
+    if (interval === 1) {
+        switch (rule.frequency) {
+            case "DAILY": text = t("Daily"); break;
+            case "WEEKLY": text = t("Weekly"); break;
+            case "MONTHLY": text = t("Monthly"); break;
+            case "YEARLY": text = t("Yearly"); break;
+            default: text = t("Recurring");
+        }
+    } else {
+        switch (rule.frequency) {
+            case "DAILY": text = t("Every {{count}} days", { count: interval }); break;
+            case "WEEKLY": text = t("Every {{count}} weeks", { count: interval }); break;
+            case "MONTHLY": text = t("Every {{count}} months", { count: interval }); break;
+            case "YEARLY": text = t("Every {{count}} years", { count: interval }); break;
+            default: text = t("Recurring");
+        }
+    }
+
+    if (rule.count) {
+        text += ` · ${t("{{count}} occurrences", { count: rule.count })}`;
+    } else if (rule.until) {
+        const dateFormatter = new Intl.DateTimeFormat(language, {
+            dateStyle: "long",
+        });
+        text += ` · ${t("until {{date}}", { date: dateFormatter.format(rule.until.date) })}`;
+    }
+
+    return text;
 }
 
 /**
@@ -88,7 +191,7 @@ function formatEventDateRange(
  */
 function getAttendeeStatusInfo(
     partstat: IcsAttendee["partstat"],
-    t: (key: string) => string
+    t: (key: string) => string,
 ): { icon: string; label: string; className: string } {
     switch (partstat) {
         case "ACCEPTED":
@@ -129,65 +232,66 @@ function getAttendeeStatusInfo(
  * Create a Contact-like object from ICS attendee/organizer data for ContactChip
  */
 function createContactFromAttendee(
-    attendee: { email?: string; name?: string },
-    index: number
+    attendee: { email: string; name?: string },
 ): Contact {
     return {
-        id: `calendar-${attendee.email || index}`,
-        email: attendee.email || "",
+        id: `calendar-${attendee.email}`,
+        email: attendee.email,
         name: attendee.name || null,
     };
 }
 
-export const CalendarInvite = ({
-    attachment,
-    canDownload = true,
-}: CalendarInviteProps) => {
-    const { t, i18n } = useTranslation();
-    const [loadingState, setLoadingState] = useState<LoadingState>("loading");
-    const [calendar, setCalendar] = useState<IcsCalendar | null>(null);
-    const [errorMessage, setErrorMessage] = useState<string>("");
+/**
+ * Extracted download button to avoid duplication
+ */
+const DownloadButton = ({
+    downloadUrl,
+    name,
+    variant = "secondary",
+}: {
+    downloadUrl: string;
+    name: string;
+    variant?: "primary" | "secondary" | "tertiary";
+}) => {
+    const { t } = useTranslation();
+    return (
+        <Button
+            size="small"
+            variant={variant}
+            icon={<Icon name="download" type={IconType.OUTLINED} />}
+            href={downloadUrl}
+            download={name}
+        >
+            {t("Download .ics file")}
+        </Button>
+    );
+};
+
+/**
+ * Renders a single event's details with its own state for attendees/description
+ */
+const EventCard = ({
+    event,
+    language,
+}: {
+    event: IcsEvent;
+    language: string;
+}) => {
+    const { t } = useTranslation();
     const [showAllAttendees, setShowAllAttendees] = useState(false);
+    const [showFullDescription, setShowFullDescription] = useState(false);
 
-    const downloadUrl = AttachmentHelper.getDownloadUrl(attachment);
+    const eventStart = event.start?.date;
+    const eventEnd = getEventEnd(event);
+    const attendeeCount = event.attendees?.length ?? 0;
+    const hasAttendees = attendeeCount > 0;
+    const descriptionTruncated =
+        !!event.description &&
+        event.description.length > MAX_DESCRIPTION_LENGTH;
 
-    useEffect(() => {
-        const fetchAndParseCalendar = async () => {
-            try {
-                setLoadingState("loading");
-                const response = await fetch(downloadUrl, {
-                    credentials: "include",
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error: ${response.status}`);
-                }
-
-                const icsContent = await response.text();
-                const parsedCalendar = convertIcsCalendar(undefined, icsContent);
-                setCalendar(parsedCalendar);
-                setLoadingState("success");
-            } catch (error) {
-                console.error("Failed to parse calendar invite:", error);
-                setErrorMessage(
-                    error instanceof Error
-                        ? error.message
-                        : t("Failed to load calendar invite")
-                );
-                setLoadingState("error");
-            }
-        };
-
-        fetchAndParseCalendar();
-    }, [downloadUrl, t]);
-
-    // Get the first event (most calendar invites have one event)
-    const event: IcsEvent | undefined = calendar?.events?.[0];
-
-    // Memoize visible attendees based on showAllAttendees state
     const { visibleAttendees, hiddenCount } = useMemo(() => {
-        if (!event?.attendees) {
-            return { visibleAttendees: [], hiddenCount: 0 };
+        if (!event.attendees) {
+            return { visibleAttendees: [] as IcsAttendee[], hiddenCount: 0 };
         }
 
         const total = event.attendees.length;
@@ -199,63 +303,18 @@ export const CalendarInvite = ({
             visibleAttendees: event.attendees.slice(0, MAX_VISIBLE_ATTENDEES),
             hiddenCount: total - MAX_VISIBLE_ATTENDEES,
         };
-    }, [event?.attendees, showAllAttendees]);
+    }, [event.attendees, showAllAttendees]);
 
-    if (loadingState === "loading") {
-        return (
-            <div className="calendar-invite calendar-invite--loading">
-                <Spinner />
-                <span>{t("Loading calendar invite...")}</span>
-            </div>
-        );
-    }
-
-    if (loadingState === "error" || !calendar) {
-        return (
-            <div className="calendar-invite calendar-invite--error">
-                <Icon name="error" type={IconType.OUTLINED} />
-                <span>{errorMessage || t("Failed to load calendar invite")}</span>
-                {canDownload && (
-                    <Button
-                        size="small"
-                        variant="tertiary"
-                        icon={<Icon name="download" />}
-                        href={downloadUrl}
-                        download={attachment.name}
-                    >
-                        {t("Download .ics file")}
-                    </Button>
-                )}
-            </div>
-        );
-    }
-
-    if (!event) {
-        return (
-            <div className="calendar-invite calendar-invite--empty">
-                <Icon name="event" type={IconType.OUTLINED} />
-                <span>{t("No event found in calendar invite")}</span>
-                {canDownload && (
-                    <Button
-                        size="small"
-                        variant="tertiary"
-                        icon={<Icon name="download" />}
-                        href={downloadUrl}
-                        download={attachment.name}
-                    >
-                        {t("Download .ics file")}
-                    </Button>
-                )}
-            </div>
-        );
-    }
-
-    const eventStart = event.start?.date;
-    const eventEnd = event.end?.date;
-    const hasAttendees = event.attendees && event.attendees.length > 0;
+    const displayedDescription = useMemo(() => {
+        if (!event.description) return null;
+        if (showFullDescription || !descriptionTruncated) {
+            return event.description;
+        }
+        return event.description.slice(0, MAX_DESCRIPTION_LENGTH) + "…";
+    }, [event.description, showFullDescription]);
 
     return (
-        <article className="calendar-invite">
+        <div className="calendar-invite__event">
             <header className="calendar-invite__header">
                 <div className="calendar-invite__icon">
                     <Icon name="event" type={IconType.OUTLINED} />
@@ -263,11 +322,11 @@ export const CalendarInvite = ({
                 <div className="calendar-invite__title-section">
                     <h3 className="calendar-invite__title">{event.summary}</h3>
                     {event.status && (
-                        <span
+                        <Badge
                             className={`calendar-invite__event-status calendar-invite__event-status--${event.status.toLowerCase()}`}
                         >
                             {t(`event.status.${event.status.toLowerCase()}`)}
-                        </span>
+                        </Badge>
                     )}
                 </div>
             </header>
@@ -285,7 +344,25 @@ export const CalendarInvite = ({
                             {formatEventDateRange(
                                 eventStart,
                                 eventEnd,
-                                i18n.resolvedLanguage || "en"
+                                language,
+                            )}
+                        </span>
+                    </div>
+                )}
+
+                {/* Recurrence */}
+                {event.recurrenceRule && (
+                    <div className="calendar-invite__detail-row">
+                        <Icon
+                            name="repeat"
+                            type={IconType.OUTLINED}
+                            className="calendar-invite__detail-icon"
+                        />
+                        <span>
+                            {formatRecurrenceRule(
+                                event.recurrenceRule,
+                                t,
+                                language,
                             )}
                         </span>
                     </div>
@@ -312,21 +389,41 @@ export const CalendarInvite = ({
                             className="calendar-invite__detail-icon"
                         />
                         <ContactChip
-                            contact={createContactFromAttendee(event.organizer, -1)}
+                            contact={createContactFromAttendee(
+                                event.organizer,
+                            )}
                             displayEmail
                         />
                     </div>
                 )}
 
                 {/* Description */}
-                {event.description && (
+                {displayedDescription && (
                     <div className="calendar-invite__description">
                         <Icon
                             name="notes"
                             type={IconType.OUTLINED}
                             className="calendar-invite__detail-icon"
                         />
-                        <p>{linkifyText(event.description)}</p>
+                        <div>
+                            <p>{linkifyText(displayedDescription)}</p>
+                            {descriptionTruncated && (
+                                <button
+                                    type="button"
+                                    className="calendar-invite__show-more"
+                                    onClick={() =>
+                                        setShowFullDescription(
+                                            !showFullDescription,
+                                        )
+                                    }
+                                    aria-expanded={showFullDescription}
+                                >
+                                    {showFullDescription
+                                        ? t("Show less")
+                                        : t("Show more")}
+                                </button>
+                            )}
+                        </div>
                     </div>
                 )}
 
@@ -341,23 +438,25 @@ export const CalendarInvite = ({
                             />
                             <span>
                                 {t("{{count}} attendees", {
-                                    count: event.attendees!.length,
+                                    count: attendeeCount,
                                 })}
                             </span>
                         </div>
                         <ul className="calendar-invite__attendee-list">
-                            {visibleAttendees.map((attendee, index) => {
+                            {visibleAttendees.map((attendee) => {
                                 const statusInfo = getAttendeeStatusInfo(
                                     attendee.partstat,
-                                    t
+                                    t,
                                 );
                                 return (
                                     <li
-                                        key={`${attendee.email}-${index}`}
+                                        key={attendee.email}
                                         className="calendar-invite__attendee"
                                     >
                                         <ContactChip
-                                            contact={createContactFromAttendee(attendee, index)}
+                                            contact={createContactFromAttendee(
+                                                attendee,
+                                            )}
                                         />
                                         <span
                                             className={`calendar-invite__attendee-status ${statusInfo.className}`}
@@ -373,40 +472,194 @@ export const CalendarInvite = ({
                                 );
                             })}
                         </ul>
-                        {hiddenCount > 0 && (
+                        {attendeeCount > MAX_VISIBLE_ATTENDEES && (
                             <button
                                 type="button"
                                 className="calendar-invite__show-more"
-                                onClick={() => setShowAllAttendees(true)}
+                                onClick={() =>
+                                    setShowAllAttendees(!showAllAttendees)
+                                }
+                                aria-expanded={showAllAttendees}
                             >
-                                {t("Show {{count}} more", { count: hiddenCount })}
-                            </button>
-                        )}
-                        {showAllAttendees && event.attendees!.length > MAX_VISIBLE_ATTENDEES && (
-                            <button
-                                type="button"
-                                className="calendar-invite__show-more"
-                                onClick={() => setShowAllAttendees(false)}
-                            >
-                                {t("Show less")}
+                                {showAllAttendees
+                                    ? t("Show less")
+                                    : t("Show {{count}} more", {
+                                          count: hiddenCount,
+                                      })}
                             </button>
                         )}
                     </div>
                 )}
             </div>
+        </div>
+    );
+};
 
-            {/* Actions */}
+// Exported for testing
+export {
+    durationToMs,
+    getEventEnd,
+    linkifyText,
+    isAllDayEvent,
+    formatEventDateRange,
+    formatRecurrenceRule,
+    getAttendeeStatusInfo,
+    createContactFromAttendee,
+};
+
+export const CalendarInvite = ({
+    attachment,
+    canDownload = true,
+}: CalendarInviteProps) => {
+    const { t, i18n } = useTranslation();
+    const [loadingState, setLoadingState] = useState<LoadingState>("loading");
+    const [calendar, setCalendar] = useState<IcsCalendar | null>(null);
+    const [retryCount, setRetryCount] = useState(0);
+
+    const downloadUrl = AttachmentHelper.getDownloadUrl(attachment);
+    const language = i18n.resolvedLanguage || "en";
+
+    useEffect(() => {
+        const cached = calendarCache.get(downloadUrl);
+        if (cached) {
+            setCalendar(cached);
+            setLoadingState("success");
+            return;
+        }
+
+        const abortController = new AbortController();
+
+        const fetchAndParse = async () => {
+            try {
+                setLoadingState("loading");
+                const response = await fetch(downloadUrl, {
+                    credentials: "include",
+                    signal: abortController.signal,
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error: ${response.status}`);
+                }
+
+                const icsContent = await response.text();
+                const parsedCalendar = convertIcsCalendar(
+                    undefined,
+                    icsContent,
+                );
+                if (calendarCache.size >= MAX_CACHE_SIZE) {
+                    const oldest = calendarCache.keys().next().value;
+                    if (oldest) calendarCache.delete(oldest);
+                }
+                calendarCache.set(downloadUrl, parsedCalendar);
+                setCalendar(parsedCalendar);
+                setLoadingState("success");
+            } catch (error) {
+                if (
+                    error instanceof Error &&
+                    error.name === "AbortError"
+                ) {
+                    return;
+                }
+                console.error("Failed to parse calendar invite:", error);
+                setLoadingState("error");
+            }
+        };
+
+        fetchAndParse();
+
+        return () => {
+            abortController.abort();
+        };
+    }, [downloadUrl, retryCount]);
+
+    const handleRetry = () => {
+        calendarCache.delete(downloadUrl);
+        setRetryCount((c) => c + 1);
+    };
+
+    const events = calendar?.events ?? [];
+    const isCancellation = calendar?.method === "CANCEL";
+
+    if (loadingState === "loading") {
+        return (
+            <div
+                className="calendar-invite calendar-invite--loading"
+                role="status"
+                aria-live="polite"
+            >
+                <Spinner />
+                <span>{t("Loading calendar invite...")}</span>
+            </div>
+        );
+    }
+
+    if (loadingState === "error" || !calendar) {
+        return (
+            <div
+                className="calendar-invite calendar-invite--error"
+                role="alert"
+            >
+                <Icon name="error" type={IconType.OUTLINED} />
+                <span>{t("Failed to load calendar invite")}</span>
+                <Button
+                    size="small"
+                    variant="tertiary"
+                    onClick={handleRetry}
+                >
+                    {t("Try again")}
+                </Button>
+                {canDownload && (
+                    <DownloadButton
+                        downloadUrl={downloadUrl}
+                        name={attachment.name}
+                        variant="tertiary"
+                    />
+                )}
+            </div>
+        );
+    }
+
+    if (events.length === 0) {
+        return (
+            <div
+                className="calendar-invite calendar-invite--empty"
+                role="status"
+            >
+                <Icon name="event" type={IconType.OUTLINED} />
+                <span>{t("No event found in calendar invite")}</span>
+                {canDownload && (
+                    <DownloadButton
+                        downloadUrl={downloadUrl}
+                        name={attachment.name}
+                        variant="tertiary"
+                    />
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <article className="calendar-invite" aria-label={t("Calendar invite")}>
+            {isCancellation && (
+                <div
+                    className="calendar-invite__method-banner calendar-invite__method-banner--cancel"
+                    role="alert"
+                >
+                    <Icon name="event_busy" type={IconType.OUTLINED} />
+                    <span>{t("This event has been cancelled")}</span>
+                </div>
+            )}
+
+            {events.map((event, index) => (
+                <EventCard key={event.uid || index} event={event} language={language} />
+            ))}
+
             <footer className="calendar-invite__actions">
                 {canDownload && (
-                    <Button
-                        size="small"
-                        variant="primary"
-                        icon={<Icon name="download" />}
-                        href={downloadUrl}
-                        download={attachment.name}
-                    >
-                        {t("Download .ics file")}
-                    </Button>
+                    <DownloadButton
+                        downloadUrl={downloadUrl}
+                        name={attachment.name}
+                    />
                 )}
             </footer>
         </article>
