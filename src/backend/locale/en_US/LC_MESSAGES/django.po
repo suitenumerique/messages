@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-docs\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-03 10:50+0000\n"
+"POT-Creation-Date: 2026-01-22 11:32+0000\n"
 "PO-Revision-Date: 2025-01-27 09:27\n"
 "Last-Translator: \n"
 "Language-Team: English\n"
@@ -16,6 +16,18 @@ msgstr ""
 "X-Crowdin-Language: en\n"
 "X-Crowdin-File: backend-drive.pot\n"
 "X-Crowdin-File-ID: 18\n"
+
+msgid "delivery status"
+msgstr ""
+
+#, python-format
+msgid ""
+"%(message_count)d messages - Retry send message task queued (id: "
+"%(task_id)s)."
+msgstr ""
+
+msgid "Retry to send selected messages to pending recipients"
+msgstr ""
 
 msgid "Personal info"
 msgstr ""
@@ -44,6 +56,18 @@ msgstr ""
 msgid "Import Messages from IMAP"
 msgstr ""
 
+msgid "Message not found."
+msgstr ""
+
+msgid "No pending recipients found for this message."
+msgstr ""
+
+#, python-format
+msgid ""
+"Retry task has been queued for %(retryable_recipients_count)d pending "
+"recipient(s) (id: %(task_id)s)."
+msgstr ""
+
 msgid "Keys"
 msgstr ""
 
@@ -59,10 +83,38 @@ msgstr ""
 msgid "messages core application"
 msgstr ""
 
-msgid "Invalid response format or token verification failed"
+msgid "User account is disabled"
 msgstr ""
 
-msgid "User account is disabled"
+#, python-format
+msgid ""
+"Message body size (%(body_size)s MB) exceeds the %(max_size)s MB limit. "
+"Please reduce message content."
+msgstr ""
+
+#, python-format
+msgid ""
+"Cannot add attachment(s) (%(new_size)s MB). Total attachments would be "
+"%(total_size)s MB, exceeding the %(max_size)s MB limit. Current attachments: "
+"%(current_size)s MB."
+msgstr ""
+
+#, python-format
+msgid ""
+"Too many recipients: %(count)s (maximum is %(max)s). Please reduce the "
+"number of recipients before sending."
+msgstr ""
+
+#, python-format
+msgid ""
+"Total attachment size (%(total_size)s MB) exceeds the %(max_size)s MB limit. "
+"Please remove or reduce attachments."
+msgstr ""
+
+#, python-format
+msgid ""
+"The composed email (%(mime_size)s MB) exceeds the maximum allowed size of "
+"%(max_size)s MB. Please reduce message content or attachments."
 msgstr ""
 
 msgid "id"
@@ -165,6 +217,12 @@ msgstr ""
 msgid "Sync mailboxes to an identity provider."
 msgstr ""
 
+msgid "Custom settings"
+msgstr ""
+
+msgid "Custom settings for the mail domain."
+msgstr ""
+
 msgid "Metadata to sync to the maildomain group in the identity provider."
 msgstr ""
 
@@ -239,6 +297,12 @@ msgid "has unread"
 msgstr ""
 
 msgid "has trashed"
+msgstr ""
+
+msgid "is trashed"
+msgstr ""
+
+msgid "Whether all messages in the thread are trashed"
 msgstr ""
 
 msgid "has archived"
@@ -339,9 +403,6 @@ msgstr ""
 msgid "delivered at"
 msgstr ""
 
-msgid "delivery status"
-msgstr ""
-
 msgid "delivery message"
 msgstr ""
 
@@ -364,9 +425,6 @@ msgid "is sender"
 msgstr ""
 
 msgid "is starred"
-msgstr ""
-
-msgid "is trashed"
 msgstr ""
 
 msgid "is unread"
@@ -421,6 +479,24 @@ msgid "Subject"
 msgstr ""
 
 msgid "Body"
+msgstr ""
+
+msgid "raw data"
+msgstr ""
+
+msgid "Raw email message bytes"
+msgstr ""
+
+msgid "error message"
+msgstr ""
+
+msgid "Error message if processing failed"
+msgstr ""
+
+msgid "inbound message"
+msgstr ""
+
+msgid "inbound messages"
 msgstr ""
 
 msgid "sha256 hash"
@@ -570,10 +646,21 @@ msgid ""
 "used in the same scope"
 msgstr ""
 
+msgid "is default"
+msgstr ""
+
+msgid ""
+"Whether this template is the default; it will be automatically loaded when "
+"composing a new message"
+msgstr ""
+
 msgid "message template"
 msgstr ""
 
 msgid "message templates"
+msgstr ""
+
+msgid "Retry to send to pending recipients"
 msgstr ""
 
 msgid "Import from IMAP"
@@ -595,6 +682,9 @@ msgid "English"
 msgstr ""
 
 msgid "French"
+msgstr ""
+
+msgid "Dutch"
 msgstr ""
 
 #~ msgid "Full name"

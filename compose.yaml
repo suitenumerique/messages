@@ -151,14 +151,14 @@ services:
       target: poetry
     pull_policy: build
 
-  celery-dev:
+  worker-dev:
     build:
       context: src/backend
       target: runtime-dev
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
-    command: ["celery", "-A", "messages.celery_app", "worker", "-l", "DEBUG", "-Q", "celery,default"]
+    command: ["python", "worker.py", "--loglevel=DEBUG"]
     environment:
       - DJANGO_CONFIGURATION=Development
     env_file:
@@ -170,7 +170,7 @@ services:
     depends_on:
       - backend-dev
 
-  celery-ui:
+  worker-ui:
     build:
       context: src/backend
       target: runtime-dev

@@ -10,7 +10,6 @@ test.describe("Import Message", () => {
   });
 
   test.beforeEach(async ({ page, browserName }) => {
-    await page.goto("/");
     await signInKeycloakIfNeeded({ page, username: `user.e2e.${browserName}` });
   });
 

@@ -22,6 +22,7 @@ export type MainLayoutProps = {
   isLeftPanelOpen?: boolean;
   setIsLeftPanelOpen?: (isLeftPanelOpen: boolean) => void;
   hideSearch?: boolean;
+  isDragging?: boolean;
 };
 
 /**
@@ -37,6 +38,7 @@ export const AppLayout = ({
   leftPanelContent,
   enableResize = false,
   hideSearch = false,
+  isDragging = false,
   ...props
 }: PropsWithChildren<MainLayoutProps>) => {
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useControllableState(
@@ -52,6 +54,8 @@ export const AppLayout = ({
   const { isDesktop } = useResponsive();
   const [isResizing, setIsResizing] = useState(false);
   const resizeTimeoutRef = useRef<number>(undefined);
+  // Track if panel was open before drag started, to restore state after drag ends
+  const panelOpenBeforeDragRef = useRef<boolean>(false);
 
   // We need to have two different states for the left panel, we want to always keep the
   // left panel mounted on mobile in order to show the animation when it opens or closes, instead
@@ -62,7 +66,7 @@ export const AppLayout = ({
   const showLeftPanel = isDesktop ? !hideLeftPanelOnDesktop : isLeftPanelOpen;
 
   const [minPanelSize, setMinPanelSize] = useState(
-    calculateDefaultSize(300, isDesktop)
+    calculateDefaultSize(200, isDesktop)
   );
   const [maxPanelSize, setMaxPanelSize] = useState(
     calculateDefaultSize(450, isDesktop)
@@ -74,7 +78,7 @@ export const AppLayout = ({
 
   useEffect(() => {
     const updatePanelSize = () => {
-      const min = Math.round(calculateDefaultSize(300, isDesktop));
+      const min = Math.round(calculateDefaultSize(250, isDesktop));
       const max = Math.round(
         Math.min(calculateDefaultSize(450, isDesktop), 40)
       );
@@ -118,6 +122,20 @@ export const AppLayout = ({
     };
   }, []);
 
+  // On mobile/tablet, auto-open left panel when dragging starts to reveal drop targets
+  useEffect(() => {
+    if (isDesktop) return;
+
+    if (isDragging) {
+      // Store current panel state before opening
+      panelOpenBeforeDragRef.current = isLeftPanelOpen;
+      setIsLeftPanelOpen(true);
+    } else if (panelOpenBeforeDragRef.current === false) {
+      // Only close if it wasn't open before dragging started
+      setIsLeftPanelOpen(false);
+    }
+  }, [isDragging, isDesktop]);
+
   return (
     <div className={clsx("c__main-layout", isResizing && "c__main-layout--resizing")}>
       <div className="c__main-layout__header">
@@ -129,7 +147,7 @@ export const AppLayout = ({
         />
       </div>
       <main className="c__main-layout__content">
-        <Group defaultLayout={defaultLayout} onLayoutChange={onLayoutChange} orientation="horizontal" style={{ flex: 1 }}>
+        <Group defaultLayout={defaultLayout} onLayoutChange={onLayoutChange} orientation="horizontal" style={{ width: "100%" }}>
           {mountLeftPanel && (
             <>
               <Panel

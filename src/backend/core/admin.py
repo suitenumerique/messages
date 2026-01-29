@@ -3,6 +3,8 @@
 from django.contrib import admin, messages
 from django.contrib.auth import admin as auth_admin
 from django.core.files.storage import storages
+from django.db.models import Q
+from django.http import HttpResponseNotAllowed
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.urls import path
@@ -11,10 +13,32 @@ from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
 from core.api.utils import get_file_key
+from core.mda.outbound_tasks import retry_messages_task
+from core.services.dns.provisioning import provision_domain_dns
 from core.services.importer.service import ImportService
 
 from . import models
+from .enums import MessageDeliveryStatusChoices
 from .forms import IMAPImportForm, MessageImportForm
+
+
+class RecipientDeliveryStatusFilter(admin.SimpleListFilter):
+    """Filter messages by their recipients' delivery status."""
+
+    title = _("delivery status")
+    parameter_name = "recipient_delivery_status"
+
+    def lookups(self, request, model_admin):
+        """Return a list of delivery status choices."""
+        return MessageDeliveryStatusChoices.choices
+
+    def queryset(self, request, queryset):
+        """Filter queryset by recipient delivery status."""
+        if self.value():
+            return queryset.filter(
+                recipients__delivery_status=int(self.value())
+            ).distinct()
+        return queryset
 
 
 def reset_keycloak_password_action(_, request, queryset):
@@ -51,6 +75,31 @@ def reset_keycloak_password_action(_, request, queryset):
 
 reset_keycloak_password_action.short_description = (
     "Reset Keycloak password for selected mailboxes"
+)
+
+
+def retry_send_messages_action(__, request, queryset):
+    """Admin action to retry sending selected messages with retryable recipients."""
+    message_ids = [
+        str(message_id) for message_id in queryset.values_list("id", flat=True)
+    ]
+    task = retry_messages_task.delay(message_ids=message_ids)
+
+    messages.info(
+        request,
+        _(
+            "%(message_count)d messages - "
+            "Retry send message task queued (id: %(task_id)s)."
+        )
+        % {
+            "message_count": len(message_ids),
+            "task_id": task.id,
+        },
+    )
+
+
+retry_send_messages_action.short_description = _(
+    "Retry to send selected messages to pending recipients"
 )
 
 
@@ -156,6 +205,59 @@ class MailDomainAdmin(admin.ModelAdmin):
     list_filter = ("identity_sync",)
     search_fields = ("name",)
     autocomplete_fields = ("alias_of",)
+    change_form_template = "admin/core/maildomain/change_form.html"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "<path:object_id>/dns-provision/",
+                self.admin_site.admin_view(self.dns_provision_view),
+                name="core_maildomain_dns_provision",
+            ),
+        ]
+        return custom_urls + urls
+
+    def dns_provision_view(self, request, object_id):
+        """View for provisioning DNS records for a mail domain."""
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+
+        maildomain = self.get_object(request, object_id)
+
+        if maildomain is None:
+            messages.error(request, _("Mail domain not found."))
+            return redirect("..")
+
+        # Run DNS provisioning
+        results = provision_domain_dns(maildomain)
+
+        if results["success"]:
+            provider_used = results.get("provider", "unknown")
+            changes = results.get("changes", [])
+            if changes:
+                changes_text = ", ".join(changes)
+                messages.success(
+                    request,
+                    _("DNS provisioning successful via %(provider)s: %(changes)s")
+                    % {"provider": provider_used, "changes": changes_text},
+                )
+            else:
+                messages.success(
+                    request,
+                    _(
+                        "DNS provisioning successful via %(provider)s (no changes needed)."
+                    )
+                    % {"provider": provider_used},
+                )
+        else:
+            error_msg = results.get("error", "Unknown error")
+            messages.error(
+                request,
+                _("DNS provisioning failed: %(error)s") % {"error": error_msg},
+            )
+
+        return redirect("..")
 
 
 class MailboxAccessInline(admin.TabularInline):
@@ -171,7 +273,7 @@ class MailboxAdmin(admin.ModelAdmin):
 
     inlines = [MailboxAccessInline]
     list_display = ("__str__", "is_identity", "contact", "alias_of", "updated_at")
-    list_filter = ("is_identity", "domain", "created_at", "updated_at")
+    list_filter = ("is_identity", "created_at", "updated_at")
     search_fields = ("local_part", "domain__name", "contact__name", "contact__email")
     actions = [reset_keycloak_password_action]
     autocomplete_fields = ("domain", "contact", "alias_of")
@@ -242,7 +344,17 @@ class ThreadAdmin(admin.ModelAdmin):
         "updated_at",
     )
     search_fields = ("subject", "snippet", "labels__name")
-    list_filter = ("labels",)
+    list_filter = (
+        "has_unread",
+        "has_trashed",
+        "has_archived",
+        "has_draft",
+        "has_starred",
+        "has_sender",
+        "has_attachments",
+        "is_spam",
+        "created_at",
+    )
     fieldsets = (
         (None, {"fields": ("subject", "snippet", "display_labels", "summary")}),
         (
@@ -356,6 +468,7 @@ class MessageAdmin(admin.ModelAdmin):
     """Admin class for the Message model"""
 
     inlines = [MessageRecipientInline, AttachmentInline]
+    actions = [retry_send_messages_action]
     list_display = (
         "id",
         "subject",
@@ -376,6 +489,7 @@ class MessageAdmin(admin.ModelAdmin):
         "is_spam",
         "is_archived",
         "has_attachments",
+        RecipientDeliveryStatusFilter,
         "created_at",
         "sent_at",
         "read_at",
@@ -384,6 +498,7 @@ class MessageAdmin(admin.ModelAdmin):
     )
     search_fields = ("subject", "sender__name", "sender__email", "mime_id")
     change_list_template = "admin/core/message/change_list.html"
+    change_form_template = "admin/core/message/change_form.html"
     raw_id_fields = ("thread", "blob", "draft_blob", "parent", "channel")
     autocomplete_fields = ("sender", "signature")
     readonly_fields = ("mime_id", "created_at", "updated_at")
@@ -404,6 +519,11 @@ class MessageAdmin(admin.ModelAdmin):
                 "import-imap/",
                 self.admin_site.admin_view(self.import_imap_view),
                 name="core_message_import_imap",
+            ),
+            path(
+                "<path:object_id>/retry/",
+                self.admin_site.admin_view(self.retry_message_view),
+                name="core_message_retry",
             ),
         ]
         return custom_urls + urls
@@ -487,6 +607,69 @@ class MessageAdmin(admin.ModelAdmin):
         extra_context["has_import_permission"] = self.has_add_permission(request)
         return super().changelist_view(request, extra_context=extra_context)
 
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        """Add retry availability context to the change form."""
+        context = extra_context.copy() if extra_context else {}
+
+        try:
+            message = self.get_object(request, object_id)
+            if message.is_draft is False and message.is_sender is True:
+                # Check if message has recipients with retry status
+                has_retryable_recipients = message.recipients.filter(
+                    Q(delivery_status=MessageDeliveryStatusChoices.RETRY)
+                    | Q(delivery_status__isnull=True)
+                ).exists()
+                context["has_retryable_recipients"] = has_retryable_recipients
+        except Exception:  # pylint: disable=broad-except
+            context["has_retryable_recipients"] = False
+
+        return super().change_view(
+            request,
+            object_id,
+            form_url,
+            extra_context=context,
+        )
+
+    def retry_message_view(self, request, object_id):
+        """View for retrying to send a message to recipients with retry status."""
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+
+        message = self.get_object(request, object_id)
+
+        if message is None:
+            messages.error(request, _("Message not found."))
+            return redirect("..")
+
+        # Check if message has recipients with retry status
+        retryable_recipients_count = message.recipients.filter(
+            Q(delivery_status=MessageDeliveryStatusChoices.RETRY)
+            | Q(delivery_status__isnull=True)
+        ).count()
+
+        if retryable_recipients_count == 0:
+            messages.warning(
+                request,
+                _("No pending recipients found for this message."),
+            )
+            return redirect("..")
+
+        # Trigger the retry task
+        task = retry_messages_task.delay(message_ids=[str(message.id)])
+
+        messages.success(
+            request,
+            _(
+                "Retry task has been queued for "
+                "%(retryable_recipients_count)d pending recipient(s) (id: %(task_id)s)."
+            )
+            % {
+                "retryable_recipients_count": retryable_recipients_count,
+                "task_id": task.id,
+            },
+        )
+        return redirect("..")
+
 
 @admin.register(models.Contact)
 class ContactAdmin(admin.ModelAdmin):
@@ -531,11 +714,6 @@ class MessageRecipientAdmin(admin.ModelAdmin):
 class LabelAdmin(admin.ModelAdmin):
     """Admin class for the Label model"""
 
-    list_display = ("id", "name", "slug", "mailbox", "color")
-    search_fields = ("name", "mailbox__local_part", "mailbox__domain__name")
-    filter_horizontal = ("threads",)
-    list_filter = ("mailbox",)
-    readonly_fields = ("slug",)
     list_display = (
         "id",
         "name",
@@ -546,7 +724,8 @@ class LabelAdmin(admin.ModelAdmin):
         "basename",
         "parent_name",
     )
-    list_filter = ("mailbox",)
+    search_fields = ("name", "mailbox__local_part", "mailbox__domain__name")
+    readonly_fields = ("slug",)
     autocomplete_fields = ("mailbox",)
     raw_id_fields = ("threads",)
 
@@ -620,7 +799,7 @@ class DKIMKeyAdmin(admin.ModelAdmin):
         "created_at",
     )
     search_fields = ("selector", "domain__name")
-    list_filter = ("algorithm", "is_active", "domain")
+    list_filter = ("algorithm", "is_active")
     readonly_fields = ("public_key", "created_at", "updated_at")
     autocomplete_fields = ("domain",)
     fieldsets = (
@@ -648,6 +827,44 @@ class DKIMKeyAdmin(admin.ModelAdmin):
     )
 
 
+@admin.register(models.InboundMessage)
+class InboundMessageAdmin(admin.ModelAdmin):
+    """Admin class for the InboundMessage model (spam filter queue)."""
+
+    list_display = (
+        "id",
+        "mailbox",
+        "channel",
+        "has_error",
+        "created_at",
+    )
+    list_filter = ("created_at",)
+    search_fields = (
+        "mailbox__local_part",
+        "mailbox__domain__name",
+        "error_message",
+    )
+    autocomplete_fields = ("mailbox", "channel")
+    readonly_fields = ("created_at", "updated_at")
+    fields = ("mailbox", "channel", "error_message", "created_at", "updated_at")
+
+    def has_error(self, obj):
+        """Return whether the message has an error."""
+        return bool(obj.error_message)
+
+    has_error.boolean = True
+    has_error.short_description = _("Error")
+
+    def get_queryset(self, request):
+        """Optimize queryset with select_related for better performance."""
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("mailbox", "mailbox__domain", "channel")
+            .defer("raw_data")  # Exclude large binary content from list view
+        )
+
+
 @admin.register(models.MessageTemplate)
 class MessageTemplateAdmin(admin.ModelAdmin):
     """Admin class for the MessageTemplate model"""
@@ -656,6 +873,7 @@ class MessageTemplateAdmin(admin.ModelAdmin):
         "name",
         "type",
         "is_forced",
+        "is_default",
         "is_active",
         "mailbox",
         "maildomain",
@@ -664,6 +882,7 @@ class MessageTemplateAdmin(admin.ModelAdmin):
     list_filter = (
         "type",
         "is_forced",
+        "is_default",
         "created_at",
     )
     autocomplete_fields = ("mailbox", "maildomain")

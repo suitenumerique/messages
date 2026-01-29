@@ -20,6 +20,12 @@
     justify-content: space-between;
     align-items: center;
     margin-block: var(--c--globals--spacings--lg) var(--c--globals--spacings--base);
+
+    .title {
+      font-size: clamp(var(--c--globals--font--sizes--h3), 2vw, var(--c--globals--font--sizes--h1));
+      line-height: 1.2;
+      min-width: 0;
+    }
   }
 
   &__body {

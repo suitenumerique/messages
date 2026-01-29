@@ -21,11 +21,29 @@ class MailboxRoleChoices(models.IntegerChoices):
     ADMIN = 4, "admin"
 
 
+# Mailbox role groups for permission checks
+MAILBOX_ROLES_CAN_EDIT = [
+    MailboxRoleChoices.EDITOR,
+    MailboxRoleChoices.SENDER,
+    MailboxRoleChoices.ADMIN,
+]
+MAILBOX_ROLES_CAN_SEND = [
+    MailboxRoleChoices.SENDER,
+    MailboxRoleChoices.ADMIN,
+]
+
+
 class ThreadAccessRoleChoices(models.IntegerChoices):
     """Defines the possible roles a mailbox can have to access to a thread."""
 
     VIEWER = 1, "viewer"
     EDITOR = 2, "editor"
+
+
+# Thread role groups for permission checks
+THREAD_ROLES_CAN_EDIT = [
+    ThreadAccessRoleChoices.EDITOR,
+]
 
 
 class MessageRecipientTypeChoices(models.IntegerChoices):

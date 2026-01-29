@@ -302,10 +302,24 @@ class TestInboundWidgetDeliver:
             in parsed_email["htmlBody"][0]["content"]
         )
 
-    def test_inbound_widget_deliver_message_e2e(self, api_client, channel):
-        """Test that message is properly formatted with HTML and metadata."""
+    def test_inbound_widget_deliver_message_e2e(self, api_client):
+        """Test that message is properly formatted with HTML, metadata, and tags."""
 
         assert models.Message.objects.count() == 0
+
+        # Create a mailbox with labels and a channel with tags
+        mailbox = factories.MailboxFactory()
+        label1 = factories.LabelFactory(mailbox=mailbox, name="Widget Support")
+        label2 = factories.LabelFactory(mailbox=mailbox, name="Urgent")
+        channel = factories.ChannelFactory(
+            type="widget",
+            mailbox=mailbox,
+            settings={
+                "config": {"enabled": True},
+                "tags": [str(label1.id), str(label2.id)],
+                "subject_template": "Contact from {referer_domain}",
+            },
+        )
 
         data = {
             "email": "sender@example.com",
@@ -322,12 +336,16 @@ class TestInboundWidgetDeliver:
         assert response.status_code == status.HTTP_200_OK
 
         assert models.Message.objects.count() == 1
-        mailbox = channel.mailbox
         message = models.Message.objects.first()
         # Check we have a threadaccess on the right mailbox
         assert message.thread.accesses.first().mailbox == mailbox
         assert message.sender.email == "sender@example.com"
-        assert message.subject == "Message from example.com"
+        assert message.subject == "Contact from example.com"
+
+        # Check that channel tags were applied to the thread
+        thread_label_ids = set(message.thread.labels.values_list("id", flat=True))
+        assert label1.id in thread_label_ids
+        assert label2.id in thread_label_ids
 
         authenticated_user = factories.UserFactory()
         factories.MailboxAccessFactory(

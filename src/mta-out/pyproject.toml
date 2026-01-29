@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "st-messages-mta-out"
-version = "0.0.1"
+version = "0.1.1"
 authors = [{ "name" = "ANCT", "email" = "suiteterritoriale@anct.gouv.fr" }]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -109,4 +109,4 @@ addopts = [
 python_files = [
     "test_*.py",
     "tests.py",
-] 
+]

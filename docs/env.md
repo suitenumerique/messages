@@ -34,6 +34,7 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `DJANGO_SETTINGS_MODULE` | `messages.settings` | Django settings module | Required |
 | `DJANGO_SUPERUSER_PASSWORD` | `admin` | Default superuser password for development | Dev |
 | `DJANGO_DATA_DIR` | `/data` | Base directory for data storage | Optional |
+| `DJANGO_ADMIN_URL` | `admin` | admin route (must not be ended by `/`) | Optional |
 
 ### Database Configuration
 
@@ -285,6 +286,7 @@ _Those settings are deprecated and will be removed in the future._
 | `AI_MODEL` | None | Default model used for AI features | Optional |
 | `FEATURE_AI_SUMMARY` | `False` | Default enabled mode for summary AI features | Required |
 | `FEATURE_AI_AUTOLABELS` | `False` | Default enabled mode for label AI features | Required |
+| `FEATURE_MAILBOX_ADMIN_CHANNELS` | `` | Comma-separated list of channel types enabled for mailbox admin (e.g., `widget,api_key`). Empty list disables all channel types. | Optional |
 
 ### Image Proxy
 

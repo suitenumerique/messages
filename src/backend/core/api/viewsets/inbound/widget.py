@@ -144,10 +144,23 @@ class InboundWidgetViewSet(viewsets.GenericViewSet):
             ),
         )
 
+        # Build subject from template or use default
+        # Template can use {referer_domain} placeholder (same format as signature templates)
+        default_subject_template = "Message from {referer_domain}"
+        subject_template = (channel.settings or {}).get(
+            "subject_template", default_subject_template
+        )
+
+        # Replace template variables
+        subject = subject_template.replace("{referer_domain}", source_name)
+
+        # Sanitize subject to prevent header injection (strip newlines/carriage returns)
+        subject = subject.replace("\r", "").replace("\n", "")
+
         # Build a JMAP-like structured format that we could have got from parse_email_message()
 
         parsed_email = {
-            "subject": f"Message from {source_name}",
+            "subject": subject,
             "from": {"email": sender_email},
             "to": [{"name": target_name, "email": target_email}],
             "date": timezone.now(),

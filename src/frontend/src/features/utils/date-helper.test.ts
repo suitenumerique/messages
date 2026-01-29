@@ -19,6 +19,17 @@ describe('DateHelper', () => {
       expect(DateHelper.formatDate(todayDate, 'en')).toBe('17:30');
     });
 
+    it('should format time when date is today and showTime is true', () => {
+      const todayDate = '2025-04-17T17:30:00';
+      expect(DateHelper.formatDate(todayDate, 'fr', true)).toBe('17:30');
+      expect(DateHelper.formatDate(todayDate, 'en', true)).toBe('17:30');
+    });
+
+    it('should format as "Today" when date is today and showTime is false', () => {
+      const todayDate = '2025-04-17T17:30:00';
+      expect(DateHelper.formatDate(todayDate, 'en', false)).toBe('Today');
+    });
+
     it('should format as "Yesterday" when date is yesterday', () => {
       const yesterdayDate = '2025-04-16T15:30:00';
       expect(DateHelper.formatDate(yesterdayDate, 'en')).toBe('Yesterday');

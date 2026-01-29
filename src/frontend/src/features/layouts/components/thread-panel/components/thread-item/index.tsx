@@ -13,6 +13,7 @@ import { PORTALS } from "@/features/config/constants"
 import { Checkbox } from "@gouvfr-lasuite/cunningham-react"
 import { Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit"
 import { LabelBadge } from "@/features/ui/components/label-badge"
+import { useLayoutContext } from "../../../main"
 
 type ThreadItemProps = {
     thread: Thread
@@ -28,6 +29,7 @@ export const ThreadItem = ({ thread, index, isSelected, onToggleSelection, selec
     const params = useParams<{ mailboxId: string, threadId: string }>()
     const searchParams = useSearchParams()
     const [isDragging, setIsDragging] = useState(false)
+    const { setIsDragging: setGlobalDragging } = useLayoutContext();
     const dragPreviewContainer = useRef(document.getElementById(PORTALS.DRAG_PREVIEW));
 
     const hasSelection = isSelectionMode || selectedThreadIds.size > 0;
@@ -59,6 +61,7 @@ export const ThreadItem = ({ thread, index, isSelected, onToggleSelection, selec
 
     const handleDragStart = (e: React.DragEvent<HTMLAnchorElement>) => {
         setIsDragging(true)
+        setGlobalDragging(true)
 
         // If this thread is selected, drag all selected threads
         const threadsToDrag = isSelectionMode ? Array.from(selectedThreadIds) : [thread.id];
@@ -74,7 +77,10 @@ export const ThreadItem = ({ thread, index, isSelected, onToggleSelection, selec
             e.dataTransfer.setDragImage(dragPreviewContainer.current, 40, 40)
         }
     }
-    const handleDragEnd = () => setIsDragging(false);
+    const handleDragEnd = () => {
+        setIsDragging(false);
+        setGlobalDragging(false);
+    };
 
     const dragCount = selectedThreadIds.size > 0 ? selectedThreadIds.size : 1;
 

@@ -13,15 +13,19 @@ export class DateHelper {
    *
    * @param dateString - The date string to format
    * @param locale - The locale code (e.g., 'fr', 'en')
+   * @param showTime - Whether to show the time (default: true)
    * @returns Formatted date string
    */
-  public static formatDate(dateString: string, lng: string = 'en'): string {
+  public static formatDate(dateString: string, lng: string = 'en', showTime: boolean = true): string {
     const date = new Date(dateString);
     const locale = lng.length > 2 ? lng.split('-')[0] : lng;
     const dateLocale = locales[locale as keyof typeof locales];
 
     if (isToday(date)) {
-      return format(date, 'HH:mm', { locale: dateLocale });
+      if (showTime) {
+        return format(date, 'HH:mm', { locale: dateLocale });
+      }
+      return i18n.t('Today');
     }
 
     if (isYesterday(date)) {

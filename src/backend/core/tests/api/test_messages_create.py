@@ -169,12 +169,11 @@ class TestApiDraftAndSendMessage:
         task_id = send_response.data["task_id"]
         assert task_id is not None
 
-        # Check with an unknown task_id
+        # Check with an unknown task_id - should return 403 (task not found or access expired)
         task_response = client.get(
             reverse("task-detail", kwargs={"task_id": "unknown-task-id"})
         )
-        assert task_response.status_code == status.HTTP_200_OK
-        assert task_response.data["status"] == "PENDING"
+        assert task_response.status_code == status.HTTP_403_FORBIDDEN
 
         # Call the task API
         task_response = client.get(reverse("task-detail", kwargs={"task_id": task_id}))
@@ -449,6 +448,53 @@ class TestApiDraftAndSendMessage:
         )
         assert success_recipient.delivered_at is not None
         assert success_recipient.retry_count == 0
+
+    @pytest.mark.parametrize(
+        "mailbox_role",
+        [
+            enums.MailboxRoleChoices.EDITOR,
+            enums.MailboxRoleChoices.SENDER,
+            enums.MailboxRoleChoices.ADMIN,
+        ],
+    )
+    def test_draft_message_with_edit_roles(
+        self, mailbox, authenticated_user, mailbox_role
+    ):
+        """Test that EDITOR, SENDER, and ADMIN can all create drafts."""
+        # VIEWER should be denied first
+        viewer_access = factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.VIEWER,
+        )
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "test",
+                "draftBody": "<p>test</p>",
+                "to": ["pierre@example.com"],
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        # Elevate to the parametrized role and verify success
+        viewer_access.role = mailbox_role
+        viewer_access.save()
+        response = client.post(
+            reverse("draft-message"),
+            {
+                "senderId": mailbox.id,
+                "subject": "test",
+                "draftBody": "<p>test</p>",
+                "to": ["pierre@example.com"],
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED
 
     def test_draft_message_without_permission_required(
         self, mailbox, authenticated_user
@@ -950,6 +996,81 @@ class TestApiDraftAndSendMessage:
 
         # Assert the response is not found (as we query for is_draft=True)
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.parametrize(
+        "mailbox_role",
+        [
+            enums.MailboxRoleChoices.SENDER,
+            enums.MailboxRoleChoices.ADMIN,
+        ],
+    )
+    @patch("core.mda.outbound.send_outbound_message")
+    def test_send_message_with_send_roles(
+        self,
+        mock_send_outbound_message,
+        mailbox,
+        authenticated_user,
+        send_url,
+        mailbox_role,
+    ):
+        """Test that SENDER and ADMIN can send messages, but EDITOR cannot."""
+        mock_send_outbound_message.return_value = {}
+
+        # First verify EDITOR cannot send
+        editor_access = factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=authenticated_user,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+        thread_access = factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        message = factories.MessageFactory(
+            thread=thread_access.thread,
+            is_draft=True,
+            sender=factories.ContactFactory(mailbox=mailbox),
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=authenticated_user)
+
+        response = client.post(
+            send_url,
+            {
+                "messageId": str(message.id),
+                "senderId": str(mailbox.id),
+                "textBody": "Hello",
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        # Elevate to the parametrized role and verify success
+        editor_access.role = mailbox_role
+        editor_access.save()
+
+        # Create a new draft since the previous one may be in a bad state
+        message2 = factories.MessageFactory(
+            thread=thread_access.thread,
+            is_draft=True,
+            sender=factories.ContactFactory(mailbox=mailbox),
+        )
+        factories.MessageRecipientFactory(
+            message=message2,
+            type=enums.MessageRecipientTypeChoices.TO,
+        )
+
+        response = client.post(
+            send_url,
+            {
+                "messageId": str(message2.id),
+                "senderId": str(mailbox.id),
+                "textBody": "Hello",
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
 
 
 @pytest.mark.django_db

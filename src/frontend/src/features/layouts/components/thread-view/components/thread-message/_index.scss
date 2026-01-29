@@ -110,15 +110,10 @@
         & .thread-message__sender-chip {
             min-width: 0;
 
-            .contact-chip__identity-email {
-                font-size: var(--c--globals--font--sizes--sm);
-                color: var(--c--contextuals--content--semantic--neutral--secondary);
+            .contact-chip__identity-name {
+                font-size: var(--c--globals--font--sizes--md);
             }
 
-            .contact-chip__identity-name {
-                font-size: var(--c--globals--font--sizes-base);
-                color: var(--c--contextuals--content--semantic--neutral--primary);
-            }
         }
     }
 
@@ -128,7 +123,7 @@
     display: flex;
     flex-direction: row;
     justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
     gap: var(--c--globals--spacings--base);
     min-width: 0;
 }
@@ -164,6 +159,7 @@
 .thread-message__correspondents dd {
     margin: 0;
     word-break: break-word;
+    min-width: 0;
 }
 
 .thread-message__correspondents .recipient-chip-list {
@@ -172,8 +168,7 @@
     flex-wrap: wrap;
 }
 .thread-message__body {
-    width: calc(100% + 2 * var(--c--globals--spacings--base));
-    margin-inline: calc(-1 * var(--c--globals--spacings--base));
+    width: 100%;
     height: auto;
     border: none;
     display: block;

@@ -773,3 +773,82 @@ class TestDeliverInboundMessage:
         messages = thread.messages.all()
         assert messages[0].subject == ""
         assert messages[1].subject == ""
+
+    @patch("core.mda.inbound_create.logger")
+    def test_duplicate_recipients_handled_gracefully(
+        self, mock_logger, target_mailbox, raw_email_data
+    ):
+        """Test that duplicate recipients don't cause errors during import.
+
+        When the same email appears multiple times in recipients (e.g., in TO twice,
+        or in both TO and CC), the code should handle it gracefully using get_or_create
+        instead of failing with a uniqueness constraint violation.
+        """
+
+        recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
+
+        # Email with duplicate recipient in TO list
+        parsed_email_with_duplicates = {
+            "subject": "Test Duplicate Recipients",
+            "from": {"name": "Sender", "email": "sender@test.com"},
+            "to": [
+                {"name": "Recipient", "email": "duplicate@test.com"},
+                {"name": "Recipient Again", "email": "duplicate@test.com"},  # Duplicate!
+            ],
+            "cc": [
+                {"name": "CC Recipient", "email": "duplicate@test.com"},  # Same email in CC!
+            ],
+            "bcc": [],
+            "textBody": [{"content": "Test with duplicates."}],
+            "message_id": "test.duplicates@example.com",
+            "date": timezone.now(),
+        }
+
+        # Should succeed without raising ValidationError
+        success = deliver_inbound_message(
+            recipient_addr,
+            parsed_email_with_duplicates,
+            raw_email_data,
+            skip_inbound_queue=True,
+        )
+
+        assert success is True
+        assert models.Message.objects.count() == 1
+
+        message = models.Message.objects.first()
+        # Should have only 2 recipients (not 3), since duplicates are handled
+        # One for TO (first occurrence) and one for CC (different type)
+        assert message.recipients.count() == 2
+
+        # Verify we have one TO and one CC recipient
+        to_recipients = message.recipients.filter(
+            type=models.MessageRecipientTypeChoices.TO
+        )
+        cc_recipients = message.recipients.filter(
+            type=models.MessageRecipientTypeChoices.CC
+        )
+        assert to_recipients.count() == 1
+        assert cc_recipients.count() == 1
+
+        # Both should reference the same contact
+        assert to_recipients.first().contact.email == "duplicate@test.com"
+        assert cc_recipients.first().contact.email == "duplicate@test.com"
+        assert to_recipients.first().contact == cc_recipients.first().contact
+
+        # Verify no error/warning logs about recipient creation failures
+        # With get_or_create, duplicates are handled silently without logging errors
+        # With create(), we would see "Validation error creating recipient contact/link" logs
+        warning_calls = [
+            call for call in mock_logger.warning.call_args_list
+            if "recipient contact/link" in str(call).lower()
+        ]
+        error_calls = [
+            call for call in mock_logger.error.call_args_list
+            if "recipient contact/link" in str(call).lower()
+        ]
+        assert not warning_calls, (
+            f"Expected no warning logs for recipient creation, but got: {warning_calls}"
+        )
+        assert not error_calls, (
+            f"Expected no error logs for recipient creation, but got: {error_calls}"
+        )

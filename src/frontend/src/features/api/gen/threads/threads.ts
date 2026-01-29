@@ -569,7 +569,7 @@ export function useThreadsRetrieve<
 }
 
 /**
- * ViewSet for Thread model.
+ * Delete a thread, requiring EDITOR role on the thread.
  */
 export type threadsDestroyResponse204 = {
   data: void;

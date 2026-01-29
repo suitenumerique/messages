@@ -49,7 +49,12 @@ class TestLabelSerializer:
     """Test the LabelSerializer."""
 
     @pytest.mark.parametrize(
-        "role", [models.MailboxRoleChoices.ADMIN, models.MailboxRoleChoices.EDITOR]
+        "role",
+        [
+            models.MailboxRoleChoices.ADMIN,
+            models.MailboxRoleChoices.EDITOR,
+            models.MailboxRoleChoices.SENDER,
+        ],
     )
     def test_create_label_valid_data(self, api_client, role, user):
         """Test creating a label with valid data."""
@@ -86,7 +91,12 @@ class TestLabelSerializer:
         assert grandparent.mailbox == mailbox
 
     @pytest.mark.parametrize(
-        "role", [models.MailboxRoleChoices.ADMIN, models.MailboxRoleChoices.EDITOR]
+        "role",
+        [
+            models.MailboxRoleChoices.ADMIN,
+            models.MailboxRoleChoices.EDITOR,
+            models.MailboxRoleChoices.SENDER,
+        ],
     )
     def test_create_label_valid_data_similar_to_existing_parent(
         self, api_client, role, user

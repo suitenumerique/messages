@@ -1,6 +1,6 @@
 """API ViewSet for message templates."""
 
-from django.db.models import Q
+from django.db.models import Case, IntegerField, Q, When
 from django.utils.functional import cached_property
 
 from drf_spectacular.utils import (
@@ -156,7 +156,8 @@ class AvailableMailboxMessageTemplateViewSet(
 
     def get_queryset(self):
         """Get message templates active for a mailbox and its domain.
-        If a forced template exists for a template type, user can only see it."""
+        If a forced template exists for a template type, user can only see it.
+        Mailbox-level templates are returned before domain-level templates."""
         mailbox = get_object_or_404(Mailbox, id=self.kwargs["mailbox_id"])
         # get active message templates for mailbox and its domain
         queryset = MessageTemplate.objects.filter(
@@ -173,6 +174,16 @@ class AvailableMailboxMessageTemplateViewSet(
             forced_active_templates = queryset.filter(is_forced=True, is_active=True)
             if forced_active_templates.exists():
                 queryset = forced_active_templates
+
+        # Order by scope: mailbox templates first, then domain templates
+        # This ensures mailbox-level defaults take priority over domain-level
+        queryset = queryset.annotate(
+            scope_order=Case(
+                When(mailbox__isnull=False, then=0),  # Mailbox templates first
+                default=1,  # Domain templates second
+                output_field=IntegerField(),
+            )
+        ).order_by("scope_order", "-is_default", "-created_at")
 
         return queryset.distinct()
 

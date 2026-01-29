@@ -64,7 +64,7 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
         },
         {
             query: {
-                refetchOnMount: true,
+                refetchOnMount: 'always',
                 refetchOnWindowFocus: true,
             },
         }
@@ -143,31 +143,48 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
     useEffect(() => {
         if (!editor || isLoadingSignatures) return;
 
+        // Determine which signature should be used based on priority
+        let signatureToUse = undefined;
+
+        // Priority 1: Forced signature (always applies, regardless of draft state)
+        const forcedSignature = activeSignatures.find(signature => signature.is_forced);
+        if (forcedSignature) {
+            signatureToUse = forcedSignature;
+        }
+        // Priority 2: Draft signature (if exists and is still active) or nothing if draft has no signature
+        else if (draft) {
+            // If draft has a signature that's still active, use it
+            if (draft.signature?.id && activeSignatures.some(signature => signature.id === draft.signature!.id)) {
+                signatureToUse = draft.signature;
+            }
+            // If draft exists but has no signature, don't apply any (user may have removed it intentionally)
+            // signatureToUse remains undefined
+        }
+        // Priority 3: Default signature (only for new messages, not drafts)
+        else {
+            signatureToUse = activeSignatures.find(signature => signature.is_default);
+        }
+
         // Check if signature is already in the editor
         const signatureBlock = editor.getBlock('signature');
         if (signatureBlock) {
-            // In case there is a signature block, we remove the block if :
-            // - the templateId does not match an active signature
-            // - the draft signature does not match the signature block.
             const blockSignatureId = (signatureBlock.props as BlockSignatureConfigProps).templateId;
             const isSignatureStale = activeSignatures.findIndex(signature => signature.id === blockSignatureId) < 0;
-            const mismatchedSignature = draft?.signature?.id && draft.signature.id !== blockSignatureId;
-            if (isSignatureStale || mismatchedSignature) editor.removeBlocks(["signature"]);
-            else return;
+            // Forced signature must always be applied, even if different from current
+            const forcedSignatureMismatch = forcedSignature && forcedSignature.id !== blockSignatureId;
+            // For drafts with a specific signature, check if it matches
+            const draftSignatureMismatch = draft?.signature?.id && draft.signature.id !== blockSignatureId && !forcedSignature;
+            // For new messages, update if the default signature changed
+            const shouldUpdateToNewDefault = !draft && signatureToUse && signatureToUse.id !== blockSignatureId;
+
+            if (isSignatureStale || forcedSignatureMismatch || draftSignatureMismatch || shouldUpdateToNewDefault) {
+                editor.removeBlocks(["signature"]);
+            } else {
+                return;
+            }
         }
 
         if (activeSignatures.length === 0) return;
-
-        let signatureToUse = undefined;
-
-        // Priority 1: Draft signature (if exists and is still active)
-        if (draft?.signature?.id && activeSignatures.some(signature => signature.id === draft.signature!.id)) {
-            signatureToUse = draft.signature;
-        }
-        // Priority 2: Forced signature (if no draft signature)
-        else {
-            signatureToUse = activeSignatures.find(signature => signature.is_forced);
-        }
 
         // Add signature block if we have a signature to use
         if (signatureToUse) {
@@ -195,7 +212,7 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
             // Set signatureId to undefined after a microtask to avoid flushSync issues
             form.setValue('signatureId', undefined);
         }
-    }, [editor, isLoadingSignatures, activeSignatures]);
+    }, [editor, isLoadingSignatures, activeSignatures, draft?.signature?.id]);
 
     return (
         <>

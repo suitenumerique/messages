@@ -8,7 +8,7 @@ import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import z from "zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { SignatureComposer } from "./signature-composer";
+import { SignatureComposer } from "@/features/signatures/components/signature-composer";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import i18n from "@/features/i18n/initI18n";
 import { handle } from "@/features/utils/errors";
@@ -67,6 +67,7 @@ const signatureComposerSchema = z.object({
     name: z.string().min(1, { error: i18n.t("Name is required") }),
     is_active: z.boolean(),
     is_forced: z.boolean(),
+    is_default: z.boolean(),
     htmlBody: z.string().min(1, { error: i18n.t("Content is required") }),
     textBody: z.string().min(1, { error: i18n.t("Content is required") }),
     rawBody: z.string().min(1, { error: i18n.t("Content is required") }),
@@ -82,6 +83,7 @@ const SignatureComposeForm = ({ domain, defaultValue, onSuccess }: SignatureComp
             name: defaultValue?.name ?? "",
             is_active: defaultValue?.is_active ?? true,
             is_forced: defaultValue?.is_forced ?? false,
+            is_default: defaultValue?.is_default ?? false,
             htmlBody: defaultValue?.html_body,
             textBody: defaultValue?.text_body,
             rawBody: defaultValue?.raw_body ?? undefined,
@@ -102,6 +104,7 @@ const SignatureComposeForm = ({ domain, defaultValue, onSuccess }: SignatureComp
                         type: MessageTemplateTypeChoices.signature,
                         is_active: data.is_active,
                         is_forced: data.is_forced,
+                        is_default: data.is_default,
                         html_body: data.htmlBody,
                         text_body: data.textBody,
                         raw_body: data.rawBody,
@@ -115,6 +118,7 @@ const SignatureComposeForm = ({ domain, defaultValue, onSuccess }: SignatureComp
                         type: MessageTemplateTypeChoices.signature,
                         is_active: data.is_active,
                         is_forced: data.is_forced,
+                        is_default: data.is_default,
                         html_body: data.htmlBody,
                         text_body: data.textBody,
                         raw_body: data.rawBody,
@@ -150,6 +154,12 @@ const SignatureComposeForm = ({ domain, defaultValue, onSuccess }: SignatureComp
                         label={t('Active')}
                         name="is_active"
                         text={t('While the signature is disabled, it will not be available to the users.')}
+                        fullWidth
+                    />
+                    <RhfCheckbox
+                        label={t('Default signature')}
+                        name="is_default"
+                        text={t('The default signature will be automatically loaded when composing a new message.')}
                         fullWidth
                     />
                     <RhfCheckbox

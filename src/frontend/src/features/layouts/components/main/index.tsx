@@ -22,16 +22,21 @@ export const MainLayout = ({ children }: PropsWithChildren) => {
     )
 }
 
-const LayoutContext = createContext({
-    toggleLeftPanel: () => {},
-    closeLeftPanel: () => {},
-    openLeftPanel: () => {},
-})
+type LayoutContextType = {
+    toggleLeftPanel: () => void;
+    closeLeftPanel: () => void;
+    openLeftPanel: () => void;
+    isDragging: boolean;
+    setIsDragging: (prevState: boolean) => void;
+}
+
+const LayoutContext = createContext<LayoutContextType | undefined>(undefined);
 
 const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>) => {
     const { mailboxes, queryStates } = useMailboxContext();
     const hasNoMailbox = queryStates.mailboxes.status === 'success' && mailboxes!.length === 0;
     const [leftPanelOpen, setLeftPanelOpen] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
     const { theme, variant } = useTheme();
 
     return (
@@ -39,6 +44,8 @@ const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>
             toggleLeftPanel: () => setLeftPanelOpen(!leftPanelOpen),
             closeLeftPanel: () => setLeftPanelOpen(false),
             openLeftPanel: () => setLeftPanelOpen(true),
+            isDragging,
+            setIsDragging,
         }}>
             <AppLayout
                 enableResize
@@ -47,6 +54,7 @@ const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>
                 leftPanelContent={<LeftPanel hasNoMailbox={hasNoMailbox} />}
                 icon={<img src={`/images/${theme}/app-logo-${variant}.svg`} alt="logo" height={40} />}
                 hideLeftPanelOnDesktop={hasNoMailbox}
+                isDragging={isDragging}
             >
                 {hasNoMailbox ? (
                     <NoMailbox />
@@ -61,5 +69,5 @@ const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>
 export const useLayoutContext = () => {
     const context = useContext(LayoutContext);
     if (!context) throw new Error("useLayoutContext must be used within a LayoutContext.Provider");
-    return useContext(LayoutContext)
+    return context;
 }

@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useRouter } from "next/router";
 import { SearchInput } from "@/features/forms/components/search-input";
 import useAbility, { Abilities } from "@/hooks/use-ability";
+import { useFeatureFlag, FEATURE_KEYS } from "@/hooks/use-feature";
 import { useAuth, logout } from "@/features/auth";
 import { LanguagePicker } from "@/features/layouts/components/main/language-picker";
 import { LagaufreButton } from "@/features/ui/components/lagaufre";
@@ -89,6 +90,7 @@ const ApplicationMenu = () => {
   const canAccessDomainAdmin = useAbility(Abilities.CAN_VIEW_DOMAIN_ADMIN);
   const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
   const canManageMessageTemplates = useAbility(Abilities.CAN_MANAGE_MESSAGE_TEMPLATES, selectedMailbox);
+  const isIntegrationsEnabled = useFeatureFlag(FEATURE_KEYS.MAILBOX_ADMIN_CHANNELS);
   const { t } = useTranslation();
   const router = useRouter();
   const taskId = useMemo(() => {
@@ -138,14 +140,32 @@ const ApplicationMenu = () => {
               }] : []),
               ...(canImportMessages ? [importMessageOption] : []),
               ...(canManageMessageTemplates ? [{
-                label: t("Message templates"),
+                label: t("My message templates"),
                 icon: <Icon name="description" />,
                 callback: () => {
                     if (selectedMailbox) {
                         router.push(`/mailbox/${selectedMailbox.id}/message-templates`);
                     }
                 }
-            }] : []),
+              },
+              {
+                label: t("My signatures"),
+                icon: <Icon name="draw" />,
+                callback: () => {
+                    if (selectedMailbox) {
+                        router.push(`/mailbox/${selectedMailbox.id}/signatures`);
+                    }
+                }
+              }] : []),
+              ...(canManageMessageTemplates && isIntegrationsEnabled ? [{
+                label: t("Integrations"),
+                icon: <Icon name="integration_instructions" type={IconType.OUTLINED} />,
+                callback: () => {
+                    if (selectedMailbox) {
+                        router.push(`/mailbox/${selectedMailbox.id}/integrations`);
+                    }
+                }
+              }] : []),
           ]}
       >
       <Button

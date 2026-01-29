@@ -2,6 +2,8 @@
 
 import logging
 
+from django.core.cache import cache
+
 from celery import states as celery_states
 from celery.result import AsyncResult
 from drf_spectacular.utils import (
@@ -11,12 +13,20 @@ from drf_spectacular.utils import (
 )
 from rest_framework import permissions
 from rest_framework import serializers as drf_serializers
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from messages.celery_app import app as celery_app
 
 logger = logging.getLogger(__name__)
+
+TASK_OWNER_CACHE_TTL = 86400  # 24 hours
+
+
+def register_task_owner(task_id, user_id):
+    """Register the owner of a task for permission checks."""
+    cache.set(f"task_owner:{task_id}", str(user_id), timeout=TASK_OWNER_CACHE_TTL)
 
 
 @extend_schema(
@@ -65,6 +75,11 @@ class TaskDetailView(APIView):
 
     def get(self, request, task_id):
         """Get the status of a Celery task."""
+        owner_id = cache.get(f"task_owner:{task_id}")
+        if owner_id is None:
+            raise PermissionDenied("Task not found or access expired.")
+        if str(request.user.id) != owner_id:
+            raise PermissionDenied("You do not have access to this task.")
 
         task_result = AsyncResult(task_id, app=celery_app)
 

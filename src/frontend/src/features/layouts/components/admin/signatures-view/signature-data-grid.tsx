@@ -51,32 +51,73 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
             children: t('Are you sure you want to delete this signature? This action is irreversible!'),
         });
         if (decision === 'delete') {
-            await deleteSignature({ maildomainPk: domain.id, id: signature.id });
+            try {
+                await deleteSignature({ maildomainPk: domain.id, id: signature.id });
+                invalidateMessageTemplates();
+                addToast(
+                    <ToasterItem type="info">
+                        <span>{t("Signature deleted!")}</span>
+                    </ToasterItem>,
+                );
+            } catch {
+                addToast(
+                    <ToasterItem type="error">
+                        <span>{t("Failed to delete signature.")}</span>
+                    </ToasterItem>,
+                );
+            }
+        }
+    }
+    const toggleActive = async (signature: MessageTemplate) => {
+        try {
+            await updateSignature({
+                maildomainPk: domain.id,
+                id: signature.id,
+                data: { is_active: !signature.is_active },
+            });
             invalidateMessageTemplates();
+            addUpdateSucceededToast();
+        } catch {
             addToast(
-                <ToasterItem type="info">
-                    <span>{t("Signature deleted!")}</span>
+                <ToasterItem type="error">
+                    <span>{t("Failed to update signature.")}</span>
                 </ToasterItem>,
             );
         }
     }
-    const toggleActive = async (signature: MessageTemplate) => {
-        await updateSignature({
-            maildomainPk: domain.id,
-            id: signature.id,
-            data: { is_active: !signature.is_active },
-        });
-        invalidateMessageTemplates();
-        addUpdateSucceededToast();
+    const toggleForced = async (signature: MessageTemplate) => {
+        try {
+            await updateSignature({
+                maildomainPk: domain.id,
+                id: signature.id,
+                data: { is_forced: !signature.is_forced, is_active: true },
+            });
+            invalidateMessageTemplates();
+            addUpdateSucceededToast();
+        } catch {
+            addToast(
+                <ToasterItem type="error">
+                    <span>{t("Failed to update signature.")}</span>
+                </ToasterItem>,
+            );
+        }
     }
     const toggleDefault = async (signature: MessageTemplate) => {
-        await updateSignature({
-            maildomainPk: domain.id,
-            id: signature.id,
-            data: { is_forced: !signature.is_forced },
-        });
-        invalidateMessageTemplates();
-        addUpdateSucceededToast();
+        try {
+            await updateSignature({
+                maildomainPk: domain.id,
+                id: signature.id,
+                data: { is_default: !signature.is_default, is_active: true },
+            });
+            invalidateMessageTemplates();
+            addUpdateSucceededToast();
+        } catch {
+            addToast(
+                <ToasterItem type="error">
+                    <span>{t("Failed to update signature.")}</span>
+                </ToasterItem>,
+            );
+        }
     }
     const columns: Column<MessageTemplate>[] = [
         {
@@ -95,15 +136,30 @@ export const SignatureDataGrid = ({ domain }: SignatureDataGridProps) => {
             ),
         },
         {
+            id: "is_default",
+            headerName: t("Default"),
+            size: 75,
+            renderCell: ({ row }) => (
+                <div className="flex-row flex-justify-center">
+                    <Checkbox
+                        checked={row.is_default}
+                        onChange={() => toggleDefault(row)}
+                        disabled={isUpdating}
+                        aria-label={t("Default")}
+                    />
+                </div>
+            ),
+        },
+        {
             id: "is_forced",
             headerName: t("Forced"),
-            size: 100,
+            size: 75,
             renderCell: ({ row }) => (
                 <div className="flex-row flex-justify-center">
                     <Checkbox
                         checked={row.is_forced}
-                        onChange={() => toggleDefault(row)}
-                        disabled={!row.is_active || isUpdating}
+                        onChange={() => toggleForced(row)}
+                        disabled={isUpdating}
                         aria-label={t("Forced")}
                     />
                 </div>

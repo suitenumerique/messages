@@ -125,7 +125,7 @@ const ThreadMessageHeader = ({
                                     {message.created_at && (
                                         <p className="thread-message__date">
                                             {t('{{date}} at {{time}}', {
-                                                date: DateHelper.formatDate(message.created_at, i18n.resolvedLanguage),
+                                                date: DateHelper.formatDate(message.created_at, i18n.resolvedLanguage, false),
                                                 time: new Date(message.created_at).toLocaleString(i18n.resolvedLanguage, {
                                                     minute: '2-digit',
                                                     hour: '2-digit',

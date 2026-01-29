@@ -26,6 +26,8 @@ export interface MessageTemplate {
   is_active?: boolean;
   /** Set as forced template */
   is_forced?: boolean;
+  /** Set as default template (auto-loaded when composing a new message) */
+  is_default?: boolean;
   /** date and time at which a record was created */
   readonly created_at: string;
   /** date and time at which a record was last updated */

@@ -23,6 +23,7 @@ pytestmark = pytest.mark.django_db
     AI_MODEL=None,
     FEATURE_AI_SUMMARY=False,
     FEATURE_AI_AUTOLABELS=False,
+    FEATURE_MAILBOX_ADMIN_CHANNELS=[],
     DRIVE_CONFIG={"base_url": None, "app_name": "Drive"},
     MAX_OUTGOING_ATTACHMENT_SIZE=20971520,  # 20MB
     MAX_OUTGOING_BODY_SIZE=5242880,  # 5MB
@@ -48,6 +49,7 @@ def test_api_config(is_authenticated):
         "AI_ENABLED": False,
         "FEATURE_AI_SUMMARY": False,
         "FEATURE_AI_AUTOLABELS": False,
+        "FEATURE_MAILBOX_ADMIN_CHANNELS": [],
         "SCHEMA_CUSTOM_ATTRIBUTES_USER": {},
         "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN": {},
         "MAX_INCOMING_EMAIL_SIZE": 10485760,

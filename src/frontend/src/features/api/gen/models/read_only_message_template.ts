@@ -29,6 +29,8 @@ export interface ReadOnlyMessageTemplate {
   readonly is_active: boolean;
   /** Whether this template is forced; no other template of the same type can be used in the same scope */
   readonly is_forced: boolean;
+  /** Whether this template is the default; it will be automatically loaded when composing a new message */
+  readonly is_default: boolean;
   /** date and time at which a record was created */
   readonly created_at: string;
   /** date and time at which a record was last updated */

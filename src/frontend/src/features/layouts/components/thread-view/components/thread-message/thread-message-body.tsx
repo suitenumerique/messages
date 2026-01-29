@@ -219,7 +219,7 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
                 }
 
                 img {
-                    max-width: 100vw;
+                    max-width: 100%;
                 }
 
                 pre {
@@ -353,7 +353,7 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
 
     return (
         <>
-            {canDisplayExternalImages && hasExternalImagesRef.current && !displayExternalImages &&
+            {!isHidden && canDisplayExternalImages && hasExternalImagesRef.current && !displayExternalImages &&
                 <Banner
                     type="neutral"
                     icon={<Icon name="security" />}

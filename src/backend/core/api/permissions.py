@@ -150,15 +150,14 @@ class IsAllowedToAccess(IsAuthenticated):
             if view.action in ["destroy", "send"]:
                 # filter only mailboxes with editor role on thread
                 # and check if user has enough role on those mailboxes to destroy or send the message
-                minimal_user_role = (
-                    enums.MailboxRoleChoices.EDITOR
-                    if view.action == "destroy"
-                    else enums.MailboxRoleChoices.SENDER
-                )
+                if view.action == "destroy":
+                    role_list = enums.MAILBOX_ROLES_CAN_EDIT
+                else:
+                    role_list = enums.MAILBOX_ROLES_CAN_SEND
                 return thread.accesses.filter(
                     role=enums.ThreadAccessRoleChoices.EDITOR,
                     mailbox__accesses__user=user,
-                    mailbox__accesses__role__gte=minimal_user_role,
+                    mailbox__accesses__role__in=role_list,
                 ).exists()
             # for retrieve action has_access is already checked above
             return True
@@ -192,11 +191,7 @@ class IsAllowedToCreateMessage(IsAuthenticated):
         # Check if user has required role on the sender Mailbox
         has_edit_role = view.mailbox.accesses.filter(
             user=request.user,
-            role__in=[
-                enums.MailboxRoleChoices.EDITOR,
-                enums.MailboxRoleChoices.ADMIN,
-                enums.MailboxRoleChoices.SENDER,
-            ],
+            role__in=enums.MAILBOX_ROLES_CAN_EDIT,
         ).exists()
 
         # if user does not have edit role with this sender mailbox, return False
@@ -262,11 +257,7 @@ class IsAllowedToManageThreadAccess(IsAuthenticated):
                 .filter(
                     thread_id=thread_id,
                     mailbox__accesses__user=request.user,
-                    mailbox__accesses__role__in=[
-                        enums.MailboxRoleChoices.ADMIN,
-                        enums.MailboxRoleChoices.EDITOR,
-                        enums.MailboxRoleChoices.SENDER,
-                    ],
+                    mailbox__accesses__role__in=enums.MAILBOX_ROLES_CAN_EDIT,
                     role=enums.ThreadAccessRoleChoices.EDITOR,
                 )
                 .exists()
@@ -278,11 +269,7 @@ class IsAllowedToManageThreadAccess(IsAuthenticated):
                 .filter(
                     thread_id=thread_id,
                     mailbox__accesses__user=request.user,
-                    mailbox__accesses__role__in=[
-                        enums.MailboxRoleChoices.ADMIN,
-                        enums.MailboxRoleChoices.EDITOR,
-                        enums.MailboxRoleChoices.SENDER,
-                    ],
+                    mailbox__accesses__role__in=enums.MAILBOX_ROLES_CAN_EDIT,
                     role=enums.ThreadAccessRoleChoices.EDITOR,
                 )
                 .exists()
@@ -303,11 +290,7 @@ class IsAllowedToManageThreadAccess(IsAuthenticated):
             .filter(
                 thread=obj.thread,
                 mailbox__accesses__user=request.user,
-                mailbox__accesses__role__in=[
-                    enums.MailboxRoleChoices.ADMIN,
-                    enums.MailboxRoleChoices.EDITOR,
-                    enums.MailboxRoleChoices.SENDER,
-                ],
+                mailbox__accesses__role__in=enums.MAILBOX_ROLES_CAN_EDIT,
                 role=enums.ThreadAccessRoleChoices.EDITOR,
             )
             .exists()

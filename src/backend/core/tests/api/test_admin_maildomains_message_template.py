@@ -739,6 +739,48 @@ class TestAdminMailDomainMessageTemplateUpdate:
         assert signature.is_forced is False
         assert signature.is_active is False
 
+    def test_default_template_becomes_inactive(
+        self, user, maildomain, admin_detail_url
+    ):
+        """Test that when a default template is updated to be inactive, it should also become non-default."""
+        factories.MailDomainAccessFactory(
+            maildomain=maildomain,
+            user=user,
+            role=models.MailDomainAccessRoleChoices.ADMIN,
+        )
+
+        # Create a default signature template
+        signature = factories.MessageTemplateFactory(
+            name="Default Signature Template",
+            html_body="<p>Default signature content</p>",
+            text_body="Default signature content",
+            type=enums.MessageTemplateTypeChoices.SIGNATURE,
+            maildomain=maildomain,
+            is_default=True,
+            is_active=True,
+        )
+
+        assert signature.is_default is True
+        assert signature.is_active is True
+
+        # Update template to be inactive
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        data = {"is_active": False}
+
+        response = client.patch(
+            admin_detail_url(signature.id),
+            data,
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        # Verify that template is no longer default and is inactive
+        signature.refresh_from_db()
+        assert signature.is_default is False
+        assert signature.is_active is False
+
     def test_is_forced_maildomain(self, user, maildomain, admin_detail_url):
         """Test that updating a template to forced sets others to not forced for the same maildomain and type."""
         factories.MailDomainAccessFactory(
@@ -789,6 +831,57 @@ class TestAdminMailDomainMessageTemplateUpdate:
 
         assert signature1.is_forced is False
         assert signature2.is_forced is True
+
+    def test_is_default_maildomain(self, user, maildomain, admin_detail_url):
+        """Test that updating a template to default sets others to not default for the same maildomain and type."""
+        factories.MailDomainAccessFactory(
+            maildomain=maildomain,
+            user=user,
+            role=models.MailDomainAccessRoleChoices.ADMIN,
+        )
+
+        # Create signature template as default
+        signature1 = factories.MessageTemplateFactory(
+            name="Default Signature Template",
+            html_body="<p>Default signature content</p>",
+            text_body="Default signature content",
+            type=enums.MessageTemplateTypeChoices.SIGNATURE,
+            maildomain=maildomain,
+            is_default=True,
+        )
+
+        # Create second signature template as not default
+        signature2 = factories.MessageTemplateFactory(
+            name="Second Signature Template",
+            html_body="<p>Second signature content</p>",
+            text_body="Second signature content",
+            type=enums.MessageTemplateTypeChoices.SIGNATURE,
+            maildomain=maildomain,
+            is_default=False,
+        )
+
+        assert signature1.is_default is True
+        assert signature2.is_default is False
+
+        # Update second template to be default
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        data = {"is_default": True}
+
+        response = client.patch(
+            admin_detail_url(signature2.id),
+            data,
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        # Verify that first template is no longer default
+        signature1.refresh_from_db()
+        signature2.refresh_from_db()
+
+        assert signature1.is_default is False
+        assert signature2.is_default is True
 
 
 class TestAdminMailDomainMessageTemplateDelete:

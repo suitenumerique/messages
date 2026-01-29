@@ -585,3 +585,54 @@ class TestMailboxMessageTemplatePartialUpdate:
         # Verify other fields unchanged
         mailbox_template.refresh_from_db()
         assert mailbox_template.name == "Patched Name"
+
+    def test_is_default_mailbox(self, user, mailbox, detail_url):
+        """Test that updating a template to default sets others to not default for the same mailbox and type."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+
+        # Create signature template as default
+        signature1 = factories.MessageTemplateFactory(
+            name="Default Signature Template",
+            html_body="<p>Default signature content</p>",
+            text_body="Default signature content",
+            type=enums.MessageTemplateTypeChoices.SIGNATURE,
+            mailbox=mailbox,
+            is_default=True,
+        )
+
+        # Create second signature template as not default
+        signature2 = factories.MessageTemplateFactory(
+            name="Second Signature Template",
+            html_body="<p>Second signature content</p>",
+            text_body="Second signature content",
+            type=enums.MessageTemplateTypeChoices.SIGNATURE,
+            mailbox=mailbox,
+            is_default=False,
+        )
+
+        assert signature1.is_default is True
+        assert signature2.is_default is False
+
+        # Update second template to be default
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        data = {"is_default": True}
+
+        response = client.patch(
+            detail_url(signature2.id),
+            data,
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        # Verify that first template is no longer default
+        signature1.refresh_from_db()
+        signature2.refresh_from_db()
+
+        assert signature1.is_default is False
+        assert signature2.is_default is True

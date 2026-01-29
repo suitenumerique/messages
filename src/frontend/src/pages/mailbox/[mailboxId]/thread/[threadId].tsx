@@ -11,11 +11,11 @@ const Mailbox = () => {
 
     return (
         <Group defaultLayout={defaultLayout} onLayoutChange={onLayoutChange} orientation="horizontal" className="threads__container">
-            <Panel id="panel-thread-list" className="thread-list-panel" defaultSize="35%" minSize="20%">
+            <Panel id="panel-thread-list" className="thread-list-panel" defaultSize="30%" minSize="250px" maxSize="50%">
                 <ThreadPanel />
             </Panel>
             <Separator className="panel__resize-handle" />
-            <Panel id="panel-thread-view" className="thread-view-panel" defaultSize="65%" minSize="50%">
+            <Panel id="panel-thread-view" className="thread-view-panel">
                 <ThreadView />
             </Panel>
         </Group>

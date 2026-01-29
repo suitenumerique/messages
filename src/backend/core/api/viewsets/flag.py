@@ -10,10 +10,9 @@ from drf_spectacular.utils import (
     inline_serializer,
 )
 from rest_framework import serializers as drf_serializers
-from rest_framework import status
 from rest_framework.views import APIView
 
-from core import models
+from core import enums, models
 
 from .. import permissions
 
@@ -158,21 +157,11 @@ class ChangeFlagView(APIView):
         current_time = timezone.now()
         updated_threads = set()  # Keep track of threads whose stats need updating
 
-        # Get IDs of threads the user has access to
+        # Get IDs of threads the user has EDITOR access to (kept as QuerySet for subquery)
         accessible_thread_ids_qs = models.ThreadAccess.objects.filter(
-            mailbox__accesses__user=request.user
+            mailbox__accesses__user=request.user,
+            role__in=enums.THREAD_ROLES_CAN_EDIT,
         ).values_list("thread_id", flat=True)
-        accessible_thread_ids = set(accessible_thread_ids_qs)
-        if not accessible_thread_ids:
-            # User has no access to any threads, so cannot modify anything
-            return drf.response.Response(
-                {
-                    "success": True,
-                    "updated_threads": 0,
-                    "detail": "No accessible items found.",
-                },
-                status=status.HTTP_200_OK,  # Or 403 if preferred
-            )
 
         with transaction.atomic():
             # --- Process direct message IDs ---
@@ -182,7 +171,7 @@ class ChangeFlagView(APIView):
                     "thread"
                 ).filter(
                     id__in=message_ids,
-                    thread_id__in=accessible_thread_ids,  # Check access via thread
+                    thread_id__in=accessible_thread_ids_qs,  # Check access via subquery
                 )
 
                 if messages_to_update.exists():
@@ -215,9 +204,9 @@ class ChangeFlagView(APIView):
             if thread_ids:
                 # Filter threads by ID AND ensure they are accessible
                 threads_to_process = models.Thread.objects.filter(
-                    id__in=thread_ids
+                    id__in=thread_ids,
                 ).filter(
-                    id__in=accessible_thread_ids  # Redundant but safe check
+                    id__in=accessible_thread_ids_qs,  # Check access via subquery
                 )
 
                 if threads_to_process.exists():

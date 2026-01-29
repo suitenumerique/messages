@@ -9,8 +9,8 @@ import { Panel, Group, Separator, useDefaultLayout } from "react-resizable-panel
 const Mailbox = () => {
     const { t } = useTranslation();
     const { threads } = useMailboxContext();
-    const { isDesktop } = useResponsive();
-    const showSelectThreadPlaceholder = (isDesktop && (threads?.results?.length ?? 0) > 0);
+    const { isMobile } = useResponsive();
+    const showSelectThreadPlaceholder = (!isMobile && (threads?.results?.length ?? 0) > 0);
     const { defaultLayout, onLayoutChange } = useDefaultLayout({
         groupId: showSelectThreadPlaceholder ? "threads" : "threads-single",
         storage: localStorage,
@@ -18,13 +18,13 @@ const Mailbox = () => {
 
     return (
         <Group defaultLayout={defaultLayout} onLayoutChange={onLayoutChange} orientation="horizontal" className="threads__container">
-            <Panel id={showSelectThreadPlaceholder ? "panel-thread-list" : "panel-thread-list-single"} className="thread-list-panel" defaultSize="35%" minSize="20%">
+            <Panel id={showSelectThreadPlaceholder ? "panel-thread-list" : "panel-thread-list-single"} className="thread-list-panel" defaultSize="35%" minSize="20%" maxSize="50%">
                 <ThreadPanel />
             </Panel>
             {showSelectThreadPlaceholder && (
                 <>
                     <Separator className="panel__resize-handle" />
-                    <Panel id="panel-thread-view" className="thread-view-panel" defaultSize="65%" minSize="50%">
+                    <Panel id="panel-thread-view" className="thread-view-panel">
                         <div className="thread-view thread-view--empty">
                             <div>
                                 <Image src="/images/svg/read-mail.svg" alt="" width={60} height={60} />

@@ -14,7 +14,7 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
-from core import models
+from core import enums, models
 from core.api import permissions, utils
 
 # Define logger
@@ -99,11 +99,7 @@ class BlobViewSet(ViewSet):
             if not models.MailboxAccess.objects.filter(
                 mailbox=mailbox,
                 user=request.user,
-                role__in=[
-                    models.MailboxRoleChoices.EDITOR,
-                    models.MailboxRoleChoices.ADMIN,
-                    models.MailboxRoleChoices.SENDER,
-                ],
+                role__in=enums.MAILBOX_ROLES_CAN_EDIT,
             ).exists():
                 return Response(
                     {"error": "You do not have permission to upload to this mailbox"},

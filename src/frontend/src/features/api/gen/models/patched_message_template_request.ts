@@ -28,4 +28,6 @@ export interface PatchedMessageTemplateRequest {
   is_active?: boolean;
   /** Set as forced template */
   is_forced?: boolean;
+  /** Set as default template (auto-loaded when composing a new message) */
+  is_default?: boolean;
 }

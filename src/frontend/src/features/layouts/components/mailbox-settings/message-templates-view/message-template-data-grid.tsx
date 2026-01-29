@@ -119,22 +119,24 @@ export const MessageTemplateDataGrid = ({ mailbox }: MessageTemplateDataGridProp
     }
 
     return (
-        <div className="admin-data-grid">
-            <DataGrid
-                columns={columns}
-                rows={templates?.data ?? []}
-                onSortModelChange={() => undefined}
-                enableSorting={false}
-                emptyPlaceholderLabel={t("No template found")}
-            />
-            <ModalComposeTemplate
-                isOpen={modal.isOpen}
-                onClose={() => {
-                    modal.close();
-                    setSelectedTemplate(undefined);
-                }}
-                template={selectedTemplate}
-            />
-        </div>
+        <section className="admin-page__body">
+            <div className="admin-data-grid">
+                <DataGrid
+                    columns={columns}
+                    rows={templates?.data ?? []}
+                    onSortModelChange={() => undefined}
+                    enableSorting={false}
+                    emptyPlaceholderLabel={t("No template found")}
+                />
+                <ModalComposeTemplate
+                    isOpen={modal.isOpen}
+                    onClose={() => {
+                        modal.close();
+                        setSelectedTemplate(undefined);
+                    }}
+                    template={selectedTemplate}
+                />
+            </div>
+        </section>
     );
 };

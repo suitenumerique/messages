@@ -5,6 +5,7 @@ import codecs
 import imaplib
 import re
 import socket
+import ssl
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -16,6 +17,21 @@ from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import parse_email_message
 
 logger = get_task_logger(__name__)
+
+
+class IMAPSecurityError(RuntimeError):
+    """
+    Raised when an IMAP connection violates required security constraints.
+
+    This exception is raised when:
+    - Encrypted connection is required but cannot be established
+    - STARTTLS is required but not supported by the server
+    - STARTTLS negotiation fails
+    - Any security downgrade is detected or attempted
+
+    Failing fast and explicitly prevents credentials leakage
+    and protects against STARTTLS stripping attacks.
+    """
 
 
 def decode_imap_utf7(s):
@@ -53,27 +69,76 @@ class IMAPConnectionManager:
         self.connection = None
 
     def __enter__(self):
+        # Port 143 typically uses STARTTLS, port 993 uses SSL direct
+        # If use_ssl=True and port is 143, use STARTTLS instead of SSL direct
+        use_starttls = self.use_ssl and self.port == 143
+        success = False
+
         try:
-            if self.use_ssl:
-                self.connection = imaplib.IMAP4_SSL(
-                    self.server, self.port, timeout=settings.IMAP_TIMEOUT
-                )
+            if self.use_ssl and not use_starttls:
+                # SSL direct (typically port 993)
+                try:
+                    self.connection = imaplib.IMAP4_SSL(
+                        self.server, self.port, timeout=settings.IMAP_TIMEOUT
+                    )
+                except ssl.SSLError as e:
+                    # SSL handshake failed - likely wrong port or server doesn't support SSL
+                    error_msg = (
+                        f"SSL handshake failed for {self.server}:{self.port}: {e}. "
+                        f"If using port {self.port}, the server may not support SSL direct. "
+                        "Try port 143 with STARTTLS instead."
+                    )
+                    logger.error(error_msg)
+                    raise IMAPSecurityError(error_msg) from e
             else:
+                # Non-encrypted connection initially (will upgrade to TLS if use_ssl=True)
                 self.connection = imaplib.IMAP4(
                     self.server, self.port, timeout=settings.IMAP_TIMEOUT
                 )
+
+                if use_starttls:
+                    # use_ssl=True on port 143: must upgrade to TLS via STARTTLS
+                    # Check if server supports STARTTLS
+                    typ, data = self.connection.capability()
+                    capabilities = data[0].decode().upper() if data and data[0] else ""
+                    if typ != "OK" or "STARTTLS" not in capabilities:
+                        error_msg = (
+                            f"Server {self.server}:{self.port} does not support STARTTLS. "
+                            "Encrypted connection required."
+                        )
+                        logger.error(error_msg)
+                        raise IMAPSecurityError(error_msg)
+
+                    # Attempt STARTTLS
+                    status, response = self.connection.starttls()
+                    if status != "OK":
+                        error_msg = (
+                            f"STARTTLS failed for {self.server}:{self.port}: {response}. "
+                            "Encrypted connection required."
+                        )
+                        logger.error(error_msg)
+                        raise IMAPSecurityError(error_msg)
+                # else: use_ssl=False, connection remains unencrypted (explicit user choice)
 
             # Set UTF-8 encoding for the IMAP connection
             self.connection._encoding = "utf-8"  # noqa: SLF001
 
             # Login
             self.connection.login(self.username, self.password)
+
+            success = True
             return self.connection
         except Exception as e:
             logger.error(
                 "Failed to connect to IMAP server %s:%d: %s", self.server, self.port, e
             )
             raise
+        finally:
+            if not success and self.connection:
+                try:
+                    self.connection.logout()
+                except Exception as logout_err:
+                    logger.debug("Error during cleanup logout: %s", logout_err)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.connection:

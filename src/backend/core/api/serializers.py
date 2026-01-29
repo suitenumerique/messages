@@ -3,7 +3,9 @@
 # pylint: disable=too-many-lines
 
 import json
+import uuid
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q
 from django.utils.translation import gettext_lazy as _
@@ -334,6 +336,7 @@ class ReadOnlyMessageTemplateSerializer(serializers.ModelSerializer):
             "type",
             "is_active",
             "is_forced",
+            "is_default",
             "created_at",
             "updated_at",
         ]
@@ -480,11 +483,7 @@ class LabelSerializer(serializers.ModelSerializer):
         user = self.context["request"].user
         if not value.accesses.filter(
             user=user,
-            role__in=[
-                models.MailboxRoleChoices.ADMIN,
-                models.MailboxRoleChoices.EDITOR,
-                models.MailboxRoleChoices.SENDER,
-            ],
+            role__in=enums.MAILBOX_ROLES_CAN_EDIT,
         ).exists():
             raise PermissionDenied("You don't have access to this mailbox")
         return value
@@ -1322,8 +1321,12 @@ class ImportIMAPSerializer(ImportBaseSerializer):
     )
 
 
-class ChannelSerializer(AbilitiesModelSerializer):
+class ChannelSerializer(serializers.ModelSerializer):
     """Serialize Channel model."""
+
+    # Explicitly mark nullable fields to fix OpenAPI schema
+    mailbox = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
+    maildomain = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
 
     class Meta:
         model = models.Channel
@@ -1337,10 +1340,77 @@ class ChannelSerializer(AbilitiesModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "mailbox", "maildomain", "created_at", "updated_at"]
+
+    def validate_settings(self, value):
+        """Validate settings, including tags if present."""
+        if not value:
+            return value
+
+        tags = value.get("tags", [])
+        if not tags:
+            return value
+
+        # Get mailbox from context or instance
+        mailbox = self.context.get("mailbox")
+        if not mailbox and self.instance:
+            mailbox = self.instance.mailbox
+
+        if not mailbox:
+            # Tags require a mailbox - can't use tags without one
+            raise serializers.ValidationError(
+                {"tags": "Tags can only be used when a mailbox is configured."}
+            )
+
+        # Validate each tag
+        invalid_tags = []
+        missing_tags = []
+
+        for tag_id in tags:
+            # Validate UUID format
+            try:
+                tag_uuid = uuid.UUID(str(tag_id))
+            except (ValueError, TypeError):
+                invalid_tags.append(tag_id)
+                continue
+
+            # Check if label exists in the mailbox
+            if not models.Label.objects.filter(id=tag_uuid, mailbox=mailbox).exists():
+                missing_tags.append(tag_id)
+
+        errors = []
+        if invalid_tags:
+            errors.append(f"Invalid tag IDs (not valid UUIDs): {invalid_tags}")
+        if missing_tags:
+            errors.append(f"Tags not found in mailbox: {missing_tags}")
+
+        if errors:
+            raise serializers.ValidationError({"tags": errors})
+
+        return value
 
     def validate(self, attrs):
-        """Validate channel data."""
+        """Validate channel data.
+
+        When used in the nested mailbox context (via ChannelViewSet),
+        the mailbox is set from context and doesn't need to be validated here.
+        """
+        # If we have a mailbox in context (from ChannelViewSet), validate channel type
+        # and skip mailbox/maildomain validation.
+        # This allows Django admin to create any channel type.
+        if self.context.get("mailbox"):
+            channel_type = attrs.get("type")
+            if channel_type:
+                allowed_types = settings.FEATURE_MAILBOX_ADMIN_CHANNELS
+                if channel_type not in allowed_types:
+                    raise serializers.ValidationError(
+                        {
+                            "type": f"Channel type '{channel_type}' is not authorized. "
+                            f"Allowed types: {', '.join(allowed_types)}"
+                        }
+                    )
+            return attrs
+
         mailbox = attrs.get("mailbox")
         maildomain = attrs.get("maildomain")
 
@@ -1366,6 +1436,11 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
     is_forced = serializers.BooleanField(
         required=False, default=False, help_text="Set as forced template"
     )
+    is_default = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Set as default template (auto-loaded when composing a new message)",
+    )
     html_body = serializers.CharField(required=False)
     text_body = serializers.CharField(required=False)
     raw_body = serializers.CharField(required=False)
@@ -1381,6 +1456,7 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
             "type",
             "is_active",
             "is_forced",
+            "is_default",
             "created_at",
             "updated_at",
         ]

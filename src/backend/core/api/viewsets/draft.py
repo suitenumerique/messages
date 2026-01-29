@@ -222,6 +222,7 @@ class DraftMessageView(APIView):
             bcc_emails=request.data.get("bcc", []),
             attachments=request.data.get("attachments", []),
             signature_id=request.data.get("signatureId"),
+            user=request.user,
         )
 
         # Refresh to get latest data
@@ -268,7 +269,9 @@ class DraftMessageView(APIView):
             ) from exc
 
         # Update draft using the new function
-        updated_message = update_draft(sender_mailbox, message, request.data)
+        updated_message = update_draft(
+            sender_mailbox, message, request.data, user=request.user
+        )
 
         # Update thread stats
         updated_message.thread.update_stats()

@@ -3,7 +3,7 @@ import React, { useMemo } from "react";
 import { useBlockNoteEditor, useComponentsContext } from "@blocknote/react";
 import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { PlaceholdersRetrieve200 } from "@/features/api/gen";
-import { SignatureComposerBlockSchema, SignatureComposerInlineContentSchema, SignatureComposerStyleSchema } from "@/features/layouts/components/admin/modal-compose-signature/signature-composer";
+import { SignatureComposerBlockSchema, SignatureComposerInlineContentSchema, SignatureComposerStyleSchema } from "@/features/signatures/components/signature-composer";
 import { useTranslation } from "react-i18next";
 
 type TemplateVariableSelectorProps = {

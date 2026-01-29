@@ -3,9 +3,15 @@ import { expect, Page } from "@playwright/test";
 import { AUTHENTICATION_URL } from "./constants";
 import { getStorageStatePath } from "./utils";
 
-export const signInKeycloakIfNeeded = async ({ page, username }: { page: Page, username: string }) => {
-    // Await that GET request /api/v1.0/users/me is completed.
-    const meResponse = await page.waitForResponse((response) => response.url().includes('/api/v1.0/users/me/') && [200, 401].includes(response.status()));
+export const signInKeycloakIfNeeded = async ({ page, username, navigateTo = "/" }: { page: Page, username: string, navigateTo?: string }) => {
+    // Set up response listener BEFORE navigation to avoid race condition
+    const meResponsePromise = page.waitForResponse((response) => response.url().includes('/api/v1.0/users/me/') && [200, 401].includes(response.status()));
+
+    // Navigate to the page
+    await page.goto(navigateTo);
+
+    // Now await the response
+    const meResponse = await meResponsePromise;
     const isAuthenticated = meResponse.status() === 200;
 
     if (isAuthenticated) return;

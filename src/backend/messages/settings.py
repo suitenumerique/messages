@@ -69,7 +69,7 @@ class Base(Configuration):
     API_VERSION = "v1.0"
 
     # Admin URL configuration
-    ADMIN_URL = values.Value("admin/")
+    ADMIN_URL = values.Value("admin")
 
     # OpenSearch configuration
     OPENSEARCH_HOSTS = values.ListValue(
@@ -502,7 +502,6 @@ class Base(Configuration):
         "django_celery_results",
         "django_filters",
         "rest_framework",
-        "parler",
         # Django
         "django.contrib.admin",
         "django.contrib.auth",
@@ -593,6 +592,22 @@ class Base(Configuration):
     CELERY_RESULT_EXTENDED = True
     CELERY_TASK_RESULT_EXPIRES = 60 * 60 * 24 * 30  # 30 days
     CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+    # Default queue for tasks without explicit routing
+    CELERY_TASK_DEFAULT_QUEUE = "default"
+
+    # Queue routing - tasks are routed to specific queues based on their type
+    # Priority order: management > inbound > outbound > default > imports > reindex
+    CELERY_TASK_ROUTES = {
+        # Inbound email processing - highest priority, time-sensitive
+        "core.mda.inbound_tasks.*": {"queue": "inbound"},
+        # Outbound email sending - high priority
+        "core.mda.outbound_tasks.*": {"queue": "outbound"},
+        # Import tasks - lower priority than regular tasks
+        "core.services.importer.tasks.*": {"queue": "imports"},
+        # Search indexing - lowest priority, can be delayed
+        "core.services.search.tasks.*": {"queue": "reindex"},
+    }
 
     DISABLE_CELERY_BEAT_SCHEDULE = values.BooleanValue(
         default=False, environ_name="DISABLE_CELERY_BEAT_SCHEDULE", environ_prefix=None
@@ -751,10 +766,13 @@ class Base(Configuration):
         default=False, environ_name="FEATURE_AI_AUTOLABELS", environ_prefix=None
     )
     FEATURE_MESSAGE_TEMPLATES = values.BooleanValue(
-        default=False, environ_name="FEATURE_MESSAGE_TEMPLATES", environ_prefix=None
+        default=True, environ_name="FEATURE_MESSAGE_TEMPLATES", environ_prefix=None
     )
     FEATURE_IMPORT_MESSAGES = values.BooleanValue(
         default=True, environ_name="FEATURE_IMPORT_MESSAGES", environ_prefix=None
+    )
+    FEATURE_MAILBOX_ADMIN_CHANNELS = values.ListValue(
+        default=[], environ_name="FEATURE_MAILBOX_ADMIN_CHANNELS", environ_prefix=None
     )
 
     # Logging
@@ -1029,6 +1047,42 @@ class E2E(Development):
 
     # Trust X-Forwarded-* headers from nginx proxy
     USE_X_FORWARDED_HOST = True
+
+    # Use Redis for caching (required for task owner tracking)
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": values.Value(
+                "redis://redis:6379",
+                environ_name="REDIS_URL",
+                environ_prefix=None,
+            ),
+            "TIMEOUT": values.IntegerValue(
+                300,  # 5 minutes
+                environ_name="CACHES_DEFAULT_TIMEOUT",
+                environ_prefix=None,
+            ),
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            },
+        },
+        "session": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": values.Value(
+                "redis://redis:6379",
+                environ_name="REDIS_URL",
+                environ_prefix=None,
+            ),
+            "TIMEOUT": values.IntegerValue(
+                300,
+                environ_name="CACHES_DEFAULT_TIMEOUT",
+                environ_prefix=None,
+            ),
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            },
+        },
+    }
 
 
 class DevelopmentMinimal(Development):

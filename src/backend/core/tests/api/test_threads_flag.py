@@ -50,7 +50,7 @@ def test_api_flag_thread_no_permission(api_client):
     data = {"flag": "trashed", "value": True, "thread_ids": [str(thread.id)]}
     response = api_client.post(FLAG_API_URL, data=data, format="json")
 
-    # Should succeed but update nothing
+    # User without edit access: returns 200 but no threads updated
     assert response.status_code == status.HTTP_200_OK
     assert response.data["updated_threads"] == 0
 
@@ -67,13 +67,54 @@ def test_api_flag_non_existent_thread(api_client):
     """Test trashing a thread that does not exist."""
     user = factories.UserFactory()
     api_client.force_authenticate(user=user)
-    non_existent_uuid = "123e4567-e89b-12d3-a456-426614174000"
+    # User has EDITOR access to some thread (passes permission check)
+    mailbox = factories.MailboxFactory(users_read=[user])
+    thread = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=thread,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
 
+    non_existent_uuid = "123e4567-e89b-12d3-a456-426614174000"
     data = {"flag": "trashed", "value": True, "thread_ids": [non_existent_uuid]}
     response = api_client.post(FLAG_API_URL, data=data, format="json")
 
     assert response.status_code == status.HTTP_200_OK
     assert response.data["updated_threads"] == 0
+
+
+def test_api_flag_thread_viewer_should_not_update(api_client):
+    """Test that a user with only VIEWER role cannot modify flags, but EDITOR can."""
+    user = factories.UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = factories.MailboxFactory(users_read=[user])  # VIEWER mailbox role
+    thread = factories.ThreadFactory()
+    thread_access = factories.ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=thread,
+        role=enums.ThreadAccessRoleChoices.VIEWER,  # VIEWER thread role
+    )
+    factories.MessageFactory(thread=thread, is_trashed=False)
+
+    data = {"flag": "trashed", "value": True, "thread_ids": [str(thread.id)]}
+    response = api_client.post(FLAG_API_URL, data=data, format="json")
+
+    # A VIEWER should not be able to modify flags - returns 200 but no updates
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 0
+    thread.refresh_from_db()
+    assert thread.has_trashed is False
+    assert thread.messages.first().is_trashed is False
+
+    # Elevate to EDITOR and verify flag change succeeds
+    thread_access.role = enums.ThreadAccessRoleChoices.EDITOR
+    thread_access.save()
+    response = api_client.post(FLAG_API_URL, data=data, format="json")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["updated_threads"] == 1
+    thread.refresh_from_db()
+    assert thread.has_trashed is True
 
 
 # --- Tests for Trashed Flag ---

@@ -13,10 +13,10 @@ services:
       service: redis
     ports: !reset []
 
-  celery:
+  worker:
     extends:
       file: ../../compose.yaml
-      service: celery-dev
+      service: worker-dev
     environment:
       - DJANGO_CONFIGURATION=E2E
     env_file:
@@ -171,7 +171,7 @@ services:
         condition: service_started
       mta-in:
         condition: service_started
-      celery:
+      worker:
         condition: service_started
     command: npm run test
     ports:

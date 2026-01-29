@@ -111,6 +111,21 @@ class ThreadViewSet(
         queryset = queryset.order_by("-messaged_at", "-created_at")
         return queryset
 
+    def destroy(self, request, *args, **kwargs):
+        """Delete a thread, requiring EDITOR role on the thread."""
+        thread = self.get_object()
+        has_edit_access = models.ThreadAccess.objects.filter(
+            thread=thread,
+            mailbox__accesses__user=request.user,
+            role__in=enums.THREAD_ROLES_CAN_EDIT,
+        ).exists()
+        if not has_edit_access:
+            raise drf.exceptions.PermissionDenied(
+                "You do not have permission to delete this thread."
+            )
+        thread.delete()
+        return drf.response.Response(status=status.HTTP_204_NO_CONTENT)
+
     @extend_schema(
         tags=["threads"],
         parameters=[

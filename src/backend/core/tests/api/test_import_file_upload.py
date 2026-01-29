@@ -11,6 +11,7 @@ from rest_framework.test import APIClient
 
 from core import enums, factories
 from core.api.utils import get_file_key
+from core.api.viewsets.task import register_task_owner
 
 pytestmark = pytest.mark.django_db
 
@@ -27,6 +28,93 @@ def api_client(user):
     client = APIClient()
     client.force_authenticate(user=user)
     return client
+
+
+class TestTaskDetailViewPermissions:
+    """Test that TaskDetailView enforces ownership checks."""
+
+    def test_api_task_detail_unknown_task_should_be_forbidden(self):
+        """Test that accessing an unknown task (not in cache) returns 403."""
+        user = factories.UserFactory()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        # Try to access a task that was never registered
+        url = reverse("task-detail", kwargs={"task_id": "unknown-task-id"})
+        response = client.get(url)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "not found or access expired" in response.data["detail"].lower()
+
+    def test_api_task_detail_other_user_should_be_forbidden(self):
+        """Test that a user cannot access another user's task, but the owner can."""
+
+        user1 = factories.UserFactory()
+        user2 = factories.UserFactory()
+
+        task_id = "test-task-id-12345"
+        register_task_owner(task_id, user1.id)
+        url = reverse("task-detail", kwargs={"task_id": task_id})
+
+        with mock.patch("core.api.viewsets.task.AsyncResult") as mock_async_result:
+            mock_result = mock.MagicMock()
+            mock_result.status = "SUCCESS"
+            mock_result.state = "SUCCESS"
+            mock_result.result = {
+                "status": "SUCCESS",
+                "result": {"imported": 42, "mailbox_id": "sensitive-data"},
+                "error": None,
+            }
+            mock_result.info = None
+            mock_async_result.return_value = mock_result
+
+            # User2 tries to access user1's task - should be denied
+            client2 = APIClient()
+            client2.force_authenticate(user=user2)
+            response = client2.get(url)
+            assert response.status_code == status.HTTP_403_FORBIDDEN
+
+            # User1 (owner) accesses their own task - should succeed
+            client1 = APIClient()
+            client1.force_authenticate(user=user1)
+            response = client1.get(url)
+            assert response.status_code == status.HTTP_200_OK
+            assert response.data["result"]["imported"] == 42
+
+
+class TestImportViewSetPermissions:
+    """Test that ImportViewSet enforces proper role checks."""
+
+    def test_api_import_file_viewer_should_be_forbidden(self, user):
+        """Test that a user with only VIEWER access cannot import, but EDITOR can."""
+        client = APIClient()
+        client.force_authenticate(user=user)
+        mailbox = factories.MailboxFactory()
+        # Give user only VIEWER access
+        access = factories.MailboxAccessFactory(
+            user=user, mailbox=mailbox, role=enums.MailboxRoleChoices.VIEWER
+        )
+
+        url = reverse("import-file")
+        data = {"recipient": str(mailbox.id), "filename": "test.eml"}
+
+        with mock.patch("core.services.importer.service.storages") as mock_storages:
+            mock_storage = mock.MagicMock()
+            mock_storage.exists.return_value = True
+            mock_storage.connection.meta.client.head_object.return_value = {
+                "ContentType": "message/rfc822"
+            }
+            mock_storages.__getitem__.return_value = mock_storage
+
+            response = client.post(url, data, format="json")
+
+            # A VIEWER should not be allowed to import - expect 403
+            assert response.status_code == status.HTTP_403_FORBIDDEN
+
+            # Elevate to EDITOR and verify import is accepted
+            access.role = enums.MailboxRoleChoices.EDITOR
+            access.save()
+            response = client.post(url, data, format="json")
+            assert response.status_code == status.HTTP_202_ACCEPTED
 
 
 class TestMessagesArchiveUploadViewSet:

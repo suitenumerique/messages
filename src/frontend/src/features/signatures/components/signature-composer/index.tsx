@@ -33,7 +33,8 @@ type SignatureComposerProps = FieldProps & {
 }
 
 /**
- * The composer component for the signature content.
+ * Shared composer component for signature content.
+ * Used by both admin (maildomain) and mailbox signature modals.
  */
 export const SignatureComposer = ({ blockNoteOptions, defaultValue, disabled = false, ...props }: SignatureComposerProps) => {
     const { t, i18n } = useTranslation();
@@ -110,3 +111,4 @@ export const SignatureComposer = ({ blockNoteOptions, defaultValue, disabled = f
         </>
     )
 };
+

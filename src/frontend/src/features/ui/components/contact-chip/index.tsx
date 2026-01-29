@@ -23,13 +23,13 @@ type ContactChipProps = {
     isUser?: boolean;
 } & React.HTMLAttributes<HTMLDivElement>;
 
-export const ContactChip = ({ contact, status, displayEmail = false, isUser = false, ...props }: ContactChipProps) => {
+export const ContactChip = ({ contact, status, displayEmail = false, isUser = false, className, ...props }: ContactChipProps) => {
     const { t } = useTranslation();
     const popoverTriggerRef = useRef<HTMLButtonElement | null>(null);
     const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
     const chipContent = (
-        <div className={clsx("contact-chip", props.className)} {...props}>
+        <div className={clsx(["contact-chip", className])} {...props}>
             <button type="button" ref={popoverTriggerRef} className="contact-chip__content" onClick={() => setIsPopoverOpen(open => !open)}>
                 {status === 'unverified' && (
                     <Icon name="warning" type={IconType.OUTLINED} size={IconSize.SMALL} className="contact-chip__icon contact-chip__icon--warning" />

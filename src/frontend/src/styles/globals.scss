@@ -47,7 +47,7 @@ body {
     position: absolute;
     opacity: 0;
     transition: opacity 250ms var(--c--globals--transitions--ease-in-out);
-    z-index: 5;
+    z-index: 10;
   }
 
   // Little tricks to expand the area to catch hover

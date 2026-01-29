@@ -31,7 +31,7 @@ def heartbeat(request):
 
 
 urlpatterns = [
-    path(settings.ADMIN_URL, admin.site.urls),
+    path(f"{settings.ADMIN_URL}/", admin.site.urls),
     path("", include("core.urls")),
     path(
         "__heartbeat__/",

@@ -142,7 +142,8 @@ export const AttachmentUploader = ({
         const driveAttachments = attachments.filter(attachment => 'url' in attachment);
         form.setValue('attachments', localAttachments.map((attachment) => ({
             blobId: attachment.blobId,
-            name: attachment.name
+            name: attachment.name,
+            cid: 'cid' in attachment ? attachment.cid : undefined,
         })), { shouldDirty: true });
         form.setValue('driveAttachments', driveAttachments, { shouldDirty: true });
         if (form.formState.dirtyFields.attachments) {

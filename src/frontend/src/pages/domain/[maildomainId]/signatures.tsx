@@ -3,7 +3,7 @@ import { ComposeSignatureAction } from "@/features/layouts/components/admin/sign
 import { AdminSignaturesViewPageContent } from "@/features/layouts/components/admin/signatures-view/page-content";
 
 /**
- * Admin page which list all mailboxes for a given domain and allow to manage them.
+ * Admin page which list all signatures for a given domain and allow to manage them.
  */
 export default function AdminDomainPage() {
   return (

@@ -249,6 +249,20 @@ def _create_message_from_inbound(
                 logger.exception("Error creating label %s: %s", label, e)
                 continue
 
+    # Apply labels from channel settings (e.g., widget channel tags)
+    if channel and channel.settings:
+        channel_tags = channel.settings.get("tags", [])
+        for tag_id in channel_tags:
+            try:
+                label_obj = models.Label.objects.get(id=tag_id, mailbox=mailbox)
+                thread.labels.add(label_obj)
+            except models.Label.DoesNotExist:
+                logger.warning(
+                    "Label %s not found for channel %s, skipping", tag_id, channel.id
+                )
+            except Exception as e:
+                logger.exception("Error adding label %s from channel: %s", tag_id, e)
+
     # --- 4. Get or Create Sender Contact --- #
     sender_info = parsed_email.get("from", {})
     sender_email = sender_info.get("email")
@@ -425,17 +439,18 @@ def _create_message_from_inbound(
                         mailbox.id,
                     )
 
-                # Create the link between message and contact
-                data = {
-                    "message": message,
-                    "contact": recipient_contact,
-                    "type": recipient_type,
-                }
+                # Create the link between message and contact (use get_or_create to handle duplicates)
+                defaults = {}
                 if is_import and not message.is_draft:
-                    data["delivery_status"] = enums.MessageDeliveryStatusChoices.SENT
-                models.MessageRecipient.objects.create(**data)
+                    defaults["delivery_status"] = enums.MessageDeliveryStatusChoices.SENT
+                models.MessageRecipient.objects.get_or_create(
+                    message=message,
+                    contact=recipient_contact,
+                    type=recipient_type,
+                    defaults=defaults,
+                )
             except ValidationError as e:
-                logger.error(
+                logger.warning(
                     "Validation error creating recipient contact/link (%s) for message %s: %s",
                     email,
                     message.id,
@@ -501,8 +516,11 @@ def _create_message_from_inbound(
                         thread.summary = new_summary
                         thread.save(update_fields=["summary"])
 
-            # Assign labels to the thread
-            if is_auto_labels_enabled():
+            # Assign labels to the thread (skip if channel already applied tags)
+            has_channel_tags = (
+                channel and channel.settings and channel.settings.get("tags")
+            )
+            if is_auto_labels_enabled() and not has_channel_tags:
                 assign_label_to_thread(thread, mailbox.id)
 
     except Exception as e:

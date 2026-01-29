@@ -1616,6 +1616,14 @@ class Attachment(BaseModel):
         help_text=_("Messages that use this attachment"),
     )
 
+    cid = models.CharField(
+        _("content ID"),
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text=_("Content-ID for inline images"),
+    )
+
     class Meta:
         db_table = "messages_attachment"
         verbose_name = _("attachment")
@@ -1790,6 +1798,14 @@ class MessageTemplate(BaseModel):
         ),
     )
 
+    is_default = models.BooleanField(
+        _("is default"),
+        default=False,
+        help_text=_(
+            "Whether this template is the default; it will be automatically loaded when composing a new message"
+        ),
+    )
+
     class Meta:
         db_table = "messages_messagetemplate"
         verbose_name = _("message template")
@@ -1812,20 +1828,33 @@ class MessageTemplate(BaseModel):
                 condition=models.Q(is_forced=True),
                 name="uniq_forced_template_maildomain_type",
             ),
+            models.UniqueConstraint(
+                fields=("mailbox", "type"),
+                condition=models.Q(is_default=True),
+                name="uniq_default_template_mailbox_type",
+            ),
+            models.UniqueConstraint(
+                fields=("maildomain", "type"),
+                condition=models.Q(is_default=True),
+                name="uniq_default_template_maildomain_type",
+            ),
         ]
         indexes = [
             models.Index(fields=("mailbox", "type", "is_active")),
             models.Index(fields=("maildomain", "type", "is_active")),
+            models.Index(fields=("mailbox", "type", "is_default")),
+            models.Index(fields=("maildomain", "type", "is_default")),
         ]
 
     def __str__(self):
         return f"{self.name} ({self.get_type_display()})"
 
     def save(self, *args, **kwargs):
-        """If the template is forced, unforce all other templates of the same type
-        in the same scope (mailbox or maildomain)
-        only one forced template is allowed per type and scope"""
+        """If the template is forced or default, unset other templates of the same type
+        in the same scope (mailbox or maildomain).
+        Only one forced/default template is allowed per type and scope."""
         with transaction.atomic():
+            # Handle is_forced: only one forced template per type and scope
             if self.is_forced:
                 qs = (
                     MessageTemplate.objects.select_for_update()
@@ -1837,6 +1866,20 @@ class MessageTemplate(BaseModel):
                 elif self.maildomain_id:
                     qs = qs.filter(maildomain_id=self.maildomain_id)
                 qs.update(is_forced=False)
+
+            # Handle is_default: only one default template per type and scope
+            if self.is_default:
+                qs = (
+                    MessageTemplate.objects.select_for_update()
+                    .filter(type=self.type, is_default=True)
+                    .exclude(id=self.id)
+                )
+                if self.mailbox_id:
+                    qs = qs.filter(mailbox_id=self.mailbox_id)
+                elif self.maildomain_id:
+                    qs = qs.filter(maildomain_id=self.maildomain_id)
+                qs.update(is_default=False)
+
             super().save(*args, **kwargs)
 
     def clean(self):
@@ -1849,9 +1892,10 @@ class MessageTemplate(BaseModel):
             raise ValidationError(
                 {"__all__": "Mailbox and maildomain cannot be linked together"}
             )
-        # if user desactivate a forced template, the template is no longer forced
+        # if user deactivates a template, it should no longer be forced or default
         if not self.is_active:
             self.is_forced = False
+            self.is_default = False
         super().clean()
 
     @property
