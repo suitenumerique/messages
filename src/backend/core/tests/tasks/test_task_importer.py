@@ -14,7 +14,11 @@ from core import models
 from core.factories import MailboxFactory, UserFactory
 from core.mda.inbound import deliver_inbound_message
 from core.models import Message
-from core.services.importer.tasks import process_mbox_file_task, stream_mbox_messages
+from core.services.importer.tasks import (
+    process_mbox_file_task,
+    scan_mbox_messages,
+    stream_mbox_messages,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -561,7 +565,8 @@ class TestStreamMboxMessages:
     def test_task_stream_mbox_messages_success(self, sample_mbox_content):
         """Test successful streaming of MBOX file."""
         file = BytesIO(sample_mbox_content)
-        messages = list(stream_mbox_messages(file))
+        message_positions, file_end = scan_mbox_messages(file)
+        messages = list(stream_mbox_messages(file, message_positions, file_end))
         assert len(messages) == 3
         # Messages are in reverse order (newest first) due to the reversing in stream_mbox_messages
         assert b"Test Message 3" in messages[0]
@@ -571,7 +576,8 @@ class TestStreamMboxMessages:
     def test_task_stream_mbox_messages_empty(self):
         """Test streaming an empty MBOX file."""
         file = BytesIO(b"")
-        messages = list(stream_mbox_messages(file))
+        message_positions, file_end = scan_mbox_messages(file)
+        messages = list(stream_mbox_messages(file, message_positions, file_end))
         assert len(messages) == 0
 
     def test_task_stream_mbox_messages_single_message(self):
@@ -584,7 +590,8 @@ To: recipient@example.com
 This is a single message.
 """
         file = BytesIO(content)
-        messages = list(stream_mbox_messages(file))
+        message_positions, file_end = scan_mbox_messages(file)
+        messages = list(stream_mbox_messages(file, message_positions, file_end))
         assert len(messages) == 1
         assert b"Single Message" in messages[0]
 
@@ -598,5 +605,93 @@ To: recipient@example.com
 This is a malformed message.
 """
         file = BytesIO(content)
-        messages = list(stream_mbox_messages(file))
+        message_positions, file_end = scan_mbox_messages(file)
+        messages = list(stream_mbox_messages(file, message_positions, file_end))
         assert len(messages) == 0  # No valid messages should be found
+
+    def test_task_stream_mbox_messages_not_fully_loaded_in_memory(
+        self, sample_mbox_content
+    ):
+        """Test that mbox processing uses a memory-efficient two-pass approach.
+
+        The workflow should:
+        1. First pass (scan_mbox_messages): iterate line by line, no seek, only stores integers
+        2. Second pass (stream_mbox_messages): seek to each position and read one message at a time
+
+        This test verifies the file is processed efficiently without loading all content.
+        """
+
+        class SpyFile:
+            """A file wrapper that tracks seek and read operations."""
+
+            def __init__(self, content: bytes):
+                self._file = BytesIO(content)
+                self.seek_calls = []
+                self.read_calls = []
+                self.readline_calls = []
+                self.iter_count = 0
+
+            def __iter__(self):
+                self.iter_count += 1
+                return iter(self._file)
+
+            def seek(self, pos, *args):
+                self.seek_calls.append(pos)
+                return self._file.seek(pos, *args)
+
+            def read(self, size=-1):
+                result = self._file.read(size)
+                self.read_calls.append(len(result))
+                return result
+
+            def readline(self):
+                result = self._file.readline()
+                self.readline_calls.append(len(result))
+                return result
+
+        # Test scan_mbox_messages (first pass)
+        scan_spy = SpyFile(sample_mbox_content)
+        positions, file_end = scan_mbox_messages(scan_spy)
+
+        # Verify scan only iterates once and doesn't seek
+        assert scan_spy.iter_count == 1, "scan_mbox_messages should iterate once"
+        assert len(scan_spy.seek_calls) == 0, (
+            "scan_mbox_messages should not seek - it only scans line by line"
+        )
+        assert len(positions) == 3, (
+            f"Expected 3 message positions, got {len(positions)}"
+        )
+
+        # Test stream_mbox_messages with pre-computed positions (second pass)
+        stream_spy = SpyFile(sample_mbox_content)
+        messages = list(stream_mbox_messages(stream_spy, positions, file_end))
+
+        # Verify we got all 3 messages
+        assert len(messages) == 3
+
+        # Verify stream didn't iterate (positions were pre-computed)
+        assert stream_spy.iter_count == 0, (
+            "stream_mbox_messages should not iterate when positions are provided"
+        )
+
+        # Verify seek was called for each message
+        assert len(stream_spy.seek_calls) == 3, (
+            f"Expected 3 seek calls (one per message), got {len(stream_spy.seek_calls)}. "
+            "This suggests the file might be fully loaded into memory."
+        )
+
+        # Verify read was called for each message individually
+        assert len(stream_spy.read_calls) == 3, (
+            f"Expected 3 read calls (one per message), got {len(stream_spy.read_calls)}. "
+            "This suggests messages might be accumulated in memory."
+        )
+
+        # Verify readline was called for each message (to skip "From " separator)
+        assert len(stream_spy.readline_calls) == 3, (
+            f"Expected 3 readline calls, got {len(stream_spy.readline_calls)}."
+        )
+
+        # Verify messages are still in correct order (oldest first for threading)
+        assert b"Test Message 3" in messages[0]
+        assert b"Test Message 2" in messages[1]
+        assert b"Test Message 1" in messages[2]

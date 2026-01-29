@@ -89,15 +89,15 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
             if content_type not in enums.MBOX_SUPPORTED_MIME_TYPES:
                 raise Exception(f"Expected MBOX file, got {content_type}")
 
-            # First pass: count total messages
+            # First pass: scan for message positions (also gives us the count)
             file.seek(0)
-            total_messages = count_mbox_messages(file)
+            message_positions, file_end = scan_mbox_messages(file)
+            total_messages = len(message_positions)
 
-            # Reset file pointer
-            file.seek(0)
-
-            # Second pass: process messages
-            for i, message_content in enumerate(stream_mbox_messages(file), 1):
+            # Second pass: process messages using pre-computed positions
+            for i, message_content in enumerate(
+                stream_mbox_messages(file, message_positions, file_end), 1
+            ):
                 current_message = i
                 try:
                     # Update task state with progress
@@ -186,59 +186,75 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
         }
 
 
-def count_mbox_messages(file) -> int:
+def scan_mbox_messages(file) -> tuple[list[int], int]:
     """
-    Count the number of messages in an MBOX file without loading everything into memory.
-    """
-    count = 0
-    for line in file:
-        if line.startswith(b"From "):
-            count += 1
-    return count
+    Scan an MBOX file and return message positions without loading content into memory.
 
-
-def stream_mbox_messages(file) -> Generator[bytes, None, None]:
-    """
-    Stream individual email messages from an MBOX file without loading everything into memory.
-
-    Note: To maintain chronological order (needed for reply threading), we first collect
-    all messages and then yield them in reverse order, since mbox files store messages
-    with the most recent first.
+    This function performs a single pass through the file to record the byte offset
+    where each message starts. The count of messages is simply len(positions).
 
     Args:
         file: File-like object to read from
 
+    Returns:
+        A tuple of (message_positions, file_end) where:
+        - message_positions: list of byte offsets where each message starts
+        - file_end: byte offset of end of file (needed to compute last message size)
+    """
+    message_positions = []
+    position = 0
+
+    for line in file:
+        if line.startswith(b"From "):
+            message_positions.append(position)
+        position += len(line)
+
+    return message_positions, position
+
+
+def stream_mbox_messages(
+    file, message_positions: list[int], file_end: int | None = None
+) -> Generator[bytes, None, None]:
+    """
+    Stream individual email messages from an MBOX file without loading everything into memory.
+
+    Yields messages in reverse order (oldest first) for proper reply threading,
+    since mbox files store messages with the most recent first.
+
+    Args:
+        file: File-like object to read from (must support seek)
+        message_positions: Pre-computed list of byte offsets where messages start.
+        file_end: Byte offset of end of file.
+
     Yields:
         Individual email messages as bytes
     """
-    current_message = []
-    in_message = False
-    messages = []
+    if message_positions is None or file_end is None:
+        logger.warning(
+            "Cannot stream MBOX messages: message positions or file end not provided"
+        )
+        return
 
-    # Read line by line to avoid loading entire file into memory at once
-    # We still need to collect messages for reversing due to mbox format
-    for line in file:
-        # Check for mbox message separator
-        if line.startswith(b"From "):
-            if in_message and current_message:
-                # End of previous message - store it
-                messages.append(b"".join(current_message))
-                current_message = []
-            in_message = True
-            # Skip the mbox From line
-            continue
+    # Read messages in reverse order for chronological processing
+    # Process from last message to first (oldest to newest in real time)
+    for i in range(len(message_positions) - 1, -1, -1):
+        start_pos = message_positions[i]
+        # End position is either the next message start or end of file
+        end_pos = (
+            message_positions[i + 1] if i + 1 < len(message_positions) else file_end
+        )
 
-        if in_message:
-            current_message.append(line)
+        # Seek to message start
+        file.seek(start_pos)
 
-    # Add the last message if there is one
-    if current_message:
-        messages.append(b"".join(current_message))
+        # Read the message content (excluding the "From " line)
+        first_line = file.readline()  # Skip the "From " separator line
+        content_start = start_pos + len(first_line)
+        content_length = end_pos - content_start
 
-    # Yield messages in reverse order to treat replies correctly
-    # (mbox format stores newest messages first)
-    for message in reversed(messages):
-        yield message
+        # Read just this message's content
+        message_content = file.read(content_length)
+        yield message_content
 
 
 @celery_app.task(bind=True)
