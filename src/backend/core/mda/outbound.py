@@ -346,7 +346,8 @@ def send_message(message: models.Message, force_mta_out: bool = False):
             # Mark all recipients as failed
             for recipient in message.recipients.all():
                 recipient.delivery_status = MessageDeliveryStatusChoices.FAILED
-                recipient.save(update_fields=["delivery_status"])
+                recipient.delivery_message = "Internal error: failed to parse email"
+                recipient.save(update_fields=["delivery_status", "delivery_message"])
             return
 
         if parsed_email.get("from", {}).get("email") != message.sender.email:
