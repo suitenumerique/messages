@@ -439,6 +439,20 @@ keycloak-export: ## export all keycloak data to a JSON file
 	@$(COMPOSE) run -v `pwd`/src/keycloak:/tmp/keycloak-export --rm keycloak export --realm messages --file /tmp/keycloak-export/realm.json
 .PHONY: keycloak-export
 
+# -- Worker
+worker-ui: ## start the worker ui in local mode
+	@$(COMPOSE) -f compose.yaml up --force-recreate --build -d worker-ui --wait
+.PHONY: worker-ui
+
+worker-ui-staging: ## start the worker ui in staging mode
+	@$(COMPOSE) -f compose.yaml -f compose.staging.yaml up --force-recreate --build -d worker-ui --wait
+.PHONY: worker-ui-staging
+
+worker-ui-production: ## start the worker ui in staging mode
+	@$(COMPOSE) -f compose.yaml -f compose.production.yaml up --force-recreate --build -d worker-ui --wait
+.PHONY: worker-ui-production
+
+
 # -- Database
 
 db-shell: ## connect to database shell
@@ -578,4 +592,3 @@ mta-in-poetry-lock: ## lock the dependencies
 mta-out-poetry-lock: ## lock the dependencies
 	@$(COMPOSE) run --rm --build mta-out-poetry poetry lock
 .PHONY: mta-out-poetry-lock
-

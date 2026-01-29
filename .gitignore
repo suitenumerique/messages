@@ -94,3 +94,5 @@ CLAUDE.md
 # Messages
 .aws
 .hypothesis
+compose.staging.yaml
+compose.production.yaml
