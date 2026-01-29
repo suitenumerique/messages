@@ -31,6 +31,9 @@ export function useImportTaskStatus(
     return (taskMetadata.success_count / taskMetadata.total_messages) * 100;
   }, [taskStatus, taskMetadata]);
 
+  const hasKnownTotal = Boolean(taskMetadata?.total_messages);
+  const currentMessage = taskMetadata?.current_message ?? 0;
+
   useEffect(() => {
     if (!enabled || taskStatus === StatusEnum.FAILURE || taskStatus === StatusEnum.SUCCESS) {
       setQueryEnabled(false);
@@ -41,9 +44,11 @@ export function useImportTaskStatus(
 
   if (!taskId) return null;
   return {
-    progress: Math.ceil(progress || 0),
+    progress: progress !== null ? Math.ceil(progress) : null,
+    hasKnownTotal,
+    currentMessage,
     state: taskQuery.data?.data.status,
-    loading: taskQuery.isPending || !progress,
+    loading: taskQuery.isPending,
     error: taskQuery.data?.data.error,
   };
 }

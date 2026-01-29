@@ -4,7 +4,7 @@
 import logging
 import uuid
 from io import BytesIO
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 from django.core.exceptions import ValidationError
 
@@ -13,11 +13,11 @@ import pytest
 from core import models
 from core.factories import MailboxFactory, UserFactory
 from core.mda.inbound import deliver_inbound_message
-from core.models import Message
+from core.models import Message, Thread
 from core.services.importer.tasks import (
+    extract_date_from_headers,
+    index_mbox_messages,
     process_mbox_file_task,
-    scan_mbox_messages,
-    stream_mbox_messages,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,27 +39,45 @@ def user():
 
 @pytest.fixture
 def sample_mbox_content():
-    """Create a sample MBOX file content."""
+    """Create a sample MBOX file content with a threaded conversation.
+
+    The messages form a thread:
+    - Message 1: Original message
+    - Message 2: Reply to Message 1
+    - Message 3: Reply to Message 2
+
+    Messages are voluntarily not in chronological order to test the sorting logic.
+    """
     return b"""From user@example.com Thu Jan 1 00:00:00 2024
 Subject: Test Message 1
 From: sender1@example.com
 To: recipient@example.com
+Message-ID: <msg1@example.com>
+Date: Thu, 1 Jan 2024 00:00:00 +0000
 
 This is test message 1.
 
-From user@example.com Thu Jan 1 00:00:01 2024
-Subject: Test Message 2
-From: sender2@example.com
-To: recipient@example.com
-
-This is test message 2.
-
 From user@example.com Thu Jan 1 00:00:02 2024
-Subject: Test Message 3
+Subject: Re: Re: Test Message 1
 From: sender3@example.com
 To: recipient@example.com
+Message-ID: <msg3@example.com>
+In-Reply-To: <msg2@example.com>
+References: <msg1@example.com> <msg2@example.com>
+Date: Thu, 1 Jan 2024 00:00:02 +0000
 
-This is test message 3.
+This is test message 3, a reply to message 2.
+
+From user@example.com Thu Jan 1 00:00:01 2024
+Subject: Re: Test Message 1
+From: sender2@example.com
+To: recipient@example.com
+Message-ID: <msg2@example.com>
+In-Reply-To: <msg1@example.com>
+References: <msg1@example.com>
+Date: Thu, 1 Jan 2024 00:00:01 +0000
+
+This is test message 2, a reply to message 1.
 """
 
 
@@ -71,19 +89,13 @@ def mock_task():
     return task
 
 
-def mock_storage_open(content: bytes):
-    """Helper to create a mock storage that returns the given content.
+def mock_s3_streaming_body(content: bytes):
+    """Helper to create a mock that returns a streaming body with the given content.
 
-    The mock allows multiple opens since the task opens the file twice:
-    once for counting and once for processing.
+    This mocks the get_s3_streaming_body function to return a BytesIO object
+    that simulates an S3 StreamingBody.
     """
-
-    def create_file(*args, **kwargs):
-        return BytesIO(content)
-
-    mock_storage = Mock()
-    mock_storage.open = Mock(side_effect=create_file)
-    return mock_storage
+    return BytesIO(content)
 
 
 @pytest.mark.django_db
@@ -91,24 +103,30 @@ class TestProcessMboxFileTask:
     """Test suite for process_mbox_file_task."""
 
     def test_task_process_mbox_file_success(self, mailbox, sample_mbox_content):
-        """Test successful MBOX file processing."""
+        """Test successful MBOX file processing with 2-pass approach."""
         # Mock deliver_inbound_message to always succeed
         with patch("core.mda.inbound.deliver_inbound_message", return_value=True):
             # Create a mock task instance
             mock_task = MagicMock()
             mock_task.update_state = MagicMock()
 
-            # Mock storage
-            mock_storage = mock_storage_open(sample_mbox_content)
+            # Mock get_s3_byte_range to return message content based on byte range
+            def mock_byte_range(storage, file_key, start, end):
+                return sample_mbox_content[start : end + 1]
 
             with (
                 patch.object(
                     process_mbox_file_task, "update_state", mock_task.update_state
                 ),
-                patch("core.services.importer.tasks.storages") as mock_storages,
+                patch(
+                    "core.services.importer.tasks.get_s3_streaming_body",
+                    return_value=mock_s3_streaming_body(sample_mbox_content),
+                ),
+                patch(
+                    "core.services.importer.tasks.get_s3_byte_range",
+                    side_effect=mock_byte_range,
+                ),
             ):
-                mock_storages.__getitem__.return_value = mock_storage
-
                 # Run the task
                 task_result = process_mbox_file_task(
                     file_key="test-file-key.mbox", recipient_id=str(mailbox.id)
@@ -126,15 +144,28 @@ class TestProcessMboxFileTask:
                 assert task_result["result"]["failure_count"] == 0
                 assert task_result["result"]["current_message"] == 3
 
-                # Verify progress updates
-                assert mock_task.update_state.call_count == 5  # 4 PROGRESS + 1 SUCCESS
+                # Verify progress updates:
+                # 1 PROGRESS (indexing) + 1 PROGRESS (after indexing) + 3 PROGRESS (per message) + 1 SUCCESS
+                assert mock_task.update_state.call_count == 6
 
-                # First message
+                # First message (total_messages is now known after indexing)
                 mock_task.update_state.assert_any_call(
                     state="PROGRESS",
                     meta={
                         "result": {
-                            "message_status": "Processing message 1 of 3",
+                            "message_status": "Indexing messages",
+                            "type": "mbox",
+                        },
+                        "error": None,
+                    },
+                )
+
+                # First message (total_messages is now known after indexing)
+                mock_task.update_state.assert_any_call(
+                    state="PROGRESS",
+                    meta={
+                        "result": {
+                            "message_status": "Processing message 1/3",
                             "total_messages": 3,
                             "success_count": 0,
                             "failure_count": 0,
@@ -150,7 +181,7 @@ class TestProcessMboxFileTask:
                     state="PROGRESS",
                     meta={
                         "result": {
-                            "message_status": "Processing message 2 of 3",
+                            "message_status": "Processing message 2/3",
                             "total_messages": 3,
                             "success_count": 1,
                             "failure_count": 0,
@@ -166,7 +197,7 @@ class TestProcessMboxFileTask:
                     state="PROGRESS",
                     meta={
                         "result": {
-                            "message_status": "Processing message 3 of 3",
+                            "message_status": "Processing message 3/3",
                             "total_messages": 3,
                             "success_count": 2,
                             "failure_count": 0,
@@ -190,45 +221,64 @@ class TestProcessMboxFileTask:
                 message_count = Message.objects.count()
                 assert message_count == 3, f"Expected 3 messages, got {message_count}"
                 messages = Message.objects.order_by("created_at")
-                assert messages[0].subject == "Test Message 3"
-                assert messages[1].subject == "Test Message 2"
-                assert messages[2].subject == "Test Message 1"
+                assert messages[0].subject == "Test Message 1"
+                assert messages[1].subject == "Re: Test Message 1"
+                assert messages[2].subject == "Re: Re: Test Message 1"
+
+                # Verify all messages are in the same thread (threaded conversation)
+                thread_count = Thread.objects.count()
+                assert thread_count == 1, f"Expected 1 thread, got {thread_count}"
+
+                thread = Thread.objects.first()
+                assert thread.messages.count() == 3, (
+                    f"Expected 3 messages in thread, got {thread.messages.count()}"
+                )
+
+                # Verify thread subject matches the original message and messaged_at is the latest message
+                assert thread.subject == "Test Message 1"
+                assert thread.messaged_at == messages[2].created_at
 
     def test_task_process_mbox_file_partial_success(self, mailbox, sample_mbox_content):
         """Test MBOX processing with some messages failing."""
 
-        # Mock deliver_inbound_message to fail for the second message
-        original_deliver = deliver_inbound_message
+        # Track call count to fail on the second message
+        call_count = [0]
 
         def mock_deliver(recipient_email, parsed_email, raw_data, **kwargs):
-            # Get the subject from the parsed email dictionary
-            subject = parsed_email.get("headers", {}).get("subject", "")
-
-            # Return False for Test Message 2 without creating the message
-            if subject == "Test Message 2":
+            call_count[0] += 1
+            # Fail on the second message
+            if call_count[0] == 2:
                 return False
-
-            # For other messages, call the original function to create the message
-            return original_deliver(recipient_email, parsed_email, raw_data, **kwargs)
+            # For other messages, call the original function
+            return deliver_inbound_message(
+                recipient_email, parsed_email, raw_data, **kwargs
+            )
 
         # Create a mock task instance
         mock_task = MagicMock()
         mock_task.update_state = MagicMock()
 
-        # Mock storage
-        mock_storage = mock_storage_open(sample_mbox_content)
+        # Mock get_s3_byte_range to return message content based on byte range
+        def mock_byte_range(storage, file_key, start, end):
+            return sample_mbox_content[start : end + 1]
 
         with (
             patch.object(
                 process_mbox_file_task, "update_state", mock_task.update_state
             ),
             patch(
+                "core.services.importer.tasks.get_s3_streaming_body",
+                return_value=mock_s3_streaming_body(sample_mbox_content),
+            ),
+            patch(
+                "core.services.importer.tasks.get_s3_byte_range",
+                side_effect=mock_byte_range,
+            ),
+            patch(
                 "core.services.importer.tasks.deliver_inbound_message",
                 side_effect=mock_deliver,
             ),
-            patch("core.services.importer.tasks.storages") as mock_storages,
         ):
-            mock_storages.__getitem__.return_value = mock_storage
             # Call the task once
             task_result = process_mbox_file_task("test-file-key.mbox", str(mailbox.id))
 
@@ -245,14 +295,15 @@ class TestProcessMboxFileTask:
             assert task_result["result"]["current_message"] == 3
 
             # Verify progress updates
-            assert mock_task.update_state.call_count == 5  # 4 PROGRESS + 1 SUCCESS
+            # 1 PROGRESS (indexing) + 1 PROGRESS (after indexing) + 3 PROGRESS (per message) + 1 SUCCESS
+            assert mock_task.update_state.call_count == 6
 
             # First message (success)
             mock_task.update_state.assert_any_call(
                 state="PROGRESS",
                 meta={
                     "result": {
-                        "message_status": "Processing message 1 of 3",
+                        "message_status": "Processing message 1/3",
                         "total_messages": 3,
                         "success_count": 0,
                         "failure_count": 0,
@@ -268,7 +319,7 @@ class TestProcessMboxFileTask:
                 state="PROGRESS",
                 meta={
                     "result": {
-                        "message_status": "Processing message 2 of 3",
+                        "message_status": "Processing message 2/3",
                         "total_messages": 3,
                         "success_count": 1,
                         "failure_count": 0,
@@ -284,7 +335,7 @@ class TestProcessMboxFileTask:
                 state="PROGRESS",
                 meta={
                     "result": {
-                        "message_status": "Processing message 3 of 3",
+                        "message_status": "Processing message 3/3",
                         "total_messages": 3,
                         "success_count": 1,
                         "failure_count": 1,
@@ -304,11 +355,12 @@ class TestProcessMboxFileTask:
                 },
             )
 
-            # Verify messages were created
+            # Verify messages were created (now in chronological order)
+            # Message 1 and 3 succeeded, message 2 failed
             assert Message.objects.count() == 2
-            messages = Message.objects.order_by("-created_at")
+            messages = Message.objects.order_by("created_at")
             assert messages[0].subject == "Test Message 1"
-            assert messages[1].subject == "Test Message 3"
+            assert messages[1].subject == "Re: Re: Test Message 1"  # Message 3
 
     def test_task_process_mbox_file_mailbox_not_found(self, sample_mbox_content):
         """Test MBOX processing with non-existent mailbox."""
@@ -319,16 +371,15 @@ class TestProcessMboxFileTask:
         # Use a valid UUID that doesn't exist in the database
         non_existent_id = str(uuid.uuid4())
 
-        # Mock storage
-        mock_storage = mock_storage_open(sample_mbox_content)
-
         with (
             patch.object(
                 process_mbox_file_task, "update_state", mock_task.update_state
             ),
-            patch("core.services.importer.tasks.storages") as mock_storages,
+            patch(
+                "core.services.importer.tasks.get_s3_streaming_body",
+                return_value=mock_s3_streaming_body(sample_mbox_content),
+            ),
         ):
-            mock_storages.__getitem__.return_value = mock_storage
             # Run the task with non-existent mailbox
             task_result = process_mbox_file_task(
                 file_key="test-file-key.mbox", recipient_id=non_existent_id
@@ -368,12 +419,13 @@ class TestProcessMboxFileTask:
         def mock_parse(*args, **kwargs):
             raise ValidationError("Invalid message format")
 
+        # Mock get_s3_byte_range to return message content based on byte range
+        def mock_byte_range(storage, file_key, start, end):
+            return sample_mbox_content[start : end + 1]
+
         # Create a mock task instance
         mock_task = MagicMock()
         mock_task.update_state = MagicMock()
-
-        # Mock storage
-        mock_storage = mock_storage_open(sample_mbox_content)
 
         with (
             patch(
@@ -383,9 +435,15 @@ class TestProcessMboxFileTask:
             patch.object(
                 process_mbox_file_task, "update_state", mock_task.update_state
             ),
-            patch("core.services.importer.tasks.storages") as mock_storages,
+            patch(
+                "core.services.importer.tasks.get_s3_streaming_body",
+                return_value=mock_s3_streaming_body(sample_mbox_content),
+            ),
+            patch(
+                "core.services.importer.tasks.get_s3_byte_range",
+                side_effect=mock_byte_range,
+            ),
         ):
-            mock_storages.__getitem__.return_value = mock_storage
             # Call the task
             task_result = process_mbox_file_task("test-file-key.mbox", str(mailbox.id))
 
@@ -401,14 +459,15 @@ class TestProcessMboxFileTask:
             assert task_result["result"]["type"] == "mbox"
 
             # Verify progress updates were called for all messages
-            assert mock_task.update_state.call_count == 5  # 4 PROGRESS + 1 SUCCESS
+            # 1 PROGRESS (indexing) + 1 PROGRESS (after indexing) + 3 PROGRESS (per message) + 1 SUCCESS
+            assert mock_task.update_state.call_count == 6
 
-            # The first update should be for message 1 with failure_count 0
+            # The first message update should be with failure_count 0
             mock_task.update_state.assert_any_call(
                 state="PROGRESS",
                 meta={
                     "result": {
-                        "message_status": "Processing message 1 of 3",
+                        "message_status": "Processing message 1/3",
                         "total_messages": 3,
                         "success_count": 0,
                         "failure_count": 0,  # No failures yet
@@ -419,12 +478,12 @@ class TestProcessMboxFileTask:
                 },
             )
 
-            # The second update should be for message 2 with failure_count 1
+            # The second message update should be with failure_count 1
             mock_task.update_state.assert_any_call(
                 state="PROGRESS",
                 meta={
                     "result": {
-                        "message_status": "Processing message 2 of 3",
+                        "message_status": "Processing message 2/3",
                         "total_messages": 3,
                         "success_count": 0,
                         "failure_count": 1,  # One failure from message 1
@@ -435,12 +494,12 @@ class TestProcessMboxFileTask:
                 },
             )
 
-            # The third update should be for message 3 with failure_count 2
+            # The third message update should be with failure_count 2
             mock_task.update_state.assert_any_call(
                 state="PROGRESS",
                 meta={
                     "result": {
-                        "message_status": "Processing message 3 of 3",
+                        "message_status": "Processing message 3/3",
                         "total_messages": 3,
                         "success_count": 0,
                         "failure_count": 2,  # Two failures from messages 1 and 2
@@ -464,23 +523,21 @@ class TestProcessMboxFileTask:
             assert Message.objects.count() == 0
 
     def test_task_process_mbox_file_empty(self, mailbox):
-        """Test processing an empty MBOX file."""
+        """Test processing an empty MBOX file (valid MIME type but no messages)."""
         # Create a mock task instance
         mock_task = MagicMock()
         mock_task.update_state = MagicMock()
-
-        # Mock storage with empty content
-        mock_storage = mock_storage_open(b"")
 
         with (
             patch.object(
                 process_mbox_file_task, "update_state", mock_task.update_state
             ),
-            patch("core.services.importer.tasks.storages") as mock_storages,
-            patch("magic.Magic.from_buffer") as mock_magic_from_buffer,
+            patch(
+                "core.services.importer.tasks.get_s3_streaming_body",
+                return_value=mock_s3_streaming_body(b""),
+            ),
+            patch("magic.from_buffer", return_value="application/mbox"),
         ):
-            mock_magic_from_buffer.return_value = "application/mbox"
-            mock_storages.__getitem__.return_value = mock_storage
             # Run the task with empty content
             task_result = process_mbox_file_task(
                 file_key="test-file-key.mbox", recipient_id=str(mailbox.id)
@@ -489,8 +546,7 @@ class TestProcessMboxFileTask:
             # Verify task result
             assert task_result["status"] == "SUCCESS"
             assert (
-                task_result["result"]["message_status"]
-                == "Completed processing messages"
+                task_result["result"]["message_status"] == "No messages found in file"
             )
             assert task_result["result"]["type"] == "mbox"
             assert task_result["result"]["total_messages"] == 0
@@ -498,7 +554,7 @@ class TestProcessMboxFileTask:
             assert task_result["result"]["failure_count"] == 0
             assert task_result["result"]["current_message"] == 0
 
-            # Verify 2 updates were called: 1 PROGRESS TO COUNT MESSAGES + 1 SUCCESS
+            # Verify 2 updates were called: 1 PROGRESS (indexing) + 1 SUCCESS
             assert mock_task.update_state.call_count == 2
             mock_task.update_state.assert_called_with(
                 state="SUCCESS",
@@ -517,16 +573,15 @@ class TestProcessMboxFileTask:
         mock_task = MagicMock()
         mock_task.update_state = MagicMock()
 
-        # Mock storage with empty content
-        mock_storage = mock_storage_open(b"")
-
         with (
             patch.object(
                 process_mbox_file_task, "update_state", mock_task.update_state
             ),
-            patch("core.services.importer.tasks.storages") as mock_storages,
+            patch(
+                "core.services.importer.tasks.get_s3_streaming_body",
+                return_value=mock_s3_streaming_body(b""),
+            ),
         ):
-            mock_storages.__getitem__.return_value = mock_storage
             # Run the task with empty content
             task_result = process_mbox_file_task(
                 file_key="test-file-key.mbox", recipient_id=str(mailbox.id)
@@ -544,7 +599,7 @@ class TestProcessMboxFileTask:
             assert task_result["result"]["current_message"] == 0
             assert task_result["error"] == "Expected MBOX file, got application/x-empty"
 
-            # Verify 2 updates were called: 1 PROGRESS TO COUNT MESSAGES + 1 FAILURE
+            # Verify 2 updates were called: 1 PROGRESS (initializing) + 1 FAILURE
             assert mock_task.update_state.call_count == 2
             mock_task.update_state.assert_called_with(
                 state="FAILURE",
@@ -558,140 +613,203 @@ class TestProcessMboxFileTask:
             assert Message.objects.count() == 0
 
 
-@pytest.mark.django_db
-class TestStreamMboxMessages:
-    """Test the stream_mbox_messages function."""
+class TestExtractDateFromHeaders:
+    """Test the extract_date_from_headers function."""
 
-    def test_task_stream_mbox_messages_success(self, sample_mbox_content):
-        """Test successful streaming of MBOX file."""
-        file = BytesIO(sample_mbox_content)
-        message_positions, file_end = scan_mbox_messages(file)
-        messages = list(stream_mbox_messages(file, message_positions, file_end))
-        assert len(messages) == 3
-        # Messages are in reverse order (newest first) due to the reversing in stream_mbox_messages
-        assert b"Test Message 3" in messages[0]
-        assert b"Test Message 2" in messages[1]
-        assert b"Test Message 1" in messages[2]
+    def test_extract_date_basic(self):
+        """Test extracting date from standard email headers."""
+        headers = b"""Subject: Test Message
+From: sender@example.com
+To: recipient@example.com
+Date: Thu, 1 Jan 2024 12:00:00 +0000
 
-    def test_task_stream_mbox_messages_empty(self):
-        """Test streaming an empty MBOX file."""
-        file = BytesIO(b"")
-        message_positions, file_end = scan_mbox_messages(file)
-        messages = list(stream_mbox_messages(file, message_positions, file_end))
-        assert len(messages) == 0
+Body content"""
+        result = extract_date_from_headers(headers)
+        assert result is not None
+        assert result.year == 2024
+        assert result.month == 1
+        assert result.day == 1
+        assert result.hour == 12
+        assert result.tzinfo is not None
 
-    def test_task_stream_mbox_messages_single_message(self):
-        """Test streaming a MBOX file with a single message."""
+    def test_extract_date_with_timezone(self):
+        """Test extracting date with timezone offset."""
+        headers = b"""Date: Mon, 26 May 2025 20:13:44 +0200
+Subject: Test
+
+Body"""
+        result = extract_date_from_headers(headers)
+        assert result is not None
+        # Should be converted to UTC-aware datetime
+        assert result.tzinfo is not None
+
+    def test_extract_date_naive_becomes_utc(self):
+        """Test that naive datetimes become UTC-aware."""
+        # Some malformed dates might parse as naive
+        headers = b"""Date: 01 Jan 2024 12:00:00
+Subject: Test
+
+Body"""
+        result = extract_date_from_headers(headers)
+        if result:
+            # If parsed successfully, it should be timezone-aware
+            assert result.tzinfo is not None
+
+    def test_extract_date_no_date_header(self):
+        """Test handling of message without Date header."""
+        headers = b"""Subject: No Date
+From: sender@example.com
+To: recipient@example.com
+
+Body"""
+        result = extract_date_from_headers(headers)
+        assert result is None
+
+    def test_extract_date_invalid_date(self):
+        """Test handling of invalid date format."""
+        headers = b"""Date: not a valid date
+Subject: Test
+
+Body"""
+        result = extract_date_from_headers(headers)
+        assert result is None
+
+    def test_extract_date_empty_content(self):
+        """Test handling of empty content."""
+        result = extract_date_from_headers(b"")
+        assert result is None
+
+    def test_extract_date_headers_only(self):
+        """Test extraction with headers that end with proper separator."""
+        headers = b"""Date: Thu, 1 Jan 2024 10:00:00 +0000
+Subject: Test
+
+"""
+        result = extract_date_from_headers(headers)
+        assert result is not None
+        assert result.year == 2024
+
+
+class TestIndexMboxMessages:
+    """Test the index_mbox_messages function."""
+
+    def test_index_single_message(self):
+        """Test indexing a single message."""
         content = b"""From user@example.com Thu Jan 1 00:00:00 2024
 Subject: Single Message
 From: sender@example.com
 To: recipient@example.com
+Date: Thu, 1 Jan 2024 10:00:00 +0000
 
 This is a single message.
 """
         file = BytesIO(content)
-        message_positions, file_end = scan_mbox_messages(file)
-        messages = list(stream_mbox_messages(file, message_positions, file_end))
-        assert len(messages) == 1
-        assert b"Single Message" in messages[0]
+        indices = index_mbox_messages(file)
 
-    def test_task_stream_mbox_messages_malformed(self):
-        """Test streaming a malformed MBOX file."""
-        # Content without proper From headers
-        content = b"""Subject: Malformed Message
-From: sender@example.com
-To: recipient@example.com
+        assert len(indices) == 1
+        assert indices[0].start_byte > 0  # After "From " line
+        assert indices[0].end_byte > indices[0].start_byte
+        assert indices[0].date is not None
+        assert indices[0].date.year == 2024
 
-This is a malformed message.
+    def test_index_multiple_messages(self):
+        """Test indexing multiple messages."""
+        content = b"""From user@example.com Thu Jan 1 00:00:00 2024
+Subject: Message 1
+From: sender1@example.com
+Date: Thu, 1 Jan 2024 10:00:00 +0000
+
+Body 1
+
+From user@example.com Thu Jan 1 00:00:01 2024
+Subject: Message 2
+From: sender2@example.com
+Date: Thu, 1 Jan 2024 11:00:00 +0000
+
+Body 2
+
+From user@example.com Thu Jan 1 00:00:02 2024
+Subject: Message 3
+From: sender3@example.com
+Date: Thu, 1 Jan 2024 12:00:00 +0000
+
+Body 3
 """
         file = BytesIO(content)
-        message_positions, file_end = scan_mbox_messages(file)
-        messages = list(stream_mbox_messages(file, message_positions, file_end))
-        assert len(messages) == 0  # No valid messages should be found
+        indices = index_mbox_messages(file)
 
-    def test_task_stream_mbox_messages_not_fully_loaded_in_memory(
-        self, sample_mbox_content
-    ):
-        """Test that mbox processing uses a memory-efficient two-pass approach.
+        assert len(indices) == 3
+        # All indices should have valid byte ranges
+        for idx in indices:
+            assert idx.start_byte >= 0
+            assert idx.end_byte >= idx.start_byte
+            assert idx.date is not None
 
-        The workflow should:
-        1. First pass (scan_mbox_messages): iterate line by line, no seek, only stores integers
-        2. Second pass (stream_mbox_messages): seek to each position and read one message at a time
+        # Verify indices are in file order (not sorted by date yet)
+        assert indices[0].date.hour == 10
+        assert indices[1].date.hour == 11
+        assert indices[2].date.hour == 12
 
-        This test verifies the file is processed efficiently without loading all content.
-        """
+    def test_index_messages_with_initial_buffer(self):
+        """Test indexing with initial buffer (simulating MIME detection)."""
+        content = b"""From user@example.com Thu Jan 1 00:00:00 2024
+Subject: Message 1
+Date: Thu, 1 Jan 2024 10:00:00 +0000
 
-        class SpyFile:
-            """A file wrapper that tracks seek and read operations."""
+Body 1
 
-            def __init__(self, content: bytes):
-                self._file = BytesIO(content)
-                self.seek_calls = []
-                self.read_calls = []
-                self.readline_calls = []
-                self.iter_count = 0
+From user@example.com Thu Jan 1 00:00:01 2024
+Subject: Message 2
+Date: Thu, 1 Jan 2024 11:00:00 +0000
 
-            def __iter__(self):
-                self.iter_count += 1
-                return iter(self._file)
+Body 2
+"""
+        # Simulate reading first 50 bytes for MIME detection
+        initial_bytes = content[:50]
+        remaining = content[50:]
 
-            def seek(self, pos, *args):
-                self.seek_calls.append(pos)
-                return self._file.seek(pos, *args)
-
-            def read(self, size=-1):
-                result = self._file.read(size)
-                self.read_calls.append(len(result))
-                return result
-
-            def readline(self):
-                result = self._file.readline()
-                self.readline_calls.append(len(result))
-                return result
-
-        # Test scan_mbox_messages (first pass)
-        scan_spy = SpyFile(sample_mbox_content)
-        positions, file_end = scan_mbox_messages(scan_spy)
-
-        # Verify scan only iterates once and doesn't seek
-        assert scan_spy.iter_count == 1, "scan_mbox_messages should iterate once"
-        assert len(scan_spy.seek_calls) == 0, (
-            "scan_mbox_messages should not seek - it only scans line by line"
-        )
-        assert len(positions) == 3, (
-            f"Expected 3 message positions, got {len(positions)}"
+        file = BytesIO(remaining)
+        indices = index_mbox_messages(
+            file, initial_buffer=initial_bytes, initial_offset=0
         )
 
-        # Test stream_mbox_messages with pre-computed positions (second pass)
-        stream_spy = SpyFile(sample_mbox_content)
-        messages = list(stream_mbox_messages(stream_spy, positions, file_end))
+        assert len(indices) == 2
 
-        # Verify we got all 3 messages
-        assert len(messages) == 3
+    def test_index_empty_file(self):
+        """Test indexing an empty file."""
+        file = BytesIO(b"")
+        indices = index_mbox_messages(file)
+        assert len(indices) == 0
 
-        # Verify stream didn't iterate (positions were pre-computed)
-        assert stream_spy.iter_count == 0, (
-            "stream_mbox_messages should not iterate when positions are provided"
-        )
+    def test_index_messages_without_dates(self):
+        """Test indexing messages that don't have Date headers."""
+        content = b"""From user@example.com Thu Jan 1 00:00:00 2024
+Subject: No Date Message
+From: sender@example.com
 
-        # Verify seek was called for each message
-        assert len(stream_spy.seek_calls) == 3, (
-            f"Expected 3 seek calls (one per message), got {len(stream_spy.seek_calls)}. "
-            "This suggests the file might be fully loaded into memory."
-        )
+Body without date
+"""
+        file = BytesIO(content)
+        indices = index_mbox_messages(file)
 
-        # Verify read was called for each message individually
-        assert len(stream_spy.read_calls) == 3, (
-            f"Expected 3 read calls (one per message), got {len(stream_spy.read_calls)}. "
-            "This suggests messages might be accumulated in memory."
-        )
+        assert len(indices) == 1
+        assert indices[0].date is None  # No date should be extracted
 
-        # Verify readline was called for each message (to skip "From " separator)
-        assert len(stream_spy.readline_calls) == 3, (
-            f"Expected 3 readline calls, got {len(stream_spy.readline_calls)}."
-        )
+    def test_index_verifies_byte_ranges(self):
+        """Test that byte ranges correctly point to message content."""
+        content = b"""From user@example.com Thu Jan 1 00:00:00 2024
+Subject: Test Message
+Date: Thu, 1 Jan 2024 10:00:00 +0000
 
-        # Verify messages are still in correct order (oldest first for threading)
-        assert b"Test Message 3" in messages[0]
-        assert b"Test Message 2" in messages[1]
-        assert b"Test Message 1" in messages[2]
+Message body content here.
+"""
+        file = BytesIO(content)
+        indices = index_mbox_messages(file)
+
+        assert len(indices) == 1
+        # Extract content using the byte range
+        extracted = content[indices[0].start_byte : indices[0].end_byte + 1]
+        # Should contain the headers and body but NOT the "From " line
+        assert b"Subject: Test Message" in extracted
+        assert b"Message body content here." in extracted
+        assert not extracted.startswith(b"From ")

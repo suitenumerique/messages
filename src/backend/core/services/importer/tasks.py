@@ -1,7 +1,10 @@
 """Import-related tasks."""
 
 # pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught, too-many-lines
-from typing import Any, Dict, Generator
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.parser import BytesParser
+from typing import Any, Dict, List, Optional
 
 from django.core.files.storage import storages
 
@@ -11,6 +14,7 @@ from celery.utils.log import get_task_logger
 from core import enums
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import parse_email_message
+from core.mda.rfc5322.parser import parse_date
 from core.models import Mailbox
 
 from messages.celery_app import app as celery_app
@@ -25,6 +29,238 @@ from .imap import (
 )
 
 logger = get_task_logger(__name__)
+
+
+@dataclass
+class MboxMessageIndex:
+    """Index entry for a message in an mbox file.
+
+    Stores byte offsets and date for sorting messages chronologically
+    without loading full message content into memory.
+    """
+
+    start_byte: int
+    end_byte: int
+    date: Optional[datetime]
+
+
+def extract_date_from_headers(raw_message: bytes) -> Optional[datetime]:
+    """
+    Extract Date header from raw email message.
+
+    Only parses headers, not body - faster than full parse.
+    Uses the standard library email parser with headersonly=True.
+
+    Args:
+        raw_message: Raw email bytes (headers + body)
+
+    Returns:
+        Parsed datetime (always timezone-aware in UTC) or None if parsing fails
+    """
+    try:
+        # Find end of headers (double newline)
+        header_end = raw_message.find(b"\r\n\r\n")
+        if header_end == -1:
+            header_end = raw_message.find(b"\n\n")
+
+        if header_end != -1:
+            headers_bytes = raw_message[: header_end + 4]  # Include separator
+        else:
+            # No body separator found, treat entire content as headers
+            headers_bytes = raw_message
+
+        # Parse headers only using standard library (faster than flanker)
+        parser = BytesParser()
+        msg = parser.parsebytes(headers_bytes, headersonly=True)
+
+        date_str = msg.get("Date", "")
+        if date_str:
+            parsed = parse_date(date_str)
+            if parsed:
+                # Ensure timezone-aware for consistent comparison
+                if parsed.tzinfo is None:
+                    # Assume UTC for naive datetimes
+                    return parsed.replace(tzinfo=timezone.utc)
+                return parsed
+        return None
+    except Exception:  # pylint: disable=broad-exception-caught
+        return None
+
+
+def get_s3_streaming_body(storage, file_key: str):
+    """
+    Get a streaming body directly from S3 without downloading the entire file.
+
+    django-storages' storage.open() downloads the entire file to a SpooledTemporaryFile
+    before returning, which causes OOM for large files. This function bypasses that
+    by using boto3's get_object() directly, which returns a StreamingBody that can
+    be read in chunks.
+
+    Args:
+        storage: The django-storages S3Boto3Storage instance
+        file_key: The key of the file in S3
+
+    Returns:
+        A boto3 StreamingBody object that supports read(size)
+    """
+    # Access the underlying boto3 client from django-storages
+    # S3Boto3Storage exposes the bucket and connection
+    s3_client = storage.connection.meta.client
+    bucket_name = storage.bucket_name
+
+    # Handle storage location prefix if configured
+    if storage.location:
+        full_key = f"{storage.location}/{file_key}".lstrip("/")
+    else:
+        full_key = file_key
+
+    response = s3_client.get_object(Bucket=bucket_name, Key=full_key)
+    return response["Body"]
+
+
+def get_s3_byte_range(storage, file_key: str, start: int, end: int) -> bytes:
+    """
+    Fetch a specific byte range from S3.
+
+    Uses HTTP Range requests to fetch only the needed bytes,
+    avoiding full file download. This is efficient for random access
+    to large files stored in S3.
+
+    Args:
+        storage: The django-storages S3Boto3Storage instance
+        file_key: The key of the file in S3
+        start: Start byte offset (inclusive)
+        end: End byte offset (inclusive)
+
+    Returns:
+        Bytes content of the specified range
+    """
+    s3_client = storage.connection.meta.client
+    bucket_name = storage.bucket_name
+
+    if storage.location:
+        full_key = f"{storage.location}/{file_key}".lstrip("/")
+    else:
+        full_key = file_key
+
+    response = s3_client.get_object(
+        Bucket=bucket_name, Key=full_key, Range=f"bytes={start}-{end}"
+    )
+    body = response["Body"]
+    try:
+        return body.read()
+    finally:
+        body.close()
+
+
+def index_mbox_messages(
+    file,
+    chunk_size: int = 1024 * 1024,
+    initial_buffer: bytes = b"",
+    initial_offset: int = 0,
+) -> List[MboxMessageIndex]:
+    """
+    First pass: index all messages in an mbox file with byte offsets and dates.
+
+    Streams through the file once, collecting only metadata needed for sorting.
+    Does not load full message content into memory - only parses headers to
+    extract the Date field.
+
+    Args:
+        file: File-like object to read from (supports read(size))
+        chunk_size: Size of chunks to read at a time (default 1MB)
+        initial_buffer: Bytes already read from the file (e.g., for MIME detection)
+        initial_offset: Byte offset where initial_buffer starts in the file
+
+    Returns:
+        List of MboxMessageIndex entries in file order (not sorted by date)
+    """
+    indices: List[MboxMessageIndex] = []
+    buffer = initial_buffer
+    # Track absolute position in file (where current buffer content starts)
+    buffer_start_pos = initial_offset
+    message_start: Optional[int] = None
+    current_headers: List[bytes] = []
+    in_headers = False
+    from_marker = b"From "
+
+    def finalize_message(end_byte: int) -> None:
+        """Finalize current message and add to index."""
+        nonlocal message_start, current_headers, in_headers
+
+        if message_start is not None:
+            # Parse date from collected headers
+            headers_bytes = b"".join(current_headers)
+            date = extract_date_from_headers(headers_bytes)
+            indices.append(
+                MboxMessageIndex(
+                    start_byte=message_start,
+                    end_byte=end_byte,
+                    date=date,
+                )
+            )
+
+        message_start = None
+        current_headers = []
+        in_headers = False
+
+    while True:
+        chunk = file.read(chunk_size)
+        if chunk:
+            buffer += chunk
+
+        # Process complete lines from buffer
+        while b"\n" in buffer:
+            newline_pos = buffer.index(b"\n")
+            line = buffer[:newline_pos]
+            line_with_newline = line + b"\n"
+
+            # Calculate absolute position of this line's end (after newline)
+            line_end_abs = buffer_start_pos + newline_pos + 1
+
+            if line.startswith(from_marker):
+                # Found a new message boundary
+                if message_start is not None:
+                    # End previous message at byte before "From " line
+                    finalize_message(buffer_start_pos - 1)
+
+                # New message content starts after the "From " line
+                message_start = line_end_abs
+                in_headers = True
+                current_headers = []
+
+            elif message_start is not None:
+                if in_headers:
+                    if line in (b"", b"\r"):
+                        # Empty line marks end of headers
+                        in_headers = False
+                    else:
+                        # Collect header lines for date extraction
+                        current_headers.append(line_with_newline)
+
+            # Advance buffer position
+            buffer_start_pos = line_end_abs
+            buffer = buffer[newline_pos + 1 :]
+
+        # Exit when file is exhausted
+        if not chunk:
+            break
+
+    # Handle any remaining data in buffer
+    if buffer:
+        if buffer.startswith(from_marker):
+            # Edge case: file ends with a "From " line
+            if message_start is not None:
+                finalize_message(buffer_start_pos - 1)
+        else:
+            # Add remaining bytes to position
+            buffer_start_pos += len(buffer)
+
+    # Finalize the last message
+    if message_start is not None:
+        finalize_message(buffer_start_pos - 1)
+
+    return indices
 
 
 @celery_app.task(bind=True)
@@ -70,69 +306,120 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
         }
 
     try:
-        # Get storage and open file
+        # Get storage - we'll use direct S3 streaming to avoid OOM
+        # django-storages' storage.open() downloads entire file to memory first
         message_imports_storage = storages["message-imports"]
 
-        with message_imports_storage.open(file_key, "rb") as file:
-            self.update_state(
-                state="PROGRESS",
-                meta={
-                    "result": {
-                        "message_status": "Initializing import",
-                        "type": "mbox",
-                    },
-                    "error": None,
+        self.update_state(
+            state="PROGRESS",
+            meta={
+                "result": {
+                    "message_status": "Indexing messages",
+                    "type": "mbox",
                 },
-            )
-            # Ensure file is a valid mbox file
-            content_type = magic.from_buffer(file.read(2048), mime=True)
+                "error": None,
+            },
+        )
+
+        # ===== PASS 1: Index all messages with byte offsets and dates =====
+        streaming_body = get_s3_streaming_body(message_imports_storage, file_key)
+
+        try:
+            # Read first bytes for MIME type validation
+            first_bytes = streaming_body.read(2048)
+            content_type = magic.from_buffer(first_bytes, mime=True)
             if content_type not in enums.MBOX_SUPPORTED_MIME_TYPES:
                 raise Exception(f"Expected MBOX file, got {content_type}")
 
-            # First pass: scan for message positions (also gives us the count)
-            file.seek(0)
-            message_positions, file_end = scan_mbox_messages(file)
-            total_messages = len(message_positions)
+            # Index all messages (collect byte offsets and dates)
+            message_indices = index_mbox_messages(
+                streaming_body,
+                initial_buffer=first_bytes,
+                initial_offset=0,
+            )
+        finally:
+            streaming_body.close()
 
-            # Second pass: process messages using pre-computed positions
-            for i, message_content in enumerate(
-                stream_mbox_messages(file, message_positions, file_end), 1
-            ):
-                current_message = i
-                try:
-                    # Update task state with progress
-                    result = {
-                        "message_status": f"Processing message {i} of {total_messages}",
-                        "total_messages": total_messages,
-                        "success_count": success_count,
-                        "failure_count": failure_count,
-                        "type": "mbox",
-                        "current_message": i,
-                    }
-                    self.update_state(
-                        state="PROGRESS",
-                        meta={
-                            "result": result,
-                            "error": None,
-                        },
-                    )
+        total_messages = len(message_indices)
 
-                    # Parse the email message
-                    parsed_email = parse_email_message(message_content)
-                    # Deliver the message
-                    if deliver_inbound_message(
-                        str(recipient), parsed_email, message_content, is_import=True
-                    ):
-                        success_count += 1
-                    else:
-                        failure_count += 1
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    logger.exception(
-                        "Error processing message from mbox file for recipient %s: %s",
-                        recipient_id,
-                        e,
-                    )
+        if total_messages == 0:
+            result = {
+                "message_status": "No messages found in file",
+                "total_messages": 0,
+                "success_count": 0,
+                "failure_count": 0,
+                "type": "mbox",
+                "current_message": 0,
+            }
+            self.update_state(state="SUCCESS", meta={"result": result, "error": None})
+            return {"status": "SUCCESS", "result": result, "error": None}
+
+        # Sort messages by date (oldest first) for correct threading
+        # Messages without dates go to the end
+        # Use a far-future UTC datetime as fallback for messages without dates
+        max_date = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+        message_indices.sort(key=lambda m: m.date if m.date else max_date)
+
+        self.update_state(
+            state="PROGRESS",
+            meta={
+                "result": {
+                    "message_status": f"Processing {total_messages} messages",
+                    "total_messages": total_messages,
+                    "success_count": 0,
+                    "failure_count": 0,
+                    "type": "mbox",
+                    "current_message": 0,
+                },
+                "error": None,
+            },
+        )
+
+        # ===== PASS 2: Process messages in chronological order =====
+        for idx, msg_index in enumerate(message_indices):
+            current_message = idx + 1
+            try:
+                # Update task state with progress
+                result = {
+                    "message_status": f"Processing message {current_message}/{total_messages}",
+                    "total_messages": total_messages,
+                    "success_count": success_count,
+                    "failure_count": failure_count,
+                    "type": "mbox",
+                    "current_message": current_message,
+                }
+                self.update_state(
+                    state="PROGRESS",
+                    meta={"result": result, "error": None},
+                )
+
+                # Fetch message content via byte range request
+                message_content = get_s3_byte_range(
+                    message_imports_storage,
+                    file_key,
+                    msg_index.start_byte,
+                    msg_index.end_byte,
+                )
+
+                # Parse the email message
+                parsed_email = parse_email_message(message_content)
+
+                # Deliver the message
+                if deliver_inbound_message(
+                    str(recipient), parsed_email, message_content, is_import=True
+                ):
+                    success_count += 1
+                else:
                     failure_count += 1
+
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.exception(
+                    "Error processing message %d from mbox file for recipient %s: %s",
+                    current_message,
+                    recipient_id,
+                    e,
+                )
+                failure_count += 1
 
         result = {
             "message_status": "Completed processing messages",
@@ -184,77 +471,6 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
             "result": result,
             "error": error_msg,
         }
-
-
-def scan_mbox_messages(file) -> tuple[list[int], int]:
-    """
-    Scan an MBOX file and return message positions without loading content into memory.
-
-    This function performs a single pass through the file to record the byte offset
-    where each message starts. The count of messages is simply len(positions).
-
-    Args:
-        file: File-like object to read from
-
-    Returns:
-        A tuple of (message_positions, file_end) where:
-        - message_positions: list of byte offsets where each message starts
-        - file_end: byte offset of end of file (needed to compute last message size)
-    """
-    message_positions = []
-    position = 0
-
-    for line in file:
-        if line.startswith(b"From "):
-            message_positions.append(position)
-        position += len(line)
-
-    return message_positions, position
-
-
-def stream_mbox_messages(
-    file, message_positions: list[int], file_end: int | None = None
-) -> Generator[bytes, None, None]:
-    """
-    Stream individual email messages from an MBOX file without loading everything into memory.
-
-    Yields messages in reverse order (oldest first) for proper reply threading,
-    since mbox files store messages with the most recent first.
-
-    Args:
-        file: File-like object to read from (must support seek)
-        message_positions: Pre-computed list of byte offsets where messages start.
-        file_end: Byte offset of end of file.
-
-    Yields:
-        Individual email messages as bytes
-    """
-    if message_positions is None or file_end is None:
-        logger.warning(
-            "Cannot stream MBOX messages: message positions or file end not provided"
-        )
-        return
-
-    # Read messages in reverse order for chronological processing
-    # Process from last message to first (oldest to newest in real time)
-    for i in range(len(message_positions) - 1, -1, -1):
-        start_pos = message_positions[i]
-        # End position is either the next message start or end of file
-        end_pos = (
-            message_positions[i + 1] if i + 1 < len(message_positions) else file_end
-        )
-
-        # Seek to message start
-        file.seek(start_pos)
-
-        # Read the message content (excluding the "From " line)
-        first_line = file.readline()  # Skip the "From " separator line
-        content_start = start_pos + len(first_line)
-        content_length = end_pos - content_start
-
-        # Read just this message's content
-        message_content = file.read(content_length)
-        yield message_content
 
 
 @celery_app.task(bind=True)

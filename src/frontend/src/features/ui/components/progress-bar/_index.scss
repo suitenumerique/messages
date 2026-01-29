@@ -1,47 +1,118 @@
-.progress-bar{
-    width: 100%;
-    height: 10px;
-    background-color: var(--c--contextuals--background--semantic--neutral--secondary);
-        background-image: linear-gradient(
-            -45deg,
-            rgba(255, 255, 255, 0.25) 25%,
-            transparent 25%,
-            transparent 50%,
-            rgba(255, 255, 255, 0.25) 50%,
-            rgba(255, 255, 255, 0.25) 75%,
-            transparent 75%,
-            transparent
-        );
-        background-size: 40px 40px;
-        animation: progress-stripes 1s linear infinite;
-    border-radius: 50vw;
-    overflow: hidden;
+.progress-bar {
+  width: 100%;
+  height: 10px;
+  background-color: var(
+    --c--contextuals--background--semantic--neutral--secondary
+  );
+  background-image: linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.25) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.25) 50%,
+    rgba(255, 255, 255, 0.25) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 40px 40px;
+  animation: progress-stripes 1s linear infinite;
+  border-radius: 50vw;
+  overflow: hidden;
 
-    &__progress {
-        height: 100%;
-        transition: width 0.2s linear;
-        background-color: var(--c--contextuals--background--semantic--brand--primary);
-        background-image: linear-gradient(
-            -45deg,
-            rgba(255, 255, 255, 0.15) 25%,
-            transparent 25%,
-            transparent 50%,
-            rgba(255, 255, 255, 0.15) 50%,
-            rgba(255, 255, 255, 0.15) 75%,
-            transparent 75%,
-            transparent
-        );
-        background-size: 40px 40px;
-        animation: progress-stripes 1s linear infinite;
-        border-radius: 50vw;
-    }
+  &__progress {
+    height: 100%;
+    transition: width 0.2s linear;
+    background-color: var(
+      --c--contextuals--background--semantic--brand--primary
+    );
+    background-image: linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.15) 25%,
+      transparent 25%,
+      transparent 50%,
+      rgba(255, 255, 255, 0.15) 50%,
+      rgba(255, 255, 255, 0.15) 75%,
+      transparent 75%,
+      transparent
+    );
+    background-size: 40px 40px;
+    animation: progress-stripes 1s linear infinite;
+    border-radius: 50vw;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-bar {
+    animation: none;
+  }
+
+  .progress-bar__progress {
+    animation: none;
+  }
+
+  .progress-bar--indeterminate .progress-bar__progress::after {
+    animation: none;
+    left: 0;
+    width: 100%;
+  }
 }
 
 @keyframes progress-stripes {
-    0% {
-        background-position: 0 0;
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 40px 0;
+  }
+}
+
+@keyframes progress-indeterminate {
+  0% {
+    left: -30%;
+    width: 30%;
+  }
+  50% {
+    width: 30%;
+  }
+  100% {
+    left: 100%;
+    width: 30%;
+  }
+}
+
+.progress-bar--indeterminate {
+  .progress-bar__progress {
+    position: relative;
+    width: 100%;
+    background-color: transparent;
+    background-image: none;
+    animation: none;
+
+    &::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: -30%;
+      height: 100%;
+      width: 30%;
+      background-color: var(
+        --c--contextuals--background--semantic--brand--primary
+      );
+      background-image: linear-gradient(
+        -45deg,
+        rgba(255, 255, 255, 0.15) 25%,
+        transparent 25%,
+        transparent 50%,
+        rgba(255, 255, 255, 0.15) 50%,
+        rgba(255, 255, 255, 0.15) 75%,
+        transparent 75%,
+        transparent
+      );
+      background-size: 40px 40px;
+      border-radius: 50vw;
+      animation:
+        progress-indeterminate 1.5s ease-in-out infinite,
+        progress-stripes 1s linear infinite;
     }
-    100% {
-        background-position: 40px 0;
-    }
+  }
 }

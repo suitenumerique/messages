@@ -106,8 +106,11 @@ const ApplicationMenu = () => {
     if (taskStatus) {
       if (taskStatus.state === StatusEnum.PROGRESS) {
         label = t("Importing messages...");
-        if (taskStatus.loading) icon = <CircularProgress loading />;
-        else icon = <CircularProgress progress={taskStatus.progress} withLabel />;
+        if (taskStatus.loading || taskStatus.progress === null) {
+          icon = <CircularProgress loading />;
+        } else {
+          icon = <CircularProgress progress={taskStatus.progress} withLabel />;
+        }
       }
       if (taskStatus.state === StatusEnum.SUCCESS) {
         label = t("Imported messages");

@@ -9,6 +9,8 @@
   "{{count}} hours ago_other": "{{count}} hours ago",
   "{{count}} messages_one": "{{count}} message",
   "{{count}} messages_other": "{{count}} messages",
+  "{{count}} messages imported_one": "{{count}} message imported",
+  "{{count}} messages imported_other": "{{count}} messages imported",
   "{{count}} messages have been archived._one": "The message has been archived.",
   "{{count}} messages have been archived._other": "{{count}} messages have been archived.",
   "{{count}} messages have been deleted._one": "The message has been deleted.",

@@ -26,6 +26,15 @@ def mock_storage_open(content: bytes):
     return mock_storage
 
 
+def mock_s3_streaming_body(content: bytes):
+    """Helper to create a mock that returns a streaming body with the given content.
+
+    This mocks the get_s3_streaming_body function to return a BytesIO object
+    that simulates an S3 StreamingBody.
+    """
+    return BytesIO(content)
+
+
 @pytest.fixture
 def admin_user(db):
     """Create a superuser for admin access."""
@@ -183,20 +192,27 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
 
 @pytest.mark.django_db
 def test_process_mbox_file_task(mailbox, mbox_file):
-    """Test the Celery task that processes MBOX files."""
+    """Test the Celery task that processes MBOX files with 2-pass approach."""
     # Create a mock task instance
     mock_task = MagicMock()
     mock_task.update_state = MagicMock()
 
-    # Mock storage
-    mock_storage = mock_storage_open(mbox_file)
+    # Mock get_s3_byte_range to return message content based on byte range
+    def mock_byte_range(storage, file_key, start, end):
+        return mbox_file[start : end + 1]
 
     # Mock the task's update_state method to avoid database operations
     with (
         patch.object(process_mbox_file_task, "update_state", mock_task.update_state),
-        patch("core.services.importer.tasks.storages") as mock_storages,
+        patch(
+            "core.services.importer.tasks.get_s3_streaming_body",
+            return_value=mock_s3_streaming_body(mbox_file),
+        ),
+        patch(
+            "core.services.importer.tasks.get_s3_byte_range",
+            side_effect=mock_byte_range,
+        ),
     ):
-        mock_storages.__getitem__.return_value = mock_storage
         # Run the task synchronously for testing
         task_result = process_mbox_file_task(
             file_key="test-file-key.mbox", recipient_id=str(mailbox.id)
@@ -214,15 +230,16 @@ def test_process_mbox_file_task(mailbox, mbox_file):
         assert task_result["result"]["current_message"] == 3
 
         # Verify progress updates were called correctly
-        assert mock_task.update_state.call_count == 5  # 4 PROGRESS + 1 SUCCESS
+        # 1 PROGRESS (indexing) + 1 PROGRESS (after indexing) + 3 PROGRESS (per message) + 1 SUCCESS
+        assert mock_task.update_state.call_count == 6
 
-        # Verify progress updates
+        # Verify progress updates (now with total_messages known and new format)
         for i in range(1, 4):
             mock_task.update_state.assert_any_call(
                 state="PROGRESS",
                 meta={
                     "result": {
-                        "message_status": f"Processing message {i} of 3",
+                        "message_status": f"Processing message {i}/3",
                         "total_messages": 3,
                         "success_count": i - 1,  # Previous messages were successful
                         "failure_count": 0,

@@ -1,11 +1,17 @@
 type ProgressBarProps = {
-    progress: number;
+    progress: number | null;
+    indeterminate?: boolean;
 }
 
-const ProgressBar = ({ progress }: ProgressBarProps) => {
+const ProgressBar = ({ progress, indeterminate = false }: ProgressBarProps) => {
+    const isIndeterminate = indeterminate || progress === null;
+
     return (
-        <div className="progress-bar">
-            <div className="progress-bar__progress" style={{ width: `${progress}%` }} />
+        <div className={`progress-bar ${isIndeterminate ? 'progress-bar--indeterminate' : ''}`}>
+            <div
+                className="progress-bar__progress"
+                style={isIndeterminate ? undefined : { width: `${progress}%` }}
+            />
         </div>
     )
 }

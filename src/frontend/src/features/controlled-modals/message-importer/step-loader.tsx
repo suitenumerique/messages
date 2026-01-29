@@ -13,12 +13,11 @@ type StepLoaderProps = {
 
 export type TaskMetadata = {
     current_message: number;
-    total_messages: number;
+    total_messages: number | null;
     failure_count: number;
     success_count: number;
     message_status: string;
     type: "string";
-
 }
 
 export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => {
@@ -41,12 +40,22 @@ export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => 
         }
     }, [importStatus?.state]);
 
+    const renderProgressText = () => {
+        if (importStatus.hasKnownTotal && importStatus.progress !== null && importStatus.progress > 0) {
+            return t('{{progress}}% imported', { progress: importStatus.progress });
+        }
+        if (!importStatus.hasKnownTotal && importStatus.currentMessage > 0) {
+            return t('{{count}} messages imported', { count: importStatus.currentMessage });
+        }
+        return null;
+    };
+
     return (
         <div className="task-loader">
             <Spinner size="lg" />
             <div className="task-loader__progress_resume">
                 <p>{t('Importing...')}</p>
-                {importStatus.progress > 0&& t('{{progress}}% imported', { progress: importStatus.progress })}
+                {renderProgressText()}
             </div>
             <ProgressBar progress={importStatus.progress} />
             {importStatus.state === StatusEnum.PROGRESS && <p>{t('You can close this window and continue using the app.')}</p>}
