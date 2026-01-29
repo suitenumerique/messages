@@ -136,6 +136,10 @@ services:
       - env.d/development/backend.local
     ports:
       - "8901:8000"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+        # restart: true
 
   backend-poetry:
     profiles:
