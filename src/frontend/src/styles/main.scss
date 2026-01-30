@@ -57,6 +57,7 @@
 @use "./../features/forms/components/combobox";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-labels/components/label-form-modal/components/color-palette-field";
 @use "./../features/layouts/components/admin/signatures-view";
+@use "./../features/quota/components";
 
 // Blocknote custom blocks and components
 @use "./../features/blocknote/blocknote-view-field";

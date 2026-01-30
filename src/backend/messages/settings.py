@@ -484,6 +484,7 @@ class Base(Configuration):
         "django.middleware.common.CommonMiddleware",
         "django.middleware.csrf.CsrfViewMiddleware",
         "django.contrib.auth.middleware.AuthenticationMiddleware",
+        "core.entitlements.middleware.EntitlementsMiddleware",
         "django.contrib.messages.middleware.MessageMiddleware",
     ]
 
@@ -757,6 +758,19 @@ class Base(Configuration):
     AI_API_KEY = values.Value(None, environ_name="AI_API_KEY", environ_prefix=None)
     AI_BASE_URL = values.Value(None, environ_name="AI_BASE_URL", environ_prefix=None)
     AI_MODEL = values.Value(None, environ_name="AI_MODEL", environ_prefix=None)
+
+    # Entitlements
+    ENTITLEMENTS_BACKEND = values.Value(
+        "core.entitlements.backends.dummy.DummyEntitlementsBackend",
+        environ_name="ENTITLEMENTS_BACKEND",
+        environ_prefix=None,
+    )
+    ENTITLEMENTS_BACKEND_PARAMETERS = JSONValue(
+        {}, environ_name="ENTITLEMENTS_BACKEND_PARAMETERS", environ_prefix=None
+    )
+    ENTITLEMENTS_CACHE_TIMEOUT = values.PositiveIntegerValue(
+        300, environ_name="ENTITLEMENTS_CACHE_TIMEOUT", environ_prefix=None
+    )
 
     # Feature flags
     FEATURE_AI_SUMMARY = values.BooleanValue(

@@ -15,6 +15,7 @@ import { StatusEnum } from "@/features/api/gen";
 import { CircularProgress } from "@/features/ui/components/circular-progress";
 import { TaskImportCacheHelper } from "@/features/utils/task-import-cache";
 import { useTheme } from "@/features/providers/theme";
+import { QuotaWidget } from "@/features/quota/components/quota-widget";
 
 
 type AuthenticatedHeaderProps = HeaderProps & {
@@ -65,6 +66,7 @@ export const HeaderRight = () => {
   return (
     <>
       <ApplicationMenu />
+      <QuotaWidget />
       {isDesktop && <VerticalSeparator size="24px" withPadding={false} />}
       <LagaufreButton />
       <UserMenu

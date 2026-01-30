@@ -11,13 +11,14 @@ from lasuite.oidc_login.backends import (
     OIDCAuthenticationBackend as LaSuiteOIDCAuthenticationBackend,
 )
 
-from core.enums import MailboxRoleChoices
+from core.enums import MailboxRoleChoices, MailDomainAccessRoleChoices
 from core.models import (
     Contact,
     DuplicateEmailError,
     Mailbox,
     MailboxAccess,
     MailDomain,
+    MailDomainAccess,
     User,
 )
 
@@ -88,6 +89,60 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
         """Post-get or create user."""
         if user:
             self.autojoin_mailbox(user)
+            self._sync_entitlements(user)
+
+    def _sync_entitlements(self, user):
+        """Fetch user entitlements and sync MailDomainAccess ADMIN records."""
+        from core.entitlements import (
+            EntitlementsUnavailableError,
+            get_user_entitlements,
+        )
+
+        try:
+            entitlements = get_user_entitlements(
+                user.sub, user.email, force_refresh=True
+            )
+        except EntitlementsUnavailableError:
+            logger.error(
+                "Entitlements service unavailable during login for user %s",
+                user.sub,
+            )
+            return
+
+        admin_domains = entitlements.get("can_admin_maildomains")
+        if admin_domains is None:
+            # Backend doesn't support this field (e.g. dummy), skip sync
+            return
+
+        # Resolve domain names to MailDomain objects that exist in DB
+        entitled_domains = MailDomain.objects.filter(name__in=admin_domains)
+        entitled_domain_ids = set(entitled_domains.values_list("id", flat=True))
+
+        # Create missing MailDomainAccess ADMIN records
+        existing_accesses = MailDomainAccess.objects.filter(
+            user=user, role=MailDomainAccessRoleChoices.ADMIN
+        )
+        existing_domain_ids = set(
+            existing_accesses.values_list("maildomain_id", flat=True)
+        )
+
+        # Add new accesses
+        for domain in entitled_domains:
+            if domain.id not in existing_domain_ids:
+                MailDomainAccess.objects.create(
+                    user=user,
+                    maildomain=domain,
+                    role=MailDomainAccessRoleChoices.ADMIN,
+                )
+
+        # Remove stale accesses (domains not in the entitled list)
+        stale_domain_ids = existing_domain_ids - entitled_domain_ids
+        if stale_domain_ids:
+            MailDomainAccess.objects.filter(
+                user=user,
+                maildomain_id__in=stale_domain_ids,
+                role=MailDomainAccessRoleChoices.ADMIN,
+            ).delete()
 
     def get_extra_claims(self, user_info):
         """Get extra claims."""
