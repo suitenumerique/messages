@@ -1,5 +1,8 @@
+import { vi } from 'vitest';
 import MailHelper, { SUPPORTED_IMAP_DOMAINS, ATTACHMENT_SEPARATORS } from './mail-helper';
 import DetectionMap from '@/features/i18n/attachments-detection-map.json';
+
+vi.mock('./errors', () => ({ handle: vi.fn() }));
 
 describe('MailHelper', () => {
   describe('markdownToHtml', () => {
@@ -340,14 +343,7 @@ describe('MailHelper', () => {
       expect(result).toMatchInlineSnapshot(`
         "<h1>Hello, how are you today?</h1>
         ---------- Drive attachments ----------
-        <ul>
-        <li>
-        <a class="drive-attachment" href="https://example.com/test.pdf" data-id="1" data-name="test.pdf" data-type="application/pdf" data-size="100" data-created_at="2021-01-01">test.pdf</a>
-        </li>
-        <li>
-        <a class="drive-attachment" href="https://example.com/test.docx" data-id="2" data-name="test.docx" data-type="application/vnd.openxmlformats-officedocument.wordprocessingml.document" data-size="200" data-created_at="2021-01-02">test.docx</a>
-        </li>
-        </ul>
+        <ul><li><a class="drive-attachment" href="https://example.com/test.pdf" data-id="1" data-name="test.pdf" data-type="application/pdf" data-size="100" data-created_at="2021-01-01">test.pdf</a></li><li><a class="drive-attachment" href="https://example.com/test.docx" data-id="2" data-name="test.docx" data-type="application/vnd.openxmlformats-officedocument.wordprocessingml.document" data-size="200" data-created_at="2021-01-02">test.docx</a></li></ul>
 
         "
       `);
@@ -367,11 +363,7 @@ describe('MailHelper', () => {
       expect(result).toMatchInlineSnapshot(`
         "
         ---------- Drive attachments ----------
-        <ul>
-        <li>
-        <a class="drive-attachment" href="https://example.com/test.pdf" data-id="1" data-name="test.pdf" data-type="application/pdf" data-size="100" data-created_at="2021-01-01">test.pdf</a>
-        </li>
-        </ul>
+        <ul><li><a class="drive-attachment" href="https://example.com/test.pdf" data-id="1" data-name="test.pdf" data-type="application/pdf" data-size="100" data-created_at="2021-01-01">test.pdf</a></li></ul>
 
         "
       `);
@@ -385,11 +377,7 @@ describe('MailHelper', () => {
       expect(result).toMatchInlineSnapshot(`
         "
         ---------- Drive attachments ----------
-        <ul>
-        <li>
-        <a class="drive-attachment" href="https://example.com/test.pdf" data-id="1" data-name="test.pdf" data-type="application/pdf" data-size="100" data-created_at="2021-01-01">test.pdf</a>
-        </li>
-        </ul>
+        <ul><li><a class="drive-attachment" href="https://example.com/test.pdf" data-id="1" data-name="test.pdf" data-type="application/pdf" data-size="100" data-created_at="2021-01-01">test.pdf</a></li></ul>
 
         "
       `);

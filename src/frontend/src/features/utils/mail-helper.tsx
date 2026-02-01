@@ -1,4 +1,4 @@
-import { renderToString } from "react-dom/server";
+import { renderToString, renderToStaticMarkup } from "react-dom/server";
 import { Markdown } from "@react-email/components";
 import DetectionMap from "@/features/i18n/attachments-detection-map.json";
 import z from "zod";
@@ -167,15 +167,16 @@ class MailHelper {
         if (attachments.length === 0) return htmlBody;
         return htmlBody
         + `\n${ATTACHMENT_SEPARATOR}\n`
-        + `<ul>\n`
-        + attachments.map(
-            a => '<li>\n'
-            +`<a class="drive-attachment" href="${a.url}" data-id="${a.id}" data-name="${a.name}" data-type="${a.type}" data-size="${a.size}" data-created_at="${a.created_at}">`
-            + a.name
-            + '</a>\n'
-            + '</li>'
-            ).join('\n')
-        + `\n</ul>\n\n`;
+        + renderToStaticMarkup(
+            <ul>
+                {attachments.map((a) => (
+                    <li key={a.id}>
+                        <a className="drive-attachment" href={a.url} data-id={a.id} data-name={a.name} data-type={a.type} data-size={String(a.size)} data-created_at={a.created_at}>{a.name}</a>
+                    </li>
+                ))}
+            </ul>
+        )
+        + '\n\n';
     }
 
     /**
@@ -221,7 +222,7 @@ class MailHelper {
         const attachments: DriveFile[] = [];
 
         // Parse anchor elements with drive-attachment class
-        const anchorRegex = /<a[^>]*class="drive-attachment"[^>]*>.*<\/a>/g;
+        const anchorRegex = /<a[^>]*class="drive-attachment"[^>]*>.*?<\/a>/g;
         let anchorMatch;
 
         while ((anchorMatch = anchorRegex.exec(matches[2])) !== null) {

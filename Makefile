@@ -255,6 +255,10 @@ front-test: ## run the frontend tests
 	$(COMPOSE) run --rm frontend-tools npm run test -- $${args:-${1}}
 .PHONY: front-test
 
+front-test-update: ## run the frontend tests and update snapshots
+	$(COMPOSE) run --rm frontend-tools npm run test -- --update
+.PHONY: front-test-update
+
 front-test-amd64: ## run the frontend tests in amd64
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	$(COMPOSE) run --rm frontend-tools-amd64 npm run test -- $${args:-${1}}
@@ -526,7 +530,7 @@ help:
 .PHONY: help
 
 front-shell: ## open a shell in the frontend container
-	@$(COMPOSE) run --rm --build frontend-tools bash
+	@$(COMPOSE) run --rm --build frontend-tools /bin/sh
 .PHONY: front-shell
 
 # Front

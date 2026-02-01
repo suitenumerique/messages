@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { getRequestUrl, getApiOrigin } from "@/features/api/utils";
 import { getBlobDownloadRetrieveUrl } from "@/features/api/gen/blob/blob";
 import { UnquoteMessage } from '@/features/utils/unquote-message';
@@ -117,9 +118,7 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
             });
             const unquotedText = unquoteMessage.getText().content;
 
-            const tempDiv = document.createElement('div');
-            tempDiv.textContent = unquotedText;
-            return `<p class="text-plain-content">${tempDiv.innerHTML}</p>`;
+            return renderToStaticMarkup(<p className="text-plain-content">{unquotedText}</p>);
         }
 
         // Mixed content (plain text + images, etc.) - use rendered content directly

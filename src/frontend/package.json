@@ -15,6 +15,7 @@
     "build-theme": "cunningham -g css,scss,ts -o src/styles",
     "api:update": "orval --config ./orval.config.ts",
     "test": "vitest run",
+    "test:update": "vitest run --update",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "ts:check": "tsc --noEmit",

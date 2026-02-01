@@ -2,6 +2,7 @@ import { createReactBlockSpec, useBlockNoteEditor, useComponentsContext, useEdit
 import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useState } from "react";
 import { Props } from "@blocknote/core";
+import DomPurify from "dompurify";
 import { ReadOnlyMessageTemplate, useMailboxesMessageTemplatesRenderRetrieve } from "@/features/api/gen";
 import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
 import { useTranslation } from "react-i18next";
@@ -172,7 +173,7 @@ export const BlockSignature = createReactBlockSpec(
             }
 
             return (
-                <div dangerouslySetInnerHTML={{ __html: preview.html_body }} />
+                <div dangerouslySetInnerHTML={{ __html: DomPurify().sanitize(preview.html_body) }} />
             )
         },
         toExternalHTML: () => (<span />),
