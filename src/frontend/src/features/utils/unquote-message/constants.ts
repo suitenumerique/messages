@@ -54,9 +54,9 @@ export const REPLY_PATTERNS = [
   // German - Am DATE schrieb NAME <EMAIL>:
   /^\s*(am\s.+\s)schrieb.+\s?(\[|<).+(\]|>):/im,
   // Dutch - Op DATE, schreef NAME <EMAIL>:
-  /^\s*(op\s[\s\S]+?(schreef|verzond|geschreven)[\s\S]+:)/im,
+  /^\s*(op\s[\s\S]{1,500}?(schreef|verzond|geschreven)[^\r\n]+:)/im,
   // Polish - W dniu DATE, NAME pisze|napisał:
-  /^\s*((w\sdniu|dnia)\s[\s\S]+?(pisze|napisał(\(a\))?):)/im,
+  /^\s*((w\sdniu|dnia)\s[\s\S]{1,500}?(pisze|napisał(\(a\))?):)/im,
   // Swedish/Danish - Den DATE skrev NAME <EMAIL>:
   /^\s*(den|d.)?\s?.+\s?skrev\s?".+"\s*[\[|<].+[\]|>]\s?:/im,
   // Vietnamese - Vào DATE đã viết NAME <EMAIL>:
@@ -64,7 +64,7 @@ export const REPLY_PATTERNS = [
   // Finnish - pe DATE NAME <EMAIL> kirjoitti:
   /^\s*(pe\s.+\s.+kirjoitti:)/im,
   // Chinese - 在 DATE, TIME, NAME 写道：
-  /^(在[\s\S]+写道：)/m,
+  /^(在[\s\S]{1,500}写道：)/m,
 
   // ==================== Outlook 2019 Patterns ====================
   // Outlook 2019 (Norwegian)
@@ -102,11 +102,11 @@ export const REPLY_PATTERNS = [
   // Time first format - HH:II, DATE, NAME <EMAIL>:
   /^[0-9]{2}:[0-9]{2}(.*)[0-9]{4}(.*)"\s*<(.*)>\s*:/m,
   // Russian format - 02.04.2012 14:20 пользователь "bob@example.com" <bob@xxx.mailgun.org> написал:
-  /(\d+\/\d+\/\d+|\d+\.\d+\.\d+)[\s\S]*\s\S+@\S+:/,
+  /(\d+\/\d+\/\d+|\d+\.\d+\.\d+)[^\r\n]{0,500}\s\S+@\S+:/,
   // ISO 8601 with timezone - 2014-10-17 11:28 GMT+03:00 Bob <bob@example.com>:
-  /\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+GMT[\s\S]*\s\S+@\S+:/i,
+  /\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+GMT[^\r\n]{0,500}\s\S+@\S+:/i,
   // RFC 2822 format - Thu, 26 Jun 2014 14:00:51 +0400 Bob <bob@example.com>:
-  /\S{3,10},\s+\d\d?\s+\S{3,10}\s+20\d\d,?\s+\d\d?:\d\d(:\d\d)?(\s+\S+){3,6}@\S+:/,
+  /\S{3,10},\s+\d\d?\s+\S{3,10}\s+20\d\d,?\s+\d\d?:\d\d(:\d\d)?[^\r\n]{0,200}@\S+:/,
 
   // ==================== Dash Delimiter Patterns ====================
   // Original Message delimiter (multi-language)
