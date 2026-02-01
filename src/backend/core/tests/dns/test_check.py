@@ -12,7 +12,7 @@ from core.services.dns.check import check_dns_records, check_single_record
 
 
 @pytest.mark.django_db
-class TestDNSChecking:
+class TestDNSChecking:  # pylint: disable=too-many-public-methods
     """Test DNS checking functionality."""
 
     def test_check_single_record_mx_correct(self, maildomain_factory):
@@ -411,6 +411,245 @@ class TestDNSChecking:
             result = check_single_record(maildomain, expected_record)
 
             assert result["status"] == "correct"
+
+    def test_check_single_record_spf_insecure_plus_all(self, maildomain_factory):
+        """Test that SPF with +all is detected as insecure when -all is expected."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_answer = MagicMock()
+            mock_answer.to_text.return_value = '"v=spf1 include:_spf.example.com +all"'
+            mock_resolve.return_value = [mock_answer]
+
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "insecure"
+            assert "v=spf1 include:_spf.example.com +all" in result["found"]
+
+    def test_check_single_record_spf_insecure_question_all(self, maildomain_factory):
+        """Test that SPF with ?all is detected as insecure when -all is expected."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_answer = MagicMock()
+            mock_answer.to_text.return_value = '"v=spf1 include:_spf.example.com ?all"'
+            mock_resolve.return_value = [mock_answer]
+
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "insecure"
+
+    def test_check_single_record_spf_tilde_all_accepted_as_correct(
+        self, maildomain_factory
+    ):
+        """Test that SPF with ~all is accepted as correct when -all is expected."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_answer = MagicMock()
+            mock_answer.to_text.return_value = '"v=spf1 include:_spf.example.com ~all"'
+            mock_resolve.return_value = [mock_answer]
+
+            result = check_single_record(maildomain, expected_record)
+
+            # ~all is accepted as correct when -all is expected
+            assert result["status"] == "correct"
+
+    def test_check_single_record_spf_insecure_not_triggered_when_expected_not_dash_all(
+        self, maildomain_factory
+    ):
+        """Test that insecure check is skipped when expected SPF doesn't end with -all."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com ~all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_answer = MagicMock()
+            mock_answer.to_text.return_value = '"v=spf1 include:_spf.example.com +all"'
+            mock_resolve.return_value = [mock_answer]
+
+            result = check_single_record(maildomain, expected_record)
+
+            # Expected uses ~all, so insecure check doesn't apply
+            assert result["status"] == "incorrect"
+
+    def test_check_single_record_dmarc_duplicate(self, maildomain_factory):
+        """Test that duplicate DMARC records are detected."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "_dmarc",
+            "value": "v=DMARC1;p=reject;adkim=s;aspf=s",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_answer1 = MagicMock()
+            mock_answer1.to_text.return_value = '"v=DMARC1;p=reject;adkim=s;aspf=s"'
+            mock_answer2 = MagicMock()
+            mock_answer2.to_text.return_value = '"v=DMARC1;p=none"'
+            mock_resolve.return_value = [mock_answer1, mock_answer2]
+
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "duplicate"
+            assert len(result["found"]) == 2
+
+    def test_check_single_record_dmarc_insecure_p_none(self, maildomain_factory):
+        """Test that DMARC with p=none is detected as insecure when p=reject expected."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "_dmarc",
+            "value": "v=DMARC1;p=reject;adkim=s;aspf=s",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_answer = MagicMock()
+            mock_answer.to_text.return_value = '"v=DMARC1;p=none"'
+            mock_resolve.return_value = [mock_answer]
+
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "insecure"
+            assert "v=DMARC1;p=none" in result["found"]
+
+    def test_check_single_record_dmarc_insecure_not_triggered_when_expected_p_none(
+        self, maildomain_factory
+    ):
+        """Test that insecure check is skipped when expected DMARC uses p=none."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "_dmarc",
+            "value": "v=DMARC1;p=none",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_answer = MagicMock()
+            mock_answer.to_text.return_value = '"v=DMARC1;p=none"'
+            mock_resolve.return_value = [mock_answer]
+
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "correct"
+
+    def test_check_dns_records_conflicting_mx(self, maildomain_factory):
+        """Test that extra MX records from other providers are detected as conflicting."""
+        maildomain = maildomain_factory(name="example.com")
+
+        with patch.object(maildomain, "get_expected_dns_records") as mock_get_records:
+            mock_get_records.return_value = [
+                {"type": "MX", "target": "@", "value": "10 mx1.example.com"},
+            ]
+
+            with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+                # Return our expected MX plus an extra one from another provider
+                mock_mx1 = MagicMock()
+                mock_mx1.preference = 10
+                mock_mx1.exchange = "mx1.example.com"
+                mock_mx2 = MagicMock()
+                mock_mx2.preference = 20
+                mock_mx2.exchange = "mx.otherprovider.com"
+                mock_resolve.return_value = [mock_mx1, mock_mx2]
+
+                results = check_dns_records(maildomain)
+
+                assert len(results) == 1
+                assert results[0]["_check"]["status"] == "conflicting"
+                assert "10 mx1.example.com" in results[0]["_check"]["found"]
+                assert "20 mx.otherprovider.com" in results[0]["_check"]["found"]
+
+    def test_check_dns_records_mx_correct_no_extra(self, maildomain_factory):
+        """Test that MX records without extra entries stay correct."""
+        maildomain = maildomain_factory(name="example.com")
+
+        with patch.object(maildomain, "get_expected_dns_records") as mock_get_records:
+            mock_get_records.return_value = [
+                {"type": "MX", "target": "@", "value": "10 mx1.example.com"},
+            ]
+
+            with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+                mock_mx1 = MagicMock()
+                mock_mx1.preference = 10
+                mock_mx1.exchange = "mx1.example.com"
+                mock_resolve.return_value = [mock_mx1]
+
+                results = check_dns_records(maildomain)
+
+                assert len(results) == 1
+                assert results[0]["_check"]["status"] == "correct"
+
+    def test_check_dns_records_conflicting_mx_multiple_expected(
+        self, maildomain_factory
+    ):
+        """Test conflicting detection with multiple expected MX records."""
+        maildomain = maildomain_factory(name="example.com")
+
+        with patch.object(maildomain, "get_expected_dns_records") as mock_get_records:
+            mock_get_records.return_value = [
+                {"type": "MX", "target": "@", "value": "10 mx1.example.com"},
+                {"type": "MX", "target": "@", "value": "20 mx2.example.com"},
+            ]
+
+            with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+                # Both expected MX records present plus an extra one
+                mock_mx1 = MagicMock()
+                mock_mx1.preference = 10
+                mock_mx1.exchange = "mx1.example.com"
+                mock_mx2 = MagicMock()
+                mock_mx2.preference = 20
+                mock_mx2.exchange = "mx2.example.com"
+                mock_mx3 = MagicMock()
+                mock_mx3.preference = 30
+                mock_mx3.exchange = "mx.legacy.com"
+                mock_resolve.return_value = [mock_mx1, mock_mx2, mock_mx3]
+
+                results = check_dns_records(maildomain)
+
+                assert len(results) == 2
+                # Both should be conflicting since extra MX is present
+                assert results[0]["_check"]["status"] == "conflicting"
+                assert results[1]["_check"]["status"] == "conflicting"
+
+    def test_check_dns_records_mx_incorrect_not_conflicting(self, maildomain_factory):
+        """Test that incorrect MX records are not marked as conflicting."""
+        maildomain = maildomain_factory(name="example.com")
+
+        with patch.object(maildomain, "get_expected_dns_records") as mock_get_records:
+            mock_get_records.return_value = [
+                {"type": "MX", "target": "@", "value": "10 mx1.example.com"},
+            ]
+
+            with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+                # Only a foreign MX, our expected one is absent
+                mock_mx = MagicMock()
+                mock_mx.preference = 20
+                mock_mx.exchange = "mx.otherprovider.com"
+                mock_resolve.return_value = [mock_mx]
+
+                results = check_dns_records(maildomain)
+
+                assert len(results) == 1
+                # Should be incorrect, not conflicting (our MX is not present)
+                assert results[0]["_check"]["status"] == "incorrect"
 
     def test_check_single_record_with_subdomain(self, maildomain_factory):
         """Test checking a record for a subdomain."""

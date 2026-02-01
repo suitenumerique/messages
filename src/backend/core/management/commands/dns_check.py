@@ -56,6 +56,8 @@ class Command(BaseCommand):
             "correct": "🟢",
             "incorrect": "🟡",
             "duplicate": "🔴",
+            "insecure": "🟡",
+            "conflicting": "🔴",
             "missing": "🔴",
             "error": "⚠️",
         }
@@ -69,7 +71,11 @@ class Command(BaseCommand):
             elif status == "incorrect":
                 line += f" — Expected: {record['value']} | Found: {', '.join(record['_check'].get('found', []))}"
             elif status == "duplicate":
-                line += f" — Multiple SPF records found: {', '.join(record['_check'].get('found', []))}"
+                line += f" — Multiple records found: {', '.join(record['_check'].get('found', []))}"
+            elif status == "insecure":
+                line += f" — Insecure configuration: {', '.join(record['_check'].get('found', []))}"
+            elif status == "conflicting":
+                line += f" — Conflicting records: {', '.join(record['_check'].get('found', []))}"
             elif status == "missing":
                 line += f" — Expected: {record['value']} | Error: {record['_check'].get('error', '')}"
             elif status == "error":

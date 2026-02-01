@@ -70,10 +70,33 @@ def check_single_record(
             spf_records = [v for v in found_values if v.startswith("v=spf1")]
             if len(spf_records) > 1:
                 return {"status": "duplicate", "found": found_values}
+            # Check for insecure SPF: if we expect -all but found +all or ?all
+            if expected_value.endswith("-all"):
+                for spf in spf_records:
+                    if spf.endswith("+all") or spf.endswith("?all"):
+                        return {"status": "insecure", "found": found_values}
+
+        # For DMARC records, check for duplicates and insecure policy
+        if record_type.upper() == "TXT" and expected_value.startswith("v=DMARC1"):
+            dmarc_records = [v for v in found_values if v.startswith("v=DMARC1")]
+            if len(dmarc_records) > 1:
+                return {"status": "duplicate", "found": found_values}
+            # Check for insecure DMARC: if we expect p=reject or p=quarantine
+            # but found p=none
+            if "p=none" not in expected_value:
+                for dmarc in dmarc_records:
+                    if "p=none" in dmarc:
+                        return {"status": "insecure", "found": found_values}
 
         # Check if expected value is in found values
         if expected_value in found_values:
             return {"status": "correct", "found": found_values}
+
+        # Accept ~all as correct when -all is expected for SPF records
+        if record_type.upper() == "TXT" and expected_value.endswith("-all"):
+            softfail_variant = expected_value[:-4] + "~all"
+            if softfail_variant in found_values:
+                return {"status": "correct", "found": found_values}
 
         return {"status": "incorrect", "found": found_values}
 
@@ -110,9 +133,25 @@ def check_dns_records(maildomain: MailDomain) -> List[Dict[str, any]]:
     expected_records = maildomain.get_expected_dns_records()
     results = []
 
+    # Collect expected MX values for conflicting detection
+    expected_mx_values = {
+        record["value"] for record in expected_records if record["type"].upper() == "MX"
+    }
+
     for expected_record in expected_records:
         result_record = expected_record.copy()
         result_record["_check"] = check_single_record(maildomain, expected_record)
+
+        # For MX records that are correct, check for extra (conflicting) MX entries
+        if (
+            expected_record["type"].upper() == "MX"
+            and result_record["_check"]["status"] == "correct"
+        ):
+            found = result_record["_check"].get("found", [])
+            extra_mx = [v for v in found if v not in expected_mx_values]
+            if extra_mx:
+                result_record["_check"]["status"] = "conflicting"
+
         results.append(result_record)
 
     return results
