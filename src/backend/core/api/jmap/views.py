@@ -2,8 +2,11 @@
 
 from datetime import datetime
 from datetime import timezone as dt_timezone
+from urllib.parse import urlencode, urlparse
 
 from django.conf import settings
+from django.http import HttpResponse, HttpResponseRedirect
+from django.views import View
 
 from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
@@ -102,6 +105,57 @@ class JMAPSessionView(APIView):
         }
 
         return Response(session)
+
+
+class JMAPOIDCLoginView(View):
+    """
+    OIDC login helper for the JMAP demo webmail.
+
+    Initiates the existing backend OIDC flow and redirects back to
+    the demo with the access token in the URL fragment.
+
+    GET /api/v1.0/jmap/oidc-login?redirect_uri=<demo_url>
+    """
+
+    def get(self, request):
+        redirect_uri = request.GET.get("redirect_uri", "")
+
+        # Store redirect_uri in session on first visit
+        if redirect_uri:
+            # Validate redirect_uri to prevent open redirects
+            parsed = urlparse(redirect_uri)
+            if not parsed.scheme or not parsed.netloc:
+                return HttpResponse("Invalid redirect_uri", status=400)
+            request.session["jmap_oidc_redirect_uri"] = redirect_uri
+
+        if not request.user.is_authenticated:
+            # Redirect to the existing OIDC login flow,
+            # with next= pointing back here after authentication
+            next_url = f"/api/{settings.API_VERSION}/jmap/oidc-login"
+            authenticate_url = (
+                f"/api/{settings.API_VERSION}/authenticate/?{urlencode({'next': next_url})}"
+            )
+            return HttpResponseRedirect(authenticate_url)
+
+        # User is authenticated — retrieve the access token from session
+        stored_redirect = request.session.pop("jmap_oidc_redirect_uri", "")
+        access_token = request.session.get("oidc_access_token", "")
+
+        if not stored_redirect:
+            return HttpResponse(
+                "Missing redirect_uri. Start the flow with ?redirect_uri=<url>",
+                status=400,
+            )
+
+        if not access_token:
+            return HttpResponse(
+                "No OIDC access token in session. "
+                "Ensure OIDC_STORE_ACCESS_TOKEN=True is set.",
+                status=500,
+            )
+
+        # Redirect back to the demo with the token in the URL fragment
+        return HttpResponseRedirect(f"{stored_redirect}#access_token={access_token}")
 
 
 class JMAPAPIView(APIView):

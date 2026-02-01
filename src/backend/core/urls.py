@@ -5,7 +5,7 @@ from django.urls import include, path
 
 from rest_framework.routers import DefaultRouter
 
-from core.api.jmap.views import JMAPAPIView, JMAPSessionView
+from core.api.jmap.views import JMAPAPIView, JMAPOIDCLoginView, JMAPSessionView
 from core.api.viewsets.blob import BlobViewSet
 from core.api.viewsets.config import ConfigView
 from core.api.viewsets.contacts import ContactViewSet
@@ -235,6 +235,11 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/jmap/",
         JMAPAPIView.as_view(),
         name="jmap-api",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/jmap/oidc-login",
+        JMAPOIDCLoginView.as_view(),
+        name="jmap-oidc-login",
     ),
 ]
 

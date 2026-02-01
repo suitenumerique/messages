@@ -11,6 +11,7 @@ from django.db.utils import OperationalError
 from django.http import HttpResponse
 from django.urls import include, path, re_path
 
+from core.api.jmap.views import JMAPSessionView
 from drf_spectacular.views import (
     SpectacularJSONAPIView,
     SpectacularRedocView,
@@ -33,6 +34,11 @@ def heartbeat(request):
 urlpatterns = [
     path(settings.ADMIN_URL, admin.site.urls),
     path("", include("core.urls")),
+    path(
+        ".well-known/jmap",
+        JMAPSessionView.as_view(),
+        name="well-known-jmap",
+    ),
     path(
         "__heartbeat__/",
         heartbeat,
