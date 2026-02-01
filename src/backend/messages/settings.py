@@ -368,6 +368,16 @@ class Base(Configuration):
         "localhost", environ_name="MESSAGES_TECHNICAL_DOMAIN", environ_prefix=None
     )
 
+    # DNS record templates (JSON string with {technical_domain} placeholders)
+    MESSAGES_DNS_RECORDS = values.Value(
+        '[{"target":"","type":"mx","value":"10 mx1.{technical_domain}."},'
+        '{"target":"","type":"mx","value":"20 mx2.{technical_domain}."},'
+        '{"target":"","type":"txt","value":"v=spf1 include:_spf.{technical_domain} -all"},'
+        '{"target":"_dmarc","type":"txt","value":"v=DMARC1; p=reject; adkim=s; aspf=s;"}]',
+        environ_name="MESSAGES_DNS_RECORDS",
+        environ_prefix=None,
+    )
+
     # DNS Provider settings
     DNS_SCALEWAY_API_TOKEN = values.Value(
         None, environ_name="DNS_SCALEWAY_API_TOKEN", environ_prefix=None

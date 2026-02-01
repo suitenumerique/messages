@@ -334,21 +334,10 @@ class MailDomain(BaseModel):
         """Get the list of DNS records we expect to be present for this domain."""
 
         technical_domain = settings.MESSAGES_TECHNICAL_DOMAIN
-
-        records = [
-            {"target": "", "type": "mx", "value": f"10 mx1.{technical_domain}."},
-            {"target": "", "type": "mx", "value": f"20 mx2.{technical_domain}."},
-            {
-                "target": "",
-                "type": "txt",
-                "value": f"v=spf1 include:_spf.{technical_domain} -all",
-            },
-            {
-                "target": "_dmarc",
-                "type": "txt",
-                "value": "v=DMARC1; p=reject; adkim=s; aspf=s;",
-            },
-        ]
+        raw = settings.MESSAGES_DNS_RECORDS.replace(
+            "{technical_domain}", technical_domain
+        )
+        records = json.loads(raw)
 
         # Add DKIM record if we have an active DKIM key
         dkim_key = self.get_active_dkim_key()

@@ -2,7 +2,10 @@
 Tests for DNS checking functionality.
 """
 
+import json
 from unittest.mock import MagicMock, patch
+
+from django.test import override_settings
 
 import pytest
 from dns.resolver import NXDOMAIN, YXDOMAIN, NoAnswer, NoNameservers, Timeout
@@ -668,6 +671,105 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
             assert result["found"] == ["192.168.1.1"]
             # Verify the query was made for the subdomain
             mock_resolve.assert_called_once_with("www.example.com", "A")
+
+    @override_settings(MESSAGES_TECHNICAL_DOMAIN="example.com")
+    def test_get_expected_dns_records_default(self, maildomain_factory):
+        """Test that default MESSAGES_DNS_RECORDS produces the standard 4 records."""
+        maildomain = maildomain_factory(name="example.com")
+
+        with patch.object(maildomain, "get_active_dkim_key", return_value=None):
+            records = maildomain.get_expected_dns_records()
+
+        assert len(records) == 4
+        assert records[0] == {
+            "target": "",
+            "type": "mx",
+            "value": "10 mx1.example.com.",
+        }
+        assert records[1] == {
+            "target": "",
+            "type": "mx",
+            "value": "20 mx2.example.com.",
+        }
+        assert records[2] == {
+            "target": "",
+            "type": "txt",
+            "value": "v=spf1 include:_spf.example.com -all",
+        }
+        assert records[3] == {
+            "target": "_dmarc",
+            "type": "txt",
+            "value": "v=DMARC1; p=reject; adkim=s; aspf=s;",
+        }
+
+    @override_settings(
+        MESSAGES_TECHNICAL_DOMAIN="example.com",
+        MESSAGES_DNS_RECORDS=json.dumps(
+            [
+                {
+                    "target": "",
+                    "type": "mx",
+                    "value": "10 custom-mx.{technical_domain}.",
+                },
+                {
+                    "target": "",
+                    "type": "txt",
+                    "value": "v=spf1 include:custom.{technical_domain} -all",
+                },
+            ]
+        ),
+    )
+    def test_get_expected_dns_records_custom_override(self, maildomain_factory):
+        """Test that MESSAGES_DNS_RECORDS env override replaces the default records."""
+        maildomain = maildomain_factory(name="example.com")
+
+        with patch.object(maildomain, "get_active_dkim_key", return_value=None):
+            records = maildomain.get_expected_dns_records()
+
+        assert len(records) == 2
+        assert records[0] == {
+            "target": "",
+            "type": "mx",
+            "value": "10 custom-mx.example.com.",
+        }
+        assert records[1] == {
+            "target": "",
+            "type": "txt",
+            "value": "v=spf1 include:custom.example.com -all",
+        }
+
+    @override_settings(
+        MESSAGES_TECHNICAL_DOMAIN="example.com",
+        MESSAGES_DNS_RECORDS=json.dumps(
+            [{"target": "", "type": "mx", "value": "10 custom-mx.{technical_domain}."}]
+        ),
+    )
+    def test_get_expected_dns_records_custom_override_with_dkim(
+        self, maildomain_factory
+    ):
+        """Test that DKIM is still appended when using a custom DNS records override."""
+        maildomain = maildomain_factory(name="example.com")
+
+        mock_dkim_key = MagicMock()
+        mock_dkim_key.selector = "selector1"
+        mock_dkim_key.get_dns_record_value.return_value = "v=DKIM1; k=rsa; p=MIGf..."
+
+        with patch.object(
+            maildomain, "get_active_dkim_key", return_value=mock_dkim_key
+        ):
+            records = maildomain.get_expected_dns_records()
+
+        assert len(records) == 2
+        assert records[0] == {
+            "target": "",
+            "type": "mx",
+            "value": "10 custom-mx.example.com.",
+        }
+        assert records[1] == {
+            "target": "selector1._domainkey",
+            "type": "txt",
+            "value": "v=DKIM1; k=rsa; p=MIGf...",
+        }
 
 
 @pytest.fixture(name="maildomain_factory")
