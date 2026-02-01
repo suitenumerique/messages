@@ -55,6 +55,7 @@ class Command(BaseCommand):
         status_emoji = {
             "correct": "🟢",
             "incorrect": "🟡",
+            "duplicate": "🔴",
             "missing": "🔴",
             "error": "⚠️",
         }
@@ -67,6 +68,8 @@ class Command(BaseCommand):
                 line += f" — Value: {record['value']}"
             elif status == "incorrect":
                 line += f" — Expected: {record['value']} | Found: {', '.join(record['_check'].get('found', []))}"
+            elif status == "duplicate":
+                line += f" — Multiple SPF records found: {', '.join(record['_check'].get('found', []))}"
             elif status == "missing":
                 line += f" — Expected: {record['value']} | Error: {record['_check'].get('error', '')}"
             elif status == "error":

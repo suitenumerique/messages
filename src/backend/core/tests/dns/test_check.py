@@ -314,6 +314,104 @@ class TestDNSChecking:
                 assert results[1]["_check"]["status"] == "incorrect"
                 assert results[2]["_check"]["status"] == "missing"
 
+    def test_check_single_record_spf_duplicate(self, maildomain_factory):
+        """Test that duplicate SPF records are detected.
+
+        Per RFC 7208, a domain must not have multiple SPF records.
+        Example in the wild: saint-sozy.fr has both
+          "v=spf1 include:_spf.mail.suite.anct.gouv.fr -all"
+          "v=spf1 include:_spf.legacy-provider.com ~all"
+        """
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            # Mock two SPF TXT records (invalid per RFC 7208)
+            mock_answer1 = MagicMock()
+            mock_answer1.to_text.return_value = '"v=spf1 include:_spf.example.com -all"'
+            mock_answer2 = MagicMock()
+            mock_answer2.to_text.return_value = (
+                '"v=spf1 include:_spf.legacy-provider.com ~all"'
+            )
+            mock_resolve.return_value = [mock_answer1, mock_answer2]
+
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "duplicate"
+            assert len(result["found"]) == 2
+            assert "v=spf1 include:_spf.example.com -all" in result["found"]
+            assert "v=spf1 include:_spf.legacy-provider.com ~all" in result["found"]
+
+    def test_check_single_record_spf_duplicate_even_if_correct_present(
+        self, maildomain_factory
+    ):
+        """Test that duplicate SPF is reported even when the correct value is present."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_correct = MagicMock()
+            mock_correct.to_text.return_value = '"v=spf1 include:_spf.example.com -all"'
+            mock_legacy = MagicMock()
+            mock_legacy.to_text.return_value = (
+                '"v=spf1 include:_spf.legacy-provider.com ~all"'
+            )
+            mock_resolve.return_value = [mock_correct, mock_legacy]
+
+            result = check_single_record(maildomain, expected_record)
+
+            # Should be duplicate, NOT correct
+            assert result["status"] == "duplicate"
+
+    def test_check_single_record_spf_single_is_not_duplicate(self, maildomain_factory):
+        """Test that a single SPF record is not flagged as duplicate."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_spf = MagicMock()
+            mock_spf.to_text.return_value = '"v=spf1 include:_spf.example.com -all"'
+            # Also has a non-SPF TXT record
+            mock_other = MagicMock()
+            mock_other.to_text.return_value = '"google-site-verification=abc123"'
+            mock_resolve.return_value = [mock_spf, mock_other]
+
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "correct"
+
+    def test_check_single_record_dmarc_not_affected_by_spf_duplicate_check(
+        self, maildomain_factory
+    ):
+        """Test that duplicate detection only applies to SPF, not other TXT records."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "_dmarc",
+            "value": "v=DMARC1; p=reject; adkim=s; aspf=s;",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            mock_answer = MagicMock()
+            mock_answer.to_text.return_value = '"v=DMARC1; p=reject; adkim=s; aspf=s;"'
+            mock_resolve.return_value = [mock_answer]
+
+            result = check_single_record(maildomain, expected_record)
+
+            assert result["status"] == "correct"
+
     def test_check_single_record_with_subdomain(self, maildomain_factory):
         """Test checking a record for a subdomain."""
         maildomain = maildomain_factory(name="example.com")

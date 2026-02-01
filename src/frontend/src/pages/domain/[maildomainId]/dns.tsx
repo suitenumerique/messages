@@ -30,6 +30,8 @@ function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSData
         return "success";
       case "incorrect":
         return "warning";
+      case "duplicate":
+        return "danger";
       case "missing":
         return "danger";
       default:
@@ -43,6 +45,8 @@ function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSData
         return t("Correct");
       case "incorrect":
         return t("Incorrect");
+      case "duplicate":
+        return t("Duplicate");
       case "missing":
         return t("Missing");
       default:

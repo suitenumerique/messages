@@ -64,6 +64,13 @@ def check_single_record(
             answers = dns.resolver.resolve(query_name, record_type)
             found_values = [answer.to_text() for answer in answers]
 
+        # For SPF records, check for duplicates (multiple "v=spf1" TXT records
+        # is invalid per RFC 7208 and causes delivery issues)
+        if record_type.upper() == "TXT" and expected_value.startswith("v=spf1"):
+            spf_records = [v for v in found_values if v.startswith("v=spf1")]
+            if len(spf_records) > 1:
+                return {"status": "duplicate", "found": found_values}
+
         # Check if expected value is in found values
         if expected_value in found_values:
             return {"status": "correct", "found": found_values}
