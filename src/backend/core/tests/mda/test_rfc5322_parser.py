@@ -948,6 +948,40 @@ This is a test email body.
         with pytest.raises(EmailParseError, match="Input must be non-empty bytes."):
             parse_email_message(None)
 
+    def test_parse_email_with_nul_bytes(self):
+        """Test that NUL bytes are stripped from subject and body content.
+
+        PostgreSQL text fields cannot store NUL (0x00) bytes.
+        """
+        raw = b"Subject: Test\x00Subject\x00With\x00NUL\nFrom: a@b.c\nTo: d@e.f\n\nBody\x00with\x00NUL\x00bytes."
+        parsed = parse_email_message(raw)
+        assert parsed is not None
+        # Verify NUL bytes were stripped from subject
+        assert "\x00" not in parsed["subject"]
+        assert parsed["subject"] == "TestSubjectWithNUL"
+        # Verify NUL bytes were stripped from body content
+        assert len(parsed["textBody"]) == 1
+        assert "\x00" not in parsed["textBody"][0]["content"]
+        assert parsed["textBody"][0]["content"] == "BodywithNULbytes."
+
+    def test_parse_message_content_strips_nul_bytes_in_fallback_path(self):
+        """Test NUL bytes are stripped in the fallback path for malformed messages.
+
+        When a message has no content-type but has a body, the fallback path
+        in parse_message_content should still strip NUL bytes.
+        """
+
+        class MockMessage:
+            """Mock message without content_type to trigger fallback path."""
+
+            content_type = None
+            body = "Body\x00with\x00NUL\x00bytes"
+
+        result = parse_message_content(MockMessage())
+        assert len(result["textBody"]) == 1
+        assert "\x00" not in result["textBody"][0]["content"]
+        assert result["textBody"][0]["content"] == "BodywithNULbytes"
+
     def test_parse_message_content_simple(self, flanker_simple_message):
         """Test parsing content of a simple text message."""
         content = parse_message_content(flanker_simple_message)

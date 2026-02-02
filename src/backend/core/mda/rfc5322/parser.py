@@ -26,6 +26,18 @@ from flanker.mime import create
 logger = logging.getLogger(__name__)
 
 
+def _strip_nul_bytes(text: str) -> str:
+    """Strip NUL bytes from text.
+
+    PostgreSQL text fields cannot store NUL (0x00) bytes.
+    This char is used to mark the end of a string in C language
+    and is not valid in PostgreSQL text fields. Furthermore the
+    RFC 5322 section 4 defines it as an obsolete character.
+    https://datatracker.ietf.org/doc/html/rfc5322#page-31
+    """
+    return text.replace("\x00", "") if text else ""
+
+
 class EmailParseError(Exception):
     """Exception raised for errors during email parsing."""
 
@@ -475,7 +487,7 @@ def _build_body_part_dict(part_info: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "partId": part_info["part_id"],
         "type": part_type,
-        "content": content,
+        "content": _strip_nul_bytes(content),
     }
 
 
@@ -655,7 +667,11 @@ def parse_message_content(message) -> Dict[str, Any]:
     if not hasattr(message, "content_type") or not message.content_type:
         if hasattr(message, "body") and isinstance(message.body, str):
             result["textBody"].append(
-                {"partId": "", "type": "text/plain", "content": message.body}
+                {
+                    "partId": "",
+                    "type": "text/plain",
+                    "content": _strip_nul_bytes(message.body),
+                }
             )
         return result
 
@@ -792,7 +808,7 @@ def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
         default_date = datetime.now(dt_timezone.utc)
 
         return {
-            "subject": subject or "",
+            "subject": _strip_nul_bytes(subject or ""),
             "from": {"name": from_name, "email": from_addr},
             "to": [{"name": name, "email": email} for name, email in to_recipients],
             "cc": [{"name": name, "email": email} for name, email in cc_recipients],
