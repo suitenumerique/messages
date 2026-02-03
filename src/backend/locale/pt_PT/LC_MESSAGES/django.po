@@ -2,8 +2,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-01-16 09:10+0000\n"
-"PO-Revision-Date: 2026-01-22 09:05\n"
+"POT-Creation-Date: 2026-01-25 11:10+0000\n"
+"PO-Revision-Date: 2026-02-03 17:00\n"
 "Last-Translator: \n"
 "Language-Team: Portuguese\n"
 "Language: pt_PT\n"
@@ -17,6 +17,16 @@ msgstr ""
 "X-Crowdin-File: backend.pot\n"
 "X-Crowdin-File-ID: 40\n"
 
+msgid "delivery status"
+msgstr ""
+
+#, python-format
+msgid "%(message_count)d messages - Retry send message task queued (id: %(task_id)s)."
+msgstr ""
+
+msgid "Retry to send selected messages to pending recipients"
+msgstr ""
+
 msgid "Personal info"
 msgstr ""
 
@@ -24,6 +34,21 @@ msgid "Permissions"
 msgstr ""
 
 msgid "Important dates"
+msgstr ""
+
+msgid "Mail domain not found."
+msgstr ""
+
+#, python-format
+msgid "DNS provisioning successful via %(provider)s: %(changes)s"
+msgstr ""
+
+#, python-format
+msgid "DNS provisioning successful via %(provider)s (no changes needed)."
+msgstr ""
+
+#, python-format
+msgid "DNS provisioning failed: %(error)s"
 msgstr ""
 
 msgid "Statistics"
@@ -44,7 +69,20 @@ msgstr ""
 msgid "Import Messages from IMAP"
 msgstr ""
 
+msgid "Message not found."
+msgstr ""
+
+msgid "No pending recipients found for this message."
+msgstr ""
+
+#, python-format
+msgid "Retry task has been queued for %(retryable_recipients_count)d pending recipient(s) (id: %(task_id)s)."
+msgstr ""
+
 msgid "Keys"
+msgstr ""
+
+msgid "Error"
 msgstr ""
 
 msgid "A mailbox with this local part already exists in this domain."
@@ -355,9 +393,6 @@ msgstr ""
 msgid "delivered at"
 msgstr ""
 
-msgid "delivery status"
-msgstr ""
-
 msgid "delivery message"
 msgstr ""
 
@@ -514,6 +549,12 @@ msgstr ""
 msgid "Messages that use this attachment"
 msgstr ""
 
+msgid "content ID"
+msgstr ""
+
+msgid "Content-ID for inline images"
+msgstr ""
+
 msgid "attachment"
 msgstr ""
 
@@ -605,6 +646,12 @@ msgid "message template"
 msgstr ""
 
 msgid "message templates"
+msgstr ""
+
+msgid "Provision DNS records"
+msgstr ""
+
+msgid "Retry to send to pending recipients"
 msgstr ""
 
 msgid "Import from IMAP"

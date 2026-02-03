@@ -2,8 +2,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-01-16 09:10+0000\n"
-"PO-Revision-Date: 2026-01-22 09:05\n"
+"POT-Creation-Date: 2026-01-25 11:10+0000\n"
+"PO-Revision-Date: 2026-02-03 17:00\n"
 "Last-Translator: \n"
 "Language-Team: Ukrainian\n"
 "Language: uk_UA\n"
@@ -17,6 +17,16 @@ msgstr ""
 "X-Crowdin-File: backend.pot\n"
 "X-Crowdin-File-ID: 40\n"
 
+msgid "delivery status"
+msgstr "стан доставки"
+
+#, python-format
+msgid "%(message_count)d messages - Retry send message task queued (id: %(task_id)s)."
+msgstr "%(message_count)d повідомлень - Повторити завдання відправлення повідомлення в черзі (id: %(task_id)s)."
+
+msgid "Retry to send selected messages to pending recipients"
+msgstr "Повторити спробу надсилання вибраних повідомлень до очікуючих отримувачів"
+
 msgid "Personal info"
 msgstr "Особисті дані"
 
@@ -25,6 +35,21 @@ msgstr "Дозволи"
 
 msgid "Important dates"
 msgstr "Важливі дати"
+
+msgid "Mail domain not found."
+msgstr "Поштовий домен не знайдено."
+
+#, python-format
+msgid "DNS provisioning successful via %(provider)s: %(changes)s"
+msgstr "Успішне налаштування DNS через %(provider)s: %(changes)s"
+
+#, python-format
+msgid "DNS provisioning successful via %(provider)s (no changes needed)."
+msgstr "Успішне налаштування DNS через %(provider)s (зміни не потрібні)."
+
+#, python-format
+msgid "DNS provisioning failed: %(error)s"
+msgstr "Помилка під час налаштування DNS: %(error)s"
 
 msgid "Statistics"
 msgstr "Статистика"
@@ -44,8 +69,21 @@ msgstr "Імпорт повідомлень"
 msgid "Import Messages from IMAP"
 msgstr "Імпорт повідомлень з IMAP"
 
+msgid "Message not found."
+msgstr "Повідомлення не знайдене."
+
+msgid "No pending recipients found for this message."
+msgstr "Для цього повідомлення не знайдено жодного отримувача."
+
+#, python-format
+msgid "Retry task has been queued for %(retryable_recipients_count)d pending recipient(s) (id: %(task_id)s)."
+msgstr "Завдання повтору було поставлено в чергу на %(retryable_recipients_count)d одержувачів (id: %(task_id)s)."
+
 msgid "Keys"
 msgstr "Ключі"
+
+msgid "Error"
+msgstr "Помилка"
 
 msgid "A mailbox with this local part already exists in this domain."
 msgstr "Поштова скринька з цією локальною частиною вже існує в цьому домені."
@@ -355,9 +393,6 @@ msgstr "контакти"
 msgid "delivered at"
 msgstr "доставлено"
 
-msgid "delivery status"
-msgstr "стан доставки"
-
 msgid "delivery message"
 msgstr "повідомлення про доставку"
 
@@ -514,6 +549,12 @@ msgstr "Поштова скринька, що має це вкладення"
 msgid "Messages that use this attachment"
 msgstr "Повідомлення, які використовують це вкладення"
 
+msgid "content ID"
+msgstr "content ID"
+
+msgid "Content-ID for inline images"
+msgstr "Content-ID для вбудованих зображень"
+
 msgid "attachment"
 msgstr "вкладення"
 
@@ -606,6 +647,12 @@ msgstr "шаблон повідомлення"
 
 msgid "message templates"
 msgstr "шаблони повідомлень"
+
+msgid "Provision DNS records"
+msgstr "Налаштування записів DNS"
+
+msgid "Retry to send to pending recipients"
+msgstr "Повторити спробу надсилання до очікуючих отримувачів"
 
 msgid "Import from IMAP"
 msgstr "Імпорт з IMAP"

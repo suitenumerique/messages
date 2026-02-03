@@ -1,1 +1,8 @@
-{}
+{
+  "{{count}} messages_one": "{{count}} Nachricht",
+  "{{count}} messages_other": "{{count}} Nachrichten",
+  "{{count}} messages have been deleted._one": "Die Nachricht wurde gelöscht.",
+  "{{count}} messages have been deleted._other": "{{count}} Nachrichten wurden gelöscht.",
+  "{{count}} messages have been updated._one": "Die Nachricht wurde aktualisiert.",
+  "{{count}} messages have been updated._other": "{{count}} Nachrichten wurden aktualisiert."
+}

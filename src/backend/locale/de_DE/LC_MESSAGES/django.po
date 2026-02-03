@@ -2,8 +2,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-01-16 09:10+0000\n"
-"PO-Revision-Date: 2026-01-22 09:05\n"
+"POT-Creation-Date: 2026-01-25 11:10+0000\n"
+"PO-Revision-Date: 2026-02-03 17:00\n"
 "Last-Translator: \n"
 "Language-Team: German\n"
 "Language: de_DE\n"
@@ -17,13 +17,38 @@ msgstr ""
 "X-Crowdin-File: backend.pot\n"
 "X-Crowdin-File-ID: 40\n"
 
-msgid "Personal info"
+msgid "delivery status"
 msgstr ""
+
+#, python-format
+msgid "%(message_count)d messages - Retry send message task queued (id: %(task_id)s)."
+msgstr ""
+
+msgid "Retry to send selected messages to pending recipients"
+msgstr ""
+
+msgid "Personal info"
+msgstr "Persönliche Daten"
 
 msgid "Permissions"
-msgstr ""
+msgstr "Berechtigungen"
 
 msgid "Important dates"
+msgstr "Wichtige Daten"
+
+msgid "Mail domain not found."
+msgstr ""
+
+#, python-format
+msgid "DNS provisioning successful via %(provider)s: %(changes)s"
+msgstr ""
+
+#, python-format
+msgid "DNS provisioning successful via %(provider)s (no changes needed)."
+msgstr ""
+
+#, python-format
+msgid "DNS provisioning failed: %(error)s"
 msgstr ""
 
 msgid "Statistics"
@@ -44,7 +69,20 @@ msgstr ""
 msgid "Import Messages from IMAP"
 msgstr ""
 
+msgid "Message not found."
+msgstr ""
+
+msgid "No pending recipients found for this message."
+msgstr ""
+
+#, python-format
+msgid "Retry task has been queued for %(retryable_recipients_count)d pending recipient(s) (id: %(task_id)s)."
+msgstr ""
+
 msgid "Keys"
+msgstr ""
+
+msgid "Error"
 msgstr ""
 
 msgid "A mailbox with this local part already exists in this domain."
@@ -89,13 +127,13 @@ msgid "primary key for the record as UUID"
 msgstr ""
 
 msgid "created on"
-msgstr ""
+msgstr "Erstellt"
 
 msgid "date and time at which a record was created"
 msgstr ""
 
 msgid "updated on"
-msgstr ""
+msgstr "Aktualisiert"
 
 msgid "date and time at which a record was last updated"
 msgstr ""
@@ -122,7 +160,7 @@ msgid "admin email address"
 msgstr ""
 
 msgid "language"
-msgstr ""
+msgstr "Sprache"
 
 msgid "The language in which the user wants to see the interface."
 msgstr ""
@@ -149,10 +187,10 @@ msgid "Metadata to sync to the user in the identity provider."
 msgstr ""
 
 msgid "user"
-msgstr ""
+msgstr "Benutzer"
 
 msgid "users"
-msgstr ""
+msgstr "Benutzer"
 
 msgid "Enter a valid domain name. This value may contain only lowercase letters, numbers, dots and - characters."
 msgstr ""
@@ -224,7 +262,7 @@ msgid "Whether this mailbox identifies a person (i.e. is not an alias or a group
 msgstr ""
 
 msgid "mailbox"
-msgstr ""
+msgstr "Briefkasten"
 
 msgid "mailboxes"
 msgstr ""
@@ -308,7 +346,7 @@ msgid "URL-friendly version of the name"
 msgstr ""
 
 msgid "color"
-msgstr ""
+msgstr "Farbe"
 
 msgid "Color of the label in hex format (e.g. #FF0000)"
 msgstr ""
@@ -320,7 +358,7 @@ msgid "Threads that have this label"
 msgstr ""
 
 msgid "description"
-msgstr ""
+msgstr "Beschreibung"
 
 msgid "Description of the label, used by AI to understand its purpose"
 msgstr ""
@@ -344,7 +382,7 @@ msgid "thread accesses"
 msgstr ""
 
 msgid "email"
-msgstr ""
+msgstr "E-Mail"
 
 msgid "contact"
 msgstr ""
@@ -353,9 +391,6 @@ msgid "contacts"
 msgstr ""
 
 msgid "delivered at"
-msgstr ""
-
-msgid "delivery status"
 msgstr ""
 
 msgid "delivery message"
@@ -407,10 +442,10 @@ msgid "Signature template for the message"
 msgstr ""
 
 msgid "message"
-msgstr ""
+msgstr "Nachricht"
 
 msgid "messages"
-msgstr ""
+msgstr "Nachrichten"
 
 msgid "No subject"
 msgstr ""
@@ -514,8 +549,14 @@ msgstr ""
 msgid "Messages that use this attachment"
 msgstr ""
 
-msgid "attachment"
+msgid "content ID"
 msgstr ""
+
+msgid "Content-ID for inline images"
+msgstr ""
+
+msgid "attachment"
+msgstr "Anhang"
 
 msgid "attachments"
 msgstr ""
@@ -539,7 +580,7 @@ msgid "DKIM private key in PEM format (encrypted)"
 msgstr ""
 
 msgid "public key"
-msgstr ""
+msgstr "Öffentlicher Schlüssel"
 
 msgid "DKIM public key for DNS record generation"
 msgstr ""
@@ -607,11 +648,17 @@ msgstr ""
 msgid "message templates"
 msgstr ""
 
+msgid "Provision DNS records"
+msgstr ""
+
+msgid "Retry to send to pending recipients"
+msgstr ""
+
 msgid "Import from IMAP"
 msgstr ""
 
 msgid "Home"
-msgstr ""
+msgstr "Start"
 
 msgid "Please correct the error below."
 msgstr ""
@@ -626,8 +673,8 @@ msgid "English"
 msgstr ""
 
 msgid "French"
-msgstr ""
+msgstr "Französisch"
 
 msgid "Dutch"
-msgstr ""
+msgstr "Niederländisch"
 

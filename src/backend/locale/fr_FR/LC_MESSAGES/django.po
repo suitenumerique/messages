@@ -2,8 +2,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-01-22 11:32+0000\n"
-"PO-Revision-Date: 2026-01-22 09:05\n"
+"POT-Creation-Date: 2026-01-25 11:10+0000\n"
+"PO-Revision-Date: 2026-02-03 17:00\n"
 "Last-Translator: \n"
 "Language-Team: French\n"
 "Language: fr_FR\n"
@@ -21,15 +21,11 @@ msgid "delivery status"
 msgstr "statut de livraison"
 
 #, python-format
-msgid ""
-"%(message_count)d messages - Retry send message task queued (id: "
-"%(task_id)s)."
-msgstr ""
-"%(message_count)d messages - Réexpédition mise en file d'attente (id: %(task_id)s)."
+msgid "%(message_count)d messages - Retry send message task queued (id: %(task_id)s)."
+msgstr "%(message_count)d messages - Réexpédition mise en file d'attente (id: %(task_id)s)."
 
 msgid "Retry to send selected messages to pending recipients"
-msgstr ""
-"Réexpédier les messages sélectionnés aux destinataires en attente"
+msgstr "Réexpédier les messages sélectionnés aux destinataires en attente"
 
 msgid "Personal info"
 msgstr "Informations personnelles"
@@ -39,6 +35,21 @@ msgstr "Permissions"
 
 msgid "Important dates"
 msgstr "Dates importantes"
+
+msgid "Mail domain not found."
+msgstr "Domaine de messagerie introuvable."
+
+#, python-format
+msgid "DNS provisioning successful via %(provider)s: %(changes)s"
+msgstr ""
+
+#, python-format
+msgid "DNS provisioning successful via %(provider)s (no changes needed)."
+msgstr ""
+
+#, python-format
+msgid "DNS provisioning failed: %(error)s"
+msgstr ""
 
 msgid "Statistics"
 msgstr "Statistiques"
@@ -65,14 +76,14 @@ msgid "No pending recipients found for this message."
 msgstr "Aucun destinataire en attente d'envoie trouvé pour ce message."
 
 #, python-format
-msgid ""
-"Retry task has been queued for %(retryable_recipients_count)d pending "
-"recipient(s) (id: %(task_id)s)."
-msgstr ""
-"Réexpédition mise en file d'attente pour %(retryable_recipients_count)d destinataire(s) en attente (id: %(task_id)s)."
+msgid "Retry task has been queued for %(retryable_recipients_count)d pending recipient(s) (id: %(task_id)s)."
+msgstr "Réexpédition mise en file d'attente pour %(retryable_recipients_count)d destinataire(s) en attente (id: %(task_id)s)."
 
 msgid "Keys"
 msgstr "Clés"
+
+msgid "Error"
+msgstr "Erreur"
 
 msgid "A mailbox with this local part already exists in this domain."
 msgstr "Une boîte avec ce préfixe existe déjà dans ce domaine."
@@ -538,6 +549,12 @@ msgstr "Boîte aux lettres propriétaire de cette pièce jointe"
 msgid "Messages that use this attachment"
 msgstr "Messages qui utilisent cette pièce jointe"
 
+msgid "content ID"
+msgstr "content ID"
+
+msgid "Content-ID for inline images"
+msgstr "ID du contenu pour les images en ligne"
+
 msgid "attachment"
 msgstr "pièce jointe"
 
@@ -631,6 +648,9 @@ msgstr "modèle de message"
 msgid "message templates"
 msgstr "modèles de message"
 
+msgid "Provision DNS records"
+msgstr ""
+
 msgid "Retry to send to pending recipients"
 msgstr "Réessayer d'envoyer aux destinataires en attente"
 
@@ -657,3 +677,4 @@ msgstr "Français"
 
 msgid "Dutch"
 msgstr "Néerlandais"
+

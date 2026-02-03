@@ -2,8 +2,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-messages\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-01-16 09:10+0000\n"
-"PO-Revision-Date: 2026-01-22 09:05\n"
+"POT-Creation-Date: 2026-01-25 11:10+0000\n"
+"PO-Revision-Date: 2026-02-03 17:00\n"
 "Last-Translator: \n"
 "Language-Team: Dutch\n"
 "Language: nl_NL\n"
@@ -17,6 +17,16 @@ msgstr ""
 "X-Crowdin-File: backend.pot\n"
 "X-Crowdin-File-ID: 40\n"
 
+msgid "delivery status"
+msgstr "afleverstatus"
+
+#, python-format
+msgid "%(message_count)d messages - Retry send message task queued (id: %(task_id)s)."
+msgstr ""
+
+msgid "Retry to send selected messages to pending recipients"
+msgstr ""
+
 msgid "Personal info"
 msgstr "Persoonlijke gegevens"
 
@@ -25,6 +35,21 @@ msgstr "Machtigingen"
 
 msgid "Important dates"
 msgstr "Belangrijke data"
+
+msgid "Mail domain not found."
+msgstr ""
+
+#, python-format
+msgid "DNS provisioning successful via %(provider)s: %(changes)s"
+msgstr ""
+
+#, python-format
+msgid "DNS provisioning successful via %(provider)s (no changes needed)."
+msgstr ""
+
+#, python-format
+msgid "DNS provisioning failed: %(error)s"
+msgstr ""
 
 msgid "Statistics"
 msgstr "Statistieken"
@@ -44,8 +69,21 @@ msgstr "Berichten importeren"
 msgid "Import Messages from IMAP"
 msgstr "Berichten importeren van IMAP"
 
+msgid "Message not found."
+msgstr ""
+
+msgid "No pending recipients found for this message."
+msgstr ""
+
+#, python-format
+msgid "Retry task has been queued for %(retryable_recipients_count)d pending recipient(s) (id: %(task_id)s)."
+msgstr ""
+
 msgid "Keys"
 msgstr "Keys"
+
+msgid "Error"
+msgstr ""
 
 msgid "A mailbox with this local part already exists in this domain."
 msgstr "Er bestaat al een mailbox met dit lokale deel in dit domein."
@@ -355,9 +393,6 @@ msgstr "contacten"
 msgid "delivered at"
 msgstr "afgeleverd op"
 
-msgid "delivery status"
-msgstr "afleverstatus"
-
 msgid "delivery message"
 msgstr "verzend bericht"
 
@@ -514,6 +549,12 @@ msgstr "Mailbox die eigenaar is van deze bijlage"
 msgid "Messages that use this attachment"
 msgstr "Berichten die deze bijlage gebruiken"
 
+msgid "content ID"
+msgstr ""
+
+msgid "Content-ID for inline images"
+msgstr ""
+
 msgid "attachment"
 msgstr "bijlage"
 
@@ -606,6 +647,12 @@ msgstr "bericht template"
 
 msgid "message templates"
 msgstr "bericht sjablonen"
+
+msgid "Provision DNS records"
+msgstr ""
+
+msgid "Retry to send to pending recipients"
+msgstr ""
 
 msgid "Import from IMAP"
 msgstr "Importeren van IMAP"
