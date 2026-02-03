@@ -5,6 +5,7 @@ import { DropdownMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import { getMessagesEmlRetrieveUrl } from "@/features/api/gen/messages/messages";
 import { getRequestUrl } from "@/features/api/utils";
 import { useMailboxContext } from "@/features/providers/mailbox";
+import usePrint from "@/features/message/use-print";
 import useRead from "@/features/message/use-read";
 import useTrash from "@/features/message/use-trash";
 import { ThreadMessageActionsProps } from "./types";
@@ -25,6 +26,7 @@ const ThreadMessageActions = ({
     const { unselectThread, selectedThread, messages } = useMailboxContext();
     const { markAsUnread, markAsRead } = useRead();
     const { markAsTrashed } = useTrash();
+    const { print } = usePrint();
 
     const hasSiblingMessages = useMemo(() => {
         if (!selectedThread) return false;
@@ -80,6 +82,11 @@ const ThreadMessageActions = ({
             icon: <Icon type={IconType.FILLED} name="mark_email_unread" />,
             callback: () => toggleReadStateFrom(true)
         }]),
+        {
+            label: t('Print'),
+            icon: <Icon type={IconType.FILLED} name="print" />,
+            callback: () => print(message)
+        },
         {
             label: t('Download raw email'),
             icon: <Icon type={IconType.FILLED} name="download" />,

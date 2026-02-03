@@ -349,6 +349,7 @@
   "Please enter a valid email address.": "Veuillez saisir une adresse email valide.",
   "Prefix can only contain letters, numbers, dots, underscores and hyphens.": "Le préfixe ne peut contenir que des lettres, chiffres, points, tirets bas et tirets.",
   "Prefix is required.": "Le préfixe est requis.",
+  "Print": "Imprimer",
   "Read": "Lu",
   "Read state": "État de lecture",
   "Recurring": "Récurrent",
