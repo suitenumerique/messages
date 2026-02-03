@@ -1,1 +1,6 @@
-{}
+{
+    "mailbox_roles_admin": "Administrator",
+    "mailbox_roles_editor": "Mitbearbeiter",
+    "maildomain_roles_admin": "Administrator",
+    "thread_roles_editor": "Mitbearbeiter"
+}
