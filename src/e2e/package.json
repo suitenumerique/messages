@@ -1,7 +1,7 @@
 {
   "name": "st-messages-e2e",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "End-to-end tests for Messages application",
   "engines": {
     "node": ">=22.0.0 <23.0.0",

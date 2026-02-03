@@ -4,7 +4,7 @@
 
 [project]
 name = "messages-backend"
-version = "0.1.1"
+version = "0.2.0"
 authors = [{ "name" = "ANCT", "email" = "suiteterritoriale@anct.gouv.fr" }]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
