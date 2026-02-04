@@ -250,6 +250,31 @@ def _update_message_attachments(
     if to_remove:
         message.attachments.remove(*to_remove)
 
+        # Delete orphan attachments (not linked to any message)
+        orphan_attachments = models.Attachment.objects.filter(
+            id__in=to_remove,
+            messages__isnull=True,
+        )
+        blob_ids = list(orphan_attachments.values_list("blob_id", flat=True))
+        deleted_attachments, _ = orphan_attachments.delete()
+
+        # Delete blobs that are no longer referenced by anything
+        deleted_blobs = 0
+        if blob_ids:
+            deleted_blobs, _ = models.Blob.objects.filter(
+                id__in=blob_ids,
+                attachments__isnull=True,  # no more attachments
+                messages__isnull=True,  # not used by Message.blob
+                draft__isnull=True,  # not used by Message.draft_blob
+            ).delete()
+
+        if deleted_attachments or deleted_blobs:
+            logger.debug(
+                "Deleted %d orphan attachment(s) and %d blob(s)",
+                deleted_attachments,
+                deleted_blobs,
+            )
+
     # Add new attachments
     if to_add:
         valid_attachments = models.Attachment.objects.filter(id__in=to_add)

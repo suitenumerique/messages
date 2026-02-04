@@ -379,6 +379,58 @@ class TestDraftWithAttachments:
             assert response.status_code == status.HTTP_201_CREATED
             assert len(response.data["attachments"]) == 2
 
+    def test_draft_remove_attachment_deletes_orphan_blob_and_attachment(
+        self, api_client, user_mailbox, blob
+    ):
+        """Test that removing an attachment from a draft deletes orphan blob and attachment."""
+        client, _ = api_client
+
+        # Create a draft with an attachment
+        url = reverse("draft-message")
+        response = client.post(
+            url,
+            {
+                "senderId": str(user_mailbox.id),
+                "subject": "Draft with attachment",
+                "draftBody": json.dumps({"text": "Test draft"}),
+                "to": ["recipient@example.com"],
+                "attachments": [
+                    {
+                        "partId": "att-1",
+                        "blobId": str(blob.id),
+                        "name": "test_attachment.txt",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        draft_id = response.data["id"]
+
+        # Verify attachment exists and blob count (1 attachment blob + 1 draft_blob)
+        assert models.Attachment.objects.count() == 1
+        assert models.Blob.objects.count() == 2
+
+        # Update the draft to remove the attachment
+        url = reverse("draft-message-detail", kwargs={"message_id": draft_id})
+        response = client.put(
+            url,
+            {
+                "senderId": str(user_mailbox.id),
+                "attachments": [],  # Remove all attachments
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data["attachments"]) == 0
+
+        # Verify the orphan attachment and its blob were deleted
+        # Only draft_blob should remain
+        assert models.Attachment.objects.count() == 0
+        assert models.Blob.objects.count() == 1
+
     def test_draft_replace_attachment_allows_new_within_limit(
         self, api_client, user_mailbox
     ):
