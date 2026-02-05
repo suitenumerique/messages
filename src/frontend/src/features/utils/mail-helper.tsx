@@ -5,6 +5,17 @@ import z from "zod";
 import { DriveFile } from "../forms/components/message-form/drive-attachment-picker";
 import { handle } from "./errors";
 
+/**
+ * Decode HTML entities produced by renderToStaticMarkup in attribute values.
+ * &amp; must be decoded last to avoid double-decoding (e.g. &amp;lt; → &lt; → <).
+ */
+const decodeHtmlEntities = (str: string): string =>
+    str.replace(/&lt;/g, '<')
+       .replace(/&gt;/g, '>')
+       .replace(/&quot;/g, '"')
+       .replace(/&#x27;/g, "'")
+       .replace(/&amp;/g, '&');
+
 type ImapConfig = {
     host: string;
     port: number;
@@ -232,7 +243,7 @@ class MailHelper {
             const extractDataAttribute = (attr: string): string | null => {
                 const regex = new RegExp(`data-${attr}="([^"]*)"`, 'i');
                 const anchorMatch = anchorElement.match(regex);
-                return anchorMatch ? anchorMatch[1] : null;
+                return anchorMatch ? decodeHtmlEntities(anchorMatch[1]) : null;
             };
 
             const id = extractDataAttribute('id');
@@ -243,7 +254,7 @@ class MailHelper {
 
             // Extract href attribute
             const hrefMatch = anchorElement.match(/href="([^"]*)"/);
-            const url = hrefMatch ? hrefMatch[1] : '';
+            const url = hrefMatch ? decodeHtmlEntities(hrefMatch[1]) : '';
 
             if (id && name && url) {
                 attachments.push({
