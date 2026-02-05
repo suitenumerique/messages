@@ -7,6 +7,7 @@ import { SentBoxProvider } from "@/features/providers/sent-box";
 import { LeftPanel } from "./left-panel";
 import { ModalStoreProvider } from "@/features/providers/modal-store";
 import { useTheme } from "@/features/providers/theme";
+import Link from "next/link";
 
 export const MainLayout = ({ children }: PropsWithChildren) => {
     return (
@@ -52,7 +53,7 @@ const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>
                 isLeftPanelOpen={leftPanelOpen}
                 setIsLeftPanelOpen={setLeftPanelOpen}
                 leftPanelContent={<LeftPanel hasNoMailbox={hasNoMailbox} />}
-                icon={<img src={`/images/${theme}/app-logo-${variant}.svg`} alt="logo" height={40} />}
+                icon={<Link href="/"><img src={`/images/${theme}/app-logo-${variant}.svg`} alt="logo" height={40} /></Link>}
                 hideLeftPanelOnDesktop={hasNoMailbox}
                 isDragging={isDragging}
             >

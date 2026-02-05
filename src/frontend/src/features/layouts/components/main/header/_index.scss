@@ -24,7 +24,7 @@
     padding: 0 var(--c--globals--spacings--base);
 
     &__left {
-      justify-content: center;
+      justify-content: space-between;
     }
 
     &__center {
@@ -52,6 +52,7 @@
 
   &__left {
     grid-area: left;
+    gap: var(--c--globals--spacings--xs);
   }
 
   &__center {

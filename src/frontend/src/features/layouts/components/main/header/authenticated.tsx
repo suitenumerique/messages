@@ -9,6 +9,7 @@ import { useFeatureFlag, FEATURE_KEYS } from "@/hooks/use-feature";
 import { useAuth, logout } from "@/features/auth";
 import { LanguagePicker } from "@/features/layouts/components/main/language-picker";
 import { LagaufreButton } from "@/features/ui/components/lagaufre";
+import { SurveyButton } from "@/features/ui/components/feedback-button";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useImportTaskStatus } from "@/hooks/use-import-task";
 import { StatusEnum } from "@/features/api/gen";
@@ -44,7 +45,9 @@ export const AuthenticatedHeader = ({
           }
         />
       </div>
-      <div className="c__header__left">{leftIcon}</div>
+      <div className="c__header__left">
+        {leftIcon}
+      </div>
       <div className="c__header__center">
         {!hideSearch && <SearchInput />}
       </div>
@@ -64,9 +67,12 @@ export const HeaderRight = () => {
 
   return (
     <>
-      <ApplicationMenu />
-      {isDesktop && <VerticalSeparator size="24px" withPadding={false} />}
-      <LagaufreButton />
+      <div className="flex-row flex-align-center">
+        <SurveyButton iconOnly color="brand" variant="tertiary" />
+        <ApplicationMenu />
+        {isDesktop && <VerticalSeparator size="24px" withPadding={false} />}
+        <LagaufreButton />
+      </div>
       <UserMenu
         user={user ? {
           full_name: user.full_name ?? undefined,
@@ -91,6 +97,7 @@ const ApplicationMenu = () => {
   const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
   const canManageMessageTemplates = useAbility(Abilities.CAN_MANAGE_MESSAGE_TEMPLATES, selectedMailbox);
   const isIntegrationsEnabled = useFeatureFlag(FEATURE_KEYS.MAILBOX_ADMIN_CHANNELS);
+  const canManageIntegrations = canManageMessageTemplates && isIntegrationsEnabled;
   const { t } = useTranslation();
   const router = useRouter();
   const taskId = useMemo(() => {
@@ -137,6 +144,7 @@ const ApplicationMenu = () => {
                 label: t("Domain admin"),
                 icon: <Icon name="domain" />,
                 callback: () => router.push("/domain"),
+                showSeparator: canImportMessages || canManageMessageTemplates || canManageIntegrations,
               }] : []),
               ...(canImportMessages ? [importMessageOption] : []),
               ...(canManageMessageTemplates ? [{
@@ -157,7 +165,7 @@ const ApplicationMenu = () => {
                     }
                 }
               }] : []),
-              ...(canManageMessageTemplates && isIntegrationsEnabled ? [{
+              ...(canManageIntegrations ? [{
                 label: t("Integrations"),
                 icon: <Icon name="integration_instructions" type={IconType.OUTLINED} />,
                 callback: () => {

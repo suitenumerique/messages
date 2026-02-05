@@ -241,6 +241,10 @@ _Those settings are deprecated and will be removed in the future._
 | `NEXT_PUBLIC_LANGUAGES` | `[["en-US","English"],["fr-FR","Français"],["nl-NL","Nederlands"]]` | Languages available for frontend | Optional |
 | `NEXT_PUBLIC_DEFAULT_LANGUAGE` | `en-US` | Default language for frontend | Optional |
 | `NEXT_PUBLIC_THEME_CONFIG` | `{theme: "white-label"}` | Theme configuration for frontend | Optional |
+| `NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL` || Feedback widget API URL | Optional |
+| `NEXT_PUBLIC_FEEDBACK_WIDGET_PATH` || Feedback widget path | Optional |
+| `NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL` || Feedback widget channel | Optional |
+| `NEXT_PUBLIC_HELP_CENTER_URL` || Help center URL | Optional |
 
 ## Development Tools
 
