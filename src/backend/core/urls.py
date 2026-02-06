@@ -32,7 +32,10 @@ from core.api.viewsets.message_template import (
     AvailableMailboxMessageTemplateViewSet,
     MailboxMessageTemplateViewSet,
 )
-from core.api.viewsets.metrics import MailDomainUsersMetricsApiView
+from core.api.viewsets.metrics import (
+    MailboxUsageMetricsApiView,
+    MailDomainUsersMetricsApiView,
+)
 from core.api.viewsets.placeholder import PlaceholderView
 from core.api.viewsets.send import SendMessageView
 from core.api.viewsets.task import TaskDetailView
@@ -227,6 +230,11 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/metrics/maildomain_users/",
         MailDomainUsersMetricsApiView.as_view(),
         name="maildomain-users-metrics",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/metrics/mailbox_usage/",
+        MailboxUsageMetricsApiView.as_view(),
+        name="mailbox-usage-metrics",
     ),
     # Alias for MTA check endpoint
     path(

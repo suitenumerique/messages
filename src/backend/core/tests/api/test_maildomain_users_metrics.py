@@ -7,9 +7,15 @@ from django.utils import timezone
 import pytest
 
 from core.factories import (
+    AttachmentFactory,
+    BlobFactory,
+    ContactFactory,
     MailboxAccessFactory,
     MailboxFactory,
     MailDomainFactory,
+    MessageFactory,
+    ThreadAccessFactory,
+    ThreadFactory,
     UserFactory,
 )
 from core.models import MailboxAccess, MailDomain
@@ -871,3 +877,235 @@ class TestMailDomainUsersMetrics:
             group_key="siret",
             group_value=None,
         )
+
+
+class TestMailDomainStorageUsedMetrics:
+    """Tests for storage_used in the maildomain users metrics endpoint."""
+
+    @pytest.mark.django_db
+    def test_no_storage(self, api_client, url, correctly_configured_header):
+        """Domain with users but no messages has storage_used zero."""
+        domain = MailDomainFactory(name="example.com")
+        MailboxAccessFactory(mailbox__domain=domain)
+
+        response = api_client.get(url, **correctly_configured_header)
+        assert response.status_code == 200
+
+        result = response.json()["results"][0]
+        assert result["domain"] == "example.com"
+        assert result["metrics"]["storage_used"] == 0
+
+    @pytest.mark.django_db
+    def test_basic_storage(
+        self, api_client, url, correctly_configured_header, settings
+    ):
+        """Domain storage counts messages and MIME blobs."""
+        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+        domain = MailDomainFactory(name="example.com")
+        mailbox = MailboxFactory(domain=domain)
+        # Need a MailboxAccess so the domain appears in results
+        MailboxAccessFactory(mailbox=mailbox)
+
+        thread = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        contact = ContactFactory(mailbox=mailbox)
+        msg = MessageFactory(
+            thread=thread, sender=contact, raw_mime=b"mime" * 100
+        )
+
+        response = api_client.get(url, **correctly_configured_header)
+        result = response.json()["results"][0]
+
+        assert result["metrics"]["storage_used"] == (
+            1 * overhead + msg.blob.size_compressed
+        )
+
+    @pytest.mark.django_db
+    def test_shared_thread_counted_once(
+        self, api_client, url, correctly_configured_header, settings
+    ):
+        """Two mailboxes in the same domain sharing a thread: messages counted once."""
+        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+        domain = MailDomainFactory(name="example.com")
+        mailbox_a = MailboxFactory(domain=domain)
+        mailbox_b = MailboxFactory(domain=domain)
+        MailboxAccessFactory(mailbox=mailbox_a)
+        MailboxAccessFactory(mailbox=mailbox_b)
+
+        # Shared thread with 2 messages
+        thread = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox_a, thread=thread)
+        ThreadAccessFactory(mailbox=mailbox_b, thread=thread)
+        contact = ContactFactory(mailbox=mailbox_a)
+        msg1 = MessageFactory(
+            thread=thread, sender=contact, raw_mime=b"msg1" * 100
+        )
+        msg2 = MessageFactory(
+            thread=thread, sender=contact, raw_mime=b"msg2" * 100
+        )
+
+        response = api_client.get(url, **correctly_configured_header)
+        result = response.json()["results"][0]
+
+        # Messages and blobs counted once, not doubled
+        assert result["metrics"]["storage_used"] == (
+            2 * overhead
+            + msg1.blob.size_compressed
+            + msg2.blob.size_compressed
+        )
+
+    @pytest.mark.django_db
+    def test_separate_threads_summed(
+        self, api_client, url, correctly_configured_header, settings
+    ):
+        """Two mailboxes in the same domain with separate threads: both counted."""
+        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+        domain = MailDomainFactory(name="example.com")
+        mailbox_a = MailboxFactory(domain=domain)
+        mailbox_b = MailboxFactory(domain=domain)
+        MailboxAccessFactory(mailbox=mailbox_a)
+        MailboxAccessFactory(mailbox=mailbox_b)
+
+        # mailbox_a's thread
+        thread_a = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox_a, thread=thread_a)
+        contact_a = ContactFactory(mailbox=mailbox_a)
+        msg_a = MessageFactory(
+            thread=thread_a, sender=contact_a, raw_mime=b"a" * 200
+        )
+
+        # mailbox_b's thread
+        thread_b = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox_b, thread=thread_b)
+        contact_b = ContactFactory(mailbox=mailbox_b)
+        msg_b = MessageFactory(
+            thread=thread_b, sender=contact_b, raw_mime=b"b" * 300
+        )
+
+        response = api_client.get(url, **correctly_configured_header)
+        result = response.json()["results"][0]
+
+        assert result["metrics"]["storage_used"] == (
+            2 * overhead
+            + msg_a.blob.size_compressed
+            + msg_b.blob.size_compressed
+        )
+
+    @pytest.mark.django_db
+    def test_two_domains_independent(
+        self, api_client, url, correctly_configured_header, settings
+    ):
+        """Storage is computed independently per domain."""
+        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+
+        domain_a = MailDomainFactory(name="a.com")
+        domain_b = MailDomainFactory(name="b.com")
+        mailbox_a = MailboxFactory(domain=domain_a)
+        mailbox_b = MailboxFactory(domain=domain_b)
+        MailboxAccessFactory(mailbox=mailbox_a)
+        MailboxAccessFactory(mailbox=mailbox_b)
+
+        thread_a = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox_a, thread=thread_a)
+        contact_a = ContactFactory(mailbox=mailbox_a)
+        msg_a = MessageFactory(
+            thread=thread_a, sender=contact_a, raw_mime=b"aa" * 100
+        )
+
+        thread_b = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox_b, thread=thread_b)
+        contact_b = ContactFactory(mailbox=mailbox_b)
+        MessageFactory(thread=thread_b, sender=contact_b)
+        MessageFactory(thread=thread_b, sender=contact_b)
+
+        response = api_client.get(url, **correctly_configured_header)
+        results = response.json()["results"]
+
+        by_domain = {r["domain"]: r for r in results}
+        assert by_domain["a.com"]["metrics"]["storage_used"] == (
+            1 * overhead + msg_a.blob.size_compressed
+        )
+        assert by_domain["b.com"]["metrics"]["storage_used"] == 2 * overhead
+
+    @pytest.mark.django_db
+    def test_full_formula_with_attachments(
+        self, api_client, url, correctly_configured_header, settings
+    ):
+        """Storage includes MIME blobs, draft blobs, and attachment blobs."""
+        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+        domain = MailDomainFactory(name="example.com")
+        mailbox = MailboxFactory(domain=domain)
+        MailboxAccessFactory(mailbox=mailbox)
+
+        thread = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        contact = ContactFactory(mailbox=mailbox)
+
+        # Message with MIME blob
+        msg = MessageFactory(
+            thread=thread, sender=contact, raw_mime=b"mime" * 100
+        )
+
+        # Draft with draft_blob
+        draft_blob = BlobFactory(mailbox=mailbox, content=b"draft" * 50)
+        draft = MessageFactory(
+            thread=thread,
+            sender=contact,
+            is_draft=True,
+            draft_blob=draft_blob,
+        )
+
+        # Attachment on the draft
+        att = AttachmentFactory(mailbox=mailbox, blob_size=800)
+        att.messages.add(draft)
+
+        expected = (
+            2 * overhead
+            + msg.blob.size_compressed
+            + draft_blob.size_compressed
+            + att.blob.size_compressed
+        )
+
+        response = api_client.get(url, **correctly_configured_header)
+        result = response.json()["results"][0]
+
+        assert result["metrics"]["storage_used"] == expected
+
+    @pytest.mark.django_db
+    def test_storage_with_custom_attribute_grouping(
+        self,
+        api_client,
+        url_with_siret_query_param,
+        correctly_configured_header,
+        settings,
+    ):
+        """Storage is grouped by custom attribute, summing across domains."""
+        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+        siret = "12345678901234"
+
+        # Two domains with the same siret
+        domain1 = MailDomainFactory(custom_attributes={"siret": siret})
+        domain2 = MailDomainFactory(custom_attributes={"siret": siret})
+        mailbox1 = MailboxFactory(domain=domain1)
+        mailbox2 = MailboxFactory(domain=domain2)
+        MailboxAccessFactory(mailbox=mailbox1)
+        MailboxAccessFactory(mailbox=mailbox2)
+
+        thread1 = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox1, thread=thread1)
+        contact1 = ContactFactory(mailbox=mailbox1)
+        MessageFactory(thread=thread1, sender=contact1)
+
+        thread2 = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox2, thread=thread2)
+        contact2 = ContactFactory(mailbox=mailbox2)
+        MessageFactory(thread=thread2, sender=contact2)
+        MessageFactory(thread=thread2, sender=contact2)
+
+        response = api_client.get(
+            url_with_siret_query_param, **correctly_configured_header
+        )
+        result = response.json()["results"][0]
+
+        # 1 message from domain1 + 2 from domain2 = 3 total
+        assert result["metrics"]["storage_used"] == 3 * overhead

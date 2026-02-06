@@ -763,6 +763,12 @@ class Base(Configuration):
         None, environ_name="METRICS_API_KEY", environ_prefix=None
     )
 
+    METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE = values.PositiveIntegerValue(
+        1024,
+        environ_name="METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE",
+        environ_prefix=None,
+    )
+
     # AI
     AI_API_KEY = values.Value(None, environ_name="AI_API_KEY", environ_prefix=None)
     AI_BASE_URL = values.Value(None, environ_name="AI_BASE_URL", environ_prefix=None)
