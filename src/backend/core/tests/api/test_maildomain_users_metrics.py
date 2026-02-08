@@ -1,11 +1,12 @@
 """Tests for the Maildomain users metrics endpoint."""
-# pylint: disable=redefined-outer-name, unused-argument,
+# pylint: disable=redefined-outer-name, unused-argument, too-many-lines
 
 from django.urls import reverse
 from django.utils import timezone
 
 import pytest
 
+from core.enums import MessageTemplateTypeChoices
 from core.factories import (
     AttachmentFactory,
     BlobFactory,
@@ -14,6 +15,7 @@ from core.factories import (
     MailboxFactory,
     MailDomainFactory,
     MessageFactory,
+    MessageTemplateFactory,
     ThreadAccessFactory,
     ThreadFactory,
     UserFactory,
@@ -909,9 +911,7 @@ class TestMailDomainStorageUsedMetrics:
         thread = ThreadFactory()
         ThreadAccessFactory(mailbox=mailbox, thread=thread)
         contact = ContactFactory(mailbox=mailbox)
-        msg = MessageFactory(
-            thread=thread, sender=contact, raw_mime=b"mime" * 100
-        )
+        msg = MessageFactory(thread=thread, sender=contact, raw_mime=b"mime" * 100)
 
         response = api_client.get(url, **correctly_configured_header)
         result = response.json()["results"][0]
@@ -937,21 +937,15 @@ class TestMailDomainStorageUsedMetrics:
         ThreadAccessFactory(mailbox=mailbox_a, thread=thread)
         ThreadAccessFactory(mailbox=mailbox_b, thread=thread)
         contact = ContactFactory(mailbox=mailbox_a)
-        msg1 = MessageFactory(
-            thread=thread, sender=contact, raw_mime=b"msg1" * 100
-        )
-        msg2 = MessageFactory(
-            thread=thread, sender=contact, raw_mime=b"msg2" * 100
-        )
+        msg1 = MessageFactory(thread=thread, sender=contact, raw_mime=b"msg1" * 100)
+        msg2 = MessageFactory(thread=thread, sender=contact, raw_mime=b"msg2" * 100)
 
         response = api_client.get(url, **correctly_configured_header)
         result = response.json()["results"][0]
 
         # Messages and blobs counted once, not doubled
         assert result["metrics"]["storage_used"] == (
-            2 * overhead
-            + msg1.blob.size_compressed
-            + msg2.blob.size_compressed
+            2 * overhead + msg1.blob.size_compressed + msg2.blob.size_compressed
         )
 
     @pytest.mark.django_db
@@ -970,25 +964,19 @@ class TestMailDomainStorageUsedMetrics:
         thread_a = ThreadFactory()
         ThreadAccessFactory(mailbox=mailbox_a, thread=thread_a)
         contact_a = ContactFactory(mailbox=mailbox_a)
-        msg_a = MessageFactory(
-            thread=thread_a, sender=contact_a, raw_mime=b"a" * 200
-        )
+        msg_a = MessageFactory(thread=thread_a, sender=contact_a, raw_mime=b"a" * 200)
 
         # mailbox_b's thread
         thread_b = ThreadFactory()
         ThreadAccessFactory(mailbox=mailbox_b, thread=thread_b)
         contact_b = ContactFactory(mailbox=mailbox_b)
-        msg_b = MessageFactory(
-            thread=thread_b, sender=contact_b, raw_mime=b"b" * 300
-        )
+        msg_b = MessageFactory(thread=thread_b, sender=contact_b, raw_mime=b"b" * 300)
 
         response = api_client.get(url, **correctly_configured_header)
         result = response.json()["results"][0]
 
         assert result["metrics"]["storage_used"] == (
-            2 * overhead
-            + msg_a.blob.size_compressed
-            + msg_b.blob.size_compressed
+            2 * overhead + msg_a.blob.size_compressed + msg_b.blob.size_compressed
         )
 
     @pytest.mark.django_db
@@ -1008,9 +996,7 @@ class TestMailDomainStorageUsedMetrics:
         thread_a = ThreadFactory()
         ThreadAccessFactory(mailbox=mailbox_a, thread=thread_a)
         contact_a = ContactFactory(mailbox=mailbox_a)
-        msg_a = MessageFactory(
-            thread=thread_a, sender=contact_a, raw_mime=b"aa" * 100
-        )
+        msg_a = MessageFactory(thread=thread_a, sender=contact_a, raw_mime=b"aa" * 100)
 
         thread_b = ThreadFactory()
         ThreadAccessFactory(mailbox=mailbox_b, thread=thread_b)
@@ -1042,9 +1028,7 @@ class TestMailDomainStorageUsedMetrics:
         contact = ContactFactory(mailbox=mailbox)
 
         # Message with MIME blob
-        msg = MessageFactory(
-            thread=thread, sender=contact, raw_mime=b"mime" * 100
-        )
+        msg = MessageFactory(thread=thread, sender=contact, raw_mime=b"mime" * 100)
 
         # Draft with draft_blob
         draft_blob = BlobFactory(mailbox=mailbox, content=b"draft" * 50)
@@ -1065,6 +1049,35 @@ class TestMailDomainStorageUsedMetrics:
             + draft_blob.size_compressed
             + att.blob.size_compressed
         )
+
+        response = api_client.get(url, **correctly_configured_header)
+        result = response.json()["results"][0]
+
+        assert result["metrics"]["storage_used"] == expected
+
+    @pytest.mark.django_db
+    def test_storage_includes_template_blobs(
+        self, api_client, url, correctly_configured_header, settings
+    ):
+        """Domain signature/template blobs are counted toward storage."""
+        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+        domain = MailDomainFactory(name="example.com")
+        mailbox = MailboxFactory(domain=domain)
+        MailboxAccessFactory(mailbox=mailbox)
+
+        thread = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        contact = ContactFactory(mailbox=mailbox)
+        msg = MessageFactory(thread=thread, sender=contact, raw_mime=b"mime" * 100)
+
+        # Domain-level signature template
+        sig = MessageTemplateFactory(
+            maildomain=domain,
+            mailbox=None,
+            type=MessageTemplateTypeChoices.SIGNATURE,
+        )
+
+        expected = 1 * overhead + msg.blob.size_compressed + sig.blob.size_compressed
 
         response = api_client.get(url, **correctly_configured_header)
         result = response.json()["results"][0]
@@ -1109,3 +1122,58 @@ class TestMailDomainStorageUsedMetrics:
 
         # 1 message from domain1 + 2 from domain2 = 3 total
         assert result["metrics"]["storage_used"] == 3 * overhead
+
+    @pytest.mark.django_db
+    def test_blobs_with_identical_sizes_counted_separately(
+        self, api_client, url, correctly_configured_header, settings
+    ):
+        """Two different blobs that happen to have the same compressed size
+        must each be counted toward storage, not collapsed into one."""
+        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+        domain = MailDomainFactory(name="example.com")
+        mailbox = MailboxFactory(domain=domain)
+        MailboxAccessFactory(mailbox=mailbox)
+
+        thread = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        contact = ContactFactory(mailbox=mailbox)
+
+        same_content = b"x" * 500
+        msg1 = MessageFactory(thread=thread, sender=contact, raw_mime=same_content)
+        msg2 = MessageFactory(thread=thread, sender=contact, raw_mime=same_content)
+
+        assert msg1.blob.size_compressed == msg2.blob.size_compressed
+        assert msg1.blob.pk != msg2.blob.pk
+
+        response = api_client.get(url, **correctly_configured_header)
+        result = response.json()["results"][0]
+
+        expected = 2 * overhead + msg1.blob.size_compressed + msg2.blob.size_compressed
+        assert result["metrics"]["storage_used"] == expected
+
+    @pytest.mark.django_db
+    def test_zero_storage_groups_not_skipped_with_custom_attribute(
+        self,
+        api_client,
+        url_with_siret_query_param,
+        correctly_configured_header,
+    ):
+        """When grouping by custom attribute, a group with users but zero
+        storage must still include storage_used: 0 in its metrics."""
+        siret = "12345678901234"
+
+        domain_with_users = MailDomainFactory(
+            name="users.com", custom_attributes={"siret": siret}
+        )
+        MailboxAccessFactory(mailbox__domain=domain_with_users)
+
+        MailDomainFactory(name="empty.com", custom_attributes={"siret": siret})
+
+        response = api_client.get(
+            url_with_siret_query_param, **correctly_configured_header
+        )
+        results = response.json()["results"]
+
+        assert len(results) == 1
+        assert results[0]["siret"] == siret
+        assert results[0]["metrics"]["storage_used"] == 0

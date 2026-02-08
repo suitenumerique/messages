@@ -1,15 +1,18 @@
 """Tests for the mailbox usage metrics endpoint."""
+# pylint: disable=redefined-outer-name
 
 from django.urls import reverse
 
 import pytest
 
+from core.enums import MessageTemplateTypeChoices
 from core.factories import (
     AttachmentFactory,
     BlobFactory,
     ContactFactory,
     MailboxFactory,
     MessageFactory,
+    MessageTemplateFactory,
     ThreadAccessFactory,
     ThreadFactory,
 )
@@ -53,9 +56,7 @@ class TestMailboxUsageMetrics:
         assert response.json() == {"count": 0, "results": []}
 
     @pytest.mark.django_db
-    def test_mailbox_no_messages(
-        self, api_client, url, correctly_configured_header
-    ):
+    def test_mailbox_no_messages(self, api_client, url, correctly_configured_header):
         """A mailbox with no messages and no attachments has zero storage."""
         MailboxFactory(local_part="alice", domain__name="example.com")
 
@@ -114,12 +115,8 @@ class TestMailboxUsageMetrics:
         contact = ContactFactory(mailbox=mailbox)
 
         # 2 messages with raw MIME blobs
-        msg1 = MessageFactory(
-            thread=thread, sender=contact, raw_mime=b"mime1" * 100
-        )
-        msg2 = MessageFactory(
-            thread=thread, sender=contact, raw_mime=b"mime2" * 200
-        )
+        msg1 = MessageFactory(thread=thread, sender=contact, raw_mime=b"mime1" * 100)
+        msg2 = MessageFactory(thread=thread, sender=contact, raw_mime=b"mime2" * 200)
 
         # 1 attachment on msg1
         att = AttachmentFactory(mailbox=mailbox, blob_size=500)
@@ -153,27 +150,19 @@ class TestMailboxUsageMetrics:
         thread_a = ThreadFactory()
         ThreadAccessFactory(mailbox=mailbox_a, thread=thread_a)
         contact_a = ContactFactory(mailbox=mailbox_a)
-        msg_a1 = MessageFactory(
-            thread=thread_a, sender=contact_a, raw_mime=b"a1" * 100
-        )
-        msg_a2 = MessageFactory(
-            thread=thread_a, sender=contact_a, raw_mime=b"a2" * 100
-        )
+        msg_a1 = MessageFactory(thread=thread_a, sender=contact_a, raw_mime=b"a1" * 100)
+        msg_a2 = MessageFactory(thread=thread_a, sender=contact_a, raw_mime=b"a2" * 100)
 
         # mailbox_b: 1 message + 1 attachment
         thread_b = ThreadFactory()
         ThreadAccessFactory(mailbox=mailbox_b, thread=thread_b)
         contact_b = ContactFactory(mailbox=mailbox_b)
-        msg_b = MessageFactory(
-            thread=thread_b, sender=contact_b, raw_mime=b"b1" * 50
-        )
+        msg_b = MessageFactory(thread=thread_b, sender=contact_b, raw_mime=b"b1" * 50)
         att_b = AttachmentFactory(mailbox=mailbox_b, blob_size=300)
         att_b.messages.add(msg_b)
 
         expected_a = (
-            2 * overhead
-            + msg_a1.blob.size_compressed
-            + msg_a2.blob.size_compressed
+            2 * overhead + msg_a1.blob.size_compressed + msg_a2.blob.size_compressed
         )
         expected_b = (
             1 * overhead + msg_b.blob.size_compressed + att_b.blob.size_compressed
@@ -287,6 +276,60 @@ class TestMailboxUsageMetrics:
             + att1.blob.size_compressed
             + att2.blob.size_compressed
         )
+
+        response = api_client.get(url, **correctly_configured_header)
+        data = response.json()
+
+        assert data["count"] == 1
+        assert data["results"][0]["storage_used"] == expected
+
+    @pytest.mark.django_db
+    def test_blobs_with_identical_sizes_counted_separately(
+        self, api_client, url, correctly_configured_header, settings
+    ):
+        """Two different blobs that happen to have the same compressed size
+        must each be counted toward storage, not collapsed into one."""
+        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+
+        mailbox = MailboxFactory(local_part="alice", domain__name="test.com")
+        thread = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        contact = ContactFactory(mailbox=mailbox)
+
+        same_content = b"x" * 500
+        msg1 = MessageFactory(thread=thread, sender=contact, raw_mime=same_content)
+        msg2 = MessageFactory(thread=thread, sender=contact, raw_mime=same_content)
+
+        assert msg1.blob.size_compressed == msg2.blob.size_compressed
+        assert msg1.blob.pk != msg2.blob.pk
+
+        response = api_client.get(url, **correctly_configured_header)
+        data = response.json()
+
+        expected = 2 * overhead + msg1.blob.size_compressed + msg2.blob.size_compressed
+        assert data["results"][0]["storage_used"] == expected
+
+    @pytest.mark.django_db
+    def test_storage_includes_template_blobs(
+        self, api_client, url, correctly_configured_header, settings
+    ):
+        """Mailbox signature/template blobs are counted toward storage."""
+        overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
+
+        mailbox = MailboxFactory(local_part="alice", domain__name="test.com")
+        thread = ThreadFactory()
+        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        contact = ContactFactory(mailbox=mailbox)
+        msg = MessageFactory(thread=thread, sender=contact, raw_mime=b"mime" * 100)
+
+        # Mailbox-level signature template
+        sig = MessageTemplateFactory(
+            mailbox=mailbox,
+            maildomain=None,
+            type=MessageTemplateTypeChoices.SIGNATURE,
+        )
+
+        expected = 1 * overhead + msg.blob.size_compressed + sig.blob.size_compressed
 
         response = api_client.get(url, **correctly_configured_header)
         data = response.json()
