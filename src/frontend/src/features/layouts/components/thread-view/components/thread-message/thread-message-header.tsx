@@ -71,29 +71,23 @@ const ThreadMessageHeader = ({
     const sortedBcc = useMemo(() => sortRecipientsByDeliveryStatus(message.bcc), [message.bcc, sortRecipientsByDeliveryStatus]);
 
     // Get delivery actions for a recipient based on their current status
-    const getRecipientDeliveryActions = useCallback((recipient: MessageRecipient): ContactChipDeliveryAction[] | undefined => {
+    const getRecipientDeliveryActions = useCallback(({ id: recipientId, delivery_status: recipientDeliveryStatus }: MessageRecipient): ContactChipDeliveryAction[] | undefined => {
         if (!onUpdateRecipientStatus) return undefined;
 
         const actions: ContactChipDeliveryAction[] = [];
 
         // FAILED -> can retry (if allowed) or dismiss
-        if (recipient.delivery_status === MessageDeliveryStatusChoices.failed) {
-            if (canRetry) {
-                actions.push({
-                    label: t('Retry'),
-                    onClick: () => onUpdateRecipientStatus(recipient.id, 'retry'),
-                });
-            }
+        if (canRetry && recipientDeliveryStatus === MessageDeliveryStatusChoices.failed) {
             actions.push({
-                label: t('Dismiss'),
-                onClick: () => onUpdateRecipientStatus(recipient.id, 'cancelled'),
+                label: t('Retry'),
+                onClick: () => onUpdateRecipientStatus(recipientId, 'retry'),
             });
         }
-        // RETRY -> can cancel
-        else if (recipient.delivery_status === MessageDeliveryStatusChoices.retry) {
+        // RETRY or FAILED -> can cancel
+        if (recipientDeliveryStatus === MessageDeliveryStatusChoices.retry || recipientDeliveryStatus === MessageDeliveryStatusChoices.failed) {
             actions.push({
                 label: t('Cancel'),
-                onClick: () => onUpdateRecipientStatus(recipient.id, 'cancelled'),
+                onClick: () => onUpdateRecipientStatus(recipientId, 'cancelled'),
             });
         }
 

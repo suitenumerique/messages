@@ -250,13 +250,13 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                         fullWidth
                         actions={canUpdateDeliveryStatus ? [
                             ...(canRetry ? [{
-                                label: t('Retry all'),
+                                label: t('Retry'),
                                 onClick: handleRetryFailures,
                                 color: "error" as const,
                                 variant: "secondary" as const,
                             }] : []),
                             {
-                                label: t('Dismiss all'),
+                                label: t('Cancel those sendings'),
                                 onClick: handleDismissFailures,
                                 color: "error",
                                 variant: "secondary",
@@ -273,7 +273,7 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                         fullWidth
                         actions={canUpdateDeliveryStatus ? [
                             {
-                                label: t('Cancel'),
+                                label: t('Cancel those sendings'),
                                 onClick: handleCancelRetries,
                                 variant: "secondary",
                             }

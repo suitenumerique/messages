@@ -95,9 +95,9 @@ test.describe("Delivery failures", () => {
       page.getByText("Some recipients have not received this message!")
     ).toBeVisible();
 
-    // The banner should have "Retry all" and "Dismiss all" buttons
-    await expect(page.getByRole("button", { name: "Retry all" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Dismiss all" })).toBeVisible();
+    // The banner should have "Retry" and "Cancel those sendings" buttons
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Cancel those sendings", exact: true })).toBeVisible();
   });
 
   test("should show delivery status tooltip on recipient chip", async ({
@@ -136,7 +136,7 @@ test.describe("Delivery failures", () => {
     await expect(page.getByText("Show logs")).toBeVisible();
   });
 
-  test("should dismiss all delivery failures", async ({ page }) => {
+  test("should cancel all delivery failures", async ({ page }) => {
     await page.waitForLoadState("networkidle");
 
     // Navigate to outbox and open the thread
@@ -155,19 +155,18 @@ test.describe("Delivery failures", () => {
       })
       .waitFor({ state: "visible" });
 
-    // Verify the failure banner is visible before dismissing
+    // Verify the failure banner is visible before cancelling
     await expect(
       page.getByText("Some recipients have not received this message!")
     ).toBeVisible();
 
-    // Click the "Dismiss all" button
-    await page.getByRole("button", { name: "Dismiss all" }).click();
+    // Click the "Cancel those sendings" button
+    await page.getByRole("button", { name: "Cancel those sendings" }).click();
 
     // Wait for the UI to update
     await page.waitForLoadState("networkidle");
 
-    // After dismissing, the failure banner should be gone
-    // (or the text should change to indicate all failures are dismissed)
+    // After cancelling, the failure banner should be gone
     await expect(
       page.getByText("Some recipients have not received this message!")
     ).not.toBeVisible({ timeout: 10000 });
@@ -242,12 +241,12 @@ test.describe("Delivery pending (retry only)", () => {
       page.getByText("This message has not yet been delivered to all recipients.")
     ).toBeVisible();
 
-    // The banner should have a "Cancel" button (not "Dismiss all")
-    await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible();
+    // The banner should have a "Cancel those sendings" button
+    await expect(page.getByRole("button", { name: "Cancel those sendings" })).toBeVisible();
 
-    // "Dismiss all" should NOT be visible (that's for failed deliveries)
+    // "Retry" should NOT be visible
     await expect(
-      page.getByRole("button", { name: "Dismiss all" })
+      page.getByRole("button", { name: "Retry" })
     ).not.toBeVisible();
   });
 
