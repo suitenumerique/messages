@@ -58,6 +58,28 @@ export const imageBlockSpec: typeof defaultBlockSpecs.image = {
                 }
             }
 
+            // --- Text alignment ---
+            // BlockNote sets the data-text-alignment attribute but not the
+            // corresponding inline style. Apply it here so the style survives
+            // the serializer stripping the bn-block-content wrapper.
+            const alignment = block.props.textAlignment;
+            if (alignment && alignment !== 'left') {
+                if (target.tagName === 'IMG') {
+                    // For standalone <img>, text-align has no effect (inline-replaced element).
+                    // Use display:block with margin-based alignment instead.
+                    target.style.display = 'block';
+                    if (alignment === 'center') {
+                        target.style.marginLeft = 'auto';
+                        target.style.marginRight = 'auto';
+                    } else if (alignment === 'right') {
+                        target.style.marginLeft = 'auto';
+                    }
+                } else {
+                    // For <figure> (image with caption), text-align works on inline children.
+                    target.style.textAlign = alignment;
+                }
+            }
+
             return result;
         },
     },

@@ -7,6 +7,7 @@ import {
     FilePreviewButton,
     FileReplaceButton,
     FormattingToolbar,
+    TextAlignButton,
 } from "@blocknote/react";
 
 type ToolbarProps = {
@@ -36,6 +37,9 @@ export const Toolbar = ({ children }: ToolbarProps) => {
                 basicTextStyle={"strike"}
                 key={"strikeStyleButton"}
             />
+            <TextAlignButton textAlignment={"left"} key={"textAlignLeftButton"} />
+            <TextAlignButton textAlignment={"center"} key={"textAlignCenterButton"} />
+            <TextAlignButton textAlignment={"right"} key={"textAlignRightButton"} />
             <CreateLinkButton key={"createLinkButton"} />
             {children}
         </FormattingToolbar>

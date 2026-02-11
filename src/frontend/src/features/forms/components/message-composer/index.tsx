@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, defaultBlockSpecs, PartialBlock } from '@blocknote/core';
 import { MessageTemplateSelector } from '@/features/blocknote/message-template-block';
 import { imageBlockSpec, ALLOWED_IMAGE_MIME_TYPES } from '@/features/blocknote/image-block';
-import MailHelper from '@/features/utils/mail-helper';
+import { EmailExporter } from '@/features/blocknote/email-exporter';
 import { FieldProps } from '@gouvfr-lasuite/cunningham-react';
 import { useFormContext } from 'react-hook-form';
 import { useEffect, useRef } from 'react';
@@ -40,6 +40,8 @@ export type MessageComposerBlockSchema = MessageComposerBlockNoteSchema['blockSc
 export type MessageComposerInlineContentSchema = MessageComposerBlockNoteSchema['inlineContentSchema'];
 export type MessageComposerStyleSchema = MessageComposerBlockNoteSchema['styleSchema'];
 export type PartialMessageComposerBlockSchema = PartialBlock<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>;
+
+const emailExporter = new EmailExporter();
 
 export type QuoteType = "reply" | "forward";
 
@@ -271,7 +273,7 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
         registerImageLoadListeners(editor);
         const blocks = editor.document;
         const markdown = await editor.blocksToMarkdownLossy(blocks);
-        const html = await MailHelper.markdownToHtml(markdown);
+        const html = emailExporter.exportBlocks(blocks, editor.domElement ?? null);
         form.setValue("messageDraftBody", JSON.stringify(editor.document), { shouldDirty: true });
         form.setValue("messageTextBody", markdown);
         form.setValue("messageHtmlBody", html);
