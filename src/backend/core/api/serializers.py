@@ -1063,11 +1063,29 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
             )
 
     def validate(self, attrs):
-        """Validate the domain of the mailbox."""
+        """Validate the domain of the mailbox and denylist rules."""
         if not self.context.get("domain"):
             raise serializers.ValidationError(
                 "Domain is required in serializer context."
             )
+
+        metadata = self.context.get("metadata", {})
+        if metadata.get("type") == "personal":
+            local_part = attrs.get("local_part", "")
+            denylist = getattr(
+                settings, "MESSAGES_MAILBOX_PREFIX_DENYLIST_PERSONAL", []
+            )
+            lower_value = local_part.lower()
+            if any(
+                lower_value.startswith(prefix.lower()) for prefix in denylist
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "local_part_denied": _(
+                            "This prefix is not allowed for personal mailboxes."
+                        )
+                    }
+                )
 
         return super().validate(attrs)
 

@@ -243,7 +243,9 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
       setCreatedMailbox(response.data);
       onSuccess?.();
     } catch (error: unknown) {
-      if (error instanceof APIError && error.data.local_part) {
+      if (error instanceof APIError && error.data?.local_part_denied) {
+        setError(t('This email prefix is not allowed for personal mailboxes. Please choose a different prefix.'));
+      } else if (error instanceof APIError && error.data?.local_part) {
         setError(t('An address with this prefix already exists in this domain.'));
       } else {
         setError(t('An error occurred while creating the address.'));

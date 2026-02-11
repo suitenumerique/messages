@@ -541,6 +541,116 @@ class TestAdminMailDomainMailboxViewSet:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "local_part" in response.data
 
+    @override_settings(MESSAGES_MAILBOX_PREFIX_DENYLIST_PERSONAL=["admin", "postmaster"])
+    def test_admin_maildomains_mailbox_create_personal_denied_prefix(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Test that creating a personal mailbox with a denied prefix fails."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+        data = {
+            "local_part": "admin.test",
+            "metadata": {
+                "type": "personal",
+                "first_name": "Admin",
+                "last_name": "Test",
+            },
+        }
+        response = api_client.post(url, data=data, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "local_part_denied" in response.data
+
+    @override_settings(MESSAGES_MAILBOX_PREFIX_DENYLIST_PERSONAL=["admin", "postmaster"])
+    def test_admin_maildomains_mailbox_create_personal_denied_prefix_case_insensitive(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Test that the denylist check is case-insensitive."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+        data = {
+            "local_part": "POSTMASTER",
+            "metadata": {
+                "type": "personal",
+                "first_name": "Post",
+                "last_name": "Master",
+            },
+        }
+        response = api_client.post(url, data=data, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "local_part_denied" in response.data
+
+    @override_settings(MESSAGES_MAILBOX_PREFIX_DENYLIST_PERSONAL=["admin", "postmaster"])
+    def test_admin_maildomains_mailbox_create_shared_denied_prefix_allowed(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Test that the denylist does not apply to shared mailboxes."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+        data = {
+            "local_part": "admin",
+            "metadata": {
+                "type": "shared",
+                "name": "Admin Shared",
+            },
+        }
+        response = api_client.post(url, data=data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+
+    @override_settings(MESSAGES_MAILBOX_PREFIX_DENYLIST_PERSONAL=["admin", "postmaster"])
+    def test_admin_maildomains_mailbox_create_personal_allowed_prefix(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Test that a personal mailbox with a non-denied prefix succeeds."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+        data = {
+            "local_part": "john.doe",
+            "metadata": {
+                "type": "personal",
+                "first_name": "John",
+                "last_name": "Doe",
+            },
+        }
+        response = api_client.post(url, data=data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_admin_maildomains_mailbox_create_personal_empty_denylist(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Test that with an empty denylist (default), all prefixes are allowed."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+        data = {
+            "local_part": "admin",
+            "metadata": {
+                "type": "personal",
+                "first_name": "Admin",
+                "last_name": "User",
+            },
+        }
+        response = api_client.post(url, data=data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+
     @patch("core.services.identity.keycloak.reset_keycloak_user_password")
     @override_settings(IDENTITY_PROVIDER="keycloak")
     def test_admin_maildomains_mailbox_create_personal_without_maildomain_identity_sync(
