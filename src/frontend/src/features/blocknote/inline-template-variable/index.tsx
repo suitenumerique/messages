@@ -1,10 +1,36 @@
 import { createReactInlineContentSpec } from "@blocknote/react";
 import React, { useMemo } from "react";
 import { useBlockNoteEditor, useComponentsContext } from "@blocknote/react";
+import { BlockSchema, StyleSchema, defaultInlineContentSpecs, InlineContentSchemaFromSpecs } from "@blocknote/core";
 import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { PlaceholdersRetrieve200 } from "@/features/api/gen";
-import { SignatureComposerBlockSchema, SignatureComposerInlineContentSchema, SignatureComposerStyleSchema } from "@/features/signatures/components/signature-composer";
 import { useTranslation } from "react-i18next";
+
+export const InlineTemplateVariable = createReactInlineContentSpec(
+  {
+    type: "template-variable",
+    content: "none",
+    propSchema: {
+      value: { default: "" },
+      label: { default: "" },
+    },
+  },
+  {
+    render: ({ inlineContent: { props } }) => {
+      return (
+        // TODO : Find a way to display variable name
+        // and (de)serialize this inline content during export and parsing
+        <span data-inline-type="template-variable">
+          {`{${props.value}}`}
+        </span>
+      );
+    },
+  }
+);
+
+type TemplateVariableInlineContentSchema = InlineContentSchemaFromSpecs<
+  typeof defaultInlineContentSpecs & { 'template-variable': typeof InlineTemplateVariable }
+>;
 
 type TemplateVariableSelectorProps = {
   variables: PlaceholdersRetrieve200;
@@ -13,7 +39,7 @@ type TemplateVariableSelectorProps = {
 
 export const TemplateVariableSelector = ({ variables, isLoading }: TemplateVariableSelectorProps) => {
   const { t } = useTranslation();
-  const editor = useBlockNoteEditor<SignatureComposerBlockSchema, SignatureComposerInlineContentSchema, SignatureComposerStyleSchema>();
+  const editor = useBlockNoteEditor<BlockSchema, TemplateVariableInlineContentSchema, StyleSchema>();
   const Components = useComponentsContext()!;
   const variableItems = useMemo(() => {
     if (!variables) return [];
@@ -58,30 +84,3 @@ export const TemplateVariableSelector = ({ variables, isLoading }: TemplateVaria
     />
   );
 }
-
-
-export const InlineTemplateVariable = createReactInlineContentSpec(
-  {
-    type: "template-variable",
-    content: "none",
-    propSchema: {
-      value: { default: "" },
-      label: { default: "" },
-    },
-  },
-  {
-    render: ({ inlineContent: { props } }) => {
-      return (
-        // TODO : Find a way to display variable name
-        // and (de)serialize this inline content during export and parsing
-        <span data-inline-type="template-variable">
-          {`{${props.value}}`}
-        </span>
-      );
-    },
-  }
-);
-
-
-
-

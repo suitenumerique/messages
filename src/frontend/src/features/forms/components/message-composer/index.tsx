@@ -1,5 +1,4 @@
 "use client";
-import * as locales from '@blocknote/core/locales';
 import { useCreateBlockNote } from "@blocknote/react";
 import { useTranslation } from "react-i18next";
 import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, defaultBlockSpecs, PartialBlock } from '@blocknote/core';
@@ -19,6 +18,7 @@ import { MessageTemplateTypeChoices, useMailboxesMessageTemplatesAvailableList }
 import { Attachment } from '@/features/api/gen/models/attachment';
 import { MessageComposerHelper } from '@/features/utils/composer-helper';
 import { SmartTrailingBlock } from '@/features/blocknote/smart-trailing-block';
+import { createBlockNoteDictionary, removeFailedImageBlocks } from '@/features/blocknote/utils';
 import { MessageFormValues } from '../message-form';
 import { DriveFile } from '../message-form/drive-attachment-picker';
 
@@ -166,14 +166,7 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
         trailingBlock: false,
         initialContent: getInitialContent(),
         uploadFile,
-        dictionary: {
-            ...(locales[locale as keyof typeof locales] || locales.en),
-            placeholders: {
-                ...(locales[locale as keyof typeof locales] || locales.en).placeholders,
-                emptyDocument: t('Start typing...'),
-                default: t('Start typing...'),
-            }
-        },
+        dictionary: createBlockNoteDictionary(locale, t),
         ...blockNoteOptions,
         _tiptapOptions: {
             extensions: [SmartTrailingBlock],
@@ -273,14 +266,7 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
     };
 
     const handleChange = async (editor: BlockNoteEditor<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>, submitNeeded: boolean = true) => {
-        // Remove image blocks whose upload failed (url is "#")
-        const failedImageBlocks = editor.document.filter(
-            (block) => block.type === 'image' && block.props.url === "#",
-        );
-        if (failedImageBlocks.length > 0) {
-            editor.removeBlocks(failedImageBlocks.map((b) => b.id));
-            return;
-        }
+        if (removeFailedImageBlocks(editor)) return;
 
         registerImageLoadListeners(editor);
         const blocks = editor.document;
