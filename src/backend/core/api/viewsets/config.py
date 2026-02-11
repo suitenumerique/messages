@@ -101,6 +101,11 @@ class ConfigView(drf.views.APIView):
                             ),
                             "readOnly": True,
                         },
+                        "MAX_TEMPLATE_IMAGE_SIZE": {
+                            "type": "integer",
+                            "description": "Maximum size in bytes for images embedded in templates and signatures",
+                            "readOnly": True,
+                        },
                         "IMAGE_PROXY_ENABLED": {
                             "type": "boolean",
                             "description": "Whether external images should be proxied",
@@ -129,6 +134,7 @@ class ConfigView(drf.views.APIView):
                         "MAX_OUTGOING_BODY_SIZE",
                         "MAX_INCOMING_EMAIL_SIZE",
                         "MAX_RECIPIENTS_PER_MESSAGE",
+                        "MAX_TEMPLATE_IMAGE_SIZE",
                         "IMAGE_PROXY_ENABLED",
                         "MESSAGES_MANUAL_RETRY_MAX_AGE",
                     ],
@@ -148,6 +154,7 @@ class ConfigView(drf.views.APIView):
             "LANGUAGE_CODE",
             "SCHEMA_CUSTOM_ATTRIBUTES_USER",
             "SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN",
+            "MAX_TEMPLATE_IMAGE_SIZE",
             "IMAGE_PROXY_ENABLED",
             "MESSAGES_MANUAL_RETRY_MAX_AGE",
             "FEATURE_MAILBOX_ADMIN_CHANNELS",

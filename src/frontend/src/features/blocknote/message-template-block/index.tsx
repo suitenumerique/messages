@@ -6,17 +6,19 @@ import { MessageTemplateTypeChoices, ReadOnlyMessageTemplate, useMailboxesMessag
 import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
 import { useModal } from "@gouvfr-lasuite/cunningham-react";
 import { handle } from "@/features/utils/errors";
+import MailHelper from "@/features/utils/mail-helper";
 
 type MessageTemplateSelectorProps = {
     mailboxId: string;
     context?: Record<string, string>;
+    uploadInlineImage?: (file: File) => Promise<{ url: string; blobId: string } | null>;
 }
 
 /**
  * A BlockNote toolbar selector which allows the user to select a message template
  * from all active templates for a given mailbox.
  */
-export const MessageTemplateSelector = ({ mailboxId, context = {} }: MessageTemplateSelectorProps) => {
+export const MessageTemplateSelector = ({ mailboxId, context = {}, uploadInlineImage }: MessageTemplateSelectorProps) => {
     const { t } = useTranslation();
     const editor = useBlockNoteEditor<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>();
     const Components = useComponentsContext()!;
@@ -63,6 +65,36 @@ export const MessageTemplateSelector = ({ mailboxId, context = {} }: MessageTemp
 
             // Convert HTML to blocks using BlockNote's built-in parser
             const contentBlocks = await editor.tryParseHTMLToBlocks(renderedTemplate.html_body) as PartialMessageComposerBlockSchema[];
+
+            // Convert base64 images to blobs via upload
+            if (uploadInlineImage) {
+                const blocksToRemove = new Set<number>();
+                await Promise.all(
+                    contentBlocks.map(async (block, index) => {
+                        if (block.type !== 'image' || !block.props?.url?.startsWith('data:')) return;
+
+                        const file = MailHelper.dataUrlToFile(block.props.url, `template-image-${index}.png`);
+                        if (!file) {
+                            blocksToRemove.add(index);
+                            return;
+                        }
+
+                        const result = await uploadInlineImage(file);
+                        if (result) {
+                            contentBlocks[index] = {
+                                ...block,
+                                props: { ...block.props, url: result.url },
+                            } as PartialMessageComposerBlockSchema;
+                        } else {
+                            blocksToRemove.add(index);
+                        }
+                    })
+                );
+                // Remove failed blocks (reverse order to preserve indices)
+                for (const index of Array.from(blocksToRemove).sort((a, b) => b - a)) {
+                    contentBlocks.splice(index, 1);
+                }
+            }
 
             // Check if there's already a signature in the editor
             const editorSignature = editor.getBlock("signature");

@@ -20,6 +20,8 @@ from core.mda.rfc5322 import (
     compose_email,
     create_forward_message,
     create_reply_message,
+    extract_base64_images_from_html,
+    extract_base64_images_from_text,
     parse_email_message,
 )
 from core.mda.signing import sign_message_dkim, verify_message_dkim
@@ -148,6 +150,25 @@ def prepare_outbound_message(
         if nested_data.get("htmlBody"):
             html_body = nested_data["htmlBody"][0]["content"]
 
+    # Extract base64 images from text and HTML bodies (e.g. from signatures
+    # and templates) and convert them to inline CID attachments.
+    # A shared known_images dict deduplicates identical images across both bodies
+    # so the same image is attached only once.
+    known_images: dict[str, str] = {}
+    base64_inline_attachments = []
+
+    if text_body:
+        text_body, text_images = extract_base64_images_from_text(
+            text_body, known_images=known_images
+        )
+        base64_inline_attachments.extend(text_images)
+
+    if html_body:
+        html_body, html_images = extract_base64_images_from_html(
+            html_body, known_images=known_images
+        )
+        base64_inline_attachments.extend(html_images)
+
     # Generate the MIME data dictionary
     mime_data = {
         "from": [
@@ -167,8 +188,8 @@ def prepare_outbound_message(
     }
 
     # Add attachments if present
+    attachments = []
     if message.attachments.exists():
-        attachments = []
         total_attachment_size = 0
 
         for attachment in message.attachments.select_related("blob").all():
@@ -217,9 +238,23 @@ def prepare_outbound_message(
                 }
             )
 
-        # Add attachments to the MIME data
-        if attachments:
-            mime_data["attachments"] = attachments
+    # Add base64-extracted inline images as attachments
+    if base64_inline_attachments:
+        attachments.extend(
+            {
+                "content": img["content"],
+                "type": img["content_type"],
+                "name": img["name"],
+                "disposition": "inline",
+                "cid": img["cid"],
+                "size": img["size"],
+            }
+            for img in base64_inline_attachments
+        )
+
+    # Add attachments to the MIME data
+    if len(attachments) > 0:
+        mime_data["attachments"] = attachments
 
     # Assemble the raw mime message
     try:
@@ -285,6 +320,7 @@ def prepare_outbound_message(
     message.blob = blob
     message.is_draft = False
     message.draft_blob = None
+    message.has_attachments = len(attachments) > 0
     message.created_at = timezone.now()
     message.updated_at = timezone.now()
     message.save(
@@ -294,6 +330,7 @@ def prepare_outbound_message(
             "mime_id",
             "is_draft",
             "draft_blob",
+            "has_attachments",
             "created_at",
         ]
     )

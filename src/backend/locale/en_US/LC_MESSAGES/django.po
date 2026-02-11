@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lasuite-docs\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-02-03 18:09+0000\n"
+"POT-Creation-Date: 2026-02-11 17:50+0000\n"
 "PO-Revision-Date: 2025-01-27 09:27\n"
 "Last-Translator: \n"
 "Language-Team: English\n"
@@ -90,6 +90,10 @@ msgid "Error"
 msgstr ""
 
 msgid "A mailbox with this local part already exists in this domain."
+msgstr ""
+
+#, python-format
+msgid "Image \"%(name)s\" (%(size)s MB) exceeds the %(max)s MB limit."
 msgstr ""
 
 msgid "Name"
@@ -350,7 +354,15 @@ msgstr ""
 msgid "has delivery pending"
 msgstr ""
 
+msgid ""
+"True if thread has messages awaiting successful delivery (sending, retrying, "
+"or failed)."
+msgstr ""
+
 msgid "has delivery failed"
+msgstr ""
+
+msgid "True if thread has messages with permanent delivery failure."
 msgstr ""
 
 msgid "messaged at"

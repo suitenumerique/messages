@@ -813,6 +813,56 @@ describe('MailHelper', () => {
     });
   });
 
+  describe('dataUrlToFile', () => {
+    it('should convert a valid PNG data URL to a File', () => {
+      // 1x1 red PNG as base64
+      const base64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+      const dataUrl = `data:image/png;base64,${base64}`;
+      const file = MailHelper.dataUrlToFile(dataUrl, 'test.png');
+
+      expect(file).not.toBeNull();
+      expect(file!.name).toBe('test.png');
+      expect(file!.type).toBe('image/png');
+      expect(file!.size).toBeGreaterThan(0);
+    });
+
+    it('should convert a valid JPEG data URL to a File', () => {
+      // Minimal valid JPEG (SOI + APP0 + EOI markers)
+      const base64 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AKwA//9k=';
+      const dataUrl = `data:image/jpeg;base64,${base64}`;
+      const file = MailHelper.dataUrlToFile(dataUrl, 'photo.jpg');
+
+      expect(file).not.toBeNull();
+      expect(file!.name).toBe('photo.jpg');
+      expect(file!.type).toBe('image/jpeg');
+    });
+
+    it('should return null for a non-data URL', () => {
+      const file = MailHelper.dataUrlToFile('https://example.com/image.png', 'test.png');
+      expect(file).toBeNull();
+    });
+
+    it('should return null for a non-image data URL', () => {
+      const file = MailHelper.dataUrlToFile('data:text/plain;base64,SGVsbG8=', 'test.txt');
+      expect(file).toBeNull();
+    });
+
+    it('should return null for a malformed data URL', () => {
+      const file = MailHelper.dataUrlToFile('data:image/png;base64', 'test.png');
+      expect(file).toBeNull();
+    });
+
+    it('should return null for invalid base64 content', () => {
+      const file = MailHelper.dataUrlToFile('data:image/png;base64,!!!invalid!!!', 'test.png');
+      expect(file).toBeNull();
+    });
+
+    it('should return null for empty string', () => {
+      const file = MailHelper.dataUrlToFile('', 'test.png');
+      expect(file).toBeNull();
+    });
+  });
+
   describe('DetectionMap', () => {
     it('should not have invalid regex patterns', () => {
       // A test guard to ensure that the detection map does not contain malformed regex patterns

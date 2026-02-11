@@ -1,11 +1,11 @@
+import { BlockSchema, InlineContentSchema, StyleSchema } from "@blocknote/core";
 import { useBlockNoteEditor, useComponentsContext, useEditorState } from "@blocknote/react";
 import { useTranslation } from "react-i18next";
 import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
-import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema } from "@/features/forms/components/message-composer";
 
 export const ImageUploadButton = () => {
     const { t } = useTranslation();
-    const editor = useBlockNoteEditor<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>();
+    const editor = useBlockNoteEditor<BlockSchema, InlineContentSchema, StyleSchema>();
     const Components = useComponentsContext()!;
 
     const hasInlineContent = useEditorState({

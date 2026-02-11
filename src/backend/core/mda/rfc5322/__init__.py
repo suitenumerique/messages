@@ -21,6 +21,7 @@ from .parser import (
     parse_email_addresses,
     parse_email_message,
 )
+from .utils import extract_base64_images_from_html, extract_base64_images_from_text
 
 __all__ = [
     # Parser functions
@@ -37,4 +38,7 @@ __all__ = [
     "create_reply_message",
     "create_forward_message",
     "EmailComposeError",
+    # Utility functions
+    "extract_base64_images_from_html",
+    "extract_base64_images_from_text",
 ]

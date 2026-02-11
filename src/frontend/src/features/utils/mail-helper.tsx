@@ -244,6 +244,27 @@ class MailHelper {
     }
 
     /**
+     * Convert a data URL (base64-encoded) to a File object.
+     * Returns null if the input is not a valid image data URL.
+     */
+    static dataUrlToFile(dataUrl: string, filename: string): File | null {
+        const match = dataUrl.match(/^data:(image\/[\w+.-]+);base64,(.+)$/);
+        if (!match) return null;
+
+        const [, mimeType, base64Data] = match;
+        try {
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return new File([bytes], filename, { type: mimeType });
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Extract drive attachments from html body.
      */
     static extractDriveAttachmentsFromHtmlBody(html: string = ''): [string, DriveFile[]] {

@@ -1,12 +1,13 @@
 import { createReactBlockSpec, useBlockNoteEditor, useComponentsContext, useEditorSelectionChange, useEditorChange, useEditorState } from "@blocknote/react";
 import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Props } from "@blocknote/core";
 import DomPurify from "dompurify";
 import { ReadOnlyMessageTemplate, useMailboxesMessageTemplatesRenderRetrieve } from "@/features/api/gen";
 import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
 import { useTranslation } from "react-i18next";
 import { MessageComposerHelper } from "@/features/utils/composer-helper";
+import { useHtmlWithObjectUrls } from "@/features/blocknote/image-block/use-html-with-object-urls";
 
 
 type SignatureTemplateSelectorProps = {
@@ -183,16 +184,25 @@ export const BlockSignature = createReactBlockSpec(
                 }
             );
 
+            // eslint-disable-next-line react-hooks/rules-of-hooks
+            const sanitizedHtml = useMemo(() => {
+                if (!preview?.html_body) return null;
+                return DomPurify().sanitize(preview.html_body);
+            }, [preview?.html_body]);
+
+            // eslint-disable-next-line react-hooks/rules-of-hooks
+            const processedHtml = useHtmlWithObjectUrls(sanitizedHtml);
+
             if (isLoading) {
                 return <Spinner size="sm" />;
             }
 
-            if (!preview?.html_body) {
+            if (!processedHtml) {
                 return null;
             }
 
             return (
-                <div dangerouslySetInnerHTML={{ __html: DomPurify().sanitize(preview.html_body) }} />
+                <div dangerouslySetInnerHTML={{ __html: processedHtml }} />
             )
         },
         toExternalHTML: () => (<span />),

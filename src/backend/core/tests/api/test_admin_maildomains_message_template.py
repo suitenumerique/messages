@@ -1,7 +1,10 @@
 """Test create operations for MessageTemplateViewSet."""
+# pylint: disable=too-many-lines
 
+import base64
 import json
 
+from django.test import override_settings
 from django.urls import reverse
 
 import pytest
@@ -416,6 +419,33 @@ class TestAdminMailDomainMessageTemplateCreate:
         # maildomain is used from the context
         assert models.MessageTemplate.objects.get().maildomain == maildomain
         assert not models.MessageTemplate.objects.get().mailbox
+
+    @override_settings(MAX_TEMPLATE_IMAGE_SIZE=100)
+    def test_create_with_oversized_base64_image(self, user, maildomain, admin_list_url):
+        """Creating a template with an oversized base64 image should fail."""
+        factories.MailDomainAccessFactory(
+            maildomain=maildomain,
+            user=user,
+            role=enums.MailDomainAccessRoleChoices.ADMIN,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        large_data = base64.b64encode(b"\x89PNG" + b"\x00" * 200).decode()
+        html_body = f'<img src="data:image/png;base64,{large_data}">'
+
+        data = {
+            "name": "Template with large image",
+            "html_body": html_body,
+            "text_body": "content",
+            "raw_body": RAW_DATA,
+            "type": "signature",
+        }
+        response = client.post(admin_list_url, data, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "html_body" in response.data
 
 
 class TestAdminMailDomainMessageTemplateUpdate:
@@ -882,6 +912,45 @@ class TestAdminMailDomainMessageTemplateUpdate:
 
         assert signature1.is_default is False
         assert signature2.is_default is True
+
+    @override_settings(MAX_TEMPLATE_IMAGE_SIZE=100)
+    def test_update_with_oversized_base64_image(
+        self, user, maildomain, admin_detail_url
+    ):
+        """Updating a template with an oversized base64 image should fail."""
+        factories.MailDomainAccessFactory(
+            maildomain=maildomain,
+            user=user,
+            role=enums.MailDomainAccessRoleChoices.ADMIN,
+        )
+
+        maildomain_template = factories.MessageTemplateFactory(
+            html_body="<p>Original content</p>",
+            text_body="Original content",
+            maildomain=maildomain,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        large_data = base64.b64encode(b"\x89PNG" + b"\x00" * 200).decode()
+        html_body = f'<img src="data:image/png;base64,{large_data}">'
+
+        data = {
+            "name": "Updated Template",
+            "html_body": html_body,
+            "text_body": "Updated content",
+            "raw_body": RAW_DATA,
+            "type": "signature",
+        }
+
+        response = client.put(
+            admin_detail_url(maildomain_template.id),
+            data,
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "html_body" in response.data
 
 
 class TestAdminMailDomainMessageTemplateDelete:

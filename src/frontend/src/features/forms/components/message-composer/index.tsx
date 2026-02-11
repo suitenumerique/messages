@@ -441,6 +441,7 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
                                 ? draft.to.map(to => to.contact.name).join(", ")
                                 : quotedMessage?.sender?.name || ""
                         }}
+                        uploadInlineImage={uploadInlineImage}
                     />
                     <SignatureTemplateSelector
                         templates={activeSignatures}

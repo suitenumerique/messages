@@ -105,6 +105,12 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    MAX_TEMPLATE_IMAGE_SIZE = values.PositiveIntegerValue(
+        2 * 1024 * 1024,  # 2 MiB
+        environ_name="MAX_TEMPLATE_IMAGE_SIZE",
+        environ_prefix=None,
+    )
+
     MAX_OUTGOING_BODY_SIZE = values.PositiveIntegerValue(
         5 * 1024 * 1024,  # 5 MiB
         environ_name="MAX_OUTGOING_BODY_SIZE",

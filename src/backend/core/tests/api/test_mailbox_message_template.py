@@ -1,7 +1,9 @@
 """Test CRUD operations for MailboxMessageTemplateViewSet."""
 
+import base64
 import json
 
+from django.test import override_settings
 from django.urls import reverse
 
 import pytest
@@ -276,6 +278,60 @@ class TestMailboxMessageTemplateCreate:
         assert not template.maildomain
         assert template.name == "Test Template"
 
+    @override_settings(MAX_TEMPLATE_IMAGE_SIZE=100)
+    def test_create_with_oversized_base64_image(self, user, mailbox, list_url):
+        """Creating a template with an oversized base64 image should fail."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        # Generate a base64 image larger than the 100-byte limit
+        large_data = base64.b64encode(b"\x89PNG" + b"\x00" * 200).decode()
+        html_body = f'<img src="data:image/png;base64,{large_data}">'
+
+        data = {
+            "name": "Template with large image",
+            "html_body": html_body,
+            "text_body": "content",
+            "raw_body": RAW_DATA,
+            "type": "signature",
+        }
+        response = client.post(list_url, data, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "html_body" in response.data
+
+    def test_create_with_valid_base64_image(self, user, mailbox, list_url):
+        """Creating a template with a valid-sized base64 image should succeed."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        # Generate a small base64 image well within the 2 MiB default limit
+        small_data = base64.b64encode(b"\x89PNG" + b"\x00" * 10).decode()
+        html_body = f'<img src="data:image/png;base64,{small_data}">'
+
+        data = {
+            "name": "Template with small image",
+            "html_body": html_body,
+            "text_body": "content",
+            "raw_body": RAW_DATA,
+            "type": "signature",
+        }
+        response = client.post(list_url, data, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+
 
 class TestMailboxMessageTemplateUpdate:
     """Test update operations for MailboxMessageTemplateViewSet."""
@@ -416,6 +472,39 @@ class TestMailboxMessageTemplateUpdate:
         mailbox_template.refresh_from_db()
         content = json.loads(mailbox_template.blob.get_content().decode("utf-8"))
         assert content["raw"] == RAW_DATA_STRUCT
+
+    @override_settings(MAX_TEMPLATE_IMAGE_SIZE=100)
+    def test_update_with_oversized_base64_image(
+        self, user, mailbox, mailbox_template, detail_url
+    ):
+        """Updating a template with an oversized base64 image should fail."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        large_data = base64.b64encode(b"\x89PNG" + b"\x00" * 200).decode()
+        html_body = f'<img src="data:image/png;base64,{large_data}">'
+
+        data = {
+            "name": "Updated Template",
+            "html_body": html_body,
+            "text_body": "Updated content",
+            "raw_body": RAW_DATA,
+            "type": "message",
+        }
+
+        response = client.put(
+            detail_url(mailbox_template.id),
+            data,
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "html_body" in response.data
 
 
 class TestMailboxMessageTemplateDelete:
