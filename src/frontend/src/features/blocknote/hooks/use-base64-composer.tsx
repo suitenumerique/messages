@@ -7,9 +7,12 @@ import { useTranslation } from 'react-i18next';
 
 import { useUploadImageAsBase64 } from '@/features/blocknote/image-block/use-upload-image-as-base64';
 import { useImageObjectUrls } from '@/features/blocknote/image-block/use-image-object-urls';
+import { EmailExporter } from '@/features/blocknote/email-exporter';
 import { useConfig } from '@/features/providers/config';
 import MailHelper from '@/features/utils/mail-helper';
 import { createBlockNoteDictionary, createNonImageFileBlockers, removeFailedImageBlocks } from '@/features/blocknote/utils';
+
+const emailExporter = new EmailExporter();
 
 type UseBase64ComposerOptions<
     B extends BlockSpecs,
@@ -90,7 +93,7 @@ export const useBase64Composer = <
         if (removeFailedImageBlocks(editor)) return;
 
         const markdown = await editor.blocksToMarkdownLossy(editor.document);
-        const html = await MailHelper.markdownToHtml(markdown);
+        const html = emailExporter.exportBlocks(editor.document, editor.domElement ?? null);
         form.setValue("rawBody", resolveObjectUrls(JSON.stringify(editor.document)), { shouldDirty: true });
         form.setValue("textBody", resolveObjectUrls(markdown));
         form.setValue("htmlBody", resolveObjectUrls(html));

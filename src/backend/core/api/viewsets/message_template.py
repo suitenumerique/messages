@@ -4,16 +4,12 @@ from django.db.models import Case, IntegerField, Q, When
 from django.utils.functional import cached_property
 
 from drf_spectacular.utils import (
-    OpenApiExample,
     OpenApiParameter,
-    OpenApiResponse,
     OpenApiTypes,
     extend_schema,
 )
-from rest_framework import mixins, status, viewsets
-from rest_framework.decorators import action
+from rest_framework import mixins, viewsets
 from rest_framework.generics import get_object_or_404
-from rest_framework.response import Response
 
 from core.api import permissions
 from core.api.serializers import (
@@ -35,7 +31,7 @@ class MailboxMessageTemplateViewSet(
     mixins.ListModelMixin,
     viewsets.GenericViewSet,
 ):
-    """ViewSet for retrieving and rendering message templates for a mailbox."""
+    """ViewSet for managing message templates for a mailbox."""
 
     permission_classes = [permissions.IsMailboxAdmin]
     serializer_class = MessageTemplateSerializer
@@ -44,7 +40,7 @@ class MailboxMessageTemplateViewSet(
 
     def get_permissions(self):
         """Get permissions for the viewset."""
-        if self.action in ["render_template", "list", "retrieve"]:
+        if self.action in ["list", "retrieve"]:
             return [permissions.HasAccessToMailbox()]
         return super().get_permissions()
 
@@ -55,11 +51,12 @@ class MailboxMessageTemplateViewSet(
 
     def get_queryset(self):
         """Get message templates for a mailbox the user has access to."""
-        if self.action == "render_template":
-            return MessageTemplate.objects.filter(
+        if self.action == "retrieve":
+            queryset = MessageTemplate.objects.filter(
                 Q(mailbox=self.mailbox) | Q(maildomain=self.mailbox.domain)
             )
-        queryset = MessageTemplate.objects.filter(mailbox=self.mailbox)
+        else:
+            queryset = MessageTemplate.objects.filter(mailbox=self.mailbox)
         template_types = [
             MessageTemplateTypeChoices[template_type.upper()]
             for template_type in self.request.query_params.getlist("type")
@@ -74,49 +71,6 @@ class MailboxMessageTemplateViewSet(
         context = super().get_serializer_context()
         context["mailbox"] = self.mailbox
         return context
-
-    @extend_schema(
-        parameters=[
-            OpenApiParameter(
-                name="*",
-                type=OpenApiTypes.STR,
-                location=OpenApiParameter.QUERY,
-                description="Any other parameter will be available in the template context",
-                required=False,
-                examples=[OpenApiExample("Example", value="value")],
-            )
-        ],
-        responses={
-            200: OpenApiResponse(
-                description="Template rendered with provided context",
-                response={
-                    "type": "object",
-                    "properties": {
-                        "html_body": {"type": "string"},
-                        "text_body": {"type": "string"},
-                    },
-                },
-            ),
-            404: OpenApiResponse(description="Template not found"),
-        },
-        description="Render a template with the provided context variables.",
-    )
-    @action(detail=True, methods=["get"], url_path="render")
-    def render_template(self, request, mailbox_id, pk=None):  # pylint: disable=unused-argument
-        """Render a template."""
-        template = self.get_object()
-        try:
-            rendered = template.render_template(
-                mailbox=self.mailbox,
-                user=request.user,
-                context=request.query_params.dict(),
-            )
-            return Response(rendered)
-        except (KeyError, ValueError, TypeError) as e:
-            return Response(
-                {"error": f"Failed to render template: {str(e)}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
     @extend_schema(
         responses=MessageTemplateSerializer(many=True),

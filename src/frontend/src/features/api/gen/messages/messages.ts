@@ -30,6 +30,7 @@ import type {
   DraftCreate403,
   DraftCreate404,
   DraftMessageRequestRequest,
+  DraftPlaceholdersRetrieve200,
   DraftUpdate2400,
   DraftUpdate2403,
   DraftUpdate2404,
@@ -664,6 +665,215 @@ export const useDraftUpdate2 = <
 
   return useMutation(mutationOptions, queryClient);
 };
+/**
+ * Resolve placeholder values for the authenticated user in the context of a draft message. The mailbox is derived from the draft's sender. recipient_name is resolved from the draft's TO recipients.
+ * @summary Resolve placeholder values for a draft
+ */
+export type draftPlaceholdersRetrieveResponse200 = {
+  data: DraftPlaceholdersRetrieve200;
+  status: 200;
+};
+
+export type draftPlaceholdersRetrieveResponse403 = {
+  data: unknown;
+  status: 403;
+};
+
+export type draftPlaceholdersRetrieveResponse404 = {
+  data: unknown;
+  status: 404;
+};
+
+export type draftPlaceholdersRetrieveResponseSuccess =
+  draftPlaceholdersRetrieveResponse200 & {
+    headers: Headers;
+  };
+export type draftPlaceholdersRetrieveResponseError = (
+  | draftPlaceholdersRetrieveResponse403
+  | draftPlaceholdersRetrieveResponse404
+) & {
+  headers: Headers;
+};
+
+export type draftPlaceholdersRetrieveResponse =
+  | draftPlaceholdersRetrieveResponseSuccess
+  | draftPlaceholdersRetrieveResponseError;
+
+export const getDraftPlaceholdersRetrieveUrl = (messageId: string) => {
+  return `/api/v1.0/draft/${messageId}/placeholders/`;
+};
+
+export const draftPlaceholdersRetrieve = async (
+  messageId: string,
+  options?: RequestInit,
+): Promise<draftPlaceholdersRetrieveResponse> => {
+  return fetchAPI<draftPlaceholdersRetrieveResponse>(
+    getDraftPlaceholdersRetrieveUrl(messageId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getDraftPlaceholdersRetrieveQueryKey = (messageId?: string) => {
+  return [`/api/v1.0/draft/${messageId}/placeholders/`] as const;
+};
+
+export const getDraftPlaceholdersRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>,
+  TError = unknown,
+>(
+  messageId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDraftPlaceholdersRetrieveQueryKey(messageId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>
+  > = ({ signal }) =>
+    draftPlaceholdersRetrieve(messageId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!messageId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type DraftPlaceholdersRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>
+>;
+export type DraftPlaceholdersRetrieveQueryError = unknown;
+
+export function useDraftPlaceholdersRetrieve<
+  TData = Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>,
+  TError = unknown,
+>(
+  messageId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useDraftPlaceholdersRetrieve<
+  TData = Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>,
+  TError = unknown,
+>(
+  messageId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useDraftPlaceholdersRetrieve<
+  TData = Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>,
+  TError = unknown,
+>(
+  messageId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Resolve placeholder values for a draft
+ */
+
+export function useDraftPlaceholdersRetrieve<
+  TData = Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>,
+  TError = unknown,
+>(
+  messageId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof draftPlaceholdersRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getDraftPlaceholdersRetrieveQueryOptions(
+    messageId,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
 /**
  * ViewSet for Message model.
  */

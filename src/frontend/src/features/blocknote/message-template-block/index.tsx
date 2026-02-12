@@ -2,15 +2,16 @@ import { useBlockNoteEditor, useComponentsContext, useEditorState } from "@block
 import { useTranslation } from "react-i18next";
 import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
-import { MessageTemplateTypeChoices, ReadOnlyMessageTemplate, useMailboxesMessageTemplatesAvailableList, mailboxesMessageTemplatesRenderRetrieve, MailboxesMessageTemplatesRenderRetrieveParams } from "@/features/api/gen";
+import { MessageTemplateTypeChoices, ReadOnlyMessageTemplate, useMailboxesMessageTemplatesAvailableList, draftPlaceholdersRetrieve, DraftPlaceholdersRetrieve200 } from "@/features/api/gen";
 import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
 import { useModal } from "@gouvfr-lasuite/cunningham-react";
 import { handle } from "@/features/utils/errors";
 import MailHelper from "@/features/utils/mail-helper";
+import { resolveTemplateVariables } from "@/features/blocknote/utils";
 
 type MessageTemplateSelectorProps = {
     mailboxId: string;
-    context?: Record<string, string>;
+    messageId?: string;
     uploadInlineImage?: (file: File) => Promise<{ url: string; blobId: string } | null>;
 }
 
@@ -18,7 +19,7 @@ type MessageTemplateSelectorProps = {
  * A BlockNote toolbar selector which allows the user to select a message template
  * from all active templates for a given mailbox.
  */
-export const MessageTemplateSelector = ({ mailboxId, context = {}, uploadInlineImage }: MessageTemplateSelectorProps) => {
+export const MessageTemplateSelector = ({ mailboxId, messageId, uploadInlineImage }: MessageTemplateSelectorProps) => {
     const { t } = useTranslation();
     const editor = useBlockNoteEditor<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>();
     const Components = useComponentsContext()!;
@@ -45,26 +46,19 @@ export const MessageTemplateSelector = ({ mailboxId, context = {}, uploadInlineI
     );
 
     const handleSelect = async (template: ReadOnlyMessageTemplate) => {
-        if (!template.raw_body || !template.id) return;
+        if (!template.raw_body || !template.id || !messageId) return;
 
         try {
-            // Get rendered template content (allows to use placeholders)
-            const { data: renderedTemplate } = await mailboxesMessageTemplatesRenderRetrieve(
-                mailboxId,
-                template.id,
-                context as MailboxesMessageTemplatesRenderRetrieveParams,
-            );
-            if (!renderedTemplate?.html_body) {
-                handle(new Error("Failed to render template."), { extra: { templateId: template.id, mailboxId: mailboxId } });
-                return;
-            }
+            // Resolve placeholder values from the draft context
+            const { data: resolvedPlaceholders } = await draftPlaceholdersRetrieve(
+                messageId,
+            ) as { data: DraftPlaceholdersRetrieve200 };
 
-            // Parse template blocks for signature
+            // Parse raw blocks and resolve template variables client-side
             const blocks = JSON.parse(template.raw_body);
             const templateSignature = blocks.find((block: { type: string }) => block.type === "signature");
-
-            // Convert HTML to blocks using BlockNote's built-in parser
-            const contentBlocks = await editor.tryParseHTMLToBlocks(renderedTemplate.html_body) as PartialMessageComposerBlockSchema[];
+            const templateBlocks = blocks.filter((block: { type: string }) => block.type !== "signature");
+            const contentBlocks = resolveTemplateVariables(templateBlocks, resolvedPlaceholders) as PartialMessageComposerBlockSchema[];
 
             // Convert base64 images to blobs via upload
             if (uploadInlineImage) {

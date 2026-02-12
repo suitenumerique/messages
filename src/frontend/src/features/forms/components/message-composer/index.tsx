@@ -368,6 +368,7 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
                 props: {
                     templateId: signatureToUse.id,
                     mailboxId: mailboxId,
+                    messageId: draft?.id,
                 }
             };
 
@@ -424,17 +425,14 @@ export const MessageComposer = ({ mailboxId, blockNoteOptions, defaultValue, quo
                     <ImageUploadButton />
                     <MessageTemplateSelector
                         mailboxId={mailboxId}
-                        context={{
-                            recipient_name: draft
-                                ? draft.to.map(to => to.contact.name).join(", ")
-                                : quotedMessage?.sender?.name || ""
-                        }}
+                        messageId={draft?.id}
                         uploadInlineImage={uploadInlineImage}
                     />
                     <SignatureTemplateSelector
                         templates={activeSignatures}
                         isLoading={isLoadingSignatures}
                         mailboxId={mailboxId}
+                        messageId={draft?.id}
                         defaultSelected={draft?.signature?.id}
                     />
                 </Toolbar>

@@ -36,7 +36,7 @@ from core.api.viewsets.metrics import (
     MailboxUsageMetricsApiView,
     MailDomainUsersMetricsApiView,
 )
-from core.api.viewsets.placeholder import PlaceholderView
+from core.api.viewsets.placeholder import DraftPlaceholderView, PlaceholderView
 from core.api.viewsets.send import SendMessageView
 from core.api.viewsets.task import TaskDetailView
 from core.api.viewsets.thread import ThreadViewSet
@@ -200,6 +200,11 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/draft/<uuid:message_id>/",
         DraftMessageView.as_view(),
         name="draft-message-detail",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/draft/<uuid:message_id>/placeholders/",
+        DraftPlaceholderView.as_view(),
+        name="draft-placeholders",
     ),
     path(
         f"api/{settings.API_VERSION}/send/",

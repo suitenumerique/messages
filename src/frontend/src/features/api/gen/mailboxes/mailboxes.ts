@@ -27,8 +27,6 @@ import type {
   MailboxesImageProxyListParams,
   MailboxesMessageTemplatesAvailableListParams,
   MailboxesMessageTemplatesListParams,
-  MailboxesMessageTemplatesRenderRetrieve200,
-  MailboxesMessageTemplatesRenderRetrieveParams,
   MailboxesSearchListParams,
   MessageTemplate,
   MessageTemplateRequest,
@@ -664,7 +662,7 @@ export function useMailboxesMessageTemplatesList<
 }
 
 /**
- * ViewSet for retrieving and rendering message templates for a mailbox.
+ * ViewSet for managing message templates for a mailbox.
  */
 export type mailboxesMessageTemplatesCreateResponse201 = {
   data: MessageTemplate;
@@ -769,7 +767,7 @@ export const useMailboxesMessageTemplatesCreate = <
   return useMutation(mutationOptions, queryClient);
 };
 /**
- * ViewSet for retrieving and rendering message templates for a mailbox.
+ * ViewSet for managing message templates for a mailbox.
  */
 export type mailboxesMessageTemplatesRetrieveResponse200 = {
   data: MessageTemplate;
@@ -973,7 +971,7 @@ export function useMailboxesMessageTemplatesRetrieve<
 }
 
 /**
- * ViewSet for retrieving and rendering message templates for a mailbox.
+ * ViewSet for managing message templates for a mailbox.
  */
 export type mailboxesMessageTemplatesUpdateResponse200 = {
   data: MessageTemplate;
@@ -1082,7 +1080,7 @@ export const useMailboxesMessageTemplatesUpdate = <
   return useMutation(mutationOptions, queryClient);
 };
 /**
- * ViewSet for retrieving and rendering message templates for a mailbox.
+ * ViewSet for managing message templates for a mailbox.
  */
 export type mailboxesMessageTemplatesPartialUpdateResponse200 = {
   data: MessageTemplate;
@@ -1196,7 +1194,7 @@ export const useMailboxesMessageTemplatesPartialUpdate = <
   return useMutation(mutationOptions, queryClient);
 };
 /**
- * ViewSet for retrieving and rendering message templates for a mailbox.
+ * ViewSet for managing message templates for a mailbox.
  */
 export type mailboxesMessageTemplatesDestroyResponse204 = {
   data: void;
@@ -1300,245 +1298,6 @@ export const useMailboxesMessageTemplatesDestroy = <
 
   return useMutation(mutationOptions, queryClient);
 };
-/**
- * Render a template with the provided context variables.
- */
-export type mailboxesMessageTemplatesRenderRetrieveResponse200 = {
-  data: MailboxesMessageTemplatesRenderRetrieve200;
-  status: 200;
-};
-
-export type mailboxesMessageTemplatesRenderRetrieveResponse404 = {
-  data: void;
-  status: 404;
-};
-
-export type mailboxesMessageTemplatesRenderRetrieveResponseSuccess =
-  mailboxesMessageTemplatesRenderRetrieveResponse200 & {
-    headers: Headers;
-  };
-export type mailboxesMessageTemplatesRenderRetrieveResponseError =
-  mailboxesMessageTemplatesRenderRetrieveResponse404 & {
-    headers: Headers;
-  };
-
-export type mailboxesMessageTemplatesRenderRetrieveResponse =
-  | mailboxesMessageTemplatesRenderRetrieveResponseSuccess
-  | mailboxesMessageTemplatesRenderRetrieveResponseError;
-
-export const getMailboxesMessageTemplatesRenderRetrieveUrl = (
-  mailboxId: string,
-  id: string,
-  params?: MailboxesMessageTemplatesRenderRetrieveParams,
-) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0
-    ? `/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/render/?${stringifiedParams}`
-    : `/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/render/`;
-};
-
-export const mailboxesMessageTemplatesRenderRetrieve = async (
-  mailboxId: string,
-  id: string,
-  params?: MailboxesMessageTemplatesRenderRetrieveParams,
-  options?: RequestInit,
-): Promise<mailboxesMessageTemplatesRenderRetrieveResponse> => {
-  return fetchAPI<mailboxesMessageTemplatesRenderRetrieveResponse>(
-    getMailboxesMessageTemplatesRenderRetrieveUrl(mailboxId, id, params),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
-
-export const getMailboxesMessageTemplatesRenderRetrieveQueryKey = (
-  mailboxId?: string,
-  id?: string,
-  params?: MailboxesMessageTemplatesRenderRetrieveParams,
-) => {
-  return [
-    `/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/render/`,
-    ...(params ? [params] : []),
-  ] as const;
-};
-
-export const getMailboxesMessageTemplatesRenderRetrieveQueryOptions = <
-  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
-  TError = void,
->(
-  mailboxId: string,
-  id: string,
-  params?: MailboxesMessageTemplatesRenderRetrieveParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof fetchAPI>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ??
-    getMailboxesMessageTemplatesRenderRetrieveQueryKey(mailboxId, id, params);
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>
-  > = ({ signal }) =>
-    mailboxesMessageTemplatesRenderRetrieve(mailboxId, id, params, {
-      signal,
-      ...requestOptions,
-    });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: !!(mailboxId && id),
-    ...queryOptions,
-  } as UseQueryOptions<
-    Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
-
-export type MailboxesMessageTemplatesRenderRetrieveQueryResult = NonNullable<
-  Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>
->;
-export type MailboxesMessageTemplatesRenderRetrieveQueryError = void;
-
-export function useMailboxesMessageTemplatesRenderRetrieve<
-  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
-  TError = void,
->(
-  mailboxId: string,
-  id: string,
-  params: undefined | MailboxesMessageTemplatesRenderRetrieveParams,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
-          TError,
-          Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof fetchAPI>;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useMailboxesMessageTemplatesRenderRetrieve<
-  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
-  TError = void,
->(
-  mailboxId: string,
-  id: string,
-  params?: MailboxesMessageTemplatesRenderRetrieveParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
-          TError,
-          Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>
-        >,
-        "initialData"
-      >;
-    request?: SecondParameter<typeof fetchAPI>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useMailboxesMessageTemplatesRenderRetrieve<
-  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
-  TError = void,
->(
-  mailboxId: string,
-  id: string,
-  params?: MailboxesMessageTemplatesRenderRetrieveParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof fetchAPI>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-
-export function useMailboxesMessageTemplatesRenderRetrieve<
-  TData = Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
-  TError = void,
->(
-  mailboxId: string,
-  id: string,
-  params?: MailboxesMessageTemplatesRenderRetrieveParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof mailboxesMessageTemplatesRenderRetrieve>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof fetchAPI>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getMailboxesMessageTemplatesRenderRetrieveQueryOptions(
-    mailboxId,
-    id,
-    params,
-    options,
-  );
-
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  query.queryKey = queryOptions.queryKey;
-
-  return query;
-}
-
 /**
  * List message templates.
  */

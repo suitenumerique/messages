@@ -1,5 +1,5 @@
 import * as locales from '@blocknote/core/locales';
-import { BlockNoteEditor } from '@blocknote/core';
+import { Block, BlockNoteEditor } from '@blocknote/core';
 import { TFunction } from 'i18next';
 import { ALLOWED_IMAGE_MIME_TYPES } from '@/features/blocknote/image-block';
 
@@ -58,3 +58,35 @@ export const createNonImageFileBlockers = () => ({
         return false;
     },
 });
+
+/**
+ * Replaces `template-variable` inline content nodes with plain text
+ * using resolved placeholder values. Recurses into children blocks.
+ */
+export const resolveTemplateVariables = (
+    blocks: Block[],
+    resolvedValues: Record<string, string>,
+): Block[] => {
+    return blocks.map((block) => {
+        const resolvedBlock = { ...block };
+
+        if (Array.isArray(block.content)) {
+            resolvedBlock.content = block.content.flatMap(
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (ic: any) => {
+                    if (ic.type === 'template-variable') {
+                        const value = resolvedValues[ic.props?.value] ?? `{${ic.props?.value}}`;
+                        return { type: 'text' as const, text: value, styles: {} };
+                    }
+                    return ic;
+                },
+            );
+        }
+
+        if (Array.isArray(block.children) && block.children.length > 0) {
+            resolvedBlock.children = resolveTemplateVariables(block.children, resolvedValues);
+        }
+
+        return resolvedBlock;
+    });
+};

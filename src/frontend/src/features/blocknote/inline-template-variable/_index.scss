@@ -1,16 +1,18 @@
 
-span[data-inline-content-type="template-variable"] {
-    padding: var(--c--globals--spacings--4xs) var(--c--globals--spacings--2xs);
-    border-radius: 4px;
-    background: var(--c--contextuals--background--semantic--brand--secondary);
-    color: var(--c--contextuals--content--semantic--brand--primary);
-    font-size: var(--c--globals--font--sizes--xs);
-    border: 1px solid var(--c--contextuals--border--semantic--brand--secondary);
-    user-select: none;
-    font-family: monospace;
-}
+// Those styles should be applied only in template and signature composers
+.template-composer, .signature-composer {
+    span[data-inline-content-type="template-variable"] {
+        padding: var(--c--globals--spacings--4xs) var(--c--globals--spacings--2xs);
+        border-radius: 4px;
+        background: var(--c--contextuals--background--semantic--brand--secondary);
+        color: var(--c--contextuals--content--semantic--brand--primary);
+        font-size: var(--c--globals--font--sizes--xs);
+        border: 1px solid var(--c--contextuals--border--semantic--brand--secondary);
+        user-select: none;
+        font-family: monospace;
+    }
 
-.node-template-variable.ProseMirror-selectednode span[data-inline-content-type="template-variable"] {
-    background: #94badc;
+    .node-template-variable.ProseMirror-selectednode span[data-inline-content-type="template-variable"] {
+        background: #94badc;
+    }
 }
-

@@ -1969,23 +1969,20 @@ class MessageTemplate(BaseModel):
         except (json.JSONDecodeError, AttributeError):
             return None
 
-    def render_template(
-        self,
-        mailbox: Mailbox = None,
-        user: User = None,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, str]:
+    @staticmethod
+    def resolve_placeholder_values(mailbox=None, user=None, message=None):
         """
-        Render the template with the given context.
+        Resolve placeholder values from mailbox, user, and message context.
 
         Args:
-            mailbox: Mailbox object
-            user: User object
+            mailbox: Mailbox object — provides `name` via its contact
+            user: User object — fallback for `name` and source of custom attributes
+            message: Message object — provides `recipient_name` from TO recipients
 
         Returns:
-            Dictionary with 'html_body' and 'text_body' keys containing rendered content
+            Dictionary mapping placeholder keys to their resolved string values
         """
-        context = context.copy() if context else {}
+        context = {}
         context["name"] = (
             mailbox.contact.name
             if mailbox and mailbox.contact
@@ -1998,11 +1995,42 @@ class MessageTemplate(BaseModel):
             for field_key in schema_properties.keys():
                 context[field_key] = user.custom_attributes.get(field_key) or ""
 
+        if message:
+            to_recipients = message.recipients.filter(
+                type=MessageRecipientTypeChoices.TO
+            ).select_related("contact")
+            context["recipient_name"] = ", ".join(
+                recipient.contact.name for recipient in to_recipients
+            )
+
+        return context
+
+    def render_template(
+        self,
+        mailbox: Mailbox = None,
+        user: User = None,
+        message: Message = None,
+    ) -> Dict[str, str]:
+        """
+        Render the template with the given context.
+
+        Args:
+            mailbox: Mailbox object
+            user: User object
+            context: Extra context variables (overrides resolved values)
+
+        Returns:
+            Dictionary with 'html_body' and 'text_body' keys containing rendered content
+        """
+        resolved = self.resolve_placeholder_values(
+            mailbox=mailbox, user=user, message=message
+        )
+
         rendered_html_body = self.html_body
         rendered_text_body = self.text_body
 
         # Simple placeholder substitution
-        for key, value in context.items():
+        for key, value in resolved.items():
             placeholder = f"{{{key}}}"
             rendered_html_body = rendered_html_body.replace(
                 placeholder, escape(str(value))

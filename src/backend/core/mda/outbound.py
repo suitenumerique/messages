@@ -96,7 +96,7 @@ def prepare_outbound_message(
     if message.signature:
         try:
             signatures = message.signature.render_template(
-                mailbox=mailbox_sender, user=user
+                mailbox=mailbox_sender, user=user, message=message
             )
             if signatures:
                 text_body = (

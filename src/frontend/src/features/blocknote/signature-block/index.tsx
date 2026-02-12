@@ -3,7 +3,7 @@ import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useMemo, useState } from "react";
 import { Props } from "@blocknote/core";
 import DomPurify from "dompurify";
-import { ReadOnlyMessageTemplate, useMailboxesMessageTemplatesRenderRetrieve } from "@/features/api/gen";
+import { ReadOnlyMessageTemplate, useMailboxesMessageTemplatesRetrieve, useDraftPlaceholdersRetrieve, DraftPlaceholdersRetrieve200 } from "@/features/api/gen";
 import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
 import { useTranslation } from "react-i18next";
 import { MessageComposerHelper } from "@/features/utils/composer-helper";
@@ -12,6 +12,7 @@ import { useHtmlWithObjectUrls } from "@/features/blocknote/image-block/use-html
 
 type SignatureTemplateSelectorProps = {
     mailboxId?: string;
+    messageId?: string;
     templates?: ReadOnlyMessageTemplate[];
     defaultSelected?: string | null;
     isLoading?: boolean;
@@ -21,7 +22,7 @@ type SignatureTemplateSelectorProps = {
  * A BlockNote toolbar selector which allows the user to select a signature template from
  * all active signatures for a given mailbox.
  */
-export const SignatureTemplateSelector = ({ mailboxId, templates = [], defaultSelected, isLoading }: SignatureTemplateSelectorProps) => {
+export const SignatureTemplateSelector = ({ mailboxId, messageId, templates = [], defaultSelected, isLoading }: SignatureTemplateSelectorProps) => {
     const editor = useBlockNoteEditor<MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema>();
     const { t } = useTranslation();
     const Components = useComponentsContext()!;
@@ -126,7 +127,8 @@ export const SignatureTemplateSelector = ({ mailboxId, templates = [], defaultSe
                     type: "signature" as const,
                     props: {
                         templateId: template.id,
-                        mailboxId: mailboxId
+                        mailboxId: mailboxId,
+                        messageId: messageId,
                     }
                 };
 
@@ -167,33 +169,40 @@ export const BlockSignature = createReactBlockSpec(
         propSchema: {
             templateId: { default: "" },
             mailboxId: { default: "" },
-            username: { default: "" },
+            messageId: { default: "" },
         }
     },
     {
         render: ({ block : { props }}) => {
+            const enabled = !!props.mailboxId && !!props.templateId;
+
             // eslint-disable-next-line react-hooks/rules-of-hooks
-            const { data: { data: preview = null } = {}, isLoading } = useMailboxesMessageTemplatesRenderRetrieve(
+            const { data: { data: template = null } = {}, isLoading: isLoadingTemplate } = useMailboxesMessageTemplatesRetrieve(
                 props.mailboxId,
                 props.templateId,
-                {},
-                {
-                    query: {
-                        enabled: !!props.mailboxId && !!props.templateId,
-                    }
-                }
+                { query: { enabled } },
+            );
+
+            // eslint-disable-next-line react-hooks/rules-of-hooks
+            const { data: { data: placeholders = {} } = {}, isLoading: isLoadingPlaceholders } = useDraftPlaceholdersRetrieve(
+                props.messageId,
+                { query: { enabled: enabled && !!props.messageId } },
             );
 
             // eslint-disable-next-line react-hooks/rules-of-hooks
             const sanitizedHtml = useMemo(() => {
-                if (!preview?.html_body) return null;
-                return DomPurify().sanitize(preview.html_body);
-            }, [preview?.html_body]);
+                if (!template?.html_body) return null;
+                let html = template.html_body;
+                for (const [key, value] of Object.entries(placeholders as DraftPlaceholdersRetrieve200)) {
+                    html = html.replaceAll(`{${key}}`, value);
+                }
+                return DomPurify().sanitize(html);
+            }, [template?.html_body, placeholders]);
 
             // eslint-disable-next-line react-hooks/rules-of-hooks
             const processedHtml = useHtmlWithObjectUrls(sanitizedHtml);
 
-            if (isLoading) {
+            if (isLoadingTemplate || isLoadingPlaceholders) {
                 return <Spinner size="sm" />;
             }
 

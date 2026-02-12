@@ -1315,6 +1315,73 @@
                 }
             }
         },
+        "/api/v1.0/draft/{message_id}/placeholders/": {
+            "get": {
+                "operationId": "draft_placeholders_retrieve",
+                "description": "Resolve placeholder values for the authenticated user in the context of a draft message. The mailbox is derived from the draft's sender. recipient_name is resolved from the draft's TO recipients.",
+                "summary": "Resolve placeholder values for a draft",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "message_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "description": "Placeholder keys mapped to their resolved values",
+                                    "additionalProperties": {
+                                        "type": "string"
+                                    },
+                                    "example": {
+                                        "name": "John Doe",
+                                        "recipient_name": "Jane Smith",
+                                        "job_title": "Developer"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "description": "User does not have editor access to this draft"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "description": "Draft not found"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/flag/": {
             "post": {
                 "operationId": "flag_create",
@@ -2857,7 +2924,7 @@
             },
             "post": {
                 "operationId": "mailboxes_message_templates_create",
-                "description": "ViewSet for retrieving and rendering message templates for a mailbox.",
+                "description": "ViewSet for managing message templates for a mailbox.",
                 "parameters": [
                     {
                         "in": "path",
@@ -2909,7 +2976,7 @@
         "/api/v1.0/mailboxes/{mailbox_id}/message-templates/{id}/": {
             "get": {
                 "operationId": "mailboxes_message_templates_retrieve",
-                "description": "ViewSet for retrieving and rendering message templates for a mailbox.",
+                "description": "ViewSet for managing message templates for a mailbox.",
                 "parameters": [
                     {
                         "in": "path",
@@ -2952,7 +3019,7 @@
             },
             "put": {
                 "operationId": "mailboxes_message_templates_update",
-                "description": "ViewSet for retrieving and rendering message templates for a mailbox.",
+                "description": "ViewSet for managing message templates for a mailbox.",
                 "parameters": [
                     {
                         "in": "path",
@@ -3010,7 +3077,7 @@
             },
             "patch": {
                 "operationId": "mailboxes_message_templates_partial_update",
-                "description": "ViewSet for retrieving and rendering message templates for a mailbox.",
+                "description": "ViewSet for managing message templates for a mailbox.",
                 "parameters": [
                     {
                         "in": "path",
@@ -3067,7 +3134,7 @@
             },
             "delete": {
                 "operationId": "mailboxes_message_templates_destroy",
-                "description": "ViewSet for retrieving and rendering message templates for a mailbox.",
+                "description": "ViewSet for managing message templates for a mailbox.",
                 "parameters": [
                     {
                         "in": "path",
@@ -3098,75 +3165,6 @@
                 "responses": {
                     "204": {
                         "description": "No response body"
-                    }
-                }
-            }
-        },
-        "/api/v1.0/mailboxes/{mailbox_id}/message-templates/{id}/render/": {
-            "get": {
-                "operationId": "mailboxes_message_templates_render_retrieve",
-                "description": "Render a template with the provided context variables.",
-                "parameters": [
-                    {
-                        "in": "query",
-                        "name": "*",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "description": "Any other parameter will be available in the template context",
-                        "examples": {
-                            "Example": {
-                                "value": "value"
-                            }
-                        }
-                    },
-                    {
-                        "in": "path",
-                        "name": "id",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "required": true
-                    },
-                    {
-                        "in": "path",
-                        "name": "mailbox_id",
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid"
-                        },
-                        "required": true
-                    }
-                ],
-                "tags": [
-                    "mailboxes"
-                ],
-                "security": [
-                    {
-                        "cookieAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "html_body": {
-                                            "type": "string"
-                                        },
-                                        "text_body": {
-                                            "type": "string"
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        "description": "Template rendered with provided context"
-                    },
-                    "404": {
-                        "description": "Template not found"
                     }
                 }
             }

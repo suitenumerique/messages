@@ -150,3 +150,90 @@ class TestMessageTemplateRetrieve:
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.data["name"] == template.name
+
+    def test_success_maildomain_template(self, user, mailbox):
+        """Test retrieving a maildomain template through the mailbox endpoint."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=models.MailboxRoleChoices.VIEWER,
+        )
+
+        template = factories.MessageTemplateFactory(
+            name="Domain Template",
+            html_body="<p>Domain content</p>",
+            text_body="Domain content",
+            maildomain=mailbox.domain,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(
+            reverse(
+                "mailbox-message-templates-detail",
+                kwargs={"mailbox_id": mailbox.id, "pk": template.id},
+            )
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["id"] == str(template.id)
+        assert response.data["name"] == "Domain Template"
+
+    def test_maildomain_template_not_accessible_from_other_domain(self, user):
+        """Test that a maildomain template is not accessible from a mailbox on
+        a different domain."""
+        mailbox = factories.MailboxFactory()
+        other_mailbox = factories.MailboxFactory()
+
+        factories.MailboxAccessFactory(
+            mailbox=other_mailbox,
+            user=user,
+            role=models.MailboxRoleChoices.VIEWER,
+        )
+
+        template = factories.MessageTemplateFactory(
+            name="Other Domain Template",
+            html_body="<p>Other domain content</p>",
+            text_body="Other domain content",
+            maildomain=mailbox.domain,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(
+            reverse(
+                "mailbox-message-templates-detail",
+                kwargs={"mailbox_id": other_mailbox.id, "pk": template.id},
+            )
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_other_mailbox_template_not_accessible(self, user, mailbox):
+        """Test that a template belonging to another mailbox on the same domain
+        is not accessible."""
+        other_mailbox = factories.MailboxFactory(domain=mailbox.domain)
+
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=models.MailboxRoleChoices.VIEWER,
+        )
+
+        template = factories.MessageTemplateFactory(
+            name="Other Mailbox Template",
+            html_body="<p>Other mailbox content</p>",
+            text_body="Other mailbox content",
+            mailbox=other_mailbox,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(
+            reverse(
+                "mailbox-message-templates-detail",
+                kwargs={"mailbox_id": mailbox.id, "pk": template.id},
+            )
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
