@@ -337,7 +337,7 @@ services:
     pull_policy: build
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.2.5
+    image: quay.io/keycloak/keycloak:26.5.3
     volumes:
       - ./src/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
       - ./src/keycloak/themes/dsfr-2.2.1.jar:/opt/keycloak/providers/keycloak-theme.jar:ro
@@ -348,7 +348,8 @@ services:
       - start-dev
       - --features=preview
       - --import-realm
-      - --proxy=edge
+      - --proxy-headers=xforwarded
+      - --http-enabled=true
       - --hostname=$${HOST}
       - --hostname-admin=$${ADMIN_HOST}
       - --http-port=8802

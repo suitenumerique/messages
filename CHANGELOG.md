@@ -8,6 +8,10 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- Bump keycloak to 26.5.3 #543
+
 ## [0.2.0] - 2026-02-03
 
 ### Added

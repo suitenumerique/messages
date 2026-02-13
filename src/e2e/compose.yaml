@@ -54,7 +54,8 @@ services:
       - start-dev
       - --features=preview
       - --import-realm
-      - --proxy=edge
+      - --proxy-headers=xforwarded
+      - --http-enabled=true
       - --hostname=$${HOST}
       - --hostname-admin=$${ADMIN_HOST}
       - --http-port=8802
