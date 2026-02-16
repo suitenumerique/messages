@@ -23,13 +23,17 @@ export function useImportTaskStatus(
   const taskStatus = taskQuery.data?.data.status;
   const taskMetadata = taskQuery.data?.data.result as TaskMetadata | undefined;
 
+  const hasKnownTotal = taskMetadata?.total_messages != null && taskMetadata.total_messages > 0;
+  const currentMessage = taskMetadata?.current_message ?? 0;
+
   const progress = useMemo(() => {
     if (taskStatus === StatusEnum.SUCCESS) return 100;
     if (taskStatus && taskStatus !== StatusEnum.PROGRESS) return 0;
+    if (!hasKnownTotal) return null;
     if (!taskMetadata?.success_count || !taskMetadata.total_messages)
       return null;
     return (taskMetadata.success_count / taskMetadata.total_messages) * 100;
-  }, [taskStatus, taskMetadata]);
+  }, [taskStatus, taskMetadata, hasKnownTotal]);
 
   useEffect(() => {
     if (!enabled || taskStatus === StatusEnum.FAILURE || taskStatus === StatusEnum.SUCCESS) {
@@ -41,9 +45,11 @@ export function useImportTaskStatus(
 
   if (!taskId) return null;
   return {
-    progress: Math.ceil(progress || 0),
+    progress: progress !== null ? Math.ceil(progress) : null,
     state: taskQuery.data?.data.status,
-    loading: taskQuery.isPending || !progress,
+    loading: taskQuery.isPending || progress === null,
     error: taskQuery.data?.data.error,
+    hasKnownTotal,
+    currentMessage,
   };
 }

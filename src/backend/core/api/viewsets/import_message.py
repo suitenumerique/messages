@@ -1,4 +1,4 @@
-"""API ViewSet for importing messages via EML, MBOX, or IMAP."""
+"""API ViewSet for importing messages via EML, MBOX, PST, or IMAP."""
 
 from django.core.files.storage import storages
 from django.shortcuts import get_object_or_404
@@ -27,10 +27,10 @@ from ..serializers import (
 @extend_schema(tags=["import"])
 class ImportViewSet(viewsets.ViewSet):
     """
-    ViewSet for importing messages via EML/MBOX file or IMAP.
+    ViewSet for importing messages via EML/MBOX/PST file or IMAP.
 
     This ViewSet provides endpoints for importing messages from:
-    - EML/MBOX files uploaded directly
+    - EML/MBOX/PST files uploaded directly
     - IMAP servers with configurable connection settings
 
     All imports are processed asynchronously and return a task ID for tracking.
@@ -53,7 +53,7 @@ class ImportViewSet(viewsets.ViewSet):
                         },
                         "type": {
                             "type": "string",
-                            "description": "Type of import (eml or mbox)",
+                            "description": "Type of import (eml, mbox, or pst)",
                         },
                     },
                 },
@@ -65,16 +65,16 @@ class ImportViewSet(viewsets.ViewSet):
             404: OpenApiResponse(description="Specified mailbox not found"),
         },
         description="""
-        Import messages by uploading an EML or MBOX file.
+        Import messages by uploading an EML, MBOX, or PST file.
 
         The import is processed asynchronously and returns a task ID for tracking.
-        The file must be a valid EML or MBOX format. The recipient mailbox must exist
+        The file must be a valid EML, MBOX, or PST format. The recipient mailbox must exist
         and the user must have access to it.
         """,
     )
     @action(detail=False, methods=["post"], url_path="file")
     def import_file(self, request):
-        """Import messages by uploading an EML or MBOX file."""
+        """Import messages by uploading an EML, MBOX, or PST file."""
         serializer = ImportFileSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         recipient_id = serializer.validated_data["recipient"]
@@ -85,6 +85,7 @@ class ImportViewSet(viewsets.ViewSet):
             file_key=file_key,
             recipient=mailbox,
             user=request.user,
+            filename=serializer.validated_data["filename"],
         )
 
         if not success:

@@ -479,25 +479,32 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
             # Fetch message with flags using retry logic
             flags, raw_email = _fetch_message_with_flags_retry(imap_connection, msg_num)
 
-            # Parse message
-            parsed_email = parse_email_message(raw_email)
-
-            # TODO: better heuristic to determine if the message is from the sender
-            is_sender = parsed_email["from"]["email"].lower() == username.lower()
-
-            # Deliver message
-            if deliver_inbound_message(
-                str(recipient),
-                parsed_email,
-                raw_email,
-                is_import=True,
-                is_import_sender=is_sender,
-                imap_labels=[display_name],
-                imap_flags=flags,
-            ):
-                success_count += 1
-            else:
+            # Check message size limit
+            if len(raw_email) > settings.MAX_INCOMING_EMAIL_SIZE:
+                logger.warning(
+                    "Skipping oversized IMAP message: %d bytes", len(raw_email)
+                )
                 failure_count += 1
+            else:
+                # Parse message
+                parsed_email = parse_email_message(raw_email)
+
+                # TODO: better heuristic to determine if the message is from the sender
+                is_sender = parsed_email["from"]["email"].lower() == username.lower()
+
+                # Deliver message
+                if deliver_inbound_message(
+                    str(recipient),
+                    parsed_email,
+                    raw_email,
+                    is_import=True,
+                    is_import_sender=is_sender,
+                    imap_labels=[display_name],
+                    imap_flags=flags,
+                ):
+                    success_count += 1
+                else:
+                    failure_count += 1
 
         except Exception as e:
             logger.exception(

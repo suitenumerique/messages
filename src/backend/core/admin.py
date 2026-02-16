@@ -559,6 +559,7 @@ class MessageAdmin(admin.ModelAdmin):
                     recipient=recipient,
                     user=request.user,
                     request=request,
+                    filename=import_file.name,
                 )
                 if success:
                     return redirect("..")

@@ -624,6 +624,7 @@ class Base(Configuration):
     CELERY_RESULT_EXTENDED = True
     CELERY_TASK_RESULT_EXPIRES = 60 * 60 * 24 * 30  # 30 days
     CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+    CELERY_WORKER_HIJACK_ROOT_LOGGER = False
 
     # Default queue for tasks without explicit routing
     CELERY_TASK_DEFAULT_QUEUE = "default"
@@ -636,7 +637,10 @@ class Base(Configuration):
         # Outbound email sending - high priority
         "core.mda.outbound_tasks.*": {"queue": "outbound"},
         # Import tasks - lower priority than regular tasks
-        "core.services.importer.tasks.*": {"queue": "imports"},
+        "core.services.importer.mbox_tasks.*": {"queue": "imports"},
+        "core.services.importer.eml_tasks.*": {"queue": "imports"},
+        "core.services.importer.imap_tasks.*": {"queue": "imports"},
+        "core.services.importer.pst_tasks.*": {"queue": "imports"},
         # Search indexing - lowest priority, can be delayed
         "core.services.search.tasks.*": {"queue": "reindex"},
     }
@@ -853,6 +857,41 @@ class Base(Configuration):
                     environ_name="LOGGING_LEVEL_LOGGERS_APP",
                     environ_prefix=None,
                 ),
+                "propagate": False,
+            },
+            "botocore": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
+            "urllib3": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
+            "opensearch": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
+            "opensearchpy": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
+            "opensearchpy.trace": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
+            "elastic_transport": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
+            "flanker": {
+                "handlers": ["console"],
+                "level": "WARNING",
                 "propagate": False,
             },
         },

@@ -12,7 +12,7 @@ import pytest
 from core import enums, factories
 from core.forms import IMAPImportForm
 from core.models import Mailbox, MailDomain, Message, Thread
-from core.services.importer.tasks import import_imap_messages_task
+from core.services.importer.imap_tasks import import_imap_messages_task
 
 from messages.celery_app import app as celery_app
 
@@ -163,7 +163,7 @@ def test_imap_import_form_view(admin_client, mailbox):
     }
 
     with patch(
-        "core.services.importer.tasks.import_imap_messages_task.delay"
+        "core.services.importer.imap_tasks.import_imap_messages_task.delay"
     ) as mock_task:
         response = admin_client.post(url, form_data, follow=True)
         assert response.status_code == 200
@@ -212,7 +212,7 @@ def test_imap_import_task_success(
         assert task["result"]["current_message"] == 3
 
         # Verify progress updates were called correctly
-        assert mock_task.update_state.call_count == 4  # 3 PROGRESS + 1 SUCCESS
+        assert mock_task.update_state.call_count == 3  # 3 PROGRESS
 
         # Verify progress updates
         for i in range(1, 4):
@@ -231,11 +231,8 @@ def test_imap_import_task_success(
                 },
             )
 
-        # Verify success update
-        mock_task.update_state.assert_any_call(
-            state="SUCCESS",
-            meta=task,
-        )
+        # No SUCCESS update_state — Celery infers SUCCESS from normal return;
+        # status is in the returned dict
 
         # Verify messages were created
         assert Message.objects.count() == 3
@@ -295,15 +292,8 @@ def test_imap_import_task_login_failure(mailbox):
         assert task_result["result"]["current_message"] == 0
         assert "Login failed" in task_result["error"]
 
-        # Verify only failure update was called
-        assert mock_task.update_state.call_count == 1
-        mock_task.update_state.assert_called_once_with(
-            state="FAILURE",
-            meta={
-                "result": task_result["result"],
-                "error": task_result["error"],
-            },
-        )
+        # No update_state calls — failure status is in the returned dict
+        mock_task.update_state.assert_not_called()
 
         # Verify no messages were created
         assert Message.objects.count() == 0
@@ -360,7 +350,7 @@ def test_imap_import_task_message_fetch_failure(
         assert task["result"]["current_message"] == 3
 
         # Verify progress updates were called correctly
-        assert mock_task.update_state.call_count == 4  # 3 PROGRESS + 1 SUCCESS
+        assert mock_task.update_state.call_count == 3  # 3 PROGRESS
 
         # Verify progress updates
         for i in range(1, 4):
@@ -379,11 +369,8 @@ def test_imap_import_task_message_fetch_failure(
                 },
             )
 
-        # Verify success update
-        mock_task.update_state.assert_any_call(
-            state="SUCCESS",
-            meta=task,
-        )
+        # No SUCCESS update_state — Celery infers SUCCESS from normal return;
+        # status is in the returned dict
 
 
 @patch("core.mda.inbound.logger")

@@ -35,6 +35,13 @@
         animation: progress-stripes 1s linear infinite;
         border-radius: 50vw;
     }
+
+    &--indeterminate {
+        .progress-bar__progress {
+            width: 30% !important;
+            animation: progress-indeterminate 1.5s ease-in-out infinite, progress-stripes 1s linear infinite;
+        }
+    }
 }
 
 @keyframes progress-stripes {
@@ -43,5 +50,27 @@
     }
     100% {
         background-position: 40px 0;
+    }
+}
+
+@keyframes progress-indeterminate {
+    0% {
+        margin-left: -30%;
+    }
+    100% {
+        margin-left: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .progress-bar,
+    .progress-bar__progress {
+        animation: none;
+    }
+    .progress-bar--indeterminate .progress-bar__progress {
+        animation: none;
+        width: 100% !important;
+        margin-left: 0;
+        opacity: 0.5;
     }
 }

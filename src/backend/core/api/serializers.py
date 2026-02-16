@@ -1334,7 +1334,9 @@ class ImportFileUploadSerializer(ImportBaseSerializer):
     def validate_content_type(self, value):
         """Validate content type."""
         if value not in enums.ARCHIVE_SUPPORTED_MIME_TYPES:
-            raise serializers.ValidationError("Only EML and MBOX files are supported.")
+            raise serializers.ValidationError(
+                "Only EML, MBOX, and PST files are supported."
+            )
         return value
 
 

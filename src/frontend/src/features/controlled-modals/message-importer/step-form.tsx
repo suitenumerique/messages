@@ -276,11 +276,11 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
                 <div className="form-field-row archive_file_field">
                     <RhfFileUploader
                         name="archive_file"
-                        accept=".eml,.mbox"
+                        accept=".eml,.mbox,.pst"
                         icon={<span className="material-icons">inventory_2</span>}
                         fileSelectedIcon={<span className="material-icons">inventory_2</span>}
                         bigText={t('Drag and drop an archive here')}
-                        text={t('EML or MBOX')}
+                        text={t('EML, MBOX or PST')}
                         fullWidth
                     />
                     {[BucketUploadState.INITIATING, BucketUploadState.IMPORTING, BucketUploadState.COMPLETING, BucketUploadState.COMPLETED].includes(bucketUploadManager.state) && (

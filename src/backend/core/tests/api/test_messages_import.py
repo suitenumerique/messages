@@ -14,7 +14,8 @@ from core import factories
 from core.api.utils import get_file_key
 from core.enums import MailboxRoleChoices, MessageDeliveryStatusChoices
 from core.models import Mailbox, MailDomain, Message, Thread
-from core.services.importer.tasks import process_eml_file_task, process_mbox_file_task
+from core.services.importer.eml_tasks import process_eml_file_task
+from core.services.importer.mbox_tasks import process_mbox_file_task
 
 pytestmark = pytest.mark.django_db
 
@@ -186,7 +187,7 @@ def test_api_import_mbox_async(api_client, user, mailbox, mbox_file):
     # add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
     with patch(
-        "core.services.importer.tasks.process_mbox_file_task.delay"
+        "core.services.importer.mbox_tasks.process_mbox_file_task.delay"
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         mock_task.return_value.status = "PENDING"
@@ -199,6 +200,78 @@ def test_api_import_mbox_async(api_client, user, mailbox, mbox_file):
         assert response.data["type"] == "mbox"
         assert mock_task.call_count == 1
         assert mock_task.call_args[0][1] == str(mailbox.id)
+
+
+def test_api_import_pst_file_async(api_client, user, mailbox):
+    """Test import of PST file via API dispatches the PST task."""
+    mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
+
+    # PST magic bytes: '!BDN' signature
+    pst_body = b"\x21\x42\x44\x4e" + b"\x00" * 100
+
+    # Create a fake PST file in S3
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    file_key = get_file_key(user.id, "test.pst")
+    s3_client.put_object(
+        Bucket=storage.bucket_name,
+        Key=file_key,
+        Body=pst_body,
+        ContentType="application/vnd.ms-outlook",
+    )
+
+    try:
+        with patch(
+            "core.services.importer.pst_tasks.process_pst_file_task.delay"
+        ) as mock_task:
+            mock_task.return_value.id = "fake-pst-task-id"
+            mock_task.return_value.status = "PENDING"
+            response = api_client.post(
+                IMPORT_FILE_URL,
+                {"filename": "test.pst", "recipient": str(mailbox.id)},
+                format="multipart",
+            )
+            assert response.status_code == 202
+            assert response.data["type"] == "pst"
+            assert mock_task.call_count == 1
+            assert mock_task.call_args[0][1] == str(mailbox.id)
+    finally:
+        s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
+
+
+def test_api_import_pst_autodetect(api_client, user, mailbox):
+    """Test that PST files are autodetected by magic bytes regardless of S3 content type."""
+    mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
+
+    # PST magic bytes: '!BDN' signature, uploaded with generic content type
+    pst_body = b"\x21\x42\x44\x4e" + b"\x00" * 100
+
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    file_key = get_file_key(user.id, "test.pst")
+    s3_client.put_object(
+        Bucket=storage.bucket_name,
+        Key=file_key,
+        Body=pst_body,
+        ContentType="application/octet-stream",
+    )
+
+    try:
+        with patch(
+            "core.services.importer.pst_tasks.process_pst_file_task.delay"
+        ) as mock_task:
+            mock_task.return_value.id = "fake-pst-task-id"
+            mock_task.return_value.status = "PENDING"
+            response = api_client.post(
+                IMPORT_FILE_URL,
+                {"filename": "test.pst", "recipient": str(mailbox.id)},
+                format="multipart",
+            )
+            assert response.status_code == 202
+            assert response.data["type"] == "pst"
+            mock_task.assert_called_once()
+    finally:
+        s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
 
 
 def test_api_import_mailbox_no_access(api_client, domain, eml_file):
@@ -218,7 +291,7 @@ def test_api_import_imap_task(api_client, user, mailbox):
     """Test import of IMAP messages."""
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
     with patch(
-        "core.services.importer.tasks.import_imap_messages_task.delay"
+        "core.services.importer.imap_tasks.import_imap_messages_task.delay"
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         data = {
@@ -336,7 +409,9 @@ def test_api_import_duplicate_eml_file(api_client, user, mailbox, eml_file):
     assert Thread.objects.count() == 0
 
     # First import
-    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.eml_tasks.process_eml_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id-1"
         response = api_client.post(
             IMPORT_FILE_URL,
@@ -361,7 +436,9 @@ def test_api_import_duplicate_eml_file(api_client, user, mailbox, eml_file):
         assert Thread.objects.count() == 1
 
     # Import again the same file
-    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.eml_tasks.process_eml_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id-2"
         response = api_client.post(
             IMPORT_FILE_URL,
@@ -396,7 +473,7 @@ def test_api_import_duplicate_mbox_file(api_client, user, mailbox, mbox_file):
 
     # First import
     with patch(
-        "core.services.importer.tasks.process_mbox_file_task.delay"
+        "core.services.importer.mbox_tasks.process_mbox_file_task.delay"
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id-1"
         response = api_client.post(
@@ -426,7 +503,7 @@ def test_api_import_duplicate_mbox_file(api_client, user, mailbox, mbox_file):
 
     # Second import of the same file
     with patch(
-        "core.services.importer.tasks.process_mbox_file_task.delay"
+        "core.services.importer.mbox_tasks.process_mbox_file_task.delay"
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id-2"
         response = api_client.post(
@@ -467,7 +544,9 @@ def test_api_import_eml_same_message_different_mailboxes(api_client, user, eml_f
     assert Message.objects.count() == 0
 
     # Import to first mailbox
-    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.eml_tasks.process_eml_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id-1"
         response = api_client.post(
             IMPORT_FILE_URL,
@@ -491,7 +570,9 @@ def test_api_import_eml_same_message_different_mailboxes(api_client, user, eml_f
         assert Message.objects.count() == 1
 
     # Import to second mailbox
-    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.eml_tasks.process_eml_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id-2"
         response = api_client.post(
             IMPORT_FILE_URL,
@@ -539,7 +620,7 @@ def test_api_import_mbox_same_message_different_mailboxes(api_client, user, mbox
 
     # Import to first mailbox
     with patch(
-        "core.services.importer.tasks.process_mbox_file_task.delay"
+        "core.services.importer.mbox_tasks.process_mbox_file_task.delay"
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id-1"
         response = api_client.post(
@@ -565,7 +646,7 @@ def test_api_import_mbox_same_message_different_mailboxes(api_client, user, mbox
 
     # Import to second mailbox
     with patch(
-        "core.services.importer.tasks.process_mbox_file_task.delay"
+        "core.services.importer.mbox_tasks.process_mbox_file_task.delay"
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id-2"
         response = api_client.post(

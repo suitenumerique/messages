@@ -6,7 +6,7 @@ import { StepForm } from "./step-form";
 import { StepLoader } from "./step-loader";
 import { StepCompleted } from "./step-completed";
 import clsx from "clsx";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TaskImportCacheHelper } from "@/features/utils/task-import-cache";
 
 
@@ -31,6 +31,30 @@ export const ModalMessageImporter = () => {
     const [step, setStep] = useState<IMPORT_STEP>(taskId ? 'importing' : 'idle');
     const [error, setError] = useState<string | null>(null);
     const { closeModal } = useModalStore();
+
+    // Track Alt key for force-reset on alt+close
+    const altKeyRef = useRef(false);
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => { altKeyRef.current = e.altKey; };
+        const onBlur = () => { altKeyRef.current = false; };
+        window.addEventListener('keydown', onKey);
+        window.addEventListener('keyup', onKey);
+        window.addEventListener('blur', onBlur);
+        return () => {
+            window.removeEventListener('keydown', onKey);
+            window.removeEventListener('keyup', onKey);
+            window.removeEventListener('blur', onBlur);
+        };
+    }, []);
+
+    const handleClose = () => {
+        if (altKeyRef.current && step === 'importing') {
+            taskImportCacheHelper.remove();
+            setTaskId(null);
+            setStep('idle');
+        }
+    };
+
     const handleCompletedStepClose = () => {
         closeModal(MODAL_MESSAGE_IMPORTER_ID);
     }
@@ -96,6 +120,7 @@ export const ModalMessageImporter = () => {
             aria-label={t('Import your old messages in {{mailbox}}', { mailbox: selectedMailbox.email })}
             modalId={MODAL_MESSAGE_IMPORTER_ID}
             size={ModalSize.LARGE}
+            onClose={handleClose}
             confirmFn={step !== 'uploading' ? undefined : handleConfirmCloseModal}
         >
             <div className="modal-importer">

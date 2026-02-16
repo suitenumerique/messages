@@ -22,7 +22,10 @@ apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
     curl \
     rdfind \
-    libmagic1
+    libmagic1 \
+    build-essential \
+    python3-dev \
+    zlib1g-dev
 rm -rf /var/lib/apt/lists/*
 EOR
 

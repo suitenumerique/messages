@@ -141,8 +141,15 @@ def set_basic_headers(message_part, jmap_data, in_reply_to=None):
                     date, datetime.timezone.utc
                 )  # Use Django's timezone utils
         except (ValueError, TypeError):
-            # Default to current time if parsing fails or type is wrong
-            date = datetime.datetime.now(datetime.timezone.utc)
+            # fromisoformat failed — try RFC5322 format (e.g. from PST transport headers)
+            try:
+                date = parsedate_to_datetime(date)
+                # Ensure timezone-aware (date strings without a timezone yield a naive datetime)
+                if date.tzinfo is None or date.tzinfo.utcoffset(date) is None:
+                    date = timezone.make_aware(date, datetime.timezone.utc)
+            except (ValueError, TypeError, IndexError):
+                # Default to current time if all parsing fails
+                date = datetime.datetime.now(datetime.timezone.utc)
     elif isinstance(date, datetime.datetime):
         # Ensure provided datetime is timezone-aware
         if date.tzinfo is None or date.tzinfo.utcoffset(date) is None:

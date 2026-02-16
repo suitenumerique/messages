@@ -6,12 +6,12 @@ from core.models import Mailbox
 
 
 class MessageImportForm(forms.Form):
-    """Form for importing EML or MBOX files in the admin interface."""
+    """Form for importing EML, MBOX, or PST files in the admin interface."""
 
     import_file = forms.FileField(
         label="Import File",
-        help_text="Select an EML or MBOX file to import",
-        widget=forms.FileInput(attrs={"accept": ".eml,.mbox,mbox"}),
+        help_text="Select an EML, MBOX, or PST file to import",
+        widget=forms.FileInput(attrs={"accept": ".eml,.mbox,mbox,.pst"}),
     )
     recipient = forms.ModelChoiceField(
         queryset=Mailbox.objects.all(),
@@ -27,9 +27,9 @@ class MessageImportForm(forms.Form):
         if not file:
             return None
 
-        if not file.name.endswith((".eml", ".mbox", "mbox")):
+        if not file.name.endswith((".eml", ".mbox", "mbox", ".pst")):
             raise forms.ValidationError(
-                "File must be either an EML (.eml) or MBOX (.mbox) file or named 'mbox'"
+                "File must be an EML (.eml), MBOX (.mbox), or PST (.pst) file or named 'mbox'"
             )
         return file
 

@@ -3,8 +3,13 @@
 
 import datetime
 from io import BytesIO
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import (
+    MagicMock,
+    Mock,
+    patch,
+)
 
+from django.core.files.storage import storages
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
@@ -12,7 +17,8 @@ import pytest
 
 from core import factories
 from core.models import Mailbox, MailDomain, Message, Thread
-from core.services.importer.tasks import process_eml_file_task, process_mbox_file_task
+from core.services.importer.eml_tasks import process_eml_file_task
+from core.services.importer.mbox_tasks import process_mbox_file_task
 
 
 def mock_storage_open(content: bytes):
@@ -107,7 +113,9 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
     mock_task.update_state = MagicMock()
 
     with (
-        patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_delay,
+        patch(
+            "core.services.importer.eml_tasks.process_eml_file_task.delay"
+        ) as mock_delay,
         patch.object(process_eml_file_task, "update_state", mock_task.update_state),
     ):
         mock_delay.return_value.id = "fake-task-id"
@@ -127,7 +135,7 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
         # Mock storage for running task synchronously
         mock_storage = mock_storage_open(eml_file)
 
-        with patch("core.services.importer.tasks.storages") as mock_storages:
+        with patch("core.services.importer.eml_tasks.storages") as mock_storages:
             mock_storages.__getitem__.return_value = mock_storage
             # Run the task synchronously for testing
             task_result = process_eml_file_task(
@@ -143,10 +151,11 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
             assert task_result["result"]["failure_count"] == 0
             assert task_result["result"]["current_message"] == 1
 
-            # Verify progress updates were called correctly
-            assert mock_task.update_state.call_count == 2
+            # Verify only PROGRESS update_state was called (no SUCCESS —
+            # Celery infers SUCCESS from normal return)
+            assert mock_task.update_state.call_count == 1
 
-            mock_task.update_state.assert_any_call(
+            mock_task.update_state.assert_called_once_with(
                 state="PROGRESS",
                 meta={
                     "result": {
@@ -157,13 +166,6 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
                         "type": "eml",
                         "current_message": 1,
                     },
-                    "error": None,
-                },
-            )
-            mock_task.update_state.assert_called_with(
-                state="SUCCESS",
-                meta={
-                    "result": task_result["result"],
                     "error": None,
                 },
             )
@@ -181,96 +183,95 @@ def test_import_eml_file(admin_client, eml_file, mailbox):
             )
 
 
+def _upload_to_s3(content, file_key="test-mbox-key"):
+    """Upload content to the message-imports S3 bucket (real MinIO)."""
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    s3_client.put_object(
+        Bucket=storage.bucket_name,
+        Key=file_key,
+        Body=content,
+    )
+    return file_key, storage, s3_client
+
+
 @pytest.mark.django_db
 def test_process_mbox_file_task(mailbox, mbox_file):
     """Test the Celery task that processes MBOX files."""
-    # Create a mock task instance
-    mock_task = MagicMock()
-    mock_task.update_state = MagicMock()
+    file_key, storage, s3_client = _upload_to_s3(mbox_file)
 
-    # Mock storage
-    mock_storage = mock_storage_open(mbox_file)
+    try:
+        mock_task = MagicMock()
+        mock_task.update_state = MagicMock()
 
-    # Mock the task's update_state method to avoid database operations
-    with (
-        patch.object(process_mbox_file_task, "update_state", mock_task.update_state),
-        patch("core.services.importer.tasks.storages") as mock_storages,
-    ):
-        mock_storages.__getitem__.return_value = mock_storage
-        # Run the task synchronously for testing
-        task_result = process_mbox_file_task(
-            file_key="test-file-key.mbox", recipient_id=str(mailbox.id)
-        )
-        assert task_result["status"] == "SUCCESS"
-        assert (
-            task_result["result"]["message_status"] == "Completed processing messages"
-        )
-        assert task_result["result"]["type"] == "mbox"
-        assert (
-            task_result["result"]["total_messages"] == 3
-        )  # Three messages in the test MBOX file
-        assert task_result["result"]["success_count"] == 3
-        assert task_result["result"]["failure_count"] == 0
-        assert task_result["result"]["current_message"] == 3
+        with patch.object(
+            process_mbox_file_task, "update_state", mock_task.update_state
+        ):
+            task_result = process_mbox_file_task(
+                file_key=file_key, recipient_id=str(mailbox.id)
+            )
+            assert task_result["status"] == "SUCCESS"
+            assert (
+                task_result["result"]["message_status"]
+                == "Completed processing messages"
+            )
+            assert task_result["result"]["type"] == "mbox"
+            assert task_result["result"]["total_messages"] == 3
+            assert task_result["result"]["success_count"] == 3
+            assert task_result["result"]["failure_count"] == 0
+            assert task_result["result"]["current_message"] == 3
 
-        # Verify progress updates were called correctly
-        assert mock_task.update_state.call_count == 5  # 4 PROGRESS + 1 SUCCESS
+            # 1 indexing + 3 per-message PROGRESS = 4
+            assert mock_task.update_state.call_count == 4
 
-        # Verify progress updates
-        for i in range(1, 4):
-            mock_task.update_state.assert_any_call(
-                state="PROGRESS",
-                meta={
-                    "result": {
-                        "message_status": f"Processing message {i} of 3",
-                        "total_messages": 3,
-                        "success_count": i - 1,  # Previous messages were successful
-                        "failure_count": 0,
-                        "type": "mbox",
-                        "current_message": i,
+            # Verify per-message progress updates
+            for i in range(1, 4):
+                mock_task.update_state.assert_any_call(
+                    state="PROGRESS",
+                    meta={
+                        "result": {
+                            "message_status": f"Processing message {i} of 3",
+                            "total_messages": 3,
+                            "success_count": i - 1,
+                            "failure_count": 0,
+                            "type": "mbox",
+                            "current_message": i,
+                        },
+                        "error": None,
                     },
-                    "error": None,
-                },
+                )
+
+            # Verify messages were created
+            assert Message.objects.count() == 3
+            messages = Message.objects.order_by("created_at")
+
+            # Check thread for each message
+            assert messages[0].thread is not None
+            assert messages[1].thread is not None
+            assert messages[2].thread is not None
+            assert messages[2].thread.messages.count() == 2
+            assert messages[1].thread == messages[2].thread
+            # Check created_at dates match between messages and threads
+            assert messages[0].sent_at == messages[0].thread.messaged_at
+            assert messages[2].sent_at == messages[1].thread.messaged_at
+            assert messages[2].sent_at == (
+                datetime.datetime(2025, 5, 26, 20, 18, 4, tzinfo=datetime.timezone.utc)
             )
 
-        # Verify success update
-        mock_task.update_state.assert_any_call(
-            state="SUCCESS",
-            meta={
-                "result": task_result["result"],
-                "error": None,
-            },
-        )
+            # Check messages
+            assert messages[0].subject == "Mon mail avec joli pj"
+            assert messages[0].has_attachments is True
 
-        # Verify messages were created
-        assert Message.objects.count() == 3
-        messages = Message.objects.order_by("created_at")
+            assert messages[1].subject == "Je t'envoie encore un message..."
+            body1 = messages[1].get_parsed_field("textBody")[0]["content"]
+            assert "Lorem ipsum dolor sit amet" in body1
 
-        # Check thread for each message
-        assert messages[0].thread is not None
-        assert messages[1].thread is not None
-        assert messages[2].thread is not None
-        assert messages[2].thread.messages.count() == 2
-        assert messages[1].thread == messages[2].thread
-        # Check created_at dates match between messages and threads
-        assert messages[0].sent_at == messages[0].thread.messaged_at
-        assert messages[2].sent_at == messages[1].thread.messaged_at
-        assert messages[2].sent_at == (
-            datetime.datetime(2025, 5, 26, 20, 18, 4, tzinfo=datetime.timezone.utc)
-        )
-
-        # Check messages
-        assert messages[0].subject == "Mon mail avec joli pj"
-        assert messages[0].has_attachments is True
-
-        assert messages[1].subject == "Je t'envoie encore un message..."
-        body1 = messages[1].get_parsed_field("textBody")[0]["content"]
-        assert "Lorem ipsum dolor sit amet" in body1
-
-        assert messages[2].subject == "Re: Je t'envoie encore un message..."
-        body2 = messages[2].get_parsed_field("textBody")[0]["content"]
-        assert "Yes !" in body2
-        assert "Lorem ipsum dolor sit amet" in body2
+            assert messages[2].subject == "Re: Je t'envoie encore un message..."
+            body2 = messages[2].get_parsed_field("textBody")[0]["content"]
+            assert "Yes !" in body2
+            assert "Lorem ipsum dolor sit amet" in body2
+    finally:
+        s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
 
 
 def test_upload_mbox_file(admin_client, mailbox, mbox_file):
@@ -316,7 +317,7 @@ def test_import_form_invalid_file(admin_client, mailbox):
     # The form should still be displayed with an error
     assert "Import Messages" in response.content.decode()
     assert (
-        "File must be either an EML (.eml) or MBOX (.mbox) file"
+        "File must be an EML (.eml), MBOX (.mbox), or PST (.pst) file"
         in response.content.decode()
     )
 
@@ -389,7 +390,7 @@ This is a test message addressed to mailbox_b.
     # Import from mailbox_a
     with (
         patch.object(process_eml_file_task, "update_state", mock_task.update_state),
-        patch("core.services.importer.tasks.storages") as mock_storages,
+        patch("core.services.importer.eml_tasks.storages") as mock_storages,
     ):
         mock_storages.__getitem__.return_value = mock_storage
         # Run the task synchronously for testing, importing from mailbox_a
@@ -460,7 +461,7 @@ This is a test message sent from the mailbox.
     # Import the message
     with (
         patch.object(process_eml_file_task, "update_state", mock_task.update_state),
-        patch("core.services.importer.tasks.storages") as mock_storages,
+        patch("core.services.importer.eml_tasks.storages") as mock_storages,
     ):
         mock_storages.__getitem__.return_value = mock_storage
         # Run the task synchronously for testing

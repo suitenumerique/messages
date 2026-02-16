@@ -104,6 +104,10 @@ def compute_labels_and_flags(
         if "\\Draft" in imap_flags:
             message_flags["is_draft"] = True
 
+        # Handle \\Flagged flag (follow-up / starred)
+        if "\\Flagged" in imap_flags:
+            message_flags["is_starred"] = True
+
     # Special case: if message is sender or draft, it should not be unread
     if message_flags.get("is_sender") or message_flags.get("is_draft"):
         message_flags["is_unread"] = False

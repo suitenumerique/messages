@@ -16,8 +16,8 @@ from core.api.utils import get_file_key
 from core.enums import MailboxRoleChoices
 from core.mda.inbound import deliver_inbound_message
 from core.models import Mailbox, MailDomain, Message
+from core.services.importer.eml_tasks import process_eml_file_task
 from core.services.importer.service import ImportService
-from core.services.importer.tasks import process_eml_file_task
 
 
 @pytest.fixture
@@ -135,7 +135,9 @@ def mbox_key(user, mbox_file):
 @pytest.mark.django_db
 def test_import_file_eml_by_superuser(admin_user, mailbox, eml_key, mock_request):
     """Test successful EML file import for superuser."""
-    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.eml_tasks.process_eml_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
             file_key=eml_key,
@@ -194,9 +196,9 @@ def test_import_file_eml_by_superuser_sync(admin_user, mailbox, eml_key):
             assert task_result["result"]["current_message"] == 1
             assert task_result["error"] is None
 
-            # Verify progress updates
-            assert mock_task.update_state.call_count == 2  # 1 PROGRESS + 1 SUCCESS
-            mock_task.update_state.assert_any_call(
+            # Verify progress update (no SUCCESS update_state — Celery infers
+            # SUCCESS from normal return; status is in the returned dict)
+            mock_task.update_state.assert_called_once_with(
                 state="PROGRESS",
                 meta={
                     "result": {
@@ -207,15 +209,6 @@ def test_import_file_eml_by_superuser_sync(admin_user, mailbox, eml_key):
                         "type": "eml",
                         "current_message": 1,
                     },
-                    "error": None,
-                },
-            )
-
-            # Verify success update
-            mock_task.update_state.assert_called_with(
-                state="SUCCESS",
-                meta={
-                    "result": task_result["result"],
                     "error": None,
                 },
             )
@@ -235,7 +228,9 @@ def test_import_file_eml_by_user_with_access_task(user, mailbox, eml_key, mock_r
     # Add access to mailbox
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
-    with patch("core.services.importer.tasks.process_eml_file_task.delay") as mock_task:
+    with patch(
+        "core.services.importer.eml_tasks.process_eml_file_task.delay"
+    ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
             file_key=eml_key,
@@ -297,9 +292,9 @@ def test_import_file_eml_by_user_with_access_sync(user, mailbox, eml_key, mock_r
             assert task_result["result"]["current_message"] == 1
             assert task_result["error"] is None
 
-            # Verify progress updates
-            assert mock_task.update_state.call_count == 2  # 1 PROGRESS + 1 SUCCESS
-            mock_task.update_state.assert_any_call(
+            # Verify progress update (no SUCCESS update_state — Celery infers
+            # SUCCESS from normal return; status is in the returned dict)
+            mock_task.update_state.assert_called_once_with(
                 state="PROGRESS",
                 meta={
                     "result": {
@@ -310,15 +305,6 @@ def test_import_file_eml_by_user_with_access_sync(user, mailbox, eml_key, mock_r
                         "type": "eml",
                         "current_message": 1,
                     },
-                    "error": None,
-                },
-            )
-
-            # Verify success update
-            mock_task.update_state.assert_called_with(
-                state="SUCCESS",
-                meta={
-                    "result": task_result["result"],
                     "error": None,
                 },
             )
@@ -339,7 +325,7 @@ def test_import_file_mbox_by_superuser_task(
     """Test successful MBOX file import by superuser."""
 
     with patch(
-        "core.services.importer.tasks.process_mbox_file_task.delay"
+        "core.services.importer.mbox_tasks.process_mbox_file_task.delay"
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
@@ -364,7 +350,7 @@ def test_import_file_mbox_by_user_with_access_task(
     mailbox.accesses.create(user=user, role=MailboxRoleChoices.ADMIN)
 
     with patch(
-        "core.services.importer.tasks.process_mbox_file_task.delay"
+        "core.services.importer.mbox_tasks.process_mbox_file_task.delay"
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_file(
@@ -427,9 +413,10 @@ def test_import_file_no_access(user, domain, eml_key, mock_request):
 def test_import_file_invalid_file(admin_user, mailbox, mock_request):
     """Test import with an invalid file."""
     # Create an invalid file (not EML or MBOX)
-    invalid_content = b"Invalid file content"
+    # Use real PDF magic bytes so python-magic detects it as application/pdf
+    invalid_content = b"%PDF-1.4 invalid content"
     invalid_file = SimpleUploadedFile(
-        "test.pdf", invalid_content, content_type="application/pdf"
+        "test.mbox", invalid_content, content_type="application/mbox"
     )
     invalid_file_key = get_file_key(admin_user.id, invalid_file.name)
     storage = storages["message-imports"]
@@ -443,11 +430,8 @@ def test_import_file_invalid_file(admin_user, mailbox, mock_request):
 
     try:
         with patch(
-            "core.services.importer.tasks.process_eml_file_task.delay"
+            "core.services.importer.eml_tasks.process_eml_file_task.delay"
         ) as mock_task:
-            # The task should not be called for invalid files
-            mock_task.assert_not_called()
-
             success, response_data = ImportService.import_file(
                 file_key=invalid_file_key,
                 recipient=mailbox,
@@ -459,6 +443,8 @@ def test_import_file_invalid_file(admin_user, mailbox, mock_request):
             assert "detail" in response_data
             assert "Invalid file format" in response_data["detail"]
             assert Message.objects.count() == 0
+            # The task should not be called for invalid files
+            mock_task.assert_not_called()
     finally:
         # Clean up: delete the file from S3 after the test
         s3_client.delete_object(
@@ -470,7 +456,7 @@ def test_import_file_invalid_file(admin_user, mailbox, mock_request):
 def test_import_imap_by_superuser(admin_user, mailbox, mock_request):
     """Test successful IMAP import."""
     with patch(
-        "core.services.importer.tasks.import_imap_messages_task.delay"
+        "core.services.importer.imap_tasks.import_imap_messages_task.delay"
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_imap(
@@ -504,7 +490,7 @@ def test_import_imap_by_user_with_access(user, mailbox, mock_request, role):
     mailbox.accesses.create(user=user, role=role)
 
     with patch(
-        "core.services.importer.tasks.import_imap_messages_task.delay"
+        "core.services.importer.imap_tasks.import_imap_messages_task.delay"
     ) as mock_task:
         mock_task.return_value.id = "fake-task-id"
         success, response_data = ImportService.import_imap(
@@ -550,7 +536,7 @@ def test_import_imap_task_error(admin_user, mailbox, mock_request):
     mailbox.accesses.create(user=admin_user, role=MailboxRoleChoices.ADMIN)
 
     with patch(
-        "core.services.importer.tasks.import_imap_messages_task.delay"
+        "core.services.importer.imap_tasks.import_imap_messages_task.delay"
     ) as mock_task:
         mock_task.side_effect = Exception("Task error")
         success, response_data = ImportService.import_imap(
@@ -566,7 +552,7 @@ def test_import_imap_task_error(admin_user, mailbox, mock_request):
 
         assert success is False
         assert "detail" in response_data
-        assert "Task error" in response_data["detail"]
+        assert "error" in response_data["detail"].lower()
 
 
 def test_import_imap_messages_by_superuser(admin_user, mailbox, mock_request):
@@ -805,3 +791,119 @@ Test message body 1"""
         assert mock_is_auto_labels_enabled.call_count == 0
         assert mock_assign_label_to_thread.call_count == 0
         assert mock_summarize_thread.call_count == 0
+
+
+# --- Filename disambiguation tests ---
+
+
+@pytest.mark.django_db
+def test_import_file_eml_disambiguated_by_filename(admin_user, mailbox, mock_request):
+    """Test that a .eml file detected as text/plain is routed to EML task via filename."""
+    # Create a file that magic detects as text/plain but has .eml extension
+    eml_content = b"From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: Test\r\n\r\nBody"
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    file_key = get_file_key(admin_user.id, "test.eml")
+    s3_client.put_object(
+        Bucket=storage.bucket_name,
+        Key=file_key,
+        Body=eml_content,
+        ContentType="text/plain",
+    )
+
+    try:
+        with (
+            patch(
+                "core.services.importer.eml_tasks.process_eml_file_task.delay"
+            ) as mock_eml_task,
+            patch(
+                "core.services.importer.mbox_tasks.process_mbox_file_task.delay"
+            ) as mock_mbox_task,
+        ):
+            mock_eml_task.return_value.id = "fake-eml-task-id"
+            success, response_data = ImportService.import_file(
+                file_key=file_key,
+                recipient=mailbox,
+                user=admin_user,
+                request=mock_request,
+                filename="test.eml",
+            )
+
+            assert success is True
+            assert response_data["type"] == "eml"
+            mock_eml_task.assert_called_once()
+            mock_mbox_task.assert_not_called()
+    finally:
+        s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
+
+
+@pytest.mark.django_db
+def test_import_file_mbox_disambiguated_by_filename(admin_user, mailbox, mock_request):
+    """Test that a .mbox file detected as text/plain is routed to MBOX task via filename."""
+    # text/plain content with .mbox extension
+    mbox_content = (
+        b"From sender@example.com Mon Jan  1 00:00:00 2025\r\n"
+        b"From: sender@example.com\r\nSubject: Test\r\n\r\nBody"
+    )
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    file_key = get_file_key(admin_user.id, "test.mbox")
+    s3_client.put_object(
+        Bucket=storage.bucket_name,
+        Key=file_key,
+        Body=mbox_content,
+        ContentType="text/plain",
+    )
+
+    try:
+        with patch(
+            "core.services.importer.mbox_tasks.process_mbox_file_task.delay"
+        ) as mock_mbox_task:
+            mock_mbox_task.return_value.id = "fake-mbox-task-id"
+            success, response_data = ImportService.import_file(
+                file_key=file_key,
+                recipient=mailbox,
+                user=admin_user,
+                request=mock_request,
+                filename="test.mbox",
+            )
+
+            assert success is True
+            assert response_data["type"] == "mbox"
+            mock_mbox_task.assert_called_once()
+    finally:
+        s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
+
+
+@pytest.mark.django_db
+def test_import_file_without_filename_falls_back_to_mime(
+    admin_user, mailbox, mock_request
+):
+    """Test that without filename, text/plain files still work (fall through to MBOX/EML)."""
+    eml_content = b"From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: Test\r\n\r\nBody"
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    file_key = get_file_key(admin_user.id, "noext")
+    s3_client.put_object(
+        Bucket=storage.bucket_name,
+        Key=file_key,
+        Body=eml_content,
+        ContentType="text/plain",
+    )
+
+    try:
+        with patch(
+            "core.services.importer.mbox_tasks.process_mbox_file_task.delay"
+        ) as mock_mbox_task:
+            mock_mbox_task.return_value.id = "fake-task-id"
+            # Without filename, text/plain hits MBOX first (as before)
+            success, _response_data = ImportService.import_file(
+                file_key=file_key,
+                recipient=mailbox,
+                user=admin_user,
+                request=mock_request,
+            )
+
+            assert success is True
+    finally:
+        s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)

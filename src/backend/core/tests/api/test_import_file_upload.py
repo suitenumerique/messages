@@ -100,8 +100,13 @@ class TestImportViewSetPermissions:
         with mock.patch("core.services.importer.service.storages") as mock_storages:
             mock_storage = mock.MagicMock()
             mock_storage.exists.return_value = True
-            mock_storage.connection.meta.client.head_object.return_value = {
-                "ContentType": "message/rfc822"
+            # Mock get_object to return EML-like content for magic detection
+            eml_body = mock.MagicMock()
+            eml_body.read.return_value = (
+                b"From: test@example.com\r\nSubject: Test\r\n\r\n"
+            )
+            mock_storage.connection.meta.client.get_object.return_value = {
+                "Body": eml_body,
             }
             mock_storages.__getitem__.return_value = mock_storage
 
@@ -187,7 +192,7 @@ class TestMessagesArchiveUploadViewSet:
         response = api_client.post(url, data, format="json")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.data["content_type"] == [
-            "Only EML and MBOX files are supported."
+            "Only EML, MBOX, and PST files are supported."
         ]
 
     def test_api_messages_archive_create_upload_missing_filename(self, api_client):
