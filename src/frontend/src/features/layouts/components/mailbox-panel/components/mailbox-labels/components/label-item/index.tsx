@@ -5,7 +5,7 @@ import { Button, useModals } from "@gouvfr-lasuite/cunningham-react";
 import clsx from "clsx";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLayoutContext } from "@/features/layouts/components/main";
@@ -56,8 +56,15 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
   const hasActiveChild = Boolean(searchParams.get('label_slug')?.startsWith(`${label.slug}-`));
   const isFoldedByDefault = label.children.length === 0 ? null : (defaultFoldState ?? !hasActiveChild);
   const foldKey = useMemo(() => `label-item-${label.display_name}${label.children.length > 0 ? `-with-children` : ''}`, [label.display_name, label.children.length]);
-  const { isFolded, toggle } = useFold(foldKey, isFoldedByDefault);
+  const { isFolded, toggle, setFoldState } = useFold(foldKey, isFoldedByDefault);
   const foldTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const unfoldIfNeeded = useEffectEvent(() => {
+    if (isFolded) {
+      setFoldState(false);
+    }
+  });
+
   const goToDefaultFolder = () => {
     const defaultFolder = MAILBOX_FOLDERS()[0];
     router.push(pathname + `?${new URLSearchParams(defaultFolder.filter).toString()}`);
@@ -232,6 +239,12 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
 
     return `${offset * level}rem`;
   }
+
+  useEffect(() => {
+    if (hasActiveChild) {
+      unfoldIfNeeded();
+    }
+  }, [hasActiveChild]);
 
   return (
     <>

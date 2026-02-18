@@ -66,7 +66,7 @@ export const LabelBadge = ({ label, removable = false, linkable = false, compact
 
     return (
         <Badge title={label.name} className={clsx("label-badge", {"label-badge--compact": compact })} style={{ backgroundColor: label.color, color: badgeColor }}>
-            {showLink ? <Link className="label-badge__label" href={link}>{label.name}</Link> : <span className="label-badge__label">{label.name}</span>}
+            {showLink ? <Link className="label-badge__label" href={link}>{label.display_name}</Link> : <span className="label-badge__label">{label.display_name}</span>}
             {canManageLabels && selectedThread?.id && removable && (
                 <Tooltip content={t('Delete')} placement="right">
                     <button

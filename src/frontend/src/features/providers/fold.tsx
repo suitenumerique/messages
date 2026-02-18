@@ -3,6 +3,7 @@ import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useRe
 type FoldContextType = {
     isFolded: (key: string) => boolean | undefined;
     toggle: (key: string) => void;
+    setFoldState: (key: string, isFolded: boolean) => void;
     subscribe: (key: string, isFolded?: boolean) => void;
     unsubscribe: (key: string) => void;
     areAllFolded: boolean | undefined;
@@ -17,6 +18,7 @@ type FoldGlobalHookContext = {
 type FoldHookContext = FoldGlobalHookContext & {
     isFolded: boolean | undefined;
     toggle: () => void;
+    setFoldState: (isFolded: boolean) => void;
 }
 
 const FoldContext = createContext<FoldContextType | undefined>(undefined);
@@ -75,6 +77,19 @@ export const FoldProvider = ({ children }: PropsWithChildren) => {
         });
     }
 
+    const setFoldState = (id: string, folded: boolean) => {
+        setSubscribers((prev) => {
+            if (!prev.has(id)) {
+                console.warn(`FoldProvider: subscriber with key "${id}" not registered`);
+                return prev;
+            }
+            if (prev.get(id) === folded) return prev;
+            const newSubscribers = new Map(prev);
+            newSubscribers.set(id, folded);
+            return newSubscribers;
+        });
+    }
+
     const toggleAll = () => {
         setSubscribers((prev) => {
             // Unfold all if all are folded, otherwise fold all
@@ -90,9 +105,10 @@ export const FoldProvider = ({ children }: PropsWithChildren) => {
         unsubscribe,
         isFolded,
         toggle,
+        setFoldState,
         areAllFolded,
         toggleAll,
-    }), [subscribe, unsubscribe, isFolded, toggle, areAllFolded, toggleAll, subscribers]);
+    }), [subscribe, unsubscribe, isFolded, toggle, setFoldState, areAllFolded, toggleAll, subscribers]);
 
     return (
         <FoldContext.Provider value={context}>
@@ -115,6 +131,7 @@ export function useFold(id?: string, isFolded: boolean | null = true): FoldHookC
         ...(id ? {
             isFolded: isRegistered.current ? ctx.isFolded(id) : undefined,
             toggle: () => ctx.toggle(id),
+            setFoldState: (folded: boolean) => ctx.setFoldState(id, folded),
         } : {}),
         areAllFolded: ctx.areAllFolded,
         toggleAll: ctx.toggleAll,
