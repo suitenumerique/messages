@@ -8,7 +8,7 @@
     "npm": ">=10.0.0"
   },
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev",
     "build": "next build --webpack",
     "start": "npx serve -s out",
     "lint": "eslint .",
