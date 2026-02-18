@@ -636,6 +636,13 @@ class Base(Configuration):
         default=False, environ_name="DISABLE_CELERY_BEAT_SCHEDULE", environ_prefix=None
     )
 
+    CELERY_WORKER_SEND_TASK_EVENTS = values.BooleanValue(
+        True, environ_name="CELERY_WORKER_SEND_TASK_EVENTS", environ_prefix=None
+    )
+    CELERY_TASK_SEND_SENT_EVENT = values.BooleanValue(
+        True, environ_name="CELERY_TASK_SEND_SENT_EVENT", environ_prefix=None
+    )
+
     # Session
     SESSION_ENGINE = "django.contrib.sessions.backends.cache"
     SESSION_CACHE_ALIAS = "default"
