@@ -1,5 +1,6 @@
 import {
     BasicTextStyleButton,
+    blockTypeSelectItems,
     BlockTypeSelect,
     ColorStyleButton,
     CreateLinkButton,
@@ -9,8 +10,12 @@ import {
     FileReplaceButton,
     FormattingToolbar,
     TextAlignButton,
+    useBlockNoteEditor,
 } from "@blocknote/react";
+import { useMemo } from "react";
+
 import { ImageUploadButton } from "./image-upload-button";
+import { isHiddenBlockTypeSelectItem } from "./utils";
 
 const ToolbarSeparator = () => (
     <div className="bn-toolbar-separator" role="separator" />
@@ -20,9 +25,17 @@ type ToolbarProps = {
     children?: React.ReactNode;
 }
 export const Toolbar = ({ children }: ToolbarProps) => {
+    const editor = useBlockNoteEditor();
+    const filteredItems = useMemo(
+        () => blockTypeSelectItems(editor.dictionary).filter(
+            (item) => !isHiddenBlockTypeSelectItem(item),
+        ),
+        [editor.dictionary],
+    );
+
     return (
         <FormattingToolbar>
-            <BlockTypeSelect key={"blockTypeSelect"} />
+            <BlockTypeSelect key={"blockTypeSelect"} items={filteredItems} />
             <ImageUploadButton />
 
             <ToolbarSeparator key={"separator-1"} />

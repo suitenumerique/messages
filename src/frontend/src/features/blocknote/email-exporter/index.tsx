@@ -164,7 +164,6 @@ function getListTag(blockType: string): ListTag | null {
     switch (blockType) {
         case 'bulletListItem':
         case 'checkListItem':
-        case 'toggleListItem':
             return 'ul';
         case 'numberedListItem':
             return 'ol';

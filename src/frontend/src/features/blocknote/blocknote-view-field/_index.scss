@@ -80,6 +80,14 @@
         flex-shrink: 0;
         min-height: var(--toolbar-height);
 
+        // Override the max-height set by the Floating UI `size` middleware
+        // on toolbar select dropdowns. Without portal rendering, the dropdown
+        // is constrained to the available space inside the toolbar container,
+        // which becomes too small when the toolbar wraps onto multiple lines.
+        .mantine-Menu-dropdown {
+            max-height: none !important;
+        }
+
         .bn-toolbar-separator {
             width: 1px;
             align-self: stretch;
@@ -104,7 +112,10 @@
         border-radius: var(--c--components--forms-input--border-radius);
         min-height: calc(100% - var(--toolbar-height));
         padding-inline: var(--c--globals--spacings--base);
+        // Extra left padding to make room for the side menu drag handle
+        padding-left: calc(var(--c--globals--spacings--base) + 8px);
         flex: 1;
+        overflow: visible;
 
         // Overide blocknote default styles to fix some contrast issues
         blockquote {

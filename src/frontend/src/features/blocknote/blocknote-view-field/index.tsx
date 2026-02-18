@@ -6,6 +6,9 @@ import clsx from "clsx";
 import { PropsWithChildren } from "react";
 import { createPortal } from "react-dom";
 
+import { CustomSideMenuController } from "../custom-side-menu";
+import { CustomSlashMenu } from "../custom-slash-menu";
+
 type BlockNoteViewFieldProps<BSchema extends BlockSchema, ISchema extends InlineContentSchema, SSchema extends StyleSchema> = PropsWithChildren<FieldProps & {
     composerProps: Parameters<typeof BlockNoteView<BSchema, ISchema, SSchema>>[0];
     disabled?: boolean;
@@ -26,6 +29,8 @@ export const BlockNoteViewField = <BSchema extends BlockSchema, ISchema extends 
                 className={clsx(composerProps.className, "composer-field-input")}
                 editable={!disabled}
             >
+                <CustomSideMenuController />
+                <CustomSlashMenu />
                 <PortalledFilePanel />
                 {children}
             </BlockNoteView>

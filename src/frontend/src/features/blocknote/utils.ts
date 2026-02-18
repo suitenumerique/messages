@@ -44,6 +44,33 @@ export const createNonImageFileBlockers = () => ({
 });
 
 /**
+ * Block types to hide from the slash menu and BlockTypeSelect.
+ * These blocks remain in the schema for backward-compatibility
+ * (existing drafts may contain them) but are hidden from the UI.
+ */
+export const HIDDEN_BLOCK_TYPES = new Set([
+    'toggleListItem',
+    'file',
+    'video',
+    'audio',
+    'table',
+]);
+
+/**
+ * Returns true if a BlockTypeSelect item should be hidden.
+ * Toggle headings share `type: "heading"` with normal headings
+ * but have `props.isToggleable: true`, so we need to check props too.
+ */
+export const isHiddenBlockTypeSelectItem = (item: {
+    type: string;
+    props?: Record<string, unknown>;
+}): boolean => {
+    if (HIDDEN_BLOCK_TYPES.has(item.type)) return true;
+    if (item.type === 'heading' && item.props?.isToggleable) return true;
+    return false;
+};
+
+/**
  * Replaces `template-variable` inline content nodes with plain text
  * using resolved placeholder values. Recurses into children blocks.
  */
