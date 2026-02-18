@@ -988,14 +988,14 @@ Django = ">=4.2"
 
 [[package]]
 name = "django-lasuite"
-version = "0.0.19"
+version = "0.0.24"
 description = "Django La Suite - A Django library"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "django_lasuite-0.0.19-py3-none-any.whl", hash = "sha256:6eb8c157d80d9661647dac143e1c56c4553c9e050a051f1ac6e58f6d630f640e"},
-    {file = "django_lasuite-0.0.19.tar.gz", hash = "sha256:342b441411d7bf6d57001bb03383ba280b4eda1533aedbf0324937ca7195c367"},
+    {file = "django_lasuite-0.0.24-py3-none-any.whl", hash = "sha256:c37e0b3606a23fd4094ca435fa4edf7a64d325be64b0310fa6577f75d515d856"},
+    {file = "django_lasuite-0.0.24.tar.gz", hash = "sha256:3231b0178a2187405c8faae447225c5dd069263a9a09e73e2a36427be4bf2388"},
 ]
 
 [package.dependencies]
@@ -1005,6 +1005,7 @@ django-configurations = {version = ">=2.5.1", optional = true, markers = "extra 
 djangorestframework = ">=3.15.2"
 joserfc = ">=1.4.0"
 mozilla-django-oidc = ">=4.0.1"
+pyjwt = ">=2.8.0"
 requests = ">=2.32.3"
 requests-toolbelt = ">=1.0.0"
 
@@ -1012,7 +1013,7 @@ requests-toolbelt = ">=1.0.0"
 all = ["celery (>=5.0)", "django-configurations (>=2.5.1)"]
 build = ["setuptools", "wheel"]
 configuration = ["django-configurations (>=2.5.1)"]
-dev = ["celery (>=5.0)", "django-configurations (>=2.5.1)", "factory-boy", "pytest", "pytest-django", "responses", "ruff"]
+dev = ["celery (>=5.0)", "django-configurations (>=2.5.1)", "factory-boy", "freezegun (>=1.5.5)", "pytest", "pytest-django", "responses", "ruff"]
 malware-detection = ["celery (>=5.0)"]
 
 [[package]]
@@ -3716,4 +3717,4 @@ dev = ["django-extensions", "drf-spectacular-sidecar", "flower", "hypothesis", "
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0"
-content-hash = "3621c5c6789a16234aa156cabdd002c2c0e62794b6819cc15bbcd5fc7759b58b"
+content-hash = "0867f092bfcf8edb9a634db6a1f784447dd8bbf903ec5f41af9f3b8e3c91e11a"
