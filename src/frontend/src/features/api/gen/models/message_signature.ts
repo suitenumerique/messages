@@ -5,9 +5,9 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { ReadOnlyMessageTemplate } from "./read_only_message_template";
+import type { ReadMessageTemplate } from "./read_message_template";
 
 /**
  * @nullable
  */
-export type MessageSignature = ReadOnlyMessageTemplate | null;
+export type MessageSignature = ReadMessageTemplate | null;

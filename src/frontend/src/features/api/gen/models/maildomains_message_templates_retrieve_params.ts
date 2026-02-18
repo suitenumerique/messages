@@ -5,12 +5,10 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { MailboxesMessageTemplatesListTypeItem } from "./mailboxes_message_templates_list_type_item";
 
-export type MailboxesMessageTemplatesListParams = {
+export type MaildomainsMessageTemplatesRetrieveParams = {
   /**
    * Comma-separated list of body fields to include in the response. Allowed values: raw, html, text. Example: ?bodies=raw,html
    */
   bodies?: string;
-  type?: MailboxesMessageTemplatesListTypeItem[];
 };

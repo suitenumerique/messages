@@ -8,5 +8,9 @@
 import type { MaildomainsMessageTemplatesListType } from "./maildomains_message_templates_list_type";
 
 export type MaildomainsMessageTemplatesListParams = {
+  /**
+   * Comma-separated list of body fields to include in the response. Allowed values: raw, html, text. Example: ?bodies=raw,html
+   */
+  bodies?: string;
   type?: MaildomainsMessageTemplatesListType;
 };

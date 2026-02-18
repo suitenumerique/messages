@@ -1,5 +1,7 @@
 """Test retrieve operations for MessageTemplateViewSet."""
 
+import json
+
 from django.urls import reverse
 
 import pytest
@@ -28,7 +30,7 @@ def fixture_mailbox():
 class TestMessageTemplateRetrieve:
     """Test retrieve operations for MessageTemplateViewSet."""
 
-    def test_unauthorized(self, mailbox):
+    def test_message_template_retrieve_unauthorized(self, mailbox):
         """Test that unauthorized users cannot retrieve templates."""
         message_template = factories.MessageTemplateFactory(
             name="Unauthorized Template",
@@ -46,7 +48,7 @@ class TestMessageTemplateRetrieve:
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_no_access(self, user, mailbox):
+    def test_message_template_retrieve_no_access(self, user, mailbox):
         """Test that users without access cannot retrieve templates."""
         message_template = factories.MessageTemplateFactory(
             name="No Access Template",
@@ -66,7 +68,7 @@ class TestMessageTemplateRetrieve:
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_success(self, user, mailbox):
+    def test_message_template_retrieve_success(self, user, mailbox):
         """Test retrieving a single email template."""
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -84,17 +86,28 @@ class TestMessageTemplateRetrieve:
         client = APIClient()
         client.force_authenticate(user=user)
 
-        response = client.get(
-            reverse(
-                "mailbox-message-templates-detail",
-                kwargs={"mailbox_id": mailbox.id, "pk": template.id},
-            )
+        url = reverse(
+            "mailbox-message-templates-detail",
+            kwargs={"mailbox_id": mailbox.id, "pk": template.id},
         )
+
+        # Without ?bodies, no body fields should be returned
+        response = client.get(url)
         assert response.status_code == status.HTTP_200_OK
         assert response.data["id"] == str(template.id)
         assert response.data["name"] == template.name
+        assert "raw_body" not in response.data
+        assert "html_body" not in response.data
+        assert "text_body" not in response.data
 
-    def test_nonexistent(self, user, mailbox):
+        # With ?bodies=raw,html,text all body fields are returned
+        response = client.get(url, {"bodies": "raw,html,text"})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["html_body"] == "<p>Test content</p>"
+        assert response.data["text_body"] == "Test content"
+        assert json.loads(response.data["raw_body"]) == {"key": "value"}
+
+    def test_message_template_retrieve_nonexistent(self, user, mailbox):
         """Test retrieving a nonexistent template."""
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -125,7 +138,9 @@ class TestMessageTemplateRetrieve:
             models.MailboxRoleChoices.ADMIN,
         ],
     )
-    def test_success_with_different_roles(self, user, mailbox, role):
+    def test_message_template_retrieve_success_with_different_roles(
+        self, user, mailbox, role
+    ):
         """Test retrieving templates with different access roles."""
 
         factories.MailboxAccessFactory(
@@ -151,7 +166,7 @@ class TestMessageTemplateRetrieve:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["name"] == template.name
 
-    def test_success_maildomain_template(self, user, mailbox):
+    def test_message_template_retrieve_success_maildomain_template(self, user, mailbox):
         """Test retrieving a maildomain template through the mailbox endpoint."""
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -179,7 +194,9 @@ class TestMessageTemplateRetrieve:
         assert response.data["id"] == str(template.id)
         assert response.data["name"] == "Domain Template"
 
-    def test_maildomain_template_not_accessible_from_other_domain(self, user):
+    def test_message_template_retrieve_maildomain_template_not_accessible_from_other_domain(
+        self, user
+    ):
         """Test that a maildomain template is not accessible from a mailbox on
         a different domain."""
         mailbox = factories.MailboxFactory()
@@ -209,7 +226,9 @@ class TestMessageTemplateRetrieve:
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_other_mailbox_template_not_accessible(self, user, mailbox):
+    def test_message_template_retrieve_other_mailbox_template_not_accessible(
+        self, user, mailbox
+    ):
         """Test that a template belonging to another mailbox on the same domain
         is not accessible."""
         other_mailbox = factories.MailboxFactory(domain=mailbox.domain)

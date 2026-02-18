@@ -1,5 +1,9 @@
-import { Component, PropsWithChildren } from 'react';
+import { Component, PropsWithChildren, ReactNode } from 'react';
 import { handle } from '@/features/utils/errors';
+
+type ErrorBoundaryProps = PropsWithChildren<{
+  fallback?: ReactNode;
+}>;
 
 /**
  * Component in charge to catch error raised by its children.
@@ -7,10 +11,10 @@ import { handle } from '@/features/utils/errors';
  * For more information : http://reactjs.org/docs/error-boundaries.html
  */
 class ErrorBoundary extends Component<
-  PropsWithChildren<void>,
+  ErrorBoundaryProps,
   { hasError: boolean }
 > {
-  constructor(props: PropsWithChildren<void>) {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false };
   }
@@ -25,6 +29,9 @@ class ErrorBoundary extends Component<
   }
 
   render() {
+    if (this.state.hasError && this.props.fallback) {
+      return this.props.fallback;
+    }
     return this.props.children;
   }
 }

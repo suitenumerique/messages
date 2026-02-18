@@ -32,12 +32,14 @@ import type {
   MaildomainsListParams,
   MaildomainsMailboxesListParams,
   MaildomainsMessageTemplatesListParams,
+  MaildomainsMessageTemplatesRetrieveParams,
   MessageTemplate,
   MessageTemplateRequest,
   PaginatedMailDomainAdminList,
   PaginatedMailboxAdminList,
   PatchedMailboxAdminPartialUpdatePayloadRequest,
   PatchedMessageTemplateRequest,
+  ReadMessageTemplate,
   ResetPasswordError,
   ResetPasswordInternalServerError,
   ResetPasswordNotFound,
@@ -1544,7 +1546,7 @@ export const useMaildomainsMailboxesResetPassword = <
  * List message templates for a maildomain.
  */
 export type maildomainsMessageTemplatesListResponse200 = {
-  data: MessageTemplate[];
+  data: ReadMessageTemplate[];
   status: 200;
 };
 
@@ -1760,7 +1762,7 @@ export function useMaildomainsMessageTemplatesList<
 }
 
 /**
- * ViewSet for managing message templates for a maildomain.
+ * Create a template and return a read-serialized response.
  */
 export type maildomainsMessageTemplatesCreateResponse201 = {
   data: MessageTemplate;
@@ -1871,10 +1873,10 @@ export const useMaildomainsMessageTemplatesCreate = <
   return useMutation(mutationOptions, queryClient);
 };
 /**
- * ViewSet for managing message templates for a maildomain.
+ * Retrieve a message template.
  */
 export type maildomainsMessageTemplatesRetrieveResponse200 = {
-  data: MessageTemplate;
+  data: ReadMessageTemplate;
   status: 200;
 };
 
@@ -1888,17 +1890,31 @@ export type maildomainsMessageTemplatesRetrieveResponse =
 export const getMaildomainsMessageTemplatesRetrieveUrl = (
   maildomainPk: string,
   id: string,
+  params?: MaildomainsMessageTemplatesRetrieveParams,
 ) => {
-  return `/api/v1.0/maildomains/${maildomainPk}/message-templates/${id}/`;
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1.0/maildomains/${maildomainPk}/message-templates/${id}/?${stringifiedParams}`
+    : `/api/v1.0/maildomains/${maildomainPk}/message-templates/${id}/`;
 };
 
 export const maildomainsMessageTemplatesRetrieve = async (
   maildomainPk: string,
   id: string,
+  params?: MaildomainsMessageTemplatesRetrieveParams,
   options?: RequestInit,
 ): Promise<maildomainsMessageTemplatesRetrieveResponse> => {
   return fetchAPI<maildomainsMessageTemplatesRetrieveResponse>(
-    getMaildomainsMessageTemplatesRetrieveUrl(maildomainPk, id),
+    getMaildomainsMessageTemplatesRetrieveUrl(maildomainPk, id, params),
     {
       ...options,
       method: "GET",
@@ -1909,9 +1925,11 @@ export const maildomainsMessageTemplatesRetrieve = async (
 export const getMaildomainsMessageTemplatesRetrieveQueryKey = (
   maildomainPk?: string,
   id?: string,
+  params?: MaildomainsMessageTemplatesRetrieveParams,
 ) => {
   return [
     `/api/v1.0/maildomains/${maildomainPk}/message-templates/${id}/`,
+    ...(params ? [params] : []),
   ] as const;
 };
 
@@ -1921,6 +1939,7 @@ export const getMaildomainsMessageTemplatesRetrieveQueryOptions = <
 >(
   maildomainPk: string,
   id: string,
+  params?: MaildomainsMessageTemplatesRetrieveParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -1936,12 +1955,12 @@ export const getMaildomainsMessageTemplatesRetrieveQueryOptions = <
 
   const queryKey =
     queryOptions?.queryKey ??
-    getMaildomainsMessageTemplatesRetrieveQueryKey(maildomainPk, id);
+    getMaildomainsMessageTemplatesRetrieveQueryKey(maildomainPk, id, params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof maildomainsMessageTemplatesRetrieve>>
   > = ({ signal }) =>
-    maildomainsMessageTemplatesRetrieve(maildomainPk, id, {
+    maildomainsMessageTemplatesRetrieve(maildomainPk, id, params, {
       signal,
       ...requestOptions,
     });
@@ -1969,6 +1988,7 @@ export function useMaildomainsMessageTemplatesRetrieve<
 >(
   maildomainPk: string,
   id: string,
+  params: undefined | MaildomainsMessageTemplatesRetrieveParams,
   options: {
     query: Partial<
       UseQueryOptions<
@@ -1997,6 +2017,7 @@ export function useMaildomainsMessageTemplatesRetrieve<
 >(
   maildomainPk: string,
   id: string,
+  params?: MaildomainsMessageTemplatesRetrieveParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -2025,6 +2046,7 @@ export function useMaildomainsMessageTemplatesRetrieve<
 >(
   maildomainPk: string,
   id: string,
+  params?: MaildomainsMessageTemplatesRetrieveParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -2046,6 +2068,7 @@ export function useMaildomainsMessageTemplatesRetrieve<
 >(
   maildomainPk: string,
   id: string,
+  params?: MaildomainsMessageTemplatesRetrieveParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -2063,6 +2086,7 @@ export function useMaildomainsMessageTemplatesRetrieve<
   const queryOptions = getMaildomainsMessageTemplatesRetrieveQueryOptions(
     maildomainPk,
     id,
+    params,
     options,
   );
 
@@ -2077,7 +2101,7 @@ export function useMaildomainsMessageTemplatesRetrieve<
 }
 
 /**
- * ViewSet for managing message templates for a maildomain.
+ * Update a template and return a read-serialized response.
  */
 export type maildomainsMessageTemplatesUpdateResponse200 = {
   data: MessageTemplate;

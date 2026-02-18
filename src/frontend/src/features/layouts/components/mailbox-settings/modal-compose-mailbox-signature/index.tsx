@@ -1,9 +1,10 @@
-import { Mailbox, MessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
+import { ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -11,6 +12,8 @@ import { useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SignatureComposer } from "@/features/signatures/components/signature-composer";
 import { Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
+import ErrorBoundary from "@/features/errors/error-boundary";
+import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import i18n from "@/features/i18n/initI18n";
 import { handle } from "@/features/utils/errors";
@@ -21,7 +24,7 @@ import { handle } from "@/features/utils/errors";
 type ModalComposeMailboxSignatureProps = {
     isOpen: boolean;
     onClose: () => void;
-    signature?: MessageTemplate;
+    signature?: ReadMessageTemplate;
 }
 
 export const ModalComposeMailboxSignature = ({ isOpen, onClose, signature }: ModalComposeMailboxSignatureProps) => {
@@ -57,15 +60,82 @@ export const ModalComposeMailboxSignature = ({ isOpen, onClose, signature }: Mod
             onClose={onClose}
         >
             <div className="modal-compose-signature">
-                <SignatureComposeForm mailbox={selectedMailbox} defaultValue={signature} onSuccess={handleSuccess} />
+                {signature ? (
+                    <SignatureComposeFormWithRetrieve
+                        mailboxId={selectedMailbox.id}
+                        signature={signature}
+                        onSuccess={handleSuccess}
+                    />
+                ) : (
+                    <SignatureComposeForm
+                        mailboxId={selectedMailbox.id}
+                        onSuccess={handleSuccess}
+                    />
+                )}
             </div>
         </Modal>
     );
 };
 
-type SignatureComposerFormProps = {
-    mailbox: Mailbox;
-    defaultValue?: MessageTemplate;
+type SignatureComposeFormWithRetrieveProps = {
+    mailboxId: string;
+    signature: ReadMessageTemplate;
+    onSuccess?: () => void;
+}
+
+const SignatureComposeFormWithRetrieve = ({ mailboxId, signature, onSuccess }: SignatureComposeFormWithRetrieveProps) => {
+    const { t } = useTranslation();
+    const { data, isLoading, isError } = useMailboxesMessageTemplatesRetrieve(mailboxId, signature.id, { bodies: "raw" }, {
+        query: { gcTime: 0 },
+    });
+
+    if (isLoading) {
+        return (
+            <div className="flex-row flex-align-center flex-justify-center" style={{ padding: "2rem", gap: "1rem" }}>
+                <Spinner />
+                <span>{t("Loading signature...")}</span>
+            </div>
+        );
+    }
+
+    if (isError) {
+        return (
+            <Banner type="error">
+                <p>{t("Failed to load signature. Please try again.")}</p>
+            </Banner>
+        );
+    }
+
+    const errorFallback = (
+        <Banner type="error">
+            <p>{t("Failed to load signature. Please try again.")}</p>
+        </Banner>
+    );
+
+    return (
+        <ErrorBoundary fallback={errorFallback}>
+            <SignatureComposeForm
+                mailboxId={mailboxId}
+                defaultValue={{
+                    id: signature.id,
+                    name: signature.name,
+                    is_default: signature.is_default,
+                    raw_body: data?.data?.raw_body ?? undefined,
+                }}
+                onSuccess={onSuccess}
+            />
+        </ErrorBoundary>
+    );
+};
+
+type SignatureComposeFormProps = {
+    mailboxId: string;
+    defaultValue?: {
+        id: string;
+        name: string;
+        is_default: boolean;
+        raw_body?: string | null;
+    };
     onSuccess?: () => void;
 }
 
@@ -77,7 +147,7 @@ const signatureComposerSchema = () => z.object({
 
 type SignatureComposerFormData = z.infer<ReturnType<typeof signatureComposerSchema>>;
 
-const SignatureComposeForm = ({ mailbox, defaultValue, onSuccess }: SignatureComposerFormProps) => {
+const SignatureComposeForm = ({ mailboxId, defaultValue, onSuccess }: SignatureComposeFormProps) => {
     const { t } = useTranslation();
     const composerRef = useRef<Base64ComposerHandle>(null);
     const form = useForm<SignatureComposerFormData>({
@@ -85,7 +155,7 @@ const SignatureComposeForm = ({ mailbox, defaultValue, onSuccess }: SignatureCom
         defaultValues: {
             name: defaultValue?.name ?? "",
             is_default: defaultValue?.is_default ?? false,
-            rawBody: defaultValue?.raw_body,
+            rawBody: defaultValue?.raw_body ?? undefined,
         }
     });
     const { mutateAsync: createSignature, isPending } = useMailboxesMessageTemplatesCreate();
@@ -101,7 +171,7 @@ const SignatureComposeForm = ({ mailbox, defaultValue, onSuccess }: SignatureCom
         try {
             if (defaultValue?.id) {
                 await updateSignature({
-                    mailboxId: mailbox.id,
+                    mailboxId,
                     id: defaultValue.id,
                     data: {
                         name: data.name,
@@ -114,7 +184,7 @@ const SignatureComposeForm = ({ mailbox, defaultValue, onSuccess }: SignatureCom
                 });
             } else {
                 await createSignature({
-                    mailboxId: mailbox.id,
+                    mailboxId,
                     data: {
                         name: data.name,
                         type: MessageTemplateTypeChoices.signature,

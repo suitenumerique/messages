@@ -8,5 +8,9 @@
 import type { MailboxesMessageTemplatesAvailableListType } from "./mailboxes_message_templates_available_list_type";
 
 export type MailboxesMessageTemplatesAvailableListParams = {
+  /**
+   * Comma-separated list of body fields to include in the response. Allowed values: raw, html, text. Example: ?bodies=raw,html
+   */
+  bodies?: string;
   type?: MailboxesMessageTemplatesAvailableListType;
 };

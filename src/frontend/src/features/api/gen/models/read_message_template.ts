@@ -8,22 +8,28 @@
 import type { MessageTemplateTypeChoices } from "./message_template_type_choices";
 
 /**
- * Serialize message templates for read-only operations.
+ * Serialize message templates with dynamic body field inclusion.
+
+Body fields (html_body, text_body, raw_body) are only included when
+explicitly requested via the ``?bodies=`` query parameter or the
+``body_fields`` keyword argument (for nested usage).
+
+Allowed values: ``raw``, ``html``, ``text`` (comma-separated).
+Mapping: ``raw`` → ``raw_body``, ``html`` → ``html_body``, ``text`` → ``text_body``.
+
+When neither query param nor kwarg is provided, no body field is returned.
  */
-export interface ReadOnlyMessageTemplate {
+export interface ReadMessageTemplate {
   /** primary key for the record as UUID */
   readonly id: string;
   /** Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature') */
   readonly name: string;
-  /** Get HTML body from blob. */
-  readonly html_body: string;
-  /** Get text body from content blob. */
-  readonly text_body: string;
-  /**
-   * Get raw blob from content blob.
-   * @nullable
-   */
-  readonly raw_body: string | null;
+  /** @nullable */
+  html_body?: string | null;
+  /** @nullable */
+  text_body?: string | null;
+  /** @nullable */
+  raw_body?: string | null;
   type: MessageTemplateTypeChoices;
   /** Whether this template is available for use */
   readonly is_active: boolean;

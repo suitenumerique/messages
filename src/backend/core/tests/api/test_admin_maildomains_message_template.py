@@ -209,7 +209,7 @@ class TestAdminMailDomainMessageTemplateCreate:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data["name"] == "Test Template Signature"
         assert response.data["type"] == "signature"
-        assert "- Mairie de Brigny" in response.data["raw_body"]
+        assert "raw_body" not in response.data
 
         # check template and blob are created
         assert models.MessageTemplate.objects.count() == 1
@@ -352,7 +352,7 @@ class TestAdminMailDomainMessageTemplateCreate:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data["name"] == "Test Template"
         assert response.data["type"] == "signature"
-        assert "- Mairie de Brigny" in response.data["raw_body"]
+        assert "raw_body" not in response.data
 
         # check template and blob are created
         assert models.MessageTemplate.objects.count() == 1
@@ -632,8 +632,8 @@ class TestAdminMailDomainMessageTemplateUpdate:
         # only name should have been updated
         assert response.data["name"] == "Partially Updated Template"
         assert response.data["type"] == "message"
-        assert response.data["html_body"] == "<p>Original content</p>"
-        assert response.data["text_body"] == "Original content"
+        assert "html_body" not in response.data
+        assert "text_body" not in response.data
         assert response.data["is_active"]
 
         # check that the template has been updated

@@ -3,7 +3,7 @@ import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useMemo, useState } from "react";
 import { Props } from "@blocknote/core";
 import DomPurify from "dompurify";
-import { ReadOnlyMessageTemplate, useMailboxesMessageTemplatesRetrieve, useDraftPlaceholdersRetrieve, DraftPlaceholdersRetrieve200 } from "@/features/api/gen";
+import { ReadMessageTemplate, useMailboxesMessageTemplatesRetrieve, useDraftPlaceholdersRetrieve, DraftPlaceholdersRetrieve200 } from "@/features/api/gen";
 import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
 import { useTranslation } from "react-i18next";
 import { MessageComposerHelper } from "@/features/utils/composer-helper";
@@ -14,7 +14,7 @@ type SignatureTemplateSelectorProps = {
     mailboxId?: string;
     messageId?: string;
     ensureDraft?: () => Promise<string | undefined>;
-    templates?: ReadOnlyMessageTemplate[];
+    templates?: ReadMessageTemplate[];
     defaultSelected?: string | null;
     isLoading?: boolean;
 }
@@ -182,6 +182,7 @@ export const BlockSignature = createReactBlockSpec(
             const { data: { data: template = null } = {}, isFetching: isLoadingTemplate } = useMailboxesMessageTemplatesRetrieve(
                 props.mailboxId,
                 props.templateId,
+                { bodies: "html" },
                 { query: { enabled } },
             );
 

@@ -1,8 +1,9 @@
-import { Mailbox, MessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
+import { ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesCreate, useMailboxesMessageTemplatesUpdate, useMailboxesMessageTemplatesRetrieve, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -10,6 +11,8 @@ import { useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { TemplateComposer } from "./template-composer";
 import { Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
+import ErrorBoundary from "@/features/errors/error-boundary";
+import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import i18n from "@/features/i18n/initI18n";
 import { handle } from "@/features/utils/errors";
@@ -20,7 +23,7 @@ import { handle } from "@/features/utils/errors";
 type ModalComposeTemplateProps = {
     isOpen: boolean;
     onClose: () => void;
-    template?: MessageTemplate;
+    template?: ReadMessageTemplate;
 }
 
 export const ModalComposeTemplate = ({ isOpen, onClose, template }: ModalComposeTemplateProps) => {
@@ -51,15 +54,82 @@ export const ModalComposeTemplate = ({ isOpen, onClose, template }: ModalCompose
             onClose={onClose}
         >
             <div className="modal-compose-template">
-                <TemplateComposeForm mailbox={selectedMailbox!} defaultValue={template} onSuccess={handleSuccess} />
+                {template ? (
+                    <TemplateComposeFormWithRetrieve
+                        mailboxId={selectedMailbox!.id}
+                        templateId={template.id}
+                        templateName={template.name}
+                        onSuccess={handleSuccess}
+                    />
+                ) : (
+                    <TemplateComposeForm
+                        mailboxId={selectedMailbox!.id}
+                        onSuccess={handleSuccess}
+                    />
+                )}
             </div>
         </Modal>
     );
 };
 
-type TemplateComposerFormProps = {
-    mailbox: Mailbox;
-    defaultValue?: MessageTemplate;
+type TemplateComposeFormWithRetrieveProps = {
+    mailboxId: string;
+    templateId: string;
+    templateName: string;
+    onSuccess?: () => void;
+}
+
+const TemplateComposeFormWithRetrieve = ({ mailboxId, templateId, templateName, onSuccess }: TemplateComposeFormWithRetrieveProps) => {
+    const { t } = useTranslation();
+    const { data, isLoading, isError } = useMailboxesMessageTemplatesRetrieve(mailboxId, templateId, { bodies: "raw" }, {
+        query: { gcTime: 0 },
+    });
+
+    if (isLoading) {
+        return (
+            <div className="flex-row flex-align-center flex-justify-center" style={{ padding: "2rem", gap: "1rem" }}>
+                <Spinner />
+                <span>{t("Loading template...")}</span>
+            </div>
+        );
+    }
+
+    if (isError) {
+        return (
+            <Banner type="error">
+                <p>{t("Failed to load template. Please try again.")}</p>
+            </Banner>
+        );
+    }
+
+    const errorFallback = (
+        <Banner type="error">
+            <p>{t("Failed to load template. Please try again.")}</p>
+        </Banner>
+    );
+
+    return (
+        <ErrorBoundary fallback={errorFallback}>
+            <TemplateComposeForm
+                mailboxId={mailboxId}
+                defaultValue={{
+                    id: templateId,
+                    name: templateName,
+                    raw_body: data?.data?.raw_body ?? undefined,
+                }}
+                onSuccess={onSuccess}
+            />
+        </ErrorBoundary>
+    );
+};
+
+type TemplateComposeFormProps = {
+    mailboxId: string;
+    defaultValue?: {
+        id: string;
+        name: string;
+        raw_body?: string | null;
+    };
     onSuccess?: () => void;
 }
 
@@ -70,7 +140,7 @@ const templateComposerSchema = () => z.object({
 
 type TemplateComposerFormData = z.infer<ReturnType<typeof templateComposerSchema>>;
 
-const TemplateComposeForm = ({ mailbox, defaultValue, onSuccess }: TemplateComposerFormProps) => {
+const TemplateComposeForm = ({ mailboxId, defaultValue, onSuccess }: TemplateComposeFormProps) => {
     const { t } = useTranslation();
     const composerRef = useRef<Base64ComposerHandle>(null);
     const form = useForm<TemplateComposerFormData>({
@@ -94,7 +164,7 @@ const TemplateComposeForm = ({ mailbox, defaultValue, onSuccess }: TemplateCompo
         try {
             if (defaultValue?.id) {
                 await updateTemplate({
-                    mailboxId: mailbox.id,
+                    mailboxId,
                     id: defaultValue.id,
                     data: {
                         name: data.name,
@@ -106,7 +176,7 @@ const TemplateComposeForm = ({ mailbox, defaultValue, onSuccess }: TemplateCompo
                 });
             } else {
                 await createTemplate({
-                    mailboxId: mailbox.id,
+                    mailboxId,
                     data: {
                         name: data.name,
                         type: MessageTemplateTypeChoices.message,

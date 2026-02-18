@@ -8,6 +8,7 @@ import hashlib
 import json
 import uuid
 from datetime import timedelta
+from functools import cached_property
 from logging import getLogger
 from typing import Any, Dict, List, Optional
 
@@ -1890,6 +1891,9 @@ class MessageTemplate(BaseModel):
         """If the template is forced or default, unset other templates of the same type
         in the same scope (mailbox or maildomain).
         Only one forced/default template is allowed per type and scope."""
+        # Invalidate cached parsed content so it's re-read from the new blob
+        self.__dict__.pop("_parsed_content", None)
+
         with transaction.atomic():
             # Handle is_forced: only one forced template per type and scope
             if self.is_forced:
@@ -1935,39 +1939,36 @@ class MessageTemplate(BaseModel):
             self.is_default = False
         super().clean()
 
+    @cached_property
+    def _parsed_content(self):
+        """Decompress and parse the blob content once."""
+        if not self.blob:
+            return {}
+        try:
+            return json.loads(self.blob.get_content().decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+            logger.warning(
+                "Failed to parse blob content for MessageTemplate %s: %s",
+                self.id,
+                exc,
+            )
+            return {}
+
     @property
     def html_body(self):
         """Get HTML body from content blob."""
-        if not self.blob:
-            return ""
-        try:
-            content = json.loads(self.blob.get_content().decode("utf-8"))
-            return content.get("html", "")
-        except (json.JSONDecodeError, AttributeError):
-            return ""
+        return self._parsed_content.get("html", "")
 
     @property
     def text_body(self):
         """Get text body from content blob."""
-        if not self.blob:
-            return ""
-        try:
-            content = json.loads(self.blob.get_content().decode("utf-8"))
-            return content.get("text", "")
-        except (json.JSONDecodeError, AttributeError):
-            return ""
+        return self._parsed_content.get("text", "")
 
     @property
     def raw_body(self):
         """Get raw body from content blob."""
-        if not self.blob:
-            return None
-        try:
-            content = json.loads(self.blob.get_content().decode("utf-8"))
-            raw_body = content.get("raw")
-            return json.dumps(raw_body, separators=(",", ":")) if raw_body else None
-        except (json.JSONDecodeError, AttributeError):
-            return None
+        raw_body = self._parsed_content.get("raw")
+        return json.dumps(raw_body, separators=(",", ":")) if raw_body else None
 
     @staticmethod
     def resolve_placeholder_values(mailbox=None, user=None, message=None):

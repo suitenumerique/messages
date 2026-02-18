@@ -28,6 +28,8 @@ from rest_framework.response import Response
 from core import models
 from core.api import permissions as core_permissions
 from core.api import serializers as core_serializers
+from core.api.viewsets.message_template import BODIES_PARAMETER
+from core.api.viewsets.mixins import MessageTemplateResponseMixin
 from core.enums import MessageTemplateTypeChoices
 from core.services.dns.check import check_dns_records
 
@@ -333,7 +335,9 @@ class AdminMailDomainMailboxViewSet(
         )
 
 
+# pylint: disable=too-many-ancestors
 class AdminMailDomainMessageTemplateViewSet(
+    MessageTemplateResponseMixin,
     mixins.CreateModelMixin,
     mixins.RetrieveModelMixin,
     mixins.DestroyModelMixin,
@@ -374,7 +378,7 @@ class AdminMailDomainMessageTemplateViewSet(
         return context
 
     @extend_schema(
-        responses=core_serializers.MessageTemplateSerializer(many=True),
+        responses=core_serializers.ReadMessageTemplateSerializer(many=True),
         description="List message templates for a maildomain.",
         parameters=[
             OpenApiParameter(
@@ -383,8 +387,16 @@ class AdminMailDomainMessageTemplateViewSet(
                 location=OpenApiParameter.QUERY,
                 enum=[c[1] for c in MessageTemplateTypeChoices.choices],
             ),
+            BODIES_PARAMETER,
         ],
     )
     def list(self, request, *args, **kwargs):
         """List message templates for a maildomain."""
         return super().list(request, *args, **kwargs)
+
+    @extend_schema(
+        parameters=[BODIES_PARAMETER],
+    )
+    def retrieve(self, request, *args, **kwargs):
+        """Retrieve a message template."""
+        return super().retrieve(request, *args, **kwargs)

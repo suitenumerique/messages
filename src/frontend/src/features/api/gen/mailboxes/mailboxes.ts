@@ -27,11 +27,12 @@ import type {
   MailboxesImageProxyListParams,
   MailboxesMessageTemplatesAvailableListParams,
   MailboxesMessageTemplatesListParams,
+  MailboxesMessageTemplatesRetrieveParams,
   MailboxesSearchListParams,
   MessageTemplate,
   MessageTemplateRequest,
   PatchedMessageTemplateRequest,
-  ReadOnlyMessageTemplate,
+  ReadMessageTemplate,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -437,7 +438,7 @@ export function useMailboxesImageProxyList<
  * List message templates for a mailbox.
  */
 export type mailboxesMessageTemplatesListResponse200 = {
-  data: MessageTemplate[];
+  data: ReadMessageTemplate[];
   status: 200;
 };
 
@@ -662,7 +663,7 @@ export function useMailboxesMessageTemplatesList<
 }
 
 /**
- * ViewSet for managing message templates for a mailbox.
+ * Create a template and return a read-serialized response.
  */
 export type mailboxesMessageTemplatesCreateResponse201 = {
   data: MessageTemplate;
@@ -767,10 +768,10 @@ export const useMailboxesMessageTemplatesCreate = <
   return useMutation(mutationOptions, queryClient);
 };
 /**
- * ViewSet for managing message templates for a mailbox.
+ * Retrieve a message template.
  */
 export type mailboxesMessageTemplatesRetrieveResponse200 = {
-  data: MessageTemplate;
+  data: ReadMessageTemplate;
   status: 200;
 };
 
@@ -784,17 +785,31 @@ export type mailboxesMessageTemplatesRetrieveResponse =
 export const getMailboxesMessageTemplatesRetrieveUrl = (
   mailboxId: string,
   id: string,
+  params?: MailboxesMessageTemplatesRetrieveParams,
 ) => {
-  return `/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/`;
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/?${stringifiedParams}`
+    : `/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/`;
 };
 
 export const mailboxesMessageTemplatesRetrieve = async (
   mailboxId: string,
   id: string,
+  params?: MailboxesMessageTemplatesRetrieveParams,
   options?: RequestInit,
 ): Promise<mailboxesMessageTemplatesRetrieveResponse> => {
   return fetchAPI<mailboxesMessageTemplatesRetrieveResponse>(
-    getMailboxesMessageTemplatesRetrieveUrl(mailboxId, id),
+    getMailboxesMessageTemplatesRetrieveUrl(mailboxId, id, params),
     {
       ...options,
       method: "GET",
@@ -805,8 +820,12 @@ export const mailboxesMessageTemplatesRetrieve = async (
 export const getMailboxesMessageTemplatesRetrieveQueryKey = (
   mailboxId?: string,
   id?: string,
+  params?: MailboxesMessageTemplatesRetrieveParams,
 ) => {
-  return [`/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/`] as const;
+  return [
+    `/api/v1.0/mailboxes/${mailboxId}/message-templates/${id}/`,
+    ...(params ? [params] : []),
+  ] as const;
 };
 
 export const getMailboxesMessageTemplatesRetrieveQueryOptions = <
@@ -815,6 +834,7 @@ export const getMailboxesMessageTemplatesRetrieveQueryOptions = <
 >(
   mailboxId: string,
   id: string,
+  params?: MailboxesMessageTemplatesRetrieveParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -830,12 +850,12 @@ export const getMailboxesMessageTemplatesRetrieveQueryOptions = <
 
   const queryKey =
     queryOptions?.queryKey ??
-    getMailboxesMessageTemplatesRetrieveQueryKey(mailboxId, id);
+    getMailboxesMessageTemplatesRetrieveQueryKey(mailboxId, id, params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof mailboxesMessageTemplatesRetrieve>>
   > = ({ signal }) =>
-    mailboxesMessageTemplatesRetrieve(mailboxId, id, {
+    mailboxesMessageTemplatesRetrieve(mailboxId, id, params, {
       signal,
       ...requestOptions,
     });
@@ -863,6 +883,7 @@ export function useMailboxesMessageTemplatesRetrieve<
 >(
   mailboxId: string,
   id: string,
+  params: undefined | MailboxesMessageTemplatesRetrieveParams,
   options: {
     query: Partial<
       UseQueryOptions<
@@ -891,6 +912,7 @@ export function useMailboxesMessageTemplatesRetrieve<
 >(
   mailboxId: string,
   id: string,
+  params?: MailboxesMessageTemplatesRetrieveParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -919,6 +941,7 @@ export function useMailboxesMessageTemplatesRetrieve<
 >(
   mailboxId: string,
   id: string,
+  params?: MailboxesMessageTemplatesRetrieveParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -940,6 +963,7 @@ export function useMailboxesMessageTemplatesRetrieve<
 >(
   mailboxId: string,
   id: string,
+  params?: MailboxesMessageTemplatesRetrieveParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -957,6 +981,7 @@ export function useMailboxesMessageTemplatesRetrieve<
   const queryOptions = getMailboxesMessageTemplatesRetrieveQueryOptions(
     mailboxId,
     id,
+    params,
     options,
   );
 
@@ -971,7 +996,7 @@ export function useMailboxesMessageTemplatesRetrieve<
 }
 
 /**
- * ViewSet for managing message templates for a mailbox.
+ * Update a template and return a read-serialized response.
  */
 export type mailboxesMessageTemplatesUpdateResponse200 = {
   data: MessageTemplate;
@@ -1302,7 +1327,7 @@ export const useMailboxesMessageTemplatesDestroy = <
  * List message templates.
  */
 export type mailboxesMessageTemplatesAvailableListResponse200 = {
-  data: ReadOnlyMessageTemplate[];
+  data: ReadMessageTemplate[];
   status: 200;
 };
 

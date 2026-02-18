@@ -1,6 +1,7 @@
 """Client serializers for the messages core app."""
 # pylint: disable=too-many-lines
 
+import hashlib
 import json
 import uuid
 
@@ -330,25 +331,58 @@ class MailboxLightSerializer(serializers.ModelSerializer):
         return None
 
 
-class ReadOnlyMessageTemplateSerializer(serializers.ModelSerializer):
-    """Serialize message templates for read-only operations."""
+class ReadMessageTemplateSerializer(serializers.ModelSerializer):
+    """Serialize message templates with dynamic body field inclusion.
+
+    Body fields (html_body, text_body, raw_body) are only included when
+    explicitly requested via the ``?bodies=`` query parameter or the
+    ``body_fields`` keyword argument (for nested usage).
+
+    Allowed values: ``raw``, ``html``, ``text`` (comma-separated).
+    Mapping: ``raw`` → ``raw_body``, ``html`` → ``html_body``, ``text`` → ``text_body``.
+
+    When neither query param nor kwarg is provided, no body field is returned.
+    """
+
+    BODY_FIELD_MAP = {
+        "raw": "raw_body",
+        "html": "html_body",
+        "text": "text_body",
+    }
 
     type = IntegerChoicesField(choices_class=enums.MessageTemplateTypeChoices)
-    html_body = serializers.SerializerMethodField()
-    text_body = serializers.SerializerMethodField()
-    raw_body = serializers.SerializerMethodField()
+    # Not marked read_only so that drf-spectacular (with COMPONENT_SPLIT_REQUEST)
+    # correctly treats them as optional in the response schema. This serializer
+    # is never used for write operations.
+    html_body = serializers.CharField(required=False, allow_null=True, default=None)
+    text_body = serializers.CharField(required=False, allow_null=True, default=None)
+    raw_body = serializers.CharField(required=False, allow_null=True, default=None)
 
-    def get_html_body(self, obj) -> str:
-        """Get HTML body from blob."""
-        return obj.html_body
+    def __init__(self, *args, **kwargs):
+        body_fields = kwargs.pop("body_fields", None)
+        super().__init__(*args, **kwargs)
 
-    def get_text_body(self, obj) -> str:
-        """Get text body from content blob."""
-        return obj.text_body
+        # Determine which body fields (html_body, text_body, raw_body) to keep.
+        # When there is no request context and no explicit body_fields kwarg,
+        # keep all fields (this is the case for OpenAPI schema introspection).
+        request = self.context.get("request")
+        if body_fields is None and request is None:
+            return
 
-    def get_raw_body(self, obj) -> str | None:
-        """Get raw blob from content blob."""
-        return obj.raw_body
+        requested = set()
+        if body_fields is not None:
+            requested = set(body_fields)
+        elif request:
+            for value in request.query_params.getlist("bodies"):
+                for part in value.split(","):
+                    field_name = part.strip()
+                    if field_name in self.BODY_FIELD_MAP:
+                        requested.add(field_name)
+
+        # Remove unrequested body fields
+        all_body_keys = set(self.BODY_FIELD_MAP.keys())
+        for key in all_body_keys - requested:
+            self.fields.pop(self.BODY_FIELD_MAP[key], None)
 
     class Meta:
         model = models.MessageTemplate
@@ -689,8 +723,17 @@ class MessageSerializer(serializers.ModelSerializer):
         source="thread.id", allow_null=True, read_only=True
     )
 
-    signature = ReadOnlyMessageTemplateSerializer(read_only=True, allow_null=True)
+    signature = serializers.SerializerMethodField()
     stmsg_headers = serializers.SerializerMethodField(read_only=True)
+
+    @extend_schema_field(ReadMessageTemplateSerializer(allow_null=True))
+    def get_signature(self, instance):
+        """Return the signature template with only html_body included."""
+        if instance.signature is None:
+            return None
+        return ReadMessageTemplateSerializer(
+            instance.signature, body_fields=["html"]
+        ).data
 
     def get_stmsg_headers(self, instance) -> dict:
         """Return the STMSG headers of the message."""
@@ -1490,6 +1533,34 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def _build_content_bytes(self, attrs):
+        """Build the JSON blob content bytes from body fields."""
+        raw_body = attrs.get("raw_body", "")
+        try:
+            raw_body = json.loads(raw_body) if raw_body else None
+        except json.JSONDecodeError as err:
+            raise serializers.ValidationError(
+                {"raw_body": f"Invalid JSON: {err.msg}"}
+            ) from err
+
+        return json.dumps(
+            {
+                "html": attrs.get("html_body", ""),
+                "text": attrs.get("text_body", ""),
+                "raw": raw_body,
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+    def _body_unchanged(self, attrs):
+        """Check if body content is identical to the existing blob."""
+        instance = self.instance
+        if not instance or not instance.blob:
+            return False
+        content_bytes = self._build_content_bytes(attrs)
+        new_hash = hashlib.sha256(content_bytes).digest()
+        return new_hash == bytes(instance.blob.sha256)
+
     def validate(self, attrs):
         """Validate template data."""
         # For creation or update, all content fields must be provided
@@ -1503,6 +1574,13 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
                 )
 
         if "html_body" in attrs:
+            # Skip expensive image validation if body content hasn't changed
+            if self._body_unchanged(attrs):
+                attrs.pop("html_body")
+                attrs.pop("text_body")
+                attrs.pop("raw_body")
+                return super().validate(attrs)
+
             _html, images = extract_base64_images_from_html(attrs["html_body"])
             total_image_size = 0
             for image in images:
@@ -1543,71 +1621,48 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """Create template with relationships and ensure atomic content creation."""
-        html_body = validated_data.pop("html_body", "")
-        text_body = validated_data.pop("text_body", "")
-        raw_body = validated_data.pop("raw_body", "")
+        content_bytes = self._build_content_bytes(validated_data)
+        validated_data.pop("html_body", None)
+        validated_data.pop("text_body", None)
+        validated_data.pop("raw_body", None)
         validated_data["maildomain"] = self.context.get("domain")
         validated_data["mailbox"] = self.context.get("mailbox")
 
-        # Use atomic transaction to ensure all content fields are created together
         with transaction.atomic():
-            # Create content blob with all content
-            # Parse raw_body if it's a JSON string
-            try:
-                raw_body = json.loads(raw_body) if raw_body else None
-            except json.JSONDecodeError as err:
-                raise serializers.ValidationError(
-                    {"raw_body": f"Invalid JSON: {err.msg}"}
-                ) from err
-
-            content = json.dumps(
-                {"html": html_body, "text": text_body, "raw": raw_body},
-                separators=(",", ":"),
-            )
-            # content is changed to bytes
             blob = models.Blob.objects.create_blob(
-                content=content.encode("utf-8"),
+                content=content_bytes,
                 content_type="application/json",
                 maildomain=self.context.get("domain"),
                 mailbox=self.context.get("mailbox"),
             )
             validated_data["blob"] = blob
-            template = super().create(validated_data)
-            return template
+            return super().create(validated_data)
 
     def update(self, instance, validated_data):
         """Update template with relationships. Not allowed to change mailbox or maildomain."""
-        html_body = validated_data.pop("html_body", None)
-        text_body = validated_data.pop("text_body", None)
-        raw_body = validated_data.pop("raw_body", None)
+        has_body = any(
+            field in validated_data for field in ["html_body", "text_body", "raw_body"]
+        )
 
-        # Use atomic transaction to ensure all content fields are updated together
         with transaction.atomic():
-            # Update content blob if any content field is provided
-            if any(field is not None for field in [html_body, text_body, raw_body]):
-                # Delete old blob
+            if has_body:
+                content_bytes = self._build_content_bytes(validated_data)
+                validated_data.pop("html_body", None)
+                validated_data.pop("text_body", None)
+                validated_data.pop("raw_body", None)
+
                 if instance.blob:
                     instance.blob.delete()
-                # Create content for new blob
-                content = {
-                    "html": html_body,
-                    "text": text_body,
-                    "raw": json.loads(raw_body) if raw_body else None,
-                }
-                # Create new blob
+
                 blob = models.Blob.objects.create_blob(
-                    content=json.dumps(content, separators=(",", ":")).encode("utf-8"),
+                    content=content_bytes,
                     content_type="application/json",
-                    maildomain=self.instance.maildomain
-                    if self.instance.maildomain
-                    else None,
-                    mailbox=self.instance.mailbox if self.instance.mailbox else None,
+                    maildomain=instance.maildomain or None,
+                    mailbox=instance.mailbox or None,
                 )
                 validated_data["blob"] = blob
 
-            # Update all fields atomically
-            template = super().update(instance, validated_data)
-            return template
+            return super().update(instance, validated_data)
 
 
 class SendMessageSerializer(serializers.Serializer):

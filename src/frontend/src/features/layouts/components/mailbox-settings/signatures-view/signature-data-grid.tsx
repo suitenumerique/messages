@@ -3,7 +3,7 @@ import { Button, Checkbox, Column, DataGrid, useModal, useModals } from "@gouvfr
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Mailbox, MessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesList, useMailboxesMessageTemplatesDestroy, useMailboxesMessageTemplatesPartialUpdate, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
+import { Mailbox, ReadMessageTemplate, MessageTemplateTypeChoices, useMailboxesMessageTemplatesList, useMailboxesMessageTemplatesDestroy, useMailboxesMessageTemplatesPartialUpdate, getMailboxesMessageTemplatesListUrl } from "@/features/api/gen";
 import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ModalComposeMailboxSignature } from "../modal-compose-mailbox-signature";
@@ -29,14 +29,14 @@ export const SignatureDataGrid = ({ mailbox }: SignatureDataGridProps) => {
     );
     const { mutateAsync: updateSignature, isPending: isUpdating } = useMailboxesMessageTemplatesPartialUpdate();
     const { mutateAsync: deleteSignature, isPending: isDeleting } = useMailboxesMessageTemplatesDestroy();
-    const [selectedSignature, setSelectedSignature] = useState<MessageTemplate | undefined>();
+    const [selectedSignature, setSelectedSignature] = useState<ReadMessageTemplate | undefined>();
     const queryClient = useQueryClient();
 
     const invalidateSignatures = async () => {
         await queryClient.invalidateQueries({ queryKey: [getMailboxesMessageTemplatesListUrl(mailbox.id)], exact: false });
     }
 
-    const handleModifyRow = (signature: MessageTemplate) => {
+    const handleModifyRow = (signature: ReadMessageTemplate) => {
         setSelectedSignature(signature);
         modal.open();
     }
@@ -49,7 +49,7 @@ export const SignatureDataGrid = ({ mailbox }: SignatureDataGridProps) => {
         );
     }
 
-    const handleDeleteRow = async (signature: MessageTemplate) => {
+    const handleDeleteRow = async (signature: ReadMessageTemplate) => {
         const decision = await modals.deleteConfirmationModal({
             title: <span className="c__modal__text--centered">{t('Delete signature "{{signature}}"', { signature: signature.name })}</span>,
             children: t('Are you sure you want to delete this signature? This action is irreversible!'),
@@ -73,7 +73,7 @@ export const SignatureDataGrid = ({ mailbox }: SignatureDataGridProps) => {
         }
     }
 
-    const toggleDefault = async (signature: MessageTemplate) => {
+    const toggleDefault = async (signature: ReadMessageTemplate) => {
         try {
             await updateSignature({
                 mailboxId: mailbox.id,
@@ -91,7 +91,7 @@ export const SignatureDataGrid = ({ mailbox }: SignatureDataGridProps) => {
         }
     }
 
-    const columns: Column<MessageTemplate>[] = [
+    const columns: Column<ReadMessageTemplate>[] = [
         {
             id: "is_default",
             headerName: t("Default"),

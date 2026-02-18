@@ -1,9 +1,10 @@
-import { MailDomainAdmin, MessageTemplate, MessageTemplateTypeChoices, useMaildomainsMessageTemplatesCreate, useMaildomainsMessageTemplatesUpdate } from "@/features/api/gen";
+import { MailDomainAdmin, ReadMessageTemplate, MessageTemplateTypeChoices, useMaildomainsMessageTemplatesCreate, useMaildomainsMessageTemplatesUpdate, useMaildomainsMessageTemplatesRetrieve } from "@/features/api/gen";
 import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
 import { RhfInput } from "@/features/forms/components/react-hook-form/rhf-input";
 import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import z from "zod";
@@ -11,6 +12,8 @@ import { useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SignatureComposer } from "@/features/signatures/components/signature-composer";
 import { Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
+import ErrorBoundary from "@/features/errors/error-boundary";
+import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import i18n from "@/features/i18n/initI18n";
 import { handle } from "@/features/utils/errors";
@@ -21,7 +24,7 @@ import { handle } from "@/features/utils/errors";
 type ModalComposeSignatureProps = {
     isOpen: boolean;
     onClose: () => void;
-    signature?: MessageTemplate;
+    signature?: ReadMessageTemplate;
 }
 
 export const ModalComposeSignature = ({ isOpen, onClose, signature }: ModalComposeSignatureProps) => {
@@ -53,15 +56,86 @@ export const ModalComposeSignature = ({ isOpen, onClose, signature }: ModalCompo
             onClose={onClose}
         >
             <div className="modal-compose-signature">
-                <SignatureComposeForm domain={selectedMailDomain!} defaultValue={signature} onSuccess={handleSuccess} />
+                {signature ? (
+                    <SignatureComposeFormWithRetrieve
+                        domain={selectedMailDomain!}
+                        signature={signature}
+                        onSuccess={handleSuccess}
+                    />
+                ) : (
+                    <SignatureComposeForm
+                        domain={selectedMailDomain!}
+                        onSuccess={handleSuccess}
+                    />
+                )}
             </div>
         </Modal>
     );
 };
 
-type SignatureComposerFormProps = {
+type SignatureComposeFormWithRetrieveProps = {
     domain: MailDomainAdmin;
-    defaultValue?: MessageTemplate;
+    signature: ReadMessageTemplate;
+    onSuccess?: () => void;
+}
+
+const SignatureComposeFormWithRetrieve = ({ domain, signature, onSuccess }: SignatureComposeFormWithRetrieveProps) => {
+    const { t } = useTranslation();
+    const { data, isLoading, isError } = useMaildomainsMessageTemplatesRetrieve(domain.id, signature.id, { bodies: "raw" }, {
+        query: { gcTime: 0 },
+    });
+
+    if (isLoading) {
+        return (
+            <div className="flex-row flex-align-center flex-justify-center" style={{ padding: "2rem", gap: "1rem" }}>
+                <Spinner />
+                <span>{t("Loading signature...")}</span>
+            </div>
+        );
+    }
+
+    if (isError) {
+        return (
+            <Banner type="error">
+                <p>{t("Failed to load signature. Please try again.")}</p>
+            </Banner>
+        );
+    }
+
+    const errorFallback = (
+        <Banner type="error">
+            <p>{t("Failed to load signature. Please try again.")}</p>
+        </Banner>
+    );
+
+    return (
+        <ErrorBoundary fallback={errorFallback}>
+            <SignatureComposeForm
+                domain={domain}
+                defaultValue={{
+                    id: signature.id,
+                    name: signature.name,
+                    is_active: signature.is_active,
+                    is_forced: signature.is_forced,
+                    is_default: signature.is_default,
+                    raw_body: data?.data?.raw_body ?? undefined,
+                }}
+                onSuccess={onSuccess}
+            />
+        </ErrorBoundary>
+    );
+};
+
+type SignatureComposeFormProps = {
+    domain: MailDomainAdmin;
+    defaultValue?: {
+        id: string;
+        name: string;
+        is_active: boolean;
+        is_forced: boolean;
+        is_default: boolean;
+        raw_body?: string | null;
+    };
     onSuccess?: () => void;
 }
 
@@ -75,7 +149,7 @@ const signatureComposerSchema = z.object({
 
 type SignatureComposerFormData = z.infer<typeof signatureComposerSchema>;
 
-const SignatureComposeForm = ({ domain, defaultValue, onSuccess }: SignatureComposerFormProps) => {
+const SignatureComposeForm = ({ domain, defaultValue, onSuccess }: SignatureComposeFormProps) => {
     const { t } = useTranslation();
     const composerRef = useRef<Base64ComposerHandle>(null);
     const form = useForm<SignatureComposerFormData>({

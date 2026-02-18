@@ -233,7 +233,7 @@ class TestMailboxMessageTemplateCreate:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data["name"] == "Test Template Signature"
         assert response.data["type"] == "signature"
-        assert "- Mairie de Brigny" in response.data["raw_body"]
+        assert "raw_body" not in response.data
 
         # check template and blob are created
         assert models.MessageTemplate.objects.count() == 1
@@ -603,10 +603,39 @@ class TestMailboxMessageTemplateRetrieve:
         )
         client = APIClient()
         client.force_authenticate(user=user)
+
+        # Without ?bodies, no body fields should be returned
         response = client.get(detail_url(mailbox_template.id))
         assert response.status_code == status.HTTP_200_OK
         assert response.data["id"] == str(mailbox_template.id)
         assert response.data["name"] == mailbox_template.name
+        assert "raw_body" not in response.data
+        assert "html_body" not in response.data
+        assert "text_body" not in response.data
+
+        # With ?bodies=raw, only raw_body should be returned
+        response = client.get(detail_url(mailbox_template.id), {"bodies": "raw"})
+        assert response.status_code == status.HTTP_200_OK
+        assert "raw_body" in response.data
+        assert "html_body" not in response.data
+        assert "text_body" not in response.data
+
+        # With ?bodies=raw,html,text, all body fields should be returned
+        response = client.get(
+            detail_url(mailbox_template.id), {"bodies": "raw,html,text"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert "raw_body" in response.data
+        assert "html_body" in response.data
+        assert "text_body" in response.data
+
+        # Invalid values are ignored
+        response = client.get(
+            detail_url(mailbox_template.id), {"bodies": "invalid,raw"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert "raw_body" in response.data
+        assert "html_body" not in response.data
 
 
 class TestMailboxMessageTemplatePartialUpdate:

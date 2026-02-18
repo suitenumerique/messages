@@ -2,7 +2,7 @@ import { useBlockNoteEditor, useComponentsContext, useEditorState } from "@block
 import { useTranslation } from "react-i18next";
 import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
-import { MessageTemplateTypeChoices, ReadOnlyMessageTemplate, useMailboxesMessageTemplatesAvailableList, draftPlaceholdersRetrieve, DraftPlaceholdersRetrieve200 } from "@/features/api/gen";
+import { MessageTemplateTypeChoices, ReadMessageTemplate, useMailboxesMessageTemplatesAvailableList, draftPlaceholdersRetrieve, DraftPlaceholdersRetrieve200 } from "@/features/api/gen";
 import { MessageComposerBlockSchema, MessageComposerInlineContentSchema, MessageComposerStyleSchema, PartialMessageComposerBlockSchema } from "@/features/forms/components/message-composer";
 import { useModal } from "@gouvfr-lasuite/cunningham-react";
 import { handle } from "@/features/utils/errors";
@@ -40,13 +40,14 @@ export const MessageTemplateSelector = ({ mailboxId, messageId, ensureDraft, upl
         mailboxId,
         {
             type: MessageTemplateTypeChoices.message,
+            bodies: "raw",
         },
         {
             query: { enabled: hasInlineContent }
         }
     );
 
-    const handleSelect = async (template: ReadOnlyMessageTemplate) => {
+    const handleSelect = async (template: ReadMessageTemplate) => {
         if (!template.raw_body || !template.id) return;
 
         const resolvedMessageId = messageId ?? await ensureDraft?.();

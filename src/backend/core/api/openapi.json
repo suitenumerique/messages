@@ -2865,6 +2865,14 @@
                 "description": "List message templates for a mailbox.",
                 "parameters": [
                     {
+                        "in": "query",
+                        "name": "bodies",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Comma-separated list of body fields to include in the response. Allowed values: raw, html, text. Example: ?bodies=raw,html"
+                    },
+                    {
                         "in": "path",
                         "name": "mailbox_id",
                         "schema": {
@@ -2903,7 +2911,7 @@
                                 "schema": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/components/schemas/MessageTemplate"
+                                        "$ref": "#/components/schemas/ReadMessageTemplate"
                                     }
                                 }
                             }
@@ -2914,7 +2922,7 @@
             },
             "post": {
                 "operationId": "mailboxes_message_templates_create",
-                "description": "ViewSet for managing message templates for a mailbox.",
+                "description": "Create a template and return a read-serialized response.",
                 "parameters": [
                     {
                         "in": "path",
@@ -2966,8 +2974,16 @@
         "/api/v1.0/mailboxes/{mailbox_id}/message-templates/{id}/": {
             "get": {
                 "operationId": "mailboxes_message_templates_retrieve",
-                "description": "ViewSet for managing message templates for a mailbox.",
+                "description": "Retrieve a message template.",
                 "parameters": [
+                    {
+                        "in": "query",
+                        "name": "bodies",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Comma-separated list of body fields to include in the response. Allowed values: raw, html, text. Example: ?bodies=raw,html"
+                    },
                     {
                         "in": "path",
                         "name": "id",
@@ -2999,7 +3015,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/MessageTemplate"
+                                    "$ref": "#/components/schemas/ReadMessageTemplate"
                                 }
                             }
                         },
@@ -3009,7 +3025,7 @@
             },
             "put": {
                 "operationId": "mailboxes_message_templates_update",
-                "description": "ViewSet for managing message templates for a mailbox.",
+                "description": "Update a template and return a read-serialized response.",
                 "parameters": [
                     {
                         "in": "path",
@@ -3165,6 +3181,14 @@
                 "description": "List message templates.",
                 "parameters": [
                     {
+                        "in": "query",
+                        "name": "bodies",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Comma-separated list of body fields to include in the response. Allowed values: raw, html, text. Example: ?bodies=raw,html"
+                    },
+                    {
                         "in": "path",
                         "name": "mailbox_id",
                         "schema": {
@@ -3200,7 +3224,7 @@
                                 "schema": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/components/schemas/ReadOnlyMessageTemplate"
+                                        "$ref": "#/components/schemas/ReadMessageTemplate"
                                     }
                                 }
                             }
@@ -3939,6 +3963,14 @@
                 "description": "List message templates for a maildomain.",
                 "parameters": [
                     {
+                        "in": "query",
+                        "name": "bodies",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Comma-separated list of body fields to include in the response. Allowed values: raw, html, text. Example: ?bodies=raw,html"
+                    },
+                    {
                         "in": "path",
                         "name": "maildomain_pk",
                         "schema": {
@@ -3974,7 +4006,7 @@
                                 "schema": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/components/schemas/MessageTemplate"
+                                        "$ref": "#/components/schemas/ReadMessageTemplate"
                                     }
                                 }
                             }
@@ -3985,7 +4017,7 @@
             },
             "post": {
                 "operationId": "maildomains_message_templates_create",
-                "description": "ViewSet for managing message templates for a maildomain.",
+                "description": "Create a template and return a read-serialized response.",
                 "parameters": [
                     {
                         "in": "path",
@@ -4037,8 +4069,16 @@
         "/api/v1.0/maildomains/{maildomain_pk}/message-templates/{id}/": {
             "get": {
                 "operationId": "maildomains_message_templates_retrieve",
-                "description": "ViewSet for managing message templates for a maildomain.",
+                "description": "Retrieve a message template.",
                 "parameters": [
+                    {
+                        "in": "query",
+                        "name": "bodies",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Comma-separated list of body fields to include in the response. Allowed values: raw, html, text. Example: ?bodies=raw,html"
+                    },
                     {
                         "in": "path",
                         "name": "id",
@@ -4072,7 +4112,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/MessageTemplate"
+                                    "$ref": "#/components/schemas/ReadMessageTemplate"
                                 }
                             }
                         },
@@ -4082,7 +4122,7 @@
             },
             "put": {
                 "operationId": "maildomains_message_templates_update",
-                "description": "ViewSet for managing message templates for a maildomain.",
+                "description": "Update a template and return a read-serialized response.",
                 "parameters": [
                     {
                         "in": "path",
@@ -6967,11 +7007,11 @@
                     "signature": {
                         "allOf": [
                             {
-                                "$ref": "#/components/schemas/ReadOnlyMessageTemplate"
+                                "$ref": "#/components/schemas/ReadMessageTemplate"
                             }
                         ],
-                        "readOnly": true,
-                        "nullable": true
+                        "nullable": true,
+                        "readOnly": true
                     },
                     "stmsg_headers": {
                         "type": "object",
@@ -7560,9 +7600,9 @@
                     }
                 }
             },
-            "ReadOnlyMessageTemplate": {
+            "ReadMessageTemplate": {
                 "type": "object",
-                "description": "Serialize message templates for read-only operations.",
+                "description": "Serialize message templates with dynamic body field inclusion.\n\nBody fields (html_body, text_body, raw_body) are only included when\nexplicitly requested via the ``?bodies=`` query parameter or the\n``body_fields`` keyword argument (for nested usage).\n\nAllowed values: ``raw``, ``html``, ``text`` (comma-separated).\nMapping: ``raw`` → ``raw_body``, ``html`` → ``html_body``, ``text`` → ``text_body``.\n\nWhen neither query param nor kwarg is provided, no body field is returned.",
                 "properties": {
                     "id": {
                         "type": "string",
@@ -7577,19 +7617,15 @@
                     },
                     "html_body": {
                         "type": "string",
-                        "description": "Get HTML body from blob.",
-                        "readOnly": true
+                        "nullable": true
                     },
                     "text_body": {
                         "type": "string",
-                        "description": "Get text body from content blob.",
-                        "readOnly": true
+                        "nullable": true
                     },
                     "raw_body": {
                         "type": "string",
-                        "nullable": true,
-                        "description": "Get raw blob from content blob.",
-                        "readOnly": true
+                        "nullable": true
                     },
                     "type": {
                         "$ref": "#/components/schemas/MessageTemplateTypeChoices"
@@ -7626,14 +7662,11 @@
                 },
                 "required": [
                     "created_at",
-                    "html_body",
                     "id",
                     "is_active",
                     "is_default",
                     "is_forced",
                     "name",
-                    "raw_body",
-                    "text_body",
                     "type",
                     "updated_at"
                 ]

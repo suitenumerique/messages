@@ -14,16 +14,31 @@ from rest_framework.generics import get_object_or_404
 from core.api import permissions
 from core.api.serializers import (
     MessageTemplateSerializer,
-    ReadOnlyMessageTemplateSerializer,
+    ReadMessageTemplateSerializer,
 )
+from core.api.viewsets.mixins import MessageTemplateResponseMixin
 from core.models import (
     Mailbox,
     MessageTemplate,
     MessageTemplateTypeChoices,
 )
 
+BODIES_PARAMETER = OpenApiParameter(
+    name="bodies",
+    type=OpenApiTypes.STR,
+    location=OpenApiParameter.QUERY,
+    description=(
+        "Comma-separated list of body fields to include in the response. "
+        "Allowed values: raw, html, text. "
+        "Example: ?bodies=raw,html"
+    ),
+    required=False,
+)
 
+
+# pylint: disable=too-many-ancestors
 class MailboxMessageTemplateViewSet(
+    MessageTemplateResponseMixin,
     mixins.CreateModelMixin,
     mixins.RetrieveModelMixin,
     mixins.DestroyModelMixin,
@@ -73,7 +88,7 @@ class MailboxMessageTemplateViewSet(
         return context
 
     @extend_schema(
-        responses=MessageTemplateSerializer(many=True),
+        responses=ReadMessageTemplateSerializer(many=True),
         description="List message templates for a mailbox.",
         parameters=[
             OpenApiParameter(
@@ -83,11 +98,19 @@ class MailboxMessageTemplateViewSet(
                 enum=[c[1] for c in MessageTemplateTypeChoices.choices],
                 many=True,
             ),
+            BODIES_PARAMETER,
         ],
     )
     def list(self, request, *args, **kwargs):
         """List message templates for a mailbox."""
         return super().list(request, *args, **kwargs)
+
+    @extend_schema(
+        parameters=[BODIES_PARAMETER],
+    )
+    def retrieve(self, request, *args, **kwargs):
+        """Retrieve a message template."""
+        return super().retrieve(request, *args, **kwargs)
 
 
 class AvailableMailboxMessageTemplateViewSet(
@@ -98,7 +121,7 @@ class AvailableMailboxMessageTemplateViewSet(
     permission_classes = [
         permissions.HasAccessToMailbox,
     ]
-    serializer_class = ReadOnlyMessageTemplateSerializer
+    serializer_class = ReadMessageTemplateSerializer
     pagination_class = None
     ordering_fields = [
         "name",
@@ -142,7 +165,7 @@ class AvailableMailboxMessageTemplateViewSet(
         return queryset.distinct()
 
     @extend_schema(
-        responses=ReadOnlyMessageTemplateSerializer(many=True),
+        responses=ReadMessageTemplateSerializer(many=True),
         description="List message templates.",
         parameters=[
             OpenApiParameter(
@@ -151,6 +174,7 @@ class AvailableMailboxMessageTemplateViewSet(
                 location=OpenApiParameter.QUERY,
                 enum=[c[1] for c in MessageTemplateTypeChoices.choices],
             ),
+            BODIES_PARAMETER,
         ],
     )
     def list(self, request, *args, **kwargs):
