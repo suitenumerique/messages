@@ -107,6 +107,7 @@
     }
 
     & .bn-editor {
+        --max-block-width: 70ch;
         // Even in dark mode, the editor stays light so we used global tokens color
         color: var(--c--globals--colors--gray-850);
         border-radius: var(--c--components--forms-input--border-radius);
@@ -126,6 +127,6 @@
 
     .tiptap > .bn-block-group {
         min-height: calc(var(--min-height) - var(--toolbar-height));
-        max-width: 70ch;
+        max-width: var(--max-block-width);
     }
 }

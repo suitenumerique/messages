@@ -188,6 +188,31 @@ function block(
   } as unknown as AnyBlock;
 }
 
+function column(
+  children: AnyBlock[],
+  width: number = 1,
+): AnyBlock {
+  return {
+    id: crypto.randomUUID(),
+    type: 'column',
+    props: { width },
+    content: undefined,
+    children,
+  } as unknown as AnyBlock;
+}
+
+function columnList(
+  columns: AnyBlock[],
+): AnyBlock {
+  return {
+    id: crypto.randomUUID(),
+    type: 'columnList',
+    props: {},
+    content: undefined,
+    children: columns,
+  } as unknown as AnyBlock;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -564,6 +589,106 @@ describe('EmailExporter', () => {
       // Should not produce any visible element
       expect(html).not.toContain('<div>');
       expect(html).not.toContain('empty-block');
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // 12. Column layout
+  // -----------------------------------------------------------------------
+  describe('column layout', () => {
+    it('renders row as a <table> with <td> columns', () => {
+      const html = exportBlocks([
+        columnList([
+          column([paragraph('Left')], 1),
+          column([paragraph('Right')], 2),
+        ]),
+      ]);
+      expect(html).toContain('<table');
+      expect(html).toContain('role="presentation"');
+      expect(html).toContain('<td');
+      expect(html).toContain('Left');
+      expect(html).toContain('Right');
+    });
+
+    it('does not set explicit width on greedy columns', () => {
+      const html = exportBlocks([
+        columnList([
+          column([paragraph('A')], 1),
+          column([paragraph('B')], 2),
+        ]),
+      ]);
+      const tds = html.match(/<td[^>]*>/g) || [];
+      expect(tds).toHaveLength(2);
+      for (const td of tds) {
+        expect(td).not.toContain('width="');
+      }
+    });
+
+    it('renders nested content recursively inside columns', () => {
+      const html = exportBlocks([
+        columnList([
+          column([
+            image('https://example.com/photo.jpg', { name: 'photo' }),
+          ], 1),
+          column([
+            heading('Title', 2),
+            paragraph('Description'),
+          ], 2),
+        ]),
+      ]);
+      expect(html).toContain('<img');
+      expect(html).toContain('src="https://example.com/photo.jpg"');
+      expect(html).toContain('<h2');
+      expect(html).toContain('Title');
+      expect(html).toContain('Description');
+    });
+
+    it('applies vertical-align:top and padding on <td>', () => {
+      const html = exportBlocks([
+        columnList([
+          column([paragraph('A')], 1),
+          column([paragraph('B')], 1),
+        ]),
+      ]);
+      expect(html).toContain('vertical-align:top');
+      expect(html).toContain('padding-right:12px');
+      expect(html).toContain('padding-left:12px');
+    });
+
+    it('sets explicit width on shrink-to-content column with image', () => {
+      const html = exportBlocks([
+        columnList([
+          column([image('https://example.com/photo.jpg', { previewWidth: 86 })], 0),
+          column([paragraph('Text content')], 2),
+        ]),
+      ]);
+      const tds = html.match(/<td[^>]*>/g) || [];
+      expect(tds).toHaveLength(2);
+      // First td (shrink column) should have width matching the image previewWidth
+      expect(tds[0]).toContain('width="86"');
+      // Second td (greedy column) should not have a width attribute
+      expect(tds[1]).not.toContain('width=');
+    });
+
+    it('does not set width on shrink column without image previewWidth', () => {
+      const html = exportBlocks([
+        columnList([
+          column([paragraph('No image')], 0),
+          column([paragraph('Text')], 2),
+        ]),
+      ]);
+      const tds = html.match(/<td[^>]*>/g) || [];
+      expect(tds).toHaveLength(2);
+      for (const td of tds) {
+        expect(td).not.toContain('width=');
+      }
+    });
+
+    it('renders standalone column as nothing', () => {
+      const html = exportBlocks([
+        column([paragraph('Orphan')]),
+      ]);
+      expect(html).not.toContain('Orphan');
     });
   });
 

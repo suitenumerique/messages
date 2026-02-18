@@ -14,6 +14,7 @@ import {
 } from "@blocknote/react";
 import { useMemo } from "react";
 
+import { ColumnLayoutInsertButton } from "./column-layout-block/column-layout-insert-button";
 import { ImageUploadButton } from "./image-upload-button";
 import { isHiddenBlockTypeSelectItem } from "./utils";
 
@@ -37,6 +38,7 @@ export const Toolbar = ({ children }: ToolbarProps) => {
         <FormattingToolbar>
             <BlockTypeSelect key={"blockTypeSelect"} items={filteredItems} />
             <ImageUploadButton />
+            <ColumnLayoutInsertButton />
 
             <ToolbarSeparator key={"separator-1"} />
 

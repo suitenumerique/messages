@@ -7,7 +7,7 @@ import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { TemplateComposer } from "./template-composer";
 import { Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
@@ -16,6 +16,7 @@ import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import i18n from "@/features/i18n/initI18n";
 import { handle } from "@/features/utils/errors";
+import { useConfirmBeforeClose } from "@/features/hooks/use-confirm-before-close";
 
 /**
  * Modal component to compose a template for a mailbox.
@@ -30,6 +31,8 @@ export const ModalComposeTemplate = ({ isOpen, onClose, template }: ModalCompose
     const { t } = useTranslation();
     const { selectedMailbox } = useMailboxContext();
     const queryClient = useQueryClient();
+    const [isDirty, setIsDirty] = useState(false);
+    const guardedOnClose = useConfirmBeforeClose(isDirty, onClose);
     const invalidateMessageTemplates = async () => {
         await queryClient.invalidateQueries({ queryKey: [getMailboxesMessageTemplatesListUrl(selectedMailbox!.id)], exact: false });
     }
@@ -51,7 +54,7 @@ export const ModalComposeTemplate = ({ isOpen, onClose, template }: ModalCompose
             isOpen={isOpen}
             title={template ? t('Edit template "{{template}}"', { template: template.name }) : t("Create a new template")}
             size={ModalSize.LARGE}
-            onClose={onClose}
+            onClose={guardedOnClose}
         >
             <div className="modal-compose-template">
                 {template ? (
@@ -60,11 +63,13 @@ export const ModalComposeTemplate = ({ isOpen, onClose, template }: ModalCompose
                         templateId={template.id}
                         templateName={template.name}
                         onSuccess={handleSuccess}
+                        onDirtyChange={setIsDirty}
                     />
                 ) : (
                     <TemplateComposeForm
                         mailboxId={selectedMailbox!.id}
                         onSuccess={handleSuccess}
+                        onDirtyChange={setIsDirty}
                     />
                 )}
             </div>
@@ -77,9 +82,10 @@ type TemplateComposeFormWithRetrieveProps = {
     templateId: string;
     templateName: string;
     onSuccess?: () => void;
+    onDirtyChange?: (isDirty: boolean) => void;
 }
 
-const TemplateComposeFormWithRetrieve = ({ mailboxId, templateId, templateName, onSuccess }: TemplateComposeFormWithRetrieveProps) => {
+const TemplateComposeFormWithRetrieve = ({ mailboxId, templateId, templateName, onSuccess, onDirtyChange }: TemplateComposeFormWithRetrieveProps) => {
     const { t } = useTranslation();
     const { data, isLoading, isError } = useMailboxesMessageTemplatesRetrieve(mailboxId, templateId, { bodies: "raw" }, {
         query: { gcTime: 0 },
@@ -118,6 +124,7 @@ const TemplateComposeFormWithRetrieve = ({ mailboxId, templateId, templateName, 
                     raw_body: data?.data?.raw_body ?? undefined,
                 }}
                 onSuccess={onSuccess}
+                onDirtyChange={onDirtyChange}
             />
         </ErrorBoundary>
     );
@@ -131,6 +138,7 @@ type TemplateComposeFormProps = {
         raw_body?: string | null;
     };
     onSuccess?: () => void;
+    onDirtyChange?: (isDirty: boolean) => void;
 }
 
 const templateComposerSchema = () => z.object({
@@ -140,7 +148,7 @@ const templateComposerSchema = () => z.object({
 
 type TemplateComposerFormData = z.infer<ReturnType<typeof templateComposerSchema>>;
 
-const TemplateComposeForm = ({ mailboxId, defaultValue, onSuccess }: TemplateComposeFormProps) => {
+const TemplateComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChange }: TemplateComposeFormProps) => {
     const { t } = useTranslation();
     const composerRef = useRef<Base64ComposerHandle>(null);
     const form = useForm<TemplateComposerFormData>({
@@ -153,6 +161,10 @@ const TemplateComposeForm = ({ mailboxId, defaultValue, onSuccess }: TemplateCom
     const { mutateAsync: createTemplate, isPending } = useMailboxesMessageTemplatesCreate();
     const { mutateAsync: updateTemplate, isPending: isUpdating } = useMailboxesMessageTemplatesUpdate();
     const isSubmitting = isPending || isUpdating;
+
+    useEffect(() => {
+        onDirtyChange?.(form.formState.isDirty);
+    }, [form.formState.isDirty, onDirtyChange]);
 
     const onSubmit = async (data: TemplateComposerFormData): Promise<void> => {
         const { htmlBody, textBody } = await composerRef.current!.exportContent();

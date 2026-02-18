@@ -10,6 +10,43 @@ import { MessageComposerHelper } from "@/features/utils/composer-helper";
 import { useHtmlWithObjectUrls } from "@/features/blocknote/image-block/use-html-with-object-urls";
 
 
+/**
+ * Converts layout tables (role="presentation") into flex divs so that
+ * ProseMirror does not try to parse them as BlockNote table blocks.
+ * Only affects the editor preview — email export keeps real tables.
+ */
+function replaceLayoutTablesWithDivs(html: string): string {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const layoutTables = doc.querySelectorAll('table[role="presentation"]');
+
+    for (const table of layoutTables) {
+        const wrapper = doc.createElement('div');
+        wrapper.style.cssText = 'display:flex;width:100%';
+
+        // Copy any extra inline styles from the table
+        if (table instanceof HTMLElement && table.style.length > 0) {
+            for (const prop of ['gap', 'margin', 'padding'] as const) {
+                const val = table.style.getPropertyValue(prop);
+                if (val) wrapper.style.setProperty(prop, val);
+            }
+        }
+
+        const cells = table.querySelectorAll('td');
+        for (const td of cells) {
+            const col = doc.createElement('div');
+            // Carry over the td's inline styles (width, vertical-align, padding…)
+            col.style.cssText = td.style.cssText;
+            col.innerHTML = td.innerHTML;
+            wrapper.appendChild(col);
+        }
+
+        table.replaceWith(wrapper);
+    }
+
+    return doc.body.innerHTML;
+}
+
 type SignatureTemplateSelectorProps = {
     mailboxId?: string;
     messageId?: string;
@@ -201,7 +238,10 @@ export const BlockSignature = createReactBlockSpec(
                 for (const [key, value] of Object.entries(placeholders as DraftPlaceholdersRetrieve200)) {
                     html = html.replaceAll(`{${key}}`, value);
                 }
-                return DomPurify().sanitize(html);
+                const sanitized = DomPurify().sanitize(html);
+                // Replace layout tables with flex divs to prevent BlockNote from
+                // parsing them as table blocks (which causes a crash).
+                return replaceLayoutTablesWithDivs(sanitized);
             }, [template?.html_body, placeholders, isLoading]);
 
             // eslint-disable-next-line react-hooks/rules-of-hooks

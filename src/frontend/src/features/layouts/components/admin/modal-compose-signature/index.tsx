@@ -8,7 +8,7 @@ import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import z from "zod";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SignatureComposer } from "@/features/signatures/components/signature-composer";
 import { Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
@@ -17,6 +17,7 @@ import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import i18n from "@/features/i18n/initI18n";
 import { handle } from "@/features/utils/errors";
+import { useConfirmBeforeClose } from "@/features/hooks/use-confirm-before-close";
 
 /**
  * Modal component to compose a signature for a mail domain.
@@ -32,6 +33,8 @@ export const ModalComposeSignature = ({ isOpen, onClose, signature }: ModalCompo
     const { selectedMailDomain } = useAdminMailDomain();
     const domainName = selectedMailDomain?.name || "";
     const queryClient = useQueryClient();
+    const [isDirty, setIsDirty] = useState(false);
+    const guardedOnClose = useConfirmBeforeClose(isDirty, onClose);
     const invalidateMessageTemplates = async () => {
         await queryClient.invalidateQueries({ queryKey: [`/api/v1.0/maildomains/${selectedMailDomain?.id}/message-templates/`], exact: false });
     }
@@ -53,7 +56,7 @@ export const ModalComposeSignature = ({ isOpen, onClose, signature }: ModalCompo
             isOpen={isOpen}
             title={t('Create a new signature for {{domain}}', { domain: domainName })}
             size={ModalSize.LARGE}
-            onClose={onClose}
+            onClose={guardedOnClose}
         >
             <div className="modal-compose-signature">
                 {signature ? (
@@ -61,11 +64,13 @@ export const ModalComposeSignature = ({ isOpen, onClose, signature }: ModalCompo
                         domain={selectedMailDomain!}
                         signature={signature}
                         onSuccess={handleSuccess}
+                        onDirtyChange={setIsDirty}
                     />
                 ) : (
                     <SignatureComposeForm
                         domain={selectedMailDomain!}
                         onSuccess={handleSuccess}
+                        onDirtyChange={setIsDirty}
                     />
                 )}
             </div>
@@ -77,9 +82,10 @@ type SignatureComposeFormWithRetrieveProps = {
     domain: MailDomainAdmin;
     signature: ReadMessageTemplate;
     onSuccess?: () => void;
+    onDirtyChange?: (isDirty: boolean) => void;
 }
 
-const SignatureComposeFormWithRetrieve = ({ domain, signature, onSuccess }: SignatureComposeFormWithRetrieveProps) => {
+const SignatureComposeFormWithRetrieve = ({ domain, signature, onSuccess, onDirtyChange }: SignatureComposeFormWithRetrieveProps) => {
     const { t } = useTranslation();
     const { data, isLoading, isError } = useMaildomainsMessageTemplatesRetrieve(domain.id, signature.id, { bodies: "raw" }, {
         query: { gcTime: 0 },
@@ -121,6 +127,7 @@ const SignatureComposeFormWithRetrieve = ({ domain, signature, onSuccess }: Sign
                     raw_body: data?.data?.raw_body ?? undefined,
                 }}
                 onSuccess={onSuccess}
+                onDirtyChange={onDirtyChange}
             />
         </ErrorBoundary>
     );
@@ -137,6 +144,7 @@ type SignatureComposeFormProps = {
         raw_body?: string | null;
     };
     onSuccess?: () => void;
+    onDirtyChange?: (isDirty: boolean) => void;
 }
 
 const signatureComposerSchema = z.object({
@@ -149,7 +157,7 @@ const signatureComposerSchema = z.object({
 
 type SignatureComposerFormData = z.infer<typeof signatureComposerSchema>;
 
-const SignatureComposeForm = ({ domain, defaultValue, onSuccess }: SignatureComposeFormProps) => {
+const SignatureComposeForm = ({ domain, defaultValue, onSuccess, onDirtyChange }: SignatureComposeFormProps) => {
     const { t } = useTranslation();
     const composerRef = useRef<Base64ComposerHandle>(null);
     const form = useForm<SignatureComposerFormData>({
@@ -165,6 +173,10 @@ const SignatureComposeForm = ({ domain, defaultValue, onSuccess }: SignatureComp
     const { mutateAsync: createSignature, isPending } = useMaildomainsMessageTemplatesCreate();
     const { mutateAsync: updateSignature, isPending: isUpdating } = useMaildomainsMessageTemplatesUpdate();
     const isSubmitting = isPending || isUpdating;
+
+    useEffect(() => {
+        onDirtyChange?.(form.formState.isDirty);
+    }, [form.formState.isDirty, onDirtyChange]);
 
     const onSubmit = async (data: SignatureComposerFormData) => {
         const { htmlBody, textBody } = await composerRef.current!.exportContent();

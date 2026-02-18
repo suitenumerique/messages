@@ -1,12 +1,15 @@
 import {
     filterSuggestionItems,
     getDefaultSlashMenuItems,
+    insertOrUpdateBlockForSlashMenu,
 } from '@blocknote/core/extensions';
 import {
     SuggestionMenuController,
     useBlockNoteEditor,
 } from '@blocknote/react';
+import { useTranslation } from 'react-i18next';
 
+import { createColumnListBlock, isInsideColumn } from './column-layout-block/column-layout-insert-button';
 import { HIDDEN_BLOCK_TYPES } from './utils';
 
 const HIDDEN_SLASH_MENU_KEYS = new Set([
@@ -21,6 +24,7 @@ const HIDDEN_SLASH_MENU_KEYS = new Set([
 ]);
 
 export const CustomSlashMenu = () => {
+    const { t } = useTranslation();
     const editor = useBlockNoteEditor();
 
     const getItems = async (query: string) => {
@@ -28,7 +32,22 @@ export const CustomSlashMenu = () => {
         const filtered = defaultItems.filter(
             (item) => !HIDDEN_SLASH_MENU_KEYS.has(item.key),
         );
-        return filterSuggestionItems(filtered, query);
+
+        const customItems = [];
+
+        if ('columnList' in editor.schema.blockSpecs && !isInsideColumn(editor)) {
+            customItems.push({
+                title: t('2 columns'),
+                subtext: t('Image + Text'),
+                group: t('Layout'),
+                key: 'column_layout',
+                onItemClick: () => {
+                    insertOrUpdateBlockForSlashMenu(editor, createColumnListBlock())
+                },
+            });
+        }
+
+        return filterSuggestionItems([...filtered, ...customItems], query);
     };
 
     return (

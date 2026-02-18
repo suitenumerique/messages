@@ -8,7 +8,7 @@ import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { SignatureComposer } from "@/features/signatures/components/signature-composer";
 import { Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
@@ -17,6 +17,7 @@ import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import i18n from "@/features/i18n/initI18n";
 import { handle } from "@/features/utils/errors";
+import { useConfirmBeforeClose } from "@/features/hooks/use-confirm-before-close";
 
 /**
  * Modal component to compose a signature for a mailbox.
@@ -31,6 +32,8 @@ export const ModalComposeMailboxSignature = ({ isOpen, onClose, signature }: Mod
     const { t } = useTranslation();
     const { selectedMailbox } = useMailboxContext();
     const queryClient = useQueryClient();
+    const [isDirty, setIsDirty] = useState(false);
+    const guardedOnClose = useConfirmBeforeClose(isDirty, onClose);
 
     if (!selectedMailbox) {
         return null;
@@ -57,7 +60,7 @@ export const ModalComposeMailboxSignature = ({ isOpen, onClose, signature }: Mod
             isOpen={isOpen}
             title={signature ? t('Edit signature "{{signature}}"', { signature: signature.name }) : t("Create a new signature")}
             size={ModalSize.LARGE}
-            onClose={onClose}
+            onClose={guardedOnClose}
         >
             <div className="modal-compose-signature">
                 {signature ? (
@@ -65,11 +68,13 @@ export const ModalComposeMailboxSignature = ({ isOpen, onClose, signature }: Mod
                         mailboxId={selectedMailbox.id}
                         signature={signature}
                         onSuccess={handleSuccess}
+                        onDirtyChange={setIsDirty}
                     />
                 ) : (
                     <SignatureComposeForm
                         mailboxId={selectedMailbox.id}
                         onSuccess={handleSuccess}
+                        onDirtyChange={setIsDirty}
                     />
                 )}
             </div>
@@ -81,9 +86,10 @@ type SignatureComposeFormWithRetrieveProps = {
     mailboxId: string;
     signature: ReadMessageTemplate;
     onSuccess?: () => void;
+    onDirtyChange?: (isDirty: boolean) => void;
 }
 
-const SignatureComposeFormWithRetrieve = ({ mailboxId, signature, onSuccess }: SignatureComposeFormWithRetrieveProps) => {
+const SignatureComposeFormWithRetrieve = ({ mailboxId, signature, onSuccess, onDirtyChange }: SignatureComposeFormWithRetrieveProps) => {
     const { t } = useTranslation();
     const { data, isLoading, isError } = useMailboxesMessageTemplatesRetrieve(mailboxId, signature.id, { bodies: "raw" }, {
         query: { gcTime: 0 },
@@ -123,6 +129,7 @@ const SignatureComposeFormWithRetrieve = ({ mailboxId, signature, onSuccess }: S
                     raw_body: data?.data?.raw_body ?? undefined,
                 }}
                 onSuccess={onSuccess}
+                onDirtyChange={onDirtyChange}
             />
         </ErrorBoundary>
     );
@@ -137,6 +144,7 @@ type SignatureComposeFormProps = {
         raw_body?: string | null;
     };
     onSuccess?: () => void;
+    onDirtyChange?: (isDirty: boolean) => void;
 }
 
 const signatureComposerSchema = () => z.object({
@@ -147,7 +155,7 @@ const signatureComposerSchema = () => z.object({
 
 type SignatureComposerFormData = z.infer<ReturnType<typeof signatureComposerSchema>>;
 
-const SignatureComposeForm = ({ mailboxId, defaultValue, onSuccess }: SignatureComposeFormProps) => {
+const SignatureComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChange }: SignatureComposeFormProps) => {
     const { t } = useTranslation();
     const composerRef = useRef<Base64ComposerHandle>(null);
     const form = useForm<SignatureComposerFormData>({
@@ -161,6 +169,10 @@ const SignatureComposeForm = ({ mailboxId, defaultValue, onSuccess }: SignatureC
     const { mutateAsync: createSignature, isPending } = useMailboxesMessageTemplatesCreate();
     const { mutateAsync: updateSignature, isPending: isUpdating } = useMailboxesMessageTemplatesUpdate();
     const isSubmitting = isPending || isUpdating;
+
+    useEffect(() => {
+        onDirtyChange?.(form.formState.isDirty);
+    }, [form.formState.isDirty, onDirtyChange]);
 
     const onSubmit = async (data: SignatureComposerFormData): Promise<void> => {
         const { htmlBody, textBody } = await composerRef.current!.exportContent();

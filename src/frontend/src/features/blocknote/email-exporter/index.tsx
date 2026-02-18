@@ -1,7 +1,7 @@
 import React, { CSSProperties } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Block, InlineContent, StyledText } from '@blocknote/core';
-import { Text, Heading, Img, Link, Hr } from '@react-email/components';
+import { Text, Heading, Img, Link, Hr, Row, Column } from '@react-email/components';
 import MailHelper from '@/features/utils/mail-helper';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -155,6 +155,53 @@ function isContentEmpty(content: AnyInlineContent[] | undefined): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Image / column width resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolves the pixel width of an image block from its `previewWidth` prop,
+ * falling back to the natural width read from the editor DOM when the image
+ * was never resized by the user.
+ */
+function resolveImageWidth(
+    block: AnyBlock,
+    editorDomElement: HTMLElement | null,
+): number | undefined {
+    const props = block.props as Record<string, unknown>;
+    let width = props.previewWidth as number | undefined;
+    if (!width && editorDomElement) {
+        const imgEl = editorDomElement.querySelector<HTMLImageElement>(
+            `[data-id="${block.id}"] img`,
+        );
+        if (imgEl?.complete && imgEl.naturalWidth > 0) {
+            width = imgEl.naturalWidth;
+        }
+    }
+    return width;
+}
+
+/**
+ * Computes the pixel width of a shrink-to-content column by returning the
+ * widest image width among its children.  The HTML table algorithm uses this
+ * value to allocate exactly the right space for the column.
+ */
+function resolveColumnContentWidth(
+    blocks: AnyBlock[],
+    editorDomElement: HTMLElement | null,
+): number | undefined {
+    let maxWidth: number | undefined;
+    for (const block of blocks) {
+        if (block.type === 'image') {
+            const w = resolveImageWidth(block, editorDomElement);
+            if (w && (!maxWidth || w > maxWidth)) {
+                maxWidth = w;
+            }
+        }
+    }
+    return maxWidth;
+}
+
+// ---------------------------------------------------------------------------
 // Block rendering
 // ---------------------------------------------------------------------------
 
@@ -240,16 +287,7 @@ function renderBlock(
             const cidUrl = MailHelper.replaceBlobUrlsWithCid(url);
             const imgStyle: CSSProperties = {};
 
-            // Resolve width from previewWidth or from the editor DOM
-            let width = props.previewWidth as number | undefined;
-            if (!width && editorDomElement) {
-                const imgEl = editorDomElement.querySelector<HTMLImageElement>(
-                    `[data-id="${block.id}"] img`,
-                );
-                if (imgEl?.complete && imgEl.naturalWidth > 0) {
-                    width = imgEl.naturalWidth;
-                }
-            }
+            const width = resolveImageWidth(block, editorDomElement);
 
             // Alignment via margin (Img already sets display:block)
             const alignment = props.textAlignment as string | undefined;
@@ -302,6 +340,57 @@ function renderBlock(
             return <Hr key={key} style={{ margin: '12px 0' }} />;
         }
 
+        case 'columnList': {
+            const columns = (block.children || []).filter(
+                (child: AnyBlock) => child.type === 'column',
+            );
+            const COLUMN_PADDING = 12;
+
+            return (
+                <Row key={key} style={{ padding: `${COLUMN_PADDING}px 0` }}>
+                    {columns.map((col: AnyBlock, colIdx: number) => {
+                        const colStyle: CSSProperties = { verticalAlign: 'top' };
+                        if (colIdx === 0) {
+                            colStyle.paddingRight = `${COLUMN_PADDING}px`;
+                        }
+                        else if (colIdx === columns.length - 1) {
+                            colStyle.paddingLeft = `${COLUMN_PADDING}px`;
+                        }
+                        else {
+                            colStyle.padding = `0 ${COLUMN_PADDING}px`;
+                        }
+                        const w = Number((col.props as Record<string, unknown>).width);
+
+                        // For shrink-to-content columns (width: 0), compute the
+                        // exact pixel width from child image blocks so the HTML
+                        // table algorithm allocates the correct space.  Without
+                        // an explicit width, the table distributes space evenly;
+                        // with it, sibling cells take the remaining space.
+                        let tdWidth: string | undefined;
+                        if (w === 0) {
+                            const contentWidth = resolveColumnContentWidth(
+                                col.children || [],
+                                editorDomElement,
+                            );
+                            if (contentWidth) {
+                                tdWidth = String(contentWidth);
+                            }
+                        }
+
+                        return (
+                            <Column key={colIdx} style={colStyle} width={tdWidth}>
+                                {transformBlocks(col.children || [], editorDomElement)}
+                            </Column>
+                        );
+                    })}
+                </Row>
+            );
+        }
+
+        case 'column':
+            // Columns are rendered as <td> inside row – standalone column is a no-op
+            return null;
+
         case 'signature':
         case 'quoted-message':
             return <span key={key} />;
@@ -347,7 +436,8 @@ function transformBlocks(
         } else {
             result.push(renderBlock(block, editorDomElement, i));
 
-            if (block.children?.length > 0) {
+            // Skip children for column blocks (handled inside row rendering)
+            if (block.type !== 'column' && block.children?.length > 0) {
                 result.push(...transformBlocks(block.children, editorDomElement));
             }
 

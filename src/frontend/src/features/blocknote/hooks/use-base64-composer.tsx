@@ -73,22 +73,37 @@ export const useBase64Composer = <
     const initialContent = useMemo(() => {
         const DEFAULT_CONTENT = [{ type: "paragraph", content: "" }];
         if (!defaultValue) return DEFAULT_CONTENT;
+        let blocks = [];
         try {
-            const blocks = JSON.parse(defaultValue);
-            return blocks.map((block: Record<string, unknown>, i: number) => {
-                const props = block.props as Record<string, string> | undefined;
-                if (block.type === 'image' && props?.url?.startsWith('data:')) {
-                    const file = MailHelper.dataUrlToFile(props.url, `image-${i}.png`);
-                    if (file) {
-                        return { ...block, props: { ...props, url: createObjectUrl(file, props.url) } };
-                    }
-                }
-                return block;
-            });
+            blocks = JSON.parse(defaultValue);
         } catch (error) {
             handle(new Error("Error parsing initial content."), { extra: { error, defaultValue } });
             return DEFAULT_CONTENT;
         }
+
+        // Traverse blocks tree to transform image data URLs to Object URLs
+        let imageIndex = 0;
+        const processImageBlocks = (blocks: Record<string, unknown>[]) => {
+            return blocks.map((block: Record<string, unknown>) => {
+                let result = { ...block };
+                const props = result.props as Record<string, string> | undefined;
+                if (result.type === 'image' && props?.url?.startsWith('data:')) {
+                    const file = MailHelper.dataUrlToFile(props.url, `image-${imageIndex}.png`);
+                    imageIndex++;
+                    if (file) {
+                        return { ...block, props: { ...props, url: createObjectUrl(file, props.url) } };
+                    }
+                }
+
+                const children = result.children as Record<string, unknown>[] | undefined;
+                if (children?.length) {
+                    result = { ...result, children: processImageBlocks(children) };
+                }
+                return result;
+            })
+        };
+
+        return processImageBlocks(blocks);
     }, [defaultValue, createObjectUrl]);
 
     const locale = i18n.resolvedLanguage?.split('-')[0] || 'en';

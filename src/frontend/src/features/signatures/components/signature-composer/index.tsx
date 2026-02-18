@@ -10,11 +10,14 @@ import { Toolbar } from "@/features/blocknote/toolbar";
 import { usePlaceholdersRetrieve } from "@/features/api/gen";
 import { imageBlockSpec } from "@/features/blocknote/image-block";
 import { useBase64Composer, Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
+import { ColumnBlock, ColumnListBlock } from "@/features/blocknote/column-layout-block";
 
 const SIGNATURE_BLOCKNOTE_SCHEMA = BlockNoteSchema.create({
     blockSpecs: {
         ...defaultBlockSpecs,
         'image': imageBlockSpec,
+        'column': ColumnBlock,
+        'columnList': ColumnListBlock,
     },
     inlineContentSpecs: {
         ...defaultInlineContentSpecs,
@@ -43,6 +46,7 @@ export const SignatureComposer = forwardRef<Base64ComposerHandle, SignatureCompo
     const { editor, handleChange, exportContent } = useBase64Composer({
         schema: SIGNATURE_BLOCKNOTE_SCHEMA,
         defaultValue,
+        trailingBlock: true,
         blockNoteOptions: { autofocus: "end", ...blockNoteOptions },
     });
 

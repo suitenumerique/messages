@@ -1,0 +1,36 @@
+.bn-block-row {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  margin-left: -24px;
+}
+
+.bn-block-column {
+  --max-width-row: var(--max-block-width, 70ch);
+  --min-width-first-column: 60px;
+  --min-width-last-column: 200px;
+  width: 0;
+  flex-grow: 1;
+  flex-shrink: 1;
+  overflow: hidden;
+  border: 1px dashed var(--c--components--forms-input--border-color);
+  border-radius: 4px;
+  padding: 4px 8px 4px 24px;
+
+  &:first-child {
+    padding-left: 24px;
+    border-left: none;
+    border-radius: 0 4px 4px 0;
+    min-width: var(--min-width-first-column);
+
+    & > div {
+        min-width: var(--min-width-first-column);
+        max-width: calc(var(--max-width-row) - var(--min-width-last-column));
+    }
+  }
+
+  &[data-width="0"] {
+    flex: 0 0 auto;
+    width: auto;
+  }
+}
