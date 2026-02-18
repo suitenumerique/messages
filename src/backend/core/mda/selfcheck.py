@@ -5,7 +5,7 @@ import logging
 import secrets
 import time
 from datetime import timedelta
-from typing import Any, Dict, Optional, Tuple
+from typing import Optional, Tuple, TypedDict
 
 from django.conf import settings
 from django.utils import timezone
@@ -15,6 +15,15 @@ from core.mda.draft import create_draft
 from core.mda.outbound import prepare_outbound_message, send_message
 
 logger = logging.getLogger(__name__)
+
+
+class SelfCheckResult(TypedDict):
+    """Result of a selfcheck run."""
+
+    success: bool
+    error: Optional[str]
+    send_time: Optional[float]
+    reception_time: Optional[float]
 
 
 class SelfCheckError(Exception):
@@ -205,7 +214,7 @@ def _cleanup_test_data(message: models.Message):
     logger.info("Cleaned up test thread")
 
 
-def run_selfcheck() -> Dict[str, Any]:
+def run_selfcheck() -> SelfCheckResult:
     """
     Run a complete end-to-end selfcheck of the mail delivery system.
 
@@ -330,5 +339,9 @@ that the mail delivery pipeline is working correctly.</p>
         if received_message:
             _cleanup_test_data(received_message)
         logger.info("Cleanup completed")
+
+    from core.mda.selfcheck_reporting import report_selfcheck
+
+    report_selfcheck(result)
 
     return result

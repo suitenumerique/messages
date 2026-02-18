@@ -24,11 +24,9 @@ The selfcheck system uses the following environment variables:
 - `MESSAGES_SELFCHECK_INTERVAL`: Interval in seconds between self-checks (for instance: `600` - 10 minutes)
 - `MESSAGES_SELFCHECK_TIMEOUT`: Timeout in seconds for message reception (for instance: `60` - 60 seconds)
 
-As well as these prometheus specific environment variables:
+Optionally, to enable uptime alerting via a selfcheck webhook:
 
-- `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_ENABLED`: Enable or disable Prometheus metrics reporting (default: `False`)
-- `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PUSHGATEWAY_URL`: URL of the Prometheus Pushgateway to which metrics are sent (default: `None`)
-- `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PREFIX`: Prefix for all Prometheus metrics names (default: empty string)
+- `MESSAGES_SELFCHECK_WEBHOOK_URL`: URL of the selfcheck webhook endpoint (default: `None` - disabled)
 
 ## Usage
 
@@ -78,24 +76,24 @@ The selfcheck system logs all operations with appropriate log levels:
 - `WARNING`: Non-critical issues (e.g., parsing errors for individual messages)
 - `ERROR`: Critical failures that cause the self-check to fail
 
-The selfcheck results can be integrated with monitoring systems by:
+Every selfcheck emits a structured log line that can be ingested by any log analysis tool:
 
-1. **Checking the success status** of the selfcheck task
-2. **Monitoring timing metrics** to detect performance degradation
-3. **Alerting on failures** to quickly identify delivery pipeline issues
-4. **Tracking trends** in reception times to identify system bottlenecks
+- Success: `selfcheck_completed success=true send_time=0.150 reception_time=2.340` (INFO)
+- Failure: `selfcheck_completed success=false error="<message>"` (ERROR)
+
+These log lines can be used to build dashboards and alerts on timing trends.
 
 ## Monitoring
 
-By setting `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_ENABLED` to `True` as well as setting `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PUSHGATEWAY_URL` to your [prometheus pushgateway](https://github.com/prometheus/pushgateway)'s url, the job will push the following metrics:
+### Selfcheck Webhook (uptime alerting)
 
-- `selfcheck_start_time`: Start timestamp of the self check
-- `selfcheck_end_time`: End timestamp of the self check
-- `selfcheck_success`: 1 if the self check succeeded, 0 if it failed
-- `selfcheck_send_duration_seconds`: Time taken to send the test message (seconds), only on successful send
-- `selfcheck_reception_duration_seconds`: Time taken to receive the test message (seconds), only on successful reception
+When `MESSAGES_SELFCHECK_WEBHOOK_URL` is configured, a heartbeat is POSTed to the webhook URL on each successful selfcheck. This is compatible with updown.io pulses and similar services. If the selfcheck fails, no request is sent, and the missing heartbeat triggers an alert after the configured grace period.
 
-All metric names can be prefixed using the `MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PREFIX` environment variable.
+The POST body includes timing data:
+
+```json
+{"send_time": 0.15, "reception_time": 2.34}
+```
 
 ## Security Considerations
 

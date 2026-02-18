@@ -330,21 +330,9 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
-    MESSAGES_SELFCHECK_PROMETHEUS_METRICS_ENABLED = values.BooleanValue(
-        default=False,
-        environ_name="MESSAGES_SELFCHECK_PROMETHEUS_METRICS_ENABLED",
-        environ_prefix=None,
-    )
-
-    MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PUSHGATEWAY_URL = values.Value(
+    MESSAGES_SELFCHECK_WEBHOOK_URL = values.Value(
         None,
-        environ_name="MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PUSHGATEWAY_URL",
-        environ_prefix=None,
-    )
-
-    MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PREFIX = values.Value(
-        "",
-        environ_name="MESSAGES_SELFCHECK_PROMETHEUS_METRICS_PREFIX",
+        environ_name="MESSAGES_SELFCHECK_WEBHOOK_URL",
         environ_prefix=None,
     )
 
