@@ -10,6 +10,7 @@ from core.api.viewsets.channel import ChannelViewSet
 from core.api.viewsets.config import ConfigView
 from core.api.viewsets.contacts import ContactViewSet
 from core.api.viewsets.draft import DraftMessageView
+from core.api.viewsets.entitlements import EntitlementsView
 from core.api.viewsets.drive import DriveAPIView
 from core.api.viewsets.flag import ChangeFlagView
 from core.api.viewsets.image_proxy import ImageProxyViewSet
@@ -186,6 +187,11 @@ urlpatterns = [
         ),
     ),
     path(f"api/{settings.API_VERSION}/config/", ConfigView.as_view()),
+    path(
+        f"api/{settings.API_VERSION}/entitlements/",
+        EntitlementsView.as_view(),
+        name="entitlements",
+    ),
     path(
         f"api/{settings.API_VERSION}/flag/",
         ChangeFlagView.as_view(),

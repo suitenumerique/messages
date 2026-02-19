@@ -549,5 +549,7 @@
   "You must confirm this statement.": "You must confirm this statement.",
   "Your email...": "Your email...",
   "Your messages have been imported successfully!": "Your messages have been imported successfully!",
-  "Your session has expired. Please log in again.": "Your session has expired. Please log in again."
+  "Your session has expired. Please log in again.": "Your session has expired. Please log in again.",
+  "Storage": "Storage",
+  "{{used}} / {{total}} used": "{{used}} / {{total}} used"
 }

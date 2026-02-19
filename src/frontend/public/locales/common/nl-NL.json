@@ -392,5 +392,7 @@
   "You must confirm this statement.": "U moet deze verklaring bevestigen.",
   "Your email...": "Jouw email...",
   "Your messages have been imported successfully!": "Je berichten zijn succesvol geïmporteerd!",
-  "Your session has expired. Please log in again.": "Je sessie is verlopen. Log opnieuw in."
+  "Your session has expired. Please log in again.": "Je sessie is verlopen. Log opnieuw in.",
+  "Storage": "Opslag",
+  "{{used}} / {{total}} used": "{{used}} / {{total}} gebruikt"
 }

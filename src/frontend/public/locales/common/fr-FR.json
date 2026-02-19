@@ -592,5 +592,7 @@
   "You must confirm this statement.": "Vous devez confirmer cette déclaration.",
   "Your email...": "Renseigner votre email...",
   "Your messages have been imported successfully!": "Vos messages ont été importés avec succès !",
-  "Your session has expired. Please log in again.": "Votre session a expiré. Veuillez vous reconnecter."
+  "Your session has expired. Please log in again.": "Votre session a expiré. Veuillez vous reconnecter.",
+  "Storage": "Stockage",
+  "{{used}} / {{total}} used": "{{used}} / {{total}} utilisé"
 }
