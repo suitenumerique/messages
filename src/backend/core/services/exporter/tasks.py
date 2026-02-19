@@ -210,9 +210,6 @@ class S3MultipartGzipUploader:
 # Pattern to match "From " at the start of a line (needs escaping in MBOX)
 FROM_LINE_PATTERN = re.compile(rb"^From ", re.MULTILINE)
 
-# Pattern to find the end of headers (blank line)
-HEADER_END_PATTERN = re.compile(rb"\r?\n\r?\n", re.MULTILINE)
-
 
 def _escape_from_lines(content: bytes) -> bytes:
     """Escape 'From ' at the start of lines by prepending '>'."""
@@ -298,10 +295,10 @@ def _build_keywords_header(labels: list) -> bytes:
 
 def _inject_headers(raw_content: bytes, extra_headers: bytes) -> bytes:
     """
-    Inject extra headers into raw email content.
+    Inject extra headers at the top of raw email content.
 
-    Headers are inserted at the end of the existing headers,
-    just before the blank line that separates headers from body.
+    Headers are prepended before existing headers so they appear before
+    the Received: chain, keeping chronological descending order.
 
     Args:
         raw_content: Raw RFC 5322 email content
@@ -313,27 +310,15 @@ def _inject_headers(raw_content: bytes, extra_headers: bytes) -> bytes:
     if not extra_headers:
         return raw_content
 
-    # Find the end of headers (first blank line)
-    match = HEADER_END_PATTERN.search(raw_content)
-    if match:
-        # Detect original line ending style (CRLF or LF) and preserve it
-        separator = match.group()
-        line_end = b"\r\n" if b"\r\n" in separator else b"\n"
-        header_end = match.start()
-        # Normalize extra_headers line endings to match the original message
-        normalized_headers = extra_headers.rstrip(b"\r\n").replace(b"\r\n", b"\n")
-        if line_end == b"\r\n":
-            normalized_headers = normalized_headers.replace(b"\n", b"\r\n")
-        return (
-            raw_content[:header_end]
-            + line_end
-            + normalized_headers
-            + separator
-            + raw_content[match.end() :]
-        )
+    # Detect original line ending style from the first line break
+    line_end = b"\r\n" if b"\r\n" in raw_content[:256] else b"\n"
 
-    # No blank line found, append headers at the end
-    return raw_content + b"\n" + extra_headers
+    # Normalize extra_headers line endings to match the original message
+    normalized_headers = extra_headers.rstrip(b"\r\n").replace(b"\r\n", b"\n")
+    if line_end == b"\r\n":
+        normalized_headers = normalized_headers.replace(b"\n", b"\r\n")
+
+    return normalized_headers + line_end + raw_content
 
 
 def _create_mbox_entry(

@@ -451,6 +451,76 @@ def test_export_includes_status_headers(mailbox_fixture, admin_user, cleanup_exp
 
 
 @pytest.mark.django_db
+def test_export_headers_prepended_before_received(
+    mailbox_fixture, admin_user, cleanup_exports
+):
+    """Test that Status/X-Keywords headers are prepended before Received: headers."""
+    # Create a message with Received: headers in the raw content (as in real email)
+    eml_content = b"""Received: from relay.example.com by our-server; Mon, 26 May 2025 20:13:44 +0200
+Received: from sender-smtp.example.com by relay.example.com; Mon, 26 May 2025 20:13:40 +0200
+From: sender@example.com
+To: test@example.com
+Subject: Message with Received headers
+Date: Mon, 26 May 2025 20:13:44 +0200
+Message-ID: <received-test@example.com>
+
+Body content here
+"""
+    blob = Blob.objects.create_blob(
+        content=eml_content,
+        content_type="message/rfc822",
+        mailbox=mailbox_fixture,
+    )
+    thread = Thread.objects.create(subject="Message with Received headers")
+    ThreadAccess.objects.create(thread=thread, mailbox=mailbox_fixture)
+    msg = Message.objects.create(
+        thread=thread,
+        blob=blob,
+        subject="Message with Received headers",
+        sender=factories.ContactFactory(email="sender@example.com"),
+        is_sender=False,
+        is_unread=False,
+    )
+    label = Label.objects.create(
+        name="test-order", slug="test-order", mailbox=mailbox_fixture
+    )
+    msg.thread.labels.add(label)
+
+    mock_task = MagicMock()
+
+    with (
+        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
+        patch(
+            "core.services.exporter.tasks.deliver_inbound_message", return_value=True
+        ),
+    ):
+        result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
+
+    assert result["status"] == "SUCCESS"
+
+    s3_key = result["result"]["s3_key"]
+    cleanup_exports.append(s3_key)
+
+    storage = storages["message-imports"]
+    s3_client = storage.connection.meta.client
+    response = s3_client.get_object(Bucket=storage.bucket_name, Key=s3_key)
+    gzip_content = response["Body"].read()
+
+    with gzip.open(BytesIO(gzip_content), "rb") as f:
+        mbox_content = f.read()
+        # Injected headers should appear before the first Received: header
+        status_pos = mbox_content.index(b"Status:")
+        keywords_pos = mbox_content.index(b"X-Keywords:")
+        received_pos = mbox_content.index(b"Received:")
+        assert status_pos < received_pos, (
+            "Status header should appear before Received headers"
+        )
+        assert keywords_pos < received_pos, (
+            "X-Keywords header should appear before Received headers"
+        )
+
+
+@pytest.mark.django_db
 def test_export_includes_labels_as_x_keywords(
     mailbox_fixture, admin_user, cleanup_exports
 ):
