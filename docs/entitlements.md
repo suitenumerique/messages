@@ -32,12 +32,12 @@ The entitlements system provides a pluggable backend architecture for checking u
 - **Abstract base** (`core/entitlements/backends/base.py`): Defines the `EntitlementsBackend` interface.
 - **Dummy backend** (`core/entitlements/backends/dummy.py`): Always grants access, returns no storage info.
 - **DeployCenter backend** (`core/entitlements/backends/deploycenter.py`): Calls the DeployCenter API.
-- **Middleware** (`core/entitlements/middleware.py`): Enforces `can_access` on all API requests.
+- **OIDC access check** (`core/authentication/backends.py`): Enforces `can_access` at login time.
 - **API endpoint** (`core/api/viewsets/entitlements.py`): `GET /api/v1.0/entitlements/` for the frontend.
 
 ### Error Handling
 
-All backend methods raise `EntitlementsUnavailableError` on failure. The system is **fail-closed**: if the entitlements service is unavailable, users cannot access the API (503 response).
+All backend methods raise `EntitlementsUnavailableError` on failure. The access check at login is **fail-open**: if the entitlements service is unavailable during OIDC login, the user is allowed in. The entitlements API endpoint returns 503 if the service is unavailable.
 
 ## Configuration
 
@@ -100,7 +100,7 @@ GET {base_url}/api/v1.0/entitlements?service_id=X&account_type=X&account_id=X
 ```
 
 Headers:
-- `X-Service-Auth: ApiKey {api_key}`
+- `X-Service-Auth: Bearer {api_key}`
 - `Authorization: Bearer {access_token}` (if provided)
 
 ### User Entitlements Request
@@ -108,36 +108,14 @@ Headers:
 - `account_type=user`
 - `account_id=<user_email>`
 
-Response fields: `can_access`, `can_admin_maildomains`, `operator`
+Response: `{"operator": {...}, "entitlements": {"can_access": bool, "can_admin_maildomains": [str], ...}}`
 
 ### Mailbox Entitlements Request
 
 - `account_type=mailbox`
 - `account_id=<mailbox_email>`
 
-Response fields: `max_storage`, `storage_used`
-
-## Middleware
-
-`EntitlementsMiddleware` checks `can_access` for all authenticated API requests.
-
-### Excluded Paths
-
-The following paths are excluded from entitlements checks:
-- `/api/v1.0/config/`
-- `/api/v1.0/inbound/mta/`
-- `/api/v1.0/mta/`
-- `/api/v1.0/metrics/`
-- `/api/v1.0/entitlements/`
-- `/api/v1.0/prometheus/`
-
-### Behavior
-
-- **Unauthenticated requests**: Pass through (DRF handles 401)
-- **Superusers**: Pass through
-- **`can_access=True`**: Pass through
-- **`can_access=False`**: 403 Forbidden
-- **Service unavailable**: 503 Service Unavailable
+Response: `{"operator": {...}, "entitlements": {"max_storage": int, "storage_used": int, ...}}`
 
 ## OIDC Login Integration
 
@@ -148,6 +126,8 @@ During OIDC login (`post_get_or_create_user`), the system:
    - Creates missing admin accesses for entitled domains
    - Removes admin accesses for domains not in the entitled list
 3. If `can_admin_maildomains` is `None` (e.g. dummy backend), sync is skipped entirely
+4. Checks `can_access` and denies login if `False` (raises `SuspiciousOperation`)
+   - If the entitlements service is unavailable, login is allowed (fail-open)
 
 ### Deployment Consideration
 

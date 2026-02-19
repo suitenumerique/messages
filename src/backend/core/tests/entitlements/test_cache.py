@@ -4,7 +4,6 @@ from unittest import mock
 
 import pytest
 from django.core.cache import cache
-from django.test import override_settings
 
 from core.entitlements import (
     EntitlementsUnavailableError,

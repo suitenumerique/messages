@@ -484,7 +484,6 @@ class Base(Configuration):
         "django.middleware.common.CommonMiddleware",
         "django.middleware.csrf.CsrfViewMiddleware",
         "django.contrib.auth.middleware.AuthenticationMiddleware",
-        "core.entitlements.middleware.EntitlementsMiddleware",
         "django.contrib.messages.middleware.MessageMiddleware",
     ]
 

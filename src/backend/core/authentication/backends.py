@@ -90,6 +90,28 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
         if user:
             self.autojoin_mailbox(user)
             self._sync_entitlements(user)
+            self._check_can_access(user)
+
+    def _check_can_access(self, user):
+        """Check if the user has access to the app via entitlements.
+
+        Called after _sync_entitlements which populates the cache.
+        Raises SuspiciousOperation to deny login if can_access is False.
+        """
+        from core.entitlements import (
+            EntitlementsUnavailableError,
+            get_user_entitlements,
+        )
+
+        try:
+            entitlements = get_user_entitlements(user.sub, user.email)
+        except EntitlementsUnavailableError:
+            # Fail open at login: if entitlements service is down,
+            # allow login (sync already logged the error)
+            return
+
+        if not entitlements.get("can_access", False):
+            raise SuspiciousOperation(_("Access denied by entitlements policy"))
 
     def _sync_entitlements(self, user):
         """Fetch user entitlements and sync MailDomainAccess ADMIN records."""

@@ -32,7 +32,7 @@ class DeployCenterEntitlementsBackend(EntitlementsBackend):
             "account_id": account_id,
         }
         headers = {
-            "X-Service-Auth": f"ApiKey {self.api_key}",
+            "X-Service-Auth": f"Bearer {self.api_key}",
         }
         if access_token:
             headers["Authorization"] = f"Bearer {access_token}"
@@ -65,9 +65,10 @@ class DeployCenterEntitlementsBackend(EntitlementsBackend):
             raise EntitlementsUnavailableError(
                 "Failed to fetch user entitlements from DeployCenter"
             )
+        entitlements = data.get("entitlements", {})
         return {
-            "can_access": data.get("can_access", False),
-            "can_admin_maildomains": data.get("can_admin_maildomains", []),
+            "can_access": entitlements.get("can_access", False),
+            "can_admin_maildomains": entitlements.get("can_admin_maildomains", []),
             "operator": data.get("operator"),
         }
 
@@ -84,7 +85,8 @@ class DeployCenterEntitlementsBackend(EntitlementsBackend):
             raise EntitlementsUnavailableError(
                 "Failed to fetch mailbox entitlements from DeployCenter"
             )
+        entitlements = data.get("entitlements", {})
         return {
-            "max_storage": data.get("max_storage"),
-            "storage_used": data.get("storage_used"),
+            "max_storage": entitlements.get("max_storage"),
+            "storage_used": entitlements.get("storage_used"),
         }

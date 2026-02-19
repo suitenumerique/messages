@@ -1,6 +1,7 @@
 """Unit tests for entitlements backends."""
 
 import pytest
+import requests
 import responses
 
 from core.entitlements import EntitlementsUnavailableError
@@ -48,8 +49,10 @@ class TestDeployCenterBackend:
             responses.GET,
             "https://deploycenter.example.com/api/v1.0/entitlements",
             json={
-                "can_access": True,
-                "can_admin_maildomains": ["example.com", "test.org"],
+                "entitlements": {
+                    "can_access": True,
+                    "can_admin_maildomains": ["example.com", "test.org"],
+                },
                 "operator": {"name": "Test Operator"},
             },
             status=200,
@@ -71,7 +74,7 @@ class TestDeployCenterBackend:
         assert "service_id=test-service" in request.url
         assert "account_type=user" in request.url
         assert "account_id=user%40example.com" in request.url
-        assert request.headers["X-Service-Auth"] == "ApiKey test-api-key"
+        assert request.headers["X-Service-Auth"] == "Bearer test-api-key"
         assert request.headers["Authorization"] == "Bearer test-token"
 
     @responses.activate
@@ -79,7 +82,7 @@ class TestDeployCenterBackend:
         responses.add(
             responses.GET,
             "https://deploycenter.example.com/api/v1.0/entitlements",
-            json={"can_access": True, "can_admin_maildomains": []},
+            json={"entitlements": {"can_access": True, "can_admin_maildomains": []}},
             status=200,
         )
 
@@ -94,7 +97,7 @@ class TestDeployCenterBackend:
         responses.add(
             responses.GET,
             "https://deploycenter.example.com/api/v1.0/entitlements",
-            json={"can_access": False, "can_admin_maildomains": []},
+            json={"entitlements": {"can_access": False, "can_admin_maildomains": []}},
             status=200,
         )
 
@@ -119,7 +122,7 @@ class TestDeployCenterBackend:
         responses.add(
             responses.GET,
             "https://deploycenter.example.com/api/v1.0/entitlements",
-            body=ConnectionError("Connection timed out"),
+            body=requests.exceptions.ConnectionError("Connection timed out"),
         )
 
         backend = self._get_backend()
@@ -132,8 +135,10 @@ class TestDeployCenterBackend:
             responses.GET,
             "https://deploycenter.example.com/api/v1.0/entitlements",
             json={
-                "max_storage": 5368709120,
-                "storage_used": 1073741824,
+                "entitlements": {
+                    "max_storage": 5368709120,
+                    "storage_used": 1073741824,
+                },
             },
             status=200,
         )
@@ -165,6 +170,24 @@ class TestDeployCenterBackend:
     @responses.activate
     def test_get_user_entitlements_missing_fields_defaults(self):
         """Backend should provide sensible defaults for missing response fields."""
+        responses.add(
+            responses.GET,
+            "https://deploycenter.example.com/api/v1.0/entitlements",
+            json={"entitlements": {}},
+            status=200,
+        )
+
+        backend = self._get_backend()
+        result = backend.get_user_entitlements("user-sub", "user@example.com")
+        assert result == {
+            "can_access": False,
+            "can_admin_maildomains": [],
+            "operator": None,
+        }
+
+    @responses.activate
+    def test_get_user_entitlements_missing_entitlements_key(self):
+        """Backend should handle response with no entitlements key."""
         responses.add(
             responses.GET,
             "https://deploycenter.example.com/api/v1.0/entitlements",
