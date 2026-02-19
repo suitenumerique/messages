@@ -6103,6 +6103,11 @@
                         "type": "string",
                         "readOnly": true
                     },
+                    "identity_sync": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "description": "Sync mailboxes to an identity provider."
+                    },
                     "abilities": {
                         "type": "object",
                         "description": "Instance permissions and capabilities",
@@ -6153,6 +6158,7 @@
                     "created_at",
                     "expected_dns_records",
                     "id",
+                    "identity_sync",
                     "name",
                     "updated_at"
                 ]
