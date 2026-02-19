@@ -326,11 +326,14 @@ that the mail delivery pipeline is working correctly.</p>
         # to avoid race conditions on deleted objects.
         time.sleep(5)
 
-        if message:
-            _cleanup_test_data(message)
-        if received_message:
-            _cleanup_test_data(received_message)
-        logger.info("Cleanup completed")
+        try:
+            if message:
+                _cleanup_test_data(message)
+            if received_message:
+                _cleanup_test_data(received_message)
+            logger.info("Cleanup completed")
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.warning("Cleanup failed", exc_info=True)
 
     try:
         report_selfcheck(result)

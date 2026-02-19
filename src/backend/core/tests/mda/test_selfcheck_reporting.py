@@ -28,6 +28,7 @@ FAILURE_RESULT: SelfCheckResult = {
 class TestLogSelfcheckResult(TestCase):
     """Tests for structured log output."""
 
+    @override_settings(MESSAGES_SELFCHECK_WEBHOOK_URL=None)
     def test_success_log(self):
         """INFO log with timing data on success."""
         with self.assertLogs("core.mda.selfcheck_reporting", level="INFO") as cm:
@@ -39,6 +40,23 @@ class TestLogSelfcheckResult(TestCase):
             log_output,
         )
 
+    @override_settings(MESSAGES_SELFCHECK_WEBHOOK_URL=None)
+    def test_success_log_without_timing(self):
+        """INFO log without timing data when times are None."""
+        result: SelfCheckResult = {
+            "success": True,
+            "error": None,
+            "send_time": None,
+            "reception_time": None,
+        }
+        with self.assertLogs("core.mda.selfcheck_reporting", level="INFO") as cm:
+            report_selfcheck(result)
+
+        log_output = "\n".join(cm.output)
+        self.assertIn("selfcheck_completed success=true", log_output)
+        self.assertNotIn("send_time", log_output)
+
+    @override_settings(MESSAGES_SELFCHECK_WEBHOOK_URL=None)
     def test_failure_log(self):
         """ERROR log with error message on failure."""
         with self.assertLogs("core.mda.selfcheck_reporting", level="ERROR") as cm:
