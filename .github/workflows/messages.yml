@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Create env files
         run: make create-env-files
       - name: Run linting checks
@@ -30,7 +30,7 @@ jobs:
       DOCKER_USER: 1001
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Create env files
         run: make create-env-files
       - name: Setup data directories
@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Create env files
         run: make create-env-files
       - name: Install frontend dependencies
@@ -63,7 +63,7 @@ jobs:
       PW_TEST_HTML_REPORT_OPEN: 'never'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Create env files
         run: make create-env-files
       - name: Run E2E tests only for Chromium browser to speed up the tests
@@ -73,7 +73,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Create env files
         run: make create-env-files
       - name: Install frontend dependencies
@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Create env files
         run: make create-env-files
       - name: Install frontend dependencies
@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Create env files
         run: make create-env-files
       - name: Install frontend dependencies
