@@ -11,6 +11,7 @@ import base64
 import hashlib
 import logging
 import re
+import shlex
 from collections import defaultdict
 from datetime import datetime
 from datetime import timezone as dt_timezone
@@ -776,8 +777,8 @@ def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
             """Parse a labels header value, handling quoted strings."""
             result = []
             # Check if comma-separated (our format, OfflineIMAP) or space-separated (Dovecot)
-            # If there are commas, use comma parsing; otherwise use space parsing
-            if "," in labels_str or '"' in labels_str:
+            # Only use comma parsing when commas are actually present as delimiters
+            if "," in labels_str:
                 # Comma-separated format with optional quoted strings
                 # Use regex that handles optional whitespace around commas and quotes
                 # Pattern: match quoted string OR non-comma sequence, with optional whitespace
@@ -790,11 +791,12 @@ def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
                     if stripped_label:
                         result.append(stripped_label)
             else:
-                # Space-separated format (Dovecot)
-                for label in labels_str.split():
-                    stripped_label = label.strip()
-                    if stripped_label:
-                        result.append(stripped_label)
+                # Space-separated format (Dovecot), with shlex to handle quoted strings
+                try:
+                    result = [l.strip() for l in shlex.split(labels_str) if l.strip()]
+                except ValueError:
+                    # Fallback to simple split if shlex fails (e.g. unmatched quotes)
+                    result = [l.strip() for l in labels_str.split() if l.strip()]
             return result
 
         # Parse X-Gmail-Labels (Google Takeout format)

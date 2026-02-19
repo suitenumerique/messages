@@ -2,7 +2,6 @@
 
 import gzip
 import io
-import mailbox
 import re
 from datetime import datetime, timezone
 from email.message import EmailMessage
@@ -13,6 +12,7 @@ from django.core.files.storage import storages
 
 from celery.utils.log import get_task_logger
 
+from core.api.utils import generate_presigned_url
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322.parser import parse_email_message
 from core.models import Label, Mailbox, Message
@@ -198,37 +198,6 @@ class S3MultipartGzipUploader:
         return False
 
 
-def _format_mbox_message(raw_content: bytes) -> bytes:
-    """
-    Format a raw email message in MBOX format.
-
-    MBOX format requires:
-    1. A "From " line at the start (envelope sender and date)
-    2. "From " at the start of body lines must be escaped with ">"
-    3. Messages end with a blank line
-    """
-    # Use mailbox.mboxMessage to handle proper formatting
-    try:
-        mbox_msg = mailbox.mboxMessage(raw_content)
-    except Exception:  # pylint: disable=broad-exception-caught
-        # If parsing fails, wrap the raw content
-        mbox_msg = mailbox.mboxMessage()
-        mbox_msg.set_payload(raw_content)
-
-    # Get the formatted message as bytes
-    # mboxMessage.as_bytes() includes the "From " line and proper escaping
-    formatted = mbox_msg.as_bytes(unixfrom=True)
-
-    # Ensure the message ends with a blank line (MBOX separator)
-    if not formatted.endswith(b"\n\n"):
-        if formatted.endswith(b"\n"):
-            formatted += b"\n"
-        else:
-            formatted += b"\n\n"
-
-    return formatted
-
-
 # Pattern to match "From " at the start of a line (needs escaping in MBOX)
 FROM_LINE_PATTERN = re.compile(rb"^From ", re.MULTILINE)
 
@@ -338,13 +307,18 @@ def _inject_headers(raw_content: bytes, extra_headers: bytes) -> bytes:
     # Find the end of headers (first blank line)
     match = HEADER_END_PATTERN.search(raw_content)
     if match:
-        # Insert headers before the blank line
-        header_end = match.start()
+        # Detect original line ending style (CRLF or LF) and preserve it
         separator = match.group()
+        line_end = b"\r\n" if b"\r\n" in separator else b"\n"
+        header_end = match.start()
+        # Normalize extra_headers line endings to match the original message
+        normalized_headers = extra_headers.rstrip(b"\r\n").replace(b"\r\n", b"\n")
+        if line_end == b"\r\n":
+            normalized_headers = normalized_headers.replace(b"\n", b"\r\n")
         return (
             raw_content[:header_end]
-            + b"\n"
-            + extra_headers.rstrip(b"\n")
+            + line_end
+            + normalized_headers
             + separator
             + raw_content[match.end() :]
         )
@@ -550,8 +524,10 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]:
                     skipped_count += 1
 
         # Generate presigned URL (7 days)
-        presigned_url = s3_client.generate_presigned_url(
-            "get_object",
+        # Use the project helper that respects AWS_S3_DOMAIN_REPLACE
+        presigned_url = generate_presigned_url(
+            storage,
+            ClientMethod="get_object",
             Params={"Bucket": storage.bucket_name, "Key": s3_key},
             ExpiresIn=PRESIGNED_URL_EXPIRATION,
         )

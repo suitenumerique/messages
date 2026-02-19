@@ -13,7 +13,7 @@ import pytest
 from core import factories
 from core.models import Blob, Label, Mailbox, MailDomain, Message, Thread, ThreadAccess
 from core.services.exporter.tasks import export_mailbox_task
-from core.services.importer.tasks import process_mbox_file_task
+from core.services.importer.mbox_tasks import process_mbox_file_task
 
 
 @pytest.fixture

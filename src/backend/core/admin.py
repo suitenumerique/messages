@@ -312,8 +312,14 @@ class MailboxAdmin(admin.ModelAdmin):
             return redirect("..")
 
         # Start the export task
-        task = export_mailbox_task.delay(str(mailbox_obj.id), str(request.user.id))
-        register_task_owner(task.id, request.user.id)
+        try:
+            task = export_mailbox_task.delay(str(mailbox_obj.id), str(request.user.id))
+            register_task_owner(task.id, request.user.id)
+        except Exception:  # pylint: disable=broad-exception-caught
+            messages.error(
+                request, _("Failed to queue export task. Please try again later.")
+            )
+            return redirect("..")
 
         messages.success(
             request,

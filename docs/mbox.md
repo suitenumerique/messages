@@ -30,7 +30,7 @@ Message flags are exported using the standard mbox `Status` and `X-Status` heade
 | `X-Status: T` | T | Draft |
 
 **Examples:**
-```
+```text
 Status: RO          # Read message
 Status: O           # Unread message
 X-Status: F         # Starred message
@@ -44,7 +44,7 @@ Labels are exported using the `X-Keywords` header, which is recognized by Doveco
 
 **Format:** Comma-separated list with quoted strings for labels containing spaces or commas.
 
-```
+```text
 X-Keywords: work, important, "project alpha"
 ```
 
@@ -52,7 +52,7 @@ X-Keywords: work, important, "project alpha"
 
 A read, starred message with labels would have these headers injected:
 
-```
+```text
 Status: RO
 X-Status: F
 X-Keywords: work, important
@@ -137,8 +137,8 @@ Apple Mail's export format (`.mbox` packages) can be imported. However, Apple Ma
 ### MBOX Variant
 
 We use the mboxrd format where:
-- Messages are separated by `From ` lines at the start of a line
-- `From ` at the beginning of body lines is escaped as `>From `
+- Messages are separated by "From " lines at the start of a line
+- "From " at the beginning of body lines is escaped as ">From "
 - Each message ends with a blank line
 
 ### Header Injection
