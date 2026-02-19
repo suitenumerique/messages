@@ -27,11 +27,13 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
         const threadViewContext = useThreadViewContext();
         const { selectedMailbox, selectedThread, queryStates, invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
         const config = useConfig();
+        const shouldSkipDelivery = !message.is_sender || message.is_draft || message.is_trashed;
+
         // Refresh dateNow periodically to keep canRetry accurate over time
         // Only active when the message has a problematic delivery status
         const [dateNow, setDateNow] = useState(Date.now);
         const hasDeliveryIssue = useMemo(() => {
-            if (!message.is_sender) return false;
+            if (shouldSkipDelivery) return false;
             const allRecipients = [...message.to, ...message.cc, ...message.bcc];
             return allRecipients.some(r =>
                 r.delivery_status === MessageDeliveryStatusChoices.failed ||
@@ -51,14 +53,14 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
 
         // Compute if manual retry is allowed based on message age
         const canRetry = useMemo(() => {
-            if (!message.is_sender || !message.sent_at) return false;
+            if (shouldSkipDelivery || !message.sent_at) return false;
             const maxAgeMs = config.MESSAGES_MANUAL_RETRY_MAX_AGE * 1000;
             const messageAgeMs = dateNow - new Date(message.sent_at).getTime();
             return messageAgeMs <= maxAgeMs;
         }, [message.is_sender, message.sent_at, config.MESSAGES_MANUAL_RETRY_MAX_AGE, dateNow]);
 
         const deliveryStatus = useMemo(() => {
-            if (!message.is_sender) return null;
+            if (shouldSkipDelivery) return null;
             const allRecipients = [...message.to, ...message.cc, ...message.bcc];
             const hasFailed = allRecipients.some(r => r.delivery_status === MessageDeliveryStatusChoices.failed);
             const hasRetry = allRecipients.some(r => r.delivery_status === MessageDeliveryStatusChoices.retry || r.delivery_status === null);
