@@ -1,4 +1,5 @@
 """Admin classes and registrations for core app."""
+# pylint: disable=too-many-lines
 
 import logging
 

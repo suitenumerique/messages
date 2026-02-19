@@ -7,7 +7,7 @@ cache counters with fixed time windows.
 import logging
 import math
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any
 
 from django.conf import settings
 from django.core.cache import cache
