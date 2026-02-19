@@ -50,10 +50,17 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
   const router = useRouter();
   const domainId = router.query.maildomainId as string;
   const [error, setError] = useState<string | null>(null);
+  const { selectedMailDomain } = useAdminMailDomain();
+  const isIdentitySyncDisabled = !(selectedMailDomain?.identity_sync ?? true);
+
   const [activeTab, setActiveTab] = useState<MailboxType>(() => {
-    if (!mailbox || mailbox.is_identity) return "personal";
-    if (mailbox.alias_of) return "redirect";
-    return "shared";
+    if (mailbox) {
+      if (mailbox.is_identity) return "personal";
+      if (mailbox.alias_of) return "redirect";
+      return "shared";
+    }
+    if (isIdentitySyncDisabled) return "shared";
+    return "personal";
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [prefixManuallyChanged, setPrefixManuallyChanged] = useState(false);
@@ -64,7 +71,6 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
   // Get existing mailboxes and domain info
   const { data: mailboxesData } = useMaildomainsMailboxesList(domainId);
   const mailboxes = mailboxesData?.data.results || [];
-  const { selectedMailDomain } = useAdminMailDomain();
   const domainName = selectedMailDomain?.name || "";
   const { mutateAsync: createMailbox } = useMaildomainsMailboxesCreate();
   const { mutateAsync: updateMailbox } = useMaildomainsMailboxesPartialUpdate();
@@ -243,7 +249,9 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
       setCreatedMailbox(response.data);
       onSuccess?.();
     } catch (error: unknown) {
-      if (error instanceof APIError && error.data?.local_part_denied) {
+      if (error instanceof APIError && error.data?.identity_sync) {
+        setError(t('Personal mailboxes cannot be created when identity synchronization is disabled.'));
+      } else if (error instanceof APIError && error.data?.local_part_denied) {
         setError(t('This email prefix is not allowed for personal mailboxes. Please choose a different prefix.'));
       } else if (error instanceof APIError && error.data?.local_part) {
         setError(t('An address with this prefix already exists in this domain.'));
@@ -301,8 +309,9 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
   };
 
   const handleClose = () => {
-    setActiveTab("personal");
-    reset(getDefaultValues("personal"));
+    const defaultTab = isIdentitySyncDisabled ? "shared" : "personal";
+    setActiveTab(defaultTab);
+    reset(getDefaultValues(defaultTab));
     setError(null);
     setCreatedMailbox(null);
     onClose();
@@ -337,7 +346,8 @@ export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess
               type="button"
               className={clsx('modal-tab', { 'modal-tab--active': activeTab === "personal" })}
               onClick={() => handleTabChange("personal")}
-              disabled={isUpdating}
+              disabled={isUpdating || isIdentitySyncDisabled}
+              title={isIdentitySyncDisabled ? t('Personal mailboxes cannot be created when identity synchronization is disabled.') : undefined}
             >
               {isUpdating ? t('Personal mailbox') : t('Create a new personal mailbox')}
             </button>

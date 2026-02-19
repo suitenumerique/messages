@@ -31,7 +31,7 @@ def fixture_other_user():
 @pytest.fixture(name="mail_domain1")
 def fixture_mail_domain1():
     """Create the first mail domain for testing."""
-    return factories.MailDomainFactory(name="admin-domain1.com")
+    return factories.MailDomainFactory(name="admin-domain1.com", identity_sync=True)
 
 
 @pytest.fixture(name="mail_domain2")
@@ -541,15 +541,42 @@ class TestAdminMailDomainMailboxViewSet:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "local_part" in response.data
 
-    @override_settings(MESSAGES_MAILBOX_PREFIX_DENYLIST_PERSONAL=["admin", "postmaster"])
-    def test_admin_maildomains_mailbox_create_personal_denied_prefix(
+    @override_settings(
+        MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL=["admin", "postmaster"]
+    )
+    def test_admin_maildomains_mailbox_create_personal_denied_localpart(
         self,
         api_client,
         domain_admin_user,
         domain_admin_access1,
         mail_domain1,
     ):
-        """Test that creating a personal mailbox with a denied prefix fails."""
+        """Test that creating a personal mailbox with a denied local_part fails."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+        data = {
+            "local_part": "admin",
+            "metadata": {
+                "type": "personal",
+                "first_name": "Admin",
+                "last_name": "Test",
+            },
+        }
+        response = api_client.post(url, data=data, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "local_part_denied" in response.data
+
+    @override_settings(
+        MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL=["admin", "postmaster"]
+    )
+    def test_admin_maildomains_mailbox_create_personal_denied_localpart_not_prefix(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Test that the denylist matches exact local_parts, not prefixes."""
         api_client.force_authenticate(user=domain_admin_user)
         url = self.mailboxes_url(mail_domain1.pk)
         data = {
@@ -561,10 +588,11 @@ class TestAdminMailDomainMailboxViewSet:
             },
         }
         response = api_client.post(url, data=data, format="json")
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "local_part_denied" in response.data
+        assert response.status_code == status.HTTP_201_CREATED
 
-    @override_settings(MESSAGES_MAILBOX_PREFIX_DENYLIST_PERSONAL=["admin", "postmaster"])
+    @override_settings(
+        MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL=["admin", "postmaster"]
+    )
     def test_admin_maildomains_mailbox_create_personal_denied_prefix_case_insensitive(
         self,
         api_client,
@@ -587,7 +615,9 @@ class TestAdminMailDomainMailboxViewSet:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "local_part_denied" in response.data
 
-    @override_settings(MESSAGES_MAILBOX_PREFIX_DENYLIST_PERSONAL=["admin", "postmaster"])
+    @override_settings(
+        MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL=["admin", "postmaster"]
+    )
     def test_admin_maildomains_mailbox_create_shared_denied_prefix_allowed(
         self,
         api_client,
@@ -608,7 +638,9 @@ class TestAdminMailDomainMailboxViewSet:
         response = api_client.post(url, data=data, format="json")
         assert response.status_code == status.HTTP_201_CREATED
 
-    @override_settings(MESSAGES_MAILBOX_PREFIX_DENYLIST_PERSONAL=["admin", "postmaster"])
+    @override_settings(
+        MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL=["admin", "postmaster"]
+    )
     def test_admin_maildomains_mailbox_create_personal_allowed_prefix(
         self,
         api_client,
@@ -624,6 +656,78 @@ class TestAdminMailDomainMailboxViewSet:
             "metadata": {
                 "type": "personal",
                 "first_name": "John",
+                "last_name": "Doe",
+            },
+        }
+        response = api_client.post(url, data=data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_admin_maildomains_mailbox_create_personal_blocked_when_no_identity_sync(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Creating a personal mailbox should fail when identity_sync is disabled."""
+        mail_domain1.identity_sync = False
+        mail_domain1.save()
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+        data = {
+            "local_part": "john.doe",
+            "metadata": {
+                "type": "personal",
+                "first_name": "John",
+                "last_name": "Doe",
+            },
+        }
+        response = api_client.post(url, data=data, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "identity_sync" in response.data
+
+    def test_admin_maildomains_mailbox_create_shared_allowed_when_no_identity_sync(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Creating a shared mailbox should succeed even when identity_sync is disabled."""
+        mail_domain1.identity_sync = False
+        mail_domain1.save()
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+        data = {
+            "local_part": "shared-box",
+            "metadata": {
+                "type": "shared",
+                "name": "Shared Box",
+            },
+        }
+        response = api_client.post(url, data=data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_admin_maildomains_mailbox_create_personal_allowed_when_identity_sync(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Creating a personal mailbox should succeed when identity_sync is enabled."""
+        mail_domain1.identity_sync = True
+        mail_domain1.save()
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+        data = {
+            "local_part": "jane.doe",
+            "metadata": {
+                "type": "personal",
+                "first_name": "Jane",
                 "last_name": "Doe",
             },
         }
@@ -651,17 +755,15 @@ class TestAdminMailDomainMailboxViewSet:
         response = api_client.post(url, data=data, format="json")
         assert response.status_code == status.HTTP_201_CREATED
 
-    @patch("core.services.identity.keycloak.reset_keycloak_user_password")
     @override_settings(IDENTITY_PROVIDER="keycloak")
     def test_admin_maildomains_mailbox_create_personal_without_maildomain_identity_sync(
         self,
-        mock_reset_password,
         api_client,
         domain_admin_user,
         domain_admin_access1,
         mail_domain1,
     ):
-        """Test that personal mailbox creation doesn't trigger password reset when maildomain identity_sync is False."""
+        """Test that personal mailbox creation is blocked when maildomain identity_sync is False."""
         api_client.force_authenticate(user=domain_admin_user)
         url = self.mailboxes_url(mail_domain1.pk)
 
@@ -675,12 +777,8 @@ class TestAdminMailDomainMailboxViewSet:
 
         response = api_client.post(url, data, format="json")
 
-        assert response.status_code == status.HTTP_201_CREATED
-        assert response.data["local_part"] == "testuser"
-        assert "one_time_password" not in response.data
-
-        # Verify Keycloak password reset was not called
-        mock_reset_password.assert_not_called()
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "identity_sync" in response.data
 
     @patch("core.services.identity.keycloak.reset_keycloak_user_password")
     @override_settings(IDENTITY_PROVIDER="other_provider")

@@ -177,11 +177,13 @@ class Base(Configuration):
         {}, environ_name="SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN", environ_prefix=None
     )
 
-    # Denylist of prefixes for personal mailboxes.
-    # Any personal mailbox whose local_part starts with one of these prefixes
+    # Denylist of local parts for personal mailboxes.
+    # Any personal mailbox whose local_part exactly matches one of these values
     # (case-insensitive) will be rejected.
-    MESSAGES_MAILBOX_PREFIX_DENYLIST_PERSONAL = values.ListValue(
-        [], environ_name="MESSAGES_MAILBOX_PREFIX_DENYLIST_PERSONAL", environ_prefix=None
+    MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL = values.ListValue(
+        [],
+        environ_name="MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL",
+        environ_prefix=None,
     )
 
     DATA_DIR = values.Value(

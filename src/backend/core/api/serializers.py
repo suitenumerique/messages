@@ -914,7 +914,14 @@ class MailDomainAdminSerializer(AbilitiesModelSerializer):
 
     class Meta:
         model = models.MailDomain
-        fields = ["id", "name", "created_at", "updated_at", "expected_dns_records"]
+        fields = [
+            "id",
+            "name",
+            "created_at",
+            "updated_at",
+            "expected_dns_records",
+            "identity_sync",
+        ]
         read_only_fields = fields
 
     @extend_schema_field(
@@ -1069,16 +1076,25 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
                 "Domain is required in serializer context."
             )
 
+        domain = self.context.get("domain")
         metadata = self.context.get("metadata", {})
+        if metadata.get("type") == "personal" and not domain.identity_sync:
+            raise serializers.ValidationError(
+                {
+                    "identity_sync": _(
+                        "Personal mailboxes cannot be created when "
+                        "identity synchronization is disabled."
+                    )
+                }
+            )
+
         if metadata.get("type") == "personal":
             local_part = attrs.get("local_part", "")
             denylist = getattr(
-                settings, "MESSAGES_MAILBOX_PREFIX_DENYLIST_PERSONAL", []
+                settings, "MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL", []
             )
             lower_value = local_part.lower()
-            if any(
-                lower_value.startswith(prefix.lower()) for prefix in denylist
-            ):
+            if any(lower_value == prefix.lower() for prefix in denylist):
                 raise serializers.ValidationError(
                     {
                         "local_part_denied": _(
