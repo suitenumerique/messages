@@ -1,10 +1,12 @@
 """Celery tasks for exporting mailbox messages."""
 
 import gzip
+import html
 import io
 import re
 from datetime import datetime, timezone
 from email.message import EmailMessage
+from email.utils import format_datetime
 from typing import Any, Dict
 
 from django.conf import settings
@@ -93,12 +95,9 @@ class S3MultipartGzipUploader:
         # This creates a complete gzip stream that can be concatenated with others.
         self._gzip.close()
 
-        # Get buffer contents
+        # Get buffer contents (always non-empty: gzip close writes header + footer)
         self._buffer.seek(0)
         chunk_data = self._buffer.read()
-
-        if len(chunk_data) == 0:
-            return
 
         # Upload part
         response = self.s3_client.upload_part(
@@ -126,8 +125,6 @@ class S3MultipartGzipUploader:
         if self._closed:
             return
 
-        self._closed = True
-
         # Close gzip to flush final data
         self._gzip.close()
 
@@ -151,32 +148,43 @@ class S3MultipartGzipUploader:
                 }
             )
 
-        # Complete multipart upload
-        if self.parts:
-            self.s3_client.complete_multipart_upload(
-                Bucket=self.bucket,
-                Key=self.key,
-                UploadId=self.upload_id,
-                MultipartUpload={"Parts": self.parts},
-            )
-        else:
-            # No data was written, abort the upload and create empty file
+        # Complete or abort the multipart upload
+        try:
+            if self.parts:
+                self.s3_client.complete_multipart_upload(
+                    Bucket=self.bucket,
+                    Key=self.key,
+                    UploadId=self.upload_id,
+                    MultipartUpload={"Parts": self.parts},
+                )
+            else:
+                # No data was written, abort the upload and create empty file
+                self.s3_client.abort_multipart_upload(
+                    Bucket=self.bucket,
+                    Key=self.key,
+                    UploadId=self.upload_id,
+                )
+                # Upload empty gzip file
+                empty_gzip = io.BytesIO()
+                with gzip.GzipFile(fileobj=empty_gzip, mode="wb"):
+                    pass
+                empty_gzip.seek(0)
+                self.s3_client.put_object(
+                    Bucket=self.bucket,
+                    Key=self.key,
+                    Body=empty_gzip.read(),
+                    ContentType="application/gzip",
+                )
+        except Exception:
+            # Abort the multipart upload to avoid leaked parts on S3
             self.s3_client.abort_multipart_upload(
                 Bucket=self.bucket,
                 Key=self.key,
                 UploadId=self.upload_id,
             )
-            # Upload empty gzip file
-            empty_gzip = io.BytesIO()
-            with gzip.GzipFile(fileobj=empty_gzip, mode="wb"):
-                pass
-            empty_gzip.seek(0)
-            self.s3_client.put_object(
-                Bucket=self.bucket,
-                Key=self.key,
-                Body=empty_gzip.read(),
-                ContentType="application/gzip",
-            )
+            raise
+        finally:
+            self._closed = True
 
     def abort(self):
         """Abort the multipart upload in case of error."""
@@ -366,7 +374,27 @@ def _create_mbox_entry(
 
     # Format timestamp for MBOX "From " line (traditional Unix mbox format)
     # Format: "From sender@example.com Fri Dec 20 12:00:00 2024"
-    from_date = timestamp.strftime("%a %b %d %H:%M:%S %Y")
+    # Use English day/month names regardless of server locale
+    _days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    _months = [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+    ]
+    from_date = (
+        f"{_days[timestamp.weekday()]} {_months[timestamp.month - 1]} "
+        f"{timestamp.day:2d} {timestamp.hour:02d}:{timestamp.minute:02d}"
+        f":{timestamp.second:02d} {timestamp.year}"
+    )
 
     # Escape any "From " lines in the content
     escaped_content = _escape_from_lines(content_with_headers)
@@ -629,7 +657,7 @@ def _create_notification_message(
     msg["From"] = f"noreply@{settings.MESSAGES_TECHNICAL_DOMAIN}"
     msg["To"] = mailbox_email
     msg["Subject"] = "Your mailbox export is ready"
-    msg["Date"] = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
+    msg["Date"] = format_datetime(datetime.now(timezone.utc))
 
     # Create message body
     body_text = f"""Your mailbox export is ready for download.
@@ -645,6 +673,7 @@ Download your export here (link valid for 7 days):
 This file is in MBOX format and can be imported into most email clients.
 """
 
+    escaped_url = html.escape(presigned_url)
     body_html = f"""<html>
 <body>
 <h2>Your mailbox export is ready for download</h2>
@@ -656,7 +685,7 @@ This file is in MBOX format and can be imported into most email clients.
 <li>Messages skipped: {skipped_count}</li>
 </ul>
 
-<p><strong><a href="{presigned_url}">Download your export</a></strong> (link valid for 7 days)</p>
+<p><strong><a href="{escaped_url}">Download your export</a></strong> (link valid for 7 days)</p>
 
 <p><em>This file is in MBOX format and can be imported into most email clients.</em></p>
 </body>

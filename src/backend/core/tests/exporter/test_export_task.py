@@ -399,12 +399,14 @@ def test_export_reimport_roundtrip(domain, cleanup_exports):
         )
 
     # 7. Verify label roundtrip — the "roundtrip-test" label should be on a thread in mailbox B
-    labeled_thread = (
-        imported_messages.filter(subject="First message").first().thread
-    )
+    first_msg = imported_messages.filter(subject="First message").first()
+    assert first_msg is not None, "Imported 'First message' not found in mailbox B"
+    labeled_thread = first_msg.thread
     mailbox_b_labels = Label.objects.filter(mailbox=mailbox_b)
     imported_label = mailbox_b_labels.filter(name="roundtrip-test").first()
-    assert imported_label is not None, "Label 'roundtrip-test' was not created in target mailbox"
+    assert imported_label is not None, (
+        "Label 'roundtrip-test' was not created in target mailbox"
+    )
     assert labeled_thread.labels.filter(id=imported_label.id).exists(), (
         "Label 'roundtrip-test' not attached to the imported thread"
     )

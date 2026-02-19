@@ -149,4 +149,4 @@ When exporting, metadata headers (`Status`, `X-Status`, `X-Keywords`) are inject
 
 - Labels are UTF-8 encoded
 - Labels containing commas, spaces, or quotes are enclosed in double quotes
-- Quotes within labels are escaped with backslash: `"label with \"quotes\""`
+- Labels containing double-quote characters are not currently supported for round-trip import

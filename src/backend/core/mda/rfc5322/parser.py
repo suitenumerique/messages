@@ -714,7 +714,9 @@ def _parse_labels_header(labels_str: str) -> list:
     else:
         # Space-separated format (Dovecot), with shlex to handle quoted strings
         try:
-            result = [token.strip() for token in shlex.split(labels_str) if token.strip()]
+            result = [
+                token.strip() for token in shlex.split(labels_str) if token.strip()
+            ]
         except ValueError:
             # Fallback to simple split if shlex fails (e.g. unmatched quotes)
             result = [token.strip() for token in labels_str.split() if token.strip()]

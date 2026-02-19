@@ -1,5 +1,7 @@
 """Admin classes and registrations for core app."""
 
+import logging
+
 from django.contrib import admin, messages
 from django.contrib.auth import admin as auth_admin
 from django.core.files.storage import storages
@@ -11,6 +13,8 @@ from django.urls import path
 from django.utils.html import escape, format_html
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
+
+from sentry_sdk import capture_exception
 
 from core.api.utils import get_file_key
 from core.api.viewsets.task import register_task_owner
@@ -316,6 +320,10 @@ class MailboxAdmin(admin.ModelAdmin):
             task = export_mailbox_task.delay(str(mailbox_obj.id), str(request.user.id))
             register_task_owner(task.id, request.user.id)
         except Exception:  # pylint: disable=broad-exception-caught
+            logging.exception(
+                "Failed to queue export task for mailbox %s", mailbox_obj.id
+            )
+            capture_exception()
             messages.error(
                 request, _("Failed to queue export task. Please try again later.")
             )

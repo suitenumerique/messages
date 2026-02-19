@@ -2055,6 +2055,21 @@ This is a test email.
         assert "gmail-label" in parsed["gmail_labels"]
         assert "keyword-label" in parsed["gmail_labels"]
 
+    def test_x_keywords_combined_deduplication(self):
+        """Test that duplicate labels across X-Gmail-Labels and X-Keywords are deduplicated."""
+        email_content = """From: test@example.com
+To: recipient@example.com
+Subject: Test Email
+X-Gmail-Labels: shared-label, gmail-only
+X-Keywords: shared-label, keywords-only
+
+This is a test email.
+"""
+        parsed = parse_email_message(email_content.encode("utf-8"))
+        assert parsed["gmail_labels"].count("shared-label") == 1
+        assert "gmail-only" in parsed["gmail_labels"]
+        assert "keywords-only" in parsed["gmail_labels"]
+
     def test_x_keywords_empty(self):
         """Test parsing empty X-Keywords header."""
         email_content = """From: test@example.com
