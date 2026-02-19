@@ -1,22 +1,23 @@
 """Tests for selfcheck reporting (webhook + structured logging)."""
 
-import logging
+import json
 
-import responses
 from django.test import TestCase, override_settings
 
-from core.mda.selfcheck_reporting import report_selfcheck
+import responses
+
+from core.mda.selfcheck_reporting import SelfCheckResult, report_selfcheck
 
 WEBHOOK_URL = "https://example.com/api/checks/xxxx/webhook"
 
-SUCCESS_RESULT = {
+SUCCESS_RESULT: SelfCheckResult = {
     "success": True,
     "error": None,
     "send_time": 0.150,
     "reception_time": 2.340,
 }
 
-FAILURE_RESULT = {
+FAILURE_RESULT: SelfCheckResult = {
     "success": False,
     "error": "Message not received within 60 seconds",
     "send_time": None,
@@ -28,25 +29,26 @@ class TestLogSelfcheckResult(TestCase):
     """Tests for structured log output."""
 
     def test_success_log(self):
+        """INFO log with timing data on success."""
         with self.assertLogs("core.mda.selfcheck_reporting", level="INFO") as cm:
             report_selfcheck(SUCCESS_RESULT)
 
-        self.assertEqual(len(cm.output), 1)
-        log_line = cm.output[0]
-        self.assertIn("selfcheck_completed", log_line)
-        self.assertIn("success=true", log_line)
-        self.assertIn("send_time=0.150", log_line)
-        self.assertIn("reception_time=2.340", log_line)
+        log_output = "\n".join(cm.output)
+        self.assertIn(
+            "selfcheck_completed success=true send_time=0.150 reception_time=2.340",
+            log_output,
+        )
 
     def test_failure_log(self):
+        """ERROR log with error message on failure."""
         with self.assertLogs("core.mda.selfcheck_reporting", level="ERROR") as cm:
             report_selfcheck(FAILURE_RESULT)
 
-        self.assertEqual(len(cm.output), 1)
-        log_line = cm.output[0]
-        self.assertIn("selfcheck_completed", log_line)
-        self.assertIn("success=false", log_line)
-        self.assertIn("Message not received within 60 seconds", log_line)
+        log_output = "\n".join(cm.output)
+        self.assertIn(
+            'selfcheck_completed success=false error="Message not received within 60 seconds"',
+            log_output,
+        )
 
 
 class TestSendSelfcheckWebhook(TestCase):
@@ -76,9 +78,8 @@ class TestSendSelfcheckWebhook(TestCase):
         self.assertEqual(len(responses.calls), 1)
         call = responses.calls[0]
         self.assertEqual(call.request.url, WEBHOOK_URL)
-        body = call.request.body
-        self.assertIn(b"send_time", body)
-        self.assertIn(b"reception_time", body)
+        payload = json.loads(call.request.body)
+        self.assertEqual(payload, {"send_time": 0.15, "reception_time": 2.34})
 
     @responses.activate
     @override_settings(MESSAGES_SELFCHECK_WEBHOOK_URL=WEBHOOK_URL)

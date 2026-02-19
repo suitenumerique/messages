@@ -1,13 +1,22 @@
 """Selfcheck reporting: webhook and structured logging."""
 
 import logging
+from typing import Optional, TypedDict
 
-import requests
 from django.conf import settings
 
-from core.mda.selfcheck import SelfCheckResult
+import requests
 
 logger = logging.getLogger(__name__)
+
+
+class SelfCheckResult(TypedDict):
+    """Result of a selfcheck run."""
+
+    success: bool
+    error: Optional[str]
+    send_time: Optional[float]
+    reception_time: Optional[float]
 
 
 def report_selfcheck(result: SelfCheckResult):
@@ -19,11 +28,16 @@ def report_selfcheck(result: SelfCheckResult):
 def log_selfcheck_result(result: SelfCheckResult):
     """Emit a structured log line."""
     if result["success"]:
-        logger.info(
-            "selfcheck_completed success=true send_time=%.3f reception_time=%.3f",
-            result["send_time"],
-            result["reception_time"],
-        )
+        send_time = result["send_time"]
+        reception_time = result["reception_time"]
+        if send_time is not None and reception_time is not None:
+            logger.info(
+                "selfcheck_completed success=true send_time=%.3f reception_time=%.3f",
+                send_time,
+                reception_time,
+            )
+        else:
+            logger.info("selfcheck_completed success=true")
     else:
         logger.error(
             'selfcheck_completed success=false error="%s"',

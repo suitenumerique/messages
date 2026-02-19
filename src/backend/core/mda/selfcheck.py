@@ -5,7 +5,7 @@ import logging
 import secrets
 import time
 from datetime import timedelta
-from typing import Optional, Tuple, TypedDict
+from typing import Optional, Tuple
 
 from django.conf import settings
 from django.utils import timezone
@@ -13,17 +13,9 @@ from django.utils import timezone
 from core import models
 from core.mda.draft import create_draft
 from core.mda.outbound import prepare_outbound_message, send_message
+from core.mda.selfcheck_reporting import SelfCheckResult, report_selfcheck
 
 logger = logging.getLogger(__name__)
-
-
-class SelfCheckResult(TypedDict):
-    """Result of a selfcheck run."""
-
-    success: bool
-    error: Optional[str]
-    send_time: Optional[float]
-    reception_time: Optional[float]
 
 
 class SelfCheckError(Exception):
@@ -228,7 +220,7 @@ def run_selfcheck() -> SelfCheckResult:
     7. Times all operations and returns metrics
 
     Returns:
-        dict: Dictionary containing success status and timing metrics
+        SelfCheckResult: success, error, send_time and reception_time
     """
 
     result = {
@@ -340,8 +332,9 @@ that the mail delivery pipeline is working correctly.</p>
             _cleanup_test_data(received_message)
         logger.info("Cleanup completed")
 
-    from core.mda.selfcheck_reporting import report_selfcheck
-
-    report_selfcheck(result)
+    try:
+        report_selfcheck(result)
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.warning("Failed to report selfcheck result", exc_info=True)
 
     return result
