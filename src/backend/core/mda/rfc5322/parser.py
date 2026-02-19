@@ -693,6 +693,34 @@ def parse_message_content(message) -> Dict[str, Any]:
     return result
 
 
+def _parse_labels_header(labels_str: str) -> list:
+    """Parse a labels header value, handling quoted strings.
+
+    Supports two formats:
+    - Comma-separated (our format, OfflineIMAP): ``label1, label2, "label three"``
+    - Space-separated (Dovecot): ``label1 label2 "label three"``
+    """
+    result = []
+    # Only use comma parsing when commas are actually present as delimiters
+    if "," in labels_str:
+        # Comma-separated format with optional quoted strings
+        pattern = r'\s*"([^"]*)"\s*|\s*([^,]+)'
+        matches = re.findall(pattern, labels_str)
+        for match in matches:
+            # match[0] is the quoted content (without quotes), match[1] is unquoted
+            label = (match[0] if match[0] else match[1]).strip()
+            if label:
+                result.append(label)
+    else:
+        # Space-separated format (Dovecot), with shlex to handle quoted strings
+        try:
+            result = [token.strip() for token in shlex.split(labels_str) if token.strip()]
+        except ValueError:
+            # Fallback to simple split if shlex fails (e.g. unmatched quotes)
+            result = [token.strip() for token in labels_str.split() if token.strip()]
+    return result
+
+
 def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
     """
     Parse a raw email message (bytes) into a structured dictionary following JMAP format.
@@ -772,46 +800,27 @@ def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
         # Extract labels from X-Gmail-Labels and X-Keywords headers
         # Both are combined into gmail_labels for backward compatibility
         gmail_labels = []
-
-        def parse_labels_header(labels_str: str) -> list:
-            """Parse a labels header value, handling quoted strings."""
-            result = []
-            # Check if comma-separated (our format, OfflineIMAP) or space-separated (Dovecot)
-            # Only use comma parsing when commas are actually present as delimiters
-            if "," in labels_str:
-                # Comma-separated format with optional quoted strings
-                # Use regex that handles optional whitespace around commas and quotes
-                # Pattern: match quoted string OR non-comma sequence, with optional whitespace
-                pattern = r'\s*"([^"]*)"\s*|\s*([^,]+)'
-                matches = re.findall(pattern, labels_str)
-                for match in matches:
-                    # match[0] is the quoted content (without quotes), match[1] is unquoted
-                    label = match[0] if match[0] else match[1]
-                    stripped_label = label.strip()
-                    if stripped_label:
-                        result.append(stripped_label)
-            else:
-                # Space-separated format (Dovecot), with shlex to handle quoted strings
-                try:
-                    result = [l.strip() for l in shlex.split(labels_str) if l.strip()]
-                except ValueError:
-                    # Fallback to simple split if shlex fails (e.g. unmatched quotes)
-                    result = [l.strip() for l in labels_str.split() if l.strip()]
-            return result
+        seen_labels = set()
 
         # Parse X-Gmail-Labels (Google Takeout format)
         if "x-gmail-labels" in headers:
             labels_str = headers["x-gmail-labels"]
             if isinstance(labels_str, list):
                 labels_str = labels_str[0]  # Take first value if multiple
-            gmail_labels.extend(parse_labels_header(labels_str))
+            for label in _parse_labels_header(labels_str):
+                if label not in seen_labels:
+                    seen_labels.add(label)
+                    gmail_labels.append(label)
 
         # Parse X-Keywords (Dovecot/OfflineIMAP/mu4e format)
         if "x-keywords" in headers:
             labels_str = headers["x-keywords"]
             if isinstance(labels_str, list):
                 labels_str = labels_str[0]  # Take first value if multiple
-            gmail_labels.extend(parse_labels_header(labels_str))
+            for label in _parse_labels_header(labels_str):
+                if label not in seen_labels:
+                    seen_labels.add(label)
+                    gmail_labels.append(label)
 
         subject = headers.get("subject", "")
         from_header_decoded = headers.get("from", "")

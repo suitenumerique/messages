@@ -11,6 +11,7 @@ from django.conf import settings
 from django.core.files.storage import storages
 
 from celery.utils.log import get_task_logger
+from sentry_sdk import capture_exception
 
 from core.api.utils import generate_presigned_url
 from core.mda.inbound import deliver_inbound_message
@@ -546,15 +547,23 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]:
             },
         )
 
-        _create_notification_message(
-            mailbox_email=mailbox_email,
-            presigned_url=presigned_url,
-            exported_count=exported_count,
-            skipped_count=skipped_count,
-            total_messages=total_messages,
-        )
+        try:
+            _create_notification_message(
+                mailbox_email=mailbox_email,
+                presigned_url=presigned_url,
+                exported_count=exported_count,
+                skipped_count=skipped_count,
+                total_messages=total_messages,
+            )
+        except Exception as notif_exc:  # pylint: disable=broad-exception-caught
+            capture_exception(notif_exc)
+            logger.warning(
+                "Failed to create notification for mailbox %s: %s",
+                mailbox_id,
+                notif_exc,
+            )
 
-        # Success
+        # Success — export to S3 completed regardless of notification delivery
         result = {
             "message_status": "Export completed",
             "total_messages": total_messages,
@@ -571,6 +580,7 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]:
         return {"status": "SUCCESS", "result": result, "error": None}
 
     except Exception as e:  # pylint: disable=broad-exception-caught
+        capture_exception(e)
         error_msg = str(e)
         logger.exception(
             "Error exporting mailbox %s: %s",
@@ -616,7 +626,7 @@ def _create_notification_message(
     """
     # Build the notification email
     msg = EmailMessage()
-    msg["From"] = f"noreply@{settings.MESSAGES_TESTDOMAIN or 'messages.local'}"
+    msg["From"] = f"noreply@{settings.MESSAGES_TECHNICAL_DOMAIN}"
     msg["To"] = mailbox_email
     msg["Subject"] = "Your mailbox export is ready"
     msg["Date"] = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")

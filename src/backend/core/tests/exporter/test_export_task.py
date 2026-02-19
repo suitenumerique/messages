@@ -315,12 +315,18 @@ def test_export_reimport_roundtrip(domain, cleanup_exports):
     # Create multiple test messages with different content
     subjects = ["First message", "Second message", "Third message"]
     for i, subject in enumerate(subjects):
-        create_test_message(
+        msg = create_test_message(
             mailbox_a,
             subject,
             f"Body content for message {i + 1}",
             sender=f"sender{i}@example.com",
         )
+        # Add a label to the first message for roundtrip verification
+        if i == 0:
+            label = Label.objects.create(
+                name="roundtrip-test", slug="roundtrip-test", mailbox=mailbox_a
+            )
+            msg.thread.labels.add(label)
 
     original_count = Message.objects.filter(thread__accesses__mailbox=mailbox_a).count()
     assert original_count == 3
@@ -391,6 +397,17 @@ def test_export_reimport_roundtrip(domain, cleanup_exports):
         assert subject in imported_subjects, (
             f"Subject '{subject}' not found in imported messages"
         )
+
+    # 7. Verify label roundtrip — the "roundtrip-test" label should be on a thread in mailbox B
+    labeled_thread = (
+        imported_messages.filter(subject="First message").first().thread
+    )
+    mailbox_b_labels = Label.objects.filter(mailbox=mailbox_b)
+    imported_label = mailbox_b_labels.filter(name="roundtrip-test").first()
+    assert imported_label is not None, "Label 'roundtrip-test' was not created in target mailbox"
+    assert labeled_thread.labels.filter(id=imported_label.id).exists(), (
+        "Label 'roundtrip-test' not attached to the imported thread"
+    )
 
 
 @pytest.mark.django_db
