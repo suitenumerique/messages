@@ -14,8 +14,25 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from core.mda.inbound import count_external_recipients
+from core.utils import ThrottleRateValue
 
 logger = logging.getLogger(__name__)
+
+# Shared instance for parsing rate strings
+_rate_parser = ThrottleRateValue()
+
+
+def _normalize_rate(rate):
+    """Normalize a throttle rate setting.
+
+    Accepts a pre-parsed tuple (from ThrottleRateValue in settings) or a raw
+    string (from override_settings in tests). Returns the parsed tuple or None.
+    """
+    if rate is None:
+        return None
+    if isinstance(rate, tuple):
+        return rate
+    return _rate_parser.to_python(rate)
 
 
 class ThrottleLimitExceeded(Exception):
@@ -34,43 +51,6 @@ class ThrottleLimitExceeded(Exception):
         self.limit = limit
         self.retry_after = retry_after  # seconds until window resets
         super().__init__(message)
-
-
-def parse_throttle_rate(rate: Optional[str]) -> Optional[tuple[int, str, int]]:
-    """
-    Parse a throttle rate string like "1000/day" into (limit, period_name, period_seconds).
-
-    Accepts a pre-parsed tuple (from ThrottleRateValue in settings) or a raw
-    string (from override_settings in tests). Returns the parsed tuple or None.
-    """
-    if rate is None:
-        return None
-
-    # Already parsed (from ThrottleRateValue)
-    if isinstance(rate, tuple):
-        return rate
-
-    if not rate:
-        return None
-
-    try:
-        limit_str, period = rate.split("/")
-        limit = int(limit_str)
-
-        period_seconds = {
-            "minute": 60,
-            "hour": 3600,
-            "day": 86400,
-        }.get(period.lower())
-
-        if period_seconds is None:
-            logger.warning("Invalid throttle period: %s", period)
-            return None
-
-        return (limit, period.lower(), period_seconds)
-    except (ValueError, AttributeError) as e:
-        logger.warning("Invalid throttle rate format '%s': %s", rate, e)
-        return None
 
 
 def get_period_key(period_name: str) -> str:
@@ -168,10 +148,10 @@ def check_and_increment_throttle(mailbox, maildomain, message) -> None:
     6. If OK, increment both counters
     7. Verify post-increment (race condition check), rollback if exceeded
     """
-    mailbox_rate = parse_throttle_rate(
+    mailbox_rate = _normalize_rate(
         settings.THROTTLE_MAILBOX_OUTBOUND_EXTERNAL_RECIPIENTS
     )
-    maildomain_rate = parse_throttle_rate(
+    maildomain_rate = _normalize_rate(
         settings.THROTTLE_MAILDOMAIN_OUTBOUND_EXTERNAL_RECIPIENTS
     )
 
@@ -289,7 +269,7 @@ def get_throttle_status(mailbox=None, maildomain=None) -> dict[str, Any]:
     result = {}
 
     if mailbox:
-        mailbox_rate = parse_throttle_rate(
+        mailbox_rate = _normalize_rate(
             settings.THROTTLE_MAILBOX_OUTBOUND_EXTERNAL_RECIPIENTS
         )
         if mailbox_rate:
@@ -307,7 +287,7 @@ def get_throttle_status(mailbox=None, maildomain=None) -> dict[str, Any]:
             }
 
     if maildomain:
-        maildomain_rate = parse_throttle_rate(
+        maildomain_rate = _normalize_rate(
             settings.THROTTLE_MAILDOMAIN_OUTBOUND_EXTERNAL_RECIPIENTS
         )
         if maildomain_rate:

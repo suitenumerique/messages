@@ -16,8 +16,8 @@ from core.services.throttle import (
     get_period_key,
     get_throttle_cache_key,
     get_throttle_status,
-    parse_throttle_rate,
 )
+from core.utils import ThrottleRateValue
 
 
 @pytest.fixture(autouse=True)
@@ -28,42 +28,54 @@ def clear_cache():
     cache.clear()
 
 
-class TestParseThrottleRate:
-    """Tests for parse_throttle_rate function."""
+class TestThrottleRateValue:
+    """Tests for ThrottleRateValue configuration class."""
 
     def test_parse_valid_rate_per_day(self):
         """Test parsing a valid rate per day."""
-        result = parse_throttle_rate("1000/day")
+        value = ThrottleRateValue()
+        result = value.to_python("1000/day")
         assert result == (1000, "day", 86400)
 
     def test_parse_valid_rate_per_hour(self):
         """Test parsing a valid rate per hour."""
-        result = parse_throttle_rate("100/hour")
+        value = ThrottleRateValue()
+        result = value.to_python("100/hour")
         assert result == (100, "hour", 3600)
 
     def test_parse_valid_rate_per_minute(self):
         """Test parsing a valid rate per minute."""
-        result = parse_throttle_rate("10/minute")
+        value = ThrottleRateValue()
+        result = value.to_python("10/minute")
         assert result == (10, "minute", 60)
 
     def test_parse_none_returns_none(self):
         """Test that None input returns None."""
-        assert parse_throttle_rate(None) is None
+        value = ThrottleRateValue()
+        assert value.to_python(None) is None
 
     def test_parse_empty_string_returns_none(self):
         """Test that empty string returns None."""
-        assert parse_throttle_rate("") is None
+        value = ThrottleRateValue()
+        assert value.to_python("") is None
 
-    def test_parse_invalid_format_returns_none(self):
-        """Test that invalid format returns None."""
-        assert parse_throttle_rate("invalid") is None
-        assert parse_throttle_rate("100") is None
-        assert parse_throttle_rate("/day") is None
+    def test_parse_invalid_format_raises(self):
+        """Test that invalid format raises ValueError."""
+        value = ThrottleRateValue()
+        with pytest.raises(ValueError, match="Invalid throttle rate format"):
+            value.to_python("invalid")
+        with pytest.raises(ValueError, match="Invalid throttle rate format"):
+            value.to_python("100")
+        with pytest.raises(ValueError, match="Invalid throttle rate format"):
+            value.to_python("/day")
 
-    def test_parse_invalid_period_returns_none(self):
-        """Test that invalid period returns None."""
-        assert parse_throttle_rate("100/week") is None
-        assert parse_throttle_rate("100/year") is None
+    def test_parse_invalid_period_raises(self):
+        """Test that invalid period raises ValueError."""
+        value = ThrottleRateValue()
+        with pytest.raises(ValueError, match="Invalid throttle period"):
+            value.to_python("100/week")
+        with pytest.raises(ValueError, match="Invalid throttle period"):
+            value.to_python("100/year")
 
 
 class TestGetPeriodKey:
