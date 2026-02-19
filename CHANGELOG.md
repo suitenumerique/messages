@@ -8,6 +8,10 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Add arm64 platform support for Docker image builds
+
 ### Changed
 
 - Bump keycloak to 26.5.3 #543
