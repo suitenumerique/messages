@@ -26,10 +26,10 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
  * 
-        Import messages by uploading an EML or MBOX file.
+        Import messages by uploading an EML, MBOX, or PST file.
 
         The import is processed asynchronously and returns a task ID for tracking.
-        The file must be a valid EML or MBOX format. The recipient mailbox must exist
+        The file must be a valid EML, MBOX, or PST format. The recipient mailbox must exist
         and the user must have access to it.
         
  */

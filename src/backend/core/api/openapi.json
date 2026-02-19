@@ -1538,7 +1538,7 @@
         "/api/v1.0/import/file/": {
             "post": {
                 "operationId": "import_file_create",
-                "description": "\n        Import messages by uploading an EML or MBOX file.\n\n        The import is processed asynchronously and returns a task ID for tracking.\n        The file must be a valid EML or MBOX format. The recipient mailbox must exist\n        and the user must have access to it.\n        ",
+                "description": "\n        Import messages by uploading an EML, MBOX, or PST file.\n\n        The import is processed asynchronously and returns a task ID for tracking.\n        The file must be a valid EML, MBOX, or PST format. The recipient mailbox must exist\n        and the user must have access to it.\n        ",
                 "tags": [
                     "import"
                 ],
@@ -1580,7 +1580,7 @@
                                         },
                                         "type": {
                                             "type": "string",
-                                            "description": "Type of import (eml or mbox)"
+                                            "description": "Type of import (eml, mbox, or pst)"
                                         }
                                     }
                                 }

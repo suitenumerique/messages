@@ -9,6 +9,6 @@
 export type ImportFileCreate202 = {
   /** Task ID for tracking the import */
   task_id?: string;
-  /** Type of import (eml or mbox) */
+  /** Type of import (eml, mbox, or pst) */
   type?: string;
 };
