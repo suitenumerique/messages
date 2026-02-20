@@ -276,7 +276,6 @@ class TestDNSProvisioning:
 
 
 @pytest.fixture(name="maildomain_factory")
-@pytest.mark.django_db
 def fixture_maildomain_factory():
     """Create a maildomain factory for testing."""
 

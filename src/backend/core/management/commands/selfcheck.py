@@ -15,7 +15,6 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         """Add command arguments."""
-        pass
 
     def handle(self, *args, **options):
         """Execute the command."""

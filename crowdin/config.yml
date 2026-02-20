@@ -16,11 +16,6 @@ preserve_hierarchy: true
 #
 files: [
   {
-    source : "/backend/locale/django.pot",
-    dest: "/backend.pot",
-    translation : "/backend/locale/%locale_with_underscore%/LC_MESSAGES/django.po"
-  },
-  {
     source: "/frontend/public/locales/common/en-US.json",
     dest: "/frontend-common.json",
     translation: "/frontend/public/locales/common/%locale%.json",

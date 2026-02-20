@@ -5,7 +5,6 @@ import re
 
 from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
-from django.utils.translation import gettext_lazy as _
 
 from lasuite.oidc_login.backends import (
     OIDCAuthenticationBackend as LaSuiteOIDCAuthenticationBackend,
@@ -74,7 +73,7 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
 
         if user:
             if not user.is_active:
-                raise SuspiciousOperation(_("User account is disabled"))
+                raise SuspiciousOperation("User account is disabled")
             self.update_user_if_needed(user, claims)
 
         elif self.should_create_user(email):

@@ -64,12 +64,11 @@ def get_period_key(period_name: str) -> str:
     now = timezone.now()
     if period_name == "day":
         return now.strftime("%Y-%m-%d")
-    elif period_name == "hour":
+    if period_name == "hour":
         return now.strftime("%Y-%m-%d-%H")
-    elif period_name == "minute":
+    if period_name == "minute":
         return now.strftime("%Y-%m-%d-%H-%M")
-    else:
-        return now.strftime("%Y-%m-%d")
+    return now.strftime("%Y-%m-%d")
 
 
 def get_period_expiry(period_name: str) -> int:
@@ -81,16 +80,15 @@ def get_period_expiry(period_name: str) -> int:
             hour=0, minute=0, second=0, microsecond=0
         )
         return int((tomorrow - now).total_seconds())
-    elif period_name == "hour":
+    if period_name == "hour":
         next_hour = (now + timedelta(hours=1)).replace(
             minute=0, second=0, microsecond=0
         )
         return int((next_hour - now).total_seconds())
-    elif period_name == "minute":
+    if period_name == "minute":
         next_minute = (now + timedelta(minutes=1)).replace(second=0, microsecond=0)
         return int((next_minute - now).total_seconds())
-    else:
-        return 86400
+    return 86400
 
 
 def get_throttle_cache_key(entity_type: str, entity_id: str, period_key: str) -> str:
@@ -119,7 +117,7 @@ def increment_counter(cache_key: str, amount: int, expiry_seconds: int) -> int:
         return amount
 
 
-def decrement_counter(cache_key: str, amount: int, expiry_seconds: int) -> int:
+def decrement_counter(cache_key: str, amount: int, expiry_seconds: int) -> int:  # pylint: disable=unused-argument
     """
     Decrement a counter in cache and return the new value.
 
@@ -255,7 +253,7 @@ def check_and_increment_throttle(mailbox, maildomain, message) -> None:
                 decrement_counter(
                     inc_check["cache_key"], external_count, inc_check["expiry"]
                 )
-            except Exception as rollback_error:
+            except Exception as rollback_error:  # pylint: disable=broad-exception-caught
                 logger.error("Failed to rollback throttle counter: %s", rollback_error)
         raise
 
@@ -313,9 +311,8 @@ def format_duration(seconds: int) -> str:
     """Format seconds into a human-readable duration."""
     if seconds < 60:
         return f"{seconds}s"
-    elif seconds < 3600:
+    if seconds < 3600:
         minutes = math.ceil(seconds / 60)
         return f"{minutes}m"
-    else:
-        hours = math.ceil(seconds / 3600)
-        return f"{hours}h"
+    hours = math.ceil(seconds / 3600)
+    return f"{hours}h"

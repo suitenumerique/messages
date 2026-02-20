@@ -2,7 +2,6 @@
 
 from django.conf import settings
 from django.db.models import F
-from django.utils import translation
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import permissions
@@ -48,10 +47,10 @@ class PlaceholderView(APIView):
     )
     def get(self, request):
         """Get the structure of available fields."""
-        current_language = translation.get_language().split("-")[0]
+        current_language = settings.LANGUAGE_CODE.split("-")[0]
         fields = {
-            "name": translation.gettext_lazy("Name"),
-            "recipient_name": translation.gettext_lazy("Recipient name"),
+            "name": "Name",
+            "recipient_name": "Recipient name",
         }
         # Add user custom attributes fields from schema
         schema = settings.SCHEMA_CUSTOM_ATTRIBUTES_USER

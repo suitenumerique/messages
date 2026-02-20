@@ -1,7 +1,6 @@
 """Messages Core application"""
 
 from django.apps import AppConfig
-from django.utils.translation import gettext_lazy as _
 
 
 class CoreConfig(AppConfig):
@@ -9,7 +8,7 @@ class CoreConfig(AppConfig):
 
     name = "core"
     app_label = "core"
-    verbose_name = _("messages core application")
+    verbose_name = "messages core application"
 
     def ready(self):
         """Register signal handlers and prometheus collector when the app is ready."""

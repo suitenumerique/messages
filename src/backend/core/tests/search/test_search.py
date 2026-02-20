@@ -148,7 +148,7 @@ def test_reindex_all(mock_es_client_index):
 
 
 @pytest.mark.django_db
-def test_reindex_mailbox(mock_es_client_index, test_mailbox, test_thread):
+def test_reindex_mailbox(mock_es_client_index, test_mailbox, test_thread):  # pylint: disable=unused-argument
     """Test reindexing a specific mailbox."""
 
     # Call the function

@@ -4,7 +4,6 @@ import logging
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.utils.translation import gettext_lazy as _
 
 from rest_framework import exceptions as drf_exceptions
 from rest_framework import views as drf_views
@@ -32,7 +31,7 @@ def exception_handler(exc, context):
             exc.retry_after,
         )
         response = Response(
-            {"detail": _("Sending limit reached. Please wait before trying again.")},
+            {"detail": "Sending limit reached. Please wait before trying again."},
             status=429,
         )
         response["Retry-After"] = exc.retry_after

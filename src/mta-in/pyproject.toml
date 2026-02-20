@@ -25,7 +25,7 @@ license = "MIT"
 readme = "README.md"
 requires-python = ">=3.13,<4.0"
 
-# Note: after changing this list you must re-run `make uv-lock-mta-in`
+# Note: after changing this list you must re-run `make deps-lock-mta-in`
 dependencies = [
     "requests==2.32.3",
     "PyJWT==2.10.1",

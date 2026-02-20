@@ -6,7 +6,6 @@ from typing import Optional
 
 from django.conf import settings
 from django.utils import timezone
-from django.utils.translation import gettext_lazy as _
 
 import rest_framework as drf
 
@@ -25,7 +24,7 @@ def validate_body_size(body_bytes: bytes) -> None:
 
         raise drf.exceptions.ValidationError(
             {
-                "draftBody": _(
+                "draftBody": (
                     "Message body size (%(body_size)s MB) exceeds the %(max_size)s MB limit. "
                     "Please reduce message content."
                 )
@@ -51,7 +50,7 @@ def validate_attachment_size(current_total_size: int, new_total_size: int) -> No
 
         raise drf.exceptions.ValidationError(
             {
-                "attachments": _(
+                "attachments": (
                     "Cannot add attachment(s) (%(new_size)s MB). "
                     "Total attachments would be %(total_size)s MB, exceeding the %(max_size)s MB limit. "
                     "Current attachments: %(current_size)s MB."

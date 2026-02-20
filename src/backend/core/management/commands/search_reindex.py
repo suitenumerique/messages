@@ -95,6 +95,7 @@ class Command(BaseCommand):
             )
             if result.get("failure_count", 0) > 0:
                 return 1
+        return None
 
     def _reindex_thread(self, thread_id, async_mode):
         """Reindex a specific thread and its messages."""
@@ -115,7 +116,7 @@ class Command(BaseCommand):
                 self.style.SUCCESS(f"Reindexing task scheduled (ID: {task.id})")
             )
         else:
-            result = reindex_thread_task(thread_id)
+            result = reindex_thread_task(thread_id)  # pylint: disable=no-value-for-parameter
             if result.get("success", False):
                 self.stdout.write(
                     self.style.SUCCESS(f"Thread {thread_id} indexed successfully")
@@ -127,6 +128,7 @@ class Command(BaseCommand):
                     )
                 )
                 return 1
+        return None
 
     def _reindex_mailbox(self, mailbox_id, async_mode):
         """Reindex all threads and messages in a specific mailbox."""
@@ -146,7 +148,7 @@ class Command(BaseCommand):
                 self.style.SUCCESS(f"Reindexing task scheduled (ID: {task.id})")
             )
         else:
-            result = reindex_mailbox_task(mailbox_id)
+            result = reindex_mailbox_task(mailbox_id)  # pylint: disable=no-value-for-parameter
             self.stdout.write(
                 self.style.SUCCESS(
                     f"Reindexing completed: {result.get('success_count', 0)} succeeded, "
@@ -155,3 +157,4 @@ class Command(BaseCommand):
             )
             if result.get("failure_count", 0) > 0:
                 return 1
+        return None

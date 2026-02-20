@@ -3,7 +3,7 @@
 # A comma-separated list of package or module names from where C extensions may
 # be loaded. Extensions are loading into the active Python interpreter and may
 # run arbitrary code
-extension-pkg-whitelist=
+extension-pkg-whitelist=pypff
 
 # Add files or directories to the blacklist. They should be base names, not
 # paths.
@@ -23,7 +23,7 @@ jobs=0
 
 # List of plugins (as comma separated values of python modules names) to load,
 # usually to register additional checkers.
-load-plugins=pylint_django,pylint.extensions.no_self_use
+load-plugins=pylint_django
 
 # Pickle collected data for later comparisons.
 persistent=yes
@@ -33,8 +33,6 @@ persistent=yes
 
 # When enabled, pylint would attempt to guess common misconfiguration and emit
 # user-friendly hints instead of false-positive error messages
-suggestion-mode=yes
-
 # Allow loading of arbitrary C extensions. Extensions are imported into the
 # active Python interpreter and may run arbitrary code.
 unsafe-load-any-extension=no
@@ -60,11 +58,11 @@ disable=bad-inline-option,
         django-not-configured,
         file-ignored,
         locally-disabled,
-        no-self-use,
         raw-checker-failed,
         suppressed-message,
         useless-suppression,
-        fixme
+        fixme,
+        cyclic-import
 
 # Enable the message, report, category or checker with the given id(s). You can
 # either give multiple identifier separated by comma (,) or put this option

@@ -14,7 +14,7 @@ from core.services.search.parse import parse_search_query
 logger = logging.getLogger(__name__)
 
 
-def search_threads(
+def search_threads(  # pylint: disable=too-many-branches
     query: str,
     mailbox_ids: Optional[list] = None,
     filters: Optional[Dict[str, Any]] = None,
@@ -41,7 +41,7 @@ def search_threads(
         logger.debug("OpenSearch search is disabled, returning empty results")
         return {"threads": [], "total": 0, "from": from_offset, "size": size}
 
-    try:
+    try:  # pylint: disable=too-many-nested-blocks
         es = get_opensearch_client()
 
         # Parse the query for modifiers
@@ -167,7 +167,7 @@ def search_threads(
                 {"term": {"is_trashed": True}}
             )
         else:
-            # Fully trashed threads should be excluded from search results until the user explicitly searches for trashed threads
+            # Exclude fully trashed threads unless the user explicitly searches for them
             search_body["query"]["bool"]["filter"].append(
                 {"term": {"is_trashed": False}}
             )

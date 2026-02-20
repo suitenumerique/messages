@@ -1,12 +1,3 @@
-# /!\ /!\ /!\ /!\ /!\ /!\ /!\ DISCLAIMER /!\ /!\ /!\ /!\ /!\ /!\ /!\ /!\
-#
-# This Makefile is only meant to be used for DEVELOPMENT purpose as we are
-# changing the user id that will run in the container.
-#
-# PLEASE DO NOT USE IT FOR YOUR CI/PRODUCTION/WHATEVER...
-#
-# /!\ /!\ /!\ /!\ /!\ /!\ /!\ /!\ /!\ /!\ /!\ /!\ /!\ /!\ /!\ /!\ /!\ /!\
-#
 # Note to developers:
 #
 # While editing this file, please respect the following statements:
@@ -115,7 +106,6 @@ update:  ## Update the project with latest changes
 	@$(MAKE) collectstatic
 	@$(MAKE) migrate
 	@$(MAKE) install-frozen-front
-	@$(MAKE) i18n-compile
 .PHONY: update
 
 # -- Docker/compose
@@ -173,53 +163,58 @@ lint: ## run all linters
 lint: \
   lint-back \
   lint-front \
-  ts-check-front \
+  typecheck-front \
   lint-mta-in \
   lint-mta-out
 .PHONY: lint
 
-lint-check:  ## run all linters in check mode
+lint-check:  ## run all linters in check mode (no auto-fix)
 lint-check: \
-  ruff-check-back \
-  pylint-back \
-  ts-check-front \
+  lint-check-back \
+  typecheck-front \
   lint-front
 .PHONY: lint-check
 
-lint-back: ## run back-end linters
+lint-back: ## run back-end linters (with auto-fix)
 lint-back: \
-  ruff-format-back \
-  ruff-check-back \
-  pylint-back
+  format-back \
+  check-back \
+  analyze-back
 .PHONY: lint-back
 
-ruff-format-back: ## format back-end python sources with ruff
-	@$(COMPOSE_RUN_APP_TOOLS) ruff format .
-.PHONY: ruff-format-back
-
-ruff-check-back: ## lint back-end python sources with ruff
-	@$(COMPOSE_RUN_APP_TOOLS) ruff check . --fix
-.PHONY: ruff-check-back
-
-pylint-back: ## lint back-end python sources with pylint
+lint-check-back: ## run back-end linters in check mode (no auto-fix)
+	@$(COMPOSE_RUN_APP_TOOLS) ruff format --check .
+	@$(COMPOSE_RUN_APP_TOOLS) ruff check .
 	@$(COMPOSE_RUN_APP_TOOLS) sh -c "pylint ."
-.PHONY: pylint-back
+.PHONY: lint-check-back
 
-ts-check-front: ## run the frontend type checker
+format-back: ## format back-end python sources
+	@$(COMPOSE_RUN_APP_TOOLS) ruff format .
+.PHONY: format-back
+
+check-back: ## check back-end python sources
+	@$(COMPOSE_RUN_APP_TOOLS) ruff check . --fix
+.PHONY: check-back
+
+analyze-back: ## analyze back-end python sources
+	@$(COMPOSE_RUN_APP_TOOLS) sh -c "pylint ."
+.PHONY: analyze-back
+
+typecheck-front: ## run the frontend type checker
 	@$(COMPOSE) run --rm frontend-tools npm run ts:check
-.PHONY: ts-check-front
+.PHONY: typecheck-front
 
 lint-front: ## run the frontend linter
 	@$(COMPOSE) run --rm frontend-tools npm run lint
 .PHONY: lint-front
 
-lint-mta-in: ## lint mta-in python sources with pylint
+lint-mta-in: ## lint mta-in python sources
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff format .
 	#$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff check . --fix
 	#$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test pylint .
 .PHONY: lint-mta-in
 
-lint-mta-out: ## lint mta-out python sources with pylint
+lint-mta-out: ## lint mta-out python sources
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-out-test ruff format .
 .PHONY: lint-mta-out
 
@@ -283,27 +278,27 @@ test-socks-proxy: ## run the socks-proxy tests
 # -- E2E Tests
 
 test-e2e: ## Setup, run and teardown e2e tests in headless mode
-	@$(MAKE) setup-e2e
+	@$(MAKE) start-e2e
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
-	$(MAKE) run-test-e2e args="$${args:-${1}}" || echo "$(BOLD)Tests failed$(RESET)"
-	@$(MAKE) teardown-e2e
+	$(MAKE) test-e2e-bare args="$${args:-${1}}" || echo "$(BOLD)Tests failed$(RESET)"
+	@$(MAKE) stop-e2e
 .PHONY: test-e2e
 
 test-e2e-ui: ## Setup, run and teardown e2e tests in UI mode
-	@$(MAKE) setup-e2e
-	@$(MAKE) run-test-e2e-ui
-	@$(MAKE) teardown-e2e
+	@$(MAKE) start-e2e
+	@$(MAKE) test-e2e-ui-bare
+	@$(MAKE) stop-e2e
 .PHONY: test-e2e-ui
 
 test-e2e-dev: ## Setup, run and teardown e2e tests in UI mode with dev frontend
-	@$(MAKE) setup-e2e
-	@$(MAKE) run-test-e2e-dev
-	@$(MAKE) teardown-e2e
+	@$(MAKE) start-e2e
+	@$(MAKE) test-e2e-dev-bare
+	@$(MAKE) stop-e2e
 .PHONY: test-e2e-dev
 
 test-e2e-ci: ## Setup and run e2e tests in CI mode
-	@$(MAKE) setup-e2e
-	@$(MAKE) run-test-e2e args="$(args)"
+	@$(MAKE) start-e2e
+	@$(MAKE) test-e2e-bare args="$(args)"
 .PHONY: test-e2e-ci
 
 build-e2e: ## Build the e2e services
@@ -311,7 +306,7 @@ build-e2e: ## Build the e2e services
 	$(COMPOSE_E2E) build --no-cache $${args:-${1}}
 .PHONY: build-e2e
 
-log-e2e:
+log-e2e: ## alias for logs-e2e
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	$(MAKE) logs-e2e -- $${args:-${1}}
 .PHONY: log-e2e
@@ -321,30 +316,27 @@ logs-e2e: ## Show logs from e2e services
 	$(COMPOSE_E2E) --profile dev logs $${args:-${1}}
 .PHONY: logs-e2e
 
-run-test-e2e: ## Run e2e tests in headless mode
+test-e2e-bare: ## Run e2e tests in headless mode
 	@echo "$(BLUE)\n\n| 🎭 Running E2E tests... \n$(RESET)"
 	$(COMPOSE_E2E) run --rm --service-ports runner npm run test -- $(args)
 	@echo "$(GREEN)> 🎭 E2E tests completed!$(RESET)\n"
-.PHONY: run-test-e2e
+.PHONY: test-e2e-bare
 
-run-test-e2e-ui: ## Run e2e tests in UI mode
+test-e2e-ui-bare: ## Run e2e tests in UI mode
 	@echo "$(BLUE)\n\n| 🎭 Running E2E tests in UI mode... \n$(RESET)"
 	# Note: || true allows graceful exit when user closes the UI
 	@$(COMPOSE_E2E) run --rm --service-ports runner npm run test:ui || true
 	@echo "$(GREEN)> 🎭 You killed the UI!$(RESET)\n"
-.PHONY: run-test-e2e-ui
+.PHONY: test-e2e-ui-bare
 
-run-test-e2e-dev: ## Run e2e tests in UI mode with dev frontend
+test-e2e-dev-bare: ## Run e2e tests in UI mode with dev frontend
 	@echo "$(BLUE)\n\n| 🎭 Running E2E tests in dev mode... \n$(RESET)"
 	# Note: || true allows graceful exit when user closes the UI
 	E2E_PROFILE=dev $(COMPOSE_E2E) --profile dev run --rm --service-ports runner npm run test:ui || true
 	@echo "$(GREEN)> 🎭 You killed the UI!$(RESET)\n"
-.PHONY: run-test-e2e-dev
+.PHONY: test-e2e-dev-bare
 
-down-e2e: ## Stop and remove all e2e services
-	@echo "$(BOLD)Stopping E2E services...$(RESET)"
-	@$(COMPOSE_E2E) --profile dev down -v
-	@echo "$(GREEN)✓ E2E services stopped$(RESET)"
+down-e2e: stop-e2e ## alias for stop-e2e
 .PHONY: down-e2e
 
 demo-e2e: ## Populate the e2e database with demo data
@@ -352,18 +344,18 @@ demo-e2e: ## Populate the e2e database with demo data
 	@$(COMPOSE_E2E) run --rm backend python manage.py e2e_demo
 .PHONY: demo-e2e
 
-setup-e2e: ## Setup e2e services
+start-e2e: ## Start e2e services (migrate, seed, etc.)
 	@echo "$(BLUE)\n\n| 🔧 Setting up E2E services... \n$(RESET)"
 	@$(COMPOSE_E2E) run --rm objectstorage-createbucket
 	@$(COMPOSE_E2E) run --rm backend python manage.py migrate --noinput
 	@$(COMPOSE_E2E) run --rm backend python manage.py search_index_create || true
 	@$(MAKE) demo-e2e
-.PHONY: setup-e2e
+.PHONY: start-e2e
 
-teardown-e2e: ## Teardown e2e services
+stop-e2e: ## Stop and remove e2e services
 	@echo "$(BLUE)\n\n| 🧹 Cleaning up E2E services... \n$(RESET)"
 	@$(COMPOSE_E2E) --profile dev down -v
-.PHONY: teardown-e2e
+.PHONY: stop-e2e
 
 # -- Backend
 
@@ -386,14 +378,6 @@ superuser: ## Create an admin superuser with password "admin"
 	@$(MANAGE_DB) createsuperuser --email admin@admin.local --password admin
 .PHONY: superuser
 
-i18n-compile-back: ## compile the gettext files
-	@$(MANAGE) compilemessages --ignore="venv/**/*"
-.PHONY: i18n-compile-back
-
-i18n-generate-back: ## create the .pot files used for i18n
-	@$(MANAGE) makemessages -a --keep-pot --all --no-location
-.PHONY: i18n-generate-back
-
 shell-back: ## open a shell in the backend container
 	@$(COMPOSE) run --rm --build backend-dev /bin/bash
 .PHONY: shell-back
@@ -406,39 +390,42 @@ exec-back: ## open a shell in the running backend-dev container
 	@$(COMPOSE) exec backend-dev /bin/bash
 .PHONY: exec-back
 
-uv-lock-back: ## lock the dependencies
+deps-lock-back: ## lock the dependencies
 	@$(COMPOSE) run --rm --build backend-uv uv lock
-	make pip-audit
-.PHONY: uv-lock-back
+	make deps-audit
+.PHONY: deps-lock-back
 
-uv-update-indirect-back: ## update indirect dependencies
+deps-update-indirect-back: ## update indirect dependencies
 	rm src/backend/uv.lock
-	make uv-lock-back
-.PHONY: uv-update-indirect-back
+	make deps-lock-back
+.PHONY: deps-update-indirect-back
 
-uv-outdated-back: ## show outdated dependencies
+deps-outdated-back: ## show outdated dependencies
 	@$(COMPOSE) run --rm --build backend-uv uv tree --outdated
-.PHONY: uv-outdated-back
+.PHONY: deps-outdated-back
 
-uv-tree-back: ## show dependencies as a tree
+deps-tree-back: ## show dependencies as a tree
 	@$(COMPOSE) run --rm --build backend-uv uv tree
-.PHONY: uv-tree-back
+.PHONY: deps-tree-back
 
-pip-audit: ## check the dependencies
+deps-audit-back: ## audit back-end dependencies for vulnerabilities
 	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp --build backend-dev pip-audit
-.PHONY: pip-audit
+.PHONY: deps-audit-back
+
+deps-audit: deps-audit-back ## alias for deps-audit-back
+.PHONY: deps-audit
 
 collectstatic: ## collect static files
 	@$(MANAGE_DB) collectstatic --noinput
 .PHONY: collectstatic
 
-shell: ## connect to django shell
+shell-back-django: ## connect to django shell
 	@$(MANAGE) shell #_plus
-.PHONY: shell
+.PHONY: shell-back-django
 
-export-keycloak: ## export all keycloak data to a JSON file
+export-identity: ## export all identity provider data to a JSON file
 	@$(COMPOSE) run -v `pwd`/src/keycloak:/tmp/keycloak-export --rm keycloak export --realm messages --file /tmp/keycloak-export/realm.json
-.PHONY: export-keycloak
+.PHONY: export-identity
 
 # -- Database
 
@@ -467,39 +454,32 @@ env.d/development/%.local:
 
 # -- Internationalization
 
-download-crowdin: ## Download translated message from crowdin
+i18n-download: ## Download translated messages
 	@$(COMPOSE_RUN_CROWDIN) download -c crowdin/config.yml
-.PHONY: download-crowdin
+.PHONY: i18n-download
 
-download-crowdin-sources: ## Download sources from Crowdin
+i18n-download-sources: ## Download translation sources
 	@$(COMPOSE_RUN_CROWDIN) download sources -c crowdin/config.yml
-.PHONY: download-crowdin-sources
+.PHONY: i18n-download-sources
 
-upload-crowdin: ## Upload source translations to crowdin
+i18n-upload: ## Upload source translations
 	@$(COMPOSE_RUN_CROWDIN) upload sources -c crowdin/config.yml
-.PHONY: upload-crowdin
+.PHONY: i18n-upload
 
-i18n-compile: ## compile all translations
-i18n-compile: \
-	i18n-compile-back
-.PHONY: i18n-compile
-
-i18n-generate: ## create the .pot files and extract frontend messages
+i18n-generate: ## extract frontend messages for translation
 i18n-generate: \
-	i18n-generate-back \
 	i18n-generate-front
 .PHONY: i18n-generate
 
-i18n-download-and-compile: ## download all translated messages and compile them to be used by all applications
+i18n-download-and-compile: ## download all translated messages to be used by all applications
 i18n-download-and-compile: \
-  download-crowdin \
-  i18n-compile
+  i18n-download
 .PHONY: i18n-download-and-compile
 
 i18n-generate-and-upload: ## generate source translations for all applications and upload them to Crowdin
 i18n-generate-and-upload: \
   i18n-generate \
-  upload-crowdin
+  i18n-upload
 .PHONY: i18n-generate-and-upload
 
 # -- Release
@@ -516,9 +496,9 @@ clean-media: ## remove all media files
 	rm -rf data/media/*
 .PHONY: clean-media
 
-pyclean: ## remove all python cache files
+clean-cache: ## remove all python cache files
 	find . | grep -E "\(/__pycache__$|\.pyc$|\.pyo$\)" | xargs rm -rf
-.PHONY: pyclean
+.PHONY: clean-cache
 
 help:
 	@echo "$(BOLD)messages Makefile"
@@ -572,10 +552,10 @@ search-index: ## Create and/or reindex opensearch data
 	@$(MANAGE) search_reindex --all
 .PHONY: search-index
 
-uv-lock-mta-in: ## lock the dependencies
+deps-lock-mta-in: ## lock the dependencies
 	@$(COMPOSE) run --rm --build mta-in-uv uv lock
-.PHONY: uv-lock-mta-in
+.PHONY: deps-lock-mta-in
 
-uv-lock-mta-out: ## lock the dependencies
+deps-lock-mta-out: ## lock the dependencies
 	@$(COMPOSE) run --rm --build mta-out-uv uv lock
-.PHONY: uv-lock-mta-out
+.PHONY: deps-lock-mta-out

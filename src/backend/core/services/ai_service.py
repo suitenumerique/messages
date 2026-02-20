@@ -1,3 +1,5 @@
+"""Service for AI-powered features using OpenAI-compatible API."""
+
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 

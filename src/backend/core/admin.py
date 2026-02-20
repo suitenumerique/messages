@@ -13,7 +13,6 @@ from django.template.response import TemplateResponse
 from django.urls import path
 from django.utils.html import escape, format_html
 from django.utils.text import slugify
-from django.utils.translation import gettext_lazy as _
 
 from sentry_sdk import capture_exception
 
@@ -33,7 +32,7 @@ from .forms import IMAPImportForm, MessageImportForm
 class RecipientDeliveryStatusFilter(admin.SimpleListFilter):
     """Filter messages by their recipients' delivery status."""
 
-    title = _("delivery status")
+    title = "delivery status"
     parameter_name = "recipient_delivery_status"
 
     def lookups(self, request, model_admin):
@@ -95,18 +94,12 @@ def retry_send_messages_action(__, request, queryset):
 
     messages.info(
         request,
-        _(
-            "%(message_count)d messages - "
-            "Retry send message task queued (id: %(task_id)s)."
-        )
-        % {
-            "message_count": len(message_ids),
-            "task_id": task.id,
-        },
+        f"{len(message_ids)} messages - "
+        f"Retry send message task queued (id: {task.id}).",
     )
 
 
-retry_send_messages_action.short_description = _(
+retry_send_messages_action.short_description = (
     "Retry to send selected messages to pending recipients"
 )
 
@@ -127,7 +120,7 @@ class UserAdmin(auth_admin.UserAdmin):
             },
         ),
         (
-            _("Personal info"),
+            "Personal info",
             {
                 "fields": (
                     "sub",
@@ -140,7 +133,7 @@ class UserAdmin(auth_admin.UserAdmin):
             },
         ),
         (
-            _("Permissions"),
+            "Permissions",
             {
                 "fields": (
                     "is_active",
@@ -151,7 +144,7 @@ class UserAdmin(auth_admin.UserAdmin):
                 ),
             },
         ),
-        (_("Important dates"), {"fields": ("created_at", "updated_at")}),
+        ("Important dates", {"fields": ("created_at", "updated_at")}),
     )
     add_fieldsets = (
         (
@@ -216,12 +209,12 @@ class MailDomainAdmin(admin.ModelAdmin):
     readonly_fields = ("throttle_status_display",)
     change_form_template = "admin/core/maildomain/change_form.html"
 
-    @admin.display(description=_("Throttle Status (External Recipients)"))
+    @admin.display(description="Throttle Status (External Recipients)")
     def throttle_status_display(self, obj):
         """Display current throttle usage for this maildomain."""
         status = get_throttle_status(maildomain=obj)
         if "maildomain" not in status:
-            return _("No throttle configured")
+            return "No throttle configured"
 
         info = status["maildomain"]
         return format_html(
@@ -251,7 +244,7 @@ class MailDomainAdmin(admin.ModelAdmin):
         maildomain = self.get_object(request, object_id)
 
         if maildomain is None:
-            messages.error(request, _("Mail domain not found."))
+            messages.error(request, "Mail domain not found.")
             return redirect("..")
 
         # Run DNS provisioning
@@ -264,22 +257,18 @@ class MailDomainAdmin(admin.ModelAdmin):
                 changes_text = ", ".join(changes)
                 messages.success(
                     request,
-                    _("DNS provisioning successful via %(provider)s: %(changes)s")
-                    % {"provider": provider_used, "changes": changes_text},
+                    f"DNS provisioning successful via {provider_used}: {changes_text}",
                 )
             else:
                 messages.success(
                     request,
-                    _(
-                        "DNS provisioning successful via %(provider)s (no changes needed)."
-                    )
-                    % {"provider": provider_used},
+                    f"DNS provisioning successful via {provider_used} (no changes needed).",
                 )
         else:
             error_msg = results.get("error", "Unknown error")
             messages.error(
                 request,
-                _("DNS provisioning failed: %(error)s") % {"error": error_msg},
+                f"DNS provisioning failed: {error_msg}",
             )
 
         return redirect("..")
@@ -332,7 +321,7 @@ class MailboxAdmin(admin.ModelAdmin):
         mailbox_obj = self.get_object(request, object_id)
 
         if mailbox_obj is None:
-            messages.error(request, _("Mailbox not found."))
+            messages.error(request, "Mailbox not found.")
             return redirect("..")
 
         # Start the export task
@@ -345,23 +334,20 @@ class MailboxAdmin(admin.ModelAdmin):
             )
             capture_exception()
             messages.error(
-                request, _("Failed to queue export task. Please try again later.")
+                request, "Failed to queue export task. Please try again later."
             )
             return redirect("..")
 
         messages.success(
             request,
-            _(
-                "Export task has been queued for mailbox %(mailbox)s. "
-                "You will receive a message with the download link when the export "
-                "is complete (task id: %(task_id)s)."
-            )
-            % {"mailbox": mailbox_obj, "task_id": task.id},
+            f"Export task has been queued for mailbox {mailbox_obj}. "
+            f"You will receive a message with the download link when the export "
+            f"is complete (task id: {task.id}).",
         )
 
         return redirect("..")
 
-    @admin.display(description=_("Throttle Status (External Recipients)"))
+    @admin.display(description="Throttle Status (External Recipients)")
     def throttle_status_display(self, obj):
         """Display current throttle usage for this mailbox and its domain."""
         status = get_throttle_status(mailbox=obj, maildomain=obj.domain)
@@ -390,7 +376,7 @@ class MailboxAdmin(admin.ModelAdmin):
                 )
             )
 
-        return format_html("<br>".join(parts)) if parts else _("No throttle configured")
+        return format_html("<br>".join(parts)) if parts else "No throttle configured"
 
 
 @admin.register(models.Channel)
@@ -466,7 +452,7 @@ class ThreadAdmin(admin.ModelAdmin):
     fieldsets = (
         (None, {"fields": ("subject", "snippet", "display_labels", "summary")}),
         (
-            _("Statistics"),
+            "Statistics",
             {
                 "fields": (
                     "has_unread",
@@ -486,7 +472,7 @@ class ThreadAdmin(admin.ModelAdmin):
             },
         ),
         (
-            _("Metadata"),
+            "Metadata",
             {
                 "fields": ("sender_names", "created_at", "updated_at", "messaged_at"),
                 "classes": ("collapse",),
@@ -517,13 +503,13 @@ class ThreadAdmin(admin.ModelAdmin):
         """Return a comma-separated list of labels for the thread."""
         return ", ".join(label.name for label in obj.labels.all())
 
-    get_labels.short_description = _("Labels")
+    get_labels.short_description = "Labels"
     get_labels.admin_order_field = "labels__name"
 
     def display_labels(self, obj):
         """Display labels with their colors in the detail view."""
         if not obj.labels.exists():
-            return _("No labels")
+            return "No labels"
 
         # Create a list of formatted label spans
         label_spans = []
@@ -540,7 +526,7 @@ class ThreadAdmin(admin.ModelAdmin):
         # Join all spans with a space using format_html
         return format_html(" ".join(label_spans))
 
-    display_labels.short_description = _("Labels")
+    display_labels.short_description = "Labels"
 
 
 class MessageRecipientInline(admin.TabularInline):
@@ -674,7 +660,7 @@ class MessageAdmin(admin.ModelAdmin):
 
         context = dict(
             self.admin_site.each_context(request),
-            title=_("Import Messages"),
+            title="Import Messages",
             form=form,
             opts=self.model._meta,  # noqa: SLF001
         )
@@ -704,7 +690,7 @@ class MessageAdmin(admin.ModelAdmin):
 
         context = dict(
             self.admin_site.each_context(request),
-            title=_("Import Messages from IMAP"),
+            title="Import Messages from IMAP",
             form=form,
             opts=self.model._meta,  # noqa: SLF001
         )
@@ -751,7 +737,7 @@ class MessageAdmin(admin.ModelAdmin):
         message = self.get_object(request, object_id)
 
         if message is None:
-            messages.error(request, _("Message not found."))
+            messages.error(request, "Message not found.")
             return redirect("..")
 
         # Check if message has recipients with retry status
@@ -763,7 +749,7 @@ class MessageAdmin(admin.ModelAdmin):
         if retryable_recipients_count == 0:
             messages.warning(
                 request,
-                _("No pending recipients found for this message."),
+                "No pending recipients found for this message.",
             )
             return redirect("..")
 
@@ -772,14 +758,8 @@ class MessageAdmin(admin.ModelAdmin):
 
         messages.success(
             request,
-            _(
-                "Retry task has been queued for "
-                "%(retryable_recipients_count)d pending recipient(s) (id: %(task_id)s)."
-            )
-            % {
-                "retryable_recipients_count": retryable_recipients_count,
-                "task_id": task.id,
-            },
+            f"Retry task has been queued for "
+            f"{retryable_recipients_count} pending recipient(s) (id: {task.id}).",
         )
         return redirect("..")
 
@@ -931,7 +911,7 @@ class DKIMKeyAdmin(admin.ModelAdmin):
             },
         ),
         (
-            _("Keys"),
+            "Keys",
             {
                 "fields": ("public_key",),
                 "classes": ("collapse",),
@@ -966,7 +946,7 @@ class InboundMessageAdmin(admin.ModelAdmin):
         return bool(obj.error_message)
 
     has_error.boolean = True
-    has_error.short_description = _("Error")
+    has_error.short_description = "Error"
 
     def get_queryset(self, request):
         """Optimize queryset with select_related for better performance."""

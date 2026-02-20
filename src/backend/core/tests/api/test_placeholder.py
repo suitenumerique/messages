@@ -113,18 +113,11 @@ class TestPlaceholderView:
             "required": [],
         }
     )
-    def test_internationalization_support(self, api_client):
-        """Test that internationalization is properly handled."""
+    def test_i18n_schema_uses_default_language(self, api_client):
+        """Test that x-i18n schema labels always use the default language."""
         url = reverse("placeholders")
+        # Accept-Language header is ignored; backend always uses LANGUAGE_CODE
         response = api_client.get(url, HTTP_ACCEPT_LANGUAGE="fr-fr")
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["job_title"] == "Fonction"
-        assert data["is_elected"] == "Est élu"
-        assert data["name"] == "Nom"
-
-        # Test that fallback language handling works correctly.
-        response = api_client.get(url, HTTP_ACCEPT_LANGUAGE="de-de")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["job_title"] == "Job title"

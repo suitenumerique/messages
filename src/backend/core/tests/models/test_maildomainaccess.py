@@ -1,3 +1,5 @@
+"""Tests for the MailDomainAccess model."""
+
 from django.core.exceptions import ValidationError
 
 import pytest
@@ -9,7 +11,10 @@ pytestmark = pytest.mark.django_db
 
 
 class TestMailDomainAccessModel:
+    """Tests for MailDomainAccess model CRUD and constraints."""
+
     def test_create_mail_domain_access(self):
+        """Test creating a MailDomainAccess instance."""
         user = factories.UserFactory()
         maildomain = factories.MailDomainFactory()
 
@@ -26,6 +31,7 @@ class TestMailDomainAccessModel:
         )
 
     def test_unique_together_constraint(self):
+        """Test that duplicate user+maildomain access is rejected."""
         user = factories.UserFactory()
         maildomain = factories.MailDomainFactory()
 
@@ -41,6 +47,7 @@ class TestMailDomainAccessModel:
             )
 
     def test_related_names(self):
+        """Test reverse relation names on User and MailDomain."""
         user = factories.UserFactory()
         maildomain = factories.MailDomainFactory()
         access = factories.MailDomainAccessFactory(user=user, maildomain=maildomain)

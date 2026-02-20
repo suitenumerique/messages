@@ -1,3 +1,5 @@
+"""Utility functions for AI features."""
+
 from typing import List
 
 from django.conf import settings
@@ -20,7 +22,7 @@ def get_messages_from_thread(thread: Thread) -> List[Message]:
 
 
 def is_ai_enabled() -> bool:
-    """Check if AI features are enabled based on the presence of required settings in the environment (API_KEY, BASE_URL, MODEL)"""
+    """Check if AI features are enabled based on required settings."""
     return all(
         [
             settings.AI_API_KEY,

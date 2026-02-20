@@ -1,4 +1,11 @@
-"""IMAP utilities for message import."""
+"""IMAP utilities for message import.
+
+Broad exception handling (W0718) is intentional: IMAP servers can raise many
+different exception types (socket errors, encoding errors, protocol errors)
+and the import must continue processing remaining messages on failure.
+"""
+
+# pylint: disable=broad-exception-caught
 
 import base64
 import codecs
@@ -183,13 +190,13 @@ def _parse_imap_folder_info(folder_info: str) -> Optional[str]:
     return None
 
 
-def get_selectable_folders(
+def get_selectable_folders(  # pylint: disable=unused-argument
     imap_connection, username: str, imap_server: str
 ) -> List[str]:
     """Get list of selectable folders from IMAP server."""
     status, folder_list = imap_connection.list()
     if status != "OK":
-        raise Exception(f"Failed to list folders: {folder_list}")
+        raise RuntimeError(f"Failed to list folders: {folder_list}")
 
     selectable_folders = []
     for folder_info in folder_list:
@@ -281,7 +288,7 @@ def select_imap_folder(imap_connection, folder: str) -> bool:
         return False
 
 
-def get_message_numbers(
+def get_message_numbers(  # pylint: disable=unused-argument
     imap_connection, folder: str, username: str, imap_server: str
 ) -> List[bytes]:
     """Get message numbers from the selected folder."""
@@ -409,7 +416,7 @@ def _fetch_message_with_flags(
     # Fetch message with flags
     status, msg_data = imap_connection.fetch(msg_num, "(FLAGS BODY.PEEK[])")
     if status != "OK":
-        raise Exception(f"Failed to fetch message {msg_num}: {msg_data}")
+        raise RuntimeError(f"Failed to fetch message {msg_num}: {msg_data}")
 
     flags, raw_email = _extract_imap_flags_and_content(msg_data)
 
@@ -418,12 +425,12 @@ def _fetch_message_with_flags(
         flags = _fetch_separate_flags(imap_connection, msg_num)
 
     if raw_email is None:
-        raise Exception(f"No raw email found for message {msg_num}")
+        raise RuntimeError(f"No raw email found for message {msg_num}")
 
     return flags, raw_email
 
 
-def _fetch_message_with_flags_retry(
+def _fetch_message_with_flags_retry(  # pylint: disable=inconsistent-return-statements
     imap_connection, msg_num: bytes
 ) -> Tuple[List[str], Optional[bytes]]:
     """Fetch a message with retry logic for timeout errors."""
@@ -442,13 +449,12 @@ def _fetch_message_with_flags_retry(
                 # Exponential backoff
                 time.sleep(2**attempt)
                 continue
-            else:
-                logger.error(
-                    "Failed to fetch message %s after %d attempts",
-                    msg_num,
-                    max_retries,
-                )
-                raise
+            logger.error(
+                "Failed to fetch message %s after %d attempts",
+                msg_num,
+                max_retries,
+            )
+            raise
         except Exception as e:
             logger.error("Unexpected error fetching message %s: %s", msg_num, e)
             raise

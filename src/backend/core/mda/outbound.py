@@ -7,7 +7,6 @@ from typing import Any, Optional
 from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
-from django.utils.translation import gettext_lazy as _
 
 import rest_framework as drf
 
@@ -65,7 +64,7 @@ def prepare_outbound_message(
     if recipient_count > max_recipients:
         raise drf.exceptions.ValidationError(
             {
-                "message": _(
+                "message": (
                     "Too many recipients: %(count)s (maximum is %(max)s). "
                     "Please reduce the number of recipients before sending."
                 )
@@ -217,7 +216,7 @@ def prepare_outbound_message(
 
             raise drf.exceptions.ValidationError(
                 {
-                    "message": _(
+                    "message": (
                         "Total attachment size (%(total_size)s MB) exceeds the %(max_size)s MB limit. "
                         "Please remove or reduce attachments."
                     )
@@ -303,7 +302,7 @@ def prepare_outbound_message(
 
         raise drf.exceptions.ValidationError(
             {
-                "message": _(
+                "message": (
                     "The composed email (%(mime_size)s MB) exceeds the maximum allowed size of %(max_size)s MB. "
                     "Please reduce message content or attachments."
                 )

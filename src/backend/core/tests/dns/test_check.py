@@ -773,7 +773,6 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
 
 
 @pytest.fixture(name="maildomain_factory")
-@pytest.mark.django_db
 def fixture_maildomain_factory():
     """Factory for creating test mail domains."""
 

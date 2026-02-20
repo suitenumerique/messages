@@ -324,7 +324,7 @@ class TestProcessMboxFileTask:
         finally:
             s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
 
-    def test_task_process_mbox_file_mailbox_not_found(self, sample_mbox_content):
+    def test_task_process_mbox_file_mailbox_not_found(self, sample_mbox_content):  # pylint: disable=unused-argument
         """Test MBOX processing with non-existent mailbox."""
         mock_task = MagicMock()
         mock_task.update_state = MagicMock()

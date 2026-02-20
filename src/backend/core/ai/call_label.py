@@ -1,3 +1,5 @@
+"""AI-powered label assignment for threads."""
+
 from core.ai.thread_classifier import get_most_relevant_labels
 from core.models import Label, Thread
 

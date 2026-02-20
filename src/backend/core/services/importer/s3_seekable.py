@@ -11,7 +11,7 @@ BUFFER_CENTERED = "centered"
 BUFFER_NONE = "none"
 
 
-class S3SeekableReader:
+class S3SeekableReader:  # pylint: disable=too-many-instance-attributes
     """Seekable file-like object that reads from S3 using range requests.
 
     Maintains a read-ahead buffer (default 100MB) and makes HTTP Range

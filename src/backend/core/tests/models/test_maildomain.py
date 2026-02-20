@@ -118,10 +118,11 @@ class TestMailDomainModel:
         }
         with pytest.raises(ValidationError) as exception_info:
             MailDomainFactory(custom_attributes=custom_attributes)
-        assert (
-            str(exception_info.value)
-            == "{'custom_attributes': [\"Additional properties are not allowed ('additional_property' was unexpected)\"]}"
+        expected = (
+            """{'custom_attributes': ["Additional properties are not allowed"""
+            """ ('additional_property' was unexpected)"]}"""
         )
+        assert str(exception_info.value) == expected
 
 
 class TestMailDomainModelAbilities:

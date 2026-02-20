@@ -13,6 +13,8 @@ from core.services.dns.provisioning import (
 
 
 class Command(BaseCommand):
+    """Provision DNS records for mail domains."""
+
     help = "Provision DNS records for mail domains"
 
     def add_arguments(self, parser):
@@ -49,8 +51,7 @@ class Command(BaseCommand):
         except MailDomain.DoesNotExist:
             if domain_name:
                 raise CommandError(f"Domain '{domain_name}' not found") from None
-            else:
-                raise CommandError(f"Domain with ID {domain_id} not found") from None
+            raise CommandError(f"Domain with ID {domain_id} not found") from None
 
         if pretend:
             self.stdout.write(

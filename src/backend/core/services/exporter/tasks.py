@@ -34,7 +34,7 @@ CHUNK_SIZE = 100 * 1024 * 1024
 MIN_PART_SIZE = 5 * 1024 * 1024
 
 
-class S3MultipartGzipUploader:
+class S3MultipartGzipUploader:  # pylint: disable=too-many-instance-attributes
     """
     A file-like object that streams gzip-compressed data to S3 using multipart upload.
 
@@ -399,7 +399,7 @@ def _create_mbox_entry(
 
 
 @celery_app.task(bind=True)  # pylint: disable=too-many-locals
-def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]:
+def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]:  # pylint: disable=unused-argument
     """
     Export all messages from a mailbox to an MBOX file and upload to S3.
 

@@ -1,3 +1,5 @@
+"""Management command to print active user sessions."""
+
 import logging
 from importlib import import_module
 
@@ -13,6 +15,8 @@ User = get_user_model()
 
 
 class Command(BaseCommand):
+    """Print active user sessions with optional filters."""
+
     help = "Print active user sessions with optional filters"
 
     def add_arguments(self, parser):
@@ -31,7 +35,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         redis = get_redis_connection(settings.SESSION_CACHE_ALIAS)
         engine = import_module(settings.SESSION_ENGINE)
-        SessionStore = engine.SessionStore
+        session_store = engine.SessionStore
 
         user_email_filter = options.get("email")
         session_id_filter = options.get("session_id")
@@ -42,7 +46,7 @@ class Command(BaseCommand):
         # If session ID filter is provided, check that specific session
         if session_id_filter:
             self._print_specific_session(
-                redis, SessionStore, prefix, session_id_filter, verbose
+                redis, session_store, prefix, session_id_filter, verbose
             )
             return
 
@@ -55,7 +59,7 @@ class Command(BaseCommand):
 
         for redis_key in redis_keys:
             session_count += 1
-            session_data = self._get_session_data(redis_key, SessionStore, prefix)
+            session_data = self._get_session_data(redis_key, session_store, prefix)
             if not session_data:
                 continue
 
@@ -77,7 +81,7 @@ class Command(BaseCommand):
             )
         )
 
-    def _get_session_data(self, redis_key, SessionStore, prefix):
+    def _get_session_data(self, redis_key, session_store, prefix):
         """Extract and validate session data."""
         try:
             # Extract actual session key
@@ -85,7 +89,7 @@ class Command(BaseCommand):
             session_key = raw_key.replace(prefix, "")
 
             # Load and decode session
-            session = SessionStore(session_key=session_key)
+            session = session_store(session_key=session_key)
             data = session.load()
 
             user_id = data.get("_auth_user_id")
@@ -96,18 +100,19 @@ class Command(BaseCommand):
                 user = User.objects.get(id=user_id)
             except User.DoesNotExist:
                 logger.warning(
-                    f"User with ID {user_id} not found for session {session_key}"
+                    "User with ID %s not found for session %s", user_id, session_key
                 )
                 return None
 
             return user, session_key, data
 
-        # pylint: disable=broad-except
-        except Exception as e:
-            logger.error(f"Failed to process session {redis_key}: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Failed to process session %s: %s", redis_key, e)
             return None
 
-    def _print_specific_session(self, redis, SessionStore, prefix, session_id, verbose):
+    def _print_specific_session(
+        self, redis, session_store, prefix, session_id, verbose
+    ):
         """Print information for a specific session ID."""
         redis_key = f"{prefix}{session_id}".encode()
 
@@ -117,7 +122,7 @@ class Command(BaseCommand):
             )
             return
 
-        session_data = self._get_session_data(redis_key, SessionStore, prefix)
+        session_data = self._get_session_data(redis_key, session_store, prefix)
         if not session_data:
             self.stdout.write(
                 self.style.ERROR(f"Could not load session data for ID '{session_id}'")

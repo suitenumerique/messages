@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
+    """Send an email using send_outbound_email."""
+
     help = "Send an email using send_outbound_email (works without mailboxes, no DB writes)"
 
     def add_arguments(self, parser):
@@ -97,7 +99,8 @@ class Command(BaseCommand):
             except models.Mailbox.DoesNotExist:
                 # Use minimal setup without mailbox
                 logger.warning(
-                    f"Mailbox with email '{from_email}' not found, sending without DKIM"
+                    "Mailbox with email '%s' not found, sending without DKIM",
+                    from_email,
                 )
         else:
             # Use minimal setup without mailbox
@@ -108,8 +111,8 @@ class Command(BaseCommand):
             sender_mailbox.contact.name if sender_mailbox else None
         ) or from_email.split("@")[0]
 
-        logger.info(f"Sending email from {from_email} to {to_email}")
-        logger.info(f"Subject: {subject}")
+        logger.info("Sending email from %s to %s", from_email, to_email)
+        logger.info("Subject: %s", subject)
 
         # Generate MIME ID
         mime_id = (

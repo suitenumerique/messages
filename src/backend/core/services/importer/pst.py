@@ -1,4 +1,11 @@
-"""PST file parsing utilities for message import."""
+"""PST file parsing utilities for message import.
+
+Broad exception handling (W0718/C0302) is intentional: PST parsing relies on
+the pypff C library which can raise arbitrary exceptions on malformed data.
+Each field extraction must be individually guarded to maximise data recovery.
+"""
+
+# pylint: disable=broad-exception-caught,too-many-lines
 
 import base64
 import logging
@@ -565,9 +572,9 @@ def _extract_recipients_from_mapi(message) -> dict:
     result = {"to": [], "cc": [], "bcc": []}
 
     # MAPI recipient types
-    MAPI_TO = 1
-    MAPI_CC = 2
-    MAPI_BCC = 3
+    MAPI_TO = 1  # pylint: disable=invalid-name
+    MAPI_CC = 2  # pylint: disable=invalid-name
+    MAPI_BCC = 3  # pylint: disable=invalid-name
 
     try:
         num_recipients = int(message.number_of_recipients)
@@ -651,7 +658,7 @@ def _decode_html_bytes(raw_html: bytes) -> str:
     return raw_html.decode("utf-8", errors="replace")
 
 
-def reconstruct_eml(message, store_email: Optional[str] = None) -> bytes:
+def reconstruct_eml(message, store_email: Optional[str] = None) -> bytes:  # pylint: disable=too-many-branches
     """Convert a pypff message to RFC5322 bytes.
 
     If transport_headers is available, uses those for threading headers.

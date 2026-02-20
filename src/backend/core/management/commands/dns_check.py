@@ -9,6 +9,8 @@ from core.services.dns.check import check_dns_records
 
 
 class Command(BaseCommand):
+    """Check DNS records for mail domains."""
+
     help = "Check DNS records for mail domains"
 
     def add_arguments(self, parser):

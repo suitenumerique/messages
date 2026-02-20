@@ -212,8 +212,7 @@ def sync_mailbox_to_keycloak_user(mailbox):
 
             for group in groups:
                 yield group
-                for sub_group in group.get("subGroups") or []:
-                    yield sub_group
+                yield from group.get("subGroups") or []
 
         for group in list_groups_and_subgroups():
             if group.get("name") == group_name:

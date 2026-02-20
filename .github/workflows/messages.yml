@@ -81,7 +81,7 @@ jobs:
       - name: Run frontend linting
         run: make lint-front
       - name: Run frontend check
-        run: make ts-check-front
+        run: make typecheck-front
 
   build-front:
     runs-on: ubuntu-latest

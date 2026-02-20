@@ -76,16 +76,15 @@ class ImportService:
                 "mbox": "application/mbox",
                 "pst": "application/vnd.ms-outlook",
             }
-            if ext in extension_map:
-                content_type = extension_map[ext]
+            content_type = extension_map.get(ext, content_type)
 
         if content_type not in enums.ARCHIVE_SUPPORTED_MIME_TYPES:
             return False, {
                 "detail": (
-                    "Invalid file format. Only EML, MBOX, "
-                    "and PST files are supported. "
-                    "Detected content type: {content_type}"
-                ).format(content_type=content_type)
+                    f"Invalid file format. Only EML, MBOX, "
+                    f"and PST files are supported. "
+                    f"Detected content type: {content_type}"
+                )
             }
 
         try:
@@ -102,7 +101,7 @@ class ImportService:
                     )
                 return True, response_data
             # Check MIME type for MBOX
-            elif content_type in enums.MBOX_SUPPORTED_MIME_TYPES:
+            if content_type in enums.MBOX_SUPPORTED_MIME_TYPES:
                 # Process MBOX file asynchronously
                 task = process_mbox_file_task.delay(file_key, str(recipient.id))
                 register_task_owner(task.id, user.id)
@@ -115,7 +114,7 @@ class ImportService:
                     )
                 return True, response_data
             # Check MIME type for EML
-            elif content_type in enums.EML_SUPPORTED_MIME_TYPES:
+            if content_type in enums.EML_SUPPORTED_MIME_TYPES:
                 # Process EML file asynchronously
                 task = process_eml_file_task.delay(file_key, str(recipient.id))
                 register_task_owner(task.id, user.id)
@@ -127,9 +126,8 @@ class ImportService:
                         "This may take a while. You can check the status in the Celery task monitor.",
                     )
                 return True, response_data
-            else:
-                return False, {"detail": f"Unsupported file format: {content_type}"}
-        except Exception as e:
+            return False, {"detail": f"Unsupported file format: {content_type}"}
+        except Exception as e:  # pylint: disable=broad-exception-caught
             capture_exception(e)
             logger.exception("Error processing file: %s", e)
             if request:
@@ -192,7 +190,7 @@ class ImportService:
                 )
             return True, response_data
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             capture_exception(e)
             logger.exception("Error starting IMAP import: %s", e)
             if request:

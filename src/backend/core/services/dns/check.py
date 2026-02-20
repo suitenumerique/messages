@@ -5,9 +5,9 @@ DNS checking functionality for mail domains.
 import re
 from typing import Dict, List
 
-from core.models import MailDomain
-
 import dns.resolver
+
+from core.models import MailDomain
 
 
 def normalize_txt_value(value: str) -> str:

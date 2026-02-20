@@ -40,7 +40,7 @@ class TestSendMessageTask:
         self, draft_message, mailbox_with_thread
     ):
         """Test send_message_task with must_archive=True archives all thread messages."""
-        mailbox, thread = mailbox_with_thread
+        _, thread = mailbox_with_thread
 
         # Create additional messages in the same thread
         other_message1 = factories.MessageFactory(
@@ -68,7 +68,9 @@ class TestSendMessageTask:
         with patch("core.mda.outbound_tasks.send_message") as mock_mda_send:
             # Call the task with must_archive=True
             with patch.object(send_message_task, "update_state"):
-                result = send_message_task(str(draft_message.id), must_archive=True)
+                result = send_message_task(  # pylint: disable=no-value-for-parameter
+                    str(draft_message.id), must_archive=True
+                )
 
             # Verify send_message was called
             mock_mda_send.assert_called_once_with(draft_message, False)
@@ -94,7 +96,7 @@ class TestSendMessageTask:
         self, draft_message, mailbox_with_thread
     ):
         """Test send_message_task with must_archive=False does not archive messages."""
-        mailbox, thread = mailbox_with_thread
+        _, thread = mailbox_with_thread
 
         # Create additional messages in the same thread
         other_message = factories.MessageFactory(
@@ -114,7 +116,9 @@ class TestSendMessageTask:
         with patch("core.mda.outbound_tasks.send_message") as mock_mda_send:
             # Call the task with must_archive=False
             with patch.object(send_message_task, "update_state"):
-                result = send_message_task(str(draft_message.id), must_archive=False)
+                result = send_message_task(  # pylint: disable=no-value-for-parameter
+                    str(draft_message.id), must_archive=False
+                )
 
             # Verify the result
             assert result["success"] is True
@@ -134,7 +138,9 @@ class TestSendMessageTask:
         assert other_message.archived_at is None
 
     def test_task_send_message_archive_error_does_not_fail_task(
-        self, draft_message, mailbox_with_thread
+        self,
+        draft_message,
+        mailbox_with_thread,  # pylint: disable=unused-argument
     ):
         """Test that archiving error does not cause the task to fail."""
         assert draft_message.is_draft is True
@@ -150,7 +156,9 @@ class TestSendMessageTask:
                 # Call the task with must_archive=True
                 # The task should succeed even if archiving fails
                 with patch.object(send_message_task, "update_state"):
-                    result = send_message_task(str(draft_message.id), must_archive=True)
+                    result = send_message_task(  # pylint: disable=no-value-for-parameter
+                        str(draft_message.id), must_archive=True
+                    )
 
                 # Verify send_message was called
                 mock_mda_send.assert_called_once_with(draft_message, False)
@@ -160,7 +168,9 @@ class TestSendMessageTask:
                 assert result["message_id"] == str(draft_message.id)
 
     def test_task_send_message_updates_thread_stats_after_archive(
-        self, draft_message, mailbox_with_thread
+        self,
+        draft_message,
+        mailbox_with_thread,  # pylint: disable=unused-argument
     ):
         """Test that thread stats are updated after archiving."""
         # Mock the send_message function
@@ -169,7 +179,9 @@ class TestSendMessageTask:
             with patch("core.models.Thread.update_stats") as mock_update_stats:
                 # Call the task with must_archive=True
                 with patch.object(send_message_task, "update_state"):
-                    result = send_message_task(str(draft_message.id), must_archive=True)
+                    result = send_message_task(  # pylint: disable=no-value-for-parameter
+                        str(draft_message.id), must_archive=True
+                    )
 
                 # Verify the result
                 assert result["success"] is True

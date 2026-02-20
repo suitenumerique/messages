@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from django.conf import settings
-from django.utils import timezone, translation
+from django.utils import timezone
 
 from core.ai.utils import get_messages_from_thread
 from core.models import Thread
@@ -23,8 +23,7 @@ def get_most_relevant_labels(thread: Thread, labels: list) -> list[str]:
 
     current_datetime = timezone.now().isoformat()
 
-    # Determine the active or fallback language
-    active_language = translation.get_language() or settings.LANGUAGE_CODE
+    active_language = settings.LANGUAGE_CODE
 
     # Extract messages from the thread
     messages = get_messages_from_thread(thread)
@@ -45,8 +44,7 @@ def get_most_relevant_labels(thread: Thread, labels: list) -> list[str]:
         language=active_language,
     )
 
-    with translation.override(active_language):
-        best_labels = AIService().call_ai_api(prompt)
+    best_labels = AIService().call_ai_api(prompt)
 
     # Get rid of surrounding text if present
     if best_labels.startswith('["') and best_labels.endswith('"]'):

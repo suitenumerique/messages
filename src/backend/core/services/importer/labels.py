@@ -140,6 +140,6 @@ def handle_duplicate_message(
             )
             existing_message.thread.labels.add(label_obj)
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             logger.exception("Error creating label %s: %s", label, e)
             continue

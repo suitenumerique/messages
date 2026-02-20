@@ -8,7 +8,6 @@ import uuid
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q
-from django.utils.translation import gettext_lazy as _
 
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -1124,7 +1123,7 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
         if metadata.get("type") == "personal" and not domain.identity_sync:
             raise serializers.ValidationError(
                 {
-                    "identity_sync": _(
+                    "identity_sync": (
                         "Personal mailboxes cannot be created when "
                         "identity synchronization is disabled."
                     )
@@ -1140,7 +1139,7 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
             if any(lower_value == prefix.lower() for prefix in denylist):
                 raise serializers.ValidationError(
                     {
-                        "local_part_denied": _(
+                        "local_part_denied": (
                             "This prefix is not allowed for personal mailboxes."
                         )
                     }
@@ -1154,7 +1153,7 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
             domain=self.context.get("domain"), local_part=value
         ).exists():
             raise serializers.ValidationError(
-                _("A mailbox with this local part already exists in this domain.")
+                "A mailbox with this local part already exists in this domain."
             )
         return value
 
@@ -1626,7 +1625,7 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
                     image_mb = image["size"] / (1024 * 1024)
                     raise serializers.ValidationError(
                         {
-                            "html_body": _(
+                            "html_body": (
                                 'Image "%(name)s" (%(size)s MB) exceeds'
                                 " the %(max)s MB limit."
                             )
@@ -1642,7 +1641,7 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
                     total_mb = total_image_size / (1024 * 1024)
                     raise serializers.ValidationError(
                         {
-                            "html_body": _(
+                            "html_body": (
                                 "Total attachment size (%(total_size)s MB) exceeds the %(max_size)s MB limit. "
                                 "Please remove or reduce attachments."
                             )

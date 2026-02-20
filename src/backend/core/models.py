@@ -22,7 +22,6 @@ from django.db.models import Case, Q, When
 from django.utils import timezone
 from django.utils.html import escape
 from django.utils.text import slugify
-from django.utils.translation import gettext_lazy as _
 
 import jsonschema
 import pyzstd
@@ -68,21 +67,21 @@ class BaseModel(models.Model):
     """
 
     id = models.UUIDField(
-        verbose_name=_("id"),
-        help_text=_("primary key for the record as UUID"),
+        verbose_name="id",
+        help_text="primary key for the record as UUID",
         primary_key=True,
         default=uuid.uuid4,
         editable=False,
     )
     created_at = models.DateTimeField(
-        verbose_name=_("created on"),
-        help_text=_("date and time at which a record was created"),
+        verbose_name="created on",
+        help_text="date and time at which a record was created",
         auto_now_add=True,
         editable=False,
     )
     updated_at = models.DateTimeField(
-        verbose_name=_("updated on"),
-        help_text=_("date and time at which a record was last updated"),
+        verbose_name="updated on",
+        help_text="date and time at which a record was last updated",
         auto_now=True,
         editable=False,
     )
@@ -117,10 +116,8 @@ class UserManager(auth_models.UserManager):
                 and not settings.OIDC_ALLOW_DUPLICATE_EMAILS
             ):
                 raise DuplicateEmailError(
-                    _(
-                        "We couldn't find a user with this sub but the email is already "
-                        "associated with a registered user."
-                    )
+                    "We couldn't find a user with this sub but the email is already "
+                    "associated with a registered user."
                 ) from err
         return None
 
@@ -130,15 +127,15 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
 
     sub_validator = validators.RegexValidator(
         regex=r"^[\w.@+-:]+\Z",
-        message=_(
+        message=(
             "Enter a valid sub. This value may contain only letters, "
             "numbers, and @/./+/-/_/: characters."
         ),
     )
 
     sub = models.CharField(
-        _("sub"),
-        help_text=_(
+        "sub",
+        help_text=(
             "Required. 255 characters or fewer. Letters, numbers, and @/./+/-/_/: characters only."
         ),
         max_length=255,
@@ -148,48 +145,48 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
         null=True,
     )
 
-    full_name = models.CharField(_("full name"), max_length=255, null=True, blank=True)
+    full_name = models.CharField("full name", max_length=255, null=True, blank=True)
 
-    email = models.EmailField(_("identity email address"), blank=True, null=True)
+    email = models.EmailField("identity email address", blank=True, null=True)
 
     # Unlike the "email" field which stores the email coming from the OIDC token, this field
     # stores the email used by staff users to login to the admin site
     admin_email = models.EmailField(
-        _("admin email address"), unique=True, blank=True, null=True
+        "admin email address", unique=True, blank=True, null=True
     )
 
     language = models.CharField(
         max_length=10,
         choices=settings.LANGUAGES,
         default=settings.LANGUAGE_CODE,
-        verbose_name=_("language"),
-        help_text=_("The language in which the user wants to see the interface."),
+        verbose_name="language",
+        help_text="The language in which the user wants to see the interface.",
     )
     timezone = TimeZoneField(
         choices_display="WITH_GMT_OFFSET",
         use_pytz=False,
         default=settings.TIME_ZONE,
-        help_text=_("The timezone in which the user wants to see times."),
+        help_text="The timezone in which the user wants to see times.",
     )
     is_staff = models.BooleanField(
-        _("staff status"),
+        "staff status",
         default=False,
-        help_text=_("Whether the user can log into this admin site."),
+        help_text="Whether the user can log into this admin site.",
     )
     is_active = models.BooleanField(
-        _("active"),
+        "active",
         default=True,
-        help_text=_(
+        help_text=(
             "Whether this user should be treated as active. "
             "Unselect this instead of deleting accounts."
         ),
     )
 
     custom_attributes = models.JSONField(
-        _("Custom attributes"),
+        "Custom attributes",
         default=dict,
         blank=True,
-        help_text=_("Metadata to sync to the user in the identity provider."),
+        help_text="Metadata to sync to the user in the identity provider.",
     )
 
     objects = UserManager()
@@ -199,8 +196,8 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
 
     class Meta:
         db_table = "messages_user"
-        verbose_name = _("user")
-        verbose_name_plural = _("users")
+        verbose_name = "user"
+        verbose_name_plural = "users"
 
     def __str__(self):
         return self.email or self.admin_email or str(self.id)
@@ -246,14 +243,14 @@ class MailDomain(BaseModel):
 
     name_validator = validators.RegexValidator(
         regex=r"^[a-z0-9][a-z0-9.-]*[a-z0-9]$",
-        message=_(
+        message=(
             "Enter a valid domain name. This value may contain only lowercase "
             "letters, numbers, dots and - characters."
         ),
     )
 
     name = models.CharField(
-        _("name"), max_length=253, unique=True, validators=[name_validator]
+        "name", max_length=253, unique=True, validators=[name_validator]
     )
 
     alias_of = models.ForeignKey(
@@ -261,37 +258,37 @@ class MailDomain(BaseModel):
     )
 
     oidc_autojoin = models.BooleanField(
-        _("oidc autojoin"),
+        "oidc autojoin",
         default=False,
-        help_text=_("Create mailboxes automatically based on OIDC emails."),
+        help_text="Create mailboxes automatically based on OIDC emails.",
     )
 
     identity_sync = models.BooleanField(
-        _("Identity sync"),
+        "Identity sync",
         default=False,
-        help_text=_("Sync mailboxes to an identity provider."),
+        help_text="Sync mailboxes to an identity provider.",
     )
 
     custom_settings = models.JSONField(
-        _("Custom settings"),
+        "Custom settings",
         default=dict,
         blank=True,
-        help_text=_("Custom settings for the mail domain."),
+        help_text="Custom settings for the mail domain.",
     )
 
     custom_attributes = models.JSONField(
-        _("Custom attributes"),
+        "Custom attributes",
         default=dict,
         blank=True,
-        help_text=_(
+        help_text=(
             "Metadata to sync to the maildomain group in the identity provider."
         ),
     )
 
     class Meta:
         db_table = "messages_maildomain"
-        verbose_name = _("mail domain")
-        verbose_name_plural = _("mail domains")
+        verbose_name = "mail domain"
+        verbose_name_plural = "mail domains"
 
     def __str__(self):
         return self.name
@@ -433,18 +430,18 @@ class Channel(BaseModel):
     """Channel model to store channel information for receiving messages from various sources."""
 
     name = models.CharField(
-        _("name"), max_length=255, help_text=_("Human-readable name for this channel")
+        "name", max_length=255, help_text="Human-readable name for this channel"
     )
 
     type = models.CharField(
-        _("type"), max_length=255, help_text=_("Type of channel"), default="mta"
+        "type", max_length=255, help_text="Type of channel", default="mta"
     )
 
     settings = models.JSONField(
-        _("settings"),
+        "settings",
         default=dict,
         blank=True,
-        help_text=_("Channel-specific configuration settings"),
+        help_text="Channel-specific configuration settings",
     )
 
     mailbox = models.ForeignKey(
@@ -453,7 +450,7 @@ class Channel(BaseModel):
         null=True,
         blank=True,
         related_name="channels",
-        help_text=_("Mailbox that receives messages from this channel"),
+        help_text="Mailbox that receives messages from this channel",
     )
 
     maildomain = models.ForeignKey(
@@ -462,13 +459,13 @@ class Channel(BaseModel):
         null=True,
         blank=True,
         related_name="channels",
-        help_text=_("Mail domain that owns this channel"),
+        help_text="Mail domain that owns this channel",
     )
 
     class Meta:
         db_table = "messages_channel"
-        verbose_name = _("channel")
-        verbose_name_plural = _("channels")
+        verbose_name = "channel"
+        verbose_name_plural = "channels"
         ordering = ["-created_at"]
         constraints = [
             models.CheckConstraint(
@@ -487,7 +484,7 @@ class Mailbox(BaseModel):
     """Mailbox model to store mailbox information."""
 
     local_part = models.CharField(
-        _("local part"),
+        "local part",
         max_length=64,
         validators=[validators.RegexValidator(regex=r"^[a-zA-Z0-9_.-]+$")],
     )
@@ -501,9 +498,9 @@ class Mailbox(BaseModel):
     )
 
     is_identity = models.BooleanField(
-        _("is identity"),
+        "is identity",
         default=True,
-        help_text=_(
+        help_text=(
             "Whether this mailbox identifies a person (i.e. is not an alias or a group)"
         ),
     )
@@ -514,8 +511,8 @@ class Mailbox(BaseModel):
 
     class Meta:
         db_table = "messages_mailbox"
-        verbose_name = _("mailbox")
-        verbose_name_plural = _("mailboxes")
+        verbose_name = "mailbox"
+        verbose_name_plural = "mailboxes"
         unique_together = ("local_part", "domain")
         ordering = ["-created_at"]
 
@@ -720,19 +717,19 @@ class MailboxAccess(BaseModel):
         "User", on_delete=models.CASCADE, related_name="mailbox_accesses"
     )
     role = models.SmallIntegerField(
-        _("role"),
+        "role",
         choices=MailboxRoleChoices.choices,
         default=MailboxRoleChoices.VIEWER,
     )
 
     accessed_at = models.DateTimeField(
-        _("accessed at"), null=True, blank=True, db_index=True
+        "accessed at", null=True, blank=True, db_index=True
     )
 
     class Meta:
         db_table = "messages_mailboxaccess"
-        verbose_name = _("mailbox access")
-        verbose_name_plural = _("mailbox accesses")
+        verbose_name = "mailbox access"
+        verbose_name_plural = "mailbox accesses"
         unique_together = ("mailbox", "user")
 
     def __str__(self):
@@ -756,44 +753,44 @@ class MailboxAccess(BaseModel):
 class Thread(BaseModel):
     """Thread model to group messages."""
 
-    subject = models.CharField(_("subject"), max_length=255, null=True, blank=True)
-    snippet = models.TextField(_("snippet"), blank=True)
-    has_unread = models.BooleanField(_("has unread"), default=False)
-    has_trashed = models.BooleanField(_("has trashed"), default=False)
+    subject = models.CharField("subject", max_length=255, null=True, blank=True)
+    snippet = models.TextField("snippet", blank=True)
+    has_unread = models.BooleanField("has unread", default=False)
+    has_trashed = models.BooleanField("has trashed", default=False)
     is_trashed = models.BooleanField(
-        _("is trashed"),
+        "is trashed",
         default=False,
-        help_text=_("Whether all messages in the thread are trashed"),
+        help_text="Whether all messages in the thread are trashed",
     )
-    has_archived = models.BooleanField(_("has archived"), default=False)
-    has_draft = models.BooleanField(_("has draft"), default=False)
-    has_starred = models.BooleanField(_("has starred"), default=False)
-    has_sender = models.BooleanField(_("has sender"), default=False)
-    has_messages = models.BooleanField(_("has messages"), default=True)
-    has_attachments = models.BooleanField(_("has attachments"), default=False)
-    is_spam = models.BooleanField(_("is spam"), default=False)
-    has_active = models.BooleanField(_("has active"), default=False)
+    has_archived = models.BooleanField("has archived", default=False)
+    has_draft = models.BooleanField("has draft", default=False)
+    has_starred = models.BooleanField("has starred", default=False)
+    has_sender = models.BooleanField("has sender", default=False)
+    has_messages = models.BooleanField("has messages", default=True)
+    has_attachments = models.BooleanField("has attachments", default=False)
+    is_spam = models.BooleanField("is spam", default=False)
+    has_active = models.BooleanField("has active", default=False)
     has_delivery_pending = models.BooleanField(
-        _("has delivery pending"),
+        "has delivery pending",
         default=False,
-        help_text=_(
+        help_text=(
             "True if thread has messages awaiting successful delivery "
             "(sending, retrying, or failed)."
         ),
     )
     has_delivery_failed = models.BooleanField(
-        _("has delivery failed"),
+        "has delivery failed",
         default=False,
-        help_text=_("True if thread has messages with permanent delivery failure."),
+        help_text="True if thread has messages with permanent delivery failure.",
     )
-    messaged_at = models.DateTimeField(_("messaged at"), null=True, blank=True)
-    sender_names = models.JSONField(_("sender names"), null=True, blank=True)
-    summary = models.TextField(_("summary"), null=True, blank=True, default=None)
+    messaged_at = models.DateTimeField("messaged at", null=True, blank=True)
+    sender_names = models.JSONField("sender names", null=True, blank=True)
+    summary = models.TextField("summary", null=True, blank=True, default=None)
 
     class Meta:
         db_table = "messages_thread"
-        verbose_name = _("thread")
-        verbose_name_plural = _("threads")
+        verbose_name = "thread"
+        verbose_name_plural = "threads"
 
     def __str__(self):
         return str(self.subject) if self.subject else "(no subject)"
@@ -962,52 +959,52 @@ class Label(BaseModel):
     """Label model to organize threads into folders using slash-based naming."""
 
     name = models.CharField(
-        _("name"),
+        "name",
         max_length=255,
-        help_text=_(
+        help_text=(
             "Name of the label/folder (can use slashes for hierarchy, e.g. 'Work/Projects')"
         ),
     )
     slug = models.SlugField(
-        _("slug"),
+        "slug",
         max_length=255,
-        help_text=_("URL-friendly version of the name"),
+        help_text="URL-friendly version of the name",
     )
     color = models.CharField(
-        _("color"),
+        "color",
         max_length=7,
         default="#E3E3FD",
-        help_text=_("Color of the label in hex format (e.g. #FF0000)"),
+        help_text="Color of the label in hex format (e.g. #FF0000)",
     )
     mailbox = models.ForeignKey(
         "Mailbox",
         on_delete=models.CASCADE,
         related_name="labels",
-        help_text=_("Mailbox that owns this label"),
+        help_text="Mailbox that owns this label",
     )
     threads = models.ManyToManyField(
         "Thread",
         related_name="labels",
-        help_text=_("Threads that have this label"),
+        help_text="Threads that have this label",
         blank=True,
     )
     description = models.CharField(
-        _("description"),
+        "description",
         max_length=255,
         blank=True,
         default="",
-        help_text=_("Description of the label, used by AI to understand its purpose"),
+        help_text="Description of the label, used by AI to understand its purpose",
     )
     is_auto = models.BooleanField(
-        _("auto labeling"),
+        "auto labeling",
         default=False,
-        help_text=_("Whether this label should be automatically applied by AI"),
+        help_text="Whether this label should be automatically applied by AI",
     )
 
     class Meta:
         db_table = "messages_label"
-        verbose_name = _("label")
-        verbose_name_plural = _("labels")
+        verbose_name = "label"
+        verbose_name_plural = "labels"
         unique_together = ("slug", "mailbox")
         ordering = ["slug"]
 
@@ -1171,15 +1168,15 @@ class ThreadAccess(BaseModel):
         "Mailbox", on_delete=models.CASCADE, related_name="thread_accesses"
     )
     role = models.SmallIntegerField(
-        _("role"),
+        "role",
         choices=ThreadAccessRoleChoices.choices,
         default=ThreadAccessRoleChoices.VIEWER,
     )
 
     class Meta:
         db_table = "messages_threadaccess"
-        verbose_name = _("thread access")
-        verbose_name_plural = _("thread accesses")
+        verbose_name = "thread access"
+        verbose_name_plural = "thread accesses"
         unique_together = ("thread", "mailbox")
 
     def __str__(self):
@@ -1189,8 +1186,8 @@ class ThreadAccess(BaseModel):
 class Contact(BaseModel):
     """Contact model to store contact information."""
 
-    name = models.CharField(_("name"), max_length=255, null=True, blank=True)
-    email = models.EmailField(_("email"))
+    name = models.CharField("name", max_length=255, null=True, blank=True)
+    email = models.EmailField("email")
     mailbox = models.ForeignKey(
         "Mailbox",
         on_delete=models.CASCADE,
@@ -1199,8 +1196,8 @@ class Contact(BaseModel):
 
     class Meta:
         db_table = "messages_contact"
-        verbose_name = _("contact")
-        verbose_name_plural = _("contacts")
+        verbose_name = "contact"
+        verbose_name_plural = "contacts"
         unique_together = ("email", "mailbox")
 
     def __str__(self):
@@ -1222,26 +1219,26 @@ class MessageRecipient(BaseModel):
         "Contact", on_delete=models.CASCADE, related_name="messages"
     )
     type = models.SmallIntegerField(
-        _("type"),
+        "type",
         choices=MessageRecipientTypeChoices.choices,
         default=MessageRecipientTypeChoices.TO,
     )
 
-    delivered_at = models.DateTimeField(_("delivered at"), null=True, blank=True)
+    delivered_at = models.DateTimeField("delivered at", null=True, blank=True)
     delivery_status = models.SmallIntegerField(
-        _("delivery status"),
+        "delivery status",
         null=True,
         blank=True,
         choices=MessageDeliveryStatusChoices.choices,
     )
-    delivery_message = models.TextField(_("delivery message"), null=True, blank=True)
-    retry_count = models.IntegerField(_("retry count"), default=0)
-    retry_at = models.DateTimeField(_("retry at"), null=True, blank=True)
+    delivery_message = models.TextField("delivery message", null=True, blank=True)
+    retry_count = models.IntegerField("retry count", default=0)
+    retry_at = models.DateTimeField("retry at", null=True, blank=True)
 
     class Meta:
         db_table = "messages_messagerecipient"
-        verbose_name = _("message recipient")
-        verbose_name_plural = _("message recipients")
+        verbose_name = "message recipient"
+        verbose_name_plural = "message recipients"
         unique_together = ("message", "contact", "type")
 
     def __str__(self):
@@ -1254,28 +1251,28 @@ class Message(BaseModel):
     thread = models.ForeignKey(
         Thread, on_delete=models.CASCADE, related_name="messages"
     )
-    subject = models.CharField(_("subject"), max_length=255, null=True, blank=True)
+    subject = models.CharField("subject", max_length=255, null=True, blank=True)
     sender = models.ForeignKey("Contact", on_delete=models.CASCADE)
     parent = models.ForeignKey(
         "Message", on_delete=models.SET_NULL, null=True, blank=True
     )
 
     # Flags
-    is_draft = models.BooleanField(_("is draft"), default=False)
-    is_sender = models.BooleanField(_("is sender"), default=False)
-    is_starred = models.BooleanField(_("is starred"), default=False)
-    is_trashed = models.BooleanField(_("is trashed"), default=False)
-    is_unread = models.BooleanField(_("is unread"), default=False)
-    is_spam = models.BooleanField(_("is spam"), default=False)
-    is_archived = models.BooleanField(_("is archived"), default=False)
-    has_attachments = models.BooleanField(_("has attachments"), default=False)
+    is_draft = models.BooleanField("is draft", default=False)
+    is_sender = models.BooleanField("is sender", default=False)
+    is_starred = models.BooleanField("is starred", default=False)
+    is_trashed = models.BooleanField("is trashed", default=False)
+    is_unread = models.BooleanField("is unread", default=False)
+    is_spam = models.BooleanField("is spam", default=False)
+    is_archived = models.BooleanField("is archived", default=False)
+    has_attachments = models.BooleanField("has attachments", default=False)
 
-    trashed_at = models.DateTimeField(_("trashed at"), null=True, blank=True)
-    sent_at = models.DateTimeField(_("sent at"), null=True, blank=True)
-    read_at = models.DateTimeField(_("read at"), null=True, blank=True)
-    archived_at = models.DateTimeField(_("archived at"), null=True, blank=True)
+    trashed_at = models.DateTimeField("trashed at", null=True, blank=True)
+    sent_at = models.DateTimeField("sent at", null=True, blank=True)
+    read_at = models.DateTimeField("read at", null=True, blank=True)
+    archived_at = models.DateTimeField("archived at", null=True, blank=True)
 
-    mime_id = models.CharField(_("mime id"), max_length=998, null=True, blank=True)
+    mime_id = models.CharField("mime id", max_length=998, null=True, blank=True)
 
     channel = models.ForeignKey(
         "Channel",
@@ -1303,7 +1300,7 @@ class Message(BaseModel):
     )
     signature = models.ForeignKey(
         "MessageTemplate",
-        help_text=_("Signature template for the message"),
+        help_text="Signature template for the message",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -1315,8 +1312,8 @@ class Message(BaseModel):
 
     class Meta:
         db_table = "messages_message"
-        verbose_name = _("message")
-        verbose_name_plural = _("messages")
+        verbose_name = "message"
+        verbose_name_plural = "messages"
         ordering = ["-created_at"]
 
     def __str__(self):
@@ -1387,7 +1384,7 @@ class Message(BaseModel):
         ).select_related("contact")
         cc = [str(mr.contact) for mr in cc_contacts]
         # Subject
-        subject = self.subject or _("No subject")
+        subject = self.subject or "No subject"
         # Body: try to get text/plain from parsed data
         body = ""
         parsed_data = self.get_parsed_data()
@@ -1398,19 +1395,19 @@ class Message(BaseModel):
         # Message ID
         msg_id = str(self.id)
         return (
-            f"{_('Message ID')}: {msg_id}\n"
-            f"{_('From')}: {sender}\n"
-            f"{_('To')}: {', '.join(recipients)}\n"
-            f"{_('CC')}: {', '.join(cc)}\n"
-            f"{_('Date')}: {date_str}\n"
-            f"{_('Subject')}: {subject}\n\n"
-            f"{_('Body')}: {body}"
+            f"Message ID: {msg_id}\n"
+            f"From: {sender}\n"
+            f"To: {', '.join(recipients)}\n"
+            f"CC: {', '.join(cc)}\n"
+            f"Date: {date_str}\n"
+            f"Subject: {subject}\n\n"
+            f"Body: {body}"
         )
 
     def get_tokens_count(self) -> int:
         """Get the number of tokens in the message (subject + body)."""
         # Subject
-        subject = self.subject or _("No subject")
+        subject = self.subject or "No subject"
         # Body: try to get text/plain from parsed data
         body = ""
         parsed_data = self.get_parsed_data()
@@ -1430,7 +1427,7 @@ class InboundMessage(BaseModel):
         on_delete=models.CASCADE,
         related_name="inbound_messages",
     )
-    raw_data = models.BinaryField(_("raw data"), help_text=_("Raw email message bytes"))
+    raw_data = models.BinaryField("raw data", help_text="Raw email message bytes")
     channel = models.ForeignKey(
         "Channel",
         on_delete=models.SET_NULL,
@@ -1439,15 +1436,15 @@ class InboundMessage(BaseModel):
         related_name="inbound_messages",
     )
     error_message = models.TextField(
-        _("error message"),
+        "error message",
         blank=True,
-        help_text=_("Error message if processing failed"),
+        help_text="Error message if processing failed",
     )
 
     class Meta:
         db_table = "messages_inboundmessage"
-        verbose_name = _("inbound message")
-        verbose_name_plural = _("inbound messages")
+        verbose_name = "inbound message"
+        verbose_name_plural = "inbound messages"
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["created_at"]),
@@ -1538,33 +1535,33 @@ class Blob(BaseModel):
     """
 
     sha256 = models.BinaryField(
-        _("sha256 hash"),
+        "sha256 hash",
         max_length=32,
         db_index=True,
-        help_text=_("SHA-256 hash of the uncompressed blob content"),
+        help_text="SHA-256 hash of the uncompressed blob content",
     )
 
     size = models.PositiveIntegerField(
-        _("file size"), help_text=_("Size of the blob in bytes")
+        "file size", help_text="Size of the blob in bytes"
     )
 
     size_compressed = models.PositiveIntegerField(
-        _("compressed size"), help_text=_("Size of the compressed blob in bytes")
+        "compressed size", help_text="Size of the compressed blob in bytes"
     )
 
     content_type = models.CharField(
-        _("content type"), max_length=127, help_text=_("MIME type of the blob")
+        "content type", max_length=127, help_text="MIME type of the blob"
     )
 
     compression = models.SmallIntegerField(
-        _("compression"),
+        "compression",
         choices=CompressionTypeChoices.choices,
         default=CompressionTypeChoices.NONE,
     )
 
     raw_content = models.BinaryField(
-        _("raw content"),
-        help_text=_("Compressed binary content of the blob"),
+        "raw content",
+        help_text="Compressed binary content of the blob",
     )
 
     mailbox = models.ForeignKey(
@@ -1573,7 +1570,7 @@ class Blob(BaseModel):
         blank=True,
         on_delete=models.CASCADE,
         related_name="blobs",
-        help_text=_("Mailbox that owns this blob"),
+        help_text="Mailbox that owns this blob",
     )
     maildomain = models.ForeignKey(
         "MailDomain",
@@ -1581,15 +1578,15 @@ class Blob(BaseModel):
         blank=True,
         on_delete=models.CASCADE,
         related_name="blobs",
-        help_text=_("Mail domain that owns this blob"),
+        help_text="Mail domain that owns this blob",
     )
 
     objects = BlobManager()
 
     class Meta:
         db_table = "messages_blob"
-        verbose_name = _("blob")
-        verbose_name_plural = _("blobs")
+        verbose_name = "blob"
+        verbose_name_plural = "blobs"
         ordering = ["-created_at"]
         constraints = [
             models.CheckConstraint(
@@ -1629,43 +1626,43 @@ class Attachment(BaseModel):
     """Attachment model to link messages with blobs."""
 
     name = models.CharField(
-        _("file name"),
+        "file name",
         max_length=255,
-        help_text=_("Original filename of the attachment"),
+        help_text="Original filename of the attachment",
     )
 
     blob = models.ForeignKey(
         "Blob",
         on_delete=models.CASCADE,
         related_name="attachments",
-        help_text=_("Reference to the blob containing the attachment data"),
+        help_text="Reference to the blob containing the attachment data",
     )
 
     mailbox = models.ForeignKey(
         "Mailbox",
         on_delete=models.CASCADE,
         related_name="attachments",
-        help_text=_("Mailbox that owns this attachment"),
+        help_text="Mailbox that owns this attachment",
     )
 
     messages = models.ManyToManyField(
         "Message",
         related_name="attachments",
-        help_text=_("Messages that use this attachment"),
+        help_text="Messages that use this attachment",
     )
 
     cid = models.CharField(
-        _("content ID"),
+        "content ID",
         max_length=255,
         blank=True,
         null=True,
-        help_text=_("Content-ID for inline images"),
+        help_text="Content-ID for inline images",
     )
 
     class Meta:
         db_table = "messages_attachment"
-        verbose_name = _("attachment")
-        verbose_name_plural = _("attachments")
+        verbose_name = "attachment"
+        verbose_name_plural = "attachments"
         ordering = ["-created_at"]
 
     def __str__(self):
@@ -1697,15 +1694,15 @@ class MailDomainAccess(BaseModel):
         "User", on_delete=models.CASCADE, related_name="maildomain_accesses"
     )
     role = models.SmallIntegerField(
-        _("role"),
+        "role",
         choices=MailDomainAccessRoleChoices.choices,
         default=MailDomainAccessRoleChoices.ADMIN,
     )
 
     class Meta:
         db_table = "messages_maildomainaccess"
-        verbose_name = _("mail domain access")
-        verbose_name_plural = _("mail domain accesses")
+        verbose_name = "mail domain access"
+        verbose_name_plural = "mail domain accesses"
         unique_together = ("maildomain", "user")
 
     def __str__(self):
@@ -1716,50 +1713,50 @@ class DKIMKey(BaseModel):
     """DKIM Key model to store DKIM signing keys with encrypted private key storage."""
 
     selector = models.CharField(
-        _("selector"),
+        "selector",
         max_length=255,
-        help_text=_("DKIM selector (e.g., 'default', 'mail')"),
+        help_text="DKIM selector (e.g., 'default', 'mail')",
     )
 
     private_key = EncryptedTextField(
-        _("private key"),
-        help_text=_("DKIM private key in PEM format (encrypted)"),
+        "private key",
+        help_text="DKIM private key in PEM format (encrypted)",
     )
 
     public_key = models.TextField(
-        _("public key"),
-        help_text=_("DKIM public key for DNS record generation"),
+        "public key",
+        help_text="DKIM public key for DNS record generation",
     )
 
     algorithm = models.SmallIntegerField(
-        _("algorithm"),
+        "algorithm",
         choices=DKIMAlgorithmChoices.choices,
         default=DKIMAlgorithmChoices.RSA,
-        help_text=_("DKIM signing algorithm"),
+        help_text="DKIM signing algorithm",
     )
 
     key_size = models.PositiveIntegerField(
-        _("key size"),
-        help_text=_("Key size in bits (e.g., 2048, 4096 for RSA)"),
+        "key size",
+        help_text="Key size in bits (e.g., 2048, 4096 for RSA)",
     )
 
     is_active = models.BooleanField(
-        _("is active"),
+        "is active",
         default=True,
-        help_text=_("Whether this DKIM key is active and should be used for signing"),
+        help_text="Whether this DKIM key is active and should be used for signing",
     )
 
     domain = models.ForeignKey(
         "MailDomain",
         on_delete=models.CASCADE,
         related_name="dkim_keys",
-        help_text=_("Domain that owns this DKIM key"),
+        help_text="Domain that owns this DKIM key",
     )
 
     class Meta:
         db_table = "messages_dkimkey"
-        verbose_name = _("DKIM key")
-        verbose_name_plural = _("DKIM keys")
+        verbose_name = "DKIM key"
+        verbose_name_plural = "DKIM keys"
         ordering = ["-created_at"]  # Most recent first for picking latest active key
 
     def __str__(self):
@@ -1779,9 +1776,9 @@ class MessageTemplate(BaseModel):
     """Message template model to store reusable message templates and signatures."""
 
     name = models.CharField(
-        _("name"),
+        "name",
         max_length=255,
-        help_text=_(
+        help_text=(
             "Name of the template (e.g., 'Standard Reply', 'Out of Office', 'Work Signature')"
         ),
     )
@@ -1792,22 +1789,22 @@ class MessageTemplate(BaseModel):
         null=True,
         blank=True,
         related_name="message_templates",
-        help_text=_(
+        help_text=(
             "Reference to the blob containing template content as JSON: {html: str, text: str, raw: any}"
         ),
     )
 
     type = models.SmallIntegerField(
-        _("type"),
+        "type",
         choices=MessageTemplateTypeChoices.choices,
         default=MessageTemplateTypeChoices.MESSAGE,
-        help_text=_("Type of template (message, signature)"),
+        help_text="Type of template (message, signature)",
     )
 
     is_active = models.BooleanField(
-        _("is active"),
+        "is active",
         default=True,
-        help_text=_("Whether this template is available for use"),
+        help_text="Whether this template is available for use",
     )
 
     maildomain = models.ForeignKey(
@@ -1816,7 +1813,7 @@ class MessageTemplate(BaseModel):
         blank=True,
         on_delete=models.CASCADE,
         related_name="message_templates",
-        help_text=_("Mail domain that can use this template"),
+        help_text="Mail domain that can use this template",
     )
 
     mailbox = models.ForeignKey(
@@ -1825,29 +1822,29 @@ class MessageTemplate(BaseModel):
         blank=True,
         on_delete=models.CASCADE,
         related_name="message_templates",
-        help_text=_("Mailbox that can use this template"),
+        help_text="Mailbox that can use this template",
     )
 
     is_forced = models.BooleanField(
-        _("is forced"),
+        "is forced",
         default=False,
-        help_text=_(
+        help_text=(
             "Whether this template is forced; no other template of the same type can be used in the same scope"
         ),
     )
 
     is_default = models.BooleanField(
-        _("is default"),
+        "is default",
         default=False,
-        help_text=_(
+        help_text=(
             "Whether this template is the default; it will be automatically loaded when composing a new message"
         ),
     )
 
     class Meta:
         db_table = "messages_messagetemplate"
-        verbose_name = _("message template")
-        verbose_name_plural = _("message templates")
+        verbose_name = "message template"
+        verbose_name_plural = "message templates"
         ordering = ["-created_at"]
         constraints = [
             models.CheckConstraint(
