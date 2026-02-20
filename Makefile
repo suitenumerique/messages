@@ -113,6 +113,18 @@ build: ## build the project containers
 	@$(COMPOSE) build
 .PHONY: build
 
+build-back-distroless: ## build the distroless production image
+	@docker build --target runtime-distroless-prod -t messages-distroless -f src/backend/Dockerfile src/backend/
+.PHONY: build-back-distroless
+
+test-back-distroless: build-back-distroless ## build and smoke-test the distroless production image
+	@docker run --rm messages-distroless python -c " \
+		import sys, ctypes, sqlite3, ssl; \
+		import magic; \
+		magic.from_buffer(b'test', mime=True); \
+		print(f'OK: Python {sys.version.split()[0]}, {ssl.OPENSSL_VERSION}')"
+.PHONY: test-back-distroless
+
 down: ## stop and remove containers, networks, images, and volumes
 	@$(COMPOSE) down
 .PHONY: down
