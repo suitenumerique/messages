@@ -359,7 +359,7 @@ demo-e2e: ## Populate the e2e database with demo data
 
 start-e2e: ## Start e2e services (migrate, seed, etc.)
 	@echo "$(BLUE)\n\n| 🔧 Setting up E2E services... \n$(RESET)"
-	@$(COMPOSE_E2E) run --rm objectstorage-createbucket
+	@$(COMPOSE_E2E) run --rm backend python manage.py create_bucket --storage message-imports --expire-days 1
 	@$(COMPOSE_E2E) run --rm backend python manage.py migrate --noinput
 	@$(COMPOSE_E2E) run --rm backend python manage.py search_index_create || true
 	@$(MAKE) demo-e2e

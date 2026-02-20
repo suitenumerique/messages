@@ -38,11 +38,6 @@ services:
     volumes: !reset []
     ports: !reset []
 
-  objectstorage-createbucket:
-    extends:
-      file: ../../compose.yaml
-      service: objectstorage-createbucket
-
   keycloak:
     extends:
       file: ../../compose.yaml
