@@ -53,20 +53,30 @@ services:
 
   objectstorage:
     # user: ${DOCKER_USER:-1000}
-    image: minio/minio
+    image: rustfs/rustfs:latest
     environment:
-      - MINIO_ROOT_USER=st-messages
-      - MINIO_ROOT_PASSWORD=password
+      - RUSTFS_ACCESS_KEY=st-messages
+      - RUSTFS_SECRET_KEY=password
+      - RUSTFS_CONSOLE_ENABLE=true
+      - RUSTFS_ADDRESS=0.0.0.0:9000
+      - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
+      - RUSTFS_CORS_ALLOWED_ORIGINS=*
+      - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=*
     ports:
       - "8906:9000"
       - "8907:9001"
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 1s
-      timeout: 20s
-      retries: 300
-    entrypoint: ""
-    command: minio server --console-address :9001 /data
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          "curl -f http://127.0.0.1:9000/health && curl -f http://127.0.0.1:9001/rustfs/console/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     volumes:
       - ./data/media:/data
 
@@ -141,14 +151,14 @@ services:
         condition: service_healthy
         # restart: true
 
-  backend-poetry:
+  backend-uv:
     profiles:
       - tools
     volumes:
       - ./src/backend:/app
     build:
       context: src/backend/
-      target: poetry
+      target: uv
     pull_policy: build
 
   worker-dev:
@@ -262,14 +272,14 @@ services:
     volumes:
       - ./src/mta-in:/app
 
-  mta-in-poetry:
+  mta-in-uv:
     profiles:
       - tools
     volumes:
       - ./src/mta-in:/app
     build:
       context: src/mta-in
-      target: poetry
+      target: uv
     pull_policy: build
 
   mta-out:
@@ -326,14 +336,14 @@ services:
       socks-proxy:
         condition: service_started
 
-  mta-out-poetry:
+  mta-out-uv:
     profiles:
       - tools
     volumes:
       - ./src/mta-out:/app
     build:
       context: src/mta-out
-      target: poetry
+      target: uv
     pull_policy: build
 
   keycloak:

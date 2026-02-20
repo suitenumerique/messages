@@ -5,7 +5,7 @@ These tests use hypothesis for property-based testing to find edge cases
 and potential crashes in the email address parsing code.
 
 Run with: pytest -m fuzz core/tests/mda/test_rfc5322_address_fuzz.py
-Or: make back-fuzz
+Or: make fuzz-back
 """
 
 import pytest

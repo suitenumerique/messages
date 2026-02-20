@@ -166,13 +166,13 @@ $ make api-update
 You can also generate the schema only with:
 
 ```bash
-$ make back-api-update
+$ make api-update-back
 ```
 
 And the frontend API client only with:
 
 ```bash
-$ make front-api-update
+$ make api-update-front
 ```
 
 ### Sending test emails 📨
@@ -198,7 +198,7 @@ swaks --to=user1@example.local --server localhost:8917
 swaks -tls --to=test@example.external --server localhost:8911 --auth-user user --auth-password=pass
 
 # You can also send emails using Messages itself instead of the frontend
-make back-shell
+make shell-back
 MTA_OUT_MODE=relay MTA_OUT_RELAY_HOST=mailcatcher:1025 python manage.py send_mail --to=user1@example.local --subject="Test" --body="Hello World"
 
 ```

@@ -58,7 +58,7 @@ Example response:
 To run the tests, go to the repository root and do:
 
 ```
-make mpa-test
+make test-mpa
 ```
 
 The test suite includes:

@@ -2,8 +2,8 @@
 # st-messages-mta-out package
 #
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.7.19,<0.8"]
+build-backend = "uv_build"
 
 [project]
 name = "st-messages-mta-out"
@@ -48,15 +48,10 @@ dev = [
     "types-requests==2.32.0.20241016",
 ]
 
-[tool.poetry]
-package-mode = false
-
-[tool.setuptools]
-packages = { find = { where = ["."], exclude = ["tests"] } }
-zip-safe = true
-
-[tool.distutils.bdist_wheel]
-universal = true
+[tool.uv.build-backend]
+module-root = ""
+source-include = ["etc/**"]
+source-exclude = ["tests/**"]
 
 [tool.ruff]
 exclude = [

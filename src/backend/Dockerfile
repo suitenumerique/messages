@@ -14,13 +14,16 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-# ---- Poetry package manager and dev system deps ----
-FROM base AS poetry
+# ---- uv package manager and dev system deps ----
+FROM base AS uv
+
+COPY --from=ghcr.io/astral-sh/uv:0.9.10 /uv /uvx /bin/
 
 RUN <<EOR
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
     curl \
+    git \
     rdfind \
     libmagic1 \
     build-essential \
@@ -29,31 +32,25 @@ DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
 rm -rf /var/lib/apt/lists/*
 EOR
 
-ENV POETRY_NO_INTERACTION=1
-ENV POETRY_VIRTUALENVS_CREATE=0
-ENV POETRY_VIRTUALENVS_OPTIONS_NO_PIP=1
-ENV POETRY_VERSION=2.1.4
-
-RUN python -m pip install poetry==${POETRY_VERSION}
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+ENV UV_PYTHON_DOWNLOADS=0
+ENV UV_PROJECT_ENVIRONMENT=/venv
 
 # ---- Base image with dependencies installed ----
-FROM poetry AS base-with-deps
+FROM uv AS base-with-deps
 
-COPY pyproject.toml poetry.lock ./
+COPY pyproject.toml uv.lock ./
 
-# Create a runtime virtual environment and activate it
-RUN python -m venv /venv
 ENV PATH="/venv/bin:$PATH"
-ENV VIRTUAL_ENV=/venv
-ENV VIRTUAL_ENV_PROMPT=venv
 
-# Install dependencies in this new virtual environment
-RUN poetry install --compile
+# Install dependencies
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-install-project --no-dev
 
 # ---- Base image with dependencies installed for development ----
 FROM base-with-deps AS base-with-deps-dev
 
-RUN poetry install --compile --extras dev
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-install-project --all-extras
 
 # ---- static link collector ----
 FROM base-with-deps AS link-collector

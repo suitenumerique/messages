@@ -22,7 +22,7 @@ license = "MIT"
 readme = "README.md"
 requires-python = ">=3.13,<4.0"
 
-# Note: after changing this list you must re-run `make back-poetry-lock`
+# Note: after changing this list you must re-run `make uv-lock-back`
 dependencies = [
     "boto3==1.40.43",
     "botocore==1.40.43",
@@ -94,8 +94,14 @@ dev = [
     "ruff==0.9.3"
 ]
 
-[tool.poetry]
-package-mode = false
+[build-system]
+requires = ["uv_build>=0.7.19,<0.8"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+source-include = ["core/**"]
+source-exclude = ["core/tests/**"]
 
 [tool.ruff]
 exclude = [

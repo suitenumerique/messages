@@ -19,7 +19,7 @@ jobs:
       - name: Create env files
         run: make create-env-files
       - name: Generate source translations
-        run: make front-install-frozen
+        run: make install-frozen-front
       - name: Generate source translations
         run: make i18n-generate
       - name: crowdin action

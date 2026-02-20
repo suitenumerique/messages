@@ -41,5 +41,5 @@ This service provides a SOCKS5 proxy server that can be used for routing SMTP tr
 
 ```bash
 # Run this at the root of Messages:
-make socks-proxy-test
+make test-socks-proxy
 ```

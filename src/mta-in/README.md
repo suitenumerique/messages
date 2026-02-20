@@ -20,11 +20,11 @@ The API calls are secured by a JWT token, using a shared secret `env.MDA_API_SEC
 To run the tests, go to the repository root and do:
 
 ```
-make mta-in-test
+make test-mta-in
 ```
 
 You should also run lint before commit:
 
 ```
-make mta-in-lint
+make lint-mta-in
 ```

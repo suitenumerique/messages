@@ -212,5 +212,5 @@ The exporter has a comprehensive test suite in `src/features/blocknote/email-exp
 Run with:
 
 ```bash
-make front-test -- src/features/blocknote/email-exporter/index.test.tsx
+make test-front -- src/features/blocknote/email-exporter/index.test.tsx
 ```
