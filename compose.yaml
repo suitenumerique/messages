@@ -53,7 +53,7 @@ services:
 
   objectstorage:
     # user: ${DOCKER_USER:-1000}
-    image: rustfs/rustfs:latest
+    image: rustfs/rustfs:1.0.0-alpha.83
     environment:
       - RUSTFS_ACCESS_KEY=st-messages
       - RUSTFS_SECRET_KEY=password
@@ -73,10 +73,10 @@ services:
           "-c",
           "curl -f http://127.0.0.1:9000/health && curl -f http://127.0.0.1:9001/rustfs/console/health",
         ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      interval: 1s
+      timeout: 5s
+      retries: 60
+      start_period: 0s
     volumes:
       - ./data/media:/data
 

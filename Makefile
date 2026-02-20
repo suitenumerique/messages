@@ -404,12 +404,12 @@ exec-back: ## open a shell in the running backend-dev container
 
 deps-lock-back: ## lock the dependencies
 	@$(COMPOSE) run --rm --build backend-uv uv lock
-	make deps-audit
+	@$(MAKE) deps-audit
 .PHONY: deps-lock-back
 
 deps-update-indirect-back: ## update indirect dependencies
-	rm src/backend/uv.lock
-	make deps-lock-back
+	rm -f src/backend/uv.lock
+	@$(MAKE) deps-lock-back
 .PHONY: deps-update-indirect-back
 
 deps-outdated-back: ## show outdated dependencies
