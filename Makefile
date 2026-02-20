@@ -161,8 +161,9 @@ restart-minimal: \
 	start-minimal
 .PHONY: restart-minimal
 
-import-bucket: ## create the message imports bucket to objectstorage
-	@$(COMPOSE_RUN) objectstorage-createbucket
+import-bucket: ## create the message imports bucket in objectstorage
+	@$(COMPOSE) up -d objectstorage --wait
+	@$(MANAGE_DB) create_bucket --storage message-imports --expire-days 1
 .PHONY: import-bucket
 
 shell-objectstorage: ## open a shell in the objectstorage container

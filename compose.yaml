@@ -80,20 +80,6 @@ services:
     volumes:
       - ./data/media:/data
 
-  objectstorage-createbucket:
-    image: minio/mc
-    depends_on:
-      objectstorage:
-        condition: service_healthy
-    environment:
-      - MC_HOST=http://objectstorage:9000
-    entrypoint: >
-      sh -c "
-      /usr/bin/mc alias set st-messages $${MC_HOST} st-messages password && \
-      /usr/bin/mc mb st-messages/msg-imports --ignore-existing && \
-      /usr/bin/mc ilm rule rm --all --force st-messages/msg-imports || true && \
-      /usr/bin/mc ilm rule add --expire-days 1 st-messages/msg-imports"
-
   backend-base:
     build:
       context: src/backend

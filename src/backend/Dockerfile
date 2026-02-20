@@ -138,6 +138,21 @@ COPY --from=base-with-deps-dev /venv /venv
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 
 
+# ---- Production application source (strip tests, dev tooling, build files) ----
+FROM base AS app-prod
+COPY . /app/
+RUN rm -rf \
+    /app/core/tests \
+    /app/core/factories.py \
+    /app/e2e \
+    /app/Dockerfile \
+    /app/.pylintrc \
+    /app/pyproject.toml \
+    /app/uv.lock \
+    /app/README.md \
+    /app/entrypoint
+
+
 # ---- Production runtime ----
 FROM runtime-base AS runtime-prod
 ARG MESSAGES_STATIC_ROOT=/data/static
@@ -145,7 +160,7 @@ ARG MESSAGES_STATIC_ROOT=/data/static
 COPY --from=python-runtime /opt/python /opt/python
 COPY --from=base-with-deps /venv /venv
 COPY --from=link-collector ${MESSAGES_STATIC_ROOT} ${MESSAGES_STATIC_ROOT}
-COPY . /app/
+COPY --from=app-prod /app/ /app/
 
 # The default command runs gunicorn WSGI server in messages's main module
 CMD ["gunicorn", "-c", "/app/gunicorn.conf.py", "messages.wsgi:application"]
@@ -182,7 +197,7 @@ COPY --from=shared-libs /shared-libs/ /
 # Static files
 COPY --from=link-collector ${MESSAGES_STATIC_ROOT} ${MESSAGES_STATIC_ROOT}
 # Application code
-COPY . /app/
+COPY --from=app-prod /app/ /app/
 
 ENV PATH="/venv/bin:$PATH"
 ENV VIRTUAL_ENV=/venv
