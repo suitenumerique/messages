@@ -177,11 +177,14 @@ class S3MultipartGzipUploader:  # pylint: disable=too-many-instance-attributes
                 )
         except Exception:
             # Abort the multipart upload to avoid leaked parts on S3
-            self.s3_client.abort_multipart_upload(
-                Bucket=self.bucket,
-                Key=self.key,
-                UploadId=self.upload_id,
-            )
+            try:
+                self.s3_client.abort_multipart_upload(
+                    Bucket=self.bucket,
+                    Key=self.key,
+                    UploadId=self.upload_id,
+                )
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.debug("Failed to abort multipart upload", exc_info=True)
             raise
         finally:
             self._closed = True

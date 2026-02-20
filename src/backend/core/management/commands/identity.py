@@ -130,7 +130,7 @@ class Command(BaseCommand):
         except ValueError as e:
             raise CommandError(str(e)) from e
 
-    def resync_all(self, options):  # pylint: disable=unused-argument
+    def resync_all(self, _options):
         """Resync all mailboxes with identity_sync enabled to Keycloak."""
         self.stdout.write(
             self.style.SUCCESS("Starting resync of all mailboxes to Keycloak...")

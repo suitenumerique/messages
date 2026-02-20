@@ -111,12 +111,12 @@ class Command(BaseCommand):
         self.stdout.write(f"Reindexing thread {thread_id}...")
 
         if async_mode:
-            task = reindex_thread_task.delay(thread_id)
+            task = reindex_thread_task.delay(str(thread_uuid))
             self.stdout.write(
                 self.style.SUCCESS(f"Reindexing task scheduled (ID: {task.id})")
             )
         else:
-            result = reindex_thread_task(thread_id)  # pylint: disable=no-value-for-parameter
+            result = reindex_thread_task(str(thread_uuid))  # pylint: disable=no-value-for-parameter
             if result.get("success", False):
                 self.stdout.write(
                     self.style.SUCCESS(f"Thread {thread_id} indexed successfully")
@@ -143,7 +143,7 @@ class Command(BaseCommand):
         self.stdout.write(f"Reindexing threads for mailbox {mailbox}...")
 
         if async_mode:
-            task = reindex_mailbox_task.delay(mailbox_id)
+            task = reindex_mailbox_task.delay(str(mailbox_uuid))
             self.stdout.write(
                 self.style.SUCCESS(f"Reindexing task scheduled (ID: {task.id})")
             )

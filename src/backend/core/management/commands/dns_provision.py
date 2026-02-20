@@ -97,9 +97,14 @@ class Command(BaseCommand):
         else:
             self.stdout.write("Provisioning DNS records...")
 
-        results = provision_domain_dns(
-            maildomain, provider_name=provider_name, pretend=pretend
-        )
+        try:
+            results = provision_domain_dns(
+                maildomain, provider_name=provider_name, pretend=pretend
+            )
+        except Exception as e:
+            raise CommandError(
+                f"DNS provisioning failed for {maildomain.name}: {e}"
+            ) from e
 
         if results["success"]:
             if pretend:
@@ -109,10 +114,8 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(self.style.SUCCESS("✓ DNS provisioning successful"))
 
-            # Show which provider was used
             provider_used = results.get("provider", "unknown")
-            if provider_used:
-                self.stdout.write(f"Provider used: {provider_used}")
+            self.stdout.write(f"Provider used: {provider_used}")
 
             if results["changes"]:
                 if pretend:

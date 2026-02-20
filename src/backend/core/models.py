@@ -907,10 +907,8 @@ class Thread(BaseModel):
                 self.messaged_at = max(
                     msg["created_at"] for msg in non_trashed_messages
                 )
-            elif len(message_data) > 0:
-                self.messaged_at = max(msg["created_at"] for msg in message_data)
             else:
-                self.messaged_at = None
+                self.messaged_at = max(msg["created_at"] for msg in message_data)
 
             # Set sender names (first and last sender names)
             sender_names = None

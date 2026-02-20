@@ -34,8 +34,10 @@ def get_most_relevant_labels(thread: Thread, labels: list) -> list[str]:
     with open(prompts_path, encoding="utf-8") as f:
         prompts = json.load(f)
 
-    # Get the prompt for the active language
-    prompt_template = prompts.get(active_language)
+    # Get the prompt for the active language, fallback to en-us
+    prompt_template = prompts.get(active_language) or prompts.get("en-us")
+    if prompt_template is None:
+        raise ValueError(f"No AI prompt template for language '{active_language}'")
     prompt_query = prompt_template["autolabels_query"]
     prompt = prompt_query.format(
         messages=messages_as_text,

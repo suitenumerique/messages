@@ -15,7 +15,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-      # Backend i18n
       - name: Install frontend dependencies
         run: make install-frozen-front
       - name: Generate frontend source translations

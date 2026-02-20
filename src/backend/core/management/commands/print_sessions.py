@@ -41,7 +41,8 @@ class Command(BaseCommand):
         session_id_filter = options.get("session_id")
         verbose = options.get("verbose", False)
 
-        prefix = ":1:django.contrib.sessions.cache"
+        cache_version = settings.CACHES[settings.SESSION_CACHE_ALIAS].get("VERSION", 1)
+        prefix = f":{cache_version}:django.contrib.sessions.cache"
 
         # If session ID filter is provided, check that specific session
         if session_id_filter:
@@ -54,7 +55,7 @@ class Command(BaseCommand):
         session_count = 0
         filtered_count = 0
 
-        redis_keys = redis.keys(f"{prefix}*")
+        redis_keys = list(redis.scan_iter(f"{prefix}*"))
         self.stdout.write(f"Found {len(redis_keys)} total sessions")
 
         for redis_key in redis_keys:

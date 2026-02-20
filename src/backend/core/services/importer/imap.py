@@ -190,8 +190,8 @@ def _parse_imap_folder_info(folder_info: str) -> Optional[str]:
     return None
 
 
-def get_selectable_folders(  # pylint: disable=unused-argument
-    imap_connection, username: str, imap_server: str
+def get_selectable_folders(
+    imap_connection, _username: str, _imap_server: str
 ) -> List[str]:
     """Get list of selectable folders from IMAP server."""
     status, folder_list = imap_connection.list()
@@ -288,8 +288,8 @@ def select_imap_folder(imap_connection, folder: str) -> bool:
         return False
 
 
-def get_message_numbers(  # pylint: disable=unused-argument
-    imap_connection, folder: str, username: str, imap_server: str
+def get_message_numbers(
+    imap_connection, folder: str, _username: str, _imap_server: str
 ) -> List[bytes]:
     """Get message numbers from the selected folder."""
     # Search for all messages
@@ -430,11 +430,13 @@ def _fetch_message_with_flags(
     return flags, raw_email
 
 
-def _fetch_message_with_flags_retry(  # pylint: disable=inconsistent-return-statements
+def _fetch_message_with_flags_retry(
     imap_connection, msg_num: bytes
 ) -> Tuple[List[str], Optional[bytes]]:
     """Fetch a message with retry logic for timeout errors."""
     max_retries = settings.IMAP_MAX_RETRIES
+    if max_retries < 1:
+        raise RuntimeError("IMAP_MAX_RETRIES must be >= 1")
     for attempt in range(max_retries):
         try:
             return _fetch_message_with_flags(imap_connection, msg_num)
@@ -458,6 +460,7 @@ def _fetch_message_with_flags_retry(  # pylint: disable=inconsistent-return-stat
         except Exception as e:
             logger.error("Unexpected error fetching message %s: %s", msg_num, e)
             raise
+    raise RuntimeError(f"Failed to fetch message {msg_num} after {max_retries} retries")
 
 
 def process_folder_messages(  # pylint: disable=too-many-arguments
