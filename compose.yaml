@@ -78,7 +78,7 @@ services:
       retries: 60
       start_period: 0s
     volumes:
-      - ./data/media:/data
+      - objectstorage-data:/data
 
   backend-base:
     build:
@@ -385,3 +385,6 @@ services:
         condition: service_started
       redis:
         condition: service_started
+
+volumes:
+  objectstorage-data:

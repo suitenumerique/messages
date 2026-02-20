@@ -35,7 +35,7 @@ jobs:
         run: make create-env-files
       - name: Setup data directories
         run: |
-          mkdir -p data/media data/static
+          mkdir -p data/static
           chown -R 1001:1001 data
       - name: Collect static files
         run: make collectstatic
