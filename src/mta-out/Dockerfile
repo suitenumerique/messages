@@ -1,8 +1,8 @@
 # https://hub.docker.com/_/python
-FROM python:3.13.5-slim-bookworm AS base
+FROM python:3.14.3-slim-trixie AS base
 
 # Bump this to force an update of the apt repositories
-ENV MIN_UPDATE_DATE="2025-07-14"
+ENV MIN_UPDATE_DATE="2026-02-20"
 
 WORKDIR /app
 
@@ -22,7 +22,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 # ---- uv package manager ----
 FROM base AS uv
 
-COPY --from=ghcr.io/astral-sh/uv:0.9.10 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.10.4 /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy

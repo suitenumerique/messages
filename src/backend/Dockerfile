@@ -1,8 +1,8 @@
 # https://hub.docker.com/_/python
-FROM python:3.13.7-slim-trixie AS base
+FROM python:3.14.3-slim-trixie AS base
 
 # Bump this to force an update of the apt repositories
-ENV MIN_UPDATE_DATE="2025-12-01"
+ENV MIN_UPDATE_DATE="2026-02-20"
 
 RUN <<EOR
 apt-get update
@@ -17,7 +17,7 @@ WORKDIR /app
 # ---- uv package manager and dev system deps ----
 FROM base AS uv
 
-COPY --from=ghcr.io/astral-sh/uv:0.9.10 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.10.4 /uv /uvx /bin/
 
 RUN <<EOR
 apt-get update

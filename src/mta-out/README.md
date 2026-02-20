@@ -6,10 +6,10 @@ It only deals with outbound email and is optimized specifically for this purpose
 
 This MTA container is based on Postfix with a simplified configuration focused solely on outbound mail delivery. It's mostly stateless and configurable via environment variables. By default, it delivers email directly to recipient servers via DNS MX lookups. Optionally, it can be configured to relay through an upstream SMTP server.
 
-Note: it may soon be removed entirely from Messages and replaced by a simple SOCKS proxy, as SMTP delivery
-could be reimplemented as a Celery task, to move the last bit of state (the delivery queues) out of here.
-
 It is battle-tested with a complete Python test suite.
+
+Note: this component is no longer used in production and may be removed from the repository eventually. Now
+the worker directly delivers emails through a SOCKS proxy, to avoid any queue in this component.
 
 ## Key features
 - Secure SMTP on port 587 with TLS required for authentication
