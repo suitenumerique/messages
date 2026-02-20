@@ -34,7 +34,7 @@ EOR
 
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
-ENV UV_PYTHON_DOWNLOADS=0
+ENV UV_PYTHON_DOWNLOADS=never
 ENV UV_PROJECT_ENVIRONMENT=/venv
 
 # ---- Base image with dependencies installed ----
