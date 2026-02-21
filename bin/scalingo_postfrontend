@@ -5,21 +5,18 @@ set -o pipefail   # don't ignore exit codes when piping output
 
 echo "-----> Running post-frontend script"
 
-# Move the frontend build to the nginx root and clean up
+# Move the frontend build to the app root and clean up
 mkdir -p build/
 mv src/frontend/out build/frontend-out
 
 mv src/backend/* ./
 
-# Replace ${MESSAGES_FRONTEND_BACKEND_SERVER} to the erb equivalent with the "localhost:8000" default value
-# Replace ${DJANGO_ADMIN_URL} to the erb equivalent with the "admin" default value
-# Replace ${MESSAGES_FRONTEND_ROOT} with the actual frontend root for scalingo
-# Replace every other shell variable to its erb equivalent
-sed \
-  -e 's/\${MESSAGES_FRONTEND_BACKEND_SERVER}/<%= ENV["MESSAGES_FRONTEND_BACKEND_SERVER"] || "localhost:8000" %>/g' \
-  -e 's/\${DJANGO_ADMIN_URL}/<%= ENV["DJANGO_ADMIN_URL"] || "admin" %>/g' \
-  -e 's|\${MESSAGES_FRONTEND_ROOT}|/app/build/frontend-out|g' \
-  -e 's/\${\([A-Z_][A-Z0-9_]*\)}/<%= ENV["\1"] %>/g' \
-  src/frontend/nginx/nginx.conf.template > ./servers.conf.erb
+# Download Caddy binary
+CADDY_VERSION="2.9.1"
+curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" | tar -xz -C bin/ caddy
+chmod +x bin/caddy
+
+# Copy Caddyfile (uses {$ENV} vars natively, no ERB needed)
+cp src/frontend/caddy/Caddyfile ./Caddyfile
 
 echo "3.13" > .python-version

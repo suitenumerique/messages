@@ -124,5 +124,5 @@ The system is designed for containerized deployment with:
 - **Docker containers** for all services
 - **Environment-specific configurations** (dev, staging, production)
 - **Horizontal scaling** capability for backend and Celery workers
-- **Load balancing** support via nginx reverse proxy
+- **Load balancing** support via Caddy reverse proxy
 - **Health checks** and monitoring integration (In Progress)

@@ -93,13 +93,13 @@ services:
     depends_on: !override
       - backend
 
-  nginx:
-    image: nginx:1.27-alpine
+  proxy:
+    image: caddy:2-alpine
     environment:
       - E2E_PROFILE=${E2E_PROFILE:-e2e}
     volumes:
-      - ./nginx/e2e.conf.template:/etc/nginx/templates/e2e.conf.template:ro
-      - ./nginx/entrypoint.sh:/entrypoint.sh:ro
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/entrypoint.sh:/entrypoint.sh:ro
     entrypoint: "/entrypoint.sh"
     depends_on:
       frontend:
@@ -117,7 +117,7 @@ services:
     build:
       target: frontend-build
       args:
-        API_ORIGIN: http://nginx
+        API_ORIGIN: http://proxy
     command: ["npx", "serve", "-s", "out"]
     ports: !reset []
 
@@ -150,8 +150,8 @@ services:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
     environment:
-      - FRONTEND_BASE_URL=http://nginx
-      - BACKEND_BASE_URL=http://nginx
+      - FRONTEND_BASE_URL=http://proxy
+      - BACKEND_BASE_URL=http://proxy
       - KEYCLOAK_BASE_URL=http://keycloak:8802
       - DOCKER_HOST=tcp://docker-sock-proxy:2375
       - CI=${CI:-false}
@@ -163,7 +163,7 @@ services:
     depends_on:
       docker-sock-proxy:
         condition: service_started
-      nginx:
+      proxy:
         condition: service_started
       mta-in:
         condition: service_started

@@ -14,11 +14,11 @@ OIDC_OP_AUTHORIZATION_ENDPOINT=http://keycloak:8802/realms/messages/protocol/ope
 OIDC_OP_TOKEN_ENDPOINT=http://keycloak:8802/realms/messages/protocol/openid-connect/token
 OIDC_OP_USER_ENDPOINT=http://keycloak:8802/realms/messages/protocol/openid-connect/userinfo
 
-OIDC_REDIRECT_ALLOWED_HOSTS=["http://keycloak:8802", "http://nginx"]
+OIDC_REDIRECT_ALLOWED_HOSTS=["http://keycloak:8802", "http://proxy"]
 
-LOGIN_REDIRECT_URL=http://nginx
-LOGIN_REDIRECT_URL_FAILURE=http://nginx
-LOGOUT_REDIRECT_URL=http://nginx
+LOGIN_REDIRECT_URL=http://proxy
+LOGIN_REDIRECT_URL_FAILURE=http://proxy
+LOGOUT_REDIRECT_URL=http://proxy
 
 # Keycloak
 KEYCLOAK_URL=http://keycloak:8802

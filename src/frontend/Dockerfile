@@ -24,19 +24,20 @@ ENV NEXT_PUBLIC_API_ORIGIN=${API_ORIGIN}
 
 RUN npm run build
 
-FROM docker.io/nginxinc/nginx-unprivileged:1-alpine AS runtime-prod
+FROM alpine:3.21 AS caddy-download
+ARG TARGETARCH
+ARG CADDY_VERSION=2.9.1
+RUN wget -qO- "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${TARGETARCH}.tar.gz" | tar -xz caddy
 
-USER root
-RUN apk --no-cache upgrade
+FROM gcr.io/distroless/static-debian13:nonroot AS runtime-prod
 
-USER nginx
+COPY --from=caddy-download /caddy /usr/bin/caddy
 COPY --from=frontend-build /home/frontend/out /app
-COPY nginx/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY caddy/Caddyfile /etc/caddy/Caddyfile
 
 ENV PORT=8080
 ENV MESSAGES_FRONTEND_ROOT=/app
 ENV MESSAGES_FRONTEND_BACKEND_SERVER=localhost:8000
 ENV DJANGO_ADMIN_URL=admin
 
-HEALTHCHECK --interval=60s --timeout=3s --start-interval=10s \
-  CMD curl -fsS http://localhost:${PORT}/__lbheartbeat__
+ENTRYPOINT ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

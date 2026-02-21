@@ -35,7 +35,11 @@ class AIService:
             "n": 1,
         }
 
-        response = self.client.chat.completions.create(**data)
+        try:
+            response = self.client.chat.completions.create(**data)
+        except Exception:
+            logger.exception("AI API call failed")
+            raise
 
         if not response.choices:
             raise ValueError("AI response returned no choices")

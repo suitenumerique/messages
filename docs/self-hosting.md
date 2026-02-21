@@ -201,7 +201,7 @@ For production deployment, create your own Docker Compose configuration based on
 - Configure SSL/TLS certificates
 - Set up persistent volumes for databases
 - Implement proper restart policies
-- Configure reverse proxy (nginx) for SSL termination
+- Configure reverse proxy (Caddy) for SSL termination
 
 ## Security Considerations
 

@@ -15,6 +15,7 @@ classifiers = [
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 description = "A Django MDA"
 keywords = ["Django", "Contacts", "Templates", "RBAC"]

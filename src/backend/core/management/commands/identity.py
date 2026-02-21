@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class Command(BaseCommand):
     """Identity management commands for Keycloak integration."""
 
-    help = "Identity management commands for Keycloak integration"
+    help = __doc__
 
     def add_arguments(self, parser):
         subparsers = parser.add_subparsers(dest="command", help="Available commands")

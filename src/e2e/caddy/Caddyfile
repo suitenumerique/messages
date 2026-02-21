@@ -1,0 +1,7 @@
+:80 {
+	reverse_proxy /api/* backend:8000
+	reverse_proxy /oidc/* backend:8000
+	reverse_proxy /admin/* backend:8000
+	reverse_proxy /__heartbeat__/* backend:8000
+	reverse_proxy {$FRONTEND_SERVICE_NAME}:3000
+}
