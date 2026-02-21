@@ -4,7 +4,7 @@
 }
 
 :{$PORT} {
-	root * {$MESSAGES_FRONTEND_ROOT}
+	root * {$MESSAGES_FRONTEND_ROOT:/app}
 	header -Server
 
 	route {
@@ -12,25 +12,25 @@
 		respond /__lbheartbeat__ 200
 		respond /__lbheartbeat__/ 200
 
-		reverse_proxy /__heartbeat__/* {$MESSAGES_FRONTEND_BACKEND_SERVER} {
+		reverse_proxy /__heartbeat__/* {$MESSAGES_FRONTEND_BACKEND_SERVER:localhost:8000} {
 			header_up X-Forwarded-Proto https
 			header_up X-Forwarded-For {remote_host}
 		}
 
 		# Django backend proxy
-		reverse_proxy /api/* {$MESSAGES_FRONTEND_BACKEND_SERVER} {
+		reverse_proxy /api/* {$MESSAGES_FRONTEND_BACKEND_SERVER:localhost:8000} {
 			header_up X-Forwarded-Proto https
 			header_up X-Forwarded-For {remote_host}
 		}
 
-		redir /{$DJANGO_ADMIN_URL} /{$DJANGO_ADMIN_URL}/ 301
+		redir /{$DJANGO_ADMIN_URL:admin} /{$DJANGO_ADMIN_URL:admin}/ 301
 
-		reverse_proxy /{$DJANGO_ADMIN_URL}/* {$MESSAGES_FRONTEND_BACKEND_SERVER} {
+		reverse_proxy /{$DJANGO_ADMIN_URL:admin}/* {$MESSAGES_FRONTEND_BACKEND_SERVER:localhost:8000} {
 			header_up X-Forwarded-Proto https
 			header_up X-Forwarded-For {remote_host}
 		}
 
-		reverse_proxy /static/* {$MESSAGES_FRONTEND_BACKEND_SERVER} {
+		reverse_proxy /static/* {$MESSAGES_FRONTEND_BACKEND_SERVER:localhost:8000} {
 			header_up X-Forwarded-Proto https
 			header_up X-Forwarded-For {remote_host}
 		}

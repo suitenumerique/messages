@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Set defaults for Caddy env vars
+export MESSAGES_FRONTEND_ROOT="${MESSAGES_FRONTEND_ROOT:-/app/build/frontend-out}"
+export MESSAGES_FRONTEND_BACKEND_SERVER="${MESSAGES_FRONTEND_BACKEND_SERVER:-localhost:8000}"
+export DJANGO_ADMIN_URL="${DJANGO_ADMIN_URL:-admin}"
+
 # Start the Django backend server
 gunicorn -b :8000 messages.wsgi:application --log-file - &
 
