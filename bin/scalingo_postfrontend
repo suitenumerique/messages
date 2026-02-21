@@ -10,6 +10,7 @@ mkdir -p build/
 mv src/frontend/out build/frontend-out
 
 mv src/backend/* ./
+mkdir -p messages_backend && touch messages_backend/__init__.py
 
 # Download Caddy binary
 CADDY_VERSION="2.9.1"
