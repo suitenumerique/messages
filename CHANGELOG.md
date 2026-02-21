@@ -11,10 +11,15 @@ and this project adheres to
 ### Added
 
 - Add arm64 platform support for Docker image builds
-
 ### Changed
 
 - Bump keycloak to 26.5.3 #543
+- Replace nginx with Caddy for frontend reverse proxy and Scalingo deployment #556
+- Replace MinIO with RustFS for object storage in development #556
+- Migrate Python packaging from Poetry to uv #556
+- Standardize and rename Makefile targets #556
+- Upgrade Python to 3.14 #556
+- Remove Django i18n and backend translation catalogs #556
 
 ## [0.2.0] - 2026-02-03
 
