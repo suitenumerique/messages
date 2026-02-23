@@ -41,31 +41,6 @@ class DriveAPIView(APIView):
             f"{settings.DRIVE_CONFIG.get('base_url')}/external_api/v1.0"
         )
 
-    def _retrieve_main_workspace(self, access_token):
-        """
-        Retrieve the main workspace for the authenticated user.
-        """
-        response = requests.get(
-            f"{self.drive_external_api}/users/me/",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json",
-            },
-            timeout=5,
-        )
-
-        if not response.ok:
-            logger.warning(
-                "Failed to retrieve main workspace. (%s - %s)",
-                response.status_code,
-                response.text,
-                exc_info=True,
-            )
-            return None
-
-        data = response.json()
-        return data.get("main_workspace")
-
     @extend_schema(
         tags=["third-party/drive"],
         parameters=[
@@ -106,20 +81,9 @@ class DriveAPIView(APIView):
         if title := request.query_params.get("title"):
             filters.update({"title": title})
 
-        # Retrieve the main workspace
-        main_workspace = self._retrieve_main_workspace(access_token)
-
-        if not main_workspace:
-            return Response(
-                status=status.HTTP_404_NOT_FOUND,
-                data={
-                    "error": f"No {settings.DRIVE_CONFIG.get('app_name')} main workspace found"
-                },
-            )
-
-        # Search for files at the root of the main workspace
+        # Search for files at the root of the user's workspace
         response = requests.get(
-            f"{self.drive_external_api}/items/{main_workspace['id']}/children/",
+            f"{self.drive_external_api}/items/",
             params=filters,
             headers={
                 "Authorization": f"Bearer {access_token}",
@@ -170,20 +134,9 @@ class DriveAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST, data={"error": str(exc)}
             )
 
-        # Get the main workspace
-        main_workspace = self._retrieve_main_workspace(access_token)
-
-        if not main_workspace:
-            return Response(
-                status=status.HTTP_404_NOT_FOUND,
-                data={
-                    "error": f"No {settings.DRIVE_CONFIG.get('app_name')} main workspace found"
-                },
-            )
-
         # Create a new file in the main workspace
         response = requests.post(
-            f"{self.drive_external_api}/items/{main_workspace['id']}/children/",
+            f"{self.drive_external_api}/items/",
             json={
                 "type": "file",
                 "filename": attachment["name"],

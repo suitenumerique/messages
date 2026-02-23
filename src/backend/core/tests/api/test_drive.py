@@ -116,10 +116,17 @@ class TestDriveAPIView:
         client, _ = api_client_with_user
         assert mock.call_count == 0
 
+        # Mock the items endpoint that the view now calls directly
         responses.add(
             responses.GET,
-            "http://drive.test/external_api/v1.0/users/me/",
-            status=status.HTTP_401_UNAUTHORIZED,
+            "http://drive.test/external_api/v1.0/items/",
+            json={
+                "count": 0,
+                "next": None,
+                "previous": None,
+                "results": [],
+            },
+            status=status.HTTP_200_OK,
         )
         client.get(reverse("drive") + "?title=test_document")
         assert mock.call_count == 1
@@ -132,32 +139,15 @@ class TestDriveAPIView:
     def test_api_third_party_drive_get_search_by_title(
         self, _mock, api_client_with_user
     ):
-        """Test searching for files in the main workspace."""
+        """Test searching for files by title."""
         client, _ = api_client_with_user
 
-        # Mock the workspace listing response
-        workspace_id = str(uuid.uuid4())
-        responses.add(
-            responses.GET,
-            "http://drive.test/external_api/v1.0/users/me/",
-            json={
-                "id": "123",
-                "email": "john.doe@test.local",
-                "main_workspace": {
-                    "id": workspace_id,
-                    "type": "folder",
-                    "title": "My Workspace",
-                    "main_workspace": True,
-                },
-            },
-            status=status.HTTP_200_OK,
-        )
-
-        # Mock the file search response
         file_id = str(uuid.uuid4())
+
+        # Mock the items search endpoint
         responses.add(
             responses.GET,
-            f"http://drive.test/external_api/v1.0/items/{workspace_id}/children/",
+            "http://drive.test/external_api/v1.0/items/",
             json={
                 "count": 1,
                 "next": None,
@@ -175,7 +165,6 @@ class TestDriveAPIView:
             status=status.HTTP_200_OK,
         )
 
-        # Make the request with title parameter
         response = client.get(reverse("drive") + "?title=test_document")
 
         assert response.status_code == status.HTTP_200_OK
@@ -185,47 +174,16 @@ class TestDriveAPIView:
         assert data["results"][0]["id"] == file_id
         assert data["results"][0]["title"] == "test_document.pdf"
 
-        # Verify the requests were made with correct parameters
-        assert len(responses.calls) == 2
-
-        # First request should be to main workspace
-        assert (
-            responses.calls[0].request.url
-            == "http://drive.test/external_api/v1.0/users/me/"
-        )
+        # Verify a single request was made with correct parameters
+        assert len(responses.calls) == 1
         assert (
             responses.calls[0].request.headers["Authorization"]
             == "Bearer test-access-token"
         )
-
-        # Second request should include filters
-        assert f"items/{workspace_id}/children/" in responses.calls[1].request.url
-        assert "is_creator_me=True" in responses.calls[1].request.url
-        assert "type=file" in responses.calls[1].request.url
-        assert "title=test_document" in responses.calls[1].request.url
-
-    @responses.activate
-    @patch(
-        "lasuite.oidc_login.middleware.RefreshOIDCAccessToken.is_expired",
-        return_value=False,
-    )
-    def test_api_third_party_drive_get_no_main_workspace(
-        self, _mock, api_client_with_user
-    ):
-        """Test searching for files when no main workspace exists."""
-        client, _ = api_client_with_user
-
-        # Mock the workspace listing with no main workspace
-        responses.add(
-            responses.GET,
-            "http://drive.test/external_api/v1.0/users/me/",
-            status=status.HTTP_401_UNAUTHORIZED,
-        )
-
-        response = client.get(reverse("drive") + "?title=test")
-
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.json()["error"] == "No Drive main workspace found"
+        assert "items/" in responses.calls[0].request.url
+        assert "is_creator_me=True" in responses.calls[0].request.url
+        assert "type=file" in responses.calls[0].request.url
+        assert "title=test_document" in responses.calls[0].request.url
 
     @responses.activate
     @patch(
@@ -238,29 +196,10 @@ class TestDriveAPIView:
         """Test searching for files without title filter."""
         client, _ = api_client_with_user
 
-        workspace_id = str(uuid.uuid4())
-
-        # Mock the users me response
+        # Mock the items search endpoint
         responses.add(
             responses.GET,
-            "http://drive.test/external_api/v1.0/users/me/",
-            json={
-                "id": "123",
-                "email": "john.doe@test.local",
-                "main_workspace": {
-                    "id": workspace_id,
-                    "type": "folder",
-                    "title": "My Workspace",
-                    "main_workspace": True,
-                },
-            },
-            status=status.HTTP_200_OK,
-        )
-
-        # Mock the file search response
-        responses.add(
-            responses.GET,
-            f"http://drive.test/external_api/v1.0/items/{workspace_id}/children/",
+            "http://drive.test/external_api/v1.0/items/",
             json={
                 "count": 0,
                 "next": None,
@@ -270,17 +209,17 @@ class TestDriveAPIView:
             status=status.HTTP_200_OK,
         )
 
-        # Make request without title parameter
         response = client.get(reverse("drive"))
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["count"] == 0
 
-        # Verify filters don't include title
-        assert "title" not in responses.calls[1].request.url
-        assert "is_creator_me=True" in responses.calls[1].request.url
-        assert "type=file" in responses.calls[1].request.url
+        # Verify a single request with filters but no title
+        assert len(responses.calls) == 1
+        assert "title" not in responses.calls[0].request.url
+        assert "is_creator_me=True" in responses.calls[0].request.url
+        assert "type=file" in responses.calls[0].request.url
 
     def test_api_third_party_drive_post_anonymous(self):
         """Test that POST endpoint requires authentication."""
@@ -304,17 +243,8 @@ class TestDriveAPIView:
         client, _ = api_client_with_user
         assert mock.call_count == 0
 
-        responses.add(
-            responses.GET,
-            "http://drive.test/external_api/v1.0/items/",
-            status=status.HTTP_200_OK,
-            json={
-                "count": 0,
-                "next": None,
-                "previous": None,
-                "results": [],
-            },
-        )
+        # POST without blob_id returns 400 before any external call,
+        # but the OIDC refresh decorator still runs
         client.post(reverse("drive"))
         assert mock.call_count == 1
 
@@ -421,34 +351,15 @@ Test file content for Drive upload without access.
         client, _ = api_client_with_user
         _, message = mailbox_with_message
 
-        # Construct blob_id for the first attachment
         blob_id = f"msg_{message.id}_0"
 
-        workspace_id = str(uuid.uuid4())
         file_id = str(uuid.uuid4())
         presigned_url = "http://s3.test/presigned-upload-url"
-
-        # Mock the users me response
-        responses.add(
-            responses.GET,
-            "http://drive.test/external_api/v1.0/users/me/",
-            json={
-                "id": "123",
-                "email": "john.doe@test.local",
-                "main_workspace": {
-                    "id": workspace_id,
-                    "type": "folder",
-                    "title": "My Workspace",
-                    "main_workspace": True,
-                },
-            },
-            status=status.HTTP_200_OK,
-        )
 
         # Mock the file creation response
         responses.add(
             responses.POST,
-            f"http://drive.test/external_api/v1.0/items/{workspace_id}/children/",
+            "http://drive.test/external_api/v1.0/items/",
             json={
                 "id": file_id,
                 "title": "test_file.txt",
@@ -481,7 +392,6 @@ Test file content for Drive upload without access.
             status=status.HTTP_200_OK,
         )
 
-        # Make the request
         response = client.post(
             reverse("drive"),
             {"blob_id": blob_id},
@@ -493,61 +403,28 @@ Test file content for Drive upload without access.
         assert data["id"] == file_id
         assert data["title"] == "test_file.txt"
 
-        # Verify all the expected API calls were made
-        assert len(responses.calls) == 4
+        # Verify the 3 expected API calls (create → S3 upload → upload-ended)
+        assert len(responses.calls) == 3
 
-        # Verify workspace listing request
+        # Verify file creation request
         assert (
             responses.calls[0].request.url
-            == "http://drive.test/external_api/v1.0/users/me/"
+            == "http://drive.test/external_api/v1.0/items/"
         )
         assert (
             responses.calls[0].request.headers["Authorization"]
             == "Bearer test-access-token"
         )
-
-        # Verify file creation request
-        assert f"items/{workspace_id}/children/" in responses.calls[1].request.url
-        file_creation_body = json.loads(responses.calls[1].request.body)
+        file_creation_body = json.loads(responses.calls[0].request.body)
         assert file_creation_body["type"] == "file"
         assert file_creation_body["filename"] == "test_file.txt"
 
         # Verify presigned URL upload
-        assert responses.calls[2].request.url == presigned_url
-        assert responses.calls[2].request.headers["x-amz-acl"] == "private"
+        assert responses.calls[1].request.url == presigned_url
+        assert responses.calls[1].request.headers["x-amz-acl"] == "private"
 
         # Verify upload-ended confirmation
-        assert f"items/{file_id}/upload-ended/" in responses.calls[3].request.url
-
-    @responses.activate
-    @patch(
-        "lasuite.oidc_login.middleware.RefreshOIDCAccessToken.is_expired",
-        return_value=False,
-    )
-    def test_api_third_party_drive_post_no_main_workspace(
-        self, _mock, api_client_with_user, mailbox_with_message
-    ):
-        """Test uploading file when no main workspace exists."""
-        client, _ = api_client_with_user
-        _, message = mailbox_with_message
-
-        blob_id = f"msg_{message.id}_0"
-
-        # Mock the users me as unauthenticated
-        responses.add(
-            responses.GET,
-            "http://drive.test/external_api/v1.0/users/me/",
-            status=status.HTTP_401_UNAUTHORIZED,
-        )
-
-        response = client.post(
-            reverse("drive"),
-            {"blob_id": blob_id},
-            format="json",
-        )
-
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.json()["error"] == "No Drive main workspace found"
+        assert f"items/{file_id}/upload-ended/" in responses.calls[2].request.url
 
     @responses.activate
     @patch(
@@ -608,31 +485,13 @@ Test file content for Drive upload without access.
         _, message = mailbox_with_message
 
         blob_id = f"msg_{message.id}_0"
-        workspace_id = str(uuid.uuid4())
         file_id = str(uuid.uuid4())
         presigned_url = "http://s3.test/presigned-upload-url"
-
-        # Mock the users me response
-        responses.add(
-            responses.GET,
-            "http://drive.test/external_api/v1.0/users/me/",
-            json={
-                "id": "123",
-                "email": "john.doe@test.local",
-                "main_workspace": {
-                    "id": workspace_id,
-                    "type": "folder",
-                    "title": "My Workspace",
-                    "main_workspace": True,
-                },
-            },
-            status=status.HTTP_200_OK,
-        )
 
         # Mock the file creation response
         responses.add(
             responses.POST,
-            f"http://drive.test/external_api/v1.0/items/{workspace_id}/children/",
+            "http://drive.test/external_api/v1.0/items/",
             json={
                 "id": file_id,
                 "title": "test_file.txt",
@@ -651,7 +510,6 @@ Test file content for Drive upload without access.
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
-        # Make the request
         with pytest.raises(requests.exceptions.HTTPError) as excinfo:
             client.post(
                 reverse("drive"),
