@@ -2,7 +2,7 @@
 # st-messages-mta-in package
 #
 [build-system]
-requires = ["uv_build>=0.7.19,<0.8"]
+requires = ["uv_build>=0.10.0,<0.11.0"]
 build-backend = "uv_build"
 
 [project]
