@@ -17,7 +17,6 @@ from django.utils.text import slugify
 from sentry_sdk import capture_exception
 
 from core.api.utils import get_file_key
-from core.api.viewsets.task import register_task_owner
 from core.mda.outbound_tasks import retry_messages_task
 from core.services.dns.provisioning import provision_domain_dns
 from core.services.exporter.tasks import export_mailbox_task
@@ -327,7 +326,7 @@ class MailboxAdmin(admin.ModelAdmin):
         # Start the export task
         try:
             task = export_mailbox_task.delay(str(mailbox_obj.id), str(request.user.id))
-            register_task_owner(task.id, request.user.id)
+            task.track_owner(request.user.id)
         except Exception:  # pylint: disable=broad-exception-caught
             logging.exception(
                 "Failed to queue export task for mailbox %s", mailbox_obj.id

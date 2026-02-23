@@ -424,10 +424,9 @@ def test_api_import_duplicate_eml_file(api_client, user, mailbox, eml_file):
 
         # Run the task synchronously for testing with a task_id
         eml_key = get_file_key(user.id, eml_file.name)
-        task_result = process_eml_file_task.apply(
-            kwargs={"file_key": eml_key, "recipient_id": str(mailbox.id)},
-            task_id="fake-task-id-1",
-        ).get()
+        task_result = process_eml_file_task(
+            file_key=eml_key, recipient_id=str(mailbox.id)
+        )
         assert task_result["status"] == "SUCCESS"
         assert task_result["result"]["success_count"] == 1
         assert task_result["result"]["failure_count"] == 0
@@ -450,10 +449,9 @@ def test_api_import_duplicate_eml_file(api_client, user, mailbox, eml_file):
         mock_task.assert_called_once()
 
         # Run the task synchronously for testing with a task_id
-        task_result = process_eml_file_task.apply(
-            kwargs={"file_key": eml_key, "recipient_id": str(mailbox.id)},
-            task_id="fake-task-id-2",
-        ).get()
+        task_result = process_eml_file_task(
+            file_key=eml_key, recipient_id=str(mailbox.id)
+        )
         assert task_result["status"] == "SUCCESS"
         assert task_result["result"]["success_count"] == 1  # Still counts as success
         assert task_result["result"]["failure_count"] == 0
@@ -487,10 +485,9 @@ def test_api_import_duplicate_mbox_file(api_client, user, mailbox, mbox_file):
 
         # Run the task synchronously for testing with a task_id
 
-        task_result = process_mbox_file_task.apply(
-            kwargs={"file_key": mbox_key, "recipient_id": str(mailbox.id)},
-            task_id="fake-task-id-1",
-        ).get()
+        task_result = process_mbox_file_task(
+            file_key=mbox_key, recipient_id=str(mailbox.id)
+        )
         assert task_result["status"] == "SUCCESS"
         assert (
             task_result["result"]["success_count"] == 3
@@ -516,10 +513,9 @@ def test_api_import_duplicate_mbox_file(api_client, user, mailbox, mbox_file):
         mock_task.assert_called_once()
 
         # Run the task synchronously for testing with a task_id
-        task_result = process_mbox_file_task.apply(
-            kwargs={"file_key": mbox_key, "recipient_id": str(mailbox.id)},
-            task_id="fake-task-id-2",
-        ).get()
+        task_result = process_mbox_file_task(
+            file_key=mbox_key, recipient_id=str(mailbox.id)
+        )
         assert task_result["status"] == "SUCCESS"
         assert task_result["result"]["success_count"] == 3  # Still counts as success
         assert task_result["result"]["failure_count"] == 0
@@ -558,10 +554,9 @@ def test_api_import_eml_same_message_different_mailboxes(api_client, user, eml_f
         mock_task.assert_called_once()
 
         # Run the task synchronously for testing with a task_id
-        task_result = process_eml_file_task.apply(
-            kwargs={"file_key": eml_key, "recipient_id": str(mailbox1.id)},
-            task_id="fake-task-id-1",
-        ).get()
+        task_result = process_eml_file_task(
+            file_key=eml_key, recipient_id=str(mailbox1.id)
+        )
         assert task_result["status"] == "SUCCESS"
         assert task_result["result"]["success_count"] == 1
         assert task_result["result"]["failure_count"] == 0
@@ -584,10 +579,9 @@ def test_api_import_eml_same_message_different_mailboxes(api_client, user, eml_f
         mock_task.assert_called_once()
 
         # Run the task synchronously for testing with a task_id
-        task_result = process_eml_file_task.apply(
-            kwargs={"file_key": eml_key, "recipient_id": str(mailbox2.id)},
-            task_id="fake-task-id-2",
-        ).get()
+        task_result = process_eml_file_task(
+            file_key=eml_key, recipient_id=str(mailbox2.id)
+        )
         assert task_result["status"] == "SUCCESS"
         assert task_result["result"]["success_count"] == 1
         assert task_result["result"]["failure_count"] == 0
@@ -633,10 +627,9 @@ def test_api_import_mbox_same_message_different_mailboxes(api_client, user, mbox
         mock_task.assert_called_once()
 
         # Run the task synchronously for testing with a task_id
-        task_result = process_mbox_file_task.apply(
-            kwargs={"file_key": mbox_key, "recipient_id": str(mailbox1.id)},
-            task_id="fake-task-id-1",
-        ).get()
+        task_result = process_mbox_file_task(
+            file_key=mbox_key, recipient_id=str(mailbox1.id)
+        )
         assert task_result["status"] == "SUCCESS"
         assert task_result["result"]["success_count"] == 3
         assert task_result["result"]["failure_count"] == 0
@@ -659,10 +652,9 @@ def test_api_import_mbox_same_message_different_mailboxes(api_client, user, mbox
         mock_task.assert_called_once()
 
         # Run the task synchronously for testing with a task_id
-        task_result = process_mbox_file_task.apply(
-            kwargs={"file_key": mbox_key, "recipient_id": str(mailbox2.id)},
-            task_id="fake-task-id-2",
-        ).get()
+        task_result = process_mbox_file_task(
+            file_key=mbox_key, recipient_id=str(mailbox2.id)
+        )
         assert task_result["status"] == "SUCCESS"
         assert task_result["result"]["success_count"] == 3
         assert task_result["result"]["failure_count"] == 0

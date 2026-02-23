@@ -3,11 +3,11 @@
 # pylint: disable=broad-exception-caught
 from typing import Any, Dict
 
-from celery.utils.log import get_task_logger
+import logging
+logger = logging.getLogger(__name__)
 
 from core.models import Mailbox
-
-from messages.celery_app import app as celery_app
+from core.utils import register_task, set_task_progress
 
 from .imap import (
     IMAPConnectionManager,
@@ -18,12 +18,9 @@ from .imap import (
     select_imap_folder,
 )
 
-logger = get_task_logger(__name__)
 
-
-@celery_app.task(bind=True)
+@register_task(queue="imports")
 def import_imap_messages_task(
-    self,
     imap_server: str,
     imap_port: int,
     username: str,
@@ -102,7 +99,6 @@ def import_imap_messages_task(
                     message_list=message_list,
                     recipient=recipient,
                     username=username,
-                    task_instance=self,
                     success_count=success_count,
                     failure_count=failure_count,
                     current_message=current_message,
@@ -144,7 +140,7 @@ def import_imap_messages_task(
 
     except Exception as e:
         logger.exception("Error in import_imap_messages_task: %s", e)
-
+        error_msg = str(e)
         result = {
             "message_status": "Failed to process messages",
             "total_messages": total_messages,
@@ -153,4 +149,4 @@ def import_imap_messages_task(
             "type": "imap",
             "current_message": current_message,
         }
-        return {"status": "FAILURE", "result": result, "error": str(e)}
+        return {"status": "FAILURE", "result": result, "error": error_msg}

@@ -76,7 +76,7 @@ class Command(BaseCommand):
 
         try:
             # Execute task synchronously
-            result = task_func.apply(args=task_args, kwargs=kwargs)
+            result = task_func(*task_args, **kwargs)
 
             # Output result
             if options["json"]:

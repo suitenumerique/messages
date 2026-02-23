@@ -133,6 +133,19 @@ logs: ## display all services logs (follow mode)
 	@$(COMPOSE) logs -f
 .PHONY: logs
 
+logs-worker: ## display worker logs (follow mode)
+	@$(COMPOSE) logs worker-dev -f
+.PHONY: logs-worker
+
+logs-back: ## display backend logs (follow mode)
+	@$(COMPOSE) logs backend-dev -f
+.PHONY: logs-back
+
+logs-front: ## display frontend logs (follow mode)
+	@$(COMPOSE) logs frontend-dev -f
+.PHONY: logs-front
+
+
 start: ## start all development services
 	@$(COMPOSE) up --force-recreate --build -d frontend-dev backend-dev worker-dev mta-in --wait
 .PHONY: start

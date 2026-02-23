@@ -96,15 +96,9 @@ def cleanup_exports():
 @pytest.mark.django_db
 def test_export_empty_mailbox(mailbox_fixture, admin_user, cleanup_exports):
     """Test exporting a mailbox with no messages creates empty MBOX."""
-    mock_task = MagicMock()
 
-    # Mock update_state (required when calling task directly, not via .delay())
-    # and deliver_inbound_message to avoid creating notification
-    with (
-        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
-        patch(
-            "core.services.exporter.tasks.deliver_inbound_message", return_value=True
-        ),
+    with patch(
+        "core.services.exporter.tasks.deliver_inbound_message", return_value=True
     ):
         result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
 
@@ -132,13 +126,9 @@ def test_export_empty_mailbox(mailbox_fixture, admin_user, cleanup_exports):
 def test_export_single_message(mailbox_fixture, admin_user, cleanup_exports):
     """Test exporting a mailbox with one message."""
     create_test_message(mailbox_fixture, "Test Subject", "Test body content")
-    mock_task = MagicMock()
 
-    with (
-        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
-        patch(
-            "core.services.exporter.tasks.deliver_inbound_message", return_value=True
-        ),
+    with patch(
+        "core.services.exporter.tasks.deliver_inbound_message", return_value=True
     ):
         result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
 
@@ -168,13 +158,9 @@ def test_export_multiple_messages(mailbox_fixture, admin_user, cleanup_exports):
     create_test_message(mailbox_fixture, "Message 1", "Body 1")
     create_test_message(mailbox_fixture, "Message 2", "Body 2")
     create_test_message(mailbox_fixture, "Message 3", "Body 3")
-    mock_task = MagicMock()
 
-    with (
-        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
-        patch(
-            "core.services.exporter.tasks.deliver_inbound_message", return_value=True
-        ),
+    with patch(
+        "core.services.exporter.tasks.deliver_inbound_message", return_value=True
     ):
         result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
 
@@ -202,13 +188,8 @@ def test_export_skips_missing_blob(mailbox_fixture, admin_user, cleanup_exports)
         is_sender=False,
     )
 
-    mock_task = MagicMock()
-
-    with (
-        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
-        patch(
-            "core.services.exporter.tasks.deliver_inbound_message", return_value=True
-        ),
+    with patch(
+        "core.services.exporter.tasks.deliver_inbound_message", return_value=True
     ):
         result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
 
@@ -226,7 +207,6 @@ def test_export_creates_notification_message(
 ):
     """Test that a notification message is created after export."""
     create_test_message(mailbox_fixture, "Test Message", "Test body")
-    mock_task = MagicMock()
 
     deliver_called = []
 
@@ -234,12 +214,9 @@ def test_export_creates_notification_message(
         deliver_called.append((args, kwargs))
         return True
 
-    with (
-        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
-        patch(
-            "core.services.exporter.tasks.deliver_inbound_message",
-            side_effect=mock_deliver,
-        ),
+    with patch(
+        "core.services.exporter.tasks.deliver_inbound_message",
+        side_effect=mock_deliver,
     ):
         result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
 
@@ -256,9 +233,8 @@ def test_export_creates_notification_message(
 @pytest.mark.django_db
 def test_export_nonexistent_mailbox(admin_user):
     """Test exporting a non-existent mailbox returns failure."""
-    mock_task = MagicMock()
 
-    with patch.object(export_mailbox_task, "update_state", mock_task.update_state):
+    with patch("core.services.exporter.tasks.deliver_inbound_message", return_value=True):
         result = export_mailbox_task(
             "00000000-0000-0000-0000-000000000000", str(admin_user.id)
         )
@@ -286,13 +262,10 @@ def test_admin_export_view_requires_post(admin_client, mailbox_fixture):
 
 @pytest.mark.django_db
 def test_admin_export_view_starts_task(admin_client, mailbox_fixture):
-    """Test that POST to export view starts the celery task."""
+    """Test that POST to export view starts the background task."""
     url = reverse("admin:core_mailbox_export", args=[mailbox_fixture.pk])
 
-    with (
-        patch("core.admin.export_mailbox_task") as mock_task,
-        patch("core.admin.register_task_owner"),
-    ):
+    with patch("core.admin.export_mailbox_task") as mock_task:
         mock_task.delay.return_value = Mock(id="test-task-id")
 
         response = admin_client.post(url)
@@ -332,13 +305,8 @@ def test_export_reimport_roundtrip(domain, cleanup_exports):
     assert original_count == 3
 
     # 2. Export mailbox A
-    mock_task = MagicMock()
-
-    with (
-        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
-        patch(
-            "core.services.exporter.tasks.deliver_inbound_message", return_value=True
-        ),
+    with patch(
+        "core.services.exporter.tasks.deliver_inbound_message", return_value=True
     ):
         export_result = export_mailbox_task(str(mailbox_a.id), str(user.id))
 
@@ -370,15 +338,10 @@ def test_export_reimport_roundtrip(domain, cleanup_exports):
     )
     cleanup_exports.append(import_key)
 
-    # 4. Import into mailbox B
-    mock_import_task = MagicMock()
-
-    with patch.object(
-        process_mbox_file_task, "update_state", mock_import_task.update_state
-    ):
-        import_result = process_mbox_file_task(
-            file_key=import_key, recipient_id=str(mailbox_b.id)
-        )
+    # 4. Import into mailbox B (no mock — actually deliver messages)
+    import_result = process_mbox_file_task(
+        file_key=import_key, recipient_id=str(mailbox_b.id)
+    )
 
     assert import_result["status"] == "SUCCESS"
     assert import_result["result"]["success_count"] == 3
@@ -421,13 +384,8 @@ def test_export_includes_status_headers(mailbox_fixture, admin_user, cleanup_exp
     msg.is_starred = True  # Starred
     msg.save()
 
-    mock_task = MagicMock()
-
-    with (
-        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
-        patch(
-            "core.services.exporter.tasks.deliver_inbound_message", return_value=True
-        ),
+    with patch(
+        "core.services.exporter.tasks.deliver_inbound_message", return_value=True
     ):
         result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
 
@@ -486,13 +444,8 @@ Body content here
     )
     msg.thread.labels.add(label)
 
-    mock_task = MagicMock()
-
-    with (
-        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
-        patch(
-            "core.services.exporter.tasks.deliver_inbound_message", return_value=True
-        ),
+    with patch(
+        "core.services.exporter.tasks.deliver_inbound_message", return_value=True
     ):
         result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
 
@@ -535,13 +488,8 @@ def test_export_includes_labels_as_x_keywords(
     )
     msg.thread.labels.add(label1, label2)
 
-    mock_task = MagicMock()
-
-    with (
-        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
-        patch(
-            "core.services.exporter.tasks.deliver_inbound_message", return_value=True
-        ),
+    with patch(
+        "core.services.exporter.tasks.deliver_inbound_message", return_value=True
     ):
         result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
 
@@ -577,13 +525,8 @@ def test_export_labels_with_spaces_are_quoted(
     )
     msg.thread.labels.add(label)
 
-    mock_task = MagicMock()
-
-    with (
-        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
-        patch(
-            "core.services.exporter.tasks.deliver_inbound_message", return_value=True
-        ),
+    with patch(
+        "core.services.exporter.tasks.deliver_inbound_message", return_value=True
     ):
         result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
 
@@ -611,13 +554,8 @@ def test_export_unread_message_status(mailbox_fixture, admin_user, cleanup_expor
     msg.is_unread = True
     msg.save()
 
-    mock_task = MagicMock()
-
-    with (
-        patch.object(export_mailbox_task, "update_state", mock_task.update_state),
-        patch(
-            "core.services.exporter.tasks.deliver_inbound_message", return_value=True
-        ),
+    with patch(
+        "core.services.exporter.tasks.deliver_inbound_message", return_value=True
     ):
         result = export_mailbox_task(str(mailbox_fixture.id), str(admin_user.id))
 

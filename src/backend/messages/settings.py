@@ -523,8 +523,9 @@ class Base(Configuration):
         "drf_spectacular",
         # Third party apps
         "corsheaders",
-        "django_celery_beat",
-        "django_celery_results",
+        "django_dramatiq",
+        "dramatiq_crontab",
+        
         "django_filters",
         "rest_framework",
         # Django
@@ -607,47 +608,52 @@ class Base(Configuration):
         None, environ_name="FRONTEND_THEME", environ_prefix=None
     )
 
-    # Celery
-    CELERY_BROKER_URL = values.Value(
-        "redis://redis:6379", environ_name="CELERY_BROKER_URL", environ_prefix=None
-    )
-    CELERY_RESULT_BACKEND = "django-db"
-    CELERY_CACHE_BACKEND = "django-cache"
-    CELERY_BROKER_TRANSPORT_OPTIONS = values.DictValue({})
-    CELERY_RESULT_EXTENDED = True
-    CELERY_TASK_RESULT_EXPIRES = 60 * 60 * 24 * 30  # 30 days
-    CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
-    CELERY_WORKER_HIJACK_ROOT_LOGGER = False
-
-    # Default queue for tasks without explicit routing
-    CELERY_TASK_DEFAULT_QUEUE = "default"
-
-    # Queue routing - tasks are routed to specific queues based on their type
-    # Priority order: management > inbound > outbound > default > imports > reindex
-    CELERY_TASK_ROUTES = {
-        # Inbound email processing - highest priority, time-sensitive
-        "core.mda.inbound_tasks.*": {"queue": "inbound"},
-        # Outbound email sending - high priority
-        "core.mda.outbound_tasks.*": {"queue": "outbound"},
-        # Import tasks - lower priority than regular tasks
-        "core.services.importer.mbox_tasks.*": {"queue": "imports"},
-        "core.services.importer.eml_tasks.*": {"queue": "imports"},
-        "core.services.importer.imap_tasks.*": {"queue": "imports"},
-        "core.services.importer.pst_tasks.*": {"queue": "imports"},
-        # Search indexing - lowest priority, can be delayed
-        "core.services.search.tasks.*": {"queue": "reindex"},
+    # Dramatiq
+    DRAMATIQ_BROKER = {
+        "BROKER": "dramatiq.brokers.redis.RedisBroker",
+        "OPTIONS": {
+            "url": values.Value(
+                "redis://redis:6379",
+                environ_name="DRAMATIQ_BROKER_URL",
+                environ_prefix=None,
+            ),
+        },
+        "MIDDLEWARE": [
+            "dramatiq.middleware.prometheus.Prometheus",
+            "dramatiq.middleware.AgeLimit",
+            "dramatiq.middleware.TimeLimit",
+            "dramatiq.middleware.Callbacks",
+            "dramatiq.middleware.Retries",
+            "dramatiq.middleware.CurrentMessage",
+            "django_dramatiq.middleware.DbConnectionsMiddleware",
+            "django_dramatiq.middleware.AdminMiddleware",
+        ]
     }
 
-    DISABLE_CELERY_BEAT_SCHEDULE = values.BooleanValue(
-        default=False, environ_name="DISABLE_CELERY_BEAT_SCHEDULE", environ_prefix=None
-    )
+    DRAMATIQ_RESULT_BACKEND = {
+        "BACKEND": "dramatiq.results.backends.redis.RedisBackend",
+        "BACKEND_OPTIONS": {
+            "url": values.Value(
+                "redis://redis:6379/1",
+                environ_name="DRAMATIQ_BROKER_URL",
+                environ_prefix=None,
+            ),
+        },
+        "MIDDLEWARE_OPTIONS": {
+            "result_ttl": 1000 * 60 * 60 * 24 * 30  # 30 days
+        }
+    }
 
-    CELERY_WORKER_SEND_TASK_EVENTS = values.BooleanValue(
-        True, environ_name="CELERY_WORKER_SEND_TASK_EVENTS", environ_prefix=None
-    )
-    CELERY_TASK_SEND_SENT_EVENT = values.BooleanValue(
-        True, environ_name="CELERY_TASK_SEND_SENT_EVENT", environ_prefix=None
-    )
+    DRAMATIQ_CRONTAB = {
+        "REDIS_URL": values.Value(
+            "redis://redis:6379/0",
+            environ_name="DRAMATIQ_CRONTAB_REDIS_URL",
+            environ_prefix=None,
+        )
+    }
+
+    # Default ["tasks"] discovers core/tasks.py which re-exports all task modules
+    DRAMATIQ_AUTODISCOVER_MODULES = ["tasks"]
 
     # Session
     SESSION_ENGINE = "django.contrib.sessions.backends.cache"
@@ -1134,7 +1140,19 @@ class DevelopmentMinimal(Development):
     Development environment settings with minimal dependencies
     """
 
-    CELERY_TASK_ALWAYS_EAGER = True
+    DRAMATIQ_BROKER = {
+        "BROKER": "dramatiq.brokers.stub.StubBroker",
+        "OPTIONS": {},
+        "MIDDLEWARE": [
+            "dramatiq.middleware.AgeLimit",
+            "dramatiq.middleware.TimeLimit",
+            "dramatiq.middleware.Callbacks",
+            "dramatiq.middleware.Retries",
+            "dramatiq.middleware.CurrentMessage",
+            "django_dramatiq.middleware.DbConnectionsMiddleware",
+            "django_dramatiq.middleware.AdminMiddleware",
+        ]
+    }
     OPENSEARCH_INDEX_THREADS = False
     CACHES = {
         "default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"},
@@ -1152,7 +1170,19 @@ class Test(Base):
 
     IDENTITY_PROVIDER = None
 
-    CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
+    DRAMATIQ_BROKER = {
+        "BROKER": "core.utils.EagerBroker",
+        "OPTIONS": {},
+        "MIDDLEWARE": [
+            "dramatiq.middleware.AgeLimit",
+            "dramatiq.middleware.TimeLimit",
+            "dramatiq.middleware.Callbacks",
+            "dramatiq.middleware.Retries",
+            "dramatiq.middleware.CurrentMessage",
+            "django_dramatiq.middleware.DbConnectionsMiddleware",
+            "django_dramatiq.middleware.AdminMiddleware",
+        ]
+    }
 
     AWS_S3_DOMAIN_REPLACE = None
 

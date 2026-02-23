@@ -14,8 +14,6 @@ from core.forms import IMAPImportForm
 from core.models import Mailbox, MailDomain, Message, Thread
 from core.services.importer.imap_tasks import import_imap_messages_task
 
-from messages.celery_app import app as celery_app
-
 
 @pytest.fixture
 def admin_user(db):
@@ -174,21 +172,13 @@ def test_imap_import_form_view(admin_client, mailbox):
 
 
 @patch("imaplib.IMAP4_SSL")
-@patch.object(celery_app.backend, "store_result")
 def test_imap_import_task_success(
-    mock_store_result, mock_imap4_ssl, mailbox, mock_imap_connection, sample_email
+    mock_imap4_ssl, mailbox, mock_imap_connection, sample_email
 ):
     """Test successful IMAP import task execution."""
     mock_imap4_ssl.return_value = mock_imap_connection
-    mock_store_result.return_value = None
 
-    # Create a mock task instance
-    mock_task = MagicMock()
-    mock_task.update_state = MagicMock()
-
-    with patch.object(
-        import_imap_messages_task, "update_state", mock_task.update_state
-    ):
+    with patch("core.services.importer.imap.set_task_progress") as mock_set_progress:
         # Run the task
         task = import_imap_messages_task(
             imap_server="imap.example.com",
@@ -212,17 +202,18 @@ def test_imap_import_task_success(
         assert task["result"]["current_message"] == 3
 
         # Verify progress updates were called correctly
-        assert mock_task.update_state.call_count == 3  # 3 PROGRESS
+        assert mock_set_progress.call_count == 3  # 3 PROGRESS updates
 
         # Verify progress updates
         for i in range(1, 4):
-            mock_task.update_state.assert_any_call(
-                state="PROGRESS",
-                meta={
+            pct = min(int(i / max(3, 1) * 100), 99)
+            mock_set_progress.assert_any_call(
+                pct,
+                {
                     "result": {
                         "message_status": f"Processing message {i} of 3",
                         "total_messages": 3,
-                        "success_count": i,  # Current message was successful
+                        "success_count": i,
                         "failure_count": 0,
                         "type": "imap",
                         "current_message": i,
@@ -231,44 +222,34 @@ def test_imap_import_task_success(
                 },
             )
 
-        # No SUCCESS update_state — Celery infers SUCCESS from normal return;
-        # status is in the returned dict
-
         # Verify messages were created
         assert Message.objects.count() == 3
         assert Thread.objects.count() == 3
 
-        # check one of the messages
-        message = Message.objects.last()
-        assert message.subject == "Test Subject"
-        assert message.sender.email == "sender@example.com"
-        assert message.recipients.count() == 1
-        assert message.recipients.first().contact.email == "recipient@example.com"
-        assert (
-            message.get_parsed_field("textBody")[0]["content"]
-            == "This is a test message body.\n"
-        )
-        assert message.attachments.count() == 0
-        assert message.thread.messages.count() == 1
-        assert message.thread.messages.first() == message
-        assert message.created_at == message.thread.messaged_at
-        assert message.created_at == datetime.datetime(
-            2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc
-        )
+    # check one of the messages
+    message = Message.objects.last()
+    assert message.subject == "Test Subject"
+    assert message.sender.email == "sender@example.com"
+    assert message.recipients.count() == 1
+    assert message.recipients.first().contact.email == "recipient@example.com"
+    assert (
+        message.get_parsed_field("textBody")[0]["content"]
+        == "This is a test message body.\n"
+    )
+    assert message.attachments.count() == 0
+    assert message.thread.messages.count() == 1
+    assert message.thread.messages.first() == message
+    assert message.created_at == message.thread.messaged_at
+    assert message.created_at == datetime.datetime(
+        2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc
+    )
 
 
 @pytest.mark.django_db
 def test_imap_import_task_login_failure(mailbox):
     """Test IMAP import task with login failure."""
-    # Create a mock task instance
-    mock_task = MagicMock()
-    mock_task.update_state = MagicMock()
-
     # Mock IMAP connection to raise an error on login
-    with (
-        patch.object(import_imap_messages_task, "update_state", mock_task.update_state),
-        patch("core.services.importer.imap.imaplib.IMAP4_SSL") as mock_imap,
-    ):
+    with patch("imaplib.IMAP4_SSL") as mock_imap:
         mock_imap_instance = MagicMock()
         mock_imap.return_value = mock_imap_instance
         mock_imap_instance.login.side_effect = Exception("Login failed")
@@ -292,20 +273,13 @@ def test_imap_import_task_login_failure(mailbox):
         assert task_result["result"]["current_message"] == 0
         assert "Login failed" in task_result["error"]
 
-        # No update_state calls — failure status is in the returned dict
-        mock_task.update_state.assert_not_called()
-
         # Verify no messages were created
         assert Message.objects.count() == 0
 
 
 @patch("imaplib.IMAP4_SSL")
-@patch.object(celery_app.backend, "store_result")
-def test_imap_import_task_message_fetch_failure(
-    mock_store_result, mock_imap4_ssl, mailbox
-):
+def test_imap_import_task_message_fetch_failure(mock_imap4_ssl, mailbox):
     """Test IMAP import task with message fetch failure."""
-    mock_store_result.return_value = None
     mock_imap = MagicMock()
     mock_imap.login.return_value = ("OK", [b"Logged in"])
 
@@ -320,13 +294,7 @@ def test_imap_import_task_message_fetch_failure(
     mock_imap.logout.return_value = ("OK", [b"Logged out"])
     mock_imap4_ssl.return_value = mock_imap
 
-    # Create a mock task instance
-    mock_task = MagicMock()
-    mock_task.update_state = MagicMock()
-
-    with patch.object(
-        import_imap_messages_task, "update_state", mock_task.update_state
-    ):
+    with patch("core.services.importer.imap.set_task_progress") as mock_set_progress:
         # Run the task
         task = import_imap_messages_task(
             imap_server="imap.example.com",
@@ -350,13 +318,14 @@ def test_imap_import_task_message_fetch_failure(
         assert task["result"]["current_message"] == 3
 
         # Verify progress updates were called correctly
-        assert mock_task.update_state.call_count == 3  # 3 PROGRESS
+        assert mock_set_progress.call_count == 3  # 3 PROGRESS
 
-        # Verify progress updates
+        # Verify progress updates - each message fails
         for i in range(1, 4):
-            mock_task.update_state.assert_any_call(
-                state="PROGRESS",
-                meta={
+            pct = min(int(i / max(3, 1) * 100), 99)
+            mock_set_progress.assert_any_call(
+                pct,
+                {
                     "result": {
                         "message_status": f"Processing message {i} of 3",
                         "total_messages": 3,
@@ -369,15 +338,10 @@ def test_imap_import_task_message_fetch_failure(
                 },
             )
 
-        # No SUCCESS update_state — Celery infers SUCCESS from normal return;
-        # status is in the returned dict
-
 
 @patch("core.mda.inbound.logger")
 @patch("imaplib.IMAP4_SSL")
-@patch.object(celery_app.backend, "store_result")
 def test_imap_import_task_duplicate_recipients(
-    mock_store_result,
     mock_imap4_ssl,
     mock_logger,
     mailbox,
@@ -385,74 +349,66 @@ def test_imap_import_task_duplicate_recipients(
 ):
     """Test IMAP import task with duplicate recipients handles deduplication correctly."""
     mock_imap4_ssl.return_value = mock_imap_connection_with_duplicates
-    mock_store_result.return_value = None
 
-    # Create a mock task instance
-    mock_task = MagicMock()
-    mock_task.update_state = MagicMock()
+    # Run the task
+    task = import_imap_messages_task(
+        imap_server="imap.example.com",
+        imap_port=993,
+        username="test@example.com",
+        password="password123",
+        use_ssl=True,
+        recipient_id=str(mailbox.id),
+    )
 
-    with patch.object(
-        import_imap_messages_task, "update_state", mock_task.update_state
-    ):
-        # Run the task
-        task = import_imap_messages_task(
-            imap_server="imap.example.com",
-            imap_port=993,
-            username="test@example.com",
-            password="password123",
-            use_ssl=True,
-            recipient_id=str(mailbox.id),
-        )
+    # Verify results
+    assert task["status"] == "SUCCESS"
+    assert (
+        task["result"]["message_status"]
+        == "Completed processing messages from folder 'INBOX'"
+    )
+    assert task["result"]["type"] == "imap"
+    assert task["result"]["total_messages"] == 1
+    assert task["result"]["success_count"] == 1
+    assert task["result"]["failure_count"] == 0
+    assert task["result"]["current_message"] == 1
 
-        # Verify results
-        assert task["status"] == "SUCCESS"
-        assert (
-            task["result"]["message_status"]
-            == "Completed processing messages from folder 'INBOX'"
-        )
-        assert task["result"]["type"] == "imap"
-        assert task["result"]["total_messages"] == 1
-        assert task["result"]["success_count"] == 1
-        assert task["result"]["failure_count"] == 0
-        assert task["result"]["current_message"] == 1
+    # Verify messages were created
+    assert Message.objects.count() == 1
+    assert Thread.objects.count() == 1
 
-        # Verify messages were created
-        assert Message.objects.count() == 1
-        assert Thread.objects.count() == 1
+    # Check the message
+    message = Message.objects.first()
+    assert message.subject == "Test Subject with Duplicates"
+    assert message.sender.email == "sender@example.com"
 
-        # Check the message
-        message = Message.objects.first()
-        assert message.subject == "Test Subject with Duplicates"
-        assert message.sender.email == "sender@example.com"
+    # Verify recipients - should have unique recipients only
+    recipients = message.recipients.all()
+    recipient_emails = [r.contact.email for r in recipients]
 
-        # Verify recipients - should have unique recipients only
-        recipients = message.recipients.all()
-        recipient_emails = [r.contact.email for r in recipients]
+    # Should have unique recipients (no duplicates)
+    assert len(recipient_emails) == len(set(recipient_emails))
 
-        # Should have unique recipients (no duplicates)
-        assert len(recipient_emails) == len(set(recipient_emails))
+    # Should have the expected recipients
+    assert "recipient@example.com" in recipient_emails
+    assert "cc@example.com" in recipient_emails
 
-        # Should have the expected recipients
-        assert "recipient@example.com" in recipient_emails
-        assert "cc@example.com" in recipient_emails
+    # Verify recipient types
+    to_recipients = message.recipients.filter(
+        type=enums.MessageRecipientTypeChoices.TO
+    )
+    cc_recipients = message.recipients.filter(
+        type=enums.MessageRecipientTypeChoices.CC
+    )
 
-        # Verify recipient types
-        to_recipients = message.recipients.filter(
-            type=enums.MessageRecipientTypeChoices.TO
-        )
-        cc_recipients = message.recipients.filter(
-            type=enums.MessageRecipientTypeChoices.CC
-        )
+    assert to_recipients.count() == 1  # Only one TO recipient (duplicate removed)
+    assert cc_recipients.count() == 1  # Only one CC recipient (duplicate removed)
 
-        assert to_recipients.count() == 1  # Only one TO recipient (duplicate removed)
-        assert cc_recipients.count() == 1  # Only one CC recipient (duplicate removed)
+    # Verify the content
+    assert (
+        message.get_parsed_field("textBody")[0]["content"]
+        == "This is a test message with duplicate recipients.\n"
+    )
 
-        # Verify the content
-        assert (
-            message.get_parsed_field("textBody")[0]["content"]
-            == "This is a test message with duplicate recipients.\n"
-        )
-
-        # Critical: Verify that no validation errors were logged
-        # This ensures the deduplication logic works correctly
-        mock_logger.error.assert_not_called()
+    # Critical: Verify that no validation errors were logged
+    # This ensures the deduplication logic works correctly
+    mock_logger.error.assert_not_called()

@@ -7,14 +7,14 @@ from django.conf import settings
 from django.core.files.storage import storages
 
 import pypff
-from celery.utils.log import get_task_logger
+import logging
 from sentry_sdk import capture_exception
 
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import parse_email_message
 from core.models import Mailbox
 
-from messages.celery_app import app as celery_app
+from core.utils import register_task, set_task_progress
 
 from .pst import (
     FLAG_STATUS_FOLLOWUP,
@@ -34,11 +34,11 @@ from .pst import (
 )
 from .s3_seekable import BUFFER_NONE, S3SeekableReader
 
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
-@celery_app.task(bind=True)
-def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, Any]:
+@register_task(queue="imports")
+def process_pst_file_task(file_key: str, recipient_id: str) -> Dict[str, Any]:
     """
     Process a PST file asynchronously.
 
@@ -75,20 +75,14 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
     try:
         message_imports_storage = storages["message-imports"]
 
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "result": {
-                    "message_status": "Initializing import",
-                    "total_messages": None,
-                    "success_count": 0,
-                    "failure_count": 0,
-                    "type": "pst",
-                    "current_message": 0,
-                },
-                "error": None,
-            },
-        )
+        set_task_progress(0, {
+            "message_status": "Initializing import",
+            "total_messages": None,
+            "success_count": 0,
+            "failure_count": 0,
+            "type": "pst",
+            "current_message": 0,
+        })
 
         # Create S3 seekable reader with block-aligned LRU cache
         # for pypff's random-access B-tree traversal pattern.
@@ -135,7 +129,8 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
                             failure_count += 1
                             continue
 
-                        result = {
+                        progress_pct = min(int((current_message / total_messages) * 100), 99) if total_messages > 0 else 0
+                        set_task_progress(progress_pct, {
                             "message_status": (
                                 f"Processing message {current_message}"
                                 f" of {total_messages}"
@@ -145,14 +140,7 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
                             "failure_count": failure_count,
                             "type": "pst",
                             "current_message": current_message,
-                        }
-                        self.update_state(
-                            state="PROGRESS",
-                            meta={
-                                "result": result,
-                                "error": None,
-                            },
-                        )
+                        })
 
                         parsed_email = parse_email_message(eml_bytes)
 

@@ -1,8 +1,10 @@
 """Test suite for ImportFileUploadViewSet."""
 # pylint: disable=redefined-outer-name, unused-argument
 
+import json
 from unittest import mock
 
+from django.core.cache import cache
 from django.urls import reverse
 
 import pytest
@@ -11,7 +13,7 @@ from rest_framework.test import APIClient
 
 from core import enums, factories
 from core.api.utils import get_file_key
-from core.api.viewsets.task import register_task_owner
+from core.utils import TASK_TRACKING_CACHE_TTL
 
 pytestmark = pytest.mark.django_db
 
@@ -52,33 +54,37 @@ class TestTaskDetailViewPermissions:
         user2 = factories.UserFactory()
 
         task_id = "test-task-id-12345"
-        register_task_owner(task_id, user1.id)
+        # Register tracking metadata (as task.track_owner() would)
+        cache.set(
+            f"task_tracking:{task_id}",
+            json.dumps({
+                "owner": str(user1.id),
+                "actor_name": "test_actor",
+                "queue_name": "default",
+            }),
+            timeout=TASK_TRACKING_CACHE_TTL,
+        )
         url = reverse("task-detail", kwargs={"task_id": task_id})
 
-        with mock.patch("core.api.viewsets.task.AsyncResult") as mock_async_result:
-            mock_result = mock.MagicMock()
-            mock_result.status = "SUCCESS"
-            mock_result.state = "SUCCESS"
-            mock_result.result = {
-                "status": "SUCCESS",
-                "result": {"imported": 42, "mailbox_id": "sensitive-data"},
-                "error": None,
-            }
-            mock_result.info = None
-            mock_async_result.return_value = mock_result
+        result_data = {
+            "status": "SUCCESS",
+            "result": {"imported": 42, "mailbox_id": "sensitive-data"},
+            "error": None,
+        }
 
-            # User2 tries to access user1's task - should be denied
-            client2 = APIClient()
-            client2.force_authenticate(user=user2)
-            response = client2.get(url)
-            assert response.status_code == status.HTTP_403_FORBIDDEN
+        # User2 tries to access user1's task - should be denied
+        client2 = APIClient()
+        client2.force_authenticate(user=user2)
+        response = client2.get(url)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
-            # User1 (owner) accesses their own task - should succeed
-            client1 = APIClient()
-            client1.force_authenticate(user=user1)
+        # User1 (owner) accesses their own task - should succeed
+        client1 = APIClient()
+        client1.force_authenticate(user=user1)
+        with mock.patch("dramatiq.Message.get_result", return_value=result_data):
             response = client1.get(url)
-            assert response.status_code == status.HTTP_200_OK
-            assert response.data["result"]["imported"] == 42
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["result"]["imported"] == 42
 
 
 class TestImportViewSetPermissions:

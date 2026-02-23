@@ -108,7 +108,7 @@ class TestRetryMessagesTask:
         # Mock successful send
         mock_send_message.return_value = None
 
-        result = retry_messages_task.apply(args=[message_ids]).get()
+        result = retry_messages_task(message_ids)
 
         # Verify the result
         assert result["success"] is True
@@ -126,7 +126,7 @@ class TestRetryMessagesTask:
         """Test retrying a non-existent message."""
         fake_message_id = "00000000-0000-0000-0000-000000000000"
 
-        result = retry_messages_task.apply(args=[[fake_message_id]]).get()
+        result = retry_messages_task([fake_message_id])
 
         # Verify the result
         assert result["success"] is True
@@ -139,7 +139,7 @@ class TestRetryMessagesTask:
 
     def test_retry_draft_message(self, draft_message):
         """Test retrying a draft message (should fail)."""
-        result = retry_messages_task.apply(args=[[str(draft_message.id)]]).get()
+        result = retry_messages_task([str(draft_message.id)])
 
         # Verify the result
         assert result["success"] is True
@@ -158,7 +158,7 @@ class TestRetryMessagesTask:
         # Mock successful send
         mock_send_message.return_value = None
 
-        result = retry_messages_task.apply().get()
+        result = retry_messages_task()
 
         # Verify the result
         assert result["success"] is True
@@ -194,7 +194,7 @@ class TestRetryMessagesTask:
             retry_count=1,
         )
 
-        result = retry_messages_task.apply().get()
+        result = retry_messages_task()
 
         # Verify the result
         assert result["success"] is True
@@ -248,7 +248,7 @@ class TestRetryMessagesTask:
         # Mock successful send
         mock_send_message.return_value = None
 
-        result = retry_messages_task.apply(args=[[str(message.id)]]).get()
+        result = retry_messages_task([str(message.id)])
 
         # Verify the result
         assert result["success"] is True
@@ -302,7 +302,7 @@ class TestRetryMessagesTask:
         # Mock successful send
         mock_send_message.return_value = None
 
-        result = retry_messages_task.apply(args=[[str(message.id)]]).get()
+        result = retry_messages_task([str(message.id)])
 
         # Verify the result - should only process the ready recipient
         assert result["success"] is True
@@ -343,9 +343,7 @@ class TestRetryMessagesTask:
         # Mock successful send
         mock_send_message.return_value = None
 
-        result = retry_messages_task.apply(
-            kwargs={"batch_size": 2}
-        ).get()  # Process in batches of 2
+        result = retry_messages_task(batch_size=2)  # Process in batches of 2
 
         # Verify the result
         assert result["success"] is True
@@ -426,7 +424,7 @@ class TestRetryMessagesTask:
         # Mock successful send
         mock_send_message.return_value = None
 
-        result = retry_messages_task.apply(args=[[str(message.id)]]).get()
+        result = retry_messages_task([str(message.id)])
 
         # Verify the result - should process 2 recipients (RETRY and NULL)
         assert result["success"] is True
@@ -478,7 +476,7 @@ class TestRetryMessagesTask:
             delivery_message="Permanent failure",
         )
 
-        result = retry_messages_task.apply(args=[[str(message.id)]]).get()
+        result = retry_messages_task([str(message.id)])
 
         # Verify the result - should process the message but not call send_message
         assert result["success"] is True
@@ -519,7 +517,7 @@ class TestRetryMessagesTask:
             type=models.MessageRecipientTypeChoices.TO,
         )
 
-        result = retry_messages_task.apply(args=[[]]).get()
+        result = retry_messages_task([])
 
         # Verify the result - should process the message but not call send_message
         assert result["success"] is True
@@ -532,10 +530,10 @@ class TestRetryMessagesTask:
         mock_send_message.assert_not_called()
 
     @patch("core.mda.outbound_tasks.send_message")
-    def test_retry_update_state_called_once_per_batch(
+    def test_retry_progress_updates_per_batch(
         self, mock_send_message, mailbox_sender, thread
     ):
-        """Test that update_state is called once per batch, not per message."""
+        """Test that task completes successfully with batch processing."""
         # Create 5 messages with retryable recipients
         messages = []
         for i in range(5):
@@ -565,44 +563,44 @@ class TestRetryMessagesTask:
         # Mock successful send
         mock_send_message.return_value = None
 
-        # Patch update_state to track calls
-        with patch.object(retry_messages_task, "update_state") as mock_update_state:
-            result = retry_messages_task.apply(kwargs={"batch_size": 2}).get()
+        with patch("core.mda.outbound_tasks.set_task_progress") as mock_set_progress:
+            result = retry_messages_task(batch_size=2)
 
         # Verify the result
         assert result["success"] is True
         assert result["total_messages"] == 5
         assert result["success_count"] == 5
 
-        # With 5 messages and batch_size=2, we should have 3 update_state calls:
-        # - At index 0 (start of batch 1)
-        # - At index 2 (start of batch 2)
-        # - At index 4 (start of batch 3)
-        assert mock_update_state.call_count == 3
+        # With 5 messages and batch_size=2:
+        # - 2 initial calls (finding messages, found messages)
+        # - 3 batch calls at indices 0, 2, 4
+        # Total: 5 calls
+        assert mock_set_progress.call_count == 5
 
-        # Verify the calls have correct batch information
-        calls = mock_update_state.call_args_list
+        # Verify the batch calls have correct batch information
+        # Batch calls are at indices 2, 3, 4 (after the 2 initial calls)
+        calls = mock_set_progress.call_args_list
 
-        # First call at index 0 (batch 1)
-        assert calls[0].kwargs["state"] == "PROGRESS"
-        assert calls[0].kwargs["meta"]["current_batch"] == 1
-        assert calls[0].kwargs["meta"]["total_batches"] == 3
+        # First batch call (index 2) at message index 0 (batch 1)
+        assert calls[2].args[0] == 10  # 10% progress for first batch
+        assert calls[2].args[1]["current_batch"] == 1
+        assert calls[2].args[1]["total_batches"] == 3
 
-        # Second call at index 2 (batch 2)
-        assert calls[1].kwargs["state"] == "PROGRESS"
-        assert calls[1].kwargs["meta"]["current_batch"] == 2
-        assert calls[1].kwargs["meta"]["total_batches"] == 3
+        # Second batch call (index 3) at message index 2 (batch 2)
+        assert calls[3].args[0] == 42  # 10 + (2/5)*80 = 42
+        assert calls[3].args[1]["current_batch"] == 2
+        assert calls[3].args[1]["total_batches"] == 3
 
-        # Third call at index 4 (batch 3)
-        assert calls[2].kwargs["state"] == "PROGRESS"
-        assert calls[2].kwargs["meta"]["current_batch"] == 3
-        assert calls[2].kwargs["meta"]["total_batches"] == 3
+        # Third batch call (index 4) at message index 4 (batch 3)
+        assert calls[4].args[0] == 74  # 10 + (4/5)*80 = 74
+        assert calls[4].args[1]["current_batch"] == 3
+        assert calls[4].args[1]["total_batches"] == 3
 
     @patch("core.mda.outbound_tasks.send_message")
-    def test_retry_update_state_not_called_every_message(
+    def test_retry_progress_not_called_every_message(
         self, mock_send_message, mailbox_sender, thread
     ):
-        """Test that update_state is NOT called for every message when batch_size > 1."""
+        """Test that task completes successfully with batched processing."""
         # Create 10 messages with retryable recipients
         messages = []
         for i in range(10):
@@ -630,15 +628,17 @@ class TestRetryMessagesTask:
 
         mock_send_message.return_value = None
 
-        with patch.object(retry_messages_task, "update_state") as mock_update_state:
-            result = retry_messages_task.apply(kwargs={"batch_size": 3}).get()
+        with patch("core.mda.outbound_tasks.set_task_progress") as mock_set_progress:
+            result = retry_messages_task(batch_size=3)
 
         assert result["success"] is True
         assert result["total_messages"] == 10
         assert result["success_count"] == 10
 
-        # With 10 messages and batch_size=3, update_state should be called 4 times:
-        # At indices 0, 3, 6, 9 (not 10 times for each message)
-        assert mock_update_state.call_count == 4
+        # With 10 messages and batch_size=3:
+        # - 2 initial calls (finding messages, found messages)
+        # - 4 batch calls at indices 0, 3, 6, 9
+        # Total: 6 calls
+        assert mock_set_progress.call_count == 6
         # Verify it's significantly less than total messages
-        assert mock_update_state.call_count < result["total_messages"]
+        assert mock_set_progress.call_count < result["total_messages"]

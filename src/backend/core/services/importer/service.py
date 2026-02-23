@@ -11,7 +11,6 @@ import magic
 from sentry_sdk import capture_exception
 
 from core import enums
-from core.api.viewsets.task import register_task_owner
 from core.models import Mailbox
 
 from .eml_tasks import process_eml_file_task
@@ -91,39 +90,36 @@ class ImportService:
             # Check MIME type for PST
             if content_type in enums.PST_SUPPORTED_MIME_TYPES:
                 task = process_pst_file_task.delay(file_key, str(recipient.id))
-                register_task_owner(task.id, user.id)
+                task.track_owner(user.id)
                 response_data = {"task_id": task.id, "type": "pst"}
                 if request:
                     messages.info(
                         request,
-                        f"Started processing PST file for recipient {recipient}. "
-                        "This may take a while. You can check the status in the Celery task monitor.",
+                        f"Started processing PST file for recipient {recipient}.",
                     )
                 return True, response_data
             # Check MIME type for MBOX
             if content_type in enums.MBOX_SUPPORTED_MIME_TYPES:
                 # Process MBOX file asynchronously
                 task = process_mbox_file_task.delay(file_key, str(recipient.id))
-                register_task_owner(task.id, user.id)
+                task.track_owner(user.id)
                 response_data = {"task_id": task.id, "type": "mbox"}
                 if request:
                     messages.info(
                         request,
-                        f"Started processing MBOX file for recipient {recipient}. "
-                        "This may take a while. You can check the status in the Celery task monitor.",
+                        f"Started processing MBOX file for recipient {recipient}.",
                     )
                 return True, response_data
             # Check MIME type for EML
             if content_type in enums.EML_SUPPORTED_MIME_TYPES:
                 # Process EML file asynchronously
                 task = process_eml_file_task.delay(file_key, str(recipient.id))
-                register_task_owner(task.id, user.id)
+                task.track_owner(user.id)
                 response_data = {"task_id": task.id, "type": "eml"}
                 if request:
                     messages.info(
                         request,
-                        f"Started processing EML file for recipient {recipient}. "
-                        "This may take a while. You can check the status in the Celery task monitor.",
+                        f"Started processing EML file for recipient {recipient}.",
                     )
                 return True, response_data
             return False, {"detail": f"Unsupported file format: {content_type}"}
@@ -180,13 +176,12 @@ class ImportService:
                 use_ssl=use_ssl,
                 recipient_id=str(recipient.id),
             )
-            register_task_owner(task.id, user.id)
+            task.track_owner(user.id)
             response_data = {"task_id": task.id, "type": "imap"}
             if request:
                 messages.info(
                     request,
-                    f"Started importing messages from IMAP server for recipient {recipient}. "
-                    "This may take a while. You can check the status in the Celery task monitor.",
+                    f"Started importing messages from IMAP server for recipient {recipient}.",
                 )
             return True, response_data
 

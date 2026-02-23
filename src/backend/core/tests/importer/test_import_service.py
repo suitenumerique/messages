@@ -164,62 +164,38 @@ def test_import_file_eml_by_superuser_sync(admin_user, mailbox, eml_key):
         return True
 
     with patch("core.mda.inbound.deliver_inbound_message", side_effect=mock_deliver):
-        # Create a mock task instance
-        mock_task = MagicMock()
-        mock_task.update_state = MagicMock()
+        # Run the import
+        task_result = process_eml_file_task(
+            file_key=eml_key,
+            recipient_id=str(mailbox.id),
+        )
 
-        with patch.object(
-            process_eml_file_task, "update_state", mock_task.update_state
-        ):
-            # Run the import
-            task_result = process_eml_file_task(
-                file_key=eml_key,
-                recipient_id=str(mailbox.id),
-            )
+        # Verify task result structure
+        assert isinstance(task_result, dict)
+        assert "status" in task_result
+        assert "result" in task_result
+        assert "error" in task_result
 
-            # Verify task result structure
-            assert isinstance(task_result, dict)
-            assert "status" in task_result
-            assert "result" in task_result
-            assert "error" in task_result
+        # Verify task result content
+        assert task_result["status"] == "SUCCESS"
+        assert (
+            task_result["result"]["message_status"]
+            == "Completed processing message"
+        )
+        assert task_result["result"]["type"] == "eml"
+        assert task_result["result"]["total_messages"] == 1
+        assert task_result["result"]["success_count"] == 1
+        assert task_result["result"]["failure_count"] == 0
+        assert task_result["result"]["current_message"] == 1
+        assert task_result["error"] is None
 
-            # Verify task result content
-            assert task_result["status"] == "SUCCESS"
-            assert (
-                task_result["result"]["message_status"]
-                == "Completed processing message"
-            )
-            assert task_result["result"]["type"] == "eml"
-            assert task_result["result"]["total_messages"] == 1
-            assert task_result["result"]["success_count"] == 1
-            assert task_result["result"]["failure_count"] == 0
-            assert task_result["result"]["current_message"] == 1
-            assert task_result["error"] is None
-
-            # Verify progress update (no SUCCESS update_state — Celery infers
-            # SUCCESS from normal return; status is in the returned dict)
-            mock_task.update_state.assert_called_once_with(
-                state="PROGRESS",
-                meta={
-                    "result": {
-                        "message_status": "Processing message 1 of 1",
-                        "total_messages": 1,
-                        "success_count": 0,
-                        "failure_count": 0,
-                        "type": "eml",
-                        "current_message": 1,
-                    },
-                    "error": None,
-                },
-            )
-
-            # Verify message was created
-            assert Message.objects.count() == 1
-            message = Message.objects.first()
-            assert message.subject == "Mon mail avec joli pj"
-            assert message.sender.email == "sender@example.com"
-            assert message.recipients.count() == 1
-            assert message.recipients.first().contact.email == "recipient@example.com"
+        # Verify message was created
+        assert Message.objects.count() == 1
+        message = Message.objects.first()
+        assert message.subject == "Mon mail avec joli pj"
+        assert message.sender.email == "sender@example.com"
+        assert message.recipients.count() == 1
+        assert message.recipients.first().contact.email == "recipient@example.com"
 
 
 @pytest.mark.django_db
@@ -260,62 +236,38 @@ def test_import_file_eml_by_user_with_access_sync(user, mailbox, eml_key, mock_r
         return True
 
     with patch("core.mda.inbound.deliver_inbound_message", side_effect=mock_deliver):
-        # Create a mock task instance
-        mock_task = MagicMock()
-        mock_task.update_state = MagicMock()
+        # Run the import
+        task_result = process_eml_file_task(
+            file_key=eml_key,
+            recipient_id=str(mailbox.id),
+        )
 
-        with patch.object(
-            process_eml_file_task, "update_state", mock_task.update_state
-        ):
-            # Run the import
-            task_result = process_eml_file_task(
-                file_key=eml_key,
-                recipient_id=str(mailbox.id),
-            )
+        # Verify task result structure
+        assert isinstance(task_result, dict)
+        assert "status" in task_result
+        assert "result" in task_result
+        assert "error" in task_result
 
-            # Verify task result structure
-            assert isinstance(task_result, dict)
-            assert "status" in task_result
-            assert "result" in task_result
-            assert "error" in task_result
+        # Verify task result content
+        assert task_result["status"] == "SUCCESS"
+        assert (
+            task_result["result"]["message_status"]
+            == "Completed processing message"
+        )
+        assert task_result["result"]["type"] == "eml"
+        assert task_result["result"]["total_messages"] == 1
+        assert task_result["result"]["success_count"] == 1
+        assert task_result["result"]["failure_count"] == 0
+        assert task_result["result"]["current_message"] == 1
+        assert task_result["error"] is None
 
-            # Verify task result content
-            assert task_result["status"] == "SUCCESS"
-            assert (
-                task_result["result"]["message_status"]
-                == "Completed processing message"
-            )
-            assert task_result["result"]["type"] == "eml"
-            assert task_result["result"]["total_messages"] == 1
-            assert task_result["result"]["success_count"] == 1
-            assert task_result["result"]["failure_count"] == 0
-            assert task_result["result"]["current_message"] == 1
-            assert task_result["error"] is None
-
-            # Verify progress update (no SUCCESS update_state — Celery infers
-            # SUCCESS from normal return; status is in the returned dict)
-            mock_task.update_state.assert_called_once_with(
-                state="PROGRESS",
-                meta={
-                    "result": {
-                        "message_status": "Processing message 1 of 1",
-                        "total_messages": 1,
-                        "success_count": 0,
-                        "failure_count": 0,
-                        "type": "eml",
-                        "current_message": 1,
-                    },
-                    "error": None,
-                },
-            )
-
-            # Verify message was created
-            assert Message.objects.count() == 1
-            message = Message.objects.first()
-            assert message.subject == "Mon mail avec joli pj"
-            assert message.sender.email == "sender@example.com"
-            assert message.recipients.count() == 1
-            assert message.recipients.first().contact.email == "recipient@example.com"
+        # Verify message was created
+        assert Message.objects.count() == 1
+        message = Message.objects.first()
+        assert message.subject == "Mon mail avec joli pj"
+        assert message.sender.email == "sender@example.com"
+        assert message.recipients.count() == 1
+        assert message.recipients.first().contact.email == "recipient@example.com"
 
 
 @pytest.mark.django_db

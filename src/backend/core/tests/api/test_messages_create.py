@@ -1054,6 +1054,7 @@ class TestApiDraftAndSendMessage:
         message2 = factories.MessageFactory(
             thread=thread_access.thread,
             is_draft=True,
+            is_sender=True,
             sender=factories.ContactFactory(mailbox=mailbox),
         )
         factories.MessageRecipientFactory(

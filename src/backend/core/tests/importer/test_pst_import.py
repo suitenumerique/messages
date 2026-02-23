@@ -1160,35 +1160,27 @@ def _upload_pst_to_s3(filename):
 
 
 class TestProcessPstFileTask:
-    """Tests for the process_pst_file_task Celery task using real PST files."""
+    """Tests for the process_pst_file_task using real PST files."""
 
     def test_nonexistent_mailbox(self):
         """Test task with non-existent mailbox returns failure."""
-        mock_task = MagicMock()
-        with patch.object(
-            process_pst_file_task, "update_state", mock_task.update_state
-        ):
-            result = process_pst_file_task(
-                file_key="test.pst",
-                recipient_id="00000000-0000-0000-0000-000000000000",
-            )
-            assert result["status"] == "FAILURE"
-            assert result["result"]["type"] == "pst"
-            assert "not found" in result["error"]
+        result = process_pst_file_task(
+            file_key="test.pst",
+            recipient_id="00000000-0000-0000-0000-000000000000",
+        )
+        assert result["status"] == "FAILURE"
+        assert result["result"]["type"] == "pst"
+        assert "not found" in result["error"]
 
     def test_process_sample_pst(self, mailbox):
         """Test processing sample.pst — 1 message in myInbox with transport headers."""
         file_key, storage, s3_client = _upload_pst_to_s3("sample.pst")
 
         try:
-            mock_task = MagicMock()
-            with patch.object(
-                process_pst_file_task, "update_state", mock_task.update_state
-            ):
-                result = process_pst_file_task(
-                    file_key=file_key,
-                    recipient_id=str(mailbox.id),
-                )
+            result = process_pst_file_task(
+                file_key=file_key,
+                recipient_id=str(mailbox.id),
+            )
 
             assert result["status"] == "SUCCESS"
             assert result["result"]["type"] == "pst"
@@ -1223,14 +1215,10 @@ class TestProcessPstFileTask:
         file_key, storage, s3_client = _upload_pst_to_s3("Outlook.pst")
 
         try:
-            mock_task = MagicMock()
-            with patch.object(
-                process_pst_file_task, "update_state", mock_task.update_state
-            ):
-                result = process_pst_file_task(
-                    file_key=file_key,
-                    recipient_id=str(mailbox.id),
-                )
+            result = process_pst_file_task(
+                file_key=file_key,
+                recipient_id=str(mailbox.id),
+            )
 
             assert result["status"] == "SUCCESS"
             assert result["result"]["type"] == "pst"
@@ -1270,14 +1258,10 @@ class TestProcessPstFileTask:
         )
 
         try:
-            mock_task = MagicMock()
-            with patch.object(
-                process_pst_file_task, "update_state", mock_task.update_state
-            ):
-                result = process_pst_file_task(
-                    file_key=file_key,
-                    recipient_id=str(mailbox.id),
-                )
+            result = process_pst_file_task(
+                file_key=file_key,
+                recipient_id=str(mailbox.id),
+            )
 
             assert result["status"] == "FAILURE"
             assert result["result"]["type"] == "pst"

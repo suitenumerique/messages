@@ -154,7 +154,7 @@ services:
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
-    command: ["python", "worker.py", "--loglevel=DEBUG"]
+    command: ["python", "worker.py", "-v", "2"]
     environment:
       - DJANGO_CONFIGURATION=Development
     env_file:

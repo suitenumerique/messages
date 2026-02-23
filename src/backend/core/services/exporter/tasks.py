@@ -1,4 +1,4 @@
-"""Celery tasks for exporting mailbox messages."""
+"""Background tasks for exporting mailbox messages."""
 
 import gzip
 import html
@@ -12,17 +12,15 @@ from typing import Any, Dict
 from django.conf import settings
 from django.core.files.storage import storages
 
-from celery.utils.log import get_task_logger
-from sentry_sdk import capture_exception
+import logging
+logger = logging.getLogger(__name__)
 
 from core.api.utils import generate_presigned_url
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322.parser import parse_email_message
 from core.models import Label, Mailbox, Message
-
-from messages.celery_app import app as celery_app
-
-logger = get_task_logger(__name__)
+from core.utils import register_task, set_task_progress
+from sentry_sdk import capture_exception
 
 # 7 days in seconds
 PRESIGNED_URL_EXPIRATION = 7 * 24 * 60 * 60
@@ -401,8 +399,8 @@ def _create_mbox_entry(
     return mbox_entry
 
 
-@celery_app.task(bind=True)  # pylint: disable=too-many-locals
-def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]:  # pylint: disable=unused-argument
+@register_task(queue="management")  # pylint: disable=too-many-locals
+def export_mailbox_task(mailbox_id: str, user_id: str) -> Dict[str, Any]:  # pylint: disable=unused-argument
     """
     Export all messages from a mailbox to an MBOX file and upload to S3.
 
@@ -432,19 +430,15 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
             "skipped_count": 0,
             "error": error_msg,
         }
-        self.update_state(
-            state="FAILURE",
-            meta={"result": result, "error": error_msg},
-        )
         return {"status": "FAILURE", "result": result, "error": error_msg}
 
     mailbox_email = str(mailbox_obj)
 
     try:
         # Update state to show we're starting
-        self.update_state(
-            state="PROGRESS",
-            meta={
+        set_task_progress(
+            0,
+            {
                 "result": {
                     "message_status": "Counting messages",
                     "total_messages": 0,
@@ -489,9 +483,10 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
 
                 # Update progress every 100 messages to reduce overhead
                 if current_message % 100 == 0 or current_message == total_messages:
-                    self.update_state(
-                        state="PROGRESS",
-                        meta={
+                    pct = min(10 + int(current_message / max(total_messages, 1) * 80), 90)
+                    set_task_progress(
+                        pct,
+                        {
                             "result": {
                                 "message_status": (
                                     f"Exporting message {current_message} "
@@ -550,9 +545,9 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
         )
 
         # Create notification message
-        self.update_state(
-            state="PROGRESS",
-            meta={
+        set_task_progress(
+            95,
+            {
                 "result": {
                     "message_status": "Creating notification",
                     "total_messages": total_messages,
@@ -588,11 +583,6 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
             "s3_key": s3_key,
         }
 
-        self.update_state(
-            state="SUCCESS",
-            meta={"result": result, "error": None},
-        )
-
         return {"status": "SUCCESS", "result": result, "error": None}
 
     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -611,11 +601,6 @@ def export_mailbox_task(self, mailbox_id: str, user_id: str) -> Dict[str, Any]: 
             "skipped_count": skipped_count,
             "error": error_msg,
         }
-
-        self.update_state(
-            state="FAILURE",
-            meta={"result": result, "error": error_msg},
-        )
 
         return {"status": "FAILURE", "result": result, "error": error_msg}
 

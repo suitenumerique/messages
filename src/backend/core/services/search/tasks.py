@@ -4,7 +4,8 @@
 
 from django.conf import settings
 
-from celery.utils.log import get_task_logger
+import logging
+logger = logging.getLogger(__name__)
 
 from core import models
 from core.services.search import (
@@ -14,17 +15,11 @@ from core.services.search import (
     index_thread,
 )
 
-from messages.celery_app import app as celery_app
-
-logger = get_task_logger(__name__)
+from core.utils import register_task, set_task_progress
 
 
-def _reindex_all_base(update_progress=None):
-    """Base function for reindexing all threads and messages.
-
-    Args:
-        update_progress: Optional callback function to update progress
-    """
+def _reindex_all_base():
+    """Base function for reindexing all threads and messages."""
     if not settings.OPENSEARCH_INDEX_THREADS:
         logger.info("OpenSearch thread indexing is disabled.")
         return {"success": False, "reason": "disabled"}
@@ -33,25 +28,34 @@ def _reindex_all_base(update_progress=None):
     create_index_if_not_exists()
 
     # Get all threads and index them
-    threads = models.Thread.objects.all()
-    total = threads.count()
+    total = models.Thread.objects.count()
+    threads = models.Thread.objects.all().iterator(chunk_size=1000)
     success_count = 0
     failure_count = 0
 
-    for i, thread in enumerate(threads):
+    for i, thread in enumerate(threads, start=1):
         try:
             if index_thread(thread):
                 success_count += 1
             else:
                 failure_count += 1
-        # pylint: disable=broad-exception-caught
         except Exception as e:
             failure_count += 1
             logger.exception("Error indexing thread %s: %s", thread.id, e)
 
-        # Update progress if callback provided
-        if update_progress and i % 100 == 0:
-            update_progress(i, total, success_count, failure_count)
+        # Update progress every 100 threads
+        if i % 100 == 0:
+            pct = min(int(i / max(total, 1) * 100), 99)
+            set_task_progress(
+                pct,
+                {
+                    "message": f"Processing {i}/{total}",
+                    "current": i,
+                    "total": total,
+                    "success_count": success_count,
+                    "failure_count": failure_count,
+                },
+            )
 
     return {
         "success": True,
@@ -61,27 +65,15 @@ def _reindex_all_base(update_progress=None):
     }
 
 
-@celery_app.task(bind=True)
-def reindex_all(self):
-    """Celery task wrapper for reindexing all threads and messages."""
-
-    def update_progress(current, total, success_count, failure_count):
-        """Update task progress."""
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "current": current,
-                "total": total,
-                "success_count": success_count,
-                "failure_count": failure_count,
-            },
-        )
-
-    return _reindex_all_base(update_progress)
+@register_task(queue="reindex")
+def reindex_all():
+    """Task wrapper for reindexing all threads and messages."""
+    set_task_progress(0, {"message": "Starting full reindex"})
+    return _reindex_all_base()
 
 
-@celery_app.task(bind=True)
-def reindex_thread_task(self, thread_id):
+@register_task(queue="reindex")
+def reindex_thread_task(thread_id):
     """Reindex a specific thread and all its messages."""
     if not settings.OPENSEARCH_INDEX_THREADS:
         logger.info("OpenSearch thread indexing is disabled.")
@@ -113,8 +105,8 @@ def reindex_thread_task(self, thread_id):
         raise
 
 
-@celery_app.task(bind=True)
-def reindex_mailbox_task(self, mailbox_id):
+@register_task(queue="reindex")
+def reindex_mailbox_task(mailbox_id):
     """Reindex all threads and messages in a specific mailbox."""
     if not settings.OPENSEARCH_INDEX_THREADS:
         logger.info("OpenSearch thread indexing is disabled.")
@@ -122,29 +114,37 @@ def reindex_mailbox_task(self, mailbox_id):
 
     # Ensure index exists first
     create_index_if_not_exists()
+    set_task_progress(0, {"message": "Reindex mailbox started", "mailbox_id": str(mailbox_id)})
 
     # Get all threads in the mailbox
-    threads = models.Mailbox.objects.get(id=mailbox_id).threads_viewer
-    total = threads.count()
+    try:
+        threads_qs = models.Mailbox.objects.get(id=mailbox_id).threads_viewer
+    except models.Mailbox.DoesNotExist:
+        logger.error("Mailbox %s does not exist", mailbox_id)
+        return {"mailbox_id": str(mailbox_id), "success": False, "error": "mailbox_not_found"}
+
+    total = threads_qs.count()
+    threads = threads_qs.iterator(chunk_size=1000)
     success_count = 0
     failure_count = 0
 
-    for i, thread in enumerate(threads):
+    for i, thread in enumerate(threads, start=1):
         try:
             if index_thread(thread):
                 success_count += 1
             else:
                 failure_count += 1
-        # pylint: disable=broad-exception-caught
         except Exception as e:
             failure_count += 1
             logger.exception("Error indexing thread %s: %s", thread.id, e)
 
         # Update progress every 50 threads
         if i % 50 == 0:
-            self.update_state(
-                state="PROGRESS",
-                meta={
+            pct = min(int(i / max(total, 1) * 100), 99)
+            set_task_progress(
+                pct,
+                {
+                    "message": f"Mailbox {mailbox_id} {i}/{total}",
                     "current": i,
                     "total": total,
                     "success_count": success_count,
@@ -161,8 +161,8 @@ def reindex_mailbox_task(self, mailbox_id):
     }
 
 
-@celery_app.task(bind=True)
-def index_message_task(self, message_id):
+@register_task(queue="reindex")
+def index_message_task(message_id):
     """Index a single message."""
     if not settings.OPENSEARCH_INDEX_THREADS:
         logger.info("OpenSearch message indexing is disabled.")
@@ -201,8 +201,8 @@ def index_message_task(self, message_id):
         raise
 
 
-@celery_app.task(bind=True)
-def reset_search_index(self):
+@register_task(queue="reindex")
+def reset_search_index():
     """Delete and recreate the OpenSearch index."""
 
     delete_index()

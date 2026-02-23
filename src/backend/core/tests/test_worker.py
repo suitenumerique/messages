@@ -31,31 +31,10 @@ class TestWorkerQueueConfiguration:
 
         assert worker.DEFAULT_QUEUES == worker.ALL_QUEUES
 
-    def test_celery_default_queue_is_default(self):
-        """Verify the celery default queue is set to 'default'."""
-        assert settings.CELERY_TASK_DEFAULT_QUEUE == "default"
-
-    def test_task_routes_configured(self):
-        """Verify task routes are configured for all expected modules."""
-        routes = settings.CELERY_TASK_ROUTES
-
-        assert "core.mda.inbound_tasks.*" in routes
-        assert routes["core.mda.inbound_tasks.*"]["queue"] == "inbound"
-
-        assert "core.mda.outbound_tasks.*" in routes
-        assert routes["core.mda.outbound_tasks.*"]["queue"] == "outbound"
-
-        assert "core.services.importer.mbox_tasks.*" in routes
-        assert routes["core.services.importer.mbox_tasks.*"]["queue"] == "imports"
-        assert "core.services.importer.eml_tasks.*" in routes
-        assert routes["core.services.importer.eml_tasks.*"]["queue"] == "imports"
-        assert "core.services.importer.imap_tasks.*" in routes
-        assert routes["core.services.importer.imap_tasks.*"]["queue"] == "imports"
-        assert "core.services.importer.pst_tasks.*" in routes
-        assert routes["core.services.importer.pst_tasks.*"]["queue"] == "imports"
-
-        assert "core.services.search.tasks.*" in routes
-        assert routes["core.services.search.tasks.*"]["queue"] == "reindex"
+    def test_dramatiq_broker_configured(self):
+        """Verify the Dramatiq broker is configured."""
+        assert hasattr(settings, "DRAMATIQ_BROKER")
+        assert settings.DRAMATIQ_BROKER["BROKER"] == "core.utils.EagerBroker"
 
 
 class TestWorkerCLIParsing:
@@ -75,8 +54,7 @@ class TestWorkerCLIParsing:
 
             assert args.queues is None
             assert args.exclude is None
-            assert args.disable_scheduler is False
-            assert args.loglevel == "INFO"
+            assert args.verbosity == 1
         finally:
             sys.argv = original_argv
 
@@ -110,21 +88,6 @@ class TestWorkerCLIParsing:
         finally:
             sys.argv = original_argv
 
-    def test_parse_args_with_disable_scheduler(self):
-        """Test parsing --disable-scheduler flag."""
-        import sys
-
-        import worker
-
-        original_argv = sys.argv
-        try:
-            sys.argv = ["worker.py", "--disable-scheduler"]
-            args = worker.parse_args()
-
-            assert args.disable_scheduler is True
-        finally:
-            sys.argv = original_argv
-
     def test_parse_args_with_concurrency(self):
         """Test parsing --concurrency argument."""
         import sys
@@ -140,18 +103,18 @@ class TestWorkerCLIParsing:
         finally:
             sys.argv = original_argv
 
-    def test_parse_args_with_loglevel(self):
-        """Test parsing --loglevel argument."""
+    def test_parse_args_with_verbosity(self):
+        """Test parsing --verbosity argument."""
         import sys
 
         import worker
 
         original_argv = sys.argv
         try:
-            sys.argv = ["worker.py", "--loglevel=DEBUG"]
+            sys.argv = ["worker.py", "--verbosity=2"]
             args = worker.parse_args()
 
-            assert args.loglevel == "DEBUG"
+            assert args.verbosity == 2
         finally:
             sys.argv = original_argv
 
@@ -171,15 +134,15 @@ class TestWorkerCLIParsing:
                 "reindex",
                 "-c",
                 "2",
-                "-l",
-                "WARNING",
+                "-v",
+                "2",
             ]
             args = worker.parse_args()
 
             assert args.queues == "inbound"
             assert args.exclude == "reindex"
             assert args.concurrency == 2
-            assert args.loglevel == "WARNING"
+            assert args.verbosity == 2
         finally:
             sys.argv = original_argv
 
@@ -229,32 +192,88 @@ class TestWorkerQueueValidation:
         assert result == expected
 
 
-class TestBeatScheduleQueues:
-    """Test that beat schedule tasks use correct queues."""
+class TestCrontabConfiguration:
+    """Test that crontab tasks are configured correctly."""
 
-    def test_beat_schedule_uses_correct_queues(self):
-        """Verify scheduled tasks are routed to appropriate queues."""
-        from messages.celery_app import app
+    def test_crontab_settings_configured(self):
+        """Verify crontab settings are configured."""
+        assert hasattr(settings, "DRAMATIQ_CRONTAB")
+        assert "REDIS_URL" in settings.DRAMATIQ_CRONTAB
 
-        if not hasattr(app.conf, "beat_schedule") or not app.conf.beat_schedule:
-            pytest.skip("Beat schedule is disabled")
+    def test_autodiscover_modules_finds_task_modules(self):
+        """Verify that DRAMATIQ_AUTODISCOVER_MODULES values are discoverable.
 
-        schedule = app.conf.beat_schedule
+        django_dramatiq's rundramatiq command uses Django's autodiscover_modules()
+        which looks for '{app_name}.{module_name}' for each installed app.
+        If DRAMATIQ_AUTODISCOVER_MODULES contains full paths like
+        'core.mda.inbound_tasks', autodiscovery silently fails because it
+        would look for 'core.core.mda.inbound_tasks' which doesn't exist.
+        """
+        from importlib import import_module
 
-        # Check retry-pending-messages uses outbound queue
-        if "retry-pending-messages" in schedule:
-            assert schedule["retry-pending-messages"]["options"]["queue"] == "outbound"
+        from django.apps import apps
 
-        # Check selfcheck uses outbound queue
-        if "selfcheck" in schedule:
-            assert schedule["selfcheck"]["options"]["queue"] == "outbound"
+        autodiscover_modules = settings.DRAMATIQ_AUTODISCOVER_MODULES
+        app_configs = apps.get_app_configs()
 
-        # Check process-inbound-messages-queue uses inbound queue
-        if "process-inbound-messages-queue" in schedule:
-            assert (
-                schedule["process-inbound-messages-queue"]["options"]["queue"]
-                == "inbound"
+        for module_name in autodiscover_modules:
+            found = False
+            for app_config in app_configs:
+                try:
+                    import_module(f"{app_config.name}.{module_name}")
+                    found = True
+                    break
+                except ImportError:
+                    continue
+            assert found, (
+                f"DRAMATIQ_AUTODISCOVER_MODULES entry '{module_name}' is not "
+                f"discoverable: no installed app contains a '{module_name}' "
+                f"submodule. autodiscover_modules() will silently skip it. "
+                f"Use simple module names like 'tasks' (not full paths)."
             )
+
+    def test_all_task_actors_registered_on_broker(self):
+        """Verify that all @register_task functions are registered on the broker.
+
+        This catches missing imports in core/tasks.py that would cause the
+        worker to silently ignore enqueued tasks.
+        """
+        import dramatiq
+
+        broker = dramatiq.get_broker()
+        registered_actors = set(broker.actors.keys())
+
+        # Every @register_task function must be discoverable by the worker.
+        # These are the actor names derived from each decorated function.
+        expected_actors = {
+            # core.mda.inbound_tasks
+            "process_inbound_message_task",
+            "process_inbound_messages_queue_task",
+            # core.mda.outbound_tasks
+            "send_message_task",
+            "selfcheck_task",
+            "retry_messages_task",
+            # core.services.importer
+            "process_eml_file_task",
+            "import_imap_messages_task",
+            "process_mbox_file_task",
+            "process_pst_file_task",
+            # core.services.search
+            "reindex_all",
+            "reindex_thread_task",
+            "reindex_mailbox_task",
+            "index_message_task",
+            "reset_search_index",
+            # core.services.exporter
+            "export_mailbox_task",
+        }
+
+        missing = expected_actors - registered_actors
+        assert not missing, (
+            f"Task actors not registered on the broker: {missing}. "
+            f"Check that core/tasks.py imports all task modules and that "
+            f"DRAMATIQ_AUTODISCOVER_MODULES is set correctly."
+        )
 
 
 class TestWorkerE2E:
@@ -264,15 +283,14 @@ class TestWorkerE2E:
         """Test that the worker process starts without immediate errors."""
         import subprocess
 
-        # Start worker with minimal config, disable scheduler to avoid side effects
+        # Start worker with minimal config
         # pylint: disable=consider-using-with
         process = subprocess.Popen(
             [
                 "python",
                 "worker.py",
                 "--queues=default",
-                "--disable-scheduler",
-                "--loglevel=INFO",
+                "-v", "2",
                 "--concurrency=1",
             ],
             stdout=subprocess.PIPE,

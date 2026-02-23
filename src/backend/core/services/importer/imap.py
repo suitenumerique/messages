@@ -18,12 +18,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from django.conf import settings
 
-from celery.utils.log import get_task_logger
+import logging
+logger = logging.getLogger(__name__)
 
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import parse_email_message
-
-logger = get_task_logger(__name__)
+from core.utils import set_task_progress
 
 
 class IMAPSecurityError(RuntimeError):
@@ -470,7 +470,6 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
     message_list: List[bytes],
     recipient: Any,
     username: str,
-    task_instance: Any,
     success_count: int,
     failure_count: int,
     current_message: int,
@@ -489,31 +488,36 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
             flags, raw_email = _fetch_message_with_flags_retry(imap_connection, msg_num)
 
             # Check message size limit
-            if len(raw_email) > settings.MAX_INCOMING_EMAIL_SIZE:
+            if raw_email is not None and len(raw_email) > settings.MAX_INCOMING_EMAIL_SIZE:
                 logger.warning(
                     "Skipping oversized IMAP message: %d bytes", len(raw_email)
                 )
                 failure_count += 1
-            else:
+            elif raw_email is not None:
                 # Parse message
                 parsed_email = parse_email_message(raw_email)
 
-                # TODO: better heuristic to determine if the message is from the sender
-                is_sender = parsed_email["from"]["email"].lower() == username.lower()
+                if parsed_email:
+                    # TODO: better heuristic to determine if the message is from the sender
+                    is_sender = parsed_email["from"]["email"].lower() == username.lower()
 
-                # Deliver message
-                if deliver_inbound_message(
-                    str(recipient),
-                    parsed_email,
-                    raw_email,
-                    is_import=True,
-                    is_import_sender=is_sender,
-                    imap_labels=[display_name],
-                    imap_flags=flags,
-                ):
-                    success_count += 1
+                    # Deliver message
+                    if deliver_inbound_message(
+                        str(recipient),
+                        parsed_email,
+                        raw_email,
+                        is_import=True,
+                        is_import_sender=is_sender,
+                        imap_labels=[display_name],
+                        imap_flags=flags,
+                    ):
+                        success_count += 1
+                    else:
+                        failure_count += 1
                 else:
                     failure_count += 1
+            else:
+                failure_count += 1
 
         except Exception as e:
             logger.exception(
@@ -534,9 +538,7 @@ def process_folder_messages(  # pylint: disable=too-many-arguments
             "type": "imap",
             "current_message": current_message,
         }
-        task_instance.update_state(
-            state="PROGRESS",
-            meta={"result": result, "error": None},
-        )
+        pct = min(int(current_message / max(total_messages, 1) * 100), 99)
+        set_task_progress(pct, {"result": result, "error": None})
 
     return success_count, failure_count, current_message

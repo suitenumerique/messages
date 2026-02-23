@@ -6,20 +6,19 @@ from typing import Any, Dict
 from django.conf import settings
 from django.core.files.storage import storages
 
-from celery.utils.log import get_task_logger
+import logging
+logger = logging.getLogger(__name__)
+
+from core.utils import register_task, set_task_progress
 from sentry_sdk import capture_exception
 
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import parse_email_message
 from core.models import Mailbox
 
-from messages.celery_app import app as celery_app
 
-logger = get_task_logger(__name__)
-
-
-@celery_app.task(bind=True)
-def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, Any]:
+@register_task(queue="imports")
+def process_eml_file_task(file_key: str, recipient_id: str) -> Dict[str, Any]:
     """
     Process an EML file asynchronously.
 
@@ -50,9 +49,9 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
 
     try:
         # Update progress state
-        self.update_state(
-            state="PROGRESS",
-            meta={
+        set_task_progress(
+            0,
+            {
                 "result": {
                     "message_status": "Processing message 1 of 1",
                     "total_messages": 1,

@@ -133,9 +133,9 @@ class TestDraftWithAttachments:
             mailbox=user_mailbox, email=sender_email, name=user_mailbox.local_part
         )
 
-        # Create a draft message
+        # Create a draft message (is_sender=True since this is an outbound draft)
         draft = factories.MessageFactory(
-            thread=thread, sender=sender, is_draft=True, subject="Existing draft"
+            thread=thread, sender=sender, is_draft=True, is_sender=True, subject="Existing draft"
         )
 
         # attachment blob should already be created

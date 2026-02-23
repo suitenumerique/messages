@@ -1,11 +1,10 @@
-"""API ViewSet for Celery task status."""
+"""API ViewSet for asynchronous task statuses."""
 
 import logging
 
-from django.core.cache import cache
+import dramatiq
+from dramatiq.results import ResultFailure, ResultMissing, Results
 
-from celery import states as celery_states
-from celery.result import AsyncResult
 from drf_spectacular.utils import (
     OpenApiExample,
     extend_schema,
@@ -17,16 +16,12 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from messages.celery_app import app as celery_app
+from core.utils import get_task_progress, get_task_tracking
 
 logger = logging.getLogger(__name__)
 
-TASK_OWNER_CACHE_TTL = 86400  # 24 hours
 
-
-def register_task_owner(task_id, user_id):
-    """Register the owner of a task for permission checks."""
-    cache.set(f"task_owner:{task_id}", str(user_id), timeout=TASK_OWNER_CACHE_TTL)
+TASK_STATES = ["PENDING", "SUCCESS", "FAILURE", "PROGRESS"]
 
 
 @extend_schema(
@@ -44,11 +39,13 @@ def register_task_owner(task_id, user_id):
         200: inline_serializer(
             name="TaskStatusResponse",
             fields={
-                "status": drf_serializers.ChoiceField(
-                    choices=sorted({*celery_states.ALL_STATES, "PROGRESS"})
-                ),
+                "status": drf_serializers.ChoiceField(choices=sorted(TASK_STATES)),
                 "result": drf_serializers.JSONField(allow_null=True),
                 "error": drf_serializers.CharField(allow_null=True),
+                # Present when status == "PROGRESS"
+                "progress": drf_serializers.IntegerField(required=False),
+                "message": drf_serializers.CharField(required=False, allow_blank=True),
+                "timestamp": drf_serializers.FloatField(required=False),
             },
         )
     },
@@ -69,43 +66,69 @@ def register_task_owner(task_id, user_id):
     ],
 )
 class TaskDetailView(APIView):
-    """View to retrieve the status of a Celery task."""
+    """View to retrieve the status of a task."""
 
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, task_id):
-        """Get the status of a Celery task."""
-        owner_id = cache.get(f"task_owner:{task_id}")
-        if owner_id is None:
+        """Get the status of a task."""
+        tracking = get_task_tracking(task_id)
+        if tracking is None:
             raise PermissionDenied("Task not found or access expired.")
-        if str(request.user.id) != owner_id:
+        if str(request.user.id) != tracking["owner"]:
             raise PermissionDenied("You do not have access to this task.")
 
-        task_result = AsyncResult(task_id, app=celery_app)
+        # Try to fetch the result from dramatiq's native result backend
+        message = dramatiq.Message(
+            queue_name=tracking["queue_name"],
+            actor_name=tracking["actor_name"],
+            args=(),
+            kwargs={},
+            options={},
+            message_id=task_id,
+        )
+        try:
+            result_data = message.get_result(block=False)
+        except ResultMissing:
+            result_data = None
+        except ResultFailure as exc:
+            return Response({
+                "status": "FAILURE",
+                "result": None,
+                "error": str(exc),
+            })
 
-        # By default unknown tasks will be in PENDING. There is no reliable
-        # way to check if a task exists or not with Celery.
-        # https://github.com/celery/celery/issues/3596#issuecomment-262102185
+        if result_data is not None:
+            response = {"status": "SUCCESS", "result": result_data, "error": None}
+            # If the result follows the {status, result, error} convention, unpack it
+            if (
+                isinstance(result_data, dict)
+                and {"status", "result", "error"} <= result_data.keys()
+            ):
+                response["status"] = result_data["status"]
+                response["result"] = result_data["result"]
+                response["error"] = result_data["error"]
+            return Response(response)
 
-        # Prepare the response data
-        result_data = {
-            "status": task_result.status,
-            "result": None,
-            "error": None,
-        }
+        # Check if we have progress data for this task
+        progress_data = get_task_progress(task_id)
+        if progress_data:
+            return Response(
+                {
+                    "status": "PROGRESS",
+                    "result": None,
+                    "error": None,
+                    "progress": progress_data.get("progress"),
+                    "message": progress_data.get("metadata", {}).get("message"),
+                    "timestamp": progress_data.get("timestamp"),
+                }
+            )
 
-        # If the result is a dict with status/result/error, unpack and propagate status
-        if isinstance(task_result.result, dict) and set(task_result.result.keys()) >= {
-            "status",
-            "result",
-            "error",
-        }:
-            result_data["status"] = task_result.result["status"]
-            result_data["result"] = task_result.result["result"]
-            result_data["error"] = task_result.result["error"]
-        else:
-            result_data["result"] = task_result.result
-        if task_result.state == "PROGRESS" and task_result.info:
-            result_data.update(task_result.info)
-
-        return Response(result_data)
+        # Default to pending when no result and no progress
+        return Response(
+            {
+                "status": "PENDING",
+                "result": None,
+                "error": None,
+            }
+        )

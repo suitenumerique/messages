@@ -712,9 +712,8 @@ class TestProcessInboundMessageTask:
         mock_check_spam.return_value = (True, None)  # is_spam=True
         mock_create_message.return_value = True
 
-        # Call the bound task directly using .run() method
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        # Call the task directly
+        result = process_inbound_message_task(str(inbound_message.id))
 
         assert result["success"] is True
         assert result["is_spam"] is True
@@ -745,9 +744,8 @@ class TestProcessInboundMessageTask:
         mock_check_spam.return_value = (False, None)  # is_spam=False
         mock_create_message.return_value = True
 
-        # Call the bound task directly using .run() method
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        # Call the task directly
+        result = process_inbound_message_task(str(inbound_message.id))
 
         assert result["success"] is True
         assert result["is_spam"] is False
@@ -774,9 +772,8 @@ class TestProcessInboundMessageTask:
         mock_check_spam.return_value = (False, None)
         mock_create_message.return_value = False  # Creation failed
 
-        # Call the bound task directly using .run() method
-        with patch.object(process_inbound_message_task, "update_state", Mock()):
-            result = process_inbound_message_task.run(str(inbound_message.id))
+        # Call the task directly
+        result = process_inbound_message_task(str(inbound_message.id))
 
         assert result["success"] is False
         assert "error" in result
@@ -807,9 +804,8 @@ class TestProcessInboundMessagesQueueTask:
                 created_at=old_time
             )
 
-        # Call the bound task directly using .run() method
-        with patch.object(process_inbound_messages_queue_task, "update_state", Mock()):
-            result = process_inbound_messages_queue_task.run(10)
+        # Call the task directly
+        result = process_inbound_messages_queue_task(10)
 
         assert result["success"] is True
         assert result["processed"] == 3

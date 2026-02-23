@@ -8,16 +8,15 @@ from typing import Any, Dict, Optional, Tuple
 from django.core.cache import cache
 from django.utils import timezone
 
-import requests
-from celery.utils.log import get_task_logger
+import logging
 
 from core import models
 from core.mda.inbound_create import _create_message_from_inbound
 from core.mda.rfc5322 import parse_email_message
+import requests
+from core.utils import cron_task, register_task
 
-from messages.celery_app import app as celery_app
-
-logger = get_task_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _check_spam_with_hardcoded_rules(
@@ -167,8 +166,8 @@ def _check_spam_with_rspamd(
         return False, str(e)
 
 
-@celery_app.task(bind=True)
-def process_inbound_message_task(self, inbound_message_id: str):
+@register_task(queue="inbound")
+def process_inbound_message_task(inbound_message_id: str):
     """Process an inbound message from the queue: check spam and create message.
 
     Args:
@@ -285,12 +284,13 @@ def process_inbound_message_task(self, inbound_message_id: str):
         cache.delete(lock_key)
 
 
-@celery_app.task(bind=True)
-def process_inbound_messages_queue_task(self, batch_size: int = 10):
+@cron_task(interval=300)
+@register_task(queue="inbound")
+def process_inbound_messages_queue_task(batch_size: int = 10):
     """Retry processing of inbound messages that are older than 5 minutes.
 
     This task only handles retries for messages that may have failed or gotten stuck.
-    Regular messages are processed immediately when created via process_inbound_message_task.delay().
+    Regular messages are processed immediately when created via process_inbound_message_task.send().
 
     Args:
         batch_size: Number of messages to process in this batch

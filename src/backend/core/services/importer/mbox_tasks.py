@@ -9,7 +9,10 @@ from typing import Any, Dict, List, Optional
 from django.conf import settings
 from django.core.files.storage import storages
 
-from celery.utils.log import get_task_logger
+import logging
+logger = logging.getLogger(__name__)
+
+from core.utils import register_task, set_task_progress
 from sentry_sdk import capture_exception
 
 from core.mda.inbound import deliver_inbound_message
@@ -17,11 +20,7 @@ from core.mda.rfc5322 import parse_email_message
 from core.mda.rfc5322.parser import parse_date
 from core.models import Mailbox
 
-from messages.celery_app import app as celery_app
-
 from .s3_seekable import BUFFER_CENTERED, S3SeekableReader
-
-logger = get_task_logger(__name__)
 
 
 @dataclass
@@ -170,8 +169,8 @@ def _extract_and_store_index(
     indices.append(MboxMessageIndex(start_byte=msg_start, end_byte=msg_end, date=date))
 
 
-@celery_app.task(bind=True)
-def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, Any]:
+@register_task(queue="imports")
+def process_mbox_file_task(file_key: str, recipient_id: str) -> Dict[str, Any]:
     """
     Process a MBOX file asynchronously using a 2-pass approach.
 
@@ -219,9 +218,9 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
             file_key,
             buffer_strategy=BUFFER_CENTERED,
         ) as reader:
-            self.update_state(
-                state="PROGRESS",
-                meta={
+            set_task_progress(
+                0,
+                {
                     "result": {
                         "message_status": "Indexing messages",
                         "total_messages": None,
@@ -270,18 +269,18 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
             for i, msg_index in enumerate(message_indices, 1):
                 current_message = i
                 try:
-                    result = {
-                        "message_status": f"Processing message {i} of {total_messages}",
-                        "total_messages": total_messages,
-                        "success_count": success_count,
-                        "failure_count": failure_count,
-                        "type": "mbox",
-                        "current_message": i,
-                    }
-                    self.update_state(
-                        state="PROGRESS",
-                        meta={
-                            "result": result,
+                    pct = min(10 + int(i / max(total_messages, 1) * 80), 90)
+                    set_task_progress(
+                        pct,
+                        {
+                            "result": {
+                                "message_status": f"Processing message {i} of {total_messages}",
+                                "total_messages": total_messages,
+                                "success_count": success_count,
+                                "failure_count": failure_count,
+                                "type": "mbox",
+                                "current_message": i,
+                            },
                             "error": None,
                         },
                     )
