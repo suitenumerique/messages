@@ -488,6 +488,27 @@ class TestLabelViewSet:
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert "You don't have access to this mailbox" in str(response.data["detail"])
 
+    def test_update_label_cannot_pivot_mailbox(self, api_client, label, mailbox, user):
+        """Regression test: PATCH must not allow changing the label's mailbox.
+
+        Even if a user has editor access on both mailboxes, they should not
+        be able to move a label from one mailbox to another via PATCH.
+        """
+        other_mailbox = MailboxFactory()
+        other_mailbox.accesses.create(user=user, role=models.MailboxRoleChoices.ADMIN)
+
+        url = reverse("labels-detail", args=[label.pk])
+        api_client.patch(
+            url,
+            {"mailbox": str(other_mailbox.id)},
+            format="json",
+        )
+
+        label.refresh_from_db()
+        assert label.mailbox_id == mailbox.id, (
+            "Label.mailbox was changed via PATCH — mailbox should be immutable on update"
+        )
+
     def test_delete_label(self, api_client, label):
         """Test deleting a label."""
         url = reverse("labels-detail", args=[label.pk])

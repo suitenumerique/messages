@@ -18,6 +18,23 @@ from core import enums, models
 from core.mda.rfc5322 import extract_base64_images_from_html
 
 
+class CreateOnlyFieldsMixin:
+    """Mixin that makes specified fields read-only on update (when instance exists).
+
+    Usage:
+        class MySerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
+            class Meta:
+                create_only_fields = ["mailbox", "thread"]
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance is not None:
+            for field_name in getattr(self.Meta, "create_only_fields", []):
+                if field_name in self.fields:
+                    self.fields[field_name].read_only = True
+
+
 class IntegerChoicesField(serializers.ChoiceField):
     """
     Custom field to handle IntegerChoices that accepts string labels for input
@@ -520,7 +537,7 @@ class TreeLabelSerializer(serializers.ModelSerializer):
         """
 
 
-class LabelSerializer(serializers.ModelSerializer):
+class LabelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
     """Serializer for Label model."""
 
     class Meta:
@@ -536,6 +553,7 @@ class LabelSerializer(serializers.ModelSerializer):
             "is_auto",
         ]
         read_only_fields = ["id", "slug"]
+        create_only_fields = ["mailbox"]
 
     def validate_mailbox(self, value):
         """Validate that user has access to the mailbox."""
@@ -867,7 +885,7 @@ class MessageSerializer(serializers.ModelSerializer):
         read_only_fields = fields  # Mark all as read-only
 
 
-class ThreadAccessSerializer(serializers.ModelSerializer):
+class ThreadAccessSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
     """Serialize thread access information."""
 
     role = IntegerChoicesField(choices_class=models.ThreadAccessRoleChoices)
@@ -876,6 +894,7 @@ class ThreadAccessSerializer(serializers.ModelSerializer):
         model = models.ThreadAccess
         fields = ["id", "thread", "mailbox", "role", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
+        create_only_fields = ["thread", "mailbox"]
 
 
 class MailboxAccessReadSerializer(serializers.ModelSerializer):

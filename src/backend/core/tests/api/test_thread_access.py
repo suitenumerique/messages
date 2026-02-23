@@ -286,6 +286,80 @@ class TestThreadAccessCreate:
         response = api_client.post(get_thread_access_url(thread.id), {})
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    def test_create_thread_access_on_foreign_thread(self, api_client):
+        """An authenticated user must not be able to create a ThreadAccess
+        on a thread they have no access to."""
+        user_1 = factories.UserFactory()
+        user_1_mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=user_1_mailbox,
+            user=user_1,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+
+        # Another thread — user_1 has no ThreadAccess on it
+        not_owned_thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            thread=not_owned_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+
+        api_client.force_authenticate(user=user_1)
+
+        delegated_mailbox = factories.MailboxFactory()
+        response = api_client.post(
+            get_thread_access_url(not_owned_thread.id),
+            {"mailbox": str(delegated_mailbox.id), "role": "viewer"},
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        # Verify no ThreadAccess was created for the not owned thread
+        assert not models.ThreadAccess.objects.filter(
+            thread=not_owned_thread, mailbox=delegated_mailbox
+        ).exists()
+
+    def test_create_thread_access_body_thread_ignored(self, api_client):
+        """POST body 'thread' field must not override the URL thread_id.
+
+        A user could POST to their own thread URL but send a another user's
+        thread ID in the body, hoping the serializer uses it instead.
+        The created ThreadAccess must always belong to the URL thread.
+        """
+        user_1 = factories.UserFactory()
+        user_1_mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=user_1_mailbox,
+            user=user_1,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        user_1_thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=user_1_mailbox,
+            thread=user_1_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+
+        not_owned_thread = factories.ThreadFactory()
+
+        api_client.force_authenticate(user=user_1)
+
+        delegated_mailbox = factories.MailboxFactory()
+        response = api_client.post(
+            get_thread_access_url(user_1_thread.id),
+            {
+                "thread": str(not_owned_thread.id),
+                "mailbox": str(delegated_mailbox.id),
+                "role": "viewer",
+            },
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # The created ThreadAccess must point to the URL thread, not the body thread
+        assert response.data["thread"] == user_1_thread.id
+        assert not models.ThreadAccess.objects.filter(
+            thread=not_owned_thread, mailbox=delegated_mailbox
+        ).exists()
+
 
 class TestThreadAccessUpdate:
     """Test the PUT/PATCH /threads/{thread_id}/accesses/{id}/ endpoint."""
@@ -392,6 +466,82 @@ class TestThreadAccessUpdate:
         url = get_thread_access_url(thread.id, uuid.uuid4())
         response = api_client.patch(url, {})
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_update_thread_access_cannot_pivot_thread(self, api_client):
+        """PATCH must not allow changing the thread FK (IDOR).
+
+        A user with editor access on their own thread could PATCH
+        the ThreadAccess record to point to another user's thread, gaining
+        full access to it. The 'thread' and 'mailbox' fields must be
+        read-only on update.
+        """
+        # Setup : user with mailbox and a thread they own
+        attacker = factories.UserFactory()
+        attacker_mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=attacker_mailbox,
+            user=attacker,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        attacker_thread = factories.ThreadFactory()
+        attacker_access = factories.ThreadAccessFactory(
+            mailbox=attacker_mailbox,
+            thread=attacker_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+
+        # Setup : another user with a private thread
+        victim_thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            thread=victim_thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+
+        api_client.force_authenticate(user=attacker)
+
+        # Attempt to pivot the thread FK to the second user's thread
+        url = get_thread_access_url(attacker_thread.id, attacker_access.id)
+        api_client.patch(
+            url,
+            {"thread": str(victim_thread.id), "role": "editor"},
+        )
+
+        # The request may succeed (200) but must NOT change the thread
+        attacker_access.refresh_from_db()
+        assert attacker_access.thread_id == attacker_thread.id, (
+            "IDOR: ThreadAccess.thread was changed to another thread via PATCH"
+        )
+
+    def test_update_thread_access_cannot_pivot_mailbox(self, api_client):
+        """PATCH must not allow changing the mailbox FK on a ThreadAccess."""
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        thread = factories.ThreadFactory()
+        thread_access = factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+
+        other_mailbox = factories.MailboxFactory()
+
+        api_client.force_authenticate(user=user)
+
+        url = get_thread_access_url(thread.id, thread_access.id)
+        api_client.patch(
+            url,
+            {"mailbox": str(other_mailbox.id), "role": "editor"},
+        )
+
+        thread_access.refresh_from_db()
+        assert thread_access.mailbox_id == mailbox.id, (
+            "IDOR: ThreadAccess.mailbox was changed via PATCH"
+        )
 
 
 class TestThreadAccessDelete:
