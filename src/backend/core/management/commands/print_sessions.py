@@ -87,7 +87,7 @@ class Command(BaseCommand):
         try:
             # Extract actual session key
             raw_key = redis_key.decode()
-            session_key = raw_key.replace(prefix, "")
+            session_key = raw_key.removeprefix(prefix)
 
             # Load and decode session
             session = session_store(session_key=session_key)
