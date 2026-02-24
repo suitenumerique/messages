@@ -442,6 +442,20 @@ class HasProvisioningApiKey(permissions.BasePermission):
         )
 
 
+class HasThreadEditAccess(IsAuthenticated):
+    """Allows access only to users with EDITOR role on the thread via ThreadAccess."""
+
+    message = "You do not have permission to perform this action on this thread."
+
+    def has_object_permission(self, request, view, obj):
+        """Check if user has editor access to the thread."""
+        return models.ThreadAccess.objects.filter(
+            thread=obj,
+            mailbox__accesses__user=request.user,
+            role__in=enums.THREAD_ROLES_CAN_EDIT,
+        ).exists()
+
+
 class HasAccessToMailbox(IsAuthenticated):
     """Allows access only to users with the access to the mailbox."""
 

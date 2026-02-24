@@ -10,7 +10,7 @@ export const NoMailbox = () => {
         <div id={SKIP_LINK_TARGET_ID} className="no-mailbox">
             <div>
                 <Icon name="report" type={IconType.OUTLINED} size={IconSize.LARGE} aria-hidden="true" />
-                <p>{t('No mailbox.')}</p>
+                <p>{t('No mailbox')}</p>
                 <Button onClick={logout}>{t('Logout')}</Button>
             </div>
         </div>

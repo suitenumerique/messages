@@ -33,14 +33,20 @@ const ThreadMessageHeader = ({
     // Derived state specific to header
     const isSuspiciousSender = Boolean(message.stmsg_headers?.['sender-auth'] === 'none');
 
+    const isUserSender = useMemo(() => {
+        if (!message.is_sender) return false;
+        if (!message.sender_user) return true;
+        if (message.sender_user.email === selectedMailbox?.email) return true;
+        return false;
+    }, [message.is_sender, message.sender_user, selectedMailbox?.email, user?.id]);
+
     const senderUserName = useMemo(() => {
-        if (message.is_sender && message.sender_user && selectedMailbox && selectedMailbox.email !== message.sender_user.email) {
+        if (message.is_sender && message.sender_user && selectedMailbox?.email !== message.sender_user.email) {
             if (user?.id === message.sender_user.id) return t('You')
             return message.sender_user.full_name ?? message.sender_user.email;
         }
-
         return undefined;
-    }, [message.is_sender, message.sender_user, selectedMailbox?.is_identity, user?.id, t])
+    }, [message.is_sender, message.sender_user, selectedMailbox?.email, user?.id, t])
 
     // Handler for untrash banner action
     const handleMarkAsUntrashed = useCallback(() => {
@@ -152,7 +158,7 @@ const ThreadMessageHeader = ({
                                 <ContactChip
                                     className="thread-message__sender-chip"
                                     contact={message.sender}
-                                    isUser={message.is_sender}
+                                    isUser={isUserSender}
                                     senderUserName={senderUserName}
                                     status={isSuspiciousSender ? 'unverified' : undefined}
                                     displayEmail

@@ -1,13 +1,36 @@
 """Root utils for the core application."""
 
+import html
 import json
 import logging
+import re
 from contextlib import contextmanager
 from contextvars import ContextVar
+from typing import Any
 
 from configurations import values
 
 logger = logging.getLogger(__name__)
+
+SNIPPET_MAX_LENGTH = 140
+
+
+def extract_snippet(parsed_data: dict[str, Any], fallback: str = "") -> str:
+    """Extract a text snippet from parsed email/message data.
+
+    Tries textBody first, then htmlBody (stripped of HTML tags).
+    Falls back to the provided fallback string if no body content is found.
+    Result is truncated to SNIPPET_MAX_LENGTH characters.
+    """
+    if text_body := parsed_data.get("textBody"):
+        return text_body[0].get("content", "")[:SNIPPET_MAX_LENGTH]
+
+    if html_body := parsed_data.get("htmlBody"):
+        html_content = html_body[0].get("content", "")
+        clean_text = re.sub("<[^>]+>", " ", html_content)
+        return " ".join(html.unescape(clean_text).strip().split())[:SNIPPET_MAX_LENGTH]
+
+    return fallback[:SNIPPET_MAX_LENGTH]
 
 
 class ThreadStatsUpdateDeferrer:

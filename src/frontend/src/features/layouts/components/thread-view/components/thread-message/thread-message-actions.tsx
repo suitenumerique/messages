@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
+import { Button, Tooltip, useModals } from "@gouvfr-lasuite/cunningham-react";
 import { DropdownMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import { getMessagesEmlRetrieveUrl } from "@/features/api/gen/messages/messages";
 import { getRequestUrl } from "@/features/api/utils";
@@ -8,6 +8,7 @@ import { useMailboxContext } from "@/features/providers/mailbox";
 import usePrint from "@/features/message/use-print";
 import useRead from "@/features/message/use-read";
 import useStarred from "@/features/message/use-starred";
+import useSplitThread from "@/features/message/use-split-thread";
 import useTrash from "@/features/message/use-trash";
 import { ThreadMessageActionsProps } from "./types";
 
@@ -28,12 +29,23 @@ const ThreadMessageActions = ({
     const { markAsReadAt } = useRead();
     const { markAsStarred } = useStarred();
     const { markAsTrashed } = useTrash();
+    const { splitThread } = useSplitThread();
     const { print } = usePrint();
+    const modals = useModals();
 
     const hasSiblingMessages = useMemo(() => {
         if (!selectedThread) return false;
         return selectedThread?.messages?.length > 1;
     }, [selectedThread]);
+
+    const canSplitThread = useMemo(() => {
+        if (!selectedThread || !hasSiblingMessages) return false;
+        if (message.is_draft) return false;
+        if (selectedThread.user_role !== "editor") return false;
+        // Cannot split at the first message
+        if (selectedThread.messages[0] === message.id) return false;
+        return true;
+    }, [selectedThread, hasSiblingMessages, message.id, message.is_draft]);
 
     // Handlers specific to actions
     const toggleReadStateFrom = useCallback((is_unread: boolean) => {
@@ -59,6 +71,17 @@ const ThreadMessageActions = ({
     const handleMarkAsTrashed = useCallback(() => {
         markAsTrashed({ messageIds: [message.id] });
     }, [markAsTrashed, message.id]);
+
+    const handleSplitThread = useCallback(async () => {
+        if (!selectedThread) return;
+        const decision = await modals.confirmationModal({
+            titleIcon: <Icon type={IconType.FILLED} name="call_split" />,
+            title: <span className="c__modal__text--centered">{t('Split thread')}</span>,
+            children: t('This will move this message and all following messages to a new thread. Continue?'),
+        });
+        if (decision !== 'yes') return;
+        splitThread({ threadId: selectedThread.id, messageId: message.id });
+    }, [selectedThread, splitThread, message.id, t, modals]);
 
     const handleDownloadRawEmail = useCallback(() => {
         const downloadUrl = getRequestUrl(getMessagesEmlRetrieveUrl(message.id));
@@ -96,6 +119,12 @@ const ThreadMessageActions = ({
             label: t('Star from here'),
             icon: <Icon type={IconType.FILLED} name="star_border" />,
             callback: handleStarredFrom,
+        }] : []),
+        ...(canSplitThread ? [{
+            label: t('Split thread from here'),
+            icon: <Icon type={IconType.FILLED} name="call_split" />,
+            showSeparator: true,
+            callback: handleSplitThread,
         }] : []),
         {
             label: t('Print'),

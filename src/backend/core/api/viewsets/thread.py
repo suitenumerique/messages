@@ -1,6 +1,7 @@
 """API ViewSet for Thread model."""
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q
 
 import rest_framework as drf
@@ -9,12 +10,15 @@ from drf_spectacular.utils import (
     OpenApiParameter,
     OpenApiResponse,
     extend_schema,
+    inline_serializer,
 )
 from rest_framework import mixins, status, viewsets
+from rest_framework import serializers as drf_serializers
 
 from core import enums, models
 from core.ai.thread_summarizer import summarize_thread
 from core.services.search import search_threads
+from core.utils import extract_snippet
 
 from .. import permissions, serializers
 
@@ -31,6 +35,12 @@ class ThreadViewSet(
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = "pk"
     lookup_url_kwarg = "pk"
+
+    def get_permissions(self):
+        """Use HasThreadEditAccess for actions that require EDITOR role."""
+        if self.action in ("destroy", "split"):
+            return [permissions.HasThreadEditAccess()]
+        return super().get_permissions()
 
     def get_serializer_context(self):
         """Add mailbox_id to serializer context for scoped serialization."""
@@ -144,15 +154,6 @@ class ThreadViewSet(
     def destroy(self, request, *args, **kwargs):
         """Delete a thread, requiring EDITOR role on the thread."""
         thread = self.get_object()
-        has_edit_access = models.ThreadAccess.objects.filter(
-            thread=thread,
-            mailbox__accesses__user=request.user,
-            role__in=enums.THREAD_ROLES_CAN_EDIT,
-        ).exists()
-        if not has_edit_access:
-            raise drf.exceptions.PermissionDenied(
-                "You do not have permission to delete this thread."
-            )
         thread.delete()
         return drf.response.Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -613,6 +614,158 @@ class ThreadViewSet(
         return drf.response.Response(
             {"summary": thread.summary}, status=status.HTTP_200_OK
         )
+
+    @extend_schema(
+        tags=["threads"],
+        request=inline_serializer(
+            name="ThreadSplitRequest",
+            fields={
+                "message_id": drf_serializers.UUIDField(
+                    required=True,
+                    help_text="ID of the message to split from. This message and all "
+                    "chronologically later messages will be moved to a new thread.",
+                ),
+            },
+        ),
+        responses={
+            201: serializers.ThreadSerializer,
+            400: OpenApiResponse(
+                response={
+                    "type": "object",
+                    "properties": {"detail": {"type": "string"}},
+                },
+                description="Validation error.",
+            ),
+            403: OpenApiResponse(
+                response={"detail": "Permission denied"},
+                description="User does not have editor permission on this thread.",
+            ),
+        },
+        description="Split a thread by moving the specified message and all later "
+        "messages to a new thread.",
+    )
+    @drf.decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path="split",
+        url_name="split",
+    )
+    def split(self, request, pk=None):  # pylint: disable=unused-argument
+        """Split a thread at the given message, moving it and all later messages to a new thread."""
+        old_thread = self.get_object()
+
+        # Validate request
+        message_id = request.data.get("message_id")
+        if not message_id:
+            return drf.response.Response(
+                {"detail": "message_id is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            split_message = models.Message.objects.get(id=message_id)
+        except models.Message.DoesNotExist:
+            return drf.response.Response(
+                {"detail": "Message not found."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if split_message.thread_id != old_thread.id:
+            return drf.response.Response(
+                {"detail": "Message does not belong to this thread."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if split_message.is_draft:
+            return drf.response.Response(
+                {"detail": "Cannot split at a draft message."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Get all messages in the thread ordered chronologically
+        all_messages = old_thread.messages.order_by("created_at")
+        total_count = all_messages.count()
+
+        if total_count <= 1:
+            return drf.response.Response(
+                {"detail": "Cannot split a thread with only one message."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        first_message = all_messages.first()
+        if first_message.id == split_message.id:
+            return drf.response.Response(
+                {"detail": "Cannot split at the first message in the thread."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Determine messages to move (split_message and all later)
+        messages_to_move = all_messages.filter(created_at__gte=split_message.created_at)
+
+        with transaction.atomic():
+            new_subject = split_message.subject or old_thread.subject
+            snippet = extract_snippet(
+                split_message.get_parsed_data(),
+                fallback=new_subject or "",
+            )
+
+            # Create new thread
+            new_thread = models.Thread.objects.create(
+                subject=new_subject,
+                snippet=snippet,
+            )
+
+            # Copy ThreadAccess entries
+            old_accesses = models.ThreadAccess.objects.filter(thread=old_thread)
+            new_accesses = [
+                models.ThreadAccess(
+                    thread=new_thread,
+                    mailbox=access.mailbox,
+                    role=access.role,
+                    read_at=access.read_at,
+                    starred_at=access.starred_at
+                    if access.starred_at
+                    and access.starred_at >= split_message.created_at
+                    else None,
+                )
+                for access in old_accesses
+            ]
+            models.ThreadAccess.objects.bulk_create(new_accesses, ignore_conflicts=True)
+
+            # Copy labels
+            for label in old_thread.labels.all():
+                label.threads.add(new_thread)
+
+            # Move messages
+            messages_to_move.update(thread=new_thread)
+
+            # Fix cross-thread parent references
+            models.Message.objects.filter(
+                thread=new_thread, parent__thread=old_thread
+            ).update(parent=None)
+
+            # Recalculate old thread snippet from its most recent remaining message
+            last_remaining = old_thread.messages.order_by("-created_at").first()
+            if last_remaining:
+                old_thread.snippet = extract_snippet(
+                    last_remaining.get_parsed_data(),
+                    fallback=old_thread.subject or "",
+                )
+                old_thread.save(update_fields=["snippet"])
+
+            # Update stats on both threads
+            old_thread.update_stats()
+            new_thread.update_stats()
+
+            # Invalidate summaries
+            models.Thread.objects.filter(id__in=[old_thread.id, new_thread.id]).update(
+                summary=None
+            )
+
+        serializer = serializers.ThreadSerializer(
+            new_thread, context={"request": request}
+        )
+        return drf.response.Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # @extend_schema(
     #     tags=["threads"],

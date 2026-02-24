@@ -5008,6 +5008,82 @@
                 }
             }
         },
+        "/api/v1.0/threads/{id}/split/": {
+            "post": {
+                "operationId": "threads_split_create",
+                "description": "Split a thread by moving the specified message and all later messages to a new thread.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "threads"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ThreadSplitRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ThreadSplitRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Thread"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Validation error."
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "detail": "Permission denied"
+                                }
+                            }
+                        },
+                        "description": "User does not have editor permission on this thread."
+                    }
+                }
+            }
+        },
         "/api/v1.0/threads/{id}/summary/": {
             "get": {
                 "operationId": "threads_summary_retrieve",
@@ -8225,6 +8301,19 @@
                     "id",
                     "name",
                     "slug"
+                ]
+            },
+            "ThreadSplitRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "message_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "ID of the message to split from. This message and all chronologically later messages will be moved to a new thread."
+                    }
+                },
+                "required": [
+                    "message_id"
                 ]
             },
             "TreeLabel": {

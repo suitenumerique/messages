@@ -2,7 +2,6 @@
 
 # pylint: disable=broad-exception-caught
 
-import html
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -22,6 +21,7 @@ from core.ai.utils import (
 from core.services.importer.labels import (
     compute_labels_and_flags,
 )
+from core.utils import extract_snippet
 
 logger = logging.getLogger(__name__)
 
@@ -133,18 +133,10 @@ def _create_thread(
 ) -> models.Thread:
     """Create a new thread."""
 
-    snippet = ""
-    if text_body := parsed_email.get("textBody"):
-        snippet = text_body[0].get("content", "")[:140]
-    elif html_body := parsed_email.get("htmlBody"):
-        html_content = html_body[0].get("content", "")
-        clean_text = re.sub("<[^>]+>", " ", html_content)
-        snippet = " ".join(html.unescape(clean_text).strip().split())[:140]
-    # Fallback to subject if no body content
-    elif subject_val := parsed_email.get("subject"):
-        snippet = subject_val[:140]
-    else:
-        snippet = "(No snippet available)"  # Absolute fallback
+    snippet = extract_snippet(
+        parsed_email,
+        fallback=parsed_email.get("subject") or "(No snippet available)",
+    )
 
     # Truncate subject to 255 characters if it exceeds max_length
     thread_subject = parsed_email.get("subject")
@@ -510,17 +502,10 @@ def _create_message_from_inbound(
     try:
         # Update snippet using the new message's body if possible
         # (This assumes the subject was used for the initial snippet if body was empty)
-        new_snippet = ""
-        if text_body := parsed_email.get("textBody"):
-            new_snippet = text_body[0].get("content", "")[:140]
-        elif html_body := parsed_email.get("htmlBody"):
-            html_content = html_body[0].get("content", "")
-            clean_text = re.sub("<[^>]+>", " ", html_content)
-            new_snippet = " ".join(html.unescape(clean_text).strip().split())[:140]
-        elif subject_val := parsed_email.get("subject"):  # Fallback to subject
-            new_snippet = subject_val[:140]
-        else:
-            new_snippet = ""
+        new_snippet = extract_snippet(
+            parsed_email,
+            fallback=parsed_email.get("subject", ""),
+        )
 
         if new_snippet:
             thread.snippet = new_snippet

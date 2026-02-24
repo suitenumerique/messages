@@ -28,8 +28,10 @@ import type {
 import type {
   PaginatedThreadList,
   Thread,
+  ThreadSplitRequestRequest,
   ThreadsListParams,
   ThreadsRefreshSummaryCreate200,
+  ThreadsSplitCreate400,
   ThreadsStatsRetrieve200,
   ThreadsStatsRetrieve400,
   ThreadsStatsRetrieveParams,
@@ -769,6 +771,124 @@ export const useThreadsRefreshSummaryCreate = <
 > => {
   const mutationOptions =
     getThreadsRefreshSummaryCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Split a thread by moving the specified message and all later messages to a new thread.
+ */
+export type threadsSplitCreateResponse201 = {
+  data: Thread;
+  status: 201;
+};
+
+export type threadsSplitCreateResponse400 = {
+  data: ThreadsSplitCreate400;
+  status: 400;
+};
+
+export type threadsSplitCreateResponse403 = {
+  data: unknown;
+  status: 403;
+};
+
+export type threadsSplitCreateResponseSuccess =
+  threadsSplitCreateResponse201 & {
+    headers: Headers;
+  };
+export type threadsSplitCreateResponseError = (
+  | threadsSplitCreateResponse400
+  | threadsSplitCreateResponse403
+) & {
+  headers: Headers;
+};
+
+export type threadsSplitCreateResponse =
+  | threadsSplitCreateResponseSuccess
+  | threadsSplitCreateResponseError;
+
+export const getThreadsSplitCreateUrl = (id: string) => {
+  return `/api/v1.0/threads/${id}/split/`;
+};
+
+export const threadsSplitCreate = async (
+  id: string,
+  threadSplitRequestRequest: ThreadSplitRequestRequest,
+  options?: RequestInit,
+): Promise<threadsSplitCreateResponse> => {
+  return fetchAPI<threadsSplitCreateResponse>(getThreadsSplitCreateUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(threadSplitRequestRequest),
+  });
+};
+
+export const getThreadsSplitCreateMutationOptions = <
+  TError = ThreadsSplitCreate400 | unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof threadsSplitCreate>>,
+    TError,
+    { id: string; data: ThreadSplitRequestRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof threadsSplitCreate>>,
+  TError,
+  { id: string; data: ThreadSplitRequestRequest },
+  TContext
+> => {
+  const mutationKey = ["threadsSplitCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof threadsSplitCreate>>,
+    { id: string; data: ThreadSplitRequestRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return threadsSplitCreate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ThreadsSplitCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof threadsSplitCreate>>
+>;
+export type ThreadsSplitCreateMutationBody = ThreadSplitRequestRequest;
+export type ThreadsSplitCreateMutationError = ThreadsSplitCreate400 | unknown;
+
+export const useThreadsSplitCreate = <
+  TError = ThreadsSplitCreate400 | unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof threadsSplitCreate>>,
+      TError,
+      { id: string; data: ThreadSplitRequestRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof threadsSplitCreate>>,
+  TError,
+  { id: string; data: ThreadSplitRequestRequest },
+  TContext
+> => {
+  const mutationOptions = getThreadsSplitCreateMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };
