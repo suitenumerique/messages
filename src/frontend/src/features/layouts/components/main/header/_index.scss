@@ -74,3 +74,19 @@
   width: 100%;
   align-self: flex-start;
 }
+
+.autoreply-indicator-button {
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50vw;
+    background-color: var(--c--contextuals--background--semantic--success--primary);
+    border: 2px solid var(--c--contextuals--background--surface--secondary);
+  }
+}

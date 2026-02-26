@@ -17,6 +17,7 @@ import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import i18n from "@/features/i18n/initI18n";
 import { handle } from "@/features/utils/errors";
 import { useConfirmBeforeClose } from "@/features/hooks/use-confirm-before-close";
+import { extractSignatureId } from "../utils";
 
 /**
  * Modal component to compose a template for a mailbox.
@@ -174,28 +175,25 @@ const TemplateComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChange
         }
 
         try {
+            const signatureId = extractSignatureId(data.rawBody);
+            const payload = {
+                name: data.name,
+                type: MessageTemplateTypeChoices.message,
+                html_body: htmlBody,
+                text_body: textBody,
+                raw_body: data.rawBody,
+                signature_id: signatureId,
+            };
             if (defaultValue?.id) {
                 await updateTemplate({
                     mailboxId,
                     id: defaultValue.id,
-                    data: {
-                        name: data.name,
-                        type: MessageTemplateTypeChoices.message,
-                        html_body: htmlBody,
-                        text_body: textBody,
-                        raw_body: data.rawBody,
-                    }
+                    data: payload,
                 });
             } else {
                 await createTemplate({
                     mailboxId,
-                    data: {
-                        name: data.name,
-                        type: MessageTemplateTypeChoices.message,
-                        html_body: htmlBody,
-                        text_body: textBody,
-                        raw_body: data.rawBody,
-                    }
+                    data: payload,
                 });
             }
         } catch (error) {

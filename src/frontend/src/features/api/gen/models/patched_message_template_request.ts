@@ -6,6 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 import type { MessageTemplateTypeChoices } from "./message_template_type_choices";
+import type { PatchedMessageTemplateRequestMetadata } from "./patched_message_template_request_metadata";
 
 /**
  * Serialize message templates for POST/PUT/PATCH operations.
@@ -30,4 +31,7 @@ export interface PatchedMessageTemplateRequest {
   is_forced?: boolean;
   /** Set as default template (auto-loaded when composing a new message) */
   is_default?: boolean;
+  metadata?: PatchedMessageTemplateRequestMetadata;
+  /** @nullable */
+  signature_id?: string | null;
 }

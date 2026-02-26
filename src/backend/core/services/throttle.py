@@ -91,9 +91,11 @@ def get_period_expiry(period_name: str) -> int:
     return 86400
 
 
-def get_throttle_cache_key(entity_type: str, entity_id: str, period_key: str) -> str:
+def get_throttle_cache_key(
+    entity_type: str, entity_id: str, period_key: str, counter_type: str = "ext_recip"
+) -> str:
     """Build the cache key for a throttle counter."""
-    return f"throttle:{entity_type}:{entity_id}:ext_recip:{period_key}"
+    return f"throttle:{entity_type}:{entity_id}:{counter_type}:{period_key}"
 
 
 def get_current_usage(cache_key: str) -> int:
@@ -131,20 +133,137 @@ def decrement_counter(cache_key: str, amount: int, expiry_seconds: int) -> int: 
         return 0
 
 
+class ThrottleManager:
+    """Central interface for throttle operations.
+
+    As a context manager, provides atomic check-and-increment with automatic
+    rollback on any exception (including ThrottleLimitExceeded), mirroring
+    the semantics of ``transaction.atomic()``.
+
+    Also exposes ``get_status()`` for read-only throttle introspection.
+
+    Usage::
+
+        with ThrottleManager() as throttle:
+            throttle.check_limit(rate1, "mailbox", mb_id, amount=5)
+            throttle.check_limit(rate2, "maildomain", md_id, amount=5)
+
+        status = ThrottleManager.get_status(rate, "mailbox", mb_id)
+    """
+
+    def __init__(self):
+        self._incremented: list[tuple[str, int, int]] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self._rollback()
+        return False
+
+    def _rollback(self):
+        for cache_key, amount, expiry in self._incremented:
+            decrement_counter(cache_key, amount, expiry)
+        self._incremented.clear()
+
+    @staticmethod
+    def _resolve(rate_setting, entity_type, entity_id, counter_type="ext_recip"):
+        """Resolve a rate setting into throttle state.
+
+        Returns (limit, period_name, cache_key, current, expiry) or None
+        if disabled.
+        """
+        rate = _normalize_rate(rate_setting)
+        if not rate:
+            return None
+        limit, period_name, _ = rate
+        period_key = get_period_key(period_name)
+        cache_key = get_throttle_cache_key(
+            entity_type, entity_id, period_key, counter_type
+        )
+        current = get_current_usage(cache_key)
+        expiry = get_period_expiry(period_name)
+        return limit, period_name, cache_key, current, expiry
+
+    def check_limit(
+        self,
+        rate_setting,
+        entity_type: str,
+        entity_id: str,
+        amount: int = 1,
+        counter_type: str = "ext_recip",
+    ) -> None:
+        """Check a throttle limit and increment the counter.
+
+        Raises ThrottleLimitExceeded if the limit would be exceeded.
+        Does nothing if rate_setting is None (throttling disabled).
+        """
+        state = self._resolve(rate_setting, entity_type, entity_id, counter_type)
+        if not state:
+            return
+
+        limit, period_name, cache_key, current, expiry = state
+
+        if current + amount > limit:
+            raise ThrottleLimitExceeded(
+                message=(
+                    f"Rate limit exceeded: {current}/{limit} "
+                    f"this {period_name}. Tried to add {amount} more. "
+                    f"Resets in {format_duration(expiry)}."
+                ),
+                entity_type=entity_type,
+                current=current,
+                limit=limit,
+                retry_after=expiry,
+            )
+
+        new_value = increment_counter(cache_key, amount, expiry)
+        self._incremented.append((cache_key, amount, expiry))
+
+        # Race condition check
+        if new_value > limit:
+            self._rollback()
+            raise ThrottleLimitExceeded(
+                message=(
+                    f"Rate limit exceeded: {limit}/{limit} "
+                    f"this {period_name}. Resets in {format_duration(expiry)}."
+                ),
+                entity_type=entity_type,
+                current=new_value - amount,
+                limit=limit,
+                retry_after=expiry,
+            )
+
+    @staticmethod
+    def get_status(
+        rate_setting,
+        entity_type: str,
+        entity_id: str,
+        counter_type: str = "ext_recip",
+    ) -> dict[str, Any] | None:
+        """Return current throttle status for a single entity, or None if disabled."""
+        state = ThrottleManager._resolve(
+            rate_setting, entity_type, entity_id, counter_type
+        )
+        if not state:
+            return None
+        limit, period_name, _, current, expiry = state
+        return {
+            "current": current,
+            "limit": limit,
+            "period": period_name,
+            "reset_in_seconds": expiry,
+            "reset_in_human": format_duration(expiry),
+        }
+
+
 def check_and_increment_throttle(mailbox, maildomain, message) -> None:
     """
     Check throttle limits and increment counters for external recipients.
 
     Raises ThrottleLimitExceeded if either mailbox or maildomain limit would be exceeded.
-
-    Flow:
-    1. Check if throttling is configured, return early if not
-    2. Count external recipients in the message
-    3. If zero external recipients, return immediately
-    4. Get current usage for both mailbox and maildomain
-    5. Check if adding would exceed either limit
-    6. If OK, increment both counters
-    7. Verify post-increment (race condition check), rollback if exceeded
+    Both counters are rolled back if either limit is exceeded.
     """
     mailbox_rate = _normalize_rate(
         settings.THROTTLE_MAILBOX_OUTBOUND_EXTERNAL_RECIPIENTS
@@ -153,109 +272,20 @@ def check_and_increment_throttle(mailbox, maildomain, message) -> None:
         settings.THROTTLE_MAILDOMAIN_OUTBOUND_EXTERNAL_RECIPIENTS
     )
 
-    # If no throttling configured, allow
     if not mailbox_rate and not maildomain_rate:
         return
 
-    # Count external recipients (DB query)
     external_count = count_external_recipients(message)
     if external_count == 0:
-        return  # No external recipients, nothing to throttle
+        return
 
-    # Build cache keys and get current values
-    checks = []
-
-    if mailbox_rate:
-        limit, period_name, _ = mailbox_rate
-        period_key = get_period_key(period_name)
-        cache_key = get_throttle_cache_key("mailbox", str(mailbox.id), period_key)
-        current = get_current_usage(cache_key)
-        expiry = get_period_expiry(period_name)
-        checks.append(
-            {
-                "entity_type": "mailbox",
-                "entity_name": str(mailbox),
-                "cache_key": cache_key,
-                "current": current,
-                "limit": limit,
-                "period_name": period_name,
-                "expiry": expiry,
-            }
+    with ThrottleManager() as throttle:
+        throttle.check_limit(
+            mailbox_rate, "mailbox", str(mailbox.id), amount=external_count
         )
-
-    if maildomain_rate:
-        limit, period_name, _ = maildomain_rate
-        period_key = get_period_key(period_name)
-        cache_key = get_throttle_cache_key("maildomain", str(maildomain.id), period_key)
-        current = get_current_usage(cache_key)
-        expiry = get_period_expiry(period_name)
-        checks.append(
-            {
-                "entity_type": "maildomain",
-                "entity_name": maildomain.name,
-                "cache_key": cache_key,
-                "current": current,
-                "limit": limit,
-                "period_name": period_name,
-                "expiry": expiry,
-            }
+        throttle.check_limit(
+            maildomain_rate, "maildomain", str(maildomain.id), amount=external_count
         )
-
-    # Check if adding external_count would exceed any limit
-    for check in checks:
-        if check["current"] + external_count > check["limit"]:
-            raise ThrottleLimitExceeded(
-                message=(
-                    f"Rate limit exceeded: {check['current']}/{check['limit']} external recipients "
-                    f"this {check['period_name']}. Tried to add {external_count} more. "
-                    f"Resets in {format_duration(check['expiry'])}."
-                ),
-                entity_type=check["entity_type"],
-                current=check["current"],
-                limit=check["limit"],
-                retry_after=check["expiry"],
-            )
-
-    # Increment all counters
-    incremented = []
-    try:
-        for check in checks:
-            new_value = increment_counter(
-                check["cache_key"], external_count, check["expiry"]
-            )
-            incremented.append((check, new_value))
-
-            # Race condition check: verify we didn't exceed after increment
-            if new_value > check["limit"]:
-                # Rollback all incremented counters
-                for inc_check, _ in incremented:
-                    decrement_counter(
-                        inc_check["cache_key"], external_count, inc_check["expiry"]
-                    )
-
-                raise ThrottleLimitExceeded(
-                    message=(
-                        f"Rate limit exceeded: {check['limit']}/{check['limit']} external recipients "
-                        f"this {check['period_name']}. Resets in {format_duration(check['expiry'])}."
-                    ),
-                    entity_type=check["entity_type"],
-                    current=new_value - external_count,
-                    limit=check["limit"],
-                    retry_after=check["expiry"],
-                )
-    except ThrottleLimitExceeded:
-        raise
-    except Exception as e:
-        # On any error, try to rollback
-        logger.error("Error during throttle increment, rolling back: %s", e)
-        for inc_check, _ in incremented:
-            try:
-                decrement_counter(
-                    inc_check["cache_key"], external_count, inc_check["expiry"]
-                )
-            except Exception as rollback_error:  # pylint: disable=broad-exception-caught
-                logger.error("Failed to rollback throttle counter: %s", rollback_error)
-        raise
 
 
 def get_throttle_status(mailbox=None, maildomain=None) -> dict[str, Any]:
@@ -267,42 +297,22 @@ def get_throttle_status(mailbox=None, maildomain=None) -> dict[str, Any]:
     result = {}
 
     if mailbox:
-        mailbox_rate = _normalize_rate(
-            settings.THROTTLE_MAILBOX_OUTBOUND_EXTERNAL_RECIPIENTS
+        status = ThrottleManager.get_status(
+            settings.THROTTLE_MAILBOX_OUTBOUND_EXTERNAL_RECIPIENTS,
+            "mailbox",
+            str(mailbox.id),
         )
-        if mailbox_rate:
-            limit, period_name, _ = mailbox_rate
-            period_key = get_period_key(period_name)
-            cache_key = get_throttle_cache_key("mailbox", str(mailbox.id), period_key)
-            current = get_current_usage(cache_key)
-            expiry = get_period_expiry(period_name)
-            result["mailbox"] = {
-                "current": current,
-                "limit": limit,
-                "period": period_name,
-                "reset_in_seconds": expiry,
-                "reset_in_human": format_duration(expiry),
-            }
+        if status:
+            result["mailbox"] = status
 
     if maildomain:
-        maildomain_rate = _normalize_rate(
-            settings.THROTTLE_MAILDOMAIN_OUTBOUND_EXTERNAL_RECIPIENTS
+        status = ThrottleManager.get_status(
+            settings.THROTTLE_MAILDOMAIN_OUTBOUND_EXTERNAL_RECIPIENTS,
+            "maildomain",
+            str(maildomain.id),
         )
-        if maildomain_rate:
-            limit, period_name, _ = maildomain_rate
-            period_key = get_period_key(period_name)
-            cache_key = get_throttle_cache_key(
-                "maildomain", str(maildomain.id), period_key
-            )
-            current = get_current_usage(cache_key)
-            expiry = get_period_expiry(period_name)
-            result["maildomain"] = {
-                "current": current,
-                "limit": limit,
-                "period": period_name,
-                "reset_in_seconds": expiry,
-                "reset_in_human": format_duration(expiry),
-            }
+        if status:
+            result["maildomain"] = status
 
     return result
 

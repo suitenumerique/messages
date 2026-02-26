@@ -11,11 +11,14 @@ from core import factories
 from core.mda.inbound import count_external_recipients
 from core.services.throttle import (
     ThrottleLimitExceeded,
+    ThrottleManager,
     check_and_increment_throttle,
     format_duration,
+    get_current_usage,
     get_period_key,
     get_throttle_cache_key,
     get_throttle_status,
+    increment_counter,
 )
 from core.utils import ThrottleRateValue
 
@@ -497,3 +500,60 @@ class TestGetThrottleStatus:
         assert "maildomain" in status
         assert status["mailbox"]["limit"] == 50
         assert status["maildomain"]["limit"] == 500
+
+
+class TestThrottleManager:
+    """Tests for the ThrottleManager context manager."""
+
+    def test_rate_setting_none_does_nothing(self):
+        """check_limit with None rate does not raise and leaves cache empty."""
+        with ThrottleManager() as throttle:
+            throttle.check_limit(None, "mailbox", "mb-noop")
+
+        key = get_throttle_cache_key("mailbox", "mb-noop", get_period_key("day"))
+        assert get_current_usage(key) == 0
+
+    def test_rollback_on_generic_exception(self):
+        """Counters are rolled back when a non-throttle exception occurs."""
+        with pytest.raises(RuntimeError):
+            with ThrottleManager() as throttle:
+                throttle.check_limit("5/day", "mailbox", "mb-generic", amount=3)
+                raise RuntimeError("boom")
+
+        key = get_throttle_cache_key("mailbox", "mb-generic", get_period_key("day"))
+        assert get_current_usage(key) == 0
+
+    def test_rollback_on_throttle_exceeded(self):
+        """Both calls are rolled back when the second exceeds the limit."""
+        with pytest.raises(ThrottleLimitExceeded):
+            with ThrottleManager() as throttle:
+                throttle.check_limit("3/day", "mailbox", "mb-exceed", amount=2)
+                throttle.check_limit("3/day", "mailbox", "mb-exceed", amount=2)
+
+        key = get_throttle_cache_key("mailbox", "mb-exceed", get_period_key("day"))
+        assert get_current_usage(key) == 0
+
+    def test_multiple_checks_second_fails_rollback_first(self):
+        """Two different limits: if the second fails, the first is also rolled back."""
+        with pytest.raises(ThrottleLimitExceeded):
+            with ThrottleManager() as throttle:
+                throttle.check_limit("10/day", "mailbox", "mb-multi", amount=2)
+                throttle.check_limit("1/day", "maildomain", "md-multi", amount=2)
+
+        mb_key = get_throttle_cache_key("mailbox", "mb-multi", get_period_key("day"))
+        md_key = get_throttle_cache_key("maildomain", "md-multi", get_period_key("day"))
+        assert get_current_usage(mb_key) == 0
+        assert get_current_usage(md_key) == 0
+
+    def test_race_condition_rollback(self):
+        """When increment_counter returns above the limit, rollback is triggered."""
+        # Pre-seed the counter just under the limit so that increment pushes it over
+        key = get_throttle_cache_key("mailbox", "mb-race", get_period_key("day"))
+        increment_counter(key, 4, 86400)  # 4 out of 5
+
+        with pytest.raises(ThrottleLimitExceeded):
+            with ThrottleManager() as throttle:
+                throttle.check_limit("5/day", "mailbox", "mb-race", amount=2)
+
+        # The race-condition path decrements back
+        assert get_current_usage(key) == 4

@@ -190,7 +190,7 @@ def _create_message_from_inbound(
     imap_flags: Optional[List[str]] = None,
     channel: Optional[models.Channel] = None,
     is_spam: bool = False,
-) -> bool:
+) -> Optional[models.Message]:
     """Create a message and thread from inbound message data.
 
     Warning: messages imported here could be is_sender=True.
@@ -217,14 +217,14 @@ def _create_message_from_inbound(
 
     except (DjangoDbError, ValidationError) as e:
         logger.error("Failed to find or create thread for %s: %s", recipient_email, e)
-        return False  # Indicate failure
+        return None  # Indicate failure
     except Exception as e:
         logger.exception(
             "Unexpected error finding/creating thread for %s: %s",
             recipient_email,
             e,
         )
-        return False
+        return None
 
     if is_import:
         # get labels from parsed_email
@@ -309,7 +309,7 @@ def _create_message_from_inbound(
             mailbox.id,
             e,
         )
-        return False  # Indicate failure
+        return None  # Indicate failure
     except Exception as e:
         logger.exception(
             "Unexpected error with sender contact %s in mailbox %s: %s",
@@ -317,7 +317,7 @@ def _create_message_from_inbound(
             mailbox.id,
             e,
         )
-        return False
+        return None
 
     # --- 5. Create Message --- #
     try:
@@ -402,14 +402,14 @@ def _create_message_from_inbound(
                 access.save(update_fields=["read_at"])
     except (DjangoDbError, ValidationError) as e:
         logger.error("Failed to create message in thread %s: %s", thread.id, e)
-        return False  # Indicate failure
+        return None  # Indicate failure
     except Exception as e:
         logger.exception(
             "Unexpected error creating message in thread %s: %s",
             thread.id,
             e,
         )
-        return False
+        return None
 
     # --- 6. Create Recipient Contacts and Links --- #
     # deduplicate recipients
@@ -551,7 +551,7 @@ def _create_message_from_inbound(
         mailbox.id,
         thread.id,
     )
-    return True  # Indicate success
+    return message  # Return created Message on success (truthy), None on failure
 
 
 # def _process_attachments(

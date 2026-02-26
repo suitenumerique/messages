@@ -76,6 +76,15 @@ body {
   font-size: var(--c--globals--font--sizes--sm);
 }
 
+// Cunningham: force label up for datetime-local/time inputs
+// The browser always renders native placeholder text for these input types,
+// which overlaps with Cunningham's floating label in "placeholder" position.
+.labelled-box:has(input[type="datetime-local"], input[type="time"]) .labelled-box__label.placeholder {
+  top: 8px;
+  font-size: 11px;
+  line-height: 16.5px;
+}
+
 // Cunningham icon sizes tweaks
 .material-icons.icon--size-sm {
   font-size: var(--c--globals--font--sizes--sm);

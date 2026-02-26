@@ -871,3 +871,82 @@ class TestDeliverInboundMessage:
         assert not error_calls, (
             f"Expected no error logs for recipient creation, but got: {error_calls}"
         )
+
+
+@pytest.mark.django_db
+class TestInboundAutoreplyIntegration:
+    """Test that deliver_inbound_message correctly calls try_send_autoreply."""
+
+    @pytest.fixture
+    def target_mailbox(self):
+        """Create a mailbox for testing delivery."""
+        domain = factories.MailDomainFactory(name="autoreply-integ.test")
+        return factories.MailboxFactory(local_part="recipient", domain=domain)
+
+    @pytest.fixture
+    def sample_parsed_email(self):
+        """Sample parsed email data."""
+        return {
+            "subject": "Autoreply Integration Test",
+            "from": {"name": "Sender", "email": "sender@test.com"},
+            "to": [{"name": "Recipient", "email": "recipient@autoreply-integ.test"}],
+            "cc": [],
+            "bcc": [],
+            "textBody": [{"content": "Hello"}],
+            "message_id": "autoreply.integ.1@example.com",
+            "date": timezone.now(),
+        }
+
+    @patch("core.mda.autoreply.try_send_autoreply")
+    def test_autoreply_called_on_direct_delivery(
+        self, mock_try_autoreply, target_mailbox, sample_parsed_email
+    ):
+        """try_send_autoreply is called for skip_inbound_queue deliveries."""
+        recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
+
+        result = deliver_inbound_message(
+            recipient_addr,
+            sample_parsed_email,
+            b"raw data",
+            skip_inbound_queue=True,
+        )
+
+        assert result is True
+        mock_try_autoreply.assert_called_once()
+        args = mock_try_autoreply.call_args[0]
+        assert args[0] == target_mailbox
+        assert args[1] == sample_parsed_email
+        assert isinstance(args[2], models.Message)
+
+    @patch("core.mda.autoreply.try_send_autoreply")
+    def test_autoreply_not_called_on_import(
+        self, mock_try_autoreply, target_mailbox, sample_parsed_email
+    ):
+        """try_send_autoreply is NOT called for imports."""
+        recipient_addr = f"{target_mailbox.local_part}@{target_mailbox.domain.name}"
+
+        result = deliver_inbound_message(
+            recipient_addr,
+            sample_parsed_email,
+            b"raw data",
+            is_import=True,
+        )
+
+        assert result is True
+        mock_try_autoreply.assert_not_called()
+
+    @override_settings(MESSAGES_ACCEPT_ALL_EMAILS=False, MESSAGES_TESTDOMAIN="")
+    @patch("core.mda.autoreply.try_send_autoreply")
+    def test_autoreply_not_called_on_failed_delivery(
+        self, mock_try_autoreply, sample_parsed_email
+    ):
+        """try_send_autoreply is NOT called when delivery fails."""
+        result = deliver_inbound_message(
+            "nonexistent@nonexistent-domain.invalid",
+            sample_parsed_email,
+            b"raw data",
+            skip_inbound_queue=True,
+        )
+
+        assert result is False
+        mock_try_autoreply.assert_not_called()

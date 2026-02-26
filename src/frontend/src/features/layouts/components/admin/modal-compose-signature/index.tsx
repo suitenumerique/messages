@@ -58,7 +58,7 @@ export const ModalComposeSignature = ({ isOpen, onClose, signature }: ModalCompo
             size={ModalSize.LARGE}
             onClose={guardedOnClose}
         >
-            <div className="modal-compose-signature">
+            <div className="modal-compose-template">
                 {signature ? (
                     <SignatureComposeFormWithRetrieve
                         domain={selectedMailDomain!}
@@ -229,7 +229,7 @@ const SignatureComposeForm = ({ domain, defaultValue, onSuccess, onDirtyChange }
 
     return (
         <FormProvider {...form}>
-            <form className="signature-composer-form" onSubmit={form.handleSubmit(onSubmit)}>
+            <form className="composer-form" onSubmit={form.handleSubmit(onSubmit)}>
                 <div className="form-field-row">
                     <RhfInput
                         label={t('Name')}

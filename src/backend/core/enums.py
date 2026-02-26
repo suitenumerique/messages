@@ -140,6 +140,7 @@ class MessageTemplateTypeChoices(models.IntegerChoices):
 
     MESSAGE = 1, "message"
     SIGNATURE = 2, "signature"
+    AUTOREPLY = 3, "autoreply"
 
 
 EML_SUPPORTED_MIME_TYPES = ["message/rfc822", "application/eml", "text/plain"]

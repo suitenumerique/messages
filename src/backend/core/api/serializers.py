@@ -6,6 +6,7 @@ import json
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, Q
 
@@ -32,6 +33,11 @@ class CreateOnlyFieldsMixin:
             for field_name in getattr(self.Meta, "create_only_fields", []):
                 if field_name in self.fields:
                     self.fields[field_name].read_only = True
+
+
+@extend_schema_field({"type": "object", "additionalProperties": True})
+class ObjectJSONField(serializers.JSONField):
+    """JSONField annotated as ``type: object`` for OpenAPI schema generation."""
 
 
 class IntegerChoicesField(serializers.ChoiceField):
@@ -375,6 +381,16 @@ class ReadMessageTemplateSerializer(serializers.ModelSerializer):
     html_body = serializers.CharField(required=False, allow_null=True, default=None)
     text_body = serializers.CharField(required=False, allow_null=True, default=None)
     raw_body = serializers.CharField(required=False, allow_null=True, default=None)
+    metadata = ObjectJSONField(required=False, default=dict)
+    is_active_autoreply = serializers.SerializerMethodField()
+    signature = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    @extend_schema_field(serializers.BooleanField(allow_null=True))
+    def get_is_active_autoreply(self, obj):
+        """Return whether the autoreply is currently active based on schedule."""
+        if obj.type != enums.MessageTemplateTypeChoices.AUTOREPLY:
+            return None
+        return obj.is_active_autoreply()
 
     def __init__(self, *args, **kwargs):
         body_fields = kwargs.pop("body_fields", None)
@@ -414,6 +430,9 @@ class ReadMessageTemplateSerializer(serializers.ModelSerializer):
             "is_active",
             "is_forced",
             "is_default",
+            "metadata",
+            "signature",
+            "is_active_autoreply",
             "created_at",
             "updated_at",
         ]
@@ -1602,6 +1621,8 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
     html_body = serializers.CharField(required=False)
     text_body = serializers.CharField(required=False)
     raw_body = serializers.CharField(required=False)
+    metadata = ObjectJSONField(required=False, default=dict)
+    signature_id = serializers.UUIDField(required=False, allow_null=True)
 
     class Meta:
         model = models.MessageTemplate
@@ -1615,6 +1636,8 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
             "is_active",
             "is_forced",
             "is_default",
+            "metadata",
+            "signature_id",
             "created_at",
             "updated_at",
         ]
@@ -1666,43 +1689,103 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
                 attrs.pop("html_body")
                 attrs.pop("text_body")
                 attrs.pop("raw_body")
-                return super().validate(attrs)
+            else:
+                _html, images = extract_base64_images_from_html(attrs["html_body"])
+                total_image_size = 0
+                for image in images:
+                    total_image_size += image["size"]
+                    if image["size"] > settings.MAX_TEMPLATE_IMAGE_SIZE:
+                        max_mb = settings.MAX_TEMPLATE_IMAGE_SIZE / (1024 * 1024)
+                        image_mb = image["size"] / (1024 * 1024)
+                        raise serializers.ValidationError(
+                            {
+                                "html_body": (
+                                    'Image "%(name)s" (%(size)s MB) exceeds'
+                                    " the %(max)s MB limit."
+                                )
+                                % {
+                                    "name": image["name"],
+                                    "size": f"{image_mb:.1f}",
+                                    "max": f"{max_mb:.0f}",
+                                }
+                            }
+                        )
+                    if total_image_size > settings.MAX_OUTGOING_ATTACHMENT_SIZE:
+                        max_mb = settings.MAX_OUTGOING_ATTACHMENT_SIZE / (1024 * 1024)
+                        total_mb = total_image_size / (1024 * 1024)
+                        raise serializers.ValidationError(
+                            {
+                                "html_body": (
+                                    "Total attachment size (%(total_size)s MB) exceeds the %(max_size)s MB limit. "
+                                    "Please remove or reduce attachments."
+                                )
+                                % {
+                                    "total_size": f"{total_mb:.1f}",
+                                    "max_size": f"{max_mb:.0f}",
+                                }
+                            }
+                        )
 
-            _html, images = extract_base64_images_from_html(attrs["html_body"])
-            total_image_size = 0
-            for image in images:
-                total_image_size += image["size"]
-                if image["size"] > settings.MAX_TEMPLATE_IMAGE_SIZE:
-                    max_mb = settings.MAX_TEMPLATE_IMAGE_SIZE / (1024 * 1024)
-                    image_mb = image["size"] / (1024 * 1024)
-                    raise serializers.ValidationError(
-                        {
-                            "html_body": (
-                                'Image "%(name)s" (%(size)s MB) exceeds'
-                                " the %(max)s MB limit."
-                            )
-                            % {
-                                "name": image["name"],
-                                "size": f"{image_mb:.1f}",
-                                "max": f"{max_mb:.0f}",
-                            }
-                        }
-                    )
-                if total_image_size > settings.MAX_OUTGOING_ATTACHMENT_SIZE:
-                    max_mb = settings.MAX_OUTGOING_ATTACHMENT_SIZE / (1024 * 1024)
-                    total_mb = total_image_size / (1024 * 1024)
-                    raise serializers.ValidationError(
-                        {
-                            "html_body": (
-                                "Total attachment size (%(total_size)s MB) exceeds the %(max_size)s MB limit. "
-                                "Please remove or reduce attachments."
-                            )
-                            % {
-                                "total_size": f"{total_mb:.1f}",
-                                "max_size": f"{max_mb:.0f}",
-                            }
-                        }
-                    )
+        # Autoreply-specific validation
+        template_type = attrs.get("type") or (
+            self.instance.type if self.instance else None
+        )
+        if template_type == enums.MessageTemplateTypeChoices.AUTOREPLY:
+            if attrs.get("is_forced"):
+                raise serializers.ValidationError(
+                    {"is_forced": "Autoreply templates cannot be forced."}
+                )
+            if attrs.get("is_default"):
+                raise serializers.ValidationError(
+                    {"is_default": "Autoreply templates cannot be default."}
+                )
+            metadata = attrs.get("metadata")
+            # Skip metadata validation on update
+            if not self.instance or metadata is not None:
+                try:
+                    models.MessageTemplate(
+                        type=template_type,
+                        metadata=metadata or {},
+                    ).validate_autoreply_metadata()
+                except DjangoValidationError as exc:
+                    raise serializers.ValidationError(exc.message_dict) from exc
+
+        # Validate and resolve signature_id
+        signature_id = attrs.pop("signature_id", None)
+        if signature_id:
+            mailbox = self.context.get("mailbox") or (
+                self.instance.mailbox if self.instance else None
+            )
+            domain = self.context.get("domain") or (
+                self.instance.maildomain if self.instance else None
+            )
+
+            # Build scope filter: signature must belong to the same mailbox or domain
+            scope_filter = Q()
+            if mailbox:
+                scope_filter |= Q(mailbox=mailbox) | Q(maildomain=mailbox.domain)
+            if domain:
+                scope_filter |= Q(maildomain=domain)
+
+            if not scope_filter:
+                raise serializers.ValidationError(
+                    {"signature_id": "Invalid or inaccessible signature."}
+                )
+
+            signature = models.MessageTemplate.objects.filter(
+                scope_filter,
+                id=signature_id,
+                type=enums.MessageTemplateTypeChoices.SIGNATURE,
+                is_active=True,
+            ).first()
+
+            if not signature:
+                raise serializers.ValidationError(
+                    {"signature_id": "Invalid or inaccessible signature."}
+                )
+            attrs["signature"] = signature
+        elif signature_id is None and "signature_id" in self.initial_data:
+            attrs["signature"] = None
 
         return super().validate(attrs)
 

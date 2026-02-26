@@ -34,7 +34,7 @@ type LayoutContextType = {
     setIsDragging: (prevState: boolean) => void;
 }
 
-const LayoutContext = createContext<LayoutContextType | undefined>(undefined);
+export const LayoutContext = createContext<LayoutContextType | undefined>(undefined);
 
 const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>) => {
     const { mailboxes, queryStates } = useMailboxContext();

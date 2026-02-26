@@ -133,6 +133,14 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    # Autoreply rate limit: max autoreplies per sender per mailbox per time period
+    # Format: "count/period" where period is minute, hour, or day. None to disable.
+    THROTTLE_AUTOREPLY_PER_SENDER = ThrottleRateValue(
+        "1/day",
+        environ_name="THROTTLE_AUTOREPLY_PER_SENDER",
+        environ_prefix=None,
+    )
+
     # Image Proxy
     IMAGE_PROXY_ENABLED = values.BooleanValue(
         False, environ_name="IMAGE_PROXY_ENABLED", environ_prefix=None

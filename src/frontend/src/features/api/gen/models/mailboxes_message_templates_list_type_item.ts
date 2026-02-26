@@ -11,6 +11,7 @@ export type MailboxesMessageTemplatesListTypeItem =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const MailboxesMessageTemplatesListTypeItem = {
+  autoreply: "autoreply",
   message: "message",
   signature: "signature",
 } as const;

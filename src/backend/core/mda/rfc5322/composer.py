@@ -87,6 +87,13 @@ def format_address_list(addresses: List[Dict[str, str]]) -> str:
     return ", ".join(formatted)
 
 
+def make_reply_subject(subject: str) -> str:
+    """Add 'Re: ' prefix to a subject, avoiding duplication."""
+    if subject.lower().startswith("re:"):
+        return subject
+    return f"Re: {subject}"
+
+
 def set_basic_headers(message_part, jmap_data, in_reply_to=None):
     """
     Set the basic email headers on a message part. (Renamed param for clarity)
@@ -760,11 +767,7 @@ def create_reply_message(
     if reply_text is None:
         reply_text = ""
 
-    # Create reply subject (add Re: if needed)
-    if orig_subject.lower().startswith("re:"):
-        reply_subject = orig_subject
-    else:
-        reply_subject = f"Re: {orig_subject}"
+    reply_subject = make_reply_subject(orig_subject)
 
     # Use the shared embedding logic
     text_body, html_body = _embed_original_message(

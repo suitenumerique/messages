@@ -187,7 +187,7 @@ def deliver_inbound_message(
     # --- 3. Handle imports and internal messages directly, queue others for spam processing --- #
     if is_import or skip_inbound_queue:
         # Imports and internal messages bypass spam checking and create messages directly
-        return _create_message_from_inbound(
+        result = _create_message_from_inbound(
             recipient_email=recipient_email,
             parsed_email=parsed_email,
             raw_data=raw_data,
@@ -199,6 +199,16 @@ def deliver_inbound_message(
             channel=channel,
             is_spam=False,  # Bypassed messages are never marked as spam
         )
+
+        # Send autoreply for internal messages (not imports, which are historical)
+        if not is_import and isinstance(result, models.Message):
+            from core.mda.autoreply import (  # pylint: disable=import-outside-toplevel
+                try_send_autoreply,
+            )
+
+            try_send_autoreply(mailbox, parsed_email, result)
+
+        return result is not None
 
     # Regular messages: queue for spam processing
     try:

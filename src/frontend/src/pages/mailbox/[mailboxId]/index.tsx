@@ -15,13 +15,14 @@ import { useSearchParams } from "next/navigation";
 
 const Mailbox = () => {
     const { t } = useTranslation();
-    const { selectedMailbox } = useMailboxContext();
+    const { selectedMailbox, threads } = useMailboxContext();
     const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
     const { selectedThreadIds } = useThreadSelection();
     const searchParams = useSearchParams();
     const { isMobile } = useResponsive();
     const showThreadView = !isMobile;
-    const emtpyMailbox = (selectedMailbox?.count_threads || 0) === 0;
+    const emptyMailbox = (selectedMailbox?.count_threads || 0) === 0
+        && (threads?.results.length ?? 0) === 0;
     const { defaultLayout, onLayoutChange } = useDefaultLayout({
         groupId: showThreadView ? "threads" : "threads-single",
         storage: localStorage,
@@ -29,12 +30,12 @@ const Mailbox = () => {
 
     const showImportButton = useMemo(() => {
         // Only show import button if there are no threads in inbox or all messages folders and user has ability to import messages
-        if (!canImportMessages || !emtpyMailbox) return false;
+        if (!canImportMessages || !emptyMailbox) return false;
         if (ViewHelper.isInboxView() || ViewHelper.isAllMessagesView()) return true;
         return false;
     }, [canImportMessages, searchParams]);
 
-    if (emtpyMailbox) {
+    if (emptyMailbox) {
         return (
             <div className="thread-view thread-view--empty" style={{ top: 0 }}>
                 <div>

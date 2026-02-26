@@ -46,6 +46,194 @@ RETRY_INTERVALS = [
 ]
 
 
+def validate_attachments_size(total_size: int, message_id: str) -> None:
+    """Raise a ValidationError if *total_size* exceeds the outgoing limit."""
+    if total_size > settings.MAX_OUTGOING_ATTACHMENT_SIZE:
+        max_mb = settings.MAX_OUTGOING_ATTACHMENT_SIZE / (1024 * 1024)
+
+        logger.error(
+            "Total attachment size for message %s exceeds configured limit of %d bytes (%.0f MB)",
+            message_id,
+            settings.MAX_OUTGOING_ATTACHMENT_SIZE,
+            max_mb,
+        )
+
+        raise drf.exceptions.ValidationError(
+            {
+                "message": (
+                    f"Total attachment size exceeds the {max_mb:.0f} MB limit. "
+                    "Please remove or reduce attachments."
+                )
+            }
+        )
+
+
+def compose_and_store_mime(
+    message: models.Message,
+    mailbox: models.Mailbox,
+    text_body: str,
+    html_body: str,
+    attachments: list | None = None,
+    prepend_headers: list | None = None,
+    signature: Optional[models.MessageTemplate] = None,
+    user: Optional[models.User] = None,
+) -> None:
+    """Compose a complete outbound email: append signature, embed reply/forward
+    quote, generate MIME, DKIM sign, and store as blob on the message.
+
+    The signature is inserted between the new content and the quoted original
+    so recipients see it in the expected position.
+
+    The Message must already have a sender and MessageRecipients in the DB.
+    Updates message.mime_id, message.blob and message.has_attachments
+    (caller is responsible for saving).
+    """
+    # 1. Append signature (before quoting so it sits between reply and quote)
+    text_body, html_body, inline_attachments = (
+        append_signature_and_extract_inline_images(
+            text_body,
+            html_body,
+            signature=signature,
+            mailbox=mailbox,
+            user=user,
+            message=message,
+        )
+    )
+
+    # 2. Embed reply/forward quote
+    if message.parent:
+        parent_parsed = message.parent.get_parsed_data()
+        if parent_parsed:
+            is_forward = (message.subject or "").lower().startswith("fwd:")
+            if is_forward:
+                nested_data = create_forward_message(
+                    original_message=parent_parsed,
+                    forward_text=text_body,
+                    forward_html=html_body,
+                    include_original=True,
+                )
+            else:
+                nested_data = create_reply_message(
+                    original_message=parent_parsed,
+                    reply_text=text_body,
+                    reply_html=html_body,
+                    include_quote=True,
+                )
+            if nested_data.get("textBody"):
+                text_body = nested_data["textBody"][0]["content"]
+            if nested_data.get("htmlBody"):
+                html_body = nested_data["htmlBody"][0]["content"]
+
+    # 3. Merge inline attachments from signature with caller-provided attachments
+    all_attachments = list(attachments or [])
+    caller_size = sum(a.get("size", 0) for a in all_attachments)
+    for img in inline_attachments:
+        caller_size += img["size"]
+        all_attachments.append(img)
+        validate_attachments_size(caller_size, message.id)
+
+    # 4. Compose MIME
+    message.mime_id = message.generate_mime_id()
+
+    recipients_by_type = {
+        kind: [{"name": c.name, "email": c.email} for c in contacts]
+        for kind, contacts in message.get_all_recipient_contacts().items()
+    }
+
+    mime_data = {
+        "from": [{"name": message.sender.name, "email": message.sender.email}],
+        "date": timezone.now().strftime("%a, %d %b %Y %H:%M:%S %z"),
+        "to": recipients_by_type.get(models.MessageRecipientTypeChoices.TO, []),
+        "cc": recipients_by_type.get(models.MessageRecipientTypeChoices.CC, []),
+        "subject": message.subject,
+        "textBody": [{"content": text_body}] if text_body else [],
+        "htmlBody": [{"content": html_body}] if html_body else [],
+        "message_id": message.mime_id,
+    }
+
+    if all_attachments:
+        mime_data["attachments"] = all_attachments
+    message.has_attachments = bool(all_attachments)
+
+    raw_mime = compose_email(
+        mime_data,
+        in_reply_to=message.parent.mime_id if message.parent else None,
+        prepend_headers=prepend_headers,
+    )
+
+    dkim_header = sign_message_dkim(raw_mime, mailbox.domain)
+    if dkim_header:
+        raw_mime = dkim_header + b"\r\n" + raw_mime
+
+    message.blob = mailbox.create_blob(content=raw_mime, content_type="message/rfc822")
+
+
+def append_signature_and_extract_inline_images(
+    text_body: str,
+    html_body: str,
+    signature: Optional[models.MessageTemplate] = None,
+    mailbox: Optional[models.Mailbox] = None,
+    user: Optional[models.User] = None,
+    message: Optional[models.Message] = None,
+) -> tuple[str, str, list]:
+    """Append signature to bodies and extract base64 images as inline CID attachments.
+
+    Returns (text_body, html_body, inline_attachments).
+    """
+    if signature:
+        try:
+            rendered = signature.render_template(
+                mailbox=mailbox, user=user, message=message
+            )
+            if rendered:
+                text_body = (
+                    text_body + "\n" + rendered["text_body"]
+                    if text_body
+                    else rendered["text_body"]
+                )
+                html_body = (
+                    html_body + rendered["html_body"]
+                    if html_body
+                    else rendered["html_body"]
+                )
+        except Exception as e:
+            logger.error(
+                "Failed to render signature %s: %s",
+                signature.id,
+                e,
+            )
+
+    known_images: dict[str, str] = {}
+    raw_images = []
+
+    if text_body:
+        text_body, text_images = extract_base64_images_from_text(
+            text_body, known_images=known_images
+        )
+        raw_images.extend(text_images)
+
+    if html_body:
+        html_body, html_images = extract_base64_images_from_html(
+            html_body, known_images=known_images
+        )
+        raw_images.extend(html_images)
+
+    # Normalize to the format expected by compose_email
+    inline_attachments = [
+        {
+            "content": img["content"],
+            "type": img["content_type"],
+            "name": img["name"],
+            "disposition": "inline",
+            "cid": img["cid"],
+            "size": img["size"],
+        }
+        for img in raw_images
+    ]
+
+    return text_body, html_body, inline_attachments
+
+
 def prepare_outbound_message(
     mailbox_sender: models.Mailbox,
     message: models.Message,
@@ -80,19 +268,10 @@ def prepare_outbound_message(
         message=message,
     )
 
-    # Get recipients from the MessageRecipient model
-    recipients_by_type = {
-        kind: [{"name": contact.name, "email": contact.email} for contact in contacts]
-        for kind, contacts in message.get_all_recipient_contacts().items()
-    }
-
     # TODO: Fetch MIME IDs of "references" from the thread
     # references = message.thread.messages.exclude(id=message.id).order_by("-created_at").all()
 
     # TODO: set the thread snippet?
-
-    # Generate a MIME id
-    message.mime_id = message.generate_mime_id()
 
     # Insert the validated signature
     validated_signature = mailbox_sender.get_validated_signature(
@@ -101,132 +280,8 @@ def prepare_outbound_message(
     if message.signature != validated_signature:
         message.signature = validated_signature
         message.save(update_fields=["signature"])
-    if message.signature:
-        try:
-            signatures = message.signature.render_template(
-                mailbox=mailbox_sender, user=user, message=message
-            )
-            if signatures:
-                text_body = (
-                    text_body + "\n" + signatures["text_body"]
-                    if text_body
-                    else signatures["text_body"]
-                )
-                html_body = (
-                    html_body + signatures["html_body"]
-                    if html_body
-                    else signatures["html_body"]
-                )
-        except Exception as e:
-            logger.error(
-                "Failed to render signature %s for message %s: %s",
-                message.signature.id,
-                message.id,
-                e,
-            )
-
-    # Handle reply and forward message embedding
-    if message.parent:
-        # Check if this is a forward (subject starts with Fwd:)
-        is_forward = message.subject.lower().startswith("fwd:")
-        nested_data = None
-
-        if is_forward:
-            # Handle forward message embedding
-            parent_parsed = message.parent.get_parsed_data()
-
-            nested_data = create_forward_message(
-                original_message=parent_parsed,
-                forward_text=text_body,
-                forward_html=html_body,
-                include_original=True,
-            )
-        else:
-            # Handle reply message embedding
-            parent_parsed = message.parent.get_parsed_data()
-
-            nested_data = create_reply_message(
-                original_message=parent_parsed,
-                reply_text=text_body,
-                reply_html=html_body,
-                include_quote=True,
-            )
-
-        # Update the bodies with properly formatted reply content
-        if nested_data.get("textBody"):
-            text_body = nested_data["textBody"][0]["content"]
-        if nested_data.get("htmlBody"):
-            html_body = nested_data["htmlBody"][0]["content"]
-
-    # Extract base64 images from text and HTML bodies (e.g. from signatures
-    # and templates) and convert them to inline CID attachments.
-    # A shared known_images dict deduplicates identical images across both bodies
-    # so the same image is attached only once.
-    known_images: dict[str, str] = {}
-    base64_inline_attachments = []
-
-    if text_body:
-        text_body, text_images = extract_base64_images_from_text(
-            text_body, known_images=known_images
-        )
-        base64_inline_attachments.extend(text_images)
-
-    if html_body:
-        html_body, html_images = extract_base64_images_from_html(
-            html_body, known_images=known_images
-        )
-        base64_inline_attachments.extend(html_images)
-
-    # Generate the MIME data dictionary
-    mime_data = {
-        "from": [
-            {
-                "name": message.sender.name,
-                "email": message.sender.email,
-            }
-        ],
-        "date": timezone.now().strftime("%a, %d %b %Y %H:%M:%S %z"),
-        "to": recipients_by_type.get(models.MessageRecipientTypeChoices.TO, []),
-        "cc": recipients_by_type.get(models.MessageRecipientTypeChoices.CC, []),
-        # BCC is not included in headers
-        "subject": message.subject,
-        "textBody": [{"content": text_body}] if text_body else [],
-        "htmlBody": [{"content": html_body}] if html_body else [],
-        "message_id": message.mime_id,
-    }
 
     # Add attachments if present and ensure they don't exceed the limit
-    def _validate_attachments_size(total_size: int) -> None:
-        """
-        Validate that the total size of the attachments does not exceed the limit.
-        """
-        if total_size > settings.MAX_OUTGOING_ATTACHMENT_SIZE:
-            # Use binary MB (MiB) to match frontend formatting
-            total_mb = total_size / (1024 * 1024)
-            max_mb = settings.MAX_OUTGOING_ATTACHMENT_SIZE / (1024 * 1024)
-
-            logger.error(
-                "Total attachment size for message %s exceeds limit: %d bytes (%.1f MB) > %d bytes (%.0f MB)",
-                message.id,
-                total_size,
-                total_mb,
-                settings.MAX_OUTGOING_ATTACHMENT_SIZE,
-                max_mb,
-            )
-
-            raise drf.exceptions.ValidationError(
-                {
-                    "message": (
-                        "Total attachment size (%(total_size)s MB) exceeds the %(max_size)s MB limit. "
-                        "Please remove or reduce attachments."
-                    )
-                    % {
-                        "total_size": f"{total_mb:.1f}",
-                        "max_size": f"{max_mb:.0f}",
-                    }
-                }
-            )
-
     attachments = []
     total_attachment_size = 0
 
@@ -248,46 +303,31 @@ def prepare_outbound_message(
                     "size": blob.size,  # Size in bytes
                 }
             )
-            _validate_attachments_size(total_attachment_size)
+            validate_attachments_size(total_attachment_size, message.id)
 
-    # Add base64-extracted inline images as attachments
-    if base64_inline_attachments:
-        for img in base64_inline_attachments:
-            total_attachment_size += img["size"]
-            attachments.append(
-                {
-                    "content": img["content"],
-                    "type": img["content_type"],
-                    "name": img["name"],
-                    "disposition": "inline",
-                    "cid": img["cid"],
-                    "size": img["size"],
-                }
-            )
-            _validate_attachments_size(total_attachment_size)
-
-    # Add attachments to the MIME data
-    if attachments:
-        mime_data["attachments"] = attachments
-
-    # Assemble the raw mime message
+    # Compose MIME, DKIM sign, and store as blob
     try:
-        raw_mime = compose_email(
-            mime_data,
-            in_reply_to=message.parent.mime_id if message.parent else None,
-            # TODO: Add References header logic
+        compose_and_store_mime(
+            message,
+            mailbox_sender,
+            text_body,
+            html_body,
+            attachments=attachments or None,
+            signature=message.signature,
+            user=user,
         )
+    except drf.exceptions.ValidationError:
+        raise
     except Exception as e:
         logger.error("Failed to compose MIME for message %s: %s", message.id, e)
         return False
 
-    # Validate the composed MIME size, with ~33% overhead for attachments because of MIME encoding
-    mime_size = len(raw_mime)
+    # Validate the composed MIME size
+    mime_size = message.blob.size
     max_total_size = settings.MAX_OUTGOING_BODY_SIZE + (
         settings.MAX_OUTGOING_ATTACHMENT_SIZE * 1.4
     )
     if mime_size > max_total_size:
-        # Use binary MB (MiB) to match frontend formatting
         mime_mb = mime_size / (1024 * 1024)
         max_mb = max_total_size / (1024 * 1024)
 
@@ -313,29 +353,11 @@ def prepare_outbound_message(
             }
         )
 
-    # Sign the message with DKIM
-    dkim_signature_header: Optional[bytes] = sign_message_dkim(
-        raw_mime_message=raw_mime, maildomain=mailbox_sender.domain
-    )
-
-    raw_mime_signed = raw_mime
-    if dkim_signature_header:
-        # Prepend the signature header
-        raw_mime_signed = dkim_signature_header + b"\r\n" + raw_mime
-
-    # Create a blob to store the raw MIME content
-    blob = mailbox_sender.create_blob(
-        content=raw_mime_signed,
-        content_type="message/rfc822",
-    )
-
     draft_blob = message.draft_blob
 
-    message.blob = blob
     message.is_draft = False
     message.sender_user = user
     message.draft_blob = None
-    message.has_attachments = len(attachments) > 0
     message.created_at = timezone.now()
     message.updated_at = timezone.now()
     message.save(

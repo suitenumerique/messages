@@ -13,4 +13,5 @@ export type MessageTemplateTypeChoices =
 export const MessageTemplateTypeChoices = {
   message: "message",
   signature: "signature",
+  autoreply: "autoreply",
 } as const;

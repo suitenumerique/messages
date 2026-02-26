@@ -9,6 +9,8 @@ import ErrorPage from "next/error";
 import { Toaster } from "@/features/ui/components/toaster";
 import { Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
 import { useTheme } from "@/features/providers/theme";
+import { useState } from "react";
+import { LayoutContext } from "../main";
 
 type AdminLayoutProps = {
   children: React.ReactNode;
@@ -119,21 +121,31 @@ function AdminLayoutContent({
 }
 
 export function AdminLayout(props: AdminLayoutProps) {
+  const [leftPanelOpen, setLeftPanelOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const { theme, variant } = useTheme();
 
   return (
-    <AppLayout
-      isLeftPanelOpen={false}
-      setIsLeftPanelOpen={() => { }}
-      leftPanelContent={null}
-      hideSearch
-      hideLeftPanelOnDesktop={true}
-      icon={<Link href="/"><img src={`/images/${theme}/app-logo-${variant}.svg`} alt="logo" height={40} /></Link>}
-    >
-      <AdminMailDomainProvider>
-        <AdminLayoutContent {...props} />
-        <Toaster />
-      </AdminMailDomainProvider>
-    </AppLayout>
+    <LayoutContext.Provider value={{
+      toggleLeftPanel: () => setLeftPanelOpen(!leftPanelOpen),
+      closeLeftPanel: () => setLeftPanelOpen(false),
+      openLeftPanel: () => setLeftPanelOpen(true),
+      isDragging,
+      setIsDragging,
+    }}>
+      <AppLayout
+        isLeftPanelOpen={false}
+        setIsLeftPanelOpen={() => { }}
+        leftPanelContent={null}
+        hideSearch
+        hideLeftPanelOnDesktop={true}
+        icon={<Link href="/"><img src={`/images/${theme}/app-logo-${variant}.svg`} alt="logo" height={40} /></Link>}
+      >
+        <AdminMailDomainProvider>
+          <AdminLayoutContent {...props} />
+          <Toaster />
+        </AdminMailDomainProvider>
+      </AppLayout>
+    </LayoutContext.Provider>
   );
 }

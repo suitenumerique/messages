@@ -100,16 +100,25 @@ test.describe("Inline Image in Composer", () => {
     const sentItem = page.getByRole("link", { name: "Message with inline image" }).first();
     await expect(sentItem).toBeVisible();
 
+    // Open the message and check content
+    await sentItem.click();
+    await page.getByRole("heading", { name: "Message with inline image", level: 2 }).waitFor({ state: "visible" });
+
+    // The message body should contain the image
+    const sentItemContent = page.locator('iframe').contentFrame();
+    await expect(sentItemContent.locator('img')).toBeVisible({ timeout: 10000 });
+    await expect(sentItemContent.getByText("Check this image below:")).toBeVisible();
+
     // Switch to shared mailbox and verify the message is received
-    await page.getByRole("button", { name: getMailboxEmail('user', browserName) }).click();
+    // Message delivery is async (Celery task), so we poll until the message appears
+    await page.getByTestId('panel-main-left').getByRole("button", { name: getMailboxEmail('user', browserName) }).click();
     await page.getByRole("menuitem", { name: getMailboxEmail('shared') }).click();
     await page.waitForLoadState("networkidle");
     await page.getByRole("link", { name: "Inbox" }).click();
 
-    const receivedItem = page.getByRole("link", { name: "Message with inline image" }).first();
-    await expect(receivedItem).toBeVisible();
-
     // Open the message and check content
+    const receivedItem = await page.getByRole("link", { name: "Message with inline image" }).first();
+    await expect(receivedItem).toBeVisible();
     await receivedItem.click();
     await page.getByRole("heading", { name: "Message with inline image", level: 2 }).waitFor({ state: "visible" });
 

@@ -241,7 +241,7 @@ def process_inbound_message_task(self, inbound_message_id: str):
                 )
 
         # Create the message using the extracted function
-        success = _create_message_from_inbound(
+        inbound_msg = _create_message_from_inbound(
             recipient_email=recipient_email,
             parsed_email=parsed_email,
             raw_data=raw_data_bytes,
@@ -250,9 +250,17 @@ def process_inbound_message_task(self, inbound_message_id: str):
             is_spam=is_spam,
         )
 
-        if success:
+        if inbound_msg:
             # Delete the message after successful processing
             inbound_message.delete()
+
+            # Send autoreply if appropriate (only for real Message objects)
+            if isinstance(inbound_msg, models.Message):
+                from core.mda.autoreply import (  # pylint: disable=import-outside-toplevel
+                    try_send_autoreply,
+                )
+
+                try_send_autoreply(mailbox, parsed_email, inbound_msg, is_spam=is_spam)
 
             logger.info(
                 "Successfully processed inbound message %s (is_spam=%s)",

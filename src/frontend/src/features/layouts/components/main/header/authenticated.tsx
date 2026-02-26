@@ -1,5 +1,5 @@
 import { DropdownMenu, HeaderProps, Icon, IconType, useResponsive, UserMenu, VerticalSeparator } from "@gouvfr-lasuite/ui-kit";
-import { Button, useCunningham } from "@gouvfr-lasuite/cunningham-react";
+import { Button, Tooltip, useCunningham } from "@gouvfr-lasuite/cunningham-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/router";
@@ -12,10 +12,11 @@ import { LagaufreButton } from "@/features/ui/components/lagaufre";
 import { SurveyButton } from "@/features/ui/components/feedback-button";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useImportTaskStatus } from "@/hooks/use-import-task";
-import { StatusEnum } from "@/features/api/gen";
+import { MessageTemplateTypeChoices, StatusEnum, useMailboxesMessageTemplatesList } from "@/features/api/gen";
 import { CircularProgress } from "@/features/ui/components/circular-progress";
 import { TaskImportCacheHelper } from "@/features/utils/task-import-cache";
 import { useTheme } from "@/features/providers/theme";
+import { useLayoutContext } from "..";
 
 
 type AuthenticatedHeaderProps = HeaderProps & {
@@ -60,6 +61,50 @@ export const AuthenticatedHeader = ({
   );
 };
 
+const AutoreplyIndicator = () => {
+  const { selectedMailbox } = useMailboxContext();
+  const { closeLeftPanel } = useLayoutContext();
+  const { t } = useTranslation();
+  const router = useRouter();
+
+  const { data } = useMailboxesMessageTemplatesList(
+    selectedMailbox?.id ?? "",
+    { type: [MessageTemplateTypeChoices.autoreply] },
+    {
+      query: {
+        enabled: !!selectedMailbox?.id,
+        staleTime: Infinity,
+      },
+    },
+  );
+
+  const hasActiveAutoreply = useMemo(
+    () => data?.data?.some((tpl) => tpl.is_active_autoreply) ?? false,
+    [data],
+  );
+
+  if (!hasActiveAutoreply) return null;
+
+  return (
+    <Tooltip content={t("Auto-reply is active")}>
+      <Button
+        className="autoreply-indicator-button"
+        color="brand"
+        variant="tertiary"
+        size="medium"
+        icon={<Icon name="forward_to_inbox" />}
+        aria-label={t("Auto-reply is active")}
+        onClick={() => {
+          if (selectedMailbox) {
+            closeLeftPanel();
+            router.push(`/mailbox/${selectedMailbox.id}/autoreplies`);
+          }
+        }}
+      />
+    </Tooltip>
+  );
+};
+
 export const HeaderRight = () => {
   const { user } = useAuth();
   const { isDesktop } = useResponsive();
@@ -68,6 +113,7 @@ export const HeaderRight = () => {
   return (
     <>
       <div className="flex-row flex-align-center">
+        <AutoreplyIndicator />
         <SurveyButton iconOnly color="brand" variant="tertiary" />
         <ApplicationMenu />
         {isDesktop && <VerticalSeparator size="24px" withPadding={false} />}
@@ -162,6 +208,15 @@ const ApplicationMenu = () => {
                 callback: () => {
                     if (selectedMailbox) {
                         router.push(`/mailbox/${selectedMailbox.id}/signatures`);
+                    }
+                }
+              },
+              {
+                label: t("My auto-replies"),
+                icon: <Icon name="forward_to_inbox" />,
+                callback: () => {
+                    if (selectedMailbox) {
+                        router.push(`/mailbox/${selectedMailbox.id}/autoreplies`);
                     }
                 }
               }] : []),

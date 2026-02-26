@@ -6,11 +6,14 @@ Declare and configure the models for the messages core application
 import base64
 import hashlib
 import json
+import re
 import uuid
-from datetime import timedelta
+from datetime import datetime as dt
+from datetime import time, timedelta
 from functools import cached_property
 from logging import getLogger
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.contrib.auth import models as auth_models
@@ -1999,7 +2002,7 @@ class MessageTemplate(BaseModel):
         "type",
         choices=MessageTemplateTypeChoices.choices,
         default=MessageTemplateTypeChoices.MESSAGE,
-        help_text="Type of template (message, signature)",
+        help_text="Type of template (message, signature, autoreply)",
     )
 
     is_active = models.BooleanField(
@@ -2042,6 +2045,21 @@ class MessageTemplate(BaseModel):
         ),
     )
 
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Extra configuration (used for autoreply schedule, etc.)",
+    )
+
+    signature = models.ForeignKey(
+        "MessageTemplate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="signed_templates",
+        help_text="Signature template to append when sending (only for autoreply type)",
+    )
+
     class Meta:
         db_table = "messages_messagetemplate"
         verbose_name = "message template"
@@ -2073,6 +2091,13 @@ class MessageTemplate(BaseModel):
                 fields=("maildomain", "type"),
                 condition=models.Q(is_default=True),
                 name="uniq_default_template_maildomain_type",
+            ),
+            models.UniqueConstraint(
+                fields=("mailbox",),
+                condition=models.Q(
+                    type=MessageTemplateTypeChoices.AUTOREPLY.value, is_active=True
+                ),
+                name="uniq_active_autoreply_per_mailbox",
             ),
         ]
         indexes = [
@@ -2106,6 +2131,18 @@ class MessageTemplate(BaseModel):
                     qs = qs.filter(maildomain_id=self.maildomain_id)
                 qs.update(is_forced=False)
 
+            # Handle autoreply: only one active autoreply per mailbox
+            if (
+                self.type == MessageTemplateTypeChoices.AUTOREPLY
+                and self.is_active
+                and self.mailbox_id
+            ):
+                MessageTemplate.objects.select_for_update().filter(
+                    type=MessageTemplateTypeChoices.AUTOREPLY,
+                    is_active=True,
+                    mailbox_id=self.mailbox_id,
+                ).exclude(id=self.id).update(is_active=False)
+
             # Handle is_default: only one default template per type and scope
             if self.is_default:
                 qs = (
@@ -2135,7 +2172,173 @@ class MessageTemplate(BaseModel):
         if not self.is_active:
             self.is_forced = False
             self.is_default = False
+        # Autoreply-specific validations
+        if self.type == MessageTemplateTypeChoices.AUTOREPLY:
+            if not self.mailbox:
+                raise ValidationError(
+                    {"__all__": "Autoreply templates must be scoped to a mailbox."}
+                )
+            if self.is_forced or self.is_default:
+                raise ValidationError(
+                    {"__all__": "Autoreply templates cannot be forced or default."}
+                )
+            self.validate_autoreply_metadata()
         super().clean()
+
+    def validate_autoreply_metadata(self):
+        """Validate autoreply metadata schema."""
+        metadata = self.metadata or {}
+        schedule_type = metadata.get("schedule_type")
+        if not schedule_type:
+            raise ValidationError(
+                {"metadata": "Autoreply metadata must include 'schedule_type'."}
+            )
+        if schedule_type not in ("always", "date_range", "recurring_weekly"):
+            raise ValidationError(
+                {
+                    "metadata": "schedule_type must be 'always', 'date_range', or 'recurring_weekly'."
+                }
+            )
+        if schedule_type == "date_range":
+            start_at = metadata.get("start_at")
+            end_at = metadata.get("end_at")
+            if not start_at or not end_at:
+                raise ValidationError(
+                    {
+                        "metadata": "date_range schedule requires 'start_at' and 'end_at'."
+                    }
+                )
+            try:
+                start = dt.fromisoformat(start_at)
+                end = dt.fromisoformat(end_at)
+            except (ValueError, TypeError) as exc:
+                raise ValidationError(
+                    {
+                        "metadata": "start_at and end_at must be valid ISO datetime strings."
+                    }
+                ) from exc
+            if start >= end:
+                raise ValidationError({"metadata": "start_at must be before end_at."})
+        if schedule_type == "recurring_weekly":
+            intervals = metadata.get("intervals")
+            if not intervals or not isinstance(intervals, list):
+                raise ValidationError(
+                    {
+                        "metadata": "recurring_weekly schedule requires 'intervals' as a list."
+                    }
+                )
+            time_re = re.compile(r"^\d{2}:\d{2}$")
+            for interval in intervals:
+                if not isinstance(interval, dict):
+                    raise ValidationError(
+                        {"metadata": "Each interval must be an object."}
+                    )
+                for key in ("start_day", "start_time", "end_day", "end_time"):
+                    if key not in interval:
+                        raise ValidationError(
+                            {"metadata": f"Each interval must have '{key}'."}
+                        )
+                for day_key in ("start_day", "end_day"):
+                    if not isinstance(interval[day_key], int) or not (
+                        1 <= interval[day_key] <= 7
+                    ):
+                        raise ValidationError(
+                            {
+                                "metadata": f"'{day_key}' must be an integer between 1 and 7."
+                            }
+                        )
+                for time_key in ("start_time", "end_time"):
+                    val = interval[time_key]
+                    if not isinstance(val, str) or not time_re.match(val):
+                        raise ValidationError(
+                            {"metadata": f"'{time_key}' must be a valid HH:MM string."}
+                        )
+                    try:
+                        time.fromisoformat(val)
+                    except ValueError as error:
+                        raise ValidationError(
+                            {"metadata": f"'{time_key}' must be a valid HH:MM string."}
+                        ) from error
+        # Validate timezone if provided
+        tz_name = metadata.get("timezone")
+        if tz_name:
+            try:
+                ZoneInfo(tz_name)
+            except (KeyError, ValueError) as exc:
+                raise ValidationError(
+                    {"metadata": f"Invalid timezone: {tz_name}"}
+                ) from exc
+
+    def is_active_autoreply(self, now=None):
+        """Check if this template is an active autoreply based on schedule.
+
+        Returns True if this template is active, is of type AUTOREPLY,
+        and the current time falls within the configured schedule.
+        """
+        if not self.is_active:
+            return False
+        if self.type != MessageTemplateTypeChoices.AUTOREPLY:
+            return False
+
+        metadata = self.metadata or {}
+        schedule_type = metadata.get("schedule_type", "always")
+
+        if schedule_type == "always":
+            return True
+
+        tz_name = metadata.get("timezone", "UTC")
+        try:
+            tz = ZoneInfo(tz_name)
+        except (KeyError, ValueError):
+            tz = ZoneInfo("UTC")
+
+        if now is None:
+            now = timezone.now()
+        local_now = now.astimezone(tz)
+
+        if schedule_type == "date_range":
+            start_at = metadata.get("start_at")
+            end_at = metadata.get("end_at")
+            if not start_at or not end_at:
+                return False
+            try:
+                start = dt.fromisoformat(start_at)
+                end = dt.fromisoformat(end_at)
+            except (ValueError, TypeError):
+                return False
+            # Make timezone-aware if naive
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=tz)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=tz)
+            return start <= local_now <= end
+
+        if schedule_type == "recurring_weekly":
+            intervals = metadata.get("intervals", [])
+            current_day = local_now.isoweekday()
+            current_time = local_now.time()
+            current = (current_day, current_time)
+
+            for interval in intervals:
+                try:
+                    st = time.fromisoformat(interval["start_time"])
+                    et = time.fromisoformat(interval["end_time"])
+                    sd = interval["start_day"]
+                    ed = interval["end_day"]
+                except (KeyError, ValueError, TypeError):
+                    continue
+                start = (sd, st)
+                end = (ed, et)
+                if start <= end:
+                    # Same-week span (e.g., Mon 09:00 → Fri 17:00)
+                    if start <= current <= end:
+                        return True
+                # Cross-week span (e.g., Fri 18:00 → Mon 08:00)
+                elif current >= start or current <= end:
+                    return True
+            return False
+
+        return False
 
     @cached_property
     def _parsed_content(self):

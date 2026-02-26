@@ -6,6 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 import type { MessageTemplateTypeChoices } from "./message_template_type_choices";
+import type { ReadMessageTemplateMetadata } from "./read_message_template_metadata";
 
 /**
  * Serialize message templates with dynamic body field inclusion.
@@ -37,6 +38,11 @@ export interface ReadMessageTemplate {
   readonly is_forced: boolean;
   /** Whether this template is the default; it will be automatically loaded when composing a new message */
   readonly is_default: boolean;
+  metadata?: ReadMessageTemplateMetadata;
+  /** primary key for the record as UUID */
+  readonly signature: string;
+  /** @nullable */
+  readonly is_active_autoreply: boolean | null;
   /** date and time at which a record was created */
   readonly created_at: string;
   /** date and time at which a record was last updated */

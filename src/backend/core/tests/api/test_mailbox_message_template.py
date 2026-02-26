@@ -11,6 +11,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core import enums, factories, models
+from core.api.serializers import MessageTemplateSerializer
 from core.tests.api.conftest import MESSAGE_TEMPLATE_RAW_DATA as RAW_DATA_STRUCT
 from core.tests.api.conftest import MESSAGE_TEMPLATE_RAW_DATA_JSON as RAW_DATA
 
@@ -754,3 +755,36 @@ class TestMailboxMessageTemplatePartialUpdate:
 
         assert signature1.is_default is False
         assert signature2.is_default is True
+
+
+class TestMessageTemplateSerializer:
+    """Test suite for MessageTemplateSerializer."""
+
+    def test_reject_signature_id_without_scope_context(self):
+        """Reject signature_id when neither mailbox nor domain context is available.
+
+        This guards against an empty Q() scope filter which would allow
+        cross-scope signature access.
+        """
+        other_mailbox = factories.MailboxFactory()
+        signature = factories.MessageTemplateFactory(
+            type=enums.MessageTemplateTypeChoices.SIGNATURE,
+            is_active=True,
+            mailbox=other_mailbox,
+        )
+
+        serializer = MessageTemplateSerializer(
+            data={
+                "name": "Template",
+                "html_body": "<p>Content</p>",
+                "text_body": "Content",
+                "raw_body": RAW_DATA,
+                "type": "message",
+                "signature_id": str(signature.id),
+            },
+            # No mailbox or domain in context
+            context={},
+        )
+
+        assert not serializer.is_valid()
+        assert "signature_id" in serializer.errors

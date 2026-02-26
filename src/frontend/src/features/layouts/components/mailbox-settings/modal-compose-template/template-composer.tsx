@@ -2,7 +2,7 @@ import { BlockNoteViewField } from "@/features/blocknote/blocknote-view-field";
 import { BlockNoteEditor, BlockNoteEditorOptions, BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from "@blocknote/core";
 import { InlineTemplateVariable, TemplateVariableSelector } from "@/features/blocknote/inline-template-variable";
 import { FieldProps } from "@gouvfr-lasuite/cunningham-react";
-import { forwardRef, useEffect, useImperativeHandle } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo } from "react";
 import { useFormContext } from "react-hook-form";
 import { Toolbar } from "@/features/blocknote/toolbar";
 import { BlockSignature, BlockSignatureConfigProps, SignatureTemplateSelector } from "@/features/blocknote/signature-block";
@@ -11,6 +11,7 @@ import { useMailboxContext } from "@/features/providers/mailbox";
 import { imageBlockSpec } from "@/features/blocknote/image-block";
 import { SmartTrailingBlock } from "@/features/blocknote/smart-trailing-block";
 import { useBase64Composer, Base64ComposerHandle } from "@/features/blocknote/hooks/use-base64-composer";
+import { extractSignatureId } from "../utils";
 import { SuggestionMenuController } from "@blocknote/react";
 import { filterSuggestionItems } from "@blocknote/core/extensions";
 
@@ -35,12 +36,13 @@ type TemplateComposerProps = FieldProps & {
     blockNoteOptions?: Partial<BlockNoteEditorOptions<TemplateComposerBlockSchema, TemplateComposerInlineContentSchema, TemplateComposerStyleSchema>>,
     defaultValue?: string | null;
     disabled?: boolean;
+    allowVariables?: boolean;
 }
 
 /**
  * The composer component for the template content.
  */
-export const TemplateComposer = forwardRef<Base64ComposerHandle, TemplateComposerProps>(({ blockNoteOptions, defaultValue, disabled = false, ...props }, ref) => {
+export const TemplateComposer = forwardRef<Base64ComposerHandle, TemplateComposerProps>(({ blockNoteOptions, defaultValue, disabled = false, allowVariables = true, ...props }, ref) => {
     const form = useFormContext();
     const { selectedMailbox } = useMailboxContext();
 
@@ -56,11 +58,12 @@ export const TemplateComposer = forwardRef<Base64ComposerHandle, TemplateCompose
 
     const { data: { data: placeholders = {} } = {}, isLoading: isLoadingPlaceholders } = usePlaceholdersRetrieve({
         query: {
+            enabled: allowVariables,
             refetchOnMount: true,
             refetchOnWindowFocus: true,
         }
     });
-    const canShowPlaceholdersMenu = !isLoadingPlaceholders && !!Object.keys(placeholders).length;
+    const canShowPlaceholdersMenu = allowVariables && !isLoadingPlaceholders && !!Object.keys(placeholders).length;
     const getPlaceholderMenuItems = (editor: BlockNoteEditor<TemplateComposerBlockSchema, TemplateComposerInlineContentSchema, TemplateComposerStyleSchema>) => {
         return Object.entries(placeholders).map(([value, label]) => ({
             title: label,
@@ -69,6 +72,11 @@ export const TemplateComposer = forwardRef<Base64ComposerHandle, TemplateCompose
             }
         }));
     };
+
+    const defaultSignatureId = useMemo(() => {
+        if (!defaultValue) return null;
+        return extractSignatureId(defaultValue);
+    }, [defaultValue]);
 
     const { data: { data: activeSignatures = [] } = {}, isLoading: isLoadingSignatures } = useMailboxesMessageTemplatesAvailableList(
         selectedMailbox?.id || "",
@@ -84,57 +92,52 @@ export const TemplateComposer = forwardRef<Base64ComposerHandle, TemplateCompose
         }
     );
 
-    // Detect current signature on mount and update it, then sync form values
-    useEffect(() => {
-        if(!editor) return;
-
-        const signatureBlock = editor.getBlock('signature');
-        if (signatureBlock?.type === 'signature') {
-            const templateId = signatureBlock.props.templateId;
-            const signature = activeSignatures.find(s => s.id === templateId);
-            if (signature) {
-                editor.updateBlock(signatureBlock.id, {
-                    type: 'signature',
-                    props: {
-                        templateId: signature.id,
-                        mailboxId: selectedMailbox?.id,
-                    }
-                });
-            }
-        }
-    }, [editor, activeSignatures, selectedMailbox?.id]);
-
-    // Insert or remove forced signature block
+    // Manage signature block: update existing, replace stale, or insert forced
     useEffect(() => {
         if (!editor || isLoadingSignatures) return;
 
         const signatureBlock = editor.getBlock('signature');
+        const forcedSignature = activeSignatures.find(signature => signature.is_forced);
+
         if (signatureBlock) {
-            const blockSignatureId = (signatureBlock.props as BlockSignatureConfigProps).templateId;
-            const isSignatureStale = activeSignatures.findIndex(signature => signature.id === blockSignatureId) < 0;
-            if (isSignatureStale) editor.removeBlocks(["signature"]);
-            else return;
-        }
+            const templateId = (signatureBlock.props as BlockSignatureConfigProps).templateId;
 
-        if (activeSignatures.length === 0) return;
-
-        const signatureToUse = activeSignatures.find(signature => signature.is_forced);
-        if (signatureToUse) {
-            const newSignatureBlock = {
-                id: "signature",
-                type: "signature" as const,
-                props: {
-                    templateId: signatureToUse.id,
-                    mailboxId: selectedMailbox?.id,
-                }
-            };
-
-            if (editor.document.length === 0) {
-                editor.insertBlocks([{ type: "paragraph", content: [{ type: "text", text: "", styles: {} }] }], "", "after");
+            // Forced signature must take precedence
+            if (forcedSignature && forcedSignature.id !== templateId) {
+                editor.replaceBlocks(["signature"], [{
+                    id: "signature",
+                    type: "signature" as const,
+                    props: {
+                        templateId: forcedSignature.id,
+                        mailboxId: selectedMailbox?.id,
+                    }
+                }]);
+                return;
             }
 
-            editor.insertBlocks([newSignatureBlock], editor.document[editor.document.length - 1].id, "after");
+            // Current signature is still active — keep it
+            if (activeSignatures.some(s => s.id === templateId)) {
+                return;
+            }
+
+            // Signature is stale — remove it
+            editor.removeBlocks(["signature"]);
+            return;
         }
+
+        // No signature in editor — insert forced one if available
+        if (!forcedSignature) return;
+
+        const newSignatureBlock = {
+            id: "signature",
+            type: "signature" as const,
+            props: {
+                templateId: forcedSignature.id,
+                mailboxId: selectedMailbox?.id,
+            }
+        };
+
+        editor.insertBlocks([newSignatureBlock], editor.document[editor.document.length - 1].id, "after");
     }, [editor, isLoadingSignatures, activeSignatures, selectedMailbox?.id]);
 
     return (
@@ -154,6 +157,7 @@ export const TemplateComposer = forwardRef<Base64ComposerHandle, TemplateCompose
                         templates={activeSignatures}
                         isLoading={isLoadingSignatures}
                         mailboxId={selectedMailbox?.id}
+                        defaultSelected={defaultSignatureId}
                     />
                     {canShowPlaceholdersMenu &&
                         <TemplateVariableSelector

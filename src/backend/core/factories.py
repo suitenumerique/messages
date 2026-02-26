@@ -293,7 +293,18 @@ class MessageTemplateFactory(factory.django.DjangoModelFactory):
 
     name = factory.Sequence(lambda n: f"Template {n}")
     type = factory.fuzzy.FuzzyChoice(
-        [choice[0] for choice in enums.MessageTemplateTypeChoices.choices]
+        [
+            choice[0]
+            for choice in enums.MessageTemplateTypeChoices.choices
+            if choice[0] != enums.MessageTemplateTypeChoices.AUTOREPLY
+        ]
+    )
+    metadata = factory.LazyAttribute(
+        lambda o: (
+            {"schedule_type": "always"}
+            if o.type == enums.MessageTemplateTypeChoices.AUTOREPLY
+            else {}
+        )
     )
 
     @classmethod
