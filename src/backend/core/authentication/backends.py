@@ -105,10 +105,7 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
                 user.sub, user.email, user_info=user_info, force_refresh=True
             )
         except EntitlementsUnavailableError:
-            logger.warning(
-                "Entitlements service unavailable during login for user %s",
-                user.sub,
-            )
+            logger.warning("Entitlements service unavailable during login")
             return
 
         admin_domains = entitlements.get("can_admin_maildomains")
@@ -116,9 +113,16 @@ class OIDCAuthenticationBackend(LaSuiteOIDCAuthenticationBackend):
             # Backend doesn't support this field (e.g. dummy), skip sync
             return
 
+        if not isinstance(admin_domains, (list, tuple, set)):
+            logger.warning(
+                "Invalid type for can_admin_maildomains: %s, skipping sync",
+                type(admin_domains).__name__,
+            )
+            return
+
         # Resolve domain names to MailDomain objects that exist in DB
-        entitled_domains = MailDomain.objects.filter(name__in=admin_domains)
-        entitled_domain_ids = set(entitled_domains.values_list("id", flat=True))
+        entitled_domains = list(MailDomain.objects.filter(name__in=admin_domains))
+        entitled_domain_ids = {d.id for d in entitled_domains}
 
         # Get current ADMIN accesses for this user
         existing_accesses = MailDomainAccess.objects.filter(

@@ -4,7 +4,7 @@ The entitlements system provides a pluggable backend architecture for checking u
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────┐
 │   OIDC Authentication Backend               │
 │   _sync_entitlements() on every login       │
@@ -80,7 +80,7 @@ When using `core.entitlements.backends.deploycenter.DeployCenterEntitlementsBack
 
 ```bash
 ENTITLEMENTS_BACKEND=core.entitlements.backends.deploycenter.DeployCenterEntitlementsBackend
-ENTITLEMENTS_BACKEND_PARAMETERS={"base_url":"https://deploycenter.example.com/api/v1.0/entitlements/","service_id":"42","api_key":"secret-key","timeout":10,"oidc_claims":["siret"]}
+ENTITLEMENTS_BACKEND_PARAMETERS='{"base_url":"https://deploycenter.example.com/api/v1.0/entitlements/","service_id":"42","api_key":"secret-key","timeout":10,"oidc_claims":["siret"]}'
 ENTITLEMENTS_CACHE_TIMEOUT=300
 ```
 
@@ -105,7 +105,7 @@ class MyBackend(EntitlementsBackend):
 
 The DeployCenter backend calls:
 
-```
+```text
 GET {base_url}?service_id=X&account_type=user&account_email=X&siret=X
 ```
 
