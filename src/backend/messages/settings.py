@@ -800,6 +800,19 @@ class Base(Configuration):
     AI_BASE_URL = values.Value(None, environ_name="AI_BASE_URL", environ_prefix=None)
     AI_MODEL = values.Value(None, environ_name="AI_MODEL", environ_prefix=None)
 
+    # Entitlements
+    ENTITLEMENTS_BACKEND = values.Value(
+        "core.entitlements.backends.local.LocalEntitlementsBackend",
+        environ_name="ENTITLEMENTS_BACKEND",
+        environ_prefix=None,
+    )
+    ENTITLEMENTS_BACKEND_PARAMETERS = JSONValue(
+        {}, environ_name="ENTITLEMENTS_BACKEND_PARAMETERS", environ_prefix=None
+    )
+    ENTITLEMENTS_CACHE_TIMEOUT = values.PositiveIntegerValue(
+        300, environ_name="ENTITLEMENTS_CACHE_TIMEOUT", environ_prefix=None
+    )
+
     # Feature flags
     FEATURE_AI_SUMMARY = values.BooleanValue(
         default=False, environ_name="FEATURE_AI_SUMMARY", environ_prefix=None
