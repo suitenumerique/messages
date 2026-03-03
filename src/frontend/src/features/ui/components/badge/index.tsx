@@ -2,7 +2,7 @@ import clsx from "clsx"
 import { HTMLAttributes, PropsWithChildren } from "react"
 
 type BadgeProps = PropsWithChildren<HTMLAttributes<HTMLDivElement>> & {
-    color?: 'brand' | 'neutral' | 'error' | 'warning' | 'success' | 'info';
+    color?: 'brand' | 'neutral' | 'error' | 'warning' | 'success' | 'info' | 'yellow';
     variant?: 'primary' | 'secondary' | 'tertiary';
     compact?: boolean;
 }

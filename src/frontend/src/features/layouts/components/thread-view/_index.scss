@@ -116,7 +116,13 @@
 .thread-view__subject {
     font-weight: 700;
     font-size: var(--c--globals--font--sizes--h4);
-    margin-top: var(--c--globals--spacings--xs);
+    vertical-align: baseline;
+
+    & > .thread-view__subject__star {
+        font-size: var(--c--globals--font--sizes--h4);
+        color: var(--c--contextuals--background--palette--yellow--secondary);
+        transform: translate(-4px, 3px)
+    }
 }
 
 .thread-view__sticky-container {

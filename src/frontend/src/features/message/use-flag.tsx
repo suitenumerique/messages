@@ -1,5 +1,5 @@
 import { useFlagCreate } from "@/features/api/gen"
-import { Thread, Message, FlagEnum, ChangeFlagRequestRequest } from "@/features/api/gen/models"
+import { Thread, Message, FlagEnum, ChangeFlagRequestRequest, Mailbox } from "@/features/api/gen/models"
 import { addToast, ToasterItem } from "../ui/components/toaster";
 import { toast } from "react-toastify";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,7 @@ type MarkAsOptions = {
     messageIds?: Message['id'][],
     mailboxId?: string,
     readAt?: string | null,
+    starredAt?: string | null,
     onSuccess?: (data: ChangeFlagRequestRequest) => void,
 }
 
@@ -39,6 +40,7 @@ const useFlag = (flag: FlagEnum, options?: FlagOptions) => {
                         flag={flag}
                         threadIds={data.thread_ids}
                         messageIds={data.message_ids}
+                        mailboxId={data.mailbox_id}
                         toastId={toastId}
                         messages={options?.toastMessages}
                         onUndo={options?.onSuccess}
@@ -50,7 +52,7 @@ const useFlag = (flag: FlagEnum, options?: FlagOptions) => {
 
     const markAs =
         (status: boolean) =>
-        ({ threadIds = [], messageIds = [], mailboxId, readAt, onSuccess }: MarkAsOptions) =>
+        ({ threadIds = [], messageIds = [], mailboxId, readAt, starredAt, onSuccess }: MarkAsOptions) =>
             mutate({
                 data: {
                     flag,
@@ -59,6 +61,7 @@ const useFlag = (flag: FlagEnum, options?: FlagOptions) => {
                     message_ids: messageIds,
                     mailbox_id: mailboxId,
                     ...(readAt !== undefined && { read_at: readAt }),
+                    ...(starredAt !== undefined && { starred_at: starredAt }),
                 },
             }, {
                 onSuccess: (_, { data }) => onSuccess?.(data)
@@ -75,11 +78,12 @@ type FlagUpdateSuccessToastProps = {
     flag: FlagEnum;
     threadIds?: Thread['id'][];
     messageIds?: Message['id'][];
+    mailboxId?: Mailbox['id'];
     toastId: string;
     messages?: FlagToastMessages;
     onUndo?: (data: ChangeFlagRequestRequest) => void;
 }
-const FlagUpdateSuccessToast = ({ flag, threadIds = [], messageIds = [], toastId, messages, onUndo }: FlagUpdateSuccessToastProps) => {
+const FlagUpdateSuccessToast = ({ flag, threadIds = [], messageIds = [], mailboxId, toastId, messages, onUndo }: FlagUpdateSuccessToastProps) => {
     const { t } = useTranslation();
     const { unmark } = useFlag(flag, { showToast: false });
 
@@ -87,6 +91,7 @@ const FlagUpdateSuccessToast = ({ flag, threadIds = [], messageIds = [], toastId
         unmark({
             threadIds: threadIds,
             messageIds: messageIds,
+            mailboxId,
             onSuccess: (data) => {
                 toast.dismiss(toastId);
                 onUndo?.(data);

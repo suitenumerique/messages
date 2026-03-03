@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { ThreadActionBar } from "./components/thread-action-bar"
 import { ThreadMessage } from "./components/thread-message"
@@ -12,6 +12,7 @@ import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link"
 import { useTranslation } from "react-i18next"
 import { ThreadViewLabelsList } from "./components/thread-view-labels-list"
 import { ThreadSummary } from "./components/thread-summary";
+import { StarredMarker } from "./components/starred-marker";
 import clsx from "clsx";
 import ThreadViewProvider, { useThreadViewContext } from "./provider";
 import useSpam from "@/features/message/use-spam";
@@ -57,6 +58,18 @@ const ThreadViewComponent = ({ messages, mailboxId, thread, showTrashedMessages,
         }
         return acc;
     }, messages[0]);
+    const starredAt = thread.accesses.find(a => a.mailbox.id === mailboxId)?.starred_at ?? null;
+    const starredMarkerInsertIndex = useMemo(() => {
+        // Find insertion index: marker goes after the last message whose created_at <= starred_at
+        let starredInsertIndex = null;
+        if (starredAt) {
+            starredInsertIndex = messages.findLastIndex((message) => {
+                return message.created_at <= starredAt
+            });
+            return starredInsertIndex;
+        }
+        return starredInsertIndex;
+    }, [starredAt, messages]);
 
     /**
      * Setup an intersection observer to mark messages as read when they are
@@ -125,7 +138,12 @@ const ThreadViewComponent = ({ messages, mailboxId, thread, showTrashedMessages,
                 <header className="thread-view__header">
                     <div className="thread-view__header__top">
                         <ThreadActionBar canUndelete={isThreadTrashed} canUnarchive={isThreadArchived} />
-                        <h2 className="thread-view__subject">{thread.subject || t('No subject')}</h2>
+                        <h2 className="thread-view__subject">
+                            {thread.has_starred &&
+                                <Icon name="star" type={IconType.FILLED} className="thread-view__subject__star" />
+                            }
+                            {thread.subject || t('No subject')}
+                        </h2>
                     </div>
                 </header>
             </div>
@@ -167,21 +185,30 @@ const ThreadViewComponent = ({ messages, mailboxId, thread, showTrashedMessages,
                         )}
                     </Banner>
                 )}
-                {messages.map((message) => {
-                    const isLatest = latestMessage?.id === message.id;
-                    const isUnread = message.is_unread;
-                    return (
-                        <ThreadMessage
-                            key={message.id}
-                            message={message}
-                            isLatest={isLatest}
-                            ref={isUnread ? (el => { unreadRefs.current[message.id] = el; }) : undefined}
-                            data-message-id={message.id}
-                            data-created-at={message.created_at}
-                            draftMessage={message.draft_message}
-                        />
-                    );
-                })}
+                {(() => {
+                    return messages.map((message, index) => {
+                        const isLatest = latestMessage?.id === message.id;
+                        const isUnread = message.is_unread;
+                        return (
+                            <React.Fragment key={message.id}>
+                                {starredMarkerInsertIndex === -1 && index === 0 && (
+                                    <StarredMarker />
+                                )}
+                                <ThreadMessage
+                                    message={message}
+                                    isLatest={isLatest}
+                                    ref={isUnread ? (el => { unreadRefs.current[message.id] = el; }) : undefined}
+                                    data-message-id={message.id}
+                                    data-created-at={message.created_at}
+                                    draftMessage={message.draft_message}
+                                />
+                                {starredMarkerInsertIndex === index && (
+                                    <StarredMarker />
+                                )}
+                            </React.Fragment>
+                        );
+                    });
+                })()}
             </div>
         </div>
     )

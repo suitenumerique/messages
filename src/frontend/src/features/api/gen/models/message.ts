@@ -46,7 +46,6 @@ export interface Message {
   readonly is_sender: boolean;
   readonly is_draft: boolean;
   readonly is_unread: boolean;
-  readonly is_starred: boolean;
   readonly is_trashed: boolean;
   readonly is_archived: boolean;
   readonly has_attachments: boolean;

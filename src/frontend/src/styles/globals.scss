@@ -139,6 +139,10 @@ body {
   justify-content: flex-end;
 }
 
+.flex-justify-space-between {
+  justify-content: space-between;
+}
+
 .p-0 {
   padding: var(--c--globals--spacings--2xs);
 }

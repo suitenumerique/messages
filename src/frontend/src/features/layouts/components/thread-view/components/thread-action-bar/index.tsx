@@ -9,6 +9,7 @@ import { ThreadAccessesWidget } from "../thread-accesses-widget";
 import { ThreadLabelsWidget } from "../thread-labels-widget";
 import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
+import useStarred from "@/features/message/use-starred";
 
 type ThreadActionBarProps = {
     canUndelete: boolean;
@@ -22,7 +23,9 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
     const { markAsTrashed, markAsUntrashed } = useTrash();
     const { markAsArchived, markAsUnarchived } = useArchive();
     const { markAsSpam, markAsNotSpam } = useSpam();
+    const { markAsStarred, markAsUnstarred } = useStarred();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const isStarred = selectedThread?.has_starred;
 
     return (
         <div className="thread-action-bar">
@@ -110,6 +113,27 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                 )
             }
             <VerticalSeparator />
+            {isStarred ? (
+                <Tooltip content={t('Unstar this thread')}>
+                    <Button
+                        variant="tertiary"
+                        aria-label={t('Unstar this thread')}
+                        size="nano"
+                        icon={<Icon name="star" />}
+                        onClick={() => markAsUnstarred({ threadIds: [selectedThread!.id] })}
+                    />
+                </Tooltip>
+            ) : (
+                <Tooltip content={t('Star this thread')}>
+                    <Button
+                        variant="tertiary"
+                        aria-label={t('Star this thread')}
+                        size="nano"
+                        icon={<Icon name="star_border" />}
+                        onClick={() => markAsStarred({ threadIds: [selectedThread!.id] })}
+                    />
+                </Tooltip>
+            )}
             <ThreadLabelsWidget threadId={selectedThread!.id} selectedLabels={selectedThread!.labels} />
             <ThreadAccessesWidget accesses={selectedThread!.accesses} />
             <DropdownMenu

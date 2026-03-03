@@ -2,7 +2,7 @@ import { MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/com
 import { SearchHelper } from "@/features/utils/search-helper";
 import { Label } from "@gouvfr-lasuite/ui-kit";
 import { Button, Checkbox, Input, Select } from "@gouvfr-lasuite/cunningham-react";
-import { useRef } from "react";
+import { useId, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 type SearchFiltersFormProps = {
@@ -12,6 +12,7 @@ type SearchFiltersFormProps = {
 
 export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) => {
     const { t, i18n } = useTranslation();
+    const starredLabelId = useId();
     const formRef = useRef<HTMLFormElement>(null);
 
     const updateQuery = (submit: boolean) => {
@@ -85,6 +86,10 @@ export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) =
                 <Label>{t("Read state")} :</Label>
                 <Checkbox label={t("Read")} value="true" name="is_read" checked={Boolean(parsedQuery.is_read)} onChange={handleReadStateChange} />
                 <Checkbox label={t("Unread")} value="true" name="is_unread" checked={Boolean(parsedQuery.is_unread)} onChange={handleReadStateChange} />
+            </div>
+            <div className="flex-row flex-align-center" style={{ gap: 'var(--c--globals--spacings--2xs)' }}>
+                <Label htmlFor="is_starred" id={starredLabelId}>{t("Starred")} :</Label>
+                <Checkbox id="is_starred" aria-labelledby={starredLabelId} value="true" name="is_starred" checked={Boolean(parsedQuery.is_starred)} />
             </div>
             <footer className="search__filters-footer">
                 <Button type="reset" variant="tertiary" onClick={handleReset}>

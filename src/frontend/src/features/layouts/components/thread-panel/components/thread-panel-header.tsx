@@ -11,6 +11,7 @@ import ViewHelper from "@/features/utils/view-helper";
 import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
 import useTrash from "@/features/message/use-trash";
+import useStarred from "@/features/message/use-starred";
 
 type ThreadPanelTitleProps = {
     selectedThreadIds: Set<string>;
@@ -29,6 +30,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const { markAsArchived, markAsUnarchived } = useArchive();
     const { markAsTrashed, markAsUntrashed } = useTrash();
     const { markAsSpam, markAsNotSpam } = useSpam();
+    const { markAsStarred, markAsUnstarred } = useStarred();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const searchParams = useSearchParams();
     const isSearch = searchParams.has('search');
@@ -87,6 +89,9 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const trashIconName = isTrashedView ? 'restore_from_trash' : 'delete';
     const trashMutation = isTrashedView ? markAsUntrashed : markAsTrashed;
 
+    const starLabel = t('Star {{count}} threads', { count: selectedThreadIds.size, defaultValue_one: 'Star {{count}} thread' });
+    const unstarLabel = t('Unstar {{count}} threads', { count: selectedThreadIds.size, defaultValue_one: 'Unstar {{count}} thread' });
+
     return (
         <header className="thread-panel__header">
             <h2 className="thread-panel__header--title">{title}</h2>
@@ -127,6 +132,24 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                     </Tooltip>
                     {isSelectionMode && (
                         <>
+                            <Tooltip content={starLabel} className={selectedThreadIds.size === 0 ? 'hidden' : ''}>
+                                <Button
+                                    onClick={() => {
+                                        markAsStarred({
+                                            threadIds: threadIdsToMark,
+                                            onSuccess: () => {
+                                                unselectThread();
+                                                onClearSelection();
+                                            }
+                                        });
+                                    }}
+                                    disabled={selectedThreadIds.size === 0}
+                                    icon={<Icon name="star_border" type={IconType.OUTLINED} />}
+                                    variant="tertiary"
+                                    size="nano"
+                                    aria-label={starLabel}
+                                />
+                            </Tooltip>
                             <VerticalSeparator withPadding={false} />
                             {!isSpamView && !isTrashedView && !isDraftsView && (
                                 <Tooltip content={archiveLabel} className={selectedThreadIds.size === 0 ? 'hidden' : ''}>
@@ -223,6 +246,19 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                     })
                                 },
                             },
+                            ...(isSelectionMode && selectedThreadIds.size > 0 ? [{
+                                label: unstarLabel,
+                                icon: <Icon name="star" type={IconType.FILLED} />,
+                                callback: () => {
+                                    markAsUnstarred({
+                                        threadIds: threadIdsToMark,
+                                        onSuccess: () => {
+                                            unselectThread();
+                                            onClearSelection();
+                                        }
+                                    });
+                                },
+                            }] : []),
                         ]}
                     >
                         <Tooltip content={t('More options')}>

@@ -131,6 +131,7 @@
 
 .thread-item__column--metadata {
     align-items: center;
+    gap: var(--c--globals--spacings--3xs);
 }
 
 .thread-item__label-bullets {

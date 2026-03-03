@@ -10,7 +10,8 @@
         "in_drafts": ["in:drafts"],
         "in_spam": ["in:spam"],
         "is_read": ["is:read"],
-        "is_unread": ["is:unread"]
+        "is_unread": ["is:unread"],
+        "is_starred": ["is:starred"]
     },
     "fr-FR": {
         "from": ["de"],
@@ -23,7 +24,8 @@
         "in_drafts": ["dans:brouillons"],
         "in_spam": ["dans:spam"],
         "is_read": ["est:lu"],
-        "is_unread": ["est:nonlu"]
+        "is_unread": ["est:nonlu"],
+        "is_starred": ["est:suivi"]
     },
     "nl-NL": {
         "from": ["van"],
@@ -36,6 +38,7 @@
         "in_drafts": ["in:concepten"],
         "in_spam": ["in:spam"],
         "is_read": ["is:gelezen"],
-        "is_unread": ["is:ongelezen"]
+        "is_unread": ["is:ongelezen"],
+        "is_starred": ["is:gevolgd"]
     }
 }

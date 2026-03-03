@@ -321,6 +321,7 @@ def test_api_flag_unread_per_mailbox_isolation(api_client):
     assert access2.read_at is None
 
 
+@pytest.mark.django_db(transaction=True)
 def test_api_flag_read_at_syncs_opensearch(api_client, settings):
     """Sending read_at should explicitly sync OpenSearch."""
     settings.OPENSEARCH_INDEX_THREADS = True
@@ -534,6 +535,7 @@ def test_api_flag_starred_requires_mailbox_id(api_client):
     assert "mailbox_id" in response.data["detail"]
 
 
+@pytest.mark.django_db(transaction=True)
 @patch("core.api.viewsets.flag.update_threads_mailbox_flags_task")
 def test_api_flag_mark_thread_starred_success(mock_task, api_client):
     """Test starring a thread sets starred_at on the ThreadAccess."""
@@ -564,6 +566,7 @@ def test_api_flag_mark_thread_starred_success(mock_task, api_client):
     mock_task.delay.assert_called_once()
 
 
+@pytest.mark.django_db(transaction=True)
 @patch("core.api.viewsets.flag.update_threads_mailbox_flags_task")
 def test_api_flag_mark_thread_unstarred_success(mock_task, api_client):
     """Test unstarring a thread clears starred_at on the ThreadAccess."""

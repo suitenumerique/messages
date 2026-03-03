@@ -18,4 +18,6 @@ export interface ThreadAccessDetail {
   readonly role: ThreadAccessRoleChoices;
   /** @nullable */
   readonly read_at: string | null;
+  /** @nullable */
+  readonly starred_at: string | null;
 }

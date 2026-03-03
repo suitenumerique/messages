@@ -5652,13 +5652,19 @@
                     "mailbox_id": {
                         "type": "string",
                         "format": "uuid",
-                        "description": "Mailbox UUID. Required when flag is 'unread'."
+                        "description": "Mailbox UUID. Required when flag is 'unread' or 'starred'."
                     },
                     "read_at": {
                         "type": "string",
                         "format": "date-time",
                         "nullable": true,
                         "description": "Timestamp up to which messages are considered read. When provided with flag='unread', sets ThreadAccess.read_at directly. null means nothing has been read (all messages unread)."
+                    },
+                    "starred_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true,
+                        "description": "Timestamp when the thread was starred. When provided with flag='starred' and value=true, sets ThreadAccess.starred_at. null or value=false removes the starred flag."
                     }
                 },
                 "required": [
@@ -7024,10 +7030,6 @@
                         "type": "boolean",
                         "readOnly": true
                     },
-                    "is_starred": {
-                        "type": "boolean",
-                        "readOnly": true
-                    },
                     "is_trashed": {
                         "type": "boolean",
                         "readOnly": true
@@ -7068,7 +7070,6 @@
                     "is_archived",
                     "is_draft",
                     "is_sender",
-                    "is_starred",
                     "is_trashed",
                     "is_unread",
                     "parent_id",
@@ -8123,13 +8124,20 @@
                         "format": "date-time",
                         "readOnly": true,
                         "nullable": true
+                    },
+                    "starred_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true
                     }
                 },
                 "required": [
                     "id",
                     "mailbox",
                     "read_at",
-                    "role"
+                    "role",
+                    "starred_at"
                 ]
             },
             "ThreadAccessRequest": {

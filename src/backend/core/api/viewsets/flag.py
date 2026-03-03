@@ -194,7 +194,7 @@ class ChangeFlagView(APIView):
         ).values_list("thread_id", flat=True)
 
         # Unread and starred are personal actions that don't require EDITOR access.
-        if flag not in ('unread', 'starred'):
+        if flag not in ("unread", "starred"):
             accessible_thread_ids_qs = accessible_thread_ids_qs.filter(
                 role__in=enums.THREAD_ROLES_CAN_EDIT
             )
@@ -204,19 +204,19 @@ class ChangeFlagView(APIView):
                 mailbox_id=mailbox_id
             )
 
+        if flag in ("unread", "starred") and not thread_ids and message_ids:
+            # If no thread_ids but we have message_ids, we need to get the thread_ids from the messages
+            thread_ids = (
+                models.Message.objects.filter(
+                    id__in=message_ids,
+                    thread_id__in=accessible_thread_ids_qs,
+                )
+                .values_list("thread_id", flat=True)
+                .distinct()
+            )
+
         with transaction.atomic():
             if flag == "unread":
-                if not thread_ids and message_ids:
-                    # If no thread_ids but we have message_ids, we need to get the thread_ids from the messages
-                    thread_ids = (
-                        models.Message.objects.filter(
-                            id__in=message_ids,
-                            thread_id__in=accessible_thread_ids_qs,
-                        )
-                        .values_list("thread_id", flat=True)
-                        .distinct()
-                    )
-
                 return self._handle_unread_flag(
                     request,
                     thread_ids,
@@ -365,7 +365,11 @@ class ChangeFlagView(APIView):
         updated_count = accesses.update(read_at=read_at)
 
         if thread_ids_to_sync:
-            update_threads_mailbox_flags_task.delay(thread_ids_to_sync)
+            transaction.on_commit(
+                lambda ids=thread_ids_to_sync: update_threads_mailbox_flags_task.delay(
+                    ids
+                )
+            )
 
         return drf.response.Response(
             {"success": True, "updated_threads": updated_count}
@@ -412,14 +416,17 @@ class ChangeFlagView(APIView):
             mailbox_id=mailbox_id,
         )
 
-        with transaction.atomic():
-            thread_ids_to_sync = [
-                str(tid) for tid in accesses.values_list("thread_id", flat=True)
-            ]
-            updated_count = accesses.update(starred_at=starred_at)
+        thread_ids_to_sync = [
+            str(tid) for tid in accesses.values_list("thread_id", flat=True)
+        ]
+        updated_count = accesses.update(starred_at=starred_at)
 
         if thread_ids_to_sync:
-            update_threads_mailbox_flags_task.delay(thread_ids_to_sync)
+            transaction.on_commit(
+                lambda ids=thread_ids_to_sync: update_threads_mailbox_flags_task.delay(
+                    ids
+                )
+            )
 
         return drf.response.Response(
             {"success": True, "updated_threads": updated_count}

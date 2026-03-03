@@ -154,19 +154,6 @@ export const ThreadItem = ({ thread, isSelected, onToggleSelection, selectedThre
                             )}
                         </div>
                         <div className="thread-item__column thread-item__column--metadata">
-                            {/* <Tooltip content={thread.labels.map((label) => label.display_name).join(', ')}>
-                                <div className="thread-item__label-bullets">
-                                    {thread.labels.slice(0, 4).map((label) => (
-                                        <div key={`label-bullet-${label.id}`} className="thread-item__label-bullet" style={{ backgroundColor: label.color }} />
-                                    ))}
-                                    {thread.labels.length > 4 && (
-                                        <div className="thread-item__label-bullet">
-                                            +{thread.labels.length - 4}
-                                        </div>
-                                    )}
-                                </div>
-                            </Tooltip> */}
-
                             {(threadDate || thread.messaged_at) && (
                                 <span className="thread-item__date">
                                     {DateHelper.formatDate((threadDate || thread.messaged_at)!, i18n.resolvedLanguage)}
@@ -176,7 +163,7 @@ export const ThreadItem = ({ thread, isSelected, onToggleSelection, selectedThre
                     </div>
                     <div className="thread-item__row thread-item__row--subject">
                         <div className="thread-item__column">
-                            <p className="thread-item__subject">{thread.subject || thread.snippet || t('No subject')}</p>
+                            <p className="thread-item__subject">{thread.subject || t('No subject')}</p>
                         </div>
                         <div className="thread-item__column thread-item__column--badges">
                             {thread.has_draft && (
@@ -203,15 +190,11 @@ export const ThreadItem = ({ thread, isSelected, onToggleSelection, selectedThre
                                     <Icon name="update" type={IconType.OUTLINED} size={IconSize.SMALL} />
                                 </Badge>
                             )}
-                            {/* <div className="thread-item__actions">
-                        <Tooltip placement="bottom" content={t('Mark as important')}>
-                            <Button color="tertiary-text" className="thread-item__action">
-                                <span className="material-icons">
-                                    flag
-                                </span>
-                            </Button>
-                        </Tooltip>
-                    </div> */}
+                            {thread.has_starred && (
+                                <Badge aria-label={t('Starred')} title={t('Starred')} color="yellow" variant="tertiary" compact>
+                                    <Icon name="star" size={IconSize.SMALL} />
+                                </Badge>
+                            )}
                         </div>
                     </div>
                     <div className="thread-item__row">

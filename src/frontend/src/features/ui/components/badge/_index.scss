@@ -110,3 +110,18 @@
         color: var(--c--contextuals--content--semantic--info--tertiary);
     }
 }
+
+.badge--yellow {
+    &.badge--primary {
+        background-color: var(--c--contextuals--background--palette--yellow--primary);
+        color: var(--c--contextuals--content--semantic--neutral--on-neutral);
+    }
+    &.badge--secondary {
+        background-color: var(--c--contextuals--background--palette--yellow--secondary);
+        color: var(--c--contextuals--content--semantic--neutral--on-neutral);
+    }
+    &.badge--tertiary {
+        background-color: transparent;
+        color: var(--c--contextuals--background--palette--yellow--secondary);
+    }
+}

@@ -1,0 +1,32 @@
+.starred-marker {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs);
+    padding-block: var(--c--globals--spacings--xs);
+    padding-right: var(--c--globals--spacings--sm);
+    justify-content: flex-end;
+}
+
+.starred-marker::after {
+    display: block;
+    content: '';
+    height: 1px;
+    background-color: var(--c--contextuals--background--semantic--neutral--primary);
+    width: 8px;
+}
+
+.starred-marker__label {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--3xs);
+    font-size: var(--c--globals--font--sizes--xs);
+    color: var(--c--contextuals--background--semantic--neutral--primary);
+    font-style: italic;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.starred-marker__icon {
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--background--semantic--neutral--primary);
+}
