@@ -48,8 +48,9 @@ def test_provisioning_wrong_token_returns_403(client, url, settings):
 
 
 @pytest.mark.django_db
-def test_provisioning_no_key_configured_returns_403(client, url):
+def test_provisioning_no_key_configured_returns_403(client, url, settings):
     """When PROVISIONING_API_KEY is not configured, returns 403."""
+    settings.PROVISIONING_API_KEY = None
     response = client.post(
         url,
         data={"domains": ["test.fr"]},

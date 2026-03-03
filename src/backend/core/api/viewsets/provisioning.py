@@ -1,5 +1,7 @@
 """API view for provisioning mail domains from DeployCenter."""
 
+import logging
+
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 
@@ -10,6 +12,8 @@ from rest_framework.views import APIView
 from core.api.permissions import HasProvisioningApiKey
 from core.api.serializers import ProvisioningMailDomainSerializer
 from core.models import MailDomain
+
+logger = logging.getLogger(__name__)
 
 
 class ProvisioningMailDomainView(APIView):
@@ -43,8 +47,18 @@ class ProvisioningMailDomainView(APIView):
                         domain.custom_attributes = custom_attributes
                         domain.save()
                     existing.append(domain_name)
-            except (ValidationError, IntegrityError) as e:
+            except ValidationError as e:
                 errors.append({"domain": domain_name, "error": str(e)})
+            except IntegrityError:
+                logger.exception(
+                    "IntegrityError while provisioning domain %s", domain_name
+                )
+                errors.append(
+                    {
+                        "domain": domain_name,
+                        "error": "Failed to provision domain.",
+                    }
+                )
 
         return Response(
             {
