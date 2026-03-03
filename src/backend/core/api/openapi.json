@@ -245,6 +245,14 @@
                                             "description": "Whether external images should be proxied",
                                             "readOnly": true
                                         },
+                                        "FEATURE_MAILDOMAIN_CREATE": {
+                                            "type": "boolean",
+                                            "readOnly": true
+                                        },
+                                        "FEATURE_MAILDOMAIN_MANAGE_ACCESSES": {
+                                            "type": "boolean",
+                                            "readOnly": true
+                                        },
                                         "MESSAGES_MANUAL_RETRY_MAX_AGE": {
                                             "type": "integer",
                                             "description": "Maximum age in seconds for a message to be eligible for manual retry of failed deliveries",
@@ -267,6 +275,8 @@
                                         "MAX_RECIPIENTS_PER_MESSAGE",
                                         "MAX_TEMPLATE_IMAGE_SIZE",
                                         "IMAGE_PROXY_ENABLED",
+                                        "FEATURE_MAILDOMAIN_CREATE",
+                                        "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
                                         "MESSAGES_MANUAL_RETRY_MAX_AGE"
                                     ]
                                 }

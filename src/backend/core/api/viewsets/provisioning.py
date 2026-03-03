@@ -5,6 +5,7 @@ import logging
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -22,6 +23,7 @@ class ProvisioningMailDomainView(APIView):
     permission_classes = [HasProvisioningApiKey]
     authentication_classes = []
 
+    @extend_schema(exclude=True)
     def post(self, request):
         """Provision mail domains from a list of domain names."""
         serializer = ProvisioningMailDomainSerializer(data=request.data)
