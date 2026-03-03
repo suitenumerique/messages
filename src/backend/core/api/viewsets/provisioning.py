@@ -9,6 +9,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from sentry_sdk import capture_exception
 
 from core.api.permissions import HasProvisioningApiKey
 from core.api.serializers import ProvisioningMailDomainSerializer
@@ -51,7 +52,8 @@ class ProvisioningMailDomainView(APIView):
                     existing.append(domain_name)
             except ValidationError as e:
                 errors.append({"domain": domain_name, "error": str(e)})
-            except IntegrityError:
+            except IntegrityError as exc:
+                capture_exception(exc)
                 logger.exception(
                     "IntegrityError while provisioning domain %s", domain_name
                 )
