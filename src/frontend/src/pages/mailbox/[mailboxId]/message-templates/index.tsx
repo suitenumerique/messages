@@ -6,6 +6,7 @@ import { useMailboxContext } from "@/features/providers/mailbox";
 import { ManageMessageTemplatesViewPageContent } from "@/features/layouts/components/mailbox-settings/message-templates-view/page-content";
 import { ComposeTemplateAction } from "@/features/layouts/components/mailbox-settings/message-templates-view/compose-template-action";
 import { Banner } from "@/features/ui/components/banner";
+import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link";
 
 const MailboxMessageTemplatesPage = () => {
     const { t } = useTranslation();
@@ -21,7 +22,7 @@ const MailboxMessageTemplatesPage = () => {
     if (!selectedMailbox) return null;
 
     return (
-        <div className="admin-page">
+        <div className="admin-page" id={SKIP_LINK_TARGET_ID}>
             <div className="admin-page__header">
                 <h1 className="title">{t("Message templates for {{mailbox}}", { mailbox: selectedMailbox.email })}</h1>
                 <div className="admin-page__actions">

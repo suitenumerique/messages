@@ -1,4 +1,5 @@
 import { AppLayout } from "@/features/layouts/components/main/layout";
+import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link";
 import { Breadcrumbs } from "@/features/ui/components/breadcrumbs";
 import Link from "next/link";
 import { useTranslation } from "react-i18next";
@@ -81,7 +82,7 @@ function AdminLayoutContent({
   }
 
   return (
-    <div className="admin-page">
+    <div id={SKIP_LINK_TARGET_ID} className="admin-page">
       <div className="admin-page__header">
         <div className="admin-page__breadcrumbs">
           <Breadcrumbs items={breadcrumbItems} />

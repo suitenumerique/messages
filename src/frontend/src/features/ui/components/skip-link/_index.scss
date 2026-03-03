@@ -1,0 +1,21 @@
+@use "../../../../styles/utils" as *;
+
+.c__skip-link {
+  position: absolute;
+  top: -100%;
+  left: 0;
+  margin: var(--c--globals--spacings--xs);
+  z-index: 1001;
+  padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--sm);
+  background-color: var(--c--contextuals--background--surface--primary);
+  color: var(--c--contextuals--content--semantic--brand--primary);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom-right-radius: 4px;
+
+  &:focus {
+    top: 0;
+    outline: 2px solid var(--c--contextuals--border--semantic--brand--primary);
+    outline-offset: -2px;
+  }
+}

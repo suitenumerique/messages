@@ -9,6 +9,7 @@ import {
 import { DropdownMenuOption, LeftPanel, useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { useControllableState } from "../hooks/useControllableState";
 import { Toaster } from "@/features/ui/components/toaster";
+import { SkipLink } from "@/features/ui/components/skip-link";
 import clsx from "clsx";
 export type MainLayoutProps = {
   icon?: React.ReactNode;
@@ -138,6 +139,11 @@ export const AppLayout = ({
 
   return (
     <div className={clsx("c__main-layout", isResizing && "c__main-layout--resizing")}>
+      <SkipLink onClick={() => {
+        if (!isDesktop) {
+          setIsLeftPanelOpen(false);
+        }
+      }} />
       <div className="c__main-layout__header">
         <Header
           onTogglePanel={onTogglePanel}

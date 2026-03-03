@@ -1,4 +1,5 @@
 import { useMailboxContext } from "@/features/providers/mailbox";
+import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link";
 import { ThreadItem } from "./components/thread-item";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
@@ -92,7 +93,7 @@ export const ThreadPanel = () => {
     }
 
     return (
-        <div className="thread-panel" tabIndex={-1}>
+        <div id={!selectedThread ? SKIP_LINK_TARGET_ID : undefined} className="thread-panel" tabIndex={-1}>
             <ThreadPanelHeader
                 selectedThreadIds={selectedThreadIds}
                 isAllSelected={isAllSelected}

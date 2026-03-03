@@ -8,6 +8,7 @@ import { useDebounceCallback } from "@/hooks/use-debounce-callback"
 import { Message, Thread } from "@/features/api/gen/models"
 import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit"
 import { Banner } from "@/features/ui/components/banner"
+import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link"
 import { useTranslation } from "react-i18next"
 import { ThreadViewLabelsList } from "./components/thread-view-labels-list"
 import { ThreadSummary } from "./components/thread-summary";
@@ -118,7 +119,7 @@ const ThreadViewComponent = ({ messages, mailboxId, thread, showTrashedMessages,
     }, [thread.id]);
 
     return (
-        <div className={clsx("thread-view", { "thread-view--talk": isThreadSender })} ref={rootRef}>
+        <div id={SKIP_LINK_TARGET_ID} className={clsx("thread-view", { "thread-view--talk": isThreadSender })} ref={rootRef}>
             <div className="thread-view__sticky-container" ref={stickyContainerRef}>
                 <header className="thread-view__header">
                     <div className="thread-view__header__top">

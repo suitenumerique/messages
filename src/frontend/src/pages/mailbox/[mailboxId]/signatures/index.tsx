@@ -6,6 +6,7 @@ import { useMailboxContext } from "@/features/providers/mailbox";
 import { ManageSignaturesViewPageContent } from "@/features/layouts/components/mailbox-settings/signatures-view/page-content";
 import { ComposeSignatureAction } from "@/features/layouts/components/mailbox-settings/signatures-view/compose-signature-action";
 import { Banner } from "@/features/ui/components/banner";
+import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link";
 
 const MailboxSignaturesPage = () => {
     const { t } = useTranslation();
@@ -21,7 +22,7 @@ const MailboxSignaturesPage = () => {
     if (!selectedMailbox) return null;
 
     return (
-        <div className="admin-page">
+        <div className="admin-page" id={SKIP_LINK_TARGET_ID}>
             <div className="admin-page__header">
                 <h1 className="title">{t("Signatures for {{mailbox}}", { mailbox: selectedMailbox.email })}</h1>
                 <div className="admin-page__actions">

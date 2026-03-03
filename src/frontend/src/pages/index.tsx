@@ -5,6 +5,7 @@ import { MainLayout } from "@/features/layouts/components/main";
 import { LanguagePicker } from "@/features/layouts/components/main/language-picker";
 import { AppLayout } from "@/features/layouts/components/main/layout";
 import { LeftPanel } from "@/features/layouts/components/main/left-panel";
+import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link";
 import { FeedbackWidget } from "@/features/ui/components/feedback-widget";
 import { useTheme } from "@/features/providers/theme";
 
@@ -25,7 +26,7 @@ export default function HomePage() {
         rightHeaderContent={<LanguagePicker />}
         icon={<img src={`/images/${theme}/app-logo-${variant}.svg`} alt="logo" height={40} />}
       >
-      <div className="app__home">
+      <div id={SKIP_LINK_TARGET_ID} className="app__home">
         <HomeGutter>
           <Hero
             logo={<img src={`/images/${theme}/app-icon-${variant}.svg`} alt="Messages Logo" width={64} />}

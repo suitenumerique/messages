@@ -5,6 +5,7 @@ import { MainLayout } from "@/features/layouts/components/main";
 import { MessageForm } from "@/features/forms/components/message-form";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
+import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link";
 
 const NewMessageFormPage = () => {
     const { t } = useTranslation();
@@ -35,7 +36,7 @@ const NewMessageFormPage = () => {
     }
 
     return (
-        <div className="new-message-form">
+        <div className="new-message-form" id={SKIP_LINK_TARGET_ID}>
             <div className="new-message-form-container">
                 <h1>{t("New message")}</h1>
                 <MessageForm
