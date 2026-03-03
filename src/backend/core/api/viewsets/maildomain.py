@@ -56,6 +56,8 @@ class AdminMailDomainViewSet(
 
     def get_permissions(self):
         if self.action == "create":
+            if not settings.FEATURE_MAILDOMAIN_CREATE:
+                return [core_permissions.DenyAll()]
             return [core_permissions.IsSuperUser()]
         return super().get_permissions()
 

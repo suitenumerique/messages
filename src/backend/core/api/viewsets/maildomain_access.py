@@ -1,5 +1,6 @@
 """API ViewSet for MaildomainAccess model."""
 
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 
 from drf_spectacular.utils import extend_schema
@@ -30,6 +31,12 @@ class MaildomainAccessViewSet(
     # The lookup_field for the MailboxAccess instance itself (for retrieve, update, destroy)
     lookup_field = "pk"
     pagination_class = None
+
+    def get_permissions(self):
+        if self.action in ("create", "destroy"):
+            if not settings.FEATURE_MAILDOMAIN_MANAGE_ACCESSES:
+                return [core_permissions.DenyAll()]
+        return super().get_permissions()
 
     def get_serializer_class(self):
         """Select serializer based on action."""

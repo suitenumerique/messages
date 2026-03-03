@@ -111,6 +111,14 @@ class ConfigView(drf.views.APIView):
                             "description": "Whether external images should be proxied",
                             "readOnly": True,
                         },
+                        "FEATURE_MAILDOMAIN_CREATE": {
+                            "type": "boolean",
+                            "readOnly": True,
+                        },
+                        "FEATURE_MAILDOMAIN_MANAGE_ACCESSES": {
+                            "type": "boolean",
+                            "readOnly": True,
+                        },
                         "MESSAGES_MANUAL_RETRY_MAX_AGE": {
                             "type": "integer",
                             "description": (
@@ -136,6 +144,8 @@ class ConfigView(drf.views.APIView):
                         "MAX_RECIPIENTS_PER_MESSAGE",
                         "MAX_TEMPLATE_IMAGE_SIZE",
                         "IMAGE_PROXY_ENABLED",
+                        "FEATURE_MAILDOMAIN_CREATE",
+                        "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
                         "MESSAGES_MANUAL_RETRY_MAX_AGE",
                     ],
                 },
@@ -158,6 +168,8 @@ class ConfigView(drf.views.APIView):
             "IMAGE_PROXY_ENABLED",
             "MESSAGES_MANUAL_RETRY_MAX_AGE",
             "FEATURE_MAILBOX_ADMIN_CHANNELS",
+            "FEATURE_MAILDOMAIN_CREATE",
+            "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
             "MAX_OUTGOING_ATTACHMENT_SIZE",
             "MAX_OUTGOING_BODY_SIZE",
             "MAX_INCOMING_EMAIL_SIZE",

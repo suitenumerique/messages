@@ -5,6 +5,8 @@ export enum FEATURE_KEYS {
     AI_SUMMARY = 'ai_summary',
     AI_AUTOLABELS = 'ai_autolabels',
     MAILBOX_ADMIN_CHANNELS = 'mailbox_admin_channels',
+    MAILDOMAIN_CREATE = 'maildomain_create',
+    MAILDOMAIN_MANAGE_ACCESSES = 'maildomain_manage_accesses',
 }
 
 /**
@@ -26,6 +28,10 @@ export const useFeatureFlag = (featureKey: FEATURE_KEYS) => {
             return config.AI_ENABLED === true && config.FEATURE_AI_AUTOLABELS === true;
         case FEATURE_KEYS.MAILBOX_ADMIN_CHANNELS:
             return Array.isArray(config.FEATURE_MAILBOX_ADMIN_CHANNELS) && config.FEATURE_MAILBOX_ADMIN_CHANNELS.length > 0;
+        case FEATURE_KEYS.MAILDOMAIN_CREATE:
+            return config.FEATURE_MAILDOMAIN_CREATE === true;
+        case FEATURE_KEYS.MAILDOMAIN_MANAGE_ACCESSES:
+            return config.FEATURE_MAILDOMAIN_MANAGE_ACCESSES === true;
         default:
             throw new Error(`Unknown feature key: ${featureKey}`);
     }

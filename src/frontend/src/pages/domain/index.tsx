@@ -7,6 +7,7 @@ import { AdminLayout } from "@/features/layouts/components/admin/admin-layout";
 import { getMaildomainsListQueryOptions, MailDomainAdmin, MailDomainAdminWrite } from "@/features/api/gen";
 import { useAdminMailDomain } from "@/features/providers/admin-maildomain";
 import useAbility, { Abilities } from "@/hooks/use-ability";
+import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { Banner } from "@/features/ui/components/banner";
 import { CreateDomainAction } from "@/features/layouts/components/admin/domains-view/create-domain-action";
 import { useQueryClient } from "@tanstack/react-query";
@@ -25,7 +26,9 @@ enum MailDomainEditAction {
 function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
   const router = useRouter();
   const { t, i18n } = useTranslation();
-  const canManageMaildomainAccesses = useAbility(Abilities.CAN_MANAGE_SOME_MAILDOMAIN_ACCESSES);
+  const hasManageAbility = useAbility(Abilities.CAN_MANAGE_SOME_MAILDOMAIN_ACCESSES);
+  const isManageAccessesEnabled = useFeatureFlag(FEATURE_KEYS.MAILDOMAIN_MANAGE_ACCESSES);
+  const canManageMaildomainAccesses = hasManageAbility && isManageAccessesEnabled;
   const [editedDomain, setEditedDomain] = useState<MailDomainAdmin | null>(null);
   const [editAction, setEditAction] = useState<MailDomainEditAction | null>(null);
   const columns = [
@@ -95,7 +98,9 @@ const AdminPageContent = () => {
   const { t } = useTranslation();
   const { mailDomains, isLoading, error, pagination } = useAdminMailDomain();
   const canCreateMaildomain = useAbility(Abilities.CAN_CREATE_MAILDOMAINS);
-  const canManageMaildomainAccesses = useAbility(Abilities.CAN_MANAGE_SOME_MAILDOMAIN_ACCESSES);
+  const hasManageAbility = useAbility(Abilities.CAN_MANAGE_SOME_MAILDOMAIN_ACCESSES);
+  const isManageAccessesEnabled = useFeatureFlag(FEATURE_KEYS.MAILDOMAIN_MANAGE_ACCESSES);
+  const canManageMaildomainAccesses = hasManageAbility && isManageAccessesEnabled;
   const shouldRedirect = !canCreateMaildomain && !canManageMaildomainAccesses && !isLoading && mailDomains.length === 1;
 
   /**

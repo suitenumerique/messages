@@ -2,6 +2,7 @@
 # pylint: disable=unused-argument
 
 from django.contrib.auth.models import AnonymousUser
+from django.test import override_settings
 from django.urls import reverse
 
 import pytest
@@ -409,3 +410,50 @@ class TestMaildomainAccessViewSet:
             assert "id" in user_details
             assert "email" in user_details
             assert "full_name" in user_details
+
+    # --- FEATURE FLAG Tests ---
+    @override_settings(FEATURE_MAILDOMAIN_MANAGE_ACCESSES=False)
+    def test_admin_api_maildomain_accesses_create_feature_flag_disabled(
+        self,
+        api_client,
+        super_user,
+        maildomain_1,
+        md1_access,
+        md2_admin_user,
+    ):
+        """Creating access should return 403 when FEATURE_MAILDOMAIN_MANAGE_ACCESSES is False."""
+        api_client.force_authenticate(user=super_user)
+        data = {"user": str(md2_admin_user.pk), "role": "admin"}
+        response = api_client.post(
+            self.list_create_url(maildomain_pk=maildomain_1.pk), data
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @override_settings(FEATURE_MAILDOMAIN_MANAGE_ACCESSES=False)
+    def test_admin_api_maildomain_accesses_delete_feature_flag_disabled(
+        self,
+        api_client,
+        super_user,
+        maildomain_1,
+        md1_access,
+    ):
+        """Deleting access should return 403 when FEATURE_MAILDOMAIN_MANAGE_ACCESSES is False."""
+        api_client.force_authenticate(user=super_user)
+        response = api_client.delete(
+            self.detail_url(maildomain_pk=maildomain_1.pk, pk=md1_access.pk)
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert models.MailDomainAccess.objects.filter(pk=md1_access.pk).exists()
+
+    @override_settings(FEATURE_MAILDOMAIN_MANAGE_ACCESSES=False)
+    def test_admin_api_maildomain_accesses_list_feature_flag_disabled(
+        self,
+        api_client,
+        super_user,
+        maildomain_1,
+        md1_access,
+    ):
+        """Listing accesses should still return 200 when feature flag is disabled (read-only is fine)."""
+        api_client.force_authenticate(user=super_user)
+        response = api_client.get(self.list_create_url(maildomain_pk=maildomain_1.pk))
+        assert response.status_code == status.HTTP_200_OK

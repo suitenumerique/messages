@@ -33,6 +33,8 @@ export type ConfigRetrieve200 = {
   readonly MAX_TEMPLATE_IMAGE_SIZE: number;
   /** Whether external images should be proxied */
   readonly IMAGE_PROXY_ENABLED: boolean;
+  readonly FEATURE_MAILDOMAIN_CREATE: boolean;
+  readonly FEATURE_MAILDOMAIN_MANAGE_ACCESSES: boolean;
   /** Maximum age in seconds for a message to be eligible for manual retry of failed deliveries */
   readonly MESSAGES_MANUAL_RETRY_MAX_AGE: number;
 };

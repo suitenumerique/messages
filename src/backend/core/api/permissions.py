@@ -15,6 +15,13 @@ ACTION_FOR_METHOD_TO_PERMISSION = {
 }
 
 
+class DenyAll(permissions.BasePermission):
+    """Always denies access. Used to disable endpoints via feature flags."""
+
+    def has_permission(self, request, view):
+        return False
+
+
 class IsAuthenticated(permissions.BasePermission):
     """
     Allows access only to authenticated users. Alternative method checking the presence
@@ -420,6 +427,18 @@ class HasMetricsApiKey(permissions.BasePermission):
         return compare_digest(
             request.headers.get("Authorization") or "",
             f"Bearer {settings.METRICS_API_KEY}",
+        )
+
+
+class HasProvisioningApiKey(permissions.BasePermission):
+    """Allows access only to requests bearing the provisioning API key."""
+
+    def has_permission(self, request, view):
+        if not settings.PROVISIONING_API_KEY:
+            return False
+        return compare_digest(
+            request.headers.get("Authorization") or "",
+            f"Bearer {settings.PROVISIONING_API_KEY}",
         )
 
 

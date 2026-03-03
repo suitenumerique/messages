@@ -1,6 +1,7 @@
 """Tests for the MailDomain Admin API endpoints."""
 # pylint: disable=redefined-outer-name, unused-argument
 
+from django.test import override_settings
 from django.urls import reverse
 
 import pytest
@@ -92,3 +93,14 @@ class TestAdminMailDomainsCreate:
             self.CREATE_DOMAIN_URL, {"name": "dup.com"}, format="json"
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @override_settings(FEATURE_MAILDOMAIN_CREATE=False)
+    def test_create_mail_domain_feature_flag_disabled(
+        self, api_client, domain_superuser_user
+    ):
+        """Superuser should get 403 when FEATURE_MAILDOMAIN_CREATE is False."""
+        api_client.force_authenticate(user=domain_superuser_user)
+        data = {"name": "blocked-domain.com"}
+        response = api_client.post(self.CREATE_DOMAIN_URL, data, format="json")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert not models.MailDomain.objects.filter(name="blocked-domain.com").exists()

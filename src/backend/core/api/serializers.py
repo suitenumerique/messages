@@ -1759,3 +1759,34 @@ class PartialDriveItemSerializer(serializers.Serializer):
 
     def update(self, instance, validated_data):
         """This serializer is only used to validate the data, not to create or update."""
+
+
+class DomainsField(serializers.Field):
+    """Accepts either a JSON list of strings or a comma-separated string."""
+
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            data = [d.strip() for d in data.split(",") if d.strip()]
+        if not isinstance(data, list):
+            raise serializers.ValidationError(
+                "Expected a list of domains or a comma-separated string."
+            )
+        if not data:
+            raise serializers.ValidationError("At least one domain is required.")
+        return data
+
+    def to_representation(self, value):
+        return value
+
+
+class ProvisioningMailDomainSerializer(serializers.Serializer):
+    """Serializer for the provisioning endpoint that creates mail domains."""
+
+    domains = DomainsField()
+    custom_attributes = serializers.JSONField(required=False, default=dict)
+
+    def create(self, validated_data):
+        """This serializer is only used to validate the data, not to create or update."""
+
+    def update(self, instance, validated_data):
+        """This serializer is only used to validate the data, not to create or update."""
