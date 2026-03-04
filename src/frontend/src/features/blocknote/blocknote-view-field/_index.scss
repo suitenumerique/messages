@@ -107,9 +107,11 @@
     }
 
     & .bn-editor {
-        --max-block-width: 70ch;
+        --max-block-width: 85ch;
         // Even in dark mode, the editor stays light so we used global tokens color
         color: var(--c--globals--colors--gray-850);
+        font-size: var(--c--globals--font--sizes--sm);
+        font-family: var(--c--globals--font--families--base);
         border-radius: var(--c--components--forms-input--border-radius);
         min-height: calc(100% - var(--toolbar-height));
         padding-inline: var(--c--globals--spacings--base);

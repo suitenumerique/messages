@@ -29,6 +29,8 @@
   "{{count}} occurrences_other": "{{count}} occurrences",
   "{{count}} results_one": "{{count}} result",
   "{{count}} results_other": "{{count}} results",
+  "{{count}} selected threads_one": "{{count}} selected thread",
+  "{{count}} selected threads_other": "{{count}} selected threads",
   "{{count}} threads have been archived._one": "The thread has been archived.",
   "{{count}} threads have been archived._other": "{{count}} threads have been archived.",
   "{{count}} threads have been deleted._one": "The thread has been deleted.",

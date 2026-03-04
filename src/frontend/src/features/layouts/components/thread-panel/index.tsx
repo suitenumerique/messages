@@ -10,7 +10,7 @@ import { MAILBOX_FOLDERS } from "../mailbox-panel/components/mailbox-list";
 import Image from "next/image";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import ThreadPanelHeader from "./components/thread-panel-header";
-import { useThreadSelection } from "./hooks/use-thread-selection";
+import { useThreadSelection } from "@/features/providers/thread-selection";
 
 export const ThreadPanel = () => {
     const { threads, queryStates, unselectThread, loadNextThreads, selectedThread, selectedMailbox } = useMailboxContext();
@@ -20,7 +20,6 @@ export const ThreadPanel = () => {
     const loaderRef = useRef<HTMLDivElement>(null);
     const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
 
-    // Use the thread selection hook
     const {
         selectedThreadIds,
         isSelectionMode,
@@ -30,10 +29,7 @@ export const ThreadPanel = () => {
         enableSelectionMode,
         isAllSelected,
         isSomeSelected,
-    } = useThreadSelection({
-        threads: threads?.results,
-        selectedThread,
-    });
+    } = useThreadSelection();
 
     const showImportButton = useMemo(() => {
         // Only show import button if there are no threads in inbox or all messages folders and user has ability to import messages
@@ -105,11 +101,10 @@ export const ThreadPanel = () => {
                 onDisableSelectionMode={clearSelection}
             />
             <div className="thread-panel__threads_list">
-                {threads?.results.map((thread, index) => (
+                {threads?.results.map((thread) => (
                     <ThreadItem
                         key={thread.id}
                         thread={thread}
-                        index={index}
                         isSelected={selectedThreadIds.has(thread.id)}
                         onToggleSelection={toggleThreadSelection}
                         selectedThreadIds={selectedThreadIds}

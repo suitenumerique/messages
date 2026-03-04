@@ -17,14 +17,13 @@ import { useLayoutContext } from "../../../main"
 
 type ThreadItemProps = {
     thread: Thread
-    index: number
     isSelected: boolean
-    onToggleSelection: (threadId: string, index: number, shiftKey: boolean, ctrlKey: boolean, arrowUpKey?: 'up' | 'down') => void
+    onToggleSelection: (threadId: string, shiftKey: boolean, ctrlKey: boolean, arrowUpKey?: 'up' | 'down') => void
     selectedThreadIds: Set<string>
     isSelectionMode: boolean
 }
 
-export const ThreadItem = ({ thread, index, isSelected, onToggleSelection, selectedThreadIds, isSelectionMode }: ThreadItemProps) => {
+export const ThreadItem = ({ thread, isSelected, onToggleSelection, selectedThreadIds, isSelectionMode }: ThreadItemProps) => {
     const { t, i18n } = useTranslation();
     const params = useParams<{ mailboxId: string, threadId: string }>()
     const searchParams = useSearchParams()
@@ -37,14 +36,14 @@ export const ThreadItem = ({ thread, index, isSelected, onToggleSelection, selec
 
     const handleCheckboxClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        onToggleSelection(thread.id, index, e.shiftKey, e.ctrlKey || e.metaKey);
+        onToggleSelection(thread.id, e.shiftKey, e.ctrlKey || e.metaKey);
     };
 
     const handleItemClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
         // If using modifier keys or in selection mode, toggle selection instead of navigating
         if (e.shiftKey || e.ctrlKey || e.metaKey || hasSelection) {
             e.preventDefault();
-            onToggleSelection(thread.id, index, e.shiftKey, e.ctrlKey || e.metaKey);
+            onToggleSelection(thread.id, e.shiftKey, e.ctrlKey || e.metaKey);
         }
         // Otherwise, let the Link handle navigation normally
     };
@@ -55,7 +54,7 @@ export const ThreadItem = ({ thread, index, isSelected, onToggleSelection, selec
         const arrowDownKey = e.key === 'ArrowDown';
         if (e.shiftKey && (arrowUpKey || arrowDownKey)) {
             e.preventDefault();
-            onToggleSelection(thread.id, index, e.shiftKey, e.ctrlKey || e.metaKey, arrowUpKey ? 'up' : 'down');
+            onToggleSelection(thread.id, e.shiftKey, e.ctrlKey || e.metaKey, arrowUpKey ? 'up' : 'down');
         }
     };
 
@@ -96,6 +95,7 @@ export const ThreadItem = ({ thread, index, isSelected, onToggleSelection, selec
                         'thread-item--selected': isSelected,
                     },
                 )}
+                data-thread-id={thread.id}
                 data-unread={thread.has_unread}
                 draggable
                 onDragStart={handleDragStart}

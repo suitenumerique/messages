@@ -1,7 +1,9 @@
 import { MainLayout } from "@/features/layouts/components/main";
 import { useResponsive } from "@gouvfr-lasuite/ui-kit";
 import { ThreadPanel } from "@/features/layouts/components/thread-panel";
+import { ThreadSelectionPlaceholder } from "@/features/layouts/components/thread-selection-placeholder";
 import { useMailboxContext } from "@/features/providers/mailbox";
+import { ThreadSelectionProvider, useThreadSelection } from "@/features/providers/thread-selection";
 import Image from "next/image";
 import { useTranslation } from "react-i18next";
 import { Panel, Group, Separator, useDefaultLayout } from "react-resizable-panels";
@@ -9,6 +11,7 @@ import { Panel, Group, Separator, useDefaultLayout } from "react-resizable-panel
 const Mailbox = () => {
     const { t } = useTranslation();
     const { threads } = useMailboxContext();
+    const { selectedThreadIds } = useThreadSelection();
     const { isMobile } = useResponsive();
     const showSelectThreadPlaceholder = (!isMobile && (threads?.results?.length ?? 0) > 0);
     const { defaultLayout, onLayoutChange } = useDefaultLayout({
@@ -25,23 +28,29 @@ const Mailbox = () => {
                 <>
                     <Separator className="panel__resize-handle" />
                     <Panel id="panel-thread-view" className="thread-view-panel">
-                        <div className="thread-view thread-view--empty">
-                            <div>
-                                <Image src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
-                                <p>{t('Select a thread')}</p>
+                        {selectedThreadIds.size > 0 ? (
+                            <ThreadSelectionPlaceholder />
+                        ) : (
+                            <div className="thread-view thread-view--empty">
+                                <div>
+                                    <Image src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
+                                    <p>{t('Select a thread')}</p>
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </Panel>
                 </>
             )}
         </Group>
-    )
-}
+    );
+};
 
 Mailbox.getLayout = function getLayout(page: React.ReactElement) {
     return (
         <MainLayout>
-            {page}
+            <ThreadSelectionProvider>
+                {page}
+            </ThreadSelectionProvider>
         </MainLayout>
     )
 }
