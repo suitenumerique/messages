@@ -44,6 +44,10 @@ export type ThreadsListParams = {
    */
   has_trashed?: number;
   /**
+   * Filter threads with unread messages (1=true, 0=false). Requires mailbox_id.
+   */
+  has_unread?: number;
+  /**
    * Filter threads that are spam (1=true, 0=false).
    */
   is_spam?: number;

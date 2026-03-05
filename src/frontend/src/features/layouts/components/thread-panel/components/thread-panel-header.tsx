@@ -12,6 +12,8 @@ import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
 import useTrash from "@/features/message/use-trash";
 import useStarred from "@/features/message/use-starred";
+import { ThreadPanelFilter, THREAD_PANEL_FILTER_PARAMS } from "./thread-panel-filter";
+import { useThreadPanelFilters } from "../hooks/use-thread-panel-filters";
 
 type ThreadPanelTitleProps = {
     selectedThreadIds: Set<string>;
@@ -42,11 +44,19 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const isSentView = ViewHelper.isSentView();
     const isDraftsView = ViewHelper.isDraftsView();
 
+    const { hasActiveFilters, activeFilters } = useThreadPanelFilters();
+
+    const folderSearchParams = useMemo(() => {
+        const params = new URLSearchParams(searchParams.toString());
+        THREAD_PANEL_FILTER_PARAMS.forEach((param) => params.delete(param));
+        return params;
+    }, [searchParams]);
+
     const title = useMemo(() => {
         if (searchParams.has('search')) return t('folder.search', { defaultValue: 'Search' });
         if (searchParams.has('label_slug')) return (labelsQuery.data?.data || []).find((label) => label.slug === searchParams.get('label_slug'))?.name;
-        return MAILBOX_FOLDERS().find((folder) => new URLSearchParams(folder.filter).toString() === searchParams.toString())?.name;
-    }, [searchParams, labelsQuery.data?.data, selectedMailbox, t])
+        return MAILBOX_FOLDERS().find((folder) => new URLSearchParams(folder.filter).toString() === folderSearchParams.toString())?.name;
+    }, [searchParams, folderSearchParams, labelsQuery.data?.data, selectedMailbox, t])
 
     const handleSelectAllToggle = () => {
         if (isAllSelected) {
@@ -91,10 +101,39 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
 
     const starLabel = t('Star {{count}} threads', { count: selectedThreadIds.size, defaultValue_one: 'Star {{count}} thread' });
     const unstarLabel = t('Unstar {{count}} threads', { count: selectedThreadIds.size, defaultValue_one: 'Unstar {{count}} thread' });
+    const countLabel = useMemo(() => {
+        if (isSearch) {
+            if (activeFilters.has_unread && activeFilters.has_starred) {
+                return t('{{count}} unread starred results', { count: threads?.count, defaultValue_one: '{{count}} unread starred result' });
+            }
+            if (activeFilters.has_unread) {
+                return t('{{count}} unread results', { count: threads?.count, defaultValue_one: '{{count}} unread result' });
+            }
+            if (activeFilters.has_starred) {
+                return t('{{count}} starred results', { count: threads?.count, defaultValue_one: '{{count}} starred result' });
+            }
+            return t('{{count}} results', { count: threads?.count, defaultValue_one: '{{count}} result' });
+        }
+        else {
+            if (activeFilters.has_unread && activeFilters.has_starred) {
+                return t('{{count}} unread starred messages', { count: threads?.count, defaultValue_one: '{{count}} unread starred message' });
+            }
+            if (activeFilters.has_unread) {
+                return t('{{count}} unread messages', { count: threads?.count, defaultValue_one: '{{count}} unread message' });
+            }
+            if (activeFilters.has_starred) {
+                return t('{{count}} starred messages', { count: threads?.count, defaultValue_one: '{{count}} starred message' });
+            }
+            return t('{{count}} messages', { count: threads?.count, defaultValue_one: '{{count}} message' });
+        }
+    }, [hasActiveFilters, activeFilters, isSearch, threads?.count, t]);
 
     return (
         <header className="thread-panel__header">
-            <h2 className="thread-panel__header--title">{title}</h2>
+            <div className="thread-panel__header--title-row">
+                <h2 className="thread-panel__header--title">{title}</h2>
+                <ThreadPanelFilter />
+            </div>
             <div className="thread-panel__header--details">
                 {(isSelectionMode || isSomeSelected) && (
                     <Checkbox
@@ -106,10 +145,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                     />
                 )}
                 <p className="thread-panel__header--count">
-                    {isSearch
-                        ? t('{{count}} results', { count: threads?.count, defaultValue_one: '{{count}} result' })
-                        : t('{{count}} messages', { count: threads?.count, defaultValue_one: '{{count}} message' })
-                    }
+                    {countLabel}
                 </p>
                 <div className="thread-panel__bar">
                     <Tooltip content={markAllTooltip}>

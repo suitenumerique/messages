@@ -5,18 +5,22 @@ import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useRouter } from "next/router";
 import { useSearchParams } from "next/navigation";
 import { MAILBOX_FOLDERS } from "../mailbox-panel/components/mailbox-list";
-import Image from "next/image";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import ThreadPanelHeader from "./components/thread-panel-header";
 import { useThreadSelection } from "@/features/providers/thread-selection";
 import { useScrollRestore } from "@/features/providers/scroll-restore";
+import { THREAD_PANEL_FILTER_PARAMS } from "./components/thread-panel-filter";
+import { useThreadPanelFilters } from "./hooks/use-thread-panel-filters";
 
 export const ThreadPanel = () => {
     const { threads, queryStates, unselectThread, loadNextThreads, selectedThread, selectedMailbox } = useMailboxContext();
+    const router = useRouter();
     const searchParams = useSearchParams();
     const isSearch = searchParams.has('search');
+    const { hasActiveFilters } = useThreadPanelFilters();
     const { t } = useTranslation();
     const loaderRef = useRef<HTMLDivElement>(null);
     const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
@@ -36,13 +40,19 @@ export const ThreadPanel = () => {
         isSomeSelected,
     } = useThreadSelection();
 
+    const folderSearchParams = useMemo(() => {
+        const params = new URLSearchParams(searchParams.toString());
+        THREAD_PANEL_FILTER_PARAMS.forEach((param) => params.delete(param));
+        return params;
+    }, [searchParams]);
+
     const showImportButton = useMemo(() => {
         // Only show import button if there are no threads in inbox or all messages folders and user has ability to import messages
         if (!canImportMessages) return false;
         if (threads?.results.length) return false;
         const importableMessageFolders = MAILBOX_FOLDERS().filter((folder) => ['inbox', 'all_messages'].includes(folder.id));
-        return importableMessageFolders.some((folder) => searchParams.toString() === new URLSearchParams(folder.filter).toString());
-    }, [canImportMessages, threads?.results, searchParams]);
+        return importableMessageFolders.some((folder) => folderSearchParams.toString() === new URLSearchParams(folder.filter).toString());
+    }, [canImportMessages, threads?.results, folderSearchParams]);
 
     const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
         const target = entries[0];
@@ -79,19 +89,13 @@ export const ThreadPanel = () => {
         );
     }
 
-    if (!threads?.results.length) {
-        return (
-            <div className="thread-panel thread-panel--empty">
-                <div>
-                    <Image src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
-                    <p>{isSearch ? t('No results.') : t('No threads.')}</p>
-                    {showImportButton && (
-                        <Button href="#modal-message-importer">{t('Import messages')}</Button>
-                    )}
-                </div>
-            </div>
-        );
-    }
+    const clearFilters = () => {
+        const params = new URLSearchParams(searchParams.toString());
+        THREAD_PANEL_FILTER_PARAMS.forEach((param) => params.delete(param));
+        router.push(`${router.pathname.replace("[mailboxId]", router.query.mailboxId as string)}?${params.toString()}`, undefined, { shallow: true });
+    };
+
+    const isEmpty = !threads?.results.length;
 
     return (
         <div id={!selectedThread ? SKIP_LINK_TARGET_ID : undefined} className="thread-panel" tabIndex={-1}>
@@ -105,28 +109,42 @@ export const ThreadPanel = () => {
                 onEnableSelectionMode={enableSelectionMode}
                 onDisableSelectionMode={clearSelection}
             />
-            <div className="thread-panel__threads_list" ref={scrollContainerRef} onScroll={handleScroll}>
-                {threads?.results.map((thread) => (
-                    <ThreadItem
-                        key={thread.id}
-                        thread={thread}
-                        isSelected={selectedThreadIds.has(thread.id)}
-                        onToggleSelection={toggleThreadSelection}
-                        selectedThreadIds={selectedThreadIds}
-                        isSelectionMode={isSelectionMode}
-                    />
-                ))}
-                {threads!.next && (
-                    <div className="thread-panel__page-loader" ref={loaderRef}>
-                        {queryStates.threads.isFetchingNextPage && (
-                            <>
-                                <Spinner />
-                                <span>{t('Loading next threads...')}</span>
-                            </>
+            {isEmpty ? (
+                <div className="thread-panel__empty">
+                    <div>
+                        <p>{hasActiveFilters ? t('No threads match the active filters.') : isSearch ? t('No results') : t('No threads')}</p>
+                        {hasActiveFilters && (
+                            <Button onClick={clearFilters} size="small" variant="secondary">{t('Clear filters')}</Button>
+                        )}
+                        {!hasActiveFilters && showImportButton && (
+                            <Button href="#modal-message-importer">{t('Import messages')}</Button>
                         )}
                     </div>
-                )}
-            </div>
+                </div>
+            ) : (
+                <div className="thread-panel__threads_list" ref={scrollContainerRef} onScroll={handleScroll}>
+                    {threads?.results.map((thread) => (
+                        <ThreadItem
+                            key={thread.id}
+                            thread={thread}
+                            isSelected={selectedThreadIds.has(thread.id)}
+                            onToggleSelection={toggleThreadSelection}
+                            selectedThreadIds={selectedThreadIds}
+                            isSelectionMode={isSelectionMode}
+                        />
+                    ))}
+                    {threads!.next && (
+                        <div className="thread-panel__page-loader" ref={loaderRef}>
+                            {queryStates.threads.isFetchingNextPage && (
+                                <>
+                                    <Spinner />
+                                    <span>{t('Loading next threads...')}</span>
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

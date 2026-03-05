@@ -452,6 +452,12 @@ class ThreadViewSet(
                     "Filter threads that have delivery pending messages: sending, retry or failed (1=true, 0=false)."
                 ),
             ),
+            OpenApiParameter(
+                name="has_unread",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads with unread messages (1=true, 0=false). Requires mailbox_id.",
+            ),
         ],
     )
     def list(self, request, *args, **kwargs):

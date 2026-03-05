@@ -136,7 +136,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const threadQueryKey = useMemo(() => {
         const queryKey = ['threads', selectedMailbox?.id];
         if (searchParams.get('search')) {
-            return [...queryKey, 'search'];
+            return [...queryKey, 'search', searchParams.toString()];
         }
         return [...queryKey, searchParams.toString()];
     }, [selectedMailbox?.id, searchParams]);

@@ -22,7 +22,7 @@ test.describe("Import Message", () => {
     await page.waitForLoadState("networkidle");
 
     // As the database is fresh, there should be no threads and the Import messages button should be visible
-    const noThreads = page.getByText("No threads.");
+    const noThreads = page.getByText("No threads");
     await expect(page.getByRole("link", { name: "Import messages" })).toBeVisible();
 
     const header = page.locator(".c__header");
@@ -113,7 +113,7 @@ test.describe("Import Message", () => {
 
     // As the database is fresh, there should be no threads but the Import messages button should not be visible
     // as the user does not have admin rights to the shared mailbox
-    await expect(page.getByText("No threads.")).toBeVisible();
+    await expect(page.getByText("No threads")).toBeVisible();
     await expect(
       page.getByRole("link", { name: "Import messages" })
     ).not.toBeVisible();

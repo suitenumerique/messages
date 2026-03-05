@@ -7,6 +7,13 @@
 
     &__header {
         padding: var(--c--globals--spacings--sm) var(--c--globals--spacings--base);
+        padding-right: var(--c--globals--spacings--xs);
+
+        .thread-panel__header--title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
 
         .thread-panel__header--title {
             color: var(--c--contextuals--content--semantic--neutral--primary);
@@ -59,17 +66,25 @@
         gap: var(--c--globals--spacings--4xs);
     }
 
-    &--loading,
-    &--empty {
+    &--loading {
         display: grid;
         place-items: center;
         justify-content: center;
         text-align: center;
         height: 100%;
         background: var(--c--contextuals--background--surface--tertiary);
+    }
+
+    &__empty {
+        display: grid;
+        place-items: center;
+        justify-content: center;
+        text-align: center;
+        flex: 1;
+        padding-inline: var(--c--globals--spacings--sm);
 
         & > div {
-            font-size: var(--c--globals--font--sizes--h4);
+            font-size: var(--c--globals--font--sizes--h6);
             display: flex;
             flex-direction: column;
             align-items: center;

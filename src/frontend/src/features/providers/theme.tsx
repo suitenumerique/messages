@@ -1,6 +1,6 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CunninghamProvider, FooterProps } from "@gouvfr-lasuite/ui-kit";
+import { CunninghamProvider, ContextMenuProvider, FooterProps } from "@gouvfr-lasuite/ui-kit";
 import { THEME_KEY } from "../config/constants";
 import { tokens } from '@/styles/cunningham-tokens'
 
@@ -80,7 +80,9 @@ const ThemeProvider = ({ children }: PropsWithChildren) => {
     return (
         <ThemeContext.Provider value={{ colorScheme, setColorScheme, theme, variant, setVariant, themeConfig, cunninghamTheme }}>
             <CunninghamProvider currentLocale={i18n.language} theme={cunninghamTheme}>
-                {children}
+                <ContextMenuProvider>
+                    {children}
+                </ContextMenuProvider>
             </CunninghamProvider>
         </ThemeContext.Provider>
     )

@@ -4815,6 +4815,14 @@
                     },
                     {
                         "in": "query",
+                        "name": "has_unread",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads with unread messages (1=true, 0=false). Requires mailbox_id."
+                    },
+                    {
+                        "in": "query",
                         "name": "is_spam",
                         "schema": {
                             "type": "integer"

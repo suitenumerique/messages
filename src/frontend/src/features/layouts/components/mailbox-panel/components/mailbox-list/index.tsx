@@ -15,6 +15,7 @@ import { handle } from "@/features/utils/errors";
 import ViewHelper from "@/features/utils/view-helper";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Tooltip } from "@gouvfr-lasuite/cunningham-react"
+import { THREAD_PANEL_FILTER_PARAMS } from "../../../thread-panel/components/thread-panel-filter"
 
 // @TODO: replace with real data when folder will be ready
 type Folder = {
@@ -206,7 +207,11 @@ const FolderItem = ({ folder }: FolderItemProps) => {
 
     const isActive = useMemo(() => {
         const folderFilter = Object.entries(folder.filter || {});
-        if (folderFilter.length !== searchParams.size) return false;
+        // Exclude thread panel filter params from comparison so filters don't break folder matching
+        const folderParamsSize = Array.from(searchParams.keys()).filter(
+            (key) => !THREAD_PANEL_FILTER_PARAMS.includes(key as (typeof THREAD_PANEL_FILTER_PARAMS)[number])
+        ).length;
+        if (folderFilter.length !== folderParamsSize) return false;
 
         return folderFilter.every(([key, value]) => {
             return searchParams.get(key) === value;
