@@ -11,6 +11,7 @@ import Image from "next/image";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import ThreadPanelHeader from "./components/thread-panel-header";
 import { useThreadSelection } from "@/features/providers/thread-selection";
+import { useScrollRestore } from "@/features/providers/scroll-restore";
 
 export const ThreadPanel = () => {
     const { threads, queryStates, unselectThread, loadNextThreads, selectedThread, selectedMailbox } = useMailboxContext();
@@ -19,6 +20,10 @@ export const ThreadPanel = () => {
     const { t } = useTranslation();
     const loaderRef = useRef<HTMLDivElement>(null);
     const canImportMessages = useAbility(Abilities.CAN_IMPORT_MESSAGES, selectedMailbox);
+    const scrollContextKey = `${selectedMailbox?.id}:${searchParams.toString()}`;
+    const { containerRef: scrollContainerRef, onScroll: handleScroll } = useScrollRestore(
+        'thread-list', scrollContextKey, [threads],
+    );
 
     const {
         selectedThreadIds,
@@ -100,7 +105,7 @@ export const ThreadPanel = () => {
                 onEnableSelectionMode={enableSelectionMode}
                 onDisableSelectionMode={clearSelection}
             />
-            <div className="thread-panel__threads_list">
+            <div className="thread-panel__threads_list" ref={scrollContainerRef} onScroll={handleScroll}>
                 {threads?.results.map((thread) => (
                     <ThreadItem
                         key={thread.id}

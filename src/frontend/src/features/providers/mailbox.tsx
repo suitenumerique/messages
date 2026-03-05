@@ -31,12 +31,6 @@ type MessageQueryInvalidationSource = {
      * Messages after this date keep their current state.
      */
     readAt?: string | null;
-    /**
-     * Skip the threads query invalidation (refetch).
-     * Useful when optimistic updates are sufficient (e.g. read flag)
-     * to avoid scroll position reset in the thread list.
-     */
-    skipThreadsInvalidation?: boolean;
 }
 
 type MailboxContextType = {
@@ -377,7 +371,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             mailboxes: mailboxQuery.error,
             threads: threadsQuery.error,
             messages: messagesQuery.error,
-        }
+        },
     };
 
     useEffect(() => {
