@@ -260,6 +260,25 @@ describe('EmailExporter', () => {
       ]);
       expect(html).toContain('background-color:#fbf3db');
     });
+
+    it('renders hard breaks (Shift+Enter) as <br>', () => {
+      const html = exportBlocks([
+        paragraph([styledText('Line one\nLine two')]),
+      ]);
+      expect(html).toContain('Line one');
+      expect(html).toContain('<br/>');
+      expect(html).toContain('Line two');
+    });
+
+    it('renders hard breaks within styled text as <br>', () => {
+      const html = exportBlocks([
+        paragraph([styledText('Bold line one\nBold line two', { bold: true })]),
+      ]);
+      expect(html).toContain('font-weight:bold');
+      expect(html).toContain('Bold line one');
+      expect(html).toContain('<br/>');
+      expect(html).toContain('Bold line two');
+    });
   });
 
   // -----------------------------------------------------------------------

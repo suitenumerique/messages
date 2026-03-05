@@ -117,12 +117,26 @@ function styleOrUndefined(style: CSSProperties): CSSProperties | undefined {
 // Inline content rendering
 // ---------------------------------------------------------------------------
 
+function textWithBreaks(text: string): React.ReactNode {
+    if (!text.includes('\n')) {
+        return text;
+    }
+    const parts = text.split('\n');
+    return parts.map((part, i) => (
+        <React.Fragment key={i}>
+            {part}
+            {i < parts.length - 1 && <br />}
+        </React.Fragment>
+    ));
+}
+
 function renderStyledText(st: AnyStyledText, key: number): React.ReactNode {
     const style = inlineStylesToCSS(st.styles);
+    const content = textWithBreaks(st.text);
     if (Object.keys(style).length === 0) {
-        return st.text;
+        return <React.Fragment key={key}>{content}</React.Fragment>;
     }
-    return <span key={key} style={style}>{st.text}</span>;
+    return <span key={key} style={style}>{content}</span>;
 }
 
 function renderInlineContent(content: AnyInlineContent[]): React.ReactNode[] {
