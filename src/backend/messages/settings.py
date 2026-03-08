@@ -258,6 +258,20 @@ class Base(Configuration):
             },
         },
     }
+    # Client-bridge service authentication
+    CLIENTBRIDGE_API_SECRET = values.Value(
+        "my-shared-secret-clientbridge",
+        environ_name="CLIENTBRIDGE_API_SECRET",
+        environ_prefix=None,
+    )
+    # Session JWT lifetime in seconds (default: 1 hour).
+    # IMAP/SMTP clients must re-authenticate when the token expires.
+    CLIENTBRIDGE_SESSION_TIMEOUT = values.IntegerValue(
+        3600,
+        environ_name="CLIENTBRIDGE_SESSION_TIMEOUT",
+        environ_prefix=None,
+    )
+
     # MDA settings
     MDA_API_SECRET = values.Value(
         "my-shared-secret-mda", environ_name="MDA_API_SECRET", environ_prefix=None
@@ -547,6 +561,7 @@ class Base(Configuration):
         "DEFAULT_AUTHENTICATION_CLASSES": (
             "mozilla_django_oidc.contrib.drf.OIDCAuthentication",
             "rest_framework.authentication.SessionAuthentication",
+            "core.authentication.client_bridge.ClientBridgeChannelAuthentication",
         ),
         "DEFAULT_PARSER_CLASSES": [
             "rest_framework.parsers.JSONParser",
@@ -566,6 +581,11 @@ class Base(Configuration):
             "user_list_burst": values.Value(
                 default="30/minute",
                 environ_name="API_USERS_LIST_THROTTLE_RATE_BURST",
+                environ_prefix=None,
+            ),
+            "client_bridge_auth": values.Value(
+                default="5/minute",
+                environ_name="API_CLIENT_BRIDGE_AUTH_THROTTLE_RATE",
                 environ_prefix=None,
             ),
         },
@@ -832,6 +852,9 @@ class Base(Configuration):
     )
     FEATURE_MAILBOX_ADMIN_CHANNELS = values.ListValue(
         default=[], environ_name="FEATURE_MAILBOX_ADMIN_CHANNELS", environ_prefix=None
+    )
+    FEATURE_CLIENTBRIDGE = values.BooleanValue(
+        default=False, environ_name="FEATURE_CLIENTBRIDGE", environ_prefix=None
     )
     FEATURE_MAILDOMAIN_CREATE = values.BooleanValue(
         default=True, environ_name="FEATURE_MAILDOMAIN_CREATE", environ_prefix=None

@@ -187,17 +187,19 @@ def deliver_inbound_message(
     # --- 3. Handle imports and internal messages directly, queue others for spam processing --- #
     if is_import or skip_inbound_queue:
         # Imports and internal messages bypass spam checking and create messages directly
-        return _create_message_from_inbound(
-            recipient_email=recipient_email,
-            parsed_email=parsed_email,
-            raw_data=raw_data,
-            mailbox=mailbox,
-            is_import=is_import,
-            is_import_sender=is_import_sender,
-            imap_labels=imap_labels,
-            imap_flags=imap_flags,
-            channel=channel,
-            is_spam=False,  # Bypassed messages are never marked as spam
+        return bool(
+            _create_message_from_inbound(
+                recipient_email=recipient_email,
+                parsed_email=parsed_email,
+                raw_data=raw_data,
+                mailbox=mailbox,
+                is_import=is_import,
+                is_import_sender=is_import_sender,
+                imap_labels=imap_labels,
+                imap_flags=imap_flags,
+                channel=channel,
+                is_spam=False,  # Bypassed messages are never marked as spam
+            )
         )
 
     # Regular messages: queue for spam processing

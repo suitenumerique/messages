@@ -1,0 +1,8 @@
+MESSAGES_API_BASE_URL=http://backend-dev:8000/api/v1.0/
+CLIENTBRIDGE_API_SECRET=my-shared-secret-clientbridge-at-least-32-bytes
+ENABLE_IMAP=true
+IMAP_HOST=0.0.0.0
+IMAP_PORT=143
+ENABLE_SMTP=true
+SMTP_HOST=0.0.0.0
+SMTP_PORT=587

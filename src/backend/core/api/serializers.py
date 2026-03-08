@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import secrets
 import uuid
 
 from django.conf import settings
@@ -15,6 +16,14 @@ from rest_framework.exceptions import PermissionDenied
 
 from core import enums, models
 from core.mda.rfc5322 import extract_base64_images_from_html
+
+# Base58 alphabet — no ambiguous characters (0, O, I, l)
+BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def generate_base58_password(length=16):
+    """Generate a password using base58 alphabet. 16 chars ≈ 94 bits of entropy."""
+    return "".join(secrets.choice(BASE58_ALPHABET) for _ in range(length))
 
 
 class CreateOnlyFieldsMixin:
@@ -1175,9 +1184,7 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
 
         if metadata.get("type") == "personal":
             local_part = attrs.get("local_part", "")
-            denylist = getattr(
-                settings, "MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL", []
-            )
+            denylist = settings.MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL
             lower_value = local_part.lower()
             if any(lower_value == prefix.lower() for prefix in denylist):
                 raise serializers.ValidationError(
@@ -1491,6 +1498,83 @@ class ChannelSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "mailbox", "maildomain", "created_at", "updated_at"]
 
+    # Keys in settings that should be moved to encrypted_settings, per channel type.
+    ENCRYPTED_SETTINGS_KEYS = {
+        "client-bridge": ["password"],
+    }
+
+    def _move_sensitive_settings(self, validated_data):
+        """Move sensitive keys from settings to encrypted_settings."""
+        channel_type = validated_data.get("type") or (
+            self.instance.type if self.instance else None
+        )
+        keys_to_encrypt = self.ENCRYPTED_SETTINGS_KEYS.get(channel_type, [])
+        if not keys_to_encrypt:
+            return validated_data
+
+        settings_data = validated_data.get("settings")
+        if not settings_data:
+            return validated_data
+
+        extracted = {
+            key: settings_data.pop(key)
+            for key in keys_to_encrypt
+            if key in settings_data
+        }
+        if extracted:
+            existing = (self.instance.encrypted_settings or {}) if self.instance else {}
+            validated_data["encrypted_settings"] = {**existing, **extracted}
+
+        return validated_data
+
+    def create(self, validated_data):
+        validated_data = self._move_sensitive_settings(validated_data)
+        if validated_data.get("type") == "client-bridge":
+            password = generate_base58_password()
+            validated_data.setdefault("encrypted_settings", {})
+            validated_data["encrypted_settings"]["password"] = password
+            # Remove any user-supplied password from settings
+            if "settings" in validated_data and "password" in (
+                validated_data["settings"] or {}
+            ):
+                validated_data["settings"].pop("password")
+            # Set default role if not provided
+            validated_data.setdefault("settings", {})
+            validated_data["settings"].setdefault("role", "sender")
+            # Validate role
+            role = validated_data["settings"]["role"]
+            if role not in enums.CLIENT_BRIDGE_ROLES:
+                raise serializers.ValidationError(
+                    {
+                        "settings": {
+                            "role": f"Invalid role. Must be one of: {', '.join(enums.CLIENT_BRIDGE_ROLES)}"
+                        }
+                    }
+                )
+            instance = super().create(validated_data)
+            # Stash password so the view can return it once
+            instance._generated_password = password  # noqa: SLF001  # pylint: disable=protected-access
+            return instance
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data = self._move_sensitive_settings(validated_data)
+        channel_type = validated_data.get("type") or (
+            instance.type if instance else None
+        )
+        if channel_type == "client-bridge":
+            settings_data = validated_data.get("settings") or {}
+            if "role" in settings_data:
+                if settings_data["role"] not in enums.CLIENT_BRIDGE_ROLES:
+                    raise serializers.ValidationError(
+                        {
+                            "settings": {
+                                "role": f"Invalid role. Must be one of: {', '.join(enums.CLIENT_BRIDGE_ROLES)}"
+                            }
+                        }
+                    )
+        return super().update(instance, validated_data)
+
     def validate_settings(self, value):
         """Validate settings, including tags if present."""
         if not value:
@@ -1550,13 +1634,20 @@ class ChannelSerializer(serializers.ModelSerializer):
         if self.context.get("mailbox"):
             channel_type = attrs.get("type")
             if channel_type:
-                allowed_types = settings.FEATURE_MAILBOX_ADMIN_CHANNELS
+                allowed_types = list(settings.FEATURE_MAILBOX_ADMIN_CHANNELS)
                 if channel_type not in allowed_types:
                     raise serializers.ValidationError(
                         {
                             "type": f"Channel type '{channel_type}' is not authorized. "
                             f"Allowed types: {', '.join(allowed_types)}"
                         }
+                    )
+                if (
+                    channel_type == "client-bridge"
+                    and not settings.FEATURE_CLIENTBRIDGE
+                ):
+                    raise serializers.ValidationError(
+                        {"type": "Client bridge feature is not enabled."}
                     )
             return attrs
 

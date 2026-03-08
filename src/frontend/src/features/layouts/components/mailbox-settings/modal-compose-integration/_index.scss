@@ -211,6 +211,57 @@
     border-top: 1px solid var(--c--contextuals--border--semantic--neutral--default);
 }
 
+// Client Bridge - increase select dropdown height to show all 4 role options
+.widget-integration-form .c__select__menu.c__select__menu--opened {
+    max-height: 240px !important;
+}
+
+// Client Bridge Integration Form
+.client-bridge-form__details {
+    background: var(--c--contextuals--background--surface--tertiary);
+    border: 1px solid var(--c--contextuals--border--semantic--neutral--default);
+    border-radius: var(--c--globals--spacings--xs);
+    padding: var(--c--globals--spacings--base);
+}
+
+.client-bridge-form__detail-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--sm);
+    margin: 0;
+}
+
+.client-bridge-form__detail-item {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--sm);
+
+    dt {
+        font-weight: 600;
+        font-size: 0.85rem;
+        color: var(--c--contextuals--content--semantic--neutral--secondary);
+        min-width: 100px;
+        flex-shrink: 0;
+    }
+
+    dd {
+        margin: 0;
+        font-size: 0.85rem;
+        display: flex;
+        align-items: center;
+        gap: var(--c--globals--spacings--2xs);
+    }
+
+    code {
+        font-family: "Fira Code", "Consolas", monospace;
+        font-size: 0.8rem;
+        background: var(--c--contextuals--background--surface--primary);
+        padding: 2px 6px;
+        border-radius: 3px;
+        border: 1px solid var(--c--contextuals--border--semantic--neutral--default);
+    }
+}
+
 // Tags Selector (reuses thread-labels-widget and cunningham styles)
 .tags-selector {
     position: relative;

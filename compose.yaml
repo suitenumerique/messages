@@ -268,6 +268,49 @@ services:
       target: uv
     pull_policy: build
 
+  client-bridge:
+    build:
+      context: src/client-bridge
+      target: runtime-prod
+    env_file:
+      - env.d/development/client-bridge.defaults
+      - env.d/development/client-bridge.local
+    ports:
+      - "8919:143"
+      - "8920:587"
+    depends_on:
+      - backend-dev
+
+  client-bridge-test:
+    profiles:
+      - tools
+    build:
+      context: src/client-bridge
+      target: runtime-dev
+    env_file:
+      - env.d/development/client-bridge.defaults
+      - env.d/development/client-bridge.local
+    environment:
+      - EXEC_CMD=true
+      - IMAP_HOST=localhost
+      - IMAP_PORT=1143
+      - SMTP_HOST=localhost
+      - SMTP_PORT=1587
+      - MOCK_API_PORT=8765
+    command: pytest -vvs tests/
+    volumes:
+      - ./src/client-bridge:/app
+
+  client-bridge-uv:
+    profiles:
+      - tools
+    volumes:
+      - ./src/client-bridge:/app
+    build:
+      context: src/client-bridge
+      target: uv
+    pull_policy: build
+
   mta-out:
     build:
       context: src/mta-out

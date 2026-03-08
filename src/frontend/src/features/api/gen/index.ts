@@ -1,4 +1,5 @@
 export * from "./blob/blob";
+export * from "./client-bridge/client-bridge";
 export * from "./config/config";
 export * from "./contacts/contacts";
 export * from "./messages/messages";

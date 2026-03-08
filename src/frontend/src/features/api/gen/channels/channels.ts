@@ -889,3 +889,126 @@ export const useMailboxesChannelsDestroy = <TError = void, TContext = unknown>(
 
   return useMutation(mutationOptions, queryClient);
 };
+/**
+ * Manage integration channels for a mailbox
+ */
+export type mailboxesChannelsRotatePasswordCreateResponse200 = {
+  data: void;
+  status: 200;
+};
+
+export type mailboxesChannelsRotatePasswordCreateResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type mailboxesChannelsRotatePasswordCreateResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type mailboxesChannelsRotatePasswordCreateResponseSuccess =
+  mailboxesChannelsRotatePasswordCreateResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesChannelsRotatePasswordCreateResponseError = (
+  | mailboxesChannelsRotatePasswordCreateResponse403
+  | mailboxesChannelsRotatePasswordCreateResponse404
+) & {
+  headers: Headers;
+};
+
+export type mailboxesChannelsRotatePasswordCreateResponse =
+  | mailboxesChannelsRotatePasswordCreateResponseSuccess
+  | mailboxesChannelsRotatePasswordCreateResponseError;
+
+export const getMailboxesChannelsRotatePasswordCreateUrl = (
+  mailboxId: string,
+  id: string,
+) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/channels/${id}/rotate-password/`;
+};
+
+export const mailboxesChannelsRotatePasswordCreate = async (
+  mailboxId: string,
+  id: string,
+  options?: RequestInit,
+): Promise<mailboxesChannelsRotatePasswordCreateResponse> => {
+  return fetchAPI<mailboxesChannelsRotatePasswordCreateResponse>(
+    getMailboxesChannelsRotatePasswordCreateUrl(mailboxId, id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getMailboxesChannelsRotatePasswordCreateMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mailboxesChannelsRotatePasswordCreate>>,
+    TError,
+    { mailboxId: string; id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mailboxesChannelsRotatePasswordCreate>>,
+  TError,
+  { mailboxId: string; id: string },
+  TContext
+> => {
+  const mutationKey = ["mailboxesChannelsRotatePasswordCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mailboxesChannelsRotatePasswordCreate>>,
+    { mailboxId: string; id: string }
+  > = (props) => {
+    const { mailboxId, id } = props ?? {};
+
+    return mailboxesChannelsRotatePasswordCreate(mailboxId, id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MailboxesChannelsRotatePasswordCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesChannelsRotatePasswordCreate>>
+>;
+
+export type MailboxesChannelsRotatePasswordCreateMutationError = void;
+
+export const useMailboxesChannelsRotatePasswordCreate = <
+  TError = void,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof mailboxesChannelsRotatePasswordCreate>>,
+      TError,
+      { mailboxId: string; id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof mailboxesChannelsRotatePasswordCreate>>,
+  TError,
+  { mailboxId: string; id: string },
+  TContext
+> => {
+  const mutationOptions =
+    getMailboxesChannelsRotatePasswordCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};

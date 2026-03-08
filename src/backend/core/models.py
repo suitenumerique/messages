@@ -26,7 +26,7 @@ from django.utils.text import slugify
 
 import jsonschema
 import pyzstd
-from encrypted_fields.fields import EncryptedTextField
+from encrypted_fields.fields import EncryptedJSONField, EncryptedTextField
 from timezone_field import TimeZoneField
 
 from core.enums import (
@@ -452,6 +452,22 @@ class Channel(BaseModel):
         blank=True,
         related_name="channels",
         help_text="Mailbox that receives messages from this channel",
+    )
+
+    encrypted_settings = EncryptedJSONField(
+        "encrypted settings",
+        default=dict,
+        blank=True,
+        help_text="Encrypted channel settings (e.g., app-specific passwords)",
+    )
+
+    user = models.ForeignKey(
+        "User",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="channels",
+        help_text="User who created this channel (used for permissions and auditing)",
     )
 
     maildomain = models.ForeignKey(

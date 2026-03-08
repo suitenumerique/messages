@@ -61,6 +61,7 @@ create-env-files: \
 	env.d/development/frontend.local \
 	env.d/development/mta-in.local \
 	env.d/development/mta-out.local \
+	env.d/development/client-bridge.local \
 	env.d/development/socks-proxy.local
 .PHONY: create-env-files
 
@@ -178,7 +179,8 @@ lint: \
   lint-front \
   typecheck-front \
   lint-mta-in \
-  lint-mta-out
+  lint-mta-out \
+  lint-client-bridge
 .PHONY: lint
 
 lint-check:  ## run all linters in check mode (no auto-fix)
@@ -231,6 +233,10 @@ lint-mta-out: ## lint mta-out python sources
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-out-test ruff format .
 .PHONY: lint-mta-out
 
+lint-client-bridge: ## lint client-bridge python sources
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true client-bridge-test ruff format .
+.PHONY: lint-client-bridge
+
 # -- Tests
 
 test: ## run all tests
@@ -239,6 +245,7 @@ test: \
   test-front \
   test-mta-in \
   test-mta-out \
+  test-client-bridge \
   test-mpa \
   test-socks-proxy
 .PHONY: test
@@ -279,6 +286,10 @@ test-mta-in: ## run the mta-in tests
 test-mta-out: ## run the mta-out tests
 	@$(COMPOSE) run --build --rm mta-out-test
 .PHONY: test-mta-out
+
+test-client-bridge: ## run the client-bridge tests
+	@$(COMPOSE) run --build --rm client-bridge-test
+.PHONY: test-client-bridge
 
 test-mpa: ## run the mpa tests
 	@$(COMPOSE) run --build --rm mpa-test
@@ -578,3 +589,7 @@ deps-lock-mta-in: ## lock the dependencies
 deps-lock-mta-out: ## lock the dependencies
 	@$(COMPOSE) run --rm --build mta-out-uv uv lock
 .PHONY: deps-lock-mta-out
+
+deps-lock-client-bridge: ## lock the dependencies
+	@$(COMPOSE) run --rm --build client-bridge-uv uv lock
+.PHONY: deps-lock-client-bridge

@@ -178,7 +178,7 @@ class ConfigView(drf.views.APIView):
         dict_settings = {}
         for setting in array_settings:
             if hasattr(settings, setting):
-                dict_settings[setting] = getattr(settings, setting)
+                dict_settings[setting] = getattr(settings, setting)  # pylint: disable=getattr-on-settings
 
         # AI Features
         dict_settings["AI_ENABLED"] = is_ai_enabled()

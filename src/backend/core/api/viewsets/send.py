@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 
 from core import models
 from core.api.viewsets.task import register_task_owner
+from core.enums import CLIENT_BRIDGE_ROLES_CAN_SEND
 from core.mda.outbound import prepare_outbound_message
 from core.mda.outbound_tasks import send_message_task
 
@@ -77,6 +78,16 @@ class SendMessageView(APIView):
 
     def post(self, request):
         """Send a draft message identified by messageId."""
+        # If authenticated via a client-bridge channel, enforce send permission.
+        # Even though this endpoint is not called by the client-bridge for now, this
+        # provides defense-in-depth.
+        if isinstance(request.auth, models.Channel):
+            role = (request.auth.settings or {}).get("role", "sender")
+            if role not in CLIENT_BRIDGE_ROLES_CAN_SEND:
+                raise drf_exceptions.PermissionDenied(
+                    "This channel does not have send access."
+                )
+
         serializer = serializers.SendMessageSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         message_id = serializer.validated_data.get("messageId")

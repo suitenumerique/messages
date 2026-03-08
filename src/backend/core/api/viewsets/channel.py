@@ -8,11 +8,13 @@ from drf_spectacular.utils import (
     extend_schema,
 )
 from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from core import models
 
 from .. import permissions, serializers
+from ..serializers import generate_base58_password
 
 
 @extend_schema(
@@ -65,8 +67,16 @@ class ChannelViewSet(
         """Create a new channel for the mailbox."""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(mailbox=self.mailbox)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        extra = {"mailbox": self.mailbox}
+        if serializer.validated_data.get("type") == "client-bridge":
+            extra["user"] = request.user
+        instance = serializer.save(**extra)
+        data = serializer.data
+        # Include the generated password in the response (shown once)
+        generated_password = getattr(instance, "_generated_password", None)
+        if generated_password:
+            data["password"] = generated_password
+        return Response(data, status=status.HTTP_201_CREATED)
 
     @extend_schema(
         request=serializers.ChannelSerializer,
@@ -101,3 +111,29 @@ class ChannelViewSet(
         instance = self.get_object()
         self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @extend_schema(
+        request=None,
+        responses={
+            200: OpenApiResponse(description="New password generated"),
+            403: OpenApiResponse(description="Permission denied"),
+            404: OpenApiResponse(description="Channel not found"),
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="rotate-password")
+    def rotate_password(self, request, *args, **kwargs):
+        """Generate a new app-specific password for a client-bridge channel."""
+        instance = self.get_object()
+        if instance.type != "client-bridge":
+            return Response(
+                {
+                    "detail": "Password rotation is only available for client-bridge channels."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        password = generate_base58_password()
+        encrypted = instance.encrypted_settings or {}
+        encrypted["password"] = password
+        instance.encrypted_settings = encrypted
+        instance.save(update_fields=["encrypted_settings", "updated_at"])
+        return Response({"password": password})
