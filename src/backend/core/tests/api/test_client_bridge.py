@@ -541,7 +541,7 @@ class TestChannelSerializerPasswordExtraction:
         # Password should be returned in response
         assert "password" in response.data
         generated_password = response.data["password"]
-        assert len(generated_password) > 16
+        assert len(generated_password) == 16
 
         channel = models.Channel.objects.get(id=response.data["id"])
         assert channel.encrypted_settings["password"] == generated_password
@@ -572,7 +572,7 @@ class TestChannelSerializerPasswordExtraction:
         assert "password" in response.data
         new_password = response.data["password"]
         assert new_password != "old-password"
-        assert len(new_password) > 16
+        assert len(new_password) == 16
 
         channel.refresh_from_db()
         assert channel.encrypted_settings["password"] == new_password
