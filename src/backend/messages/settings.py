@@ -14,6 +14,7 @@ https://docs.djangoproject.com/en/3.1/ref/settings/
 import logging
 import os
 import tomllib
+import warnings
 from socket import gethostbyname, gethostname
 
 import dj_database_url
@@ -1085,9 +1086,10 @@ class Base(Configuration):
             )
 
         if cls.FEATURE_CLIENTBRIDGE and not cls.CLIENTBRIDGE_API_SECRET:
-            raise ValueError(
+            warnings.warn(
                 "CLIENTBRIDGE_API_SECRET must be set when "
-                "FEATURE_CLIENTBRIDGE is enabled"
+                "FEATURE_CLIENTBRIDGE is enabled",
+                stacklevel=1,
             )
 
 
