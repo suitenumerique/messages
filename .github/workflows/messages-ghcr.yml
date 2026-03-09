@@ -7,6 +7,9 @@ name: Build and publish OCI images
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
 
   docker-publish-mta-in:

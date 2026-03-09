@@ -8,6 +8,9 @@ name: Lint and tests
     branches:
       - '*'
 
+permissions:
+  contents: read
+
 env:
   COMPOSE_BAKE: true
 

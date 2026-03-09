@@ -1,5 +1,8 @@
 name: Build and Push Container Image
 
+permissions:
+  contents: read
+
 "on":
   workflow_call:
     inputs:
