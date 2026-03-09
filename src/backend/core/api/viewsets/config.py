@@ -127,6 +127,37 @@ class ConfigView(drf.views.APIView):
                             ),
                             "readOnly": True,
                         },
+                        "CLIENTBRIDGE_PUBLIC_CONFIG": {
+                            "type": "object",
+                            "description": "Client-bridge IMAP/SMTP connection settings for email clients.",
+                            "properties": {
+                                "imap_host": {
+                                    "type": "string",
+                                    "readOnly": True,
+                                },
+                                "imap_port": {
+                                    "type": "integer",
+                                    "readOnly": True,
+                                },
+                                "imap_security": {
+                                    "type": "string",
+                                    "readOnly": True,
+                                },
+                                "smtp_host": {
+                                    "type": "string",
+                                    "readOnly": True,
+                                },
+                                "smtp_port": {
+                                    "type": "integer",
+                                    "readOnly": True,
+                                },
+                                "smtp_security": {
+                                    "type": "string",
+                                    "readOnly": True,
+                                },
+                            },
+                            "readOnly": True,
+                        },
                     },
                     "required": [
                         "ENVIRONMENT",
@@ -197,5 +228,9 @@ class ConfigView(drf.views.APIView):
                     }
                 }
             )
+
+        # Client-bridge connection settings
+        if settings.FEATURE_CLIENTBRIDGE and settings.CLIENTBRIDGE_PUBLIC_CONFIG:
+            dict_settings["CLIENTBRIDGE_PUBLIC_CONFIG"] = settings.CLIENTBRIDGE_PUBLIC_CONFIG
 
         return drf.response.Response(dict_settings)

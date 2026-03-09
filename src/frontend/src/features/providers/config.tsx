@@ -31,6 +31,7 @@ const DEFAULT_CONFIG: AppConfig = {
     FEATURE_MAILDOMAIN_MANAGE_ACCESSES: true,
     DRIVE: DEFAULT_DRIVE_CONFIG,
     MESSAGES_MANUAL_RETRY_MAX_AGE: 0,
+    CLIENTBRIDGE_PUBLIC_CONFIG: undefined,
 }
 
 const ConfigContext = createContext<AppConfig>(DEFAULT_CONFIG)

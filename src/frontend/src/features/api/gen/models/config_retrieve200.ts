@@ -5,6 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { ConfigRetrieve200CLIENTBRIDGEPUBLICCONFIG } from "./config_retrieve200_clientbridge_public_confi_g";
 import type { ConfigRetrieve200DRIVE } from "./config_retrieve200_driv_e";
 import type { ConfigRetrieve200SCHEMACUSTOMATTRIBUTESUSER } from "./config_retrieve200_schemacustomattributesuse_r";
 import type { ConfigRetrieve200SCHEMACUSTOMATTRIBUTESMAILDOMAIN } from "./config_retrieve200_schemacustomattributesmaildomai_n";
@@ -37,4 +38,6 @@ export type ConfigRetrieve200 = {
   readonly FEATURE_MAILDOMAIN_MANAGE_ACCESSES: boolean;
   /** Maximum age in seconds for a message to be eligible for manual retry of failed deliveries */
   readonly MESSAGES_MANUAL_RETRY_MAX_AGE: number;
+  /** Client-bridge IMAP/SMTP connection settings for email clients. */
+  readonly CLIENTBRIDGE_PUBLIC_CONFIG?: ConfigRetrieve200CLIENTBRIDGEPUBLICCONFIG;
 };

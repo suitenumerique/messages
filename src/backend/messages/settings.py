@@ -271,6 +271,12 @@ class Base(Configuration):
         environ_name="CLIENTBRIDGE_SESSION_TIMEOUT",
         environ_prefix=None,
     )
+    # Client-bridge connection settings exposed to the frontend via /api/v1.0/config/.
+    # Set as a JSON string, e.g.:
+    # CLIENTBRIDGE_PUBLIC_CONFIG='{"imap_host":"imap.example.com","imap_port":993,"imap_security":"SSL/TLS","smtp_host":"smtp.example.com","smtp_port":587,"smtp_security":"STARTTLS"}'
+    CLIENTBRIDGE_PUBLIC_CONFIG = values.DictValue(
+        {}, environ_name="CLIENTBRIDGE_PUBLIC_CONFIG", environ_prefix=None
+    )
 
     # MDA settings
     MDA_API_SECRET = values.Value(

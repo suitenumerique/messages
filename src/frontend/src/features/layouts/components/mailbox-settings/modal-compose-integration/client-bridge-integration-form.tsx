@@ -19,6 +19,7 @@ import { RhfSelect } from "@/features/forms/components/react-hook-form/rhf-selec
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Banner } from "@/features/ui/components/banner";
 import { handle } from "@/features/utils/errors";
+import { useConfig } from "@/features/providers/config";
 
 type ChannelCreateResponse = Channel & { password?: string };
 
@@ -97,13 +98,11 @@ export const ClientBridgeIntegrationForm = ({
                     },
                 });
                 await invalidateChannels();
-                if (response.status === 201) {
-                    const password = (response.data as ChannelCreateResponse).password;
-                    if (password) {
-                        setGeneratedPassword(password);
-                    }
-                    onSuccess(response.data);
+                const password = (response.data as ChannelCreateResponse).password;
+                if (password) {
+                    setGeneratedPassword(password);
                 }
+                onSuccess(response.data);
             }
         } catch (err) {
             handle(err);
@@ -293,6 +292,15 @@ type ConnectionDetailsProps = {
 
 const ConnectionDetails = ({ mailboxEmail, generatedPassword, onRotatePassword, isRotating }: ConnectionDetailsProps) => {
     const { t } = useTranslation();
+    const config = useConfig();
+    const bridgeConfig = config.CLIENTBRIDGE_PUBLIC_CONFIG;
+
+    const imapHost = bridgeConfig?.imap_host ?? window.location.hostname;
+    const imapPort = String(bridgeConfig?.imap_port ?? 993);
+    const imapSecurity = bridgeConfig?.imap_security ?? "SSL/TLS";
+    const smtpHost = bridgeConfig?.smtp_host ?? window.location.hostname;
+    const smtpPort = String(bridgeConfig?.smtp_port ?? 587);
+    const smtpSecurity = bridgeConfig?.smtp_security ?? "STARTTLS";
 
     return (
         <div className="widget-integration-form__section">
@@ -343,17 +351,17 @@ const ConnectionDetails = ({ mailboxEmail, generatedPassword, onRotatePassword, 
                     <div className="client-bridge-form__detail-item">
                         <dt>{t("Server")}</dt>
                         <dd>
-                            <code>{window.location.hostname}</code>
-                            <CopyButton value={window.location.hostname} />
+                            <code>{imapHost}</code>
+                            <CopyButton value={imapHost} />
                         </dd>
                     </div>
                     <div className="client-bridge-form__detail-item">
                         <dt>{t("Port")}</dt>
-                        <dd><code>993</code></dd>
+                        <dd><code>{imapPort}</code></dd>
                     </div>
                     <div className="client-bridge-form__detail-item">
                         <dt>{t("Security")}</dt>
-                        <dd>SSL/TLS</dd>
+                        <dd>{imapSecurity}</dd>
                     </div>
                 </dl>
             </div>
@@ -363,17 +371,17 @@ const ConnectionDetails = ({ mailboxEmail, generatedPassword, onRotatePassword, 
                     <div className="client-bridge-form__detail-item">
                         <dt>{t("Server")}</dt>
                         <dd>
-                            <code>{window.location.hostname}</code>
-                            <CopyButton value={window.location.hostname} />
+                            <code>{smtpHost}</code>
+                            <CopyButton value={smtpHost} />
                         </dd>
                     </div>
                     <div className="client-bridge-form__detail-item">
                         <dt>{t("Port")}</dt>
-                        <dd><code>587</code></dd>
+                        <dd><code>{smtpPort}</code></dd>
                     </div>
                     <div className="client-bridge-form__detail-item">
                         <dt>{t("Security")}</dt>
-                        <dd>STARTTLS</dd>
+                        <dd>{smtpSecurity}</dd>
                     </div>
                 </dl>
             </div>

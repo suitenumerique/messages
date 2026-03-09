@@ -151,6 +151,8 @@ By default, the SMTP server allows authentication over plaintext connections (`a
 
 ## Environment Variables
 
+### Client-bridge service
+
 | Variable | Description | Default |
 |---|---|---|
 | `MESSAGES_API_BASE_URL` | Base URL for the Messages API | (required) |
@@ -161,6 +163,31 @@ By default, the SMTP server allows authentication over plaintext connections (`a
 | `ENABLE_SMTP` | Enable SMTP server | `true` |
 | `SMTP_HOST` | SMTP server bind host | `0.0.0.0` |
 | `SMTP_PORT` | SMTP server bind port | `587` |
+
+### Backend (Django)
+
+These variables are set on the **Messages backend**, not on the client-bridge service itself.
+
+| Variable | Description | Default |
+|---|---|---|
+| `CLIENTBRIDGE_API_SECRET` | Shared secret (must match the client-bridge service) | `""` |
+| `CLIENTBRIDGE_SESSION_TIMEOUT` | JWT session lifetime in seconds | `3600` |
+| `CLIENTBRIDGE_PUBLIC_CONFIG` | JSON object with IMAP/SMTP connection settings exposed to the frontend | `{}` |
+
+`CLIENTBRIDGE_PUBLIC_CONFIG` tells the frontend which host, port, and security settings to display when a user creates a client-bridge integration. Without it, the frontend falls back to `window.location.hostname` with default ports (993/587), which is incorrect when the client bridge runs on a separate host.
+
+```bash
+CLIENTBRIDGE_PUBLIC_CONFIG='{"imap_host":"imap.example.com","imap_port":993,"imap_security":"SSL/TLS","smtp_host":"smtp.example.com","smtp_port":587,"smtp_security":"STARTTLS"}'
+```
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `imap_host` | string | Hostname for IMAP connections |
+| `imap_port` | integer | Port for IMAP connections (typically `993` for implicit TLS, `143` for STARTTLS) |
+| `imap_security` | string | Security mode shown to users (e.g. `"SSL/TLS"`, `"STARTTLS"`) |
+| `smtp_host` | string | Hostname for SMTP connections |
+| `smtp_port` | integer | Port for SMTP connections (typically `465` for implicit TLS, `587` for STARTTLS) |
+| `smtp_security` | string | Security mode shown to users (e.g. `"SSL/TLS"`, `"STARTTLS"`) |
 
 ## Development
 

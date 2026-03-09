@@ -77,6 +77,19 @@ jobs:
       context: "src/backend"
       target: runtime-prod
 
+  docker-publish-client-bridge:
+    uses: ./.github/workflows/docker-publish.yml
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+    with:
+      image_name: "client-bridge"
+      context: "src/client-bridge"
+      target: runtime-prod
+
   docker-publish-keycloak:
     uses: ./.github/workflows/docker-publish.yml
     permissions:

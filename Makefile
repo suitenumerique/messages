@@ -177,7 +177,6 @@ lint: ## run all linters
 lint: \
   lint-back \
   lint-front \
-  typecheck-front \
   lint-mta-in \
   lint-mta-out \
   lint-client-bridge
@@ -186,8 +185,10 @@ lint: \
 lint-check:  ## run all linters in check mode (no auto-fix)
 lint-check: \
   lint-check-back \
-  typecheck-front \
-  lint-front
+  lint-check-front \
+  lint-check-mta-in \
+  lint-check-mta-out \
+  lint-check-client-bridge
 .PHONY: lint-check
 
 lint-back: ## run back-end linters (with auto-fix)
@@ -219,23 +220,41 @@ typecheck-front: ## run the frontend type checker
 	@$(COMPOSE) run --rm frontend-tools npm run ts:check
 .PHONY: typecheck-front
 
-lint-front: ## run the frontend linter
+lint-front: ## run the frontend linter (typecheck + eslint)
+lint-front: \
+  typecheck-front
 	@$(COMPOSE) run --rm frontend-tools npm run lint
 .PHONY: lint-front
 
-lint-mta-in: ## lint mta-in python sources
+lint-check-front: ## run the frontend linter in check mode (no auto-fix)
+lint-check-front: lint-front
+.PHONY: lint-check-front
+
+lint-mta-in: ## lint mta-in python sources (with auto-fix)
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff format .
 	#$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff check . --fix
 	#$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test pylint .
 .PHONY: lint-mta-in
 
-lint-mta-out: ## lint mta-out python sources
+lint-check-mta-in: ## lint mta-in python sources in check mode (no auto-fix)
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff format --check .
+.PHONY: lint-check-mta-in
+
+lint-mta-out: ## lint mta-out python sources (with auto-fix)
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-out-test ruff format .
 .PHONY: lint-mta-out
 
-lint-client-bridge: ## lint client-bridge python sources
+lint-check-mta-out: ## lint mta-out python sources in check mode (no auto-fix)
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-out-test ruff format --check .
+.PHONY: lint-check-mta-out
+
+lint-client-bridge: ## lint client-bridge python sources (with auto-fix)
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true client-bridge-test ruff format .
 .PHONY: lint-client-bridge
+
+lint-check-client-bridge: ## lint client-bridge python sources in check mode (no auto-fix)
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true client-bridge-test ruff format --check .
+.PHONY: lint-check-client-bridge
 
 # -- Tests
 
