@@ -98,11 +98,11 @@ export const ClientBridgeIntegrationForm = ({
                     },
                 });
                 await invalidateChannels();
-                const password = (response.data as ChannelCreateResponse).password;
-                if (password) {
-                    setGeneratedPassword(password);
+                const channelData = response.data as ChannelCreateResponse;
+                if (channelData.password) {
+                    setGeneratedPassword(channelData.password);
                 }
-                onSuccess(response.data);
+                onSuccess(channelData);
             }
         } catch (err) {
             handle(err);

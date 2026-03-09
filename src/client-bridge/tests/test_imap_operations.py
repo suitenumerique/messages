@@ -47,6 +47,34 @@ def test_store_remove_seen_flag(imap_client):
     imap_client.store("2", "+FLAGS", "(\\Seen)")
 
 
+def test_store_seen_syncs_to_api(imap_client, mock_api):
+    """Test that IMAP \\Seen flag changes propagate to the API (IMAP → webmail).
+
+    Adding \\Seen should call POST /flag/ with flag=unread, value=false.
+    Removing \\Seen should call POST /flag/ with flag=unread, value=true.
+    """
+    imap_client.select("INBOX")
+
+    # Clear previous flag updates
+    mock_api.message_flag_updates.clear()
+
+    # Mark as read: +FLAGS (\Seen) → API should receive flag=unread, value=False
+    imap_client.store("1", "+FLAGS", "(\\Seen)")
+    unread_updates = [u for u in mock_api.message_flag_updates if u.get("flag") == "unread"]
+    assert any(u.get("value") is False for u in unread_updates), (
+        f"Expected flag=unread, value=False in API updates: {mock_api.message_flag_updates}"
+    )
+
+    mock_api.message_flag_updates.clear()
+
+    # Mark as unread: -FLAGS (\Seen) → API should receive flag=unread, value=True
+    imap_client.store("1", "-FLAGS", "(\\Seen)")
+    unread_updates = [u for u in mock_api.message_flag_updates if u.get("flag") == "unread"]
+    assert any(u.get("value") is True for u in unread_updates), (
+        f"Expected flag=unread, value=True in API updates: {mock_api.message_flag_updates}"
+    )
+
+
 def test_store_add_flagged(imap_client):
     """Test STORE +FLAGS (\\Flagged) stars a message."""
     imap_client.select("INBOX")

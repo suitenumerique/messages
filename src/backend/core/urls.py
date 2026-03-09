@@ -248,17 +248,6 @@ urlpatterns = [
         ProvisioningMailDomainView.as_view(),
         name="provisioning-maildomains",
     ),
-    # Client-bridge endpoints (IMAP/SMTP auth and message submission)
-    path(
-        f"api/{settings.API_VERSION}/client-bridge/auth/",
-        ClientBridgeAuthView.as_view(),
-        name="client-bridge-auth",
-    ),
-    path(
-        f"api/{settings.API_VERSION}/client-bridge/submit/",
-        ClientBridgeSubmitView.as_view(),
-        name="client-bridge-submit",
-    ),
     # Alias for MTA check endpoint
     path(
         f"api/{settings.API_VERSION}/mta/check-recipients/",
@@ -272,6 +261,20 @@ urlpatterns = [
         name="mta-inbound-email",
     ),
 ]
+
+if settings.FEATURE_CLIENTBRIDGE:
+    urlpatterns += [
+        path(
+            f"api/{settings.API_VERSION}/client-bridge/auth/",
+            ClientBridgeAuthView.as_view(),
+            name="client-bridge-auth",
+        ),
+        path(
+            f"api/{settings.API_VERSION}/client-bridge/submit/",
+            ClientBridgeSubmitView.as_view(),
+            name="client-bridge-submit",
+        ),
+    ]
 
 if settings.DRIVE_CONFIG.get("base_url"):
     urlpatterns += [

@@ -121,6 +121,7 @@ services:
       mailcatcher:
         condition: service_started
 
+  # Minimal backend service for development tasks that don't require all service dependencies
   backend-db:
     extends: backend-base
     profiles:

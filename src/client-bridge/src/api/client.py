@@ -142,17 +142,17 @@ class MessagesAPIClient:
             "page_size": page_size,
         }
         if folder == "trash":
-            params["is_trashed"] = "1"
+            params["has_trashed"] = "1"
         elif folder == "drafts":
-            params["is_draft"] = "1"
+            params["has_draft"] = "1"
         elif folder == "spam":
             params["is_spam"] = "1"
         elif folder == "archive":
-            params["is_archived"] = "1"
+            params["has_archived"] = "1"
         elif folder == "sent":
-            params["is_sender"] = "1"
+            params["has_sender"] = "1"
         elif folder == "starred":
-            params["is_starred"] = "1"
+            params["has_starred"] = "1"
 
         resp = await self._client.get(
             f"{self.base_url}/threads/",
@@ -176,27 +176,41 @@ class MessagesAPIClient:
     async def get_message_eml(self, message_id: str) -> bytes:
         """Download a message as raw RFC 5322 EML."""
         resp = await self._client.get(
-            f"{self.base_url}/messages/{message_id}/eml",
+            f"{self.base_url}/messages/{message_id}/eml/",
             headers=self._check_token(),
         )
         resp.raise_for_status()
         return resp.content
 
-    async def update_message_flags(self, message_id: str, **flags) -> bool:
-        """Update message flags (is_starred, is_trashed, is_archived, is_spam)."""
-        resp = await self._client.patch(
-            f"{self.base_url}/messages/{message_id}/",
-            json=flags,
-            headers=self._check_token(),
-            timeout=10,
-        )
-        return resp.status_code == 200
+    async def change_flag(
+        self,
+        flag: str,
+        value: bool,
+        mailbox_id: str,
+        *,
+        message_ids: list[str] | None = None,
+        thread_ids: list[str] | None = None,
+        read_at: str | None = None,
+    ) -> bool:
+        """Change a flag on messages or threads via POST /flag/.
 
-    async def update_thread_flags(self, thread_id: str, mailbox_id: str, **flags) -> bool:
-        """Update thread flags for a mailbox."""
-        resp = await self._client.patch(
-            f"{self.base_url}/threads/{thread_id}/",
-            json={"mailbox_id": mailbox_id, **flags},
+        Supported flags: unread, starred, trashed, archived, spam.
+        For 'unread', read_at must be provided (ISO 8601 timestamp or null).
+        """
+        payload: dict = {
+            "flag": flag,
+            "value": value,
+            "mailbox_id": mailbox_id,
+        }
+        if message_ids:
+            payload["message_ids"] = message_ids
+        if thread_ids:
+            payload["thread_ids"] = thread_ids
+        if flag == "unread":
+            payload["read_at"] = read_at
+        resp = await self._client.post(
+            f"{self.base_url}/flag/",
+            json=payload,
             headers=self._check_token(),
             timeout=10,
         )

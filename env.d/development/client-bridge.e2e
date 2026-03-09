@@ -1,0 +1,2 @@
+MESSAGES_API_BASE_URL=http://backend:8000/api/v1.0/
+CLIENTBRIDGE_API_SECRET=e2e-shared-secret-clientbridge-at-least-32-bytes

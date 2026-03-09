@@ -231,6 +231,8 @@ class ConfigView(drf.views.APIView):
 
         # Client-bridge connection settings
         if settings.FEATURE_CLIENTBRIDGE and settings.CLIENTBRIDGE_PUBLIC_CONFIG:
-            dict_settings["CLIENTBRIDGE_PUBLIC_CONFIG"] = settings.CLIENTBRIDGE_PUBLIC_CONFIG
+            dict_settings["CLIENTBRIDGE_PUBLIC_CONFIG"] = (
+                settings.CLIENTBRIDGE_PUBLIC_CONFIG
+            )
 
         return drf.response.Response(dict_settings)

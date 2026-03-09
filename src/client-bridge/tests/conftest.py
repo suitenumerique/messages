@@ -63,6 +63,7 @@ class MockMessagesAPI:
         self.thread_messages: dict[str, list[dict]] = {}
         self.message_emls: dict[str, bytes] = {}
         self.submitted_messages: list[dict] = []
+        self.message_flag_updates: list[dict] = []
         self.server = None
 
         @self.app.post("/api/v1.0/client-bridge/auth/")
@@ -119,17 +120,17 @@ class MockMessagesAPI:
             mailbox_id = request.query_params.get("mailbox_id")
             # Determine folder from query params
             folder = "inbox"
-            if request.query_params.get("is_trashed") == "1":
+            if request.query_params.get("has_trashed") == "1":
                 folder = "trash"
-            elif request.query_params.get("is_draft") == "1":
+            elif request.query_params.get("has_draft") == "1":
                 folder = "drafts"
             elif request.query_params.get("is_spam") == "1":
                 folder = "spam"
-            elif request.query_params.get("is_archived") == "1":
+            elif request.query_params.get("has_archived") == "1":
                 folder = "archive"
-            elif request.query_params.get("is_sender") == "1":
+            elif request.query_params.get("has_sender") == "1":
                 folder = "sent"
-            elif request.query_params.get("is_starred") == "1":
+            elif request.query_params.get("has_starred") == "1":
                 folder = "starred"
 
             key = f"{mailbox_id}:{folder}"
@@ -142,7 +143,7 @@ class MockMessagesAPI:
             messages = self.thread_messages.get(thread_id, [])
             return {"count": len(messages), "results": messages}
 
-        @self.app.get("/api/v1.0/messages/{message_id}/eml")
+        @self.app.get("/api/v1.0/messages/{message_id}/eml/")
         async def get_eml(message_id: str):
             eml = self.message_emls.get(message_id)
             if not eml:
@@ -153,13 +154,11 @@ class MockMessagesAPI:
                 headers={"Content-Disposition": f'attachment; filename="{message_id}.eml"'},
             )
 
-        @self.app.patch("/api/v1.0/messages/{message_id}/")
-        async def update_message(message_id: str, request: Request):
-            return {"id": message_id}
-
-        @self.app.patch("/api/v1.0/threads/{thread_id}/")
-        async def update_thread(thread_id: str, request: Request):
-            return {"id": thread_id}
+        @self.app.post("/api/v1.0/flag/")
+        async def change_flag(request: Request):
+            data = await request.json()
+            self.message_flag_updates.append(data)
+            return {"success": True, "updated_threads": 1}
 
         @self.app.get("/health")
         async def health_check():

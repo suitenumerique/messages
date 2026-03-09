@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import email.parser
 import logging
 from collections.abc import AsyncIterable, Iterable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from pymap.backend.mailbox import MailboxDataInterface, MailboxSetInterface
 from pymap.concurrent import Event, ReadWriteLock
 from pymap.context import subsystem
-from pymap.exceptions import CloseConnection
+from pymap.exceptions import CloseConnection, NotSupportedError
 from pymap.flags import FlagOp
 from pymap.interfaces.message import CachedMessage
 from pymap.listtree import ListTree
@@ -42,7 +43,14 @@ VIRTUAL_FOLDERS = {
 class Message(BaseMessage):
     """A message loaded from the Messages API."""
 
-    __slots__ = ["_api_message_id", "_api_client", "_content", "_recent"]
+    __slots__ = [
+        "_api_message_id",
+        "_api_thread_id",
+        "_api_client",
+        "_content",
+        "_mime_id",
+        "_recent",
+    ]
 
     def __init__(
         self,
@@ -51,12 +59,14 @@ class Message(BaseMessage):
         permanent_flags: Iterable[Flag],
         *,
         api_message_id: str,
+        api_thread_id: str = "",
         api_client: MessagesAPIClient | None = None,
         expunged: bool = False,
         email_id: ObjectId | None = None,
         thread_id: ObjectId | None = None,
         recent: bool = False,
         content: MessageContent | None = None,
+        mime_id: str = "",
     ) -> None:
         super().__init__(
             uid,
@@ -67,13 +77,19 @@ class Message(BaseMessage):
             thread_id=thread_id,
         )
         self._api_message_id = api_message_id
+        self._api_thread_id = api_thread_id
         self._api_client = api_client
         self._content = content
+        self._mime_id = mime_id
         self._recent = recent
 
     @property
     def api_message_id(self) -> str:
         return self._api_message_id
+
+    @property
+    def api_thread_id(self) -> str:
+        return self._api_thread_id
 
     @property
     def recent(self) -> bool:
@@ -88,14 +104,10 @@ class Message(BaseMessage):
         if self._content is None and requirement != FetchRequirement.NONE:
             if self._api_client is not None:
                 try:
-                    eml_data = await self._api_client.get_message_eml(
-                        self._api_message_id
-                    )
+                    eml_data = await self._api_client.get_message_eml(self._api_message_id)
                     self._content = MessageContent.parse(eml_data)
                 except Exception:
-                    logger.debug(
-                        "Could not load EML for message %s", self._api_message_id
-                    )
+                    logger.debug("Could not load EML for message %s", self._api_message_id)
         return LoadedMessage(self, requirement, self._content)
 
 
@@ -114,14 +126,19 @@ def _parse_date(date_str: str | None) -> datetime:
 
 
 def _flags_from_api(msg: dict) -> frozenset[Flag]:
-    """Convert Messages API flags to IMAP flags."""
+    """Convert Messages API flags to IMAP flags.
+
+    ``\\Deleted`` is intentionally NOT derived from ``is_trashed``.
+    In IMAP ``\\Deleted`` means "permanently remove on EXPUNGE" and must
+    only be set by an explicit STORE command from the client.  Trashed
+    messages are instead filtered out during ingestion so they only
+    appear in the Trash virtual folder.
+    """
     flags: set[Flag] = set()
     if not msg.get("is_unread", True):
         flags.add(Seen)
     if msg.get("is_starred", False):
         flags.add(Flagged)
-    if msg.get("is_trashed", False):
-        flags.add(Deleted)
     return frozenset(flags)
 
 
@@ -220,9 +237,7 @@ class MailboxData(MailboxDataInterface[Message]):
                 uid = self._max_uid
 
                 flags = _flags_from_api(api_msg)
-                internal_date = _parse_date(
-                    api_msg.get("sent_at") or api_msg.get("created_at")
-                )
+                internal_date = _parse_date(api_msg.get("sent_at") or api_msg.get("created_at"))
 
                 # EML content is loaded lazily on FETCH
                 message = Message(
@@ -230,10 +245,12 @@ class MailboxData(MailboxDataInterface[Message]):
                     internal_date=internal_date,
                     permanent_flags=flags,
                     api_message_id=msg_id,
+                    api_thread_id=thread_id,
                     api_client=self._api_client,
                     email_id=ObjectId.random_email_id(),
                     thread_id=ObjectId.random_thread_id(),
                     recent=True,
+                    mime_id=api_msg.get("mime_id") or "",
                 )
                 self._messages[uid] = message
                 self._api_id_to_uid[msg_id] = uid
@@ -289,9 +306,30 @@ class MailboxData(MailboxDataInterface[Message]):
         return selected
 
     async def append(self, append_msg: AppendMessage, *, recent: bool = False) -> Message:
-        # TODO: Implement via the backend's EML import endpoint or the submit
-        # endpoint to support drafts, sent-message copies, and bulk import.
-        raise NotImplementedError(
+        if self._folder == "sent":
+            # Thunderbird (and other MUAs) APPEND a copy of outgoing mail to
+            # the Sent folder right after SMTP submission.  The Messages
+            # backend already stores sent messages, so we silently accept the
+            # APPEND by matching on Message-ID.
+            parser = email.parser.BytesParser()
+            parsed = parser.parsebytes(append_msg.literal, headersonly=True)
+            raw_mid = parsed.get("Message-ID", "")
+            # Strip angle brackets: "<foo@bar>" -> "foo@bar"
+            mime_id = raw_mid.strip().strip("<>")
+
+            if mime_id:
+                await self._refresh_messages()
+                for msg in self._messages.values():
+                    if msg._mime_id == mime_id:
+                        msg.recent = recent
+                        return msg
+
+            logger.debug(
+                "APPEND to Sent ignored: no matching message found for Message-ID %s",
+                mime_id,
+            )
+
+        raise NotSupportedError(
             "IMAP APPEND is not yet supported. "
             "Use the Messages web interface or SMTP submission to create messages."
         )
@@ -314,12 +352,13 @@ class MailboxData(MailboxDataInterface[Message]):
         # Persist flag changes that represent the destination folder.
         # For example, copying to Trash should mark as trashed in the API.
         dest_flags = self._folder_flags_for(destination._folder)  # noqa: SLF001
-        if dest_flags:
+        for flag_name, flag_value in dest_flags:
             try:
-                await self._api_client.update_thread_flags(
-                    source.thread_id.value if source.thread_id else "",
-                    self._api_mailbox_id,
-                    **dest_flags,
+                await self._api_client.change_flag(
+                    flag_name,
+                    value=flag_value,
+                    mailbox_id=self._api_mailbox_id,
+                    message_ids=[source.api_message_id],
                 )
             except Exception:
                 logger.warning(
@@ -334,24 +373,26 @@ class MailboxData(MailboxDataInterface[Message]):
                 internal_date=source.internal_date,
                 permanent_flags=source.permanent_flags,
                 api_message_id=source.api_message_id,
+                api_thread_id=source.api_thread_id,
                 email_id=source.email_id,
                 thread_id=source.thread_id,
                 recent=recent,
                 content=source._content,  # noqa: SLF001
+                mime_id=source._mime_id,  # noqa: SLF001
             )
             destination._messages[dest_uid] = new_msg  # noqa: SLF001
             destination._updated.set()  # noqa: SLF001
         return dest_uid
 
     @staticmethod
-    def _folder_flags_for(folder: str) -> dict:
-        """Return API flags that correspond to moving into the given folder."""
-        mapping = {
-            "trash": {"is_trashed": True},
-            "spam": {"is_spam": True},
-            "archive": {"is_archived": True},
+    def _folder_flags_for(folder: str) -> list[tuple[str, bool]]:
+        """Return (flag_name, value) pairs for moving into the given folder."""
+        mapping: dict[str, list[tuple[str, bool]]] = {
+            "trash": [("trashed", True)],
+            "spam": [("spam", True)],
+            "archive": [("archived", True)],
         }
-        return mapping.get(folder, {})
+        return mapping.get(folder, [])
 
     async def move(
         self, uid: int, destination: MailboxData, *, recent: bool = False
@@ -366,16 +407,17 @@ class MailboxData(MailboxDataInterface[Message]):
         # Clear flags from the source folder and set flags for the destination.
         clear_flags = self._folder_flags_for(self._folder)
         set_flags = self._folder_flags_for(destination._folder)  # noqa: SLF001
-        api_flags: dict = {}
-        for key in clear_flags:
-            api_flags[key] = False
-        api_flags.update(set_flags)
-        if api_flags:
+        all_flag_changes: list[tuple[str, bool]] = [
+            (flag_name, False) for flag_name, _ in clear_flags
+        ]
+        all_flag_changes.extend(set_flags)
+        for flag_name, flag_value in all_flag_changes:
             try:
-                await self._api_client.update_thread_flags(
-                    source.thread_id.value if source.thread_id else "",
-                    self._api_mailbox_id,
-                    **api_flags,
+                await self._api_client.change_flag(
+                    flag_name,
+                    value=flag_value,
+                    mailbox_id=self._api_mailbox_id,
+                    message_ids=[source.api_message_id],
                 )
             except Exception:
                 logger.warning(
@@ -390,10 +432,12 @@ class MailboxData(MailboxDataInterface[Message]):
                 internal_date=source.internal_date,
                 permanent_flags=source.permanent_flags,
                 api_message_id=source.api_message_id,
+                api_thread_id=source.api_thread_id,
                 email_id=source.email_id,
                 thread_id=source.thread_id,
                 recent=recent,
                 content=source._content,  # noqa: SLF001
+                mime_id=source._mime_id,  # noqa: SLF001
             )
             destination._messages[dest_uid] = new_msg  # noqa: SLF001
             destination._updated.set()  # noqa: SLF001
@@ -409,9 +453,11 @@ class MailboxData(MailboxDataInterface[Message]):
                     internal_date=cached_msg.internal_date,
                     permanent_flags=cached_msg.permanent_flags,
                     api_message_id=cached_msg.api_message_id,
+                    api_thread_id=cached_msg.api_thread_id,
                     expunged=True,
                     email_id=cached_msg.email_id,
                     thread_id=cached_msg.thread_id,
+                    mime_id=cached_msg._mime_id,  # noqa: SLF001
                 )
             raise IndexError(uid)
         return msg
@@ -424,18 +470,49 @@ class MailboxData(MailboxDataInterface[Message]):
         mode: FlagOp,
     ) -> Message:
         msg = await self.get(uid, cached_msg)
+        old_flags = msg.permanent_flags
         msg.permanent_flags = mode.apply(msg.permanent_flags, flag_set)
         self._updated.set()
 
-        # Persist flag changes to the Messages API
-        api_flags: dict = {}
         new_flags = msg.permanent_flags
-        api_flags["is_starred"] = Flagged in new_flags
-        api_flags["is_trashed"] = Deleted in new_flags
-        # The API uses is_unread (inverse of Seen)
-        api_flags["is_unread"] = Seen not in new_flags
         try:
-            await self._api_client.update_message_flags(msg.api_message_id, **api_flags)
+            # Persist read/unread via the unread flag endpoint.
+            # The API uses read_at on ThreadAccess: messages created at or
+            # before read_at are read, those after are unread.
+            if (Seen in new_flags) != (Seen in old_flags):
+                is_read = Seen in new_flags
+                if is_read:
+                    # Mark as read: set read_at to the message's date
+                    read_at = msg.internal_date.isoformat()
+                else:
+                    # Mark as unread: set read_at to 1 second before the
+                    # message's date so this message and newer ones become
+                    # unread while older messages remain read.
+                    read_at_dt = msg.internal_date - timedelta(seconds=1)
+                    read_at = read_at_dt.isoformat()
+                await self._api_client.change_flag(
+                    "unread",
+                    value=not is_read,
+                    mailbox_id=self._api_mailbox_id,
+                    thread_ids=[msg.api_thread_id],
+                    read_at=read_at,
+                )
+            # Persist starred
+            if (Flagged in new_flags) != (Flagged in old_flags):
+                await self._api_client.change_flag(
+                    "starred",
+                    value=Flagged in new_flags,
+                    mailbox_id=self._api_mailbox_id,
+                    message_ids=[msg.api_message_id],
+                )
+            # Persist trashed
+            if (Deleted in new_flags) != (Deleted in old_flags):
+                await self._api_client.change_flag(
+                    "trashed",
+                    value=Deleted in new_flags,
+                    mailbox_id=self._api_mailbox_id,
+                    message_ids=[msg.api_message_id],
+                )
         except Exception:
             logger.warning("Failed to persist flags for message %s", msg.api_message_id)
 
@@ -446,10 +523,12 @@ class MailboxData(MailboxDataInterface[Message]):
             for uid in uids:
                 msg = self._messages.pop(uid, None)
                 if msg is not None:
-                    # Persist deletion to the API by marking the message as trashed
                     try:
-                        await self._api_client.update_message_flags(
-                            msg.api_message_id, is_trashed=True
+                        await self._api_client.change_flag(
+                            "trashed",
+                            value=True,
+                            mailbox_id=self._api_mailbox_id,
+                            message_ids=[msg.api_message_id],
                         )
                     except Exception:
                         logger.warning(

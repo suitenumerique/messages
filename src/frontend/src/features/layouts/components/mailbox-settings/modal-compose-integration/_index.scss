@@ -238,7 +238,7 @@
 
     dt {
         font-weight: 600;
-        font-size: 0.85rem;
+        font-size: var(--c--globals--font--sizes--sm);
         color: var(--c--contextuals--content--semantic--neutral--secondary);
         min-width: 100px;
         flex-shrink: 0;
@@ -246,7 +246,7 @@
 
     dd {
         margin: 0;
-        font-size: 0.85rem;
+        font-size: var(--c--globals--font--sizes--sm);
         display: flex;
         align-items: center;
         gap: var(--c--globals--spacings--2xs);
@@ -254,9 +254,9 @@
 
     code {
         font-family: "Fira Code", Consolas, monospace;
-        font-size: 0.8rem;
+        font-size: var(--c--globals--font--sizes--xs);
         background: var(--c--contextuals--background--surface--primary);
-        padding: 2px 6px;
+        padding: var(--c--globals--spacings--4xs) var(--c--globals--spacings--2xs);
         border-radius: 3px;
         border: 1px solid var(--c--contextuals--border--semantic--neutral--default);
     }

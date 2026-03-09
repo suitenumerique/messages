@@ -911,6 +911,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "is_trashed",
             "is_archived",
             "has_attachments",
+            "mime_id",
             "signature",
             "stmsg_headers",
         ]
@@ -1499,9 +1500,9 @@ class ChannelSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "mailbox", "maildomain", "created_at", "updated_at"]
 
     # Keys in settings that should be moved to encrypted_settings, per channel type.
-    ENCRYPTED_SETTINGS_KEYS = {
-        "client-bridge": ["password"],
-    }
+    # Note: client-bridge is NOT listed here — its passwords are always
+    # server-generated (on create or via rotate-password), never user-supplied.
+    ENCRYPTED_SETTINGS_KEYS = {}
 
     def _move_sensitive_settings(self, validated_data):
         """Move sensitive keys from settings to encrypted_settings."""
@@ -1529,19 +1530,15 @@ class ChannelSerializer(serializers.ModelSerializer):
         return validated_data
 
     def create(self, validated_data):
-        validated_data = self._move_sensitive_settings(validated_data)
         if validated_data.get("type") == "client-bridge":
+            # Server-generated password — never accept user-supplied ones
             password = generate_base58_password()
-            validated_data.setdefault("encrypted_settings", {})
-            validated_data["encrypted_settings"]["password"] = password
-            # Remove any user-supplied password from settings
-            if "settings" in validated_data and "password" in (
-                validated_data["settings"] or {}
-            ):
-                validated_data["settings"].pop("password")
+            settings_data = validated_data.get("settings") or {}
+            settings_data.pop("password", None)
+            validated_data["settings"] = settings_data
+            validated_data["encrypted_settings"] = {"password": password}
             # Set default role if not provided
-            validated_data.setdefault("settings", {})
-            validated_data["settings"].setdefault("role", "sender")
+            settings_data.setdefault("role", "sender")
             # Validate role
             role = validated_data["settings"]["role"]
             if role not in enums.CLIENT_BRIDGE_ROLES:
@@ -1556,15 +1553,18 @@ class ChannelSerializer(serializers.ModelSerializer):
             # Stash password so the view can return it once
             instance._generated_password = password  # noqa: SLF001  # pylint: disable=protected-access
             return instance
+        validated_data = self._move_sensitive_settings(validated_data)
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        validated_data = self._move_sensitive_settings(validated_data)
         channel_type = validated_data.get("type") or (
             instance.type if instance else None
         )
         if channel_type == "client-bridge":
+            # Strip any user-supplied password — passwords can only be
+            # changed via the dedicated rotate-password endpoint.
             settings_data = validated_data.get("settings") or {}
+            settings_data.pop("password", None)
             if "role" in settings_data:
                 if settings_data["role"] not in enums.CLIENT_BRIDGE_ROLES:
                     raise serializers.ValidationError(
@@ -1574,6 +1574,10 @@ class ChannelSerializer(serializers.ModelSerializer):
                             }
                         }
                     )
+            # Prevent encrypted_settings from being overwritten
+            validated_data.pop("encrypted_settings", None)
+        else:
+            validated_data = self._move_sensitive_settings(validated_data)
         return super().update(instance, validated_data)
 
     def validate_settings(self, value):

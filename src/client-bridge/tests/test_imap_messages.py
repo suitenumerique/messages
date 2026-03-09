@@ -69,12 +69,24 @@ def test_fetch_message_text(imap_client):
 
 
 def test_fetch_flags(imap_client):
-    """Test FETCH message flags."""
+    """Test FETCH flags reflects API read state (webmail → IMAP).
+
+    Message 1 has is_unread=True in the API → should NOT have \\Seen.
+    Message 2 has is_unread=False in the API → should have \\Seen.
+    """
     imap_client.select("INBOX")
+
+    # Message 1: is_unread=True → no \Seen flag
     status, data = imap_client.fetch("1", "(FLAGS)")
     assert status == "OK"
-    # First message is unread, so no \Seen flag
-    assert data[0] is not None
+    flags_str = data[0].decode() if isinstance(data[0], bytes) else str(data[0])
+    assert "\\Seen" not in flags_str, "Unread message should not have \\Seen"
+
+    # Message 2: is_unread=False → \Seen flag present
+    status, data = imap_client.fetch("2", "(FLAGS)")
+    assert status == "OK"
+    flags_str = data[0].decode() if isinstance(data[0], bytes) else str(data[0])
+    assert "\\Seen" in flags_str, "Read message should have \\Seen"
 
 
 def test_fetch_uid(imap_client):

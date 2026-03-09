@@ -135,7 +135,7 @@ logs: ## display all services logs (follow mode)
 .PHONY: logs
 
 start: ## start all development services
-	@$(COMPOSE) up --force-recreate --build -d frontend-dev backend-dev worker-dev mta-in --wait
+	@$(COMPOSE) up --force-recreate --build -d frontend-dev backend-dev worker-dev mta-in client-bridge --wait
 .PHONY: start
 
 start-minimal: ## start minimal services (backend, frontend, keycloak and DB)
@@ -361,21 +361,21 @@ logs-e2e: ## Show logs from e2e services
 
 test-e2e-bare: ## Run e2e tests in headless mode
 	@echo "$(BLUE)\n\n| 🎭 Running E2E tests... \n$(RESET)"
-	$(COMPOSE_E2E) run --rm --service-ports runner npm run test -- $(args)
+	$(COMPOSE_E2E) run --rm --service-ports e2e-runner npm run test -- $(args)
 	@echo "$(GREEN)> 🎭 E2E tests completed!$(RESET)\n"
 .PHONY: test-e2e-bare
 
 test-e2e-ui-bare: ## Run e2e tests in UI mode
 	@echo "$(BLUE)\n\n| 🎭 Running E2E tests in UI mode... \n$(RESET)"
 	# Note: || true allows graceful exit when user closes the UI
-	@$(COMPOSE_E2E) run --rm --service-ports runner npm run test:ui || true
+	@$(COMPOSE_E2E) run --rm --service-ports e2e-runner npm run test:ui || true
 	@echo "$(GREEN)> 🎭 You killed the UI!$(RESET)\n"
 .PHONY: test-e2e-ui-bare
 
 test-e2e-dev-bare: ## Run e2e tests in UI mode with dev frontend
 	@echo "$(BLUE)\n\n| 🎭 Running E2E tests in dev mode... \n$(RESET)"
 	# Note: || true allows graceful exit when user closes the UI
-	E2E_PROFILE=dev $(COMPOSE_E2E) --profile dev run --rm --service-ports runner npm run test:ui || true
+	E2E_PROFILE=dev $(COMPOSE_E2E) --profile dev run --rm --service-ports e2e-runner npm run test:ui || true
 	@echo "$(GREEN)> 🎭 You killed the UI!$(RESET)\n"
 .PHONY: test-e2e-dev-bare
 
