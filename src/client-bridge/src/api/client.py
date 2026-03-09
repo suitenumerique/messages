@@ -22,12 +22,12 @@ class MessagesAPIClient:
 
     def __init__(self, base_url: str, api_secret: str = ""):
         self.base_url = base_url.rstrip("/")
-        headers = {}
+        self._api_secret = api_secret
+        self._service_headers: dict[str, str] = {}
         if api_secret:
-            headers["X-Service-Auth"] = f"Bearer {api_secret}"
+            self._service_headers["X-Service-Auth"] = f"Bearer {api_secret}"
         transport = httpx.AsyncHTTPTransport(retries=_MAX_RETRIES)
         self._client = httpx.AsyncClient(
-            headers=headers,
             transport=transport,
             timeout=30.0,
         )
@@ -35,35 +35,48 @@ class MessagesAPIClient:
         self._token_exp: float | None = None
 
     def with_token(self, token: str) -> "MessagesAPIClient":
-        """Return a shallow copy whose requests include the session JWT.
+        """Return a new client whose requests include the session JWT.
 
-        The returned client shares the same underlying httpx.AsyncClient
-        but adds X-Channel-Token to all requests so that
-        ClientBridgeChannelAuthentication resolves the request to the
-        channel's user.
+        The returned client uses a separate httpx.AsyncClient with the
+        X-Channel-Token default header but WITHOUT the X-Service-Auth
+        header, so that channel-scoped requests never leak the bridge
+        secret.
 
         Also stores the token's expiration so we can fail fast with a
         clear error instead of waiting for a 401 from the backend.
         """
         clone = object.__new__(MessagesAPIClient)
         clone.base_url = self.base_url
-        clone._client = self._client  # noqa: SLF001
+        clone._api_secret = self._api_secret  # noqa: SLF001
+        clone._service_headers = {}  # noqa: SLF001
+        transport = httpx.AsyncHTTPTransport(retries=_MAX_RETRIES)
+        clone._client = httpx.AsyncClient(  # noqa: SLF001
+            headers={"X-Channel-Token": token},
+            transport=transport,
+            timeout=30.0,
+        )
         clone._token = token
-        # Extract exp from the JWT (decode without verification — we issued it)
+        # Verify the JWT signature using the shared secret before reading claims
         try:
-            payload = jwt.decode(token, options={"verify_signature": False})
+            payload = jwt.decode(token, key=self._api_secret, algorithms=["HS256"])
             clone._token_exp = payload.get("exp")
         except jwt.InvalidTokenError:
             clone._token_exp = None
         return clone
 
     def _check_token(self) -> dict:
-        """Return X-Channel-Token header, or raise SessionExpired."""
+        """Return extra per-request headers, or raise SessionExpired.
+
+        For token-scoped clients the X-Channel-Token is already set as a
+        default header on the httpx.AsyncClient, so we only need to check
+        expiry here.  For the service-level client we include the
+        X-Service-Auth header per-request.
+        """
         if self._token is None:
-            return {}
+            return {**self._service_headers}
         if self._token_exp is not None and time.time() >= self._token_exp:
             raise SessionExpired("Session token has expired. Please re-authenticate.")
-        return {"X-Channel-Token": self._token}
+        return {}
 
     async def close(self):
         """Close the underlying HTTP client."""
@@ -78,15 +91,15 @@ class MessagesAPIClient:
         resp = await self._client.post(
             f"{self.base_url}/client-bridge/auth/",
             json={"username": username, "password": password},
+            headers={**self._service_headers},
             timeout=10,
         )
         if resp.status_code != 200:
             return None
 
         token = resp.json()["token"]
-        # Decode without verification — the backend already signed it and
-        # we just need the payload fields (channel_id, mailbox_id, role).
-        payload = jwt.decode(token, options={"verify_signature": False})
+        # Verify the JWT signature using the shared secret before trusting claims.
+        payload = jwt.decode(token, key=self._api_secret, algorithms=["HS256"])
         payload["token"] = token
         return payload
 
@@ -107,6 +120,7 @@ class MessagesAPIClient:
             f"{self.base_url}/client-bridge/submit/",
             content=raw_message,
             headers={
+                **self._service_headers,
                 "Content-Type": "message/rfc822",
                 "X-Channel-Token": token,
                 "X-Mail-From": mail_from,

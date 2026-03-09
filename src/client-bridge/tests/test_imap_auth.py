@@ -1,13 +1,10 @@
 """Tests for IMAP authentication using channel app-specific passwords."""
 
 import imaplib
-import logging
 
 import pytest
 
 from .conftest import IMAP_HOST, IMAP_PORT
-
-logger = logging.getLogger(__name__)
 
 
 def test_login_success(imap_connection, test_channel):

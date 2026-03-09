@@ -235,6 +235,7 @@
   "Every {{count}} years_other": "Every {{count}} years",
   "Expand": "Expand",
   "Expand all": "Expand all",
+  "Failed to copy to clipboard": "Failed to copy to clipboard",
   "Failed to delete integration.": "Failed to delete integration.",
   "Failed to delete signature.": "Failed to delete signature.",
   "Failed to delete template.": "Failed to delete template.",

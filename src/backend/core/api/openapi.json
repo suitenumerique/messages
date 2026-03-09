@@ -124,34 +124,6 @@
                 }
             }
         },
-        "/api/v1.0/client-bridge/auth/": {
-            "post": {
-                "operationId": "client_bridge_auth_create",
-                "description": "Authenticate a client-bridge channel by email username and app-specific password.\n\nPOST /api/v1.0/client-bridge/auth/\nInput: {\"username\": \"<mailbox email>\", \"password\": \"...\"}\nReturns: {\"token\": \"<JWT>\", \"channel_id\", \"mailbox_id\", \"mailbox_email\", \"role\",\n          \"expires_at\": \"<ISO 8601>\"}\n\nThe request must carry ``X-Service-Auth: Bearer <CLIENTBRIDGE_API_SECRET>``\nto prove it comes from the client-bridge service.\n\nThe JWT is signed with CLIENTBRIDGE_API_SECRET and contains the channel_id,\nmailbox_id, role, and expiration. The client-bridge passes it as\nX-Channel-Token on all subsequent requests.",
-                "tags": [
-                    "client-bridge"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "No response body"
-                    }
-                }
-            }
-        },
-        "/api/v1.0/client-bridge/submit/": {
-            "post": {
-                "operationId": "client_bridge_submit_create",
-                "description": "Submit an outbound message via the client-bridge.\n\nPOST /api/v1.0/client-bridge/submit/\nContent-Type: message/rfc822 (raw email)\nHeaders: X-Channel-Token (JWT), X-Mail-From, X-Rcpt-To\nReturns: {\"message_id\": \"...\", \"status\": \"accepted\"}\n\nUses ClientBridgeChannelAuthentication: the channel is resolved from\nthe JWT and available as request.auth.",
-                "tags": [
-                    "client-bridge"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "No response body"
-                    }
-                }
-            }
-        },
         "/api/v1.0/config/": {
             "get": {
                 "operationId": "config_retrieve",
@@ -2879,7 +2851,17 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "New password generated"
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RotatePasswordResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Channel type does not support password rotation"
                     },
                     "403": {
                         "description": "Permission denied"
@@ -7850,6 +7832,17 @@
                 },
                 "required": [
                     "one_time_password"
+                ]
+            },
+            "RotatePasswordResponse": {
+                "type": "object",
+                "properties": {
+                    "password": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "password"
                 ]
             },
             "SendMessageRequest": {

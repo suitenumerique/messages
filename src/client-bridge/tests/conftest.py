@@ -215,6 +215,8 @@ class MockMessagesAPI:
                 break
             except (ConnectionRefusedError, OSError):
                 time.sleep(0.1)
+        else:
+            raise RuntimeError(f"Mock API server did not become ready on port {MOCK_API_PORT}")
 
     def stop(self):
         if self.server:

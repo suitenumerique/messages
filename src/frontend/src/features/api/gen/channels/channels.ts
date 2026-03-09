@@ -25,6 +25,7 @@ import type {
   Channel,
   ChannelRequest,
   PatchedChannelRequest,
+  RotatePasswordResponse,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -893,8 +894,13 @@ export const useMailboxesChannelsDestroy = <TError = void, TContext = unknown>(
  * Manage integration channels for a mailbox
  */
 export type mailboxesChannelsRotatePasswordCreateResponse200 = {
-  data: void;
+  data: RotatePasswordResponse;
   status: 200;
+};
+
+export type mailboxesChannelsRotatePasswordCreateResponse400 = {
+  data: void;
+  status: 400;
 };
 
 export type mailboxesChannelsRotatePasswordCreateResponse403 = {
@@ -912,6 +918,7 @@ export type mailboxesChannelsRotatePasswordCreateResponseSuccess =
     headers: Headers;
   };
 export type mailboxesChannelsRotatePasswordCreateResponseError = (
+  | mailboxesChannelsRotatePasswordCreateResponse400
   | mailboxesChannelsRotatePasswordCreateResponse403
   | mailboxesChannelsRotatePasswordCreateResponse404
 ) & {

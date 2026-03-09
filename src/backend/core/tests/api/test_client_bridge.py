@@ -595,6 +595,7 @@ class TestChannelSerializerPasswordExtraction:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=[], FEATURE_CLIENTBRIDGE=True)
     def test_client_bridge_type_rejected_when_not_in_admin_channels(self, mailbox):
         """Creating a client-bridge channel should fail when not in FEATURE_MAILBOX_ADMIN_CHANNELS."""
         user = UserFactory()
@@ -882,13 +883,13 @@ class TestClientBridgeRoleEnforcement:
         """Roles with CAN_EDIT should be allowed to POST."""
         channel = _make_channel(role)
         client = self._jwt_client(channel, mailbox, role=role)
-        # POST to threads — will fail validation but should not be 403
+        # POST to threads — will fail with 405 (no CreateModelMixin) but should not be 403
         response = client.post(
             "/api/v1.0/threads/",
             {},
             format="json",
         )
-        assert response.status_code != status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
 
     def test_post_blocked_reader(self, _make_channel, mailbox):
         """reader should not be allowed to POST (not in CAN_EDIT or CAN_SEND)."""
@@ -913,8 +914,7 @@ class TestClientBridgeRoleEnforcement:
             {},
             format="json",
         )
-        # Not 403 — may be 404/405 depending on the endpoint
-        assert response.status_code != status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
 
     @pytest.mark.parametrize("role", ["reader", "sender_only"])
     def test_patch_blocked(self, _make_channel, mailbox, role):
@@ -938,7 +938,7 @@ class TestClientBridgeRoleEnforcement:
         response = client.delete(
             "/api/v1.0/threads/",
         )
-        assert response.status_code != status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
 
     @pytest.mark.parametrize("role", ["reader", "sender_only"])
     def test_delete_blocked(self, _make_channel, mailbox, role):
@@ -961,8 +961,8 @@ class TestClientBridgeRoleEnforcement:
             {"messageId": str(uuid.uuid4()), "senderId": str(mailbox.id)},
             format="json",
         )
-        # Should fail on draft lookup, not on role enforcement
-        assert response.status_code != status.HTTP_403_FORBIDDEN
+        # Should fail on draft lookup (404), not on role enforcement (403)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     @pytest.mark.parametrize("role", ["reader", "sender_only"])
     def test_send_endpoint_blocked_no_post(self, _make_channel, mailbox, role):
@@ -1049,6 +1049,31 @@ class TestClientBridgeRoleEnforcement:
 
         assert response.status_code == status.HTTP_202_ACCEPTED
 
+    @patch("core.api.viewsets.client_bridge.send_message_task")
+    def test_submit_sets_sender_user(
+        self,
+        mock_send_task,  # pylint: disable=unused-argument
+        _make_channel,
+        mailbox,
+    ):
+        """Submit should set message.sender_user to the channel's user."""
+        channel = _make_channel("sender")
+        client = self._jwt_client(channel, mailbox, role="sender")
+        mailbox_email = str(mailbox)
+        raw_email = _build_raw_email(mailbox_email, "recipient@example.com")
+
+        response = client.post(
+            "/api/v1.0/client-bridge/submit/",
+            raw_email,
+            content_type="message/rfc822",
+            HTTP_X_MAIL_FROM=mailbox_email,
+            HTTP_X_RCPT_TO="recipient@example.com",
+        )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        message = models.Message.objects.get(id=response.data["message_id"])
+        assert message.sender_user == channel.user
+
     # ── Auth endpoint returns role ──────────────────────────────────────
 
     @pytest.mark.parametrize("role", ["reader", "editor", "sender", "sender_only"])
@@ -1086,10 +1111,10 @@ class TestClientBridgeRoleEnforcement:
         )
         assert response.status_code == status.HTTP_200_OK
 
-        # POST should work (sender can edit)
+        # POST should work (sender can edit) — 405 because ThreadViewSet has no CreateModelMixin
         response = client.post(
             "/api/v1.0/threads/",
             {},
             format="json",
         )
-        assert response.status_code != status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED

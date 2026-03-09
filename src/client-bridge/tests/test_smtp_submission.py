@@ -87,4 +87,7 @@ class TestSMTPSendMessage:
             msg.as_string(),
         )
 
-        assert len(mock_api.submitted_messages) > initial_count
+        assert len(mock_api.submitted_messages) == initial_count + 1
+        submitted = mock_api.submitted_messages[-1]
+        assert "user1@example.com" in submitted["rcpt_to"]
+        assert "user2@example.com" in submitted["rcpt_to"]

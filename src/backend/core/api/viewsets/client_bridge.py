@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from django.conf import settings
 
 import jwt
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -67,6 +68,7 @@ class ClientBridgeAuthView(APIView):
     permission_classes = []
     throttle_classes = [ClientBridgeAuthThrottle]
 
+    @extend_schema(exclude=True)
     def post(self, request):  # pylint: disable=missing-function-docstring
         # Validate service secret
         if not settings.FEATURE_CLIENTBRIDGE:
@@ -164,6 +166,7 @@ class ClientBridgeSubmitView(APIView):
     authentication_classes = [ClientBridgeChannelAuthentication]
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(exclude=True)
     def post(self, request):  # pylint: disable=missing-function-docstring
         channel = request.auth
         mail_from = request.META.get("HTTP_X_MAIL_FROM")
@@ -231,6 +234,7 @@ class ClientBridgeSubmitView(APIView):
             message,
             "",
             "",
+            user=request.user,
             raw_mime=raw_data,
         )
         if not prepared:
@@ -243,11 +247,9 @@ class ClientBridgeSubmitView(APIView):
         send_message_task.delay(str(message.id))
 
         logger.info(
-            "Message submitted via client-bridge: channel=%s, message=%s, from=%s, to=%s",
+            "Message submitted via client-bridge: channel=%s, message=%s",
             channel.id,
             message.id,
-            mail_from,
-            rcpt_to,
         )
 
         return Response(

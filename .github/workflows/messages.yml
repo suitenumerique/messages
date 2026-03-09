@@ -95,6 +95,46 @@ jobs:
       - name: Build frontend
         run: make build-front
 
+  lint-client-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run client-bridge linting
+        run: make lint-client-bridge
+
+  test-client-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run client-bridge tests
+        run: make test-client-bridge
+
+  test-mta-in:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run mta-in tests
+        run: make test-mta-in
+
+  test-socks-proxy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run socks-proxy tests
+        run: make test-socks-proxy
+
   check-api-state:
     runs-on: ubuntu-latest
     steps:

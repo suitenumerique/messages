@@ -1,9 +1,6 @@
 """Tests for IMAP folder operations."""
 
-import logging
 import re
-
-logger = logging.getLogger(__name__)
 
 
 def test_list_all_folders(imap_client):

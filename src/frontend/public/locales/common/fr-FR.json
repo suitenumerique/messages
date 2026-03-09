@@ -267,6 +267,7 @@
   "Every {{count}} years_other": "Tous les {{count}} ans",
   "Expand": "Développer",
   "Expand all": "Tout développer",
+  "Failed to copy to clipboard": "Échec de la copie dans le presse-papiers",
   "Failed to delete integration.": "Erreur lors de la suppression de l'intégration.",
   "Failed to delete signature.": "Erreur lors de la suppression de la signature.",
   "Failed to delete template.": "Erreur lors de la suppression du modèle.",

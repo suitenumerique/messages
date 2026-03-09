@@ -1517,11 +1517,12 @@ class ChannelSerializer(serializers.ModelSerializer):
             return validated_data
 
         extracted = {
-            key: settings_data.pop(key)
-            for key in keys_to_encrypt
-            if key in settings_data
+            key: settings_data[key] for key in keys_to_encrypt if key in settings_data
         }
         if extracted:
+            # Remove extracted keys from settings without mutating during iteration
+            for key in extracted:
+                del settings_data[key]
             existing = (self.instance.encrypted_settings or {}) if self.instance else {}
             validated_data["encrypted_settings"] = {**existing, **extracted}
 

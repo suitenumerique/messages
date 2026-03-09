@@ -117,6 +117,7 @@ export * from "./reset_password_error";
 export * from "./reset_password_internal_server_error";
 export * from "./reset_password_not_found";
 export * from "./reset_password_response";
+export * from "./rotate_password_response";
 export * from "./send_create400";
 export * from "./send_create403";
 export * from "./send_create503";

@@ -372,9 +372,9 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
             mime_id=parsed_email.get("messageId", parsed_email.get("message_id"))
             or None,
             parent=parent_message,
-            sent_at=parsed_email.get("date") or timezone.now()
-            if not is_outbound
-            else None,
+            sent_at=(
+                None if is_outbound else (parsed_email.get("date") or timezone.now())
+            ),
             is_draft=is_outbound,  # Outbound: draft until prepare_outbound_message finalizes
             is_sender=is_sender,
             is_starred=False,

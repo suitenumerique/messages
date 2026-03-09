@@ -8,7 +8,7 @@ Messages is natively a modern, web-based messaging platform — closer in spirit
 
 The client bridge is a **standalone service** that communicates with the Messages backend exclusively over HTTP (via the REST API). It never accesses the database directly.
 
-```
+```text
 ┌──────────────┐       IMAP/SMTP        ┌───────────────────┐        HTTP         ┌──────────────┐
 │ Email client │ ◄────────────────────► │ Client Bridge     │ ◄──────────────────► │   Messages   │
 │ (Thunderbird)│                        │ (pymap/aiosmtpd)  │                      │   Backend    │
@@ -41,7 +41,26 @@ Uses pymap's pluggable backend system with a custom `messages-api` backend that:
 - **Fetches messages** as raw EML from the Messages API
 - **Syncs flags** back to the Messages API when users mark messages as read, starred, etc.
 
+#### Virtual folders
+
+Messages has no physical folder model — threads have boolean flags (`is_trashed`, `is_archived`, `is_spam`, etc.) and the web UI renders "folders" as filtered views. The IMAP bridge does the same: each IMAP folder is a virtual view backed by an API filter.
+
+| IMAP folder | API filter | Notes |
+|---|---|---|
+| `INBOX` | Active threads (not trashed, archived, or spam) | Default view |
+| `Sent` | Threads where the mailbox is the sender | |
+| `Drafts` | Threads with a draft message | |
+| `Trash` | `is_trashed = true` | |
+| `Archive` | `is_archived = true` | |
+| `Spam` | `is_spam = true` | |
+
+**Moving messages** between folders works by toggling these flags via the API. For example, moving a message to Trash sets `is_trashed = true`; moving it back to Inbox clears that flag. Custom/arbitrary folders are not supported.
+
+#### Limitations
+
 IMAP is a legacy protocol with inherent limitations. The bridge maps Messages concepts to IMAP as faithfully as possible, but some features (e.g. labels, thread-level operations, real-time collaboration) are not representable in IMAP.
+
+IMAP APPEND (uploading raw messages into a folder) is not yet supported. Email clients that try to save a copy of sent messages via APPEND will receive a `NO` response — this is harmless because the Messages backend already stores sent messages server-side during the SMTP submission flow.
 
 ### SMTP
 
@@ -93,7 +112,7 @@ The simplest approach is to terminate TLS at a reverse proxy (HAProxy, Nginx, Tr
 
 Example with HAProxy:
 
-```
+```haproxy
 frontend imap-tls
     bind *:993 ssl crt /etc/ssl/certs/mail.pem
     default_backend client-bridge-imap

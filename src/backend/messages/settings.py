@@ -260,13 +260,13 @@ class Base(Configuration):
     }
     # Client-bridge service authentication
     CLIENTBRIDGE_API_SECRET = values.Value(
-        "my-shared-secret-clientbridge",
+        "",
         environ_name="CLIENTBRIDGE_API_SECRET",
         environ_prefix=None,
     )
     # Session JWT lifetime in seconds (default: 1 hour).
     # IMAP/SMTP clients must re-authenticate when the token expires.
-    CLIENTBRIDGE_SESSION_TIMEOUT = values.IntegerValue(
+    CLIENTBRIDGE_SESSION_TIMEOUT = values.PositiveIntegerValue(
         3600,
         environ_name="CLIENTBRIDGE_SESSION_TIMEOUT",
         environ_prefix=None,
@@ -1075,6 +1075,12 @@ class Base(Configuration):
             raise ValueError(
                 "OIDC_STORE_REFRESH_TOKEN_KEY must be set when "
                 "OIDC_STORE_REFRESH_TOKEN is enabled."
+            )
+
+        if cls.FEATURE_CLIENTBRIDGE and not cls.CLIENTBRIDGE_API_SECRET:
+            raise ValueError(
+                "CLIENTBRIDGE_API_SECRET must be set when "
+                "FEATURE_CLIENTBRIDGE is enabled"
             )
 
 

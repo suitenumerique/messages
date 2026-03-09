@@ -20,6 +20,8 @@ import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Banner } from "@/features/ui/components/banner";
 import { handle } from "@/features/utils/errors";
 
+type ChannelCreateResponse = Channel & { password?: string };
+
 type ClientBridgeIntegrationFormProps = {
     channel?: Channel;
     onSuccess: (channel: Channel) => void;
@@ -96,8 +98,7 @@ export const ClientBridgeIntegrationForm = ({
                 });
                 await invalidateChannels();
                 if (response.status === 201) {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const password = (response.data as any).password;
+                    const password = (response.data as ChannelCreateResponse).password;
                     if (password) {
                         setGeneratedPassword(password);
                     }
@@ -119,8 +120,7 @@ export const ClientBridgeIntegrationForm = ({
                 mailboxId: selectedMailbox!.id,
                 id: channel.id,
             });
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const password = (resp.data as any)?.password;
+            const password = resp.data?.password;
             if (password) {
                 setGeneratedPassword(password);
                 addToast(
@@ -265,12 +265,19 @@ const CopyButton = ({ value }: { value: string }) => {
             size="small"
             icon={<Icon name="content_copy" type={IconType.OUTLINED} size={IconSize.SMALL} />}
             onClick={() => {
-                navigator.clipboard.writeText(value);
-                addToast(
-                    <ToasterItem type="info">
-                        <span>{t("Copied to clipboard")}</span>
-                    </ToasterItem>
-                );
+                navigator.clipboard.writeText(value).then(() => {
+                    addToast(
+                        <ToasterItem type="info">
+                            <span>{t("Copied to clipboard")}</span>
+                        </ToasterItem>
+                    );
+                }).catch(() => {
+                    addToast(
+                        <ToasterItem type="error">
+                            <span>{t("Failed to copy to clipboard")}</span>
+                        </ToasterItem>
+                    );
+                });
             }}
             aria-label={t("Copy")}
         />

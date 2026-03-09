@@ -175,7 +175,7 @@
     }
 
     code {
-        font-family: "Fira Code", "Consolas", monospace;
+        font-family: "Fira Code", Consolas, monospace;
     }
 
     button {
@@ -253,7 +253,7 @@
     }
 
     code {
-        font-family: "Fira Code", "Consolas", monospace;
+        font-family: "Fira Code", Consolas, monospace;
         font-size: 0.8rem;
         background: var(--c--contextuals--background--surface--primary);
         padding: 2px 6px;

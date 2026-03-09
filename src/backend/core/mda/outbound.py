@@ -89,6 +89,7 @@ def prepare_outbound_message(
     if raw_mime is not None:
         # Client-bridge path: the email client already composed the MIME.
         # Just sign and store it.
+        message.sender_user = user
         return _sign_and_store(mailbox_sender, message, raw_mime)
 
     # --- Web/API path: compose MIME from text/html body --- #

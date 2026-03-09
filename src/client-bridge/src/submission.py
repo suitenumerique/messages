@@ -26,7 +26,7 @@ class SubmissionAuthenticator:
 
     def __init__(self, api_client: MessagesAPIClient):
         self._api_url = api_client.base_url
-        self._headers = dict(api_client._client.headers)  # noqa: SLF001
+        self._headers = dict(api_client._service_headers)
 
     def __call__(self, server: SMTP, session, envelope, mechanism, auth_data):
         if not isinstance(auth_data, LoginPassword):
@@ -55,7 +55,12 @@ class SubmissionAuthenticator:
             logger.warning("SMTP auth: no token in response for %s", username)
             return AuthResult(success=False, handled=False)
 
-        # Decode JWT without verification — we just need the payload fields
+        # The JWT was already verified by the backend auth endpoint during
+        # the POST to /client-bridge/auth/ above.  We only decode here
+        # (without re-verifying) to extract claims for role-based access
+        # control and logging/routing.  This is safe because the token
+        # was received directly from a trusted backend response over the
+        # internal network — it has not been through an untrusted party.
         try:
             payload = jwt.decode(token, options={"verify_signature": False})
         except jwt.InvalidTokenError:
@@ -69,7 +74,11 @@ class SubmissionAuthenticator:
             logger.warning("SMTP auth rejected for %s: role %r has no send access", username, role)
             return AuthResult(success=False, handled=False)
 
-        logger.info("SMTP auth success for %s (role=%s)", username, role)
+        logger.info(
+            "SMTP auth success for channel_id=%s (role=%s)",
+            payload.get("channel_id"),
+            role,
+        )
         return AuthResult(
             success=True,
             handled=False,

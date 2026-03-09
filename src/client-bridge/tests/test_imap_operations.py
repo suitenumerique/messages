@@ -5,14 +5,10 @@ These tests were added after manual testing with multiple IMAP clients
 that these operations had no unit test coverage.
 """
 
-import email
 import imaplib
-import logging
 from email.mime.text import MIMEText
 
 from tests.conftest import IMAP_HOST, IMAP_PORT
-
-logger = logging.getLogger(__name__)
 
 
 # --- STORE flag operations ---
@@ -283,72 +279,21 @@ def test_copy_to_nonexistent_folder(imap_client):
 # --- APPEND ---
 
 
-def test_append_message(imap_client):
-    """Test APPEND adds a message to a folder."""
-    # Get initial Drafts count
-    imap_client.select("Drafts")
-    status, data = imap_client.search(None, "ALL")
-    initial_count = len(data[0].split()) if data[0] else 0
-
-    # Create a new message
+def test_append_rejected(imap_client):
+    """Test APPEND is rejected for API-backed mailboxes."""
     msg = MIMEText("This is a test draft message.")
     msg["Subject"] = "Test Draft"
     msg["From"] = "test@example.com"
     msg["To"] = "recipient@example.com"
     raw_msg = msg.as_bytes()
 
-    # Append to Drafts
-    status, data = imap_client.append("Drafts", "(\\Seen)", None, raw_msg)
-    assert status == "OK"
-
-    # Verify message count increased
-    imap_client.select("Drafts")
-    status, data = imap_client.search(None, "ALL")
-    assert status == "OK"
-    new_count = len(data[0].split()) if data[0] else 0
-    assert new_count == initial_count + 1
-
-
-def test_append_with_flags(imap_client):
-    """Test APPEND with specific flags."""
-    msg = MIMEText("Test flagged append.")
-    msg["Subject"] = "Flagged Draft"
-    msg["From"] = "test@example.com"
-    msg["To"] = "recipient@example.com"
-    raw_msg = msg.as_bytes()
-
-    status, data = imap_client.append("Drafts", "(\\Seen \\Flagged)", None, raw_msg)
-    assert status == "OK"
-
-    # Select Drafts and find the flagged message
-    imap_client.select("Drafts")
-    status, data = imap_client.search(None, "FLAGGED")
-    assert status == "OK"
-    assert data[0], "Should find the flagged appended message"
-
-
-def test_append_and_fetch(imap_client):
-    """Test APPEND then FETCH the appended message."""
-    msg = MIMEText("Verifiable appended message body.")
-    msg["Subject"] = "Append Fetch Test"
-    msg["From"] = "appender@example.com"
-    msg["To"] = "test@example.com"
-    raw_msg = msg.as_bytes()
-
-    status, data = imap_client.append("Drafts", "(\\Seen)", None, raw_msg)
-    assert status == "OK"
-
-    # Select Drafts and fetch the last message
-    imap_client.select("Drafts")
-    status, data = imap_client.search(None, "ALL")
-    assert status == "OK"
-    nums = data[0].split()
-    last_num = nums[-1].decode()
-
-    status, data = imap_client.fetch(last_num, "(BODY[])")
-    assert status == "OK"
-    fetched_msg = email.message_from_bytes(data[0][1])
-    assert fetched_msg["Subject"] == "Append Fetch Test"
+    # APPEND should be rejected since the Messages API does not support it
+    try:
+        status, data = imap_client.append("Drafts", "(\\Seen)", None, raw_msg)
+        assert status == "NO", "APPEND should be rejected for API-backed mailboxes"
+    except imaplib.IMAP4.error:
+        # imaplib raises on NO/BAD responses — this is expected
+        pass
 
 
 # --- SUBSCRIBE / UNSUBSCRIBE ---

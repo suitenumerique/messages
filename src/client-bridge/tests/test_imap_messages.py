@@ -1,9 +1,6 @@
 """Tests for IMAP message operations using Python's imaplib."""
 
 import email
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 def test_fetch_message_count(imap_client, test_channel):

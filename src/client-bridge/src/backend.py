@@ -73,7 +73,9 @@ class MessagesBackend(BackendInterface):
         return cls(login, config), config
 
     async def start(self, stack: AsyncExitStack) -> None:
-        pass
+        # Register the shared API client for cleanup so HTTP connections
+        # are properly closed on shutdown.
+        stack.push_async_callback(self._login.api_client.close)
 
 
 class Config(IMAPConfig):
@@ -147,7 +149,8 @@ class Login(LoginInterface):
         )
 
     async def authorize(self, authenticated: IdentityInterface, authzid: str) -> Identity:
-        if authenticated.name != authzid:
+        # An empty authzid means "authorize as self" (RFC 4616 §2).
+        if authzid and authenticated.name != authzid:
             raise InvalidAuth("Authorization as a different user is not supported.")
         if not isinstance(authenticated, Identity):
             raise InvalidAuth()
@@ -184,8 +187,11 @@ class Identity(IdentityInterface):
     async def new_session(self) -> AsyncIterator[Session]:
         mailbox_id = self._channel_data["mailbox_id"]
         api_client = self._login.api_client.with_token(self._token)
-        mailbox_set = MailboxSet(api_client, mailbox_id, role=self.role)
-        yield Session(self._name, self._login.config, mailbox_set)
+        try:
+            mailbox_set = MailboxSet(api_client, mailbox_id, role=self.role)
+            yield Session(self._name, self._login.config, mailbox_set)
+        finally:
+            await api_client.close()
 
     async def new_token(self, *, expiration: datetime | None = None) -> str | None:
         return None

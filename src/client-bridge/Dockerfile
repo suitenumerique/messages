@@ -49,6 +49,8 @@ FROM base AS runtime-base
 COPY ./entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+RUN useradd --create-home appuser
+
 ENV PATH="/venv/bin:$PATH"
 ENV VIRTUAL_ENV=/venv
 ENV VIRTUAL_ENV_PROMPT=venv
@@ -60,6 +62,10 @@ FROM runtime-base AS runtime-dev
 
 COPY --from=base-with-deps-dev /venv /venv
 
+ENV PYTHONPATH="/app"
+ENV PYTHONIOENCODING=utf-8
+ENV PYTHONUNBUFFERED=1
+
 # /app will be mounted as a volume in the development container
 
 # ---- Base runtime image for production ----
@@ -68,3 +74,5 @@ FROM runtime-base AS runtime-prod
 COPY --from=base-with-deps /venv /venv
 
 COPY ./src /app/src
+
+USER appuser

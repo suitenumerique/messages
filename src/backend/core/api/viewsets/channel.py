@@ -6,8 +6,10 @@ from django.utils.functional import cached_property
 from drf_spectacular.utils import (
     OpenApiResponse,
     extend_schema,
+    inline_serializer,
 )
 from rest_framework import mixins, status, viewsets
+from rest_framework import serializers as drf_serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -115,7 +117,13 @@ class ChannelViewSet(
     @extend_schema(
         request=None,
         responses={
-            200: OpenApiResponse(description="New password generated"),
+            200: inline_serializer(
+                name="RotatePasswordResponse",
+                fields={"password": drf_serializers.CharField()},
+            ),
+            400: OpenApiResponse(
+                description="Channel type does not support password rotation"
+            ),
             403: OpenApiResponse(description="Permission denied"),
             404: OpenApiResponse(description="Channel not found"),
         },

@@ -60,7 +60,7 @@ It features a [MTA](https://en.wikipedia.org/wiki/Message_transfer_agent) based 
 ### Based on standards
 * 🔑 OpenID Connect for all user accounts as the primary authentication method. Plug any identity provider, including Keycloak.
 * 📬 SMTP in and out (server-to-server).
-* ✅ JMAP-inspired data model. JMAP-compilant endpoint [in progress](https://github.com/suitenumerique/messages/pull/479).
+* ✅ JMAP-inspired data model. JMAP-compliant endpoint [in progress](https://github.com/suitenumerique/messages/pull/479).
 * 📮 Optional IMAP and SMTP client access via the [client bridge](/src/client-bridge/), for users who prefer traditional email clients like Thunderbird or mobile phones. Uses app-specific passwords with configurable roles.
 
 
