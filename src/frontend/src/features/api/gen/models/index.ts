@@ -13,7 +13,7 @@ export * from "./change_flag_request_request";
 export * from "./channel";
 export * from "./channel_request";
 export * from "./config_retrieve200";
-export * from "./config_retrieve200_clientbridge_public_confi_g";
+export * from "./config_retrieve200_clientbridgepublicconfi_g";
 export * from "./config_retrieve200_driv_e";
 export * from "./config_retrieve200_schemacustomattributesmaildomai_n";
 export * from "./config_retrieve200_schemacustomattributesuse_r";

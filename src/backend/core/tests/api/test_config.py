@@ -34,6 +34,7 @@ pytestmark = pytest.mark.django_db
     MAX_TEMPLATE_IMAGE_SIZE=2097152,  # 2MB
     IMAGE_PROXY_ENABLED=False,
     MESSAGES_MANUAL_RETRY_MAX_AGE=86400,  # 1 day in seconds
+    FEATURE_CLIENTBRIDGE=False,
 )
 @pytest.mark.parametrize("is_authenticated", [False, True])
 def test_api_config(is_authenticated):

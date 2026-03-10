@@ -261,7 +261,6 @@
                                         "CLIENTBRIDGE_PUBLIC_CONFIG": {
                                             "type": "object",
                                             "description": "Client-bridge IMAP/SMTP connection settings for email clients.",
-                                            "readOnly": true,
                                             "properties": {
                                                 "imap_host": {
                                                     "type": "string",
@@ -287,7 +286,8 @@
                                                     "type": "string",
                                                     "readOnly": true
                                                 }
-                                            }
+                                            },
+                                            "readOnly": true
                                         }
                                     },
                                     "required": [
@@ -7125,6 +7125,11 @@
                         "type": "boolean",
                         "readOnly": true
                     },
+                    "mime_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true
+                    },
                     "signature": {
                         "allOf": [
                             {
@@ -7156,6 +7161,7 @@
                     "is_starred",
                     "is_trashed",
                     "is_unread",
+                    "mime_id",
                     "parent_id",
                     "sender",
                     "sender_user",
