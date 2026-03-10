@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useState, useEffect } from "react";
 import { Channel } from "@/features/api/gen";
 import { WidgetIntegrationForm } from "./widget-integration-form";
+import { ClientBridgeIntegrationForm } from "./client-bridge-integration-form";
 import { useConfig } from "@/features/providers/config";
 import i18n from "@/features/i18n/initI18n";
 
@@ -14,7 +15,7 @@ type ModalComposeIntegrationProps = {
     onSuccess?: () => void;
 };
 
-type ChannelType = "widget" | "api_key";
+type ChannelType = "widget" | "api_key" | "client-bridge";
 type ViewState = "select_type" | "form";
 
 type ChannelTypeCardProps = {
@@ -46,6 +47,12 @@ const CHANNEL_TYPE_METADATA: Record<ChannelType, ChannelTypeMetadata> = {
         description: i18n.t("Generate an API key to send messages programmatically from your applications."),
         icon: "key",
         disabled: true
+    },
+    "client-bridge": {
+        type: "client-bridge",
+        title: i18n.t("Email client access"),
+        description: i18n.t("Connect your mailbox to an email client like Thunderbird or to your mobile phone using IMAP and SMTP."),
+        icon: "mail_lock",
     },
 };
 
@@ -142,6 +149,9 @@ export const ModalComposeIntegration = ({
         if (selectedType === "widget") {
             return isEditing ? t("Edit Widget") : t("Create a Widget");
         }
+        if (selectedType === "client-bridge") {
+            return isEditing ? t("Edit email client access") : t("Create email client access");
+        }
         return t("Integrations");
     };
 
@@ -183,6 +193,13 @@ export const ModalComposeIntegration = ({
                 )}
                 {viewState === "form" && selectedType === "widget" && (
                     <WidgetIntegrationForm
+                        channel={currentChannel}
+                        onSuccess={handleSuccess}
+                        onClose={onClose}
+                    />
+                )}
+                {viewState === "form" && selectedType === "client-bridge" && (
+                    <ClientBridgeIntegrationForm
                         channel={currentChannel}
                         onSuccess={handleSuccess}
                         onClose={onClose}

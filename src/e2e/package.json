@@ -23,6 +23,9 @@
   "keywords": ["e2e", "playwright", "testing"],
   "author": "",
   "license": "MIT",
+  "dependencies": {
+    "imapflow": "1.0.175"
+  },
   "devDependencies": {
     "@playwright/test": "1.57.0",
     "@types/node": "22.19.3"

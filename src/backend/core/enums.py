@@ -21,6 +21,17 @@ class MailboxRoleChoices(models.IntegerChoices):
     ADMIN = 4, "admin"
 
 
+# Client-bridge channel roles (stored as string in channel.settings["role"])
+# - reader: read-only IMAP access (fetch messages, no flag changes, no send)
+# - editor: IMAP read + write flags (mark read, star, trash, etc.)
+# - sender: full access — IMAP read/write + SMTP send
+# - sender_only: SMTP send only, no IMAP read access (e.g. printers, apps)
+CLIENT_BRIDGE_ROLES = ("reader", "editor", "sender", "sender_only")
+CLIENT_BRIDGE_ROLES_CAN_READ = ("reader", "editor", "sender")
+CLIENT_BRIDGE_ROLES_CAN_EDIT = ("editor", "sender")
+CLIENT_BRIDGE_ROLES_CAN_SEND = ("sender", "sender_only")
+
+
 # Mailbox role groups for permission checks
 MAILBOX_ROLES_CAN_EDIT = [
     MailboxRoleChoices.EDITOR,

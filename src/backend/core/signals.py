@@ -53,7 +53,7 @@ def sync_mailbox_to_keycloak(sender, instance, created, **kwargs):
 @receiver(post_save, sender=models.Message)
 def index_message_post_save(sender, instance, created, **kwargs):
     """Index a message after it's saved."""
-    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", False):
+    if not settings.OPENSEARCH_INDEX_THREADS:
         return
 
     try:
@@ -73,7 +73,7 @@ def index_message_post_save(sender, instance, created, **kwargs):
 @receiver(post_save, sender=models.MessageRecipient)
 def index_message_recipient_post_save(sender, instance, created, **kwargs):
     """Index a message recipient after it's saved."""
-    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", False):
+    if not settings.OPENSEARCH_INDEX_THREADS:
         return
 
     try:
@@ -131,7 +131,7 @@ def update_thread_stats_on_delivery_status_change(sender, instance, **kwargs):
 @receiver(post_save, sender=models.Thread)
 def index_thread_post_save(sender, instance, created, **kwargs):
     """Index a thread after it's saved."""
-    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", False):
+    if not settings.OPENSEARCH_INDEX_THREADS:
         return
 
     try:
@@ -166,7 +166,7 @@ def delete_message_blobs(sender, instance, **kwargs):
 @receiver(post_delete, sender=models.Message)
 def delete_message_from_index(sender, instance, **kwargs):
     """Remove a message from the index after it's deleted."""
-    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", False):
+    if not settings.OPENSEARCH_INDEX_THREADS:
         return
 
     try:
@@ -190,7 +190,7 @@ def delete_message_from_index(sender, instance, **kwargs):
 @receiver(post_delete, sender=models.Thread)
 def delete_thread_from_index(sender, instance, **kwargs):
     """Remove a thread and its messages from the index after it's deleted."""
-    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", False):
+    if not settings.OPENSEARCH_INDEX_THREADS:
         return
 
     try:
@@ -244,7 +244,7 @@ def delete_orphan_draft_attachments(sender, instance, **kwargs):
 @receiver(post_save, sender=models.ThreadAccess)
 def update_unread_mailboxes_on_access_save(sender, instance, created, **kwargs):
     """Update unread_mailboxes in OpenSearch when ThreadAccess.read_at changes."""
-    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", False):
+    if not settings.OPENSEARCH_INDEX_THREADS:
         return
 
     update_fields = kwargs.get("update_fields")
@@ -265,7 +265,7 @@ def update_unread_mailboxes_on_access_save(sender, instance, created, **kwargs):
 @receiver(post_delete, sender=models.ThreadAccess)
 def update_unread_mailboxes_on_access_delete(sender, instance, **kwargs):
     """Update unread_mailboxes in OpenSearch when a ThreadAccess is deleted."""
-    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", False):
+    if not settings.OPENSEARCH_INDEX_THREADS:
         return
 
     try:

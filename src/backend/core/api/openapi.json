@@ -257,6 +257,37 @@
                                             "type": "integer",
                                             "description": "Maximum age in seconds for a message to be eligible for manual retry of failed deliveries",
                                             "readOnly": true
+                                        },
+                                        "CLIENTBRIDGE_PUBLIC_CONFIG": {
+                                            "type": "object",
+                                            "description": "Client-bridge IMAP/SMTP connection settings for email clients.",
+                                            "properties": {
+                                                "imap_host": {
+                                                    "type": "string",
+                                                    "readOnly": true
+                                                },
+                                                "imap_port": {
+                                                    "type": "integer",
+                                                    "readOnly": true
+                                                },
+                                                "imap_security": {
+                                                    "type": "string",
+                                                    "readOnly": true
+                                                },
+                                                "smtp_host": {
+                                                    "type": "string",
+                                                    "readOnly": true
+                                                },
+                                                "smtp_port": {
+                                                    "type": "integer",
+                                                    "readOnly": true
+                                                },
+                                                "smtp_security": {
+                                                    "type": "string",
+                                                    "readOnly": true
+                                                }
+                                            },
+                                            "readOnly": true
                                         }
                                     },
                                     "required": [
@@ -2808,6 +2839,60 @@
                 "responses": {
                     "204": {
                         "description": "Channel deleted successfully"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Channel not found"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/channels/{id}/rotate-password/": {
+            "post": {
+                "operationId": "mailboxes_channels_rotate_password_create",
+                "description": "Manage integration channels for a mailbox",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RotatePasswordResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Channel type does not support password rotation"
                     },
                     "403": {
                         "description": "Permission denied"
@@ -7040,6 +7125,11 @@
                         "type": "boolean",
                         "readOnly": true
                     },
+                    "mime_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true
+                    },
                     "signature": {
                         "allOf": [
                             {
@@ -7071,6 +7161,7 @@
                     "is_starred",
                     "is_trashed",
                     "is_unread",
+                    "mime_id",
                     "parent_id",
                     "sender",
                     "sender_user",
@@ -7778,6 +7869,17 @@
                 },
                 "required": [
                     "one_time_password"
+                ]
+            },
+            "RotatePasswordResponse": {
+                "type": "object",
+                "properties": {
+                    "password": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "password"
                 ]
             },
             "SendMessageRequest": {

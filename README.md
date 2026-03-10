@@ -58,10 +58,11 @@ It features a [MTA](https://en.wikipedia.org/wiki/Message_transfer_agent) based 
 * (soon) 👉 Assign threads to specific users
 
 ### Based on standards
-* 🔑 OpenID Connect for all user accounts. Plug any identity provider, including Keycloak.
-* 📬 SMTP in and out.
-* ❌ No POP3 or IMAP client support, by design. We're building for the future, not the (unsecure) past!
-* ✅ JMAP-inspired data model. Full support could be added.
+* 🔑 OpenID Connect for all user accounts as the primary authentication method. Plug any identity provider, including Keycloak.
+* 📬 SMTP in and out (server-to-server).
+* ✅ JMAP-inspired data model. JMAP-compliant endpoint [in progress](https://github.com/suitenumerique/messages/pull/479).
+* 📮 Optional IMAP and SMTP client access via the [client bridge](/src/client-bridge/), for users who prefer traditional email clients like Thunderbird or mobile phones. Uses app-specific passwords with configurable roles.
+
 
 ### Self-host
 * 🚀 Messages is designed to be installed on the cloud or on your own servers.
@@ -146,6 +147,8 @@ When running the project, the following services are available:
 | **SOCKS Proxy** | 8916 | SOCKS5 proxy | `user1` / `pwd1` |
 | **Mailcatcher (SMTP)** | 8917 | SMTP server | No auth required |
 | **MPA (Rspamd)** | 8918 | Spam filtering service | `password` |
+| **Client Bridge (IMAP)** | 8919 | IMAP server for email clients | App-specific password |
+| **Client Bridge (SMTP)** | 8920 | SMTP submission for email clients | App-specific password |
 
 
 ### OpenAPI client

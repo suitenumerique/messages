@@ -54,10 +54,17 @@ services:
       - --hostname=$${HOST}
       - --hostname-admin=$${ADMIN_HOST}
       - --http-port=8802
+      - --health-enabled=true
     env_file:
       - ../../env.d/development/keycloak.defaults
       - ../../env.d/development/keycloak.e2e
     ports: !reset []
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
     depends_on: !override
       - postgresql
 
@@ -80,7 +87,7 @@ services:
       opensearch:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
 
   mta-in:
     extends:
@@ -89,6 +96,17 @@ services:
     env_file:
       - ../../env.d/development/mta-in.defaults
       - ../../env.d/development/mta-in.e2e
+    ports: !reset []
+    depends_on: !override
+      - backend
+
+  client-bridge:
+    extends:
+      file: ../../compose.yaml
+      service: client-bridge
+    env_file:
+      - ../../env.d/development/client-bridge.defaults
+      - ../../env.d/development/client-bridge.e2e
     ports: !reset []
     depends_on: !override
       - backend
@@ -142,7 +160,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
-  runner:
+  e2e-runner:
     build:
       context: .
       dockerfile: Dockerfile
@@ -153,6 +171,8 @@ services:
       - FRONTEND_BASE_URL=http://proxy
       - BACKEND_BASE_URL=http://proxy
       - KEYCLOAK_BASE_URL=http://keycloak:8802
+      - CLIENTBRIDGE_IMAP_HOST=client-bridge
+      - CLIENTBRIDGE_IMAP_PORT=143
       - DOCKER_HOST=tcp://docker-sock-proxy:2375
       - CI=${CI:-false}
       - PW_TEST_HTML_REPORT_OPEN=${PW_TEST_HTML_REPORT_OPEN:-false}
@@ -166,6 +186,8 @@ services:
       proxy:
         condition: service_started
       mta-in:
+        condition: service_started
+      client-bridge:
         condition: service_started
       worker:
         condition: service_started

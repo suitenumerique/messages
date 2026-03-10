@@ -7,6 +7,7 @@ from rest_framework.routers import DefaultRouter
 
 from core.api.viewsets.blob import BlobViewSet
 from core.api.viewsets.channel import ChannelViewSet
+from core.api.viewsets.client_bridge import ClientBridgeAuthView, ClientBridgeSubmitView
 from core.api.viewsets.config import ConfigView
 from core.api.viewsets.contacts import ContactViewSet
 from core.api.viewsets.draft import DraftMessageView
@@ -260,6 +261,20 @@ urlpatterns = [
         name="mta-inbound-email",
     ),
 ]
+
+if settings.FEATURE_CLIENTBRIDGE:
+    urlpatterns += [
+        path(
+            f"api/{settings.API_VERSION}/client-bridge/auth/",
+            ClientBridgeAuthView.as_view(),
+            name="client-bridge-auth",
+        ),
+        path(
+            f"api/{settings.API_VERSION}/client-bridge/submit/",
+            ClientBridgeSubmitView.as_view(),
+            name="client-bridge-submit",
+        ),
+    ]
 
 if settings.DRIVE_CONFIG.get("base_url"):
     urlpatterns += [

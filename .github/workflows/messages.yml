@@ -8,6 +8,9 @@ name: Lint and tests
     branches:
       - '*'
 
+permissions:
+  contents: read
+
 env:
   COMPOSE_BAKE: true
 
@@ -21,7 +24,7 @@ jobs:
       - name: Create env files
         run: make create-env-files
       - name: Run linting checks
-        run: make lint-back
+        run: make lint-check-back
 
 
   test-back:
@@ -79,9 +82,7 @@ jobs:
       - name: Install frontend dependencies
         run: make install-frozen-front
       - name: Run frontend linting
-        run: make lint-front
-      - name: Run frontend check
-        run: make typecheck-front
+        run: make lint-check-front
 
   build-front:
     runs-on: ubuntu-latest
@@ -94,6 +95,46 @@ jobs:
         run: make install-frozen-front
       - name: Build frontend
         run: make build-front
+
+  lint-client-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run client-bridge linting
+        run: make lint-check-client-bridge
+
+  test-client-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run client-bridge tests
+        run: make test-client-bridge
+
+  test-mta-in:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run mta-in tests
+        run: make test-mta-in
+
+  test-socks-proxy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Create env files
+        run: make create-env-files
+      - name: Run socks-proxy tests
+        run: make test-socks-proxy
 
   check-api-state:
     runs-on: ubuntu-latest

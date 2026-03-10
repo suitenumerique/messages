@@ -8,7 +8,7 @@ import path from 'path';
 import fs from 'fs';
 
 /**
- * Execute a npm command in the runner container.
+ * Execute a npm command in the e2e-runner container.
  */
 async function runNpmCommand(command: string, args: string[] = [], timeout: number = 1000): Promise<string> {
   const commandArgs = [command, ...args].join(' ');

@@ -1,0 +1,111 @@
+#
+# st-messages-client-bridge package
+#
+[build-system]
+requires = ["uv_build>=0.10.0,<0.11.0"]
+build-backend = "uv_build"
+
+[project]
+name = "st-messages-client-bridge"
+version = "0.1.0"
+authors = [{ "name" = "ANCT", "email" = "contact@suite.anct.gouv.fr" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+]
+description = "An IMAP/SMTP client bridge backed by the Messages API, built on pymap and aiosmtpd."
+keywords = ["Python", "IMAP", "SMTP", "pymap", "aiosmtpd"]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.13,<4.0"
+
+# Note: after changing this list you must re-run `make deps-lock-client-bridge`
+dependencies = [
+    "pymap==0.36.7",
+    "httpx>=0.28",
+    "aiosmtpd>=1.4.6",
+    "PyJWT>=2.0",
+]
+
+[project.urls]
+"Bug Tracker" = "https://github.com/suitenumerique/st-messages/issues/new"
+"Changelog" = "https://github.com/suitenumerique/st-messages/blob/main/CHANGELOG.md"
+"Homepage" = "https://github.com/suitenumerique/st-messages"
+"Repository" = "https://github.com/suitenumerique/st-messages"
+
+[project.entry-points."pymap.backend"]
+messages-api = "src.backend:MessagesBackend"
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.5",
+    "pytest-cov==6.0.0",
+    "fastapi==0.115.12",
+    "uvicorn==0.34.1",
+    "ruff==0.9.3",
+    "pylint==3.3.4",
+]
+
+[tool.uv.build-backend]
+module-root = ""
+source-include = ["src/**"]
+source-exclude = ["tests/**"]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+exclude = [
+    ".git",
+    ".venv",
+    "build",
+    "venv",
+    "__pycache__",
+]
+line-length = 99
+
+
+[tool.ruff.lint]
+ignore = ["PLR2004"]
+select = [
+    "B", # flake8-bugbear
+    "BLE", # flake8-blind-except
+    "C4", # flake8-comprehensions
+    "I", # isort
+    "PLC", # pylint-convention
+    "PLE", # pylint-error
+    "PLR", # pylint-refactoring
+    "PLW", # pylint-warning
+    "RUF100", # Ruff unused-noqa
+    "RUF200", # Ruff check pyproject.toml
+    "S", # flake8-bandit
+    "SLF", # flake8-self
+    "T20", # flake8-print
+    "F"  # pyflakes
+]
+
+[tool.ruff.lint.isort]
+section-order = ["future","standard-library","third-party","first-party","local-folder"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/*" = ["S", "SLF", "BLE"]
+"src/mailbox.py" = ["SLF", "BLE", "PLR0913"]
+
+[tool.pytest.ini_options]
+addopts = [
+    "-v",
+    "--cov-report",
+    "term-missing",
+    "--import-mode=importlib",
+]
+filterwarnings = [
+    "ignore::pytest.PytestUnhandledThreadExceptionWarning",
+]
+python_files = [
+    "test_*.py",
+    "tests.py",
+]

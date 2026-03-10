@@ -25,6 +25,8 @@ const getChannelTypeLabel = (type: string | undefined, t: (key: string) => strin
             return t("Widget");
         case "api_key":
             return t("API Key");
+        case "client-bridge":
+            return t("Email client access");
         default:
             return type;
     }
@@ -36,6 +38,8 @@ const getChannelTypeIcon = (type: string | undefined) => {
             return "widgets";
         case "api_key":
             return "key";
+        case "client-bridge":
+            return "mail_lock";
         default:
             return "integration_instructions";
     }

@@ -52,8 +52,14 @@ def prepare_outbound_message(
     text_body: str,
     html_body: str,
     user: Optional[models.User] = None,
+    raw_mime: Optional[bytes] = None,
 ) -> bool:
-    """Compose and sign an existing draft Message object before sending via SMTP.
+    """Prepare a Message for outbound delivery: compose (or accept raw) MIME,
+    sign with DKIM, create a blob, and mark the message as non-draft.
+
+    When ``raw_mime`` is provided (e.g. from a client-bridge SMTP submission),
+    the MIME composition step is skipped and the raw bytes are used directly.
+    Validation, throttling, DKIM signing, and blob creation still apply.
 
     This part is called synchronously from the API view.
     """
@@ -79,6 +85,14 @@ def prepare_outbound_message(
         maildomain=mailbox_sender.domain,
         message=message,
     )
+
+    if raw_mime is not None:
+        # Client-bridge path: the email client already composed the MIME.
+        # Just sign and store it.
+        message.sender_user = user
+        return _sign_and_store(mailbox_sender, message, raw_mime)
+
+    # --- Web/API path: compose MIME from text/html body --- #
 
     # Get recipients from the MessageRecipient model
     recipients_by_type = {
@@ -272,7 +286,7 @@ def prepare_outbound_message(
 
     # Assemble the raw mime message
     try:
-        raw_mime = compose_email(
+        composed_mime = compose_email(
             mime_data,
             in_reply_to=message.parent.mime_id if message.parent else None,
             # TODO: Add References header logic
@@ -282,7 +296,7 @@ def prepare_outbound_message(
         return False
 
     # Validate the composed MIME size, with ~33% overhead for attachments because of MIME encoding
-    mime_size = len(raw_mime)
+    mime_size = len(composed_mime)
     max_total_size = settings.MAX_OUTGOING_BODY_SIZE + (
         settings.MAX_OUTGOING_ATTACHMENT_SIZE * 1.4
     )
@@ -313,6 +327,33 @@ def prepare_outbound_message(
             }
         )
 
+    message.sender_user = user
+    result = _sign_and_store(
+        mailbox_sender, message, composed_mime, has_attachments=len(attachments) > 0
+    )
+
+    # Clean up the draft blob and the attachment blobs
+    draft_blob = message.draft_blob
+    if draft_blob:
+        draft_blob.delete()
+    for attachment in message.attachments.all():
+        if attachment.blob:
+            attachment.blob.delete()
+        attachment.delete()
+
+    return result
+
+
+def _sign_and_store(
+    mailbox_sender: models.Mailbox,
+    message: models.Message,
+    raw_mime: bytes,
+    has_attachments: Optional[bool] = None,
+) -> bool:
+    """Sign raw MIME with DKIM, store as a blob, and finalize the message.
+
+    Shared by both the web compose path and the client-bridge raw MIME path.
+    """
     # Sign the message with DKIM
     dkim_signature_header: Optional[bytes] = sign_message_dkim(
         raw_mime_message=raw_mime, maildomain=mailbox_sender.domain
@@ -320,7 +361,6 @@ def prepare_outbound_message(
 
     raw_mime_signed = raw_mime
     if dkim_signature_header:
-        # Prepend the signature header
         raw_mime_signed = dkim_signature_header + b"\r\n" + raw_mime
 
     # Create a blob to store the raw MIME content
@@ -329,36 +369,30 @@ def prepare_outbound_message(
         content_type="message/rfc822",
     )
 
-    draft_blob = message.draft_blob
-
     message.blob = blob
     message.is_draft = False
-    message.sender_user = user
     message.draft_blob = None
-    message.has_attachments = len(attachments) > 0
     message.created_at = timezone.now()
     message.updated_at = timezone.now()
-    message.save(
-        update_fields=[
-            "updated_at",
-            "blob",
-            "mime_id",
-            "is_draft",
-            "sender_user",
-            "draft_blob",
-            "has_attachments",
-            "created_at",
-        ]
-    )
-    message.thread.update_stats()
 
-    # Clean up the draft blob and the attachment blobs
-    if draft_blob:
-        draft_blob.delete()
-    for attachment in message.attachments.all():
-        if attachment.blob:
-            attachment.blob.delete()
-        attachment.delete()
+    update_fields = [
+        "updated_at",
+        "blob",
+        "is_draft",
+        "sender_user",
+        "draft_blob",
+        "created_at",
+    ]
+
+    if has_attachments is not None:
+        message.has_attachments = has_attachments
+        update_fields.append("has_attachments")
+
+    if message.mime_id:
+        update_fields.append("mime_id")
+
+    message.save(update_fields=update_fields)
+    message.thread.update_stats()
 
     return True
 
