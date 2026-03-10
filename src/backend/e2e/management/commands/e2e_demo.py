@@ -499,7 +499,8 @@ class Command(BaseCommand):
             thread=thread2,
             mailbox=mailbox,
             role=ThreadAccessRoleChoices.EDITOR,
-            read_at=now + timezone.timedelta(minutes=1),  # read_at after message created_at → read
+            read_at=now
+            + timezone.timedelta(minutes=1),  # read_at after message created_at → read
         )
         eml2 = self._make_eml(
             "IMAP read test",
