@@ -4671,8 +4671,7 @@
                         "schema": {
                             "type": "string"
                         },
-                        "description": "Search files by title.",
-                        "required": true
+                        "description": "Search files by title."
                     }
                 ],
                 "tags": [
@@ -4698,7 +4697,7 @@
             },
             "post": {
                 "operationId": "third_party_drive_create",
-                "description": "Create a new file in the main workspace.",
+                "description": "Save an attachment to the user's Drive workspace. If the file already exists (matched by title and size), returns the existing item with a 200 status. Otherwise, creates a new file and returns it with a 201 status.",
                 "tags": [
                     "third-party/drive"
                 ],
@@ -4723,6 +4722,16 @@
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PartialDriveItem"
+                                }
+                            }
+                        },
+                        "description": "File already exists in Drive"
+                    },
                     "201": {
                         "content": {
                             "application/json": {

@@ -15,6 +15,9 @@ type DriveAttachmentPickerProps = ButtonProps & {
     onPick: (attachments: DriveFile[]) => void;
 }
 
+// TODO: Remove this type once the Drive SDK is updated to include the url_permalink field
+type PatchedItem = Item & { url_permalink: string };
+
 /**
  * DriveAttachmentPicker is a component that allows the user to pick files
  * from a Drive instance if one is configured otherwise it will return null.
@@ -29,10 +32,10 @@ export const DriveAttachmentPicker = ({ onPick, ...buttonProps }: DriveAttachmen
     const [isLoading, setIsLoading] = useState(false);
     const config = useConfig();
     const isDriveDisabled = !useFeatureFlag(FEATURE_KEYS.DRIVE);
-    const serializeToDriveFile = (item: Item): DriveFile => ({
+    const serializeToDriveFile = (item: PatchedItem): DriveFile => ({
         id: item.id,
         name: item.title,
-        url: item.url,
+        url: item.url_permalink ?? item.url,
         type: item.type,
         size: item.size,
         created_at: new Date().toISOString(),
@@ -55,7 +58,7 @@ export const DriveAttachmentPicker = ({ onPick, ...buttonProps }: DriveAttachmen
         }
 
         if (result?.type === "picked" && result.items) {
-            onPick(result.items.map(serializeToDriveFile));
+            onPick((result.items as PatchedItem[]).map(serializeToDriveFile));
         }
     }, [isDriveDisabled]);
 

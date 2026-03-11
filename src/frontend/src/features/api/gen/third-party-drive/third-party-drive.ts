@@ -48,7 +48,7 @@ export type thirdPartyDriveRetrieveResponse =
   thirdPartyDriveRetrieveResponseSuccess;
 
 export const getThirdPartyDriveRetrieveUrl = (
-  params: ThirdPartyDriveRetrieveParams,
+  params?: ThirdPartyDriveRetrieveParams,
 ) => {
   const normalizedParams = new URLSearchParams();
 
@@ -66,7 +66,7 @@ export const getThirdPartyDriveRetrieveUrl = (
 };
 
 export const thirdPartyDriveRetrieve = async (
-  params: ThirdPartyDriveRetrieveParams,
+  params?: ThirdPartyDriveRetrieveParams,
   options?: RequestInit,
 ): Promise<thirdPartyDriveRetrieveResponse> => {
   return fetchAPI<thirdPartyDriveRetrieveResponse>(
@@ -88,7 +88,7 @@ export const getThirdPartyDriveRetrieveQueryOptions = <
   TData = Awaited<ReturnType<typeof thirdPartyDriveRetrieve>>,
   TError = unknown,
 >(
-  params: ThirdPartyDriveRetrieveParams,
+  params?: ThirdPartyDriveRetrieveParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -126,7 +126,7 @@ export function useThirdPartyDriveRetrieve<
   TData = Awaited<ReturnType<typeof thirdPartyDriveRetrieve>>,
   TError = unknown,
 >(
-  params: ThirdPartyDriveRetrieveParams,
+  params: undefined | ThirdPartyDriveRetrieveParams,
   options: {
     query: Partial<
       UseQueryOptions<
@@ -153,7 +153,7 @@ export function useThirdPartyDriveRetrieve<
   TData = Awaited<ReturnType<typeof thirdPartyDriveRetrieve>>,
   TError = unknown,
 >(
-  params: ThirdPartyDriveRetrieveParams,
+  params?: ThirdPartyDriveRetrieveParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -180,7 +180,7 @@ export function useThirdPartyDriveRetrieve<
   TData = Awaited<ReturnType<typeof thirdPartyDriveRetrieve>>,
   TError = unknown,
 >(
-  params: ThirdPartyDriveRetrieveParams,
+  params?: ThirdPartyDriveRetrieveParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -200,7 +200,7 @@ export function useThirdPartyDriveRetrieve<
   TData = Awaited<ReturnType<typeof thirdPartyDriveRetrieve>>,
   TError = unknown,
 >(
-  params: ThirdPartyDriveRetrieveParams,
+  params?: ThirdPartyDriveRetrieveParams,
   options?: {
     query?: Partial<
       UseQueryOptions<
@@ -228,17 +228,24 @@ export function useThirdPartyDriveRetrieve<
 }
 
 /**
- * Create a new file in the main workspace.
+ * Save an attachment to the user's Drive workspace. If the file already exists (matched by title and size), returns the existing item with a 200 status. Otherwise, creates a new file and returns it with a 201 status.
  */
+export type thirdPartyDriveCreateResponse200 = {
+  data: PartialDriveItem;
+  status: 200;
+};
+
 export type thirdPartyDriveCreateResponse201 = {
   data: PartialDriveItem;
   status: 201;
 };
 
-export type thirdPartyDriveCreateResponseSuccess =
-  thirdPartyDriveCreateResponse201 & {
-    headers: Headers;
-  };
+export type thirdPartyDriveCreateResponseSuccess = (
+  | thirdPartyDriveCreateResponse200
+  | thirdPartyDriveCreateResponse201
+) & {
+  headers: Headers;
+};
 export type thirdPartyDriveCreateResponse =
   thirdPartyDriveCreateResponseSuccess;
 

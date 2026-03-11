@@ -1,7 +1,7 @@
-import { DriveIcon } from "@/features/forms/components/message-form/drive-icon";
 import { useConfig } from "@/features/providers/config";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Icon } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 
 type DrivePreviewLinkProps = {
@@ -28,7 +28,7 @@ export const DrivePreviewLink = ({ fileId }: DrivePreviewLinkProps) => {
             target="_blank"
             size="medium"
             variant="tertiary"
-            icon={<DriveIcon />}
+            icon={<Icon name="remove_red_eye" />}
         />
     )
 }

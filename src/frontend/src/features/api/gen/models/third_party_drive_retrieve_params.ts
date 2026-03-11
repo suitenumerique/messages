@@ -10,5 +10,5 @@ export type ThirdPartyDriveRetrieveParams = {
   /**
    * Search files by title.
    */
-  title: string;
+  title?: string;
 };

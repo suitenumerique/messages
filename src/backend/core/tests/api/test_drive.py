@@ -10,7 +10,6 @@ from unittest.mock import patch
 from django.urls import reverse
 
 import pytest
-import requests
 import responses
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -347,7 +346,7 @@ Test file content for Drive upload without access.
     def test_api_third_party_drive_post_success(
         self, _mock, api_client_with_user, mailbox_with_message
     ):
-        """Test successfully uploading a file to Drive."""
+        """Test successfully uploading a file to Drive when it doesn't exist yet."""
         client, _ = api_client_with_user
         _, message = mailbox_with_message
 
@@ -355,6 +354,19 @@ Test file content for Drive upload without access.
 
         file_id = str(uuid.uuid4())
         presigned_url = "http://s3.test/presigned-upload-url"
+
+        # Mock the search for existing file (not found)
+        responses.add(
+            responses.GET,
+            "http://drive.test/external_api/v1.0/items/",
+            json={
+                "count": 0,
+                "next": None,
+                "previous": None,
+                "results": [],
+            },
+            status=status.HTTP_200_OK,
+        )
 
         # Mock the file creation response
         responses.add(
@@ -403,28 +415,144 @@ Test file content for Drive upload without access.
         assert data["id"] == file_id
         assert data["title"] == "test_file.txt"
 
-        # Verify the 3 expected API calls (create → S3 upload → upload-ended)
-        assert len(responses.calls) == 3
+        # Verify the 4 expected API calls (search → create → S3 upload → upload-ended)
+        assert len(responses.calls) == 4
+
+        # Verify search request
+        assert "is_creator_me=True" in responses.calls[0].request.url
+        assert "title=test_file.txt" in responses.calls[0].request.url
 
         # Verify file creation request
-        assert (
-            responses.calls[0].request.url
-            == "http://drive.test/external_api/v1.0/items/"
-        )
-        assert (
-            responses.calls[0].request.headers["Authorization"]
-            == "Bearer test-access-token"
-        )
-        file_creation_body = json.loads(responses.calls[0].request.body)
+        assert responses.calls[1].request.method == "POST"
+        file_creation_body = json.loads(responses.calls[1].request.body)
         assert file_creation_body["type"] == "file"
         assert file_creation_body["filename"] == "test_file.txt"
 
         # Verify presigned URL upload
-        assert responses.calls[1].request.url == presigned_url
-        assert responses.calls[1].request.headers["x-amz-acl"] == "private"
+        assert responses.calls[2].request.url == presigned_url
+        assert responses.calls[2].request.headers["x-amz-acl"] == "private"
 
         # Verify upload-ended confirmation
-        assert f"items/{file_id}/upload-ended/" in responses.calls[2].request.url
+        assert f"items/{file_id}/upload-ended/" in responses.calls[3].request.url
+
+    @responses.activate
+    @patch(
+        "lasuite.oidc_login.middleware.RefreshOIDCAccessToken.is_expired",
+        return_value=False,
+    )
+    def test_api_third_party_drive_post_file_already_exists(
+        self, _mock, api_client_with_user, mailbox_with_message
+    ):
+        """Test that POST returns 200 when the file already exists in Drive."""
+        client, _ = api_client_with_user
+        _, message = mailbox_with_message
+
+        blob_id = f"msg_{message.id}_0"
+        existing_file_id = str(uuid.uuid4())
+
+        # The attachment "test_file.txt" has content "Test file content for Drive upload."
+        # which is 35 bytes
+        attachment_size = len(b"Test file content for Drive upload.")
+
+        # Mock the search returning an existing file with matching size
+        responses.add(
+            responses.GET,
+            "http://drive.test/external_api/v1.0/items/",
+            json={
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [
+                    {
+                        "id": existing_file_id,
+                        "filename": "test_file.txt",
+                        "mimetype": "text/plain",
+                        "size": attachment_size,
+                    }
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+        response = client.post(
+            reverse("drive"),
+            {"blob_id": blob_id},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["id"] == existing_file_id
+
+        # Only the search request should have been made (no create/upload)
+        assert len(responses.calls) == 1
+        assert "title=test_file.txt" in responses.calls[0].request.url
+
+    @responses.activate
+    @patch(
+        "lasuite.oidc_login.middleware.RefreshOIDCAccessToken.is_expired",
+        return_value=False,
+    )
+    def test_api_third_party_drive_post_same_name_different_size(
+        self, _mock, api_client_with_user, mailbox_with_message
+    ):
+        """Test that POST creates a new file when existing file has same name but different size."""
+        client, _ = api_client_with_user
+        _, message = mailbox_with_message
+
+        blob_id = f"msg_{message.id}_0"
+        file_id = str(uuid.uuid4())
+        presigned_url = "http://s3.test/presigned-upload-url"
+
+        # Mock the search returning a file with same name but different size
+        responses.add(
+            responses.GET,
+            "http://drive.test/external_api/v1.0/items/",
+            json={
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "filename": "test_file.txt",
+                        "mimetype": "text/plain",
+                        "size": 999999,
+                    }
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+        # Mock the file creation (since size didn't match)
+        responses.add(
+            responses.POST,
+            "http://drive.test/external_api/v1.0/items/",
+            json={
+                "id": file_id,
+                "title": "test_file.txt",
+                "type": "file",
+                "policy": presigned_url,
+            },
+            status=status.HTTP_200_OK,
+        )
+        responses.add(responses.PUT, presigned_url, status=status.HTTP_200_OK)
+        responses.add(
+            responses.POST,
+            f"http://drive.test/external_api/v1.0/items/{file_id}/upload-ended/",
+            json={"id": file_id, "title": "test_file.txt", "type": "file"},
+            status=status.HTTP_200_OK,
+        )
+
+        response = client.post(
+            reverse("drive"),
+            {"blob_id": blob_id},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        # search + create + S3 upload + upload-ended
+        assert len(responses.calls) == 4
 
     @responses.activate
     @patch(
@@ -488,6 +616,19 @@ Test file content for Drive upload without access.
         file_id = str(uuid.uuid4())
         presigned_url = "http://s3.test/presigned-upload-url"
 
+        # Mock the search for existing file (not found)
+        responses.add(
+            responses.GET,
+            "http://drive.test/external_api/v1.0/items/",
+            json={
+                "count": 0,
+                "next": None,
+                "previous": None,
+                "results": [],
+            },
+            status=status.HTTP_200_OK,
+        )
+
         # Mock the file creation response
         responses.add(
             responses.POST,
@@ -510,13 +651,11 @@ Test file content for Drive upload without access.
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
-        with pytest.raises(requests.exceptions.HTTPError) as excinfo:
-            client.post(
-                reverse("drive"),
-                {"blob_id": blob_id},
-                format="json",
-            )
-
-        assert (
-            excinfo.value.response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        response = client.post(
+            reverse("drive"),
+            {"blob_id": blob_id},
+            format="json",
         )
+
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json()["error"] == "Failed to create file in Drive"
