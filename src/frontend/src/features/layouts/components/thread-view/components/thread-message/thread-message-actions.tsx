@@ -7,7 +7,6 @@ import { getRequestUrl } from "@/features/api/utils";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import usePrint from "@/features/message/use-print";
 import useRead from "@/features/message/use-read";
-import useStarred from "@/features/message/use-starred";
 import useSplitThread from "@/features/message/use-split-thread";
 import useTrash from "@/features/message/use-trash";
 import { ThreadMessageActionsProps } from "./types";
@@ -25,9 +24,8 @@ const ThreadMessageActions = ({
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
     // Hooks and state specific to actions
-    const { unselectThread, selectedThread, selectedMailbox } = useMailboxContext();
+    const { unselectThread, selectedThread } = useMailboxContext();
     const { markAsReadAt } = useRead();
-    const { markAsStarred } = useStarred();
     const { markAsTrashed } = useTrash();
     const { splitThread } = useSplitThread();
     const { print } = usePrint();
@@ -59,14 +57,6 @@ const ThreadMessageActions = ({
             markAsReadAt({ threadIds: [selectedThread.id], readAt: message.created_at! });
         }
     }, [message.id, message.created_at, unselectThread, selectedThread, markAsReadAt]);
-
-    const starredAt = selectedThread?.accesses.find(a => a.mailbox.id === selectedMailbox?.id)?.starred_at ?? null;
-    const isAlreadyStarredFromHere = starredAt === message.created_at;
-
-    const handleStarredFrom = useCallback(() => {
-        if (!selectedThread) return;
-        markAsStarred({ threadIds: [selectedThread.id], starredAt: message.created_at! });
-    }, [selectedThread, message.created_at, markAsStarred]);
 
     const handleMarkAsTrashed = useCallback(() => {
         markAsTrashed({ messageIds: [message.id] });
@@ -115,11 +105,6 @@ const ThreadMessageActions = ({
             icon: <Icon type={IconType.FILLED} name="mark_email_unread" />,
             callback: () => toggleReadStateFrom(true)
         }]),
-        ...(!isAlreadyStarredFromHere && hasSiblingMessages ? [{
-            label: t('Star from here'),
-            icon: <Icon type={IconType.FILLED} name="star_border" />,
-            callback: handleStarredFrom,
-        }] : []),
         ...(canSplitThread ? [{
             label: t('Split thread from here'),
             icon: <Icon type={IconType.FILLED} name="call_split" />,

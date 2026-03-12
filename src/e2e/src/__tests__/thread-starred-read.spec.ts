@@ -44,11 +44,6 @@ test.describe("Thread starred", () => {
     // Star the thread
     await starButton.click();
 
-    // Verify the starred marker appears in thread view
-    await expect(
-      page.getByText("This thread has been starred."),
-    ).toBeVisible();
-
     // Verify the button updates to "Unstar"
     await expect(
       page.getByRole("button", { name: "Unstar this thread" }),
@@ -86,11 +81,6 @@ test.describe("Thread starred", () => {
 
     // Unstar the thread
     await unstarButton.click();
-
-    // Verify the starred marker disappears
-    await expect(
-      page.getByText("This thread has been starred."),
-    ).not.toBeVisible();
 
     // Verify the button reverts to "Star this thread"
     await expect(
