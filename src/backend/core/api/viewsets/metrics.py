@@ -267,10 +267,14 @@ class MailboxUsageMetricsApiView(APIView):
         domain = request.query_params.get("domain")
         account_email = request.query_params.get("account_email")
         account_type = request.query_params.get("account_type")
-        custom_attr_key = request.query_params.get(
-            "filter_by_maildomain_custom_attribute"
-        )
-        custom_attr_value = request.query_params.get("custom_attribute_value")
+        account_id_key = request.query_params.get("account_id_key")
+        account_id_value = request.query_params.get("account_id_value")
+
+        if account_id_key and "__" in account_id_key:
+            return Response(
+                {"error": "Invalid account_id_key."},
+                status=400,
+            )
 
         if domain:
             queryset = queryset.filter(domain__name=domain)
@@ -278,18 +282,18 @@ class MailboxUsageMetricsApiView(APIView):
             parts = account_email.rsplit("@", 1)
             if len(parts) == 2:
                 queryset = queryset.filter(local_part=parts[0], domain__name=parts[1])
-        if custom_attr_key and custom_attr_value:
+        if account_id_key and account_id_value:
             queryset = queryset.filter(
-                **{f"domain__custom_attributes__{custom_attr_key}": custom_attr_value}
+                **{f"domain__custom_attributes__{account_id_key}": account_id_value}
             )
 
         if account_type == "organization" and (
-            not custom_attr_key or not custom_attr_value
+            not account_id_key or not account_id_value
         ):
             return Response(
                 {
-                    "error": "filter_by_maildomain_custom_attribute and "
-                    "custom_attribute_value are required "
+                    "error": "account_id_key and "
+                    "account_id_value are required "
                     "for account_type=organization."
                 },
                 status=400,
@@ -312,8 +316,8 @@ class MailboxUsageMetricsApiView(APIView):
                 return Response({"count": 0, "results": []})
             results = [
                 {
-                    custom_attr_key: custom_attr_value,
-                    "account": {"type": "organization", "id": custom_attr_value},
+                    account_id_key: account_id_value,
+                    "account": {"type": "organization", "id": account_id_value},
                     "metrics": {"storage_used": total},
                 }
             ]
@@ -334,10 +338,10 @@ class MailboxUsageMetricsApiView(APIView):
                     },
                     "metrics": {"storage_used": row["domain_storage"]},
                 }
-                if custom_attr_key:
-                    result[custom_attr_key] = (
+                if account_id_key:
+                    result[account_id_key] = (
                         row["domain__custom_attributes"] or {}
-                    ).get(custom_attr_key, "")
+                    ).get(account_id_key, "")
                 results.append(result)
 
         else:
@@ -351,9 +355,9 @@ class MailboxUsageMetricsApiView(APIView):
                     "account": {"type": "mailbox", "email": email},
                     "metrics": {"storage_used": mailbox.storage_used},
                 }
-                if custom_attr_key:
-                    result[custom_attr_key] = mailbox.domain.custom_attributes.get(
-                        custom_attr_key, ""
+                if account_id_key:
+                    result[account_id_key] = mailbox.domain.custom_attributes.get(
+                        account_id_key, ""
                     )
                 results.append(result)
 
