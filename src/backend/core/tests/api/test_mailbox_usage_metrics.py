@@ -31,8 +31,24 @@ def correctly_configured_header(settings):
     return {"HTTP_AUTHORIZATION": f"Bearer {settings.METRICS_API_KEY}"}
 
 
+CUSTOM_ATTRIBUTES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "org_id": {"type": "string"},
+        "tenant": {"type": "string"},
+        "region": {"type": "string"},
+        "code": {"type": "string"},
+    },
+}
+
+
+@pytest.mark.django_db
 class TestMailboxUsageMetrics:
     """Tests for the mailbox usage metrics endpoint."""
+
+    @pytest.fixture(autouse=True)
+    def _set_custom_attributes_schema(self, settings):
+        settings.SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN = CUSTOM_ATTRIBUTES_SCHEMA
 
     @pytest.mark.django_db
     def test_requires_auth(self, api_client, url, correctly_configured_header):
@@ -537,14 +553,18 @@ class TestMailboxUsageMetrics:
         assert data["results"] == []
 
     @pytest.mark.django_db
-    def test_invalid_account_id_key(self, api_client, url, correctly_configured_header):
-        """account_id_key containing __ is rejected to prevent ORM injection."""
+    @pytest.mark.parametrize(
+        "key",
+        ["org_id__gte", "contains", "account", "metrics", "unknown"],
+    )
+    def test_invalid_account_id_key(
+        self, api_client, url, correctly_configured_header, key
+    ):
+        """account_id_key not declared in SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN
+        is rejected."""
         response = api_client.get(
             url,
-            {
-                "account_id_key": "org_id__gte",
-                "account_id_value": "111",
-            },
+            {"account_id_key": key, "account_id_value": "111"},
             **correctly_configured_header,
         )
         assert response.status_code == 400
@@ -579,7 +599,9 @@ class TestMailboxUsageMetrics:
         assert data["count"] == 2
         results_by_email = {r["account"]["email"]: r for r in data["results"]}
         assert results_by_email["alice@a.com"]["org_id"] == "111"
-        assert results_by_email["alice@a.com"]["metrics"]["storage_used"] == 1 * overhead
+        assert (
+            results_by_email["alice@a.com"]["metrics"]["storage_used"] == 1 * overhead
+        )
         assert results_by_email["bob@b.com"]["org_id"] == "222"
         assert results_by_email["bob@b.com"]["metrics"]["storage_used"] == 1 * overhead
 
@@ -618,7 +640,7 @@ class TestMailboxUsageMetrics:
         assert data["count"] == 1
         result = data["results"][0]
         assert result["org_id"] == "111"
-        assert result["account"] == {"type": "organization", "id": "111"}
+        assert result["account"] == {"type": "organization"}
         assert result["metrics"]["storage_used"] == 2 * overhead
 
     @pytest.mark.django_db

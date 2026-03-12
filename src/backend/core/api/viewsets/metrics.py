@@ -270,7 +270,10 @@ class MailboxUsageMetricsApiView(APIView):
         account_id_key = request.query_params.get("account_id_key")
         account_id_value = request.query_params.get("account_id_value")
 
-        if account_id_key and "__" in account_id_key:
+        allowed_keys = settings.SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN.get(
+            "properties", {}
+        ).keys()
+        if account_id_key and account_id_key not in allowed_keys:
             return Response(
                 {"error": "Invalid account_id_key."},
                 status=400,
@@ -317,7 +320,7 @@ class MailboxUsageMetricsApiView(APIView):
             results = [
                 {
                     account_id_key: account_id_value,
-                    "account": {"type": "organization", "id": account_id_value},
+                    "account": {"type": "organization"},
                     "metrics": {"storage_used": total},
                 }
             ]
