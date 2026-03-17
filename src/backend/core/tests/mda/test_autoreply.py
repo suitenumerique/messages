@@ -919,10 +919,14 @@ class TestSendAutoreplyForMessage:
         assert autoreply_msg.has_attachments is True
 
 
-    def test_updates_sender_read_at(
+    def test_does_not_update_sender_read_at(
         self, mailbox, autoreply_template, inbound_message
     ):
-        """Autoreply should update read_at so the thread does not appear unread."""
+        """Autoreply must NOT mark the thread as read for the sender.
+
+        The sender has autoreply enabled because they are away. The thread
+        should remain unread so they can see new messages when they return.
+        """
         access = models.ThreadAccess.objects.get(
             mailbox=mailbox, thread=inbound_message.thread
         )
@@ -931,8 +935,4 @@ class TestSendAutoreplyForMessage:
         send_autoreply_for_message(autoreply_template, mailbox, inbound_message)
 
         access.refresh_from_db()
-        autoreply_msg = models.Message.objects.filter(
-            parent=inbound_message, is_sender=True
-        ).last()
-        assert access.read_at is not None
-        assert access.read_at >= autoreply_msg.created_at
+        assert access.read_at is None

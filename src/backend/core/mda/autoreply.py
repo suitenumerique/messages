@@ -267,12 +267,9 @@ def send_autoreply_for_message(
     # 7. Trigger async send (outside transaction to avoid sending before commit)
     send_message_task.delay(str(message.id))
 
-    # 8. Update thread stats
-    models.ThreadAccess.objects.filter(
-        thread=thread,
-        mailbox=mailbox,
-    ).update(read_at=message.created_at)
-
+    # 8. Update thread stats — do NOT update read_at here: the autoreply
+    # sender is away, so the thread must stay unread for them to notice
+    # new messages when they return.
     thread.update_stats()
 
     logger.info(
