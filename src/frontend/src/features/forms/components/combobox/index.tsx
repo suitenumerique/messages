@@ -85,6 +85,7 @@ export const ComboBox = (props: ComboBoxProps) => {
                 addSelectedItem(selectedItem);
                 setInputValue('');
             },
+            defaultHighlightedIndex: 0,
             onInputValueChange: ({ inputValue: newInputValue }) => {
                 const isPasted = newInputValue.length - inputValue?.length > 1
                 const [newItems, rest] = parseInputValue(newInputValue);

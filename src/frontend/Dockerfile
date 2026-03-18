@@ -16,8 +16,9 @@ RUN npm install
 
 FROM frontend-deps AS frontend-build
 
+ARG DOCKER_USER=1000
 WORKDIR /home/frontend/
-COPY . ./
+COPY --chown=${DOCKER_USER} . ./
 
 ARG API_ORIGIN
 ENV NEXT_PUBLIC_API_ORIGIN=${API_ORIGIN}

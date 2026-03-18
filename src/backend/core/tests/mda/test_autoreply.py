@@ -918,7 +918,6 @@ class TestSendAutoreplyForMessage:
         autoreply_msg.refresh_from_db()
         assert autoreply_msg.has_attachments is True
 
-
     def test_does_not_update_sender_read_at(
         self, mailbox, autoreply_template, inbound_message
     ):

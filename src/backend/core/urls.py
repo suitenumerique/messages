@@ -42,6 +42,8 @@ from core.api.viewsets.send import SendMessageView
 from core.api.viewsets.task import TaskDetailView
 from core.api.viewsets.thread import ThreadViewSet
 from core.api.viewsets.thread_access import ThreadAccessViewSet
+from core.api.viewsets.thread_event import ThreadEventViewSet
+from core.api.viewsets.thread_user import ThreadUserViewSet
 from core.api.viewsets.user import UserViewSet
 from core.authentication.urls import urlpatterns as oidc_urls
 
@@ -65,6 +67,12 @@ router.register(
 thread_access_nested_router = DefaultRouter()
 thread_access_nested_router.register(
     r"accesses", ThreadAccessViewSet, basename="thread-access"
+)
+thread_access_nested_router.register(
+    r"events", ThreadEventViewSet, basename="thread-event"
+)
+thread_access_nested_router.register(
+    r"users", ThreadUserViewSet, basename="thread-user"
 )
 
 # Router for /mailboxes/{mailbox_id}/accesses/

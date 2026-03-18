@@ -135,6 +135,12 @@ class MailboxAbilities(models.TextChoices):
     CAN_IMPORT_MESSAGES = "import_messages", "Can import messages"
 
 
+class ThreadEventTypeChoices(models.TextChoices):
+    """Defines the possible types of thread events."""
+
+    IM = "im", "Instant message"
+
+
 class MessageTemplateTypeChoices(models.IntegerChoices):
     """Defines the possible types of message templates."""
 

@@ -15,6 +15,8 @@ export * from "./tasks/tasks";
 export * from "./third-party-drive/third-party-drive";
 export * from "./threads/threads";
 export * from "./thread-access/thread-access";
+export * from "./thread-events/thread-events";
+export * from "./thread-users/thread-users";
 export * from "./admin-users-list/admin-users-list";
 export * from "./users/users";
 export * from "./models";

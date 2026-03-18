@@ -108,20 +108,46 @@ class IsAllowedToAccess(IsAuthenticated):
         if not IsAuthenticated.has_permission(self, request, view):
             return False
 
-        # This check is primarily for LIST actions based on query params
-        mailbox_id = request.query_params.get("mailbox_id")  # Used by Thread list
-        thread_id = request.query_params.get("thread_id")  # Used by Message list
+        # For nested routes under /threads/{thread_id}/events/ or /threads/{thread_id}/accesses/
+        # URL path kwargs take priority — ignore query params when URL provides thread_id
+        thread_id_from_url = view.kwargs.get("thread_id")
+
+        # Query params are only used for flat routes (Thread list, Message list)
+        mailbox_id = (
+            request.query_params.get("mailbox_id") if not thread_id_from_url else None
+        )
+        thread_id = (
+            request.query_params.get("thread_id") if not thread_id_from_url else None
+        )
 
         # If it's a detail action (retrieve, update, destroy), object-level permission is checked
         # by has_object_permission. If it's a list action without filters, deny access.
         is_list_action = hasattr(view, "action") and view.action == "list"
 
         if not is_list_action:
+            # For create action on nested routes, check thread access with edit role
+            if (
+                thread_id_from_url
+                and hasattr(view, "action")
+                and view.action == "create"
+            ):
+                return models.ThreadAccess.objects.filter(
+                    thread_id=thread_id_from_url,
+                    role__in=enums.THREAD_ROLES_CAN_EDIT,
+                    mailbox__accesses__user=request.user,
+                ).exists()
             # Allow non-list actions (like detail views or specific APIViews like SendMessageView)
             # to proceed to object-level checks or handle permissions within the view.
             return True
 
         # --- The following logic only applies if is_list_action is True --- #
+        # Check access for nested thread routes (e.g., /threads/{id}/events/)
+        if thread_id_from_url:
+            return models.ThreadAccess.objects.filter(
+                thread_id=thread_id_from_url,
+                mailbox__accesses__user=request.user,
+            ).exists()
+
         # Check access based on query params for LIST action
         if thread_id:
             # Check if the user has access to this specific thread to list messages
@@ -142,6 +168,18 @@ class IsAllowedToAccess(IsAuthenticated):
         if isinstance(obj, models.Mailbox):
             # Check access directly on the mailbox
             return models.MailboxAccess.objects.filter(mailbox=obj, user=user).exists()
+
+        if isinstance(obj, models.ThreadEvent):
+            thread = obj.thread
+            has_access = models.ThreadAccess.objects.filter(
+                thread=thread, mailbox__accesses__user=user
+            ).exists()
+            if not has_access:
+                return False
+            # Only the author can update or delete their own events
+            if view.action in ["update", "partial_update", "destroy"]:
+                return obj.author_id == user.id
+            return True
 
         if isinstance(obj, (models.Message, models.Thread)):
             thread = obj.thread if isinstance(obj, models.Message) else obj

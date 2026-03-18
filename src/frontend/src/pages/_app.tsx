@@ -87,7 +87,7 @@ export default function MyApp({ Component, pageProps }: AppPropsWithLayout) {
         />
       </Head>
       <QueryClientProvider client={queryClient}>
-        <ReactQueryDevtools initialIsOpen={false} />
+        <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
         <ErrorBoundary>
           <ConfigProvider>
             <ThemeProvider>

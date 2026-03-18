@@ -131,14 +131,18 @@ class Command(BaseCommand):
             )
 
         # Step 6: Create outbox test data for each browser
-        self.stdout.write("\n-- 5/6 📬 Creating outbox test data")
+        self.stdout.write("\n-- 5/7 📬 Creating outbox test data")
         for browser in BROWSERS:
             self._create_outbox_test_data(domain, browser)
 
         # Step 7: Create inbox test data for each browser
-        self.stdout.write("\n-- 6/6 📥 Creating inbox test data")
+        self.stdout.write("\n-- 6/7 📥 Creating inbox test data")
         for browser in BROWSERS:
             self._create_inbox_test_data(domain, browser)
+
+        # Step 8: Create shared mailbox thread data for IM testing
+        self.stdout.write("\n-- 7/7 💬 Creating shared mailbox thread for IM testing")
+        self._create_shared_mailbox_thread_data(shared_mailbox)
 
     def _create_user_with_mailbox(
         self, email, domain, is_domain_admin=False, is_superuser=False
@@ -464,3 +468,49 @@ class Command(BaseCommand):
         thread.update_stats()
 
         return thread
+
+    def _create_shared_mailbox_thread_data(self, shared_mailbox):
+        """Create a thread in the shared mailbox for testing internal messages (IM)."""
+        subject = "Shared inbox thread for IM"
+
+        # Clean up existing thread
+        existing = models.Thread.objects.filter(
+            subject=subject,
+            accesses__mailbox=shared_mailbox,
+        )
+        deleted_count = existing.count()
+        if deleted_count > 0:
+            existing.delete()
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  ⚠ Deleted {deleted_count} existing shared mailbox IM thread(s)"
+                )
+            )
+
+        # Create thread with EDITOR access so the IM input is visible
+        thread = models.Thread.objects.create(subject=subject)
+        models.ThreadAccess.objects.create(
+            thread=thread,
+            mailbox=shared_mailbox,
+            role=ThreadAccessRoleChoices.EDITOR,
+        )
+
+        # Create an external sender message so the thread appears in inbox
+        sender_contact, _ = models.Contact.objects.get_or_create(
+            email="external@external.invalid",
+            mailbox=shared_mailbox,
+            defaults={"name": "External Sender"},
+        )
+        models.Message.objects.create(
+            thread=thread,
+            sender=sender_contact,
+            subject=subject,
+            is_sender=False,
+            is_draft=False,
+        )
+
+        thread.update_stats()
+
+        self.stdout.write(
+            self.style.SUCCESS(f"  ✓ Shared mailbox IM thread created: {subject}")
+        )

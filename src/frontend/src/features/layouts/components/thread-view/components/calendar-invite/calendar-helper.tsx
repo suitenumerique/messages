@@ -30,30 +30,7 @@ export function getEventEnd(event: IcsEvent): Date | undefined {
     return undefined;
 }
 
-/**
- * Convert URL strings in text to clickable links
- */
-export function linkifyText(text: string): React.ReactNode[] {
-    const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/i;
-    const parts = text.split(urlRegex);
-
-    return parts.map((part, index) => {
-        if (urlRegex.test(part)) {
-            return (
-                <a
-                    key={index}
-                    href={part}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="calendar-invite__link"
-                >
-                    {part}
-                </a>
-            );
-        }
-        return part;
-    });
-}
+export { TextHelper } from "@/features/utils/text-helper";
 
 /**
  * Detect all-day events by checking if start/end are both at midnight.

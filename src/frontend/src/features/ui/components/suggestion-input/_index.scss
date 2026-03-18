@@ -1,0 +1,35 @@
+.suggestion-input {
+    position: relative;
+}
+
+.suggestion-input__popover {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 2px;
+    min-width: calc(100% - 4px);
+    max-height: 20rem;
+    overflow-y: auto;
+    background-color: var(--c--components--forms-select--menu-background-color);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+    z-index: 10;
+
+    &--open {
+        display: block;
+    }
+}
+
+.suggestion-input__item {
+    padding: var(--c--globals--spacings--sm);
+    font-size: var(--c--components--forms-select--item-font-size);
+    color: var(--c--components--forms-select--item-color);
+    cursor: pointer;
+
+    &:hover,
+    &--highlighted {
+        background-color: var(--c--components--forms-select--item-background-color--hover);
+    }
+}

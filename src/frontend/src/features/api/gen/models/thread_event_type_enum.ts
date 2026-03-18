@@ -7,15 +7,12 @@
  */
 
 /**
- * * `personal` - personal
- * `shared` - shared
- * `redirect` - redirect
+ * * `im` - Instant message
  */
-export type TypeEnum = (typeof TypeEnum)[keyof typeof TypeEnum];
+export type ThreadEventTypeEnum =
+  (typeof ThreadEventTypeEnum)[keyof typeof ThreadEventTypeEnum];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
-export const TypeEnum = {
-  personal: "personal",
-  shared: "shared",
-  redirect: "redirect",
+export const ThreadEventTypeEnum = {
+  im: "im",
 } as const;

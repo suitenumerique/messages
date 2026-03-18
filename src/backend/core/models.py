@@ -44,6 +44,7 @@ from core.enums import (
     MessageRecipientTypeChoices,
     MessageTemplateTypeChoices,
     ThreadAccessRoleChoices,
+    ThreadEventTypeChoices,
     UserAbilities,
 )
 from core.mda.rfc5322 import EmailParseError, parse_email_message
@@ -1348,6 +1349,88 @@ class ThreadAccess(BaseModel):
         Used by `_compute_unread_starred_from_accesses()` in the search index.
         """
         return Q(starred_at__isnull=False)
+
+
+class ThreadEvent(BaseModel):
+    """Thread event model to store events in a thread timeline (internal comments, notifications, etc.)."""
+
+    DATA_SCHEMAS = {
+        ThreadEventTypeChoices.IM: {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                },
+                "mentions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "format": "uuid"},
+                            "name": {"type": "string"},
+                        },
+                        "required": ["id", "name"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["content"],
+            "additionalProperties": False,
+        },
+    }
+
+    thread = models.ForeignKey(
+        "Thread", on_delete=models.CASCADE, related_name="events"
+    )
+    type = models.CharField(
+        "type",
+        max_length=36,
+        choices=ThreadEventTypeChoices.choices,
+    )
+    channel = models.ForeignKey(
+        "Channel",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="thread_events",
+    )
+    message = models.ForeignKey(
+        "Message",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="thread_events",
+    )
+    author = models.ForeignKey(
+        "User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="thread_events",
+    )
+    data = models.JSONField("data", default=dict, blank=True)
+
+    class Meta:
+        db_table = "messages_threadevent"
+        verbose_name = "thread event"
+        verbose_name_plural = "thread events"
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["thread", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.thread} - {self.type} - {self.created_at}"
+
+    def clean(self):
+        """Validate the data field against the schema for this event type."""
+        schema = self.DATA_SCHEMAS.get(self.type)
+        if schema:
+            try:
+                jsonschema.validate(self.data, schema)
+            except jsonschema.ValidationError as exception:
+                raise ValidationError({"data": exception.message}) from exception
+        super().clean()
 
 
 class Contact(BaseModel):

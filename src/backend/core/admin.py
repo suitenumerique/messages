@@ -422,11 +422,21 @@ class ThreadAccessInline(admin.TabularInline):
     readonly_fields = ("read_at", "starred_at")
 
 
+class ThreadEventInline(admin.TabularInline):
+    """Inline class for the ThreadEvent model"""
+
+    model = models.ThreadEvent
+    autocomplete_fields = ("author", "channel")
+    raw_id_fields = ("message",)
+    readonly_fields = ("created_at",)
+    extra = 0
+
+
 @admin.register(models.Thread)
 class ThreadAdmin(admin.ModelAdmin):
     """Admin class for the Thread model"""
 
-    inlines = [ThreadAccessInline]
+    inlines = [ThreadAccessInline, ThreadEventInline]
     list_display = (
         "id",
         "subject",

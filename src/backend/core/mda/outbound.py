@@ -381,7 +381,6 @@ def prepare_outbound_message(
 
     message.thread.update_stats()
 
-
     # Clean up the draft blob and the attachment blobs
     if draft_blob:
         draft_blob.delete()

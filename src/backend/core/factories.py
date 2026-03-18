@@ -144,6 +144,18 @@ class ThreadAccessFactory(factory.django.DjangoModelFactory):
     )
 
 
+class ThreadEventFactory(factory.django.DjangoModelFactory):
+    """A factory to create thread events for testing purposes."""
+
+    class Meta:
+        model = models.ThreadEvent
+
+    thread = factory.SubFactory(ThreadFactory)
+    type = "im"
+    data = factory.LazyAttribute(lambda o: {"content": fake.sentence()})
+    author = factory.SubFactory(UserFactory)
+
+
 class ContactFactory(factory.django.DjangoModelFactory):
     """A factory to random contacts for testing purposes."""
 

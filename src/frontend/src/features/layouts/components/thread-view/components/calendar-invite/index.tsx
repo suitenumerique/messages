@@ -15,7 +15,7 @@ import { ContactChip } from "@/features/ui/components/contact-chip";
 import { Badge } from "@/features/ui/components/badge";
 import {
     getEventEnd,
-    linkifyText,
+    TextHelper,
     formatEventDateRange,
     formatRecurrenceRule,
     getAttendeeStatusInfo,
@@ -165,7 +165,12 @@ const EventCard = ({
                             type={IconType.OUTLINED}
                             className="calendar-invite__detail-icon"
                         />
-                        <span>{linkifyText(event.location)}</span>
+                        <span>
+                            {TextHelper.renderLinks(
+                                [event.location],
+                                { props: { className: "calendar-invite__link" } }
+                            )}
+                        </span>
                     </div>
                 )}
 
@@ -195,7 +200,7 @@ const EventCard = ({
                             className="calendar-invite__detail-icon"
                         />
                         <div>
-                            <p>{linkifyText(displayedDescription)}</p>
+                            <p>{TextHelper.renderLinks([displayedDescription])}</p>
                             {descriptionTruncated && (
                                 <button
                                     type="button"

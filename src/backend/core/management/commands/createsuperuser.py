@@ -31,8 +31,13 @@ class Command(BaseCommand):
         try:
             user = UserModel.objects.get(admin_email=email)
         except UserModel.DoesNotExist:
-            user = UserModel(admin_email=email)
-            message = "Superuser created successfully."
+            try:
+                user = UserModel.objects.get(email=email)
+            except UserModel.DoesNotExist:
+                user = UserModel(admin_email=email)
+                message = "Superuser created successfully."
+            else:
+                message = "User already existed and was upgraded to superuser."
         else:
             if user.is_superuser and user.is_staff:
                 message = "Superuser already exists."

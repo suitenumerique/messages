@@ -1,5 +1,5 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useRef } from "react";
-import { Mailbox, MailboxRoleChoices, Message, messagesListResponse200, PaginatedThreadList, Thread, useLabelsList, useMailboxesList, useMessagesList, useThreadsListInfinite } from "../api/gen";
+import { Mailbox, MailboxRoleChoices, Message, messagesListResponse200, PaginatedThreadList, Thread, ThreadEvent, useLabelsList, useMailboxesList, useMessagesList, useThreadsEventsList, useThreadsListInfinite, getThreadsEventsListQueryKey } from "../api/gen";
 import { FetchStatus, InfiniteData, QueryStatus, RefetchOptions, useQueryClient } from "@tanstack/react-query";
 import type { threadsListResponse } from "../api/gen/threads/threads";
 import { useRouter } from "next/router";
@@ -36,15 +36,22 @@ type MessageQueryInvalidationSource = {
     skipThreadsRefetch?: boolean;
 }
 
+export type TimelineItem =
+    | { type: 'message'; data: Message; created_at: string }
+    | { type: 'event'; data: ThreadEvent; created_at: string };
+
 type MailboxContextType = {
     mailboxes: readonly Mailbox[] | null;
     threads: PaginatedThreadList | null;
     messages: readonly Message[] | null;
+    threadEvents: readonly ThreadEvent[] | null;
+    threadItems: readonly TimelineItem[] | null;
     selectedMailbox: Mailbox | null;
     selectedThread: Thread | null;
     unselectThread: () => void;
     loadNextThreads: () => Promise<unknown>;
     invalidateThreadMessages: (source?: MessageQueryInvalidationSource) => Promise<void>;
+    invalidateThreadEvents: () => Promise<void>;
     invalidateThreadsStats: () => Promise<void>;
     invalidateLabels: () => Promise<void>;
     refetchMailboxes: (options?: RefetchOptions) => Promise<unknown>;
@@ -53,23 +60,30 @@ type MailboxContextType = {
         mailboxes: QueryState,
         threads: PaginatedQueryState,
         messages: QueryState,
+        threadEvents: QueryState,
     };
     error: {
         mailboxes: unknown | null;
         threads: unknown | null;
         messages: unknown | null;
+        threadEvents: unknown | null;
     };
 }
+
+export const isThreadEvent = (item: TimelineItem | null): item is Extract<TimelineItem, { type: 'event' }> => item?.type === 'event';
 
 const MailboxContext = createContext<MailboxContextType>({
     mailboxes: null,
     threads: null,
     messages: null,
+    threadEvents: null,
+    threadItems: null,
     selectedMailbox: null,
     selectedThread: null,
     loadNextThreads: async () => {},
     unselectThread: () => {},
     invalidateThreadMessages: async () => {},
+    invalidateThreadEvents: async () => {},
     invalidateThreadsStats: async () => {},
     invalidateLabels: async () => {},
     refetchMailboxes: async () => {},
@@ -94,11 +108,18 @@ const MailboxContext = createContext<MailboxContextType>({
             isFetching: false,
             isLoading: false,
         },
+        threadEvents: {
+            status: 'pending',
+            fetchStatus: 'idle',
+            isFetching: false,
+            isLoading: false,
+        },
     },
     error: {
         mailboxes: null,
         threads: null,
         messages: null,
+        threadEvents: null,
     },
 });
 
@@ -287,6 +308,29 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         }
     });
 
+    const threadEventsQuery = useThreadsEventsList(selectedThread?.id ?? '', {
+        query: {
+            enabled: !!selectedThread,
+        },
+    });
+
+    const threadItems = useMemo<TimelineItem[] | null>(() => {
+        if (!messagesQuery.data?.data) return null;
+        const messageItems: TimelineItem[] = messagesQuery.data.data.map((m) => ({
+            type: 'message' as const,
+            data: m,
+            created_at: m.created_at,
+        }));
+        const eventItems: TimelineItem[] = (threadEventsQuery.data?.data ?? []).map((e) => ({
+            type: 'event' as const,
+            data: e,
+            created_at: e.created_at,
+        }));
+        return [...messageItems, ...eventItems].sort(
+            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+    }, [messagesQuery.data, threadEventsQuery.data?.data]);
+
     const labelsQuery = useLabelsList({ mailbox_id: selectedMailbox?.id ?? '' }, {
         query: {
             enabled: !!selectedMailbox,
@@ -462,6 +506,13 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             await queryClient.invalidateQueries({ queryKey: ['messages', selectedThread.id] });
         }
     }
+
+    const invalidateThreadEvents = async () => {
+        if (selectedThread) {
+            await queryClient.invalidateQueries({ queryKey: getThreadsEventsListQueryKey(selectedThread.id) });
+        }
+    }
+
     const invalidateThreadsStats = async () => {
         await queryClient.invalidateQueries({
             queryKey: ['threads', 'stats', selectedMailbox?.id],
@@ -489,11 +540,14 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         mailboxes: mailboxQuery.data?.data ?? null,
         threads: flattenThreads ?? null,
         messages: messagesQuery.data?.data ?? null,
+        threadEvents: threadEventsQuery.data?.data ?? null,
+        threadItems: threadItems,
         selectedMailbox,
         selectedThread,
         unselectThread,
         loadNextThreads: threadsQuery.fetchNextPage,
         invalidateThreadMessages,
+        invalidateThreadEvents,
         invalidateThreadsStats,
         invalidateLabels,
         refetchMailboxes: mailboxQuery.refetch,
@@ -519,11 +573,18 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
                 isFetching: messagesQuery.isFetching,
                 isLoading: messagesQuery.isLoading,
             },
+            threadEvents: {
+                status: threadEventsQuery.status,
+                fetchStatus: threadEventsQuery.fetchStatus,
+                isFetching: threadEventsQuery.isFetching,
+                isLoading: threadEventsQuery.isLoading,
+            },
         },
         error: {
             mailboxes: mailboxQuery.error,
             threads: threadsQuery.error,
             messages: messagesQuery.error,
+            threadEvents: threadEventsQuery.error,
         },
     };
 

@@ -40,6 +40,20 @@ class ObjectJSONField(serializers.JSONField):
     """JSONField annotated as ``type: object`` for OpenAPI schema generation."""
 
 
+def _build_thread_event_data_schema():
+    """Build the OpenAPI schema for ThreadEvent.data from model DATA_SCHEMAS.
+
+    Returns a `oneOf` composition when multiple types are defined.
+    """
+    schemas = models.ThreadEvent.DATA_SCHEMAS
+    return {"oneOf": list(schemas.values())}
+
+
+@extend_schema_field(_build_thread_event_data_schema())
+class ThreadEventDataField(serializers.JSONField):
+    """JSONField for ThreadEvent.data, OpenAPI-annotated from model DATA_SCHEMAS."""
+
+
 class IntegerChoicesField(serializers.ChoiceField):
     """
     Custom field to handle IntegerChoices that accepts string labels for input
@@ -946,6 +960,36 @@ class ThreadAccessSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer)
         fields = ["id", "thread", "mailbox", "role", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
         create_only_fields = ["thread", "mailbox"]
+
+
+class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
+    """Serialize thread event information."""
+
+    author = UserWithoutAbilitiesSerializer(read_only=True)
+    data = ThreadEventDataField()
+
+    class Meta:
+        model = models.ThreadEvent
+        fields = [
+            "id",
+            "thread",
+            "type",
+            "channel",
+            "message",
+            "author",
+            "data",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "thread",
+            "channel",
+            "author",
+            "created_at",
+            "updated_at",
+        ]
+        create_only_fields = ["type", "message"]
 
 
 class MailboxAccessReadSerializer(serializers.ModelSerializer):

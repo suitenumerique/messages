@@ -5,10 +5,10 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { TypeEnum } from "./type_enum";
+import type { MailboxAdminCreateMetadataTypeEnum } from "./mailbox_admin_create_metadata_type_enum";
 
 export interface MailboxAdminCreateMetadataRequest {
-  type: TypeEnum;
+  type: MailboxAdminCreateMetadataTypeEnum;
   first_name?: string;
   last_name?: string;
   name?: string;

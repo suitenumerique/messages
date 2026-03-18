@@ -393,9 +393,10 @@ showmigrations: ## show all migrations for the messages project.
 	@$(MANAGE_DB) showmigrations
 .PHONY: showmigrations
 
-superuser: ## Create an admin superuser with password "admin"
+superuser: ## Create an admin superuser with password "admin" and promote user1 as superuser
 	@echo "$(BOLD)Creating a Django superuser$(RESET)"
 	@$(MANAGE_DB) createsuperuser --email admin@admin.local --password admin
+	@$(MANAGE_DB) createsuperuser --email user1@example.local --password user1
 .PHONY: superuser
 
 shell-back: ## open a shell in the backend container
