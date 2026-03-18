@@ -8,6 +8,7 @@ from django.utils import timezone
 import pytest
 
 from core.factories import (
+    BlobFactory,
     MailboxFactory,
     MessageFactory,
     ThreadAccessFactory,
@@ -23,7 +24,11 @@ from core.services.search import (
     search_threads,
     update_thread_mailbox_flags,
 )
-from core.services.search.index import compute_unread_mailboxes
+from core.services.search.index import (
+    _build_message_doc,
+    _build_thread_doc,
+    _compute_unread_starred_from_accesses,
+)
 
 
 @pytest.fixture(name="mock_es_client_search")
@@ -139,14 +144,14 @@ def test_reindex_all(mock_es_client_index):
     # Reset mock
     mock_es_client_index.indices.exists.return_value = False
 
-    # Call the function
-    result = reindex_all()
+    with mock.patch("core.services.search.index.bulk", return_value=(0, [])):
+        # Call the function
+        result = reindex_all()
 
     # Verify result
     assert result["status"] == "success"
 
     # Verify ES client calls
-    mock_es_client_index.indices.delete.assert_called_once()
     mock_es_client_index.indices.create.assert_called_once()
 
 
@@ -154,14 +159,13 @@ def test_reindex_all(mock_es_client_index):
 def test_reindex_mailbox(mock_es_client_index, test_mailbox, test_thread):  # pylint: disable=unused-argument
     """Test reindexing a specific mailbox."""
 
-    # Call the function
-    result = reindex_mailbox(str(test_mailbox.id))
-
-    assert mock_es_client_index.index.call_count > 0
+    with mock.patch("core.services.search.index.bulk", return_value=(2, [])):
+        result = reindex_mailbox(str(test_mailbox.id))
 
     # Verify result
     assert result["status"] == "success"
     assert result["mailbox"] == str(test_mailbox.id)
+    assert result["indexed_threads"] == 1
 
 
 def test_search_threads_with_query(mock_es_client_search):
@@ -240,87 +244,6 @@ def test_search_threads_disabled(mock_es_client_search):
 
 
 @pytest.mark.django_db
-class TestComputeUnreadMailboxes:
-    """Tests for compute_unread_mailboxes."""
-
-    def test_thread_without_active_messages(self):
-        """A thread with no active messages should return an empty list."""
-        thread = ThreadFactory(has_active=False)
-        mailbox = MailboxFactory()
-        ThreadAccessFactory(thread=thread, mailbox=mailbox, read_at=None)
-        assert compute_unread_mailboxes(thread) == []
-
-    def test_read_at_null_is_unread(self):
-        """A ThreadAccess with read_at=None should be unread."""
-        thread = ThreadFactory()
-        mailbox = MailboxFactory()
-        MessageFactory(thread=thread)
-        thread.update_stats()
-        thread.refresh_from_db()
-        ThreadAccessFactory(thread=thread, mailbox=mailbox, read_at=None)
-
-        result = compute_unread_mailboxes(thread)
-        assert str(mailbox.id) in result
-
-    def test_read_at_before_active_messaged_at_is_unread(self):
-        """A ThreadAccess with read_at < active_messaged_at should be unread."""
-        thread = ThreadFactory()
-        mailbox = MailboxFactory()
-        MessageFactory(thread=thread)
-        thread.update_stats()
-        thread.refresh_from_db()
-        old_time = thread.active_messaged_at - timezone.timedelta(hours=1)
-        ThreadAccessFactory(thread=thread, mailbox=mailbox, read_at=old_time)
-
-        result = compute_unread_mailboxes(thread)
-        assert str(mailbox.id) in result
-
-    def test_read_at_after_active_messaged_at_is_read(self):
-        """A ThreadAccess with read_at >= active_messaged_at should be read."""
-        thread = ThreadFactory()
-        mailbox = MailboxFactory()
-        MessageFactory(thread=thread)
-        thread.update_stats()
-        thread.refresh_from_db()
-        ThreadAccessFactory(thread=thread, mailbox=mailbox, read_at=timezone.now())
-
-        result = compute_unread_mailboxes(thread)
-        assert str(mailbox.id) not in result
-
-    def test_sender_only_thread_is_unread_when_not_read(self):
-        """A thread with only sent messages is unread when read_at is not set.
-
-        In practice, inbound_create.py sets read_at when sending a message,
-        so sender-only threads are read. But the unread filter itself is
-        agnostic to message type: it only compares read_at vs messaged_at.
-        """
-        thread = ThreadFactory()
-        mailbox = MailboxFactory()
-        MessageFactory(thread=thread, is_sender=True)
-        thread.update_stats()
-        thread.refresh_from_db()
-        ThreadAccessFactory(thread=thread, mailbox=mailbox, read_at=None)
-
-        result = compute_unread_mailboxes(thread)
-        assert str(mailbox.id) in result
-
-    def test_multiple_mailboxes_mixed_status(self):
-        """Different mailboxes can have different read status."""
-        thread = ThreadFactory()
-        mb_read = MailboxFactory()
-        mb_unread = MailboxFactory()
-        MessageFactory(thread=thread)
-        thread.update_stats()
-        thread.refresh_from_db()
-        ThreadAccessFactory(thread=thread, mailbox=mb_read, read_at=timezone.now())
-        ThreadAccessFactory(thread=thread, mailbox=mb_unread, read_at=None)
-
-        result = compute_unread_mailboxes(thread)
-        assert str(mb_unread.id) in result
-        assert str(mb_read.id) not in result
-
-
-@pytest.mark.django_db
 def test_update_thread_mailbox_flags(mock_es_client_index):
     """Test that update_thread_mailbox_flags re-indexes the thread document."""
     thread = ThreadFactory()
@@ -341,3 +264,287 @@ def test_update_thread_mailbox_flags(mock_es_client_index):
     assert call_args["id"] == str(thread.id)
     assert str(mailbox.id) in call_args["body"]["unread_mailboxes"]
     assert "starred_mailboxes" in call_args["body"]
+
+
+@pytest.mark.django_db
+class TestSearchIndexBuildMessageDoc:
+    """Tests for _build_message_doc."""
+
+    def test_search_index_build_message_doc_with_correct_document(self):
+        """Test that _build_message_doc builds a correct document."""
+        thread = ThreadFactory()
+        mailbox = MailboxFactory()
+        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        message = MessageFactory(thread=thread)
+
+        mailbox_ids = [str(mailbox.id)]
+        doc = _build_message_doc(message, mailbox_ids)
+
+        assert doc is not None
+        assert doc["message_id"] == str(message.id)
+        assert doc["thread_id"] == str(thread.id)
+        assert doc["mailbox_ids"] == mailbox_ids
+        assert doc["relation"] == {"name": "message", "parent": str(thread.id)}
+        assert doc["subject"] == message.subject
+        assert doc["sender_name"] == message.sender.name
+        assert doc["sender_email"] == message.sender.email
+
+    def test_search_index_build_message_doc_with_prefetched_recipients(self):
+        """Test that pre-fetched recipients are used without extra queries."""
+        thread = ThreadFactory()
+        message = MessageFactory(thread=thread)
+        recipients = list(message.recipients.select_related("contact").all())
+
+        doc = _build_message_doc(message, ["mb-1"], recipients=recipients)
+
+        assert doc is not None
+        assert doc["mailbox_ids"] == ["mb-1"]
+
+    def test_search_index_build_message_doc_returns_none_on_parse_error(self):
+        """Test that _build_message_doc returns None on blob parse error."""
+        thread = ThreadFactory()
+        message = MessageFactory(thread=thread)
+        message.blob = BlobFactory()
+        message.save()
+
+        with mock.patch(
+            "core.services.search.index.parse_email_message",
+            side_effect=RuntimeError("parse error"),
+        ):
+            doc = _build_message_doc(message, ["mb-1"])
+
+        assert doc is None
+
+
+@pytest.mark.django_db
+class TestBuildThreadDoc:
+    """Tests for _build_thread_doc."""
+
+    def test_search_index_build_thread_doc_with_correct_document(self):
+        """Test that _build_thread_doc builds a correct document."""
+        thread = ThreadFactory()
+        mailbox_ids = ["mb-1", "mb-2"]
+        unread = ["mb-1"]
+        starred = ["mb-2"]
+
+        doc = _build_thread_doc(thread, mailbox_ids, unread, starred)
+
+        assert doc["relation"] == "thread"
+        assert doc["thread_id"] == str(thread.id)
+        assert doc["subject"] == thread.subject
+        assert doc["mailbox_ids"] == mailbox_ids
+        assert doc["unread_mailboxes"] == unread
+        assert doc["starred_mailboxes"] == starred
+
+
+@pytest.mark.django_db
+class TestSearchIndexComputeUnreadStarredFromAccesses:
+    """Tests for _compute_unread_starred_from_accesses."""
+
+    def test_search_index_compute_unread_starred_from_accesses_unread_when_read_at_none(
+        self,
+    ):
+        """An access with read_at=None on a thread with messages is unread."""
+        thread = ThreadFactory()
+        mailbox = MailboxFactory()
+        MessageFactory(thread=thread)
+        thread.update_stats()
+        thread.refresh_from_db()
+        ThreadAccessFactory(thread=thread, mailbox=mailbox, read_at=None)
+
+        unread, starred = _compute_unread_starred_from_accesses(thread)
+        assert str(mailbox.id) in unread
+        assert not starred
+
+    def test_search_index_compute_unread_starred_from_accesses_starred_when_starred_at_set(
+        self,
+    ):
+        """An access with starred_at set is starred."""
+        thread = ThreadFactory(has_active=False)
+        mailbox = MailboxFactory()
+        ThreadAccessFactory(thread=thread, mailbox=mailbox, starred_at=timezone.now())
+
+        _unread, starred = _compute_unread_starred_from_accesses(thread)
+        assert str(mailbox.id) in starred
+
+    def test_search_index_compute_unread_starred_from_accesses_read_thread_is_not_unread(
+        self,
+    ):
+        """An access with read_at after messaged_at is not unread."""
+        thread = ThreadFactory()
+        mailbox = MailboxFactory()
+        MessageFactory(thread=thread)
+        thread.update_stats()
+        thread.refresh_from_db()
+        ThreadAccessFactory(thread=thread, mailbox=mailbox, read_at=timezone.now())
+
+        unread, starred = _compute_unread_starred_from_accesses(thread)
+        assert str(mailbox.id) not in unread
+        assert not starred
+
+    def test_search_index_compute_unread_starred_from_accesses_thread_without_messages_is_not_unread(
+        self,
+    ):
+        """A thread with no messages (messaged_at is None) is not unread."""
+        thread = ThreadFactory(has_active=False)
+        mailbox = MailboxFactory()
+        ThreadAccessFactory(thread=thread, mailbox=mailbox, read_at=None)
+
+        unread, _starred = _compute_unread_starred_from_accesses(thread)
+        assert not unread
+
+    def test_search_index_compute_unread_starred_from_accesses_multiple_mailboxes_mixed_status(
+        self,
+    ):
+        """Different mailboxes can have different unread/starred status."""
+        thread = ThreadFactory()
+        mb_read = MailboxFactory()
+        mb_unread = MailboxFactory()
+        mb_starred = MailboxFactory()
+        MessageFactory(thread=thread)
+        thread.update_stats()
+        thread.refresh_from_db()
+        ThreadAccessFactory(thread=thread, mailbox=mb_read, read_at=timezone.now())
+        ThreadAccessFactory(thread=thread, mailbox=mb_unread, read_at=None)
+        ThreadAccessFactory(
+            thread=thread,
+            mailbox=mb_starred,
+            starred_at=timezone.now(),
+            read_at=timezone.now(),
+        )
+
+        unread, starred = _compute_unread_starred_from_accesses(thread)
+        assert str(mb_unread.id) in unread
+        assert str(mb_read.id) not in unread
+        assert str(mb_starred.id) in starred
+
+
+@pytest.mark.django_db
+class TestSearchReindexAllBulk:
+    """Tests for the bulk reindex_all implementation."""
+
+    def test_search_reindex_all_uses_bulk_api(self, mock_es_client_index):
+        """Test that reindex_all uses opensearchpy.helpers.bulk."""
+        thread = ThreadFactory()
+        mailbox = MailboxFactory()
+        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        MessageFactory(thread=thread)
+
+        mock_es_client_index.indices.exists.return_value = False
+
+        with mock.patch("core.services.search.index.bulk") as mock_bulk:
+            mock_bulk.return_value = (2, [])
+            result = reindex_all()
+
+        assert result["status"] == "success"
+        assert result["indexed_threads"] == 1
+        assert result["indexed_messages"] == 1
+
+        mock_bulk.assert_called_once()
+        _, kwargs = mock_bulk.call_args
+        actions = mock_bulk.call_args[0][1]
+        assert len(actions) == 2  # 1 thread doc + 1 message doc
+        assert kwargs["raise_on_error"] is False
+
+    def test_search_reindex_all_progress_callback(self, mock_es_client_index):
+        """Test that the progress callback is called."""
+        thread = ThreadFactory()
+        mailbox = MailboxFactory()
+        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        MessageFactory(thread=thread)
+
+        mock_es_client_index.indices.exists.return_value = False
+        progress_calls = []
+
+        def on_progress(current, total, success_count, failure_count):
+            progress_calls.append((current, total, success_count, failure_count))
+
+        with (
+            mock.patch("core.services.search.index.BULK_CHUNK_SIZE", 1),
+            mock.patch("core.services.search.index.bulk", return_value=(2, [])),
+        ):
+            reindex_all(progress_callback=on_progress)
+
+        assert len(progress_calls) >= 1
+        last_call = progress_calls[-1]
+        assert last_call[0] == 1  # current
+        assert last_call[1] == 1  # total
+
+    def test_search_reindex_all_bulk_errors_are_counted_during_chunk_flush(
+        self, mock_es_client_index
+    ):
+        """Test that bulk errors during chunk flush are tracked in failure_count."""
+        thread = ThreadFactory()
+        mailbox = MailboxFactory()
+        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        MessageFactory(thread=thread)
+
+        mock_es_client_index.indices.exists.return_value = False
+        progress_calls = []
+
+        def on_progress(current, total, success_count, failure_count):
+            progress_calls.append((current, total, success_count, failure_count))
+
+        bulk_errors = [
+            {
+                "index": {
+                    "_id": "fake-id",
+                    "error": {
+                        "type": "mapper_parsing_exception",
+                        "reason": "failed to parse",
+                    },
+                    "status": 400,
+                }
+            },
+        ]
+
+        # Use BULK_CHUNK_SIZE=1 to trigger the mid-loop flush path
+        with (
+            mock.patch("core.services.search.index.BULK_CHUNK_SIZE", 1),
+            mock.patch(
+                "core.services.search.index.bulk", return_value=(1, bulk_errors)
+            ),
+        ):
+            result = reindex_all(progress_callback=on_progress)
+
+        assert result["status"] == "success"
+        assert result["indexed_threads"] == 1
+        assert result["indexed_messages"] == 1
+
+        # failure_count is reported via the progress callback
+        assert len(progress_calls) == 1
+        assert progress_calls[0][3] == 1  # failure_count
+
+    def test_bulk_errors_during_final_flush_are_logged(self, mock_es_client_index):
+        """Test that bulk errors during the final flush are logged."""
+        thread = ThreadFactory()
+        mailbox = MailboxFactory()
+        ThreadAccessFactory(mailbox=mailbox, thread=thread)
+        MessageFactory(thread=thread)
+
+        mock_es_client_index.indices.exists.return_value = False
+
+        bulk_errors = [
+            {
+                "index": {
+                    "_id": "fake-id",
+                    "error": {
+                        "type": "mapper_parsing_exception",
+                        "reason": "failed to parse",
+                    },
+                    "status": 400,
+                }
+            },
+        ]
+
+        # Default BULK_CHUNK_SIZE (100) > 2 actions, so all go to final flush
+        with (
+            mock.patch(
+                "core.services.search.index.bulk", return_value=(1, bulk_errors)
+            ),
+            mock.patch("core.services.search.index.logger") as mock_logger,
+        ):
+            result = reindex_all()
+
+        assert result["status"] == "success"
+        mock_logger.error.assert_called_with("Bulk indexing error: %s", bulk_errors[0])

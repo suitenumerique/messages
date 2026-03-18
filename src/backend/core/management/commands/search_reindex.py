@@ -8,6 +8,7 @@ from core import models
 from core.services.search import create_index_if_not_exists, delete_index
 from core.services.search.tasks import (
     _reindex_all_base,
+    _reindex_mailbox_base,
     reindex_all,
     reindex_mailbox_task,
     reindex_thread_task,
@@ -152,7 +153,15 @@ class Command(BaseCommand):
                 self.style.SUCCESS(f"Reindexing task scheduled (ID: {task.id})")
             )
         else:
-            result = reindex_mailbox_task(mailbox_id)  # pylint: disable=no-value-for-parameter
+
+            def update_progress(current, total, success_count, failure_count):
+                """Update progress in the console."""
+                self.stdout.write(
+                    f"Progress: {current}/{total} threads processed "
+                    f"({success_count} succeeded, {failure_count} failed)"
+                )
+
+            result = _reindex_mailbox_base(str(mailbox_uuid), update_progress)
             self.stdout.write(
                 self.style.SUCCESS(
                     f"Reindexing completed: {result.get('success_count', 0)} succeeded, "

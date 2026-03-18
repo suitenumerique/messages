@@ -1306,10 +1306,8 @@ class ThreadAccess(BaseModel):
 
     @staticmethod
     def unread_filter():
-        """Return a `Q` for filtering a `ThreadAccess` queryset to unread entries.
-
-        Used by `MailboxSerializer._get_cached_counts()` and
-        `compute_unread_mailboxes()` in the search index.
+        """
+        Return a `Q` for filtering a `ThreadAccess` queryset to unread entries.
         """
         return Q(read_at__isnull=True, thread__messaged_at__isnull=False) | Q(
             read_at__lt=F("thread__messaged_at")
@@ -1347,7 +1345,7 @@ class ThreadAccess(BaseModel):
     def starred_filter():
         """Return a `Q` for filtering a `ThreadAccess` queryset to starred entries.
 
-        Used by `compute_starred_mailboxes()` in the search index.
+        Used by `_compute_unread_starred_from_accesses()` in the search index.
         """
         return Q(starred_at__isnull=False)
 
