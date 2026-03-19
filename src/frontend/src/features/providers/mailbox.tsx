@@ -6,7 +6,6 @@ import { useRouter } from "next/router";
 import usePrevious from "@/hooks/use-previous";
 import { useSearchParams } from "next/navigation";
 import { MAILBOX_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
-import { useDebounceCallback } from "@/hooks/use-debounce-callback";
 
 type QueryState = {
     status: QueryStatus,
@@ -141,7 +140,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const threadQueryKey = useMemo(() => {
         const queryKey = ['threads', selectedMailbox?.id];
         if (searchParams.get('search')) {
-            return [...queryKey, 'search', searchParams.toString()];
+            return [...queryKey, 'search'];
         }
         return [...queryKey, searchParams.toString()];
     }, [selectedMailbox?.id, searchParams]);
@@ -463,12 +462,6 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             await queryClient.invalidateQueries({ queryKey: ['messages', selectedThread.id] });
         }
     }
-    const resetSearchQueryDebounced = useDebounceCallback(() => {
-        queryClient.resetQueries(
-            { predicate: ({ queryKey}) => queryKey.includes('search') },
-        );
-    }, 500);
-
     const invalidateThreadsStats = async () => {
         await queryClient.invalidateQueries({
             queryKey: ['threads', 'stats', selectedMailbox?.id],
@@ -602,9 +595,22 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     }, [selectedMailbox?.id, searchParams.toString()]);
 
     useEffect(() => {
-        if (searchParams.get('search') !== previousSearchParams?.get('search')) {
-            resetSearchQueryDebounced();
+        const previousSearch = previousSearchParams?.get('search');
+        const currentSearch = searchParams.get('search');
+
+        if (previousSearch && !currentSearch) {
+            // Exiting search mode: purge cached search results so re-entering
+            // search doesn't briefly flash stale results from the previous query.
+            queryClient.removeQueries({
+                queryKey: ['threads', selectedMailbox?.id, 'search'],
+                exact: true,
+            });
+        } else if (previousSearch && currentSearch && currentSearch !== previousSearch) {
+            // Search term changed while already in search mode:
+            // reset the query to force a refetch with the new params.
+            queryClient.resetQueries({ queryKey: ['threads', selectedMailbox?.id, 'search'] });
         }
+
         unselectThread();
     }, [hasSearchParamsChanged])
 
