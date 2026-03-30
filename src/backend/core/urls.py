@@ -16,6 +16,7 @@ from core.api.viewsets.image_proxy import ImageProxyViewSet
 from core.api.viewsets.import_message import ImportViewSet, MessagesArchiveUploadViewSet
 from core.api.viewsets.inbound.mta import InboundMTAViewSet
 from core.api.viewsets.inbound.widget import InboundWidgetViewSet
+from core.api.viewsets.inbound.brevo import InboundBrevoViewSet
 from core.api.viewsets.label import LabelViewSet
 from core.api.viewsets.mailbox import MailboxViewSet
 from core.api.viewsets.mailbox_access import MailboxAccessViewSet
@@ -97,6 +98,9 @@ inbound_nested_router = DefaultRouter()
 inbound_nested_router.register(r"mta", InboundMTAViewSet, basename="inbound-mta")
 inbound_nested_router.register(
     r"widget", InboundWidgetViewSet, basename="inbound-widget"
+)
+inbound_nested_router.register(
+    r"brevo", InboundBrevoViewSet, basename="inbound-brevo"
 )
 
 
