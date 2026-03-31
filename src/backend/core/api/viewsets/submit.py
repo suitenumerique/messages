@@ -64,7 +64,9 @@ class SubmitRawEmailView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Parse recipients
+        # Validate envelope recipients (required as a sanity check).
+        # Actual delivery uses MessageRecipient rows created from MIME
+        # To/Cc/Bcc headers by _create_message_from_inbound.
         recipient_emails = [
             addr.strip() for addr in rcpt_to_header.split(",") if addr.strip()
         ]

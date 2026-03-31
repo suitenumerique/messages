@@ -369,15 +369,20 @@ def prepare_outbound_message(
         return False
 
     # compose_and_store_mime already DKIM-signed and stored the blob.
-    # Validate the final size.
-    validate_mime_size(message.blob.size, message.id)
+    # Validate the final size — clean up the blob if it's too large.
+    try:
+        validate_mime_size(message.blob.size, message.id)
+    except drf.exceptions.ValidationError:
+        message.blob.delete()
+        raise
 
     draft_blob = message.draft_blob
 
     message.is_draft = False
     message.sender_user = user
     message.draft_blob = None
-    message.has_attachments = len(attachments) > 0
+    # has_attachments is already set by compose_and_store_mime (includes
+    # inline signature images), so we do not overwrite it here.
     message.created_at = timezone.now()
     message.updated_at = timezone.now()
     message.save(

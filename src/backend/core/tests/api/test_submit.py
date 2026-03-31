@@ -370,3 +370,79 @@ class TestSubmitIntegration:
         )
         assert "a@example.com" in recipient_emails
         assert "b@example.com" in recipient_emails
+
+    @patch(TASK_MOCK)
+    def test_bcc_recipients_created(self, mock_task, client, auth_header, mailbox):
+        """Bcc recipients from MIME headers are created as MessageRecipient rows."""
+        mailbox_email = str(mailbox)
+        mime = (
+            f"From: {mailbox_email}\r\n"
+            f"To: visible@example.com\r\n"
+            f"Bcc: hidden@example.com\r\n"
+            f"Subject: With Bcc\r\n"
+            f"Message-ID: <bcc@example.com>\r\n"
+            f"Date: Mon, 30 Mar 2026 10:00:00 +0000\r\n"
+            f"MIME-Version: 1.0\r\n"
+            f"Content-Type: text/plain\r\n"
+            f"\r\n"
+            f"body\r\n"
+        ).encode()
+
+        response = client.post(
+            SUBMIT_URL,
+            data=mime,
+            content_type="message/rfc822",
+            HTTP_X_MAIL_FROM=str(mailbox.id),
+            HTTP_X_RCPT_TO="visible@example.com, hidden@example.com",
+            **auth_header,
+        )
+
+        assert response.status_code == 202
+        from core.models import Message
+
+        message = Message.objects.get(id=response.json()["message_id"])
+        recipient_emails = set(
+            message.recipients.values_list("contact__email", flat=True)
+        )
+        assert "visible@example.com" in recipient_emails
+        assert "hidden@example.com" in recipient_emails
+
+    @patch(TASK_MOCK)
+    def test_cc_recipients_created(self, mock_task, client, auth_header, mailbox):
+        """Cc recipients from MIME headers are created as MessageRecipient rows."""
+        mailbox_email = str(mailbox)
+        mime = (
+            f"From: {mailbox_email}\r\n"
+            f"To: to@example.com\r\n"
+            f"Cc: cc@example.com\r\n"
+            f"Subject: With Cc\r\n"
+            f"Message-ID: <cc@example.com>\r\n"
+            f"Date: Mon, 30 Mar 2026 10:00:00 +0000\r\n"
+            f"MIME-Version: 1.0\r\n"
+            f"Content-Type: text/plain\r\n"
+            f"\r\n"
+            f"body\r\n"
+        ).encode()
+
+        response = client.post(
+            SUBMIT_URL,
+            data=mime,
+            content_type="message/rfc822",
+            HTTP_X_MAIL_FROM=str(mailbox.id),
+            HTTP_X_RCPT_TO="to@example.com, cc@example.com",
+            **auth_header,
+        )
+
+        assert response.status_code == 202
+        from core.enums import MessageRecipientTypeChoices
+        from core.models import Message
+
+        message = Message.objects.get(id=response.json()["message_id"])
+        assert message.recipients.filter(
+            contact__email="to@example.com",
+            type=MessageRecipientTypeChoices.TO,
+        ).exists()
+        assert message.recipients.filter(
+            contact__email="cc@example.com",
+            type=MessageRecipientTypeChoices.CC,
+        ).exists()

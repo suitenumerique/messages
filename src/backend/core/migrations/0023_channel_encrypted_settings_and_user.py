@@ -31,7 +31,7 @@ class Migration(migrations.Migration):
                 blank=True,
                 help_text="User who created this channel (used for permissions and auditing)",
                 null=True,
-                on_delete=django.db.models.deletion.CASCADE,
+                on_delete=django.db.models.deletion.SET_NULL,
                 related_name="channels",
                 to=settings.AUTH_USER_MODEL,
                 verbose_name="user",
