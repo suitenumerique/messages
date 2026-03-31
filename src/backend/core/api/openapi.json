@@ -7490,6 +7490,11 @@
                         "type": "boolean",
                         "readOnly": true
                     },
+                    "mime_id": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true
+                    },
                     "signature": {
                         "allOf": [
                             {
@@ -7520,6 +7525,7 @@
                     "is_sender",
                     "is_trashed",
                     "is_unread",
+                    "mime_id",
                     "parent_id",
                     "sender",
                     "sender_user",
