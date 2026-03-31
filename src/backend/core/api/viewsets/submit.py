@@ -1,0 +1,143 @@
+"""Generic outbound email submission endpoint.
+
+POST /api/v1.0/submit/
+Accepts a raw RFC 5322 message and sends it from a mailbox.
+Creates a Message via the inbound pipeline (with ``is_outbound=True``),
+then runs ``prepare_outbound_message`` synchronously (DKIM signing, blob
+creation) and dispatches SMTP delivery asynchronously via Celery.
+"""
+
+import logging
+
+from drf_spectacular.utils import extend_schema
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from core import models
+from core.api.permissions import HasCalendarsApiKey
+from core.mda.inbound_create import _create_message_from_inbound
+from core.mda.outbound import prepare_outbound_message
+from core.mda.outbound_tasks import send_message_task
+from core.mda.rfc5322 import EmailParseError, parse_email_message
+
+logger = logging.getLogger(__name__)
+
+
+class SubmitRawEmailView(APIView):
+    """Submit a pre-composed RFC 5322 email for delivery from a mailbox.
+
+    POST /api/v1.0/submit/
+    Content-Type: message/rfc822
+    Headers:
+        X-Service-Auth: Bearer <CALENDARS_API_KEY>
+        X-Mail-From: <mailbox_id>   (UUID of the sending mailbox)
+        X-Rcpt-To: <addr>[,<addr>]  (comma-separated recipient addresses)
+
+    The endpoint creates a Message record, DKIM-signs the raw MIME
+    synchronously, and dispatches SMTP delivery via Celery.
+
+    Returns: ``{"message_id": "<…>", "status": "accepted"}`` (HTTP 202).
+    """
+
+    permission_classes = [HasCalendarsApiKey]
+    authentication_classes = []
+
+    @extend_schema(exclude=True)
+    def post(self, request):
+        """Accept a raw MIME message, create a Message, sign, and dispatch."""
+        mailbox_id = request.META.get("HTTP_X_MAIL_FROM")
+        rcpt_to_header = request.META.get("HTTP_X_RCPT_TO")
+
+        if not mailbox_id or not rcpt_to_header:
+            return Response(
+                {"detail": "Missing required headers: X-Mail-From, X-Rcpt-To."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Resolve mailbox
+        try:
+            mailbox = models.Mailbox.objects.select_related("domain").get(id=mailbox_id)
+        except (models.Mailbox.DoesNotExist, ValueError):
+            return Response(
+                {"detail": "Mailbox not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Parse recipients
+        recipient_emails = [
+            addr.strip() for addr in rcpt_to_header.split(",") if addr.strip()
+        ]
+        if not recipient_emails:
+            return Response(
+                {"detail": "X-Rcpt-To header is empty."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        raw_mime = request.body
+        if not raw_mime:
+            return Response(
+                {"detail": "Empty request body."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Parse to validate structure
+        try:
+            parsed = parse_email_message(raw_mime)
+        except EmailParseError:
+            return Response(
+                {"detail": "Failed to parse email message."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate sender matches the mailbox
+        sender_email = (parsed.get("from") or {}).get("email", "")
+        mailbox_email = str(mailbox)
+        if sender_email.lower() != mailbox_email.lower():
+            return Response(
+                {
+                    "detail": (
+                        f"From header '{sender_email}' does not match"
+                        f" mailbox '{mailbox_email}'."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Create thread, contacts, message, and recipients from the parsed email.
+        # is_outbound=True skips blob creation (handled by prepare_outbound_message
+        # with DKIM) and AI features.
+        message = _create_message_from_inbound(
+            recipient_email=mailbox_email,
+            parsed_email=parsed,
+            raw_data=raw_mime,
+            mailbox=mailbox,
+            is_outbound=True,
+        )
+        if not message:
+            return Response(
+                {"detail": "Failed to create message."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Synchronous: validate recipients, throttle, DKIM sign, create blob
+        prepared = prepare_outbound_message(
+            mailbox,
+            message,
+            "",
+            "",
+            raw_mime=raw_mime,
+        )
+        if not prepared:
+            return Response(
+                {"detail": "Failed to prepare message for sending."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Dispatch async SMTP delivery
+        send_message_task.delay(str(message.id))
+
+        return Response(
+            {"message_id": str(message.id), "status": "accepted"},
+            status=status.HTTP_202_ACCEPTED,
+        )

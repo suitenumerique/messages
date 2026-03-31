@@ -208,7 +208,7 @@ def deliver_inbound_message(
 
             try_send_autoreply(mailbox, parsed_email, result)
 
-        return result is not None
+        return bool(result)
 
     # Regular messages: queue for spam processing
     try:

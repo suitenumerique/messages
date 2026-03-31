@@ -37,8 +37,13 @@ from core.api.viewsets.metrics import (
     MailDomainUsersMetricsApiView,
 )
 from core.api.viewsets.placeholder import DraftPlaceholderView, PlaceholderView
-from core.api.viewsets.provisioning import ProvisioningMailDomainView
+from core.api.viewsets.provisioning import (
+    ProvisioningMailboxView,
+    ProvisioningMailDomainView,
+    ProvisioningUserView,
+)
 from core.api.viewsets.send import SendMessageView
+from core.api.viewsets.submit import SubmitRawEmailView
 from core.api.viewsets.task import TaskDetailView
 from core.api.viewsets.thread import ThreadViewSet
 from core.api.viewsets.thread_access import ThreadAccessViewSet
@@ -254,6 +259,22 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/provisioning/maildomains/",
         ProvisioningMailDomainView.as_view(),
         name="provisioning-maildomains",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/submit/",
+        SubmitRawEmailView.as_view(),
+        name="submit-email",
+    ),
+    # Provisioning: mailbox and user lookup (service-to-service, API key auth)
+    path(
+        f"api/{settings.API_VERSION}/provisioning/mailboxes/",
+        ProvisioningMailboxView.as_view(),
+        name="provisioning-mailboxes",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/provisioning/users/",
+        ProvisioningUserView.as_view(),
+        name="provisioning-users",
     ),
     # Alias for MTA check endpoint
     path(

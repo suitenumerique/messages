@@ -1,6 +1,6 @@
 """Tests for the channel API endpoints."""
 
-# pylint: disable=redefined-outer-name, unused-argument, too-many-public-methods
+# pylint: disable=redefined-outer-name, unused-argument, too-many-public-methods, import-outside-toplevel
 
 import uuid
 
@@ -421,3 +421,151 @@ class TestChannelDomainAdminAccess:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data["name"] == "Domain Admin Widget"
+
+
+@pytest.mark.django_db
+class TestChannelEncryptedSettings:
+    """Test encrypted_settings and user fields on the Channel model."""
+
+    def test_encrypted_settings_stored_on_model(self, mailbox):
+        """encrypted_settings can be set and read back."""
+        channel = ChannelFactory(
+            mailbox=mailbox, type="widget", settings={"public": "value"}
+        )
+        channel.encrypted_settings = {"secret_key": "s3cret"}
+        channel.save()
+
+        channel.refresh_from_db()
+        assert channel.encrypted_settings["secret_key"] == "s3cret"
+        assert channel.settings["public"] == "value"
+
+    def test_encrypted_settings_not_in_api_response(self, api_client, mailbox):
+        """encrypted_settings must never leak in the REST API."""
+        channel = ChannelFactory(mailbox=mailbox, type="widget")
+        channel.encrypted_settings = {"password": "s3cret"}
+        channel.save()
+
+        url = reverse(
+            "mailbox-channels-detail",
+            kwargs={"mailbox_id": mailbox.id, "pk": channel.id},
+        )
+        response = api_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "encrypted_settings" not in response.data
+        assert "password" not in response.data
+
+    def test_encrypted_settings_not_in_list_response(self, api_client, mailbox):
+        """encrypted_settings must not appear in list responses either."""
+        channel = ChannelFactory(mailbox=mailbox, type="widget")
+        channel.encrypted_settings = {"token": "abc"}
+        channel.save()
+
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        response = api_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        for item in response.data:
+            assert "encrypted_settings" not in item
+
+    def test_user_field_on_channel(self, user, mailbox):
+        """Channel.user can be set to track who created it."""
+        channel = ChannelFactory(mailbox=mailbox, type="widget", user=user)
+        channel.refresh_from_db()
+        assert channel.user == user
+
+    def test_user_field_nullable(self, mailbox):
+        """Channel.user is optional (null for legacy channels)."""
+        channel = ChannelFactory(mailbox=mailbox, type="widget")
+        assert channel.user is None
+
+
+@pytest.mark.django_db
+class TestChannelMoveSensitiveSettings:
+    """Test _move_sensitive_settings mechanism on ChannelSerializer."""
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["custom_type"])
+    def test_sensitive_keys_moved_to_encrypted_on_create(
+        self, api_client, mailbox, monkeypatch
+    ):
+        """When ENCRYPTED_SETTINGS_KEYS is configured, matching keys are extracted."""
+        from core.api.serializers import ChannelSerializer
+
+        monkeypatch.setattr(
+            ChannelSerializer,
+            "ENCRYPTED_SETTINGS_KEYS",
+            {"custom_type": ["api_token"]},
+        )
+
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        data = {
+            "name": "Custom Channel",
+            "type": "custom_type",
+            "settings": {"api_token": "tok_secret123", "public_url": "https://a.com"},
+        }
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+        # api_token should NOT be in the public settings response
+        assert "api_token" not in response.data["settings"]
+        assert response.data["settings"]["public_url"] == "https://a.com"
+
+        # Verify it was moved to encrypted_settings in DB
+        channel = models.Channel.objects.get(id=response.data["id"])
+        assert channel.encrypted_settings["api_token"] == "tok_secret123"
+        assert "api_token" not in channel.settings
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["custom_type"])
+    def test_sensitive_keys_moved_on_update(self, api_client, mailbox, monkeypatch):
+        """Sensitive keys are also extracted on update."""
+        from core.api.serializers import ChannelSerializer
+
+        monkeypatch.setattr(
+            ChannelSerializer,
+            "ENCRYPTED_SETTINGS_KEYS",
+            {"custom_type": ["api_token"]},
+        )
+
+        channel = ChannelFactory(
+            mailbox=mailbox,
+            type="custom_type",
+            settings={"public_url": "https://old.com"},
+        )
+
+        url = reverse(
+            "mailbox-channels-detail",
+            kwargs={"mailbox_id": mailbox.id, "pk": channel.id},
+        )
+        data = {
+            "name": channel.name,
+            "type": "custom_type",
+            "settings": {"api_token": "new_secret", "public_url": "https://new.com"},
+        }
+
+        response = api_client.put(url, data, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "api_token" not in response.data["settings"]
+
+        channel.refresh_from_db()
+        assert channel.encrypted_settings["api_token"] == "new_secret"
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
+    def test_no_sensitive_keys_for_unconfigured_type(self, api_client, mailbox):
+        """Types not in ENCRYPTED_SETTINGS_KEYS keep all settings in plain settings."""
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        data = {
+            "name": "Plain Widget",
+            "type": "widget",
+            "settings": {"some_key": "some_value"},
+        }
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["settings"]["some_key"] == "some_value"
+
+        channel = models.Channel.objects.get(id=response.data["id"])
+        assert channel.encrypted_settings == {}
+        assert channel.settings["some_key"] == "some_value"

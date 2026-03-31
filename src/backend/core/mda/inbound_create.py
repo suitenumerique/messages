@@ -179,7 +179,7 @@ def _find_thread_by_message_ids(
     return None
 
 
-def _create_message_from_inbound(
+def _create_message_from_inbound(  # pylint: disable=too-many-arguments
     recipient_email: str,
     parsed_email: Dict[str, Any],
     raw_data: bytes,
@@ -190,14 +190,21 @@ def _create_message_from_inbound(
     imap_flags: Optional[List[str]] = None,
     channel: Optional[models.Channel] = None,
     is_spam: bool = False,
+    is_outbound: bool = False,
 ) -> Optional[models.Message]:
-    """Create a message and thread from inbound message data.
+    """Create a message and thread from parsed email data.
+
+    Used for inbound delivery, imports, and outbound submission.
+    Returns the created Message on success, or None on failure.
+    Callers that only need a boolean can check truthiness of the return value.
+
+    When ``is_outbound`` is True:
+    - ``is_sender`` is forced to True
+    - No blob is created (the caller handles DKIM signing + blob via prepare_outbound_message)
+    - AI features (summary, auto-labels) are skipped
+    - The message is created as a draft (finalized later by prepare_outbound_message)
 
     Warning: messages imported here could be is_sender=True.
-
-    This method continues the logic of deliver_inbound_message, potentially asynchronously.
-
-    TODO: continue splitting this into smaller methods.
     """
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     message_flags = {}
@@ -329,18 +336,24 @@ def _create_message_from_inbound(
                 mime_id=parsed_email.get("in_reply_to"), thread=thread
             ).first()
 
-        blob = mailbox.create_blob(
-            content=raw_data,
-            content_type="message/rfc822",
-        )
+        # Outbound: no blob yet — prepare_outbound_message handles
+        # DKIM signing and blob creation later.
+        blob = None
+        if not is_outbound:
+            blob = mailbox.create_blob(
+                content=raw_data,
+                content_type="message/rfc822",
+            )
 
         # Truncate subject to 255 characters if it exceeds max_length
         subject = parsed_email.get("subject")
         if subject and len(subject) > 255:
             subject = subject[:255]
 
-        is_sender = (is_import and is_import_sender) or (
-            sender_email == recipient_email
+        is_sender = (
+            is_outbound
+            or (is_import and is_import_sender)
+            or (sender_email == recipient_email)
         )
 
         message = models.Message.objects.create(
@@ -351,8 +364,10 @@ def _create_message_from_inbound(
             mime_id=parsed_email.get("messageId", parsed_email.get("message_id"))
             or None,
             parent=parent_message,
-            sent_at=parsed_email.get("date") or timezone.now(),
-            is_draft=False,
+            sent_at=(
+                None if is_outbound else (parsed_email.get("date") or timezone.now())
+            ),
+            is_draft=is_outbound,  # Outbound: draft until prepare_outbound_message finalizes
             is_sender=is_sender,
             is_trashed=False,
             is_spam=is_spam,
@@ -511,8 +526,8 @@ def _create_message_from_inbound(
             thread.snippet = new_snippet
             thread.save(update_fields=["snippet"])
 
-        # Do not trigger AI features on import or spam
-        if not is_import and not is_spam:
+        # Do not trigger AI features on import, spam, or outbound
+        if not is_import and not is_spam and not is_outbound:
             # Update summary if needed is ai is enabled
             if is_ai_summary_enabled():
                 messages = get_messages_from_thread(thread)

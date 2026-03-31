@@ -458,6 +458,17 @@ class IsMailboxAdmin(permissions.BasePermission):
         return is_domain_admin
 
 
+class HasCalendarsApiKey(permissions.BasePermission):
+    """Allows access only to requests bearing the calendars integration API key
+    in the ``X-Service-Auth`` header (``Bearer <token>``)."""
+
+    def has_permission(self, request, view):
+        if not settings.CALENDARS_API_KEY:
+            return False
+        header = request.headers.get("X-Service-Auth") or ""
+        return compare_digest(header, f"Bearer {settings.CALENDARS_API_KEY}")
+
+
 class HasMetricsApiKey(permissions.BasePermission):
     """Allows access only to users with the metrics API key."""
 

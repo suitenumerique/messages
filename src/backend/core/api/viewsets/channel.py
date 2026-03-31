@@ -65,8 +65,15 @@ class ChannelViewSet(
         """Create a new channel for the mailbox."""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(mailbox=self.mailbox)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        instance = serializer.save(mailbox=self.mailbox)
+        data = serializer.data
+        # Include the generated password in the response (shown once)
+        # _generated_password will be set in future versions of the serializer
+        # when a new password is created
+        generated_password = getattr(instance, "_generated_password", None)
+        if generated_password:
+            data["password"] = generated_password
+        return Response(data, status=status.HTTP_201_CREATED)
 
     @extend_schema(
         request=serializers.ChannelSerializer,

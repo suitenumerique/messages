@@ -944,6 +944,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "is_trashed",
             "is_archived",
             "has_attachments",
+            "mime_id",
             "signature",
             "stmsg_headers",
         ]
@@ -1247,9 +1248,7 @@ class MailboxAdminSerializer(serializers.ModelSerializer):
 
         if metadata.get("type") == "personal":
             local_part = attrs.get("local_part", "")
-            denylist = getattr(
-                settings, "MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL", []
-            )
+            denylist = settings.MESSAGES_MAILBOX_LOCALPART_DENYLIST_PERSONAL
             lower_value = local_part.lower()
             if any(lower_value == prefix.lower() for prefix in denylist):
                 raise serializers.ValidationError(
@@ -1563,6 +1562,42 @@ class ChannelSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "mailbox", "maildomain", "created_at", "updated_at"]
 
+    # Keys in settings that should be moved to encrypted_settings, per channel type.
+    ENCRYPTED_SETTINGS_KEYS = {}
+
+    def _move_sensitive_settings(self, validated_data):
+        """Move sensitive keys from settings to encrypted_settings."""
+        channel_type = validated_data.get("type") or (
+            self.instance.type if self.instance else None
+        )
+        keys_to_encrypt = self.ENCRYPTED_SETTINGS_KEYS.get(channel_type, [])
+        if not keys_to_encrypt:
+            return validated_data
+
+        settings_data = validated_data.get("settings")
+        if not settings_data:
+            return validated_data
+
+        extracted = {
+            key: settings_data[key] for key in keys_to_encrypt if key in settings_data
+        }
+        if extracted:
+            # Remove extracted keys from settings without mutating during iteration
+            for key in extracted:
+                del settings_data[key]
+            existing = (self.instance.encrypted_settings or {}) if self.instance else {}
+            validated_data["encrypted_settings"] = {**existing, **extracted}
+
+        return validated_data
+
+    def create(self, validated_data):
+        validated_data = self._move_sensitive_settings(validated_data)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data = self._move_sensitive_settings(validated_data)
+        return super().update(instance, validated_data)
+
     def validate_settings(self, value):
         """Validate settings, including tags if present."""
         if not value:
@@ -1622,7 +1657,7 @@ class ChannelSerializer(serializers.ModelSerializer):
         if self.context.get("mailbox"):
             channel_type = attrs.get("type")
             if channel_type:
-                allowed_types = settings.FEATURE_MAILBOX_ADMIN_CHANNELS
+                allowed_types = list(settings.FEATURE_MAILBOX_ADMIN_CHANNELS)
                 if channel_type not in allowed_types:
                     raise serializers.ValidationError(
                         {

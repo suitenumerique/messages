@@ -806,6 +806,10 @@ class Base(Configuration):
         None, environ_name="PROVISIONING_API_KEY", environ_prefix=None
     )
 
+    CALENDARS_API_KEY = values.Value(
+        None, environ_name="CALENDARS_API_KEY", environ_prefix=None
+    )
+
     METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE = values.PositiveIntegerValue(
         1024,
         environ_name="METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE",
