@@ -50,6 +50,8 @@ export interface Message {
   readonly is_archived: boolean;
   readonly has_attachments: boolean;
   /** @nullable */
+  readonly mime_id: string | null;
+  /** @nullable */
   readonly signature: MessageSignature;
   /** Return the STMSG headers of the message. */
   readonly stmsg_headers: MessageStmsgHeaders;
