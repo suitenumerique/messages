@@ -79,5 +79,7 @@ ENV DJANGO_ADMIN_URL=admin
 
 ENTRYPOINT ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
 
+# Port is hardcoded below because distroless has no shell to expand $PORT.
+# If you change ENV PORT above, update the healthcheck port to match.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
   CMD ["/usr/bin/lprobe", "-mode=http", "-port=8080", "-endpoint=/__lbheartbeat__"]
