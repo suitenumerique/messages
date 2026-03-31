@@ -122,6 +122,29 @@ class SubmitRawEmailView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+        # Add envelope-only recipients as BCC.  _create_message_from_inbound
+        # creates MessageRecipient rows from the MIME To/Cc/Bcc headers, but
+        # true BCC recipients appear only in the envelope (X-Rcpt-To), never
+        # in the MIME headers — that's how BCC works in SMTP.
+        mime_recipients = set(
+            message.recipients.values_list("contact__email", flat=True)
+        )
+        for addr in recipient_emails:
+            if addr.lower() not in {e.lower() for e in mime_recipients}:
+                try:
+                    contact, _ = models.Contact.objects.get_or_create(
+                        email=addr,
+                        mailbox=mailbox,
+                        defaults={"name": addr.split("@")[0]},
+                    )
+                    models.MessageRecipient.objects.get_or_create(
+                        message=message,
+                        contact=contact,
+                        type=models.MessageRecipientTypeChoices.BCC,
+                    )
+                except Exception:  # pylint: disable=broad-exception-caught
+                    logger.warning("Failed to add BCC recipient %s", addr)
+
         # Synchronous: validate recipients, throttle, DKIM sign, create blob
         prepared = prepare_outbound_message(
             mailbox,

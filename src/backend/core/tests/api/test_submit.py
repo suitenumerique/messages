@@ -2,7 +2,7 @@
 # pylint: disable=redefined-outer-name,missing-function-docstring,unused-argument,import-outside-toplevel
 
 import uuid
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -202,13 +202,20 @@ class TestSubmitValidation:
 class TestSubmitDispatch:
     """Verify message creation, synchronous signing, and async dispatch."""
 
+    def _fake_message(self):
+        """Create a fake Message with a recipients manager stub."""
+        msg = MagicMock()
+        msg.id = uuid.uuid4()
+        msg.recipients.values_list.return_value = ["attendee@example.com"]
+        return msg
+
     @patch(TASK_MOCK)
     @patch(PREPARE_MOCK, return_value=True)
     @patch(CREATE_MSG_MOCK)
     def test_accepted(
         self, mock_create, mock_prepare, mock_task, client, auth_header, mailbox
     ):
-        fake_message = type("Message", (), {"id": uuid.uuid4()})()
+        fake_message = self._fake_message()
         mock_create.return_value = fake_message
 
         response = client.post(
@@ -265,7 +272,7 @@ class TestSubmitDispatch:
     def test_prepare_failure_returns_500(
         self, mock_create, mock_prepare, mock_task, client, auth_header, mailbox
     ):
-        mock_create.return_value = type("Message", (), {"id": uuid.uuid4()})()
+        mock_create.return_value = self._fake_message()
 
         response = client.post(
             SUBMIT_URL,
@@ -372,13 +379,14 @@ class TestSubmitIntegration:
         assert "b@example.com" in recipient_emails
 
     @patch(TASK_MOCK)
-    def test_bcc_recipients_created(self, mock_task, client, auth_header, mailbox):
-        """Bcc recipients from MIME headers are created as MessageRecipient rows."""
+    def test_bcc_via_envelope(self, mock_task, client, auth_header, mailbox):
+        """BCC works via X-Rcpt-To: the recipient is in the envelope but NOT
+        in the MIME headers — just like real SMTP BCC."""
         mailbox_email = str(mailbox)
+        # MIME only has To: visible@example.com — no Bcc header
         mime = (
             f"From: {mailbox_email}\r\n"
             f"To: visible@example.com\r\n"
-            f"Bcc: hidden@example.com\r\n"
             f"Subject: With Bcc\r\n"
             f"Message-ID: <bcc@example.com>\r\n"
             f"Date: Mon, 30 Mar 2026 10:00:00 +0000\r\n"
@@ -388,6 +396,7 @@ class TestSubmitIntegration:
             f"body\r\n"
         ).encode()
 
+        # X-Rcpt-To includes both visible and hidden (BCC) recipients
         response = client.post(
             SUBMIT_URL,
             data=mime,
@@ -398,14 +407,22 @@ class TestSubmitIntegration:
         )
 
         assert response.status_code == 202
+        from core.enums import MessageRecipientTypeChoices
         from core.models import Message
 
         message = Message.objects.get(id=response.json()["message_id"])
-        recipient_emails = set(
-            message.recipients.values_list("contact__email", flat=True)
-        )
-        assert "visible@example.com" in recipient_emails
-        assert "hidden@example.com" in recipient_emails
+
+        # visible@example.com comes from MIME To: header
+        assert message.recipients.filter(
+            contact__email="visible@example.com",
+            type=MessageRecipientTypeChoices.TO,
+        ).exists()
+
+        # hidden@example.com comes from X-Rcpt-To only — added as BCC
+        assert message.recipients.filter(
+            contact__email="hidden@example.com",
+            type=MessageRecipientTypeChoices.BCC,
+        ).exists()
 
     @patch(TASK_MOCK)
     def test_cc_recipients_created(self, mock_task, client, auth_header, mailbox):
