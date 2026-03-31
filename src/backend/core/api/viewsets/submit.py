@@ -64,9 +64,10 @@ class SubmitRawEmailView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Validate envelope recipients (required as a sanity check).
-        # Actual delivery uses MessageRecipient rows created from MIME
-        # To/Cc/Bcc headers by _create_message_from_inbound.
+        # Parse envelope recipients.  _create_message_from_inbound creates
+        # MessageRecipient rows from MIME To/Cc headers; any address that
+        # appears only in X-Rcpt-To (not in MIME headers) is added as BCC
+        # after message creation — this is how SMTP BCC works.
         recipient_emails = [
             addr.strip() for addr in rcpt_to_header.split(",") if addr.strip()
         ]
@@ -126,11 +127,12 @@ class SubmitRawEmailView(APIView):
         # creates MessageRecipient rows from the MIME To/Cc/Bcc headers, but
         # true BCC recipients appear only in the envelope (X-Rcpt-To), never
         # in the MIME headers — that's how BCC works in SMTP.
-        mime_recipients = set(
-            message.recipients.values_list("contact__email", flat=True)
-        )
+        mime_recipients = {
+            e.lower()
+            for e in message.recipients.values_list("contact__email", flat=True)
+        }
         for addr in recipient_emails:
-            if addr.lower() not in {e.lower() for e in mime_recipients}:
+            if addr.lower() not in mime_recipients:
                 try:
                     contact, _ = models.Contact.objects.get_or_create(
                         email=addr,
@@ -145,15 +147,23 @@ class SubmitRawEmailView(APIView):
                 except Exception:  # pylint: disable=broad-exception-caught
                     logger.warning("Failed to add BCC recipient %s", addr)
 
-        # Synchronous: validate recipients, throttle, DKIM sign, create blob
-        prepared = prepare_outbound_message(
-            mailbox,
-            message,
-            "",
-            "",
-            raw_mime=raw_mime,
-        )
+        # Synchronous: validate recipients, throttle, DKIM sign, create blob.
+        # This is a one-shot API — clean up on any failure so no orphan
+        # draft remains.
+        try:
+            prepared = prepare_outbound_message(
+                mailbox,
+                message,
+                "",
+                "",
+                raw_mime=raw_mime,
+            )
+        except Exception:
+            message.delete()
+            raise
+
         if not prepared:
+            message.delete()
             return Response(
                 {"detail": "Failed to prepare message for sending."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
