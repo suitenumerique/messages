@@ -93,8 +93,26 @@ class ProvisioningMailDomainView(APIView):
         )
 
 
+def _serialize_mailbox_with_users(mailbox, role=None):
+    """Serialize a mailbox with all its users and their roles."""
+    data = MailboxLightSerializer(mailbox).data
+    if role is not None:
+        data["role"] = role
+    data["users"] = [
+        {
+            "email": access.user.email,
+            "role": MailboxRoleChoices(access.role).label,
+        }
+        for access in mailbox.accesses.select_related("user").all()
+    ]
+    return data
+
+
 class ProvisioningMailboxView(APIView):
     """List mailboxes for a user or look up a mailbox by email.
+
+    Each mailbox includes a ``users`` array with all users who have
+    access and their roles, so callers can sync shares in one request.
 
     GET /api/v1.0/provisioning/mailboxes/?user_email=...
     GET /api/v1.0/provisioning/mailboxes/?email=...
@@ -120,16 +138,19 @@ class ProvisioningMailboxView(APIView):
         )
 
     def _list_by_user(self, user_email):
-        accesses = models.MailboxAccess.objects.filter(
-            user__email=user_email
-        ).select_related("mailbox__domain", "mailbox__contact")
+        accesses = (
+            models.MailboxAccess.objects.filter(user__email=user_email)
+            .select_related("mailbox__domain", "mailbox__contact")
+            .prefetch_related("mailbox__accesses__user")
+        )
 
-        results = []
-        for access in accesses:
-            data = MailboxLightSerializer(access.mailbox).data
-            data["role"] = MailboxRoleChoices(access.role).label
-            results.append(data)
-
+        results = [
+            _serialize_mailbox_with_users(
+                access.mailbox,
+                role=MailboxRoleChoices(access.role).label,
+            )
+            for access in accesses
+        ]
         return Response({"results": results})
 
     def _list_by_email(self, email):
@@ -137,45 +158,13 @@ class ProvisioningMailboxView(APIView):
             return Response({"results": []})
 
         local_part, domain_name = email.rsplit("@", 1)
-        mailboxes = models.Mailbox.objects.filter(
-            local_part=local_part, domain__name=domain_name
-        ).select_related("domain", "contact")
-
-        results = MailboxLightSerializer(mailboxes, many=True).data
-        return Response({"results": results})
-
-
-class ProvisioningUserView(APIView):
-    """List users who have access to a mailbox.
-
-    GET /api/v1.0/provisioning/users/?mailbox=...
-    """
-
-    permission_classes = [HasCalendarsApiKey]
-    authentication_classes = []
-
-    @extend_schema(exclude=True)
-    def get(self, request):
-        """Return users who have access to the specified mailbox."""
-        mailbox = request.query_params.get("mailbox")
-        if not mailbox or "@" not in mailbox:
-            return Response(
-                {"detail": "Provide 'mailbox' query parameter."},
-                status=status.HTTP_400_BAD_REQUEST,
+        mailboxes = (
+            models.Mailbox.objects.filter(
+                local_part=local_part, domain__name=domain_name
             )
+            .select_related("domain", "contact")
+            .prefetch_related("accesses__user")
+        )
 
-        local_part, domain_name = mailbox.rsplit("@", 1)
-        accesses = models.MailboxAccess.objects.filter(
-            mailbox__local_part=local_part,
-            mailbox__domain__name=domain_name,
-        ).select_related("user")
-
-        results = [
-            {
-                "email": access.user.email,
-                "role": MailboxRoleChoices(access.role).label,
-            }
-            for access in accesses
-        ]
-
+        results = [_serialize_mailbox_with_users(mailbox) for mailbox in mailboxes]
         return Response({"results": results})
