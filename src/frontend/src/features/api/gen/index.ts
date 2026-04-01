@@ -10,6 +10,7 @@ export * from "./mailbox-accesses/mailbox-accesses";
 export * from "./channels/channels";
 export * from "./maildomains/maildomains";
 export * from "./maildomain-accesses/maildomain-accesses";
+export * from "./notifications/notifications";
 export * from "./placeholders/placeholders";
 export * from "./tasks/tasks";
 export * from "./third-party-drive/third-party-drive";

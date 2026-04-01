@@ -306,6 +306,195 @@ class TestViewerCannotCreateEvents:
         assert response.status_code == status.HTTP_201_CREATED
 
 
+class TestMentionSecurityEdgeCases:
+    """Security tests for @mention / notification creation."""
+
+    def test_mention_user_with_access_to_different_mailbox_only(self, api_client):
+        """A user with access to a different mailbox (not on this thread) should not receive a notification."""
+        user, _mailbox_a, thread = setup_user_with_thread_access()
+        api_client.force_authenticate(user=user)
+
+        # Create user with access to a different mailbox (not linked to this thread)
+        other_mailbox = factories.MailboxFactory()
+        other_user = factories.UserFactory()
+        factories.MailboxAccessFactory(
+            mailbox=other_mailbox, user=other_user, role=enums.MailboxRoleChoices.ADMIN
+        )
+
+        data = {
+            "type": "im",
+            "data": {"content": f"Hey @{other_user.full_name}"},
+            "mention_ids": [str(other_user.id)],
+        }
+
+        response = api_client.post(
+            get_thread_event_url(thread.id), data, format="json"
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        # No notification — other_user has no access to this thread's mailbox
+        assert not models.UserNotification.objects.filter(user=other_user).exists()
+
+    def test_duplicate_mention_ids_create_single_notification(self, api_client):
+        """Passing the same user ID multiple times should create only one notification."""
+        user, mailbox, thread = setup_user_with_thread_access()
+        api_client.force_authenticate(user=user)
+
+        mentioned = factories.UserFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox, user=mentioned, role=enums.MailboxRoleChoices.VIEWER
+        )
+
+        data = {
+            "type": "im",
+            "data": {"content": "Hey!"},
+            "mention_ids": [str(mentioned.id), str(mentioned.id), str(mentioned.id)],
+        }
+
+        response = api_client.post(
+            get_thread_event_url(thread.id), data, format="json"
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        assert (
+            models.UserNotification.objects.filter(
+                user=mentioned,
+                thread_event_id=response.data["id"],
+            ).count()
+            == 1
+        )
+
+    def test_mention_nonexistent_user_id_ignored(self, api_client):
+        """Passing a non-existent UUID in mention_ids should not cause an error."""
+        user, _mailbox, thread = setup_user_with_thread_access()
+        api_client.force_authenticate(user=user)
+
+        data = {
+            "type": "im",
+            "data": {"content": "Hey ghost"},
+            "mention_ids": [str(uuid.uuid4())],
+        }
+
+        response = api_client.post(get_thread_event_url(thread.id), data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+        assert models.UserNotification.objects.count() == 0
+
+    def test_empty_mention_ids_creates_no_notifications(self, api_client):
+        """Empty mention_ids array should create no notifications."""
+        user, _mailbox, thread = setup_user_with_thread_access()
+        api_client.force_authenticate(user=user)
+
+        data = {"type": "im", "data": {"content": "no mentions"}, "mention_ids": []}
+
+        response = api_client.post(get_thread_event_url(thread.id), data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+        assert models.UserNotification.objects.count() == 0
+
+    def test_self_mention_does_not_create_notification(self, api_client):
+        """Mentioning yourself should not create a notification."""
+        user, _mailbox, thread = setup_user_with_thread_access()
+        api_client.force_authenticate(user=user)
+
+        data = {
+            "type": "im",
+            "data": {"content": f"Hey @{user.full_name}"},
+            "mention_ids": [str(user.id)],
+        }
+
+        response = api_client.post(get_thread_event_url(thread.id), data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+        assert not models.UserNotification.objects.filter(user=user).exists()
+
+
+class TestNotificationSecurity:
+    """Security tests for UserNotification API."""
+
+    def test_cannot_read_other_user_notification(self, api_client):
+        """GET /notifications/{id}/ for another user's notification should return 404."""
+        user = factories.UserFactory()
+        api_client.force_authenticate(user=user)
+
+        other_notification = factories.UserNotificationFactory()
+
+        response = api_client.get(
+            reverse("notifications-detail", kwargs={"id": other_notification.id})
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_cannot_create_notification_via_api(self, api_client):
+        """POST /notifications/ should return 405 Method Not Allowed."""
+        user = factories.UserFactory()
+        api_client.force_authenticate(user=user)
+
+        data = {
+            "user": str(user.id),
+            "type": "mention",
+            "thread": str(factories.ThreadFactory().id),
+        }
+
+        response = api_client.post(reverse("notifications-list"), data, format="json")
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
+
+    def test_cannot_delete_notification_via_api(self, api_client):
+        """DELETE /notifications/{id}/ should return 405 Method Not Allowed."""
+        user = factories.UserFactory()
+        api_client.force_authenticate(user=user)
+
+        notification = factories.UserNotificationFactory(user=user)
+
+        response = api_client.delete(
+            reverse("notifications-detail", kwargs={"id": notification.id})
+        )
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
+
+    def test_cannot_change_notification_user_field(self, api_client):
+        """PATCH should not allow reassigning a notification to another user."""
+        user = factories.UserFactory()
+        api_client.force_authenticate(user=user)
+
+        other_user = factories.UserFactory()
+        notification = factories.UserNotificationFactory(user=user)
+
+        response = api_client.patch(
+            reverse("notifications-detail", kwargs={"id": notification.id}),
+            {"user": str(other_user.id), "is_done": True},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        notification.refresh_from_db()
+        assert notification.user_id == user.id  # User field unchanged
+
+    def test_cannot_change_notification_thread_field(self, api_client):
+        """PATCH should not allow changing the thread field."""
+        user = factories.UserFactory()
+        api_client.force_authenticate(user=user)
+
+        notification = factories.UserNotificationFactory(user=user)
+        other_thread = factories.ThreadFactory()
+
+        response = api_client.patch(
+            reverse("notifications-detail", kwargs={"id": notification.id}),
+            {"thread": str(other_thread.id)},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        notification.refresh_from_db()
+        assert notification.thread_id != other_thread.id
+
+    def test_filter_by_other_user_thread_returns_empty(self, api_client):
+        """Filtering by thread_id of a thread with another user's notifications should return empty."""
+        user = factories.UserFactory()
+        api_client.force_authenticate(user=user)
+
+        other_user = factories.UserFactory()
+        thread = factories.ThreadFactory()
+        factories.UserNotificationFactory(user=other_user, thread=thread)
+
+        response = api_client.get(
+            f"{reverse('notifications-list')}?thread_id={thread.id}"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 0
+
+
 class TestParameterConfusionAttack:
     """Test that conflicting thread_id in URL path vs query params can't bypass permissions."""
 

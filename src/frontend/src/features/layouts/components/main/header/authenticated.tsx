@@ -17,6 +17,7 @@ import { CircularProgress } from "@/features/ui/components/circular-progress";
 import { TaskImportCacheHelper } from "@/features/utils/task-import-cache";
 import { useTheme } from "@/features/providers/theme";
 import { useLayoutContext } from "..";
+import { NotificationBell } from "@/features/notifications/components/notification-bell";
 
 
 type AuthenticatedHeaderProps = HeaderProps & {
@@ -114,6 +115,7 @@ export const HeaderRight = () => {
     <>
       <div className="flex-row flex-align-center">
         <AutoreplyIndicator />
+        <NotificationBell />
         <SurveyButton iconOnly color="brand" variant="tertiary" />
         <ApplicationMenu />
         {isDesktop && <VerticalSeparator size="24px" withPadding={false} />}

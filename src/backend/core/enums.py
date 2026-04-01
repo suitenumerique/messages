@@ -89,6 +89,7 @@ THREAD_STATS_FIELDS_MAP = {
     "all_unread": "all_unread",
     "has_delivery_pending": "has_delivery_pending",
     "has_delivery_failed": "has_delivery_failed",
+    "has_notification": "has_notification",
 }
 
 

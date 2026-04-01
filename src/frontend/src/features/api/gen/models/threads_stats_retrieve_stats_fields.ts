@@ -15,4 +15,5 @@ export const ThreadsStatsRetrieveStatsFields = {
   all_unread: "all_unread",
   has_delivery_failed: "has_delivery_failed",
   has_delivery_pending: "has_delivery_pending",
+  has_notification: "has_notification",
 } as const;

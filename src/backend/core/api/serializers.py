@@ -992,6 +992,62 @@ class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         create_only_fields = ["type", "message"]
 
 
+class NotificationThreadSerializer(serializers.ModelSerializer):
+    """Serialize thread data nested within a notification."""
+
+    class Meta:
+        model = models.Thread
+        fields = ["id", "subject"]
+        read_only_fields = ["id", "subject"]
+
+
+class NotificationThreadEventSerializer(serializers.ModelSerializer):
+    """Serialize thread event data nested within a notification."""
+
+    author = UserWithoutAbilitiesSerializer(read_only=True)
+    content = serializers.SerializerMethodField()
+
+    class Meta:
+        model = models.ThreadEvent
+        fields = ["id", "author", "content"]
+        read_only_fields = ["id", "author", "content"]
+
+    def get_content(self, obj):
+        """Extract content from the thread event data JSONField."""
+        return obj.data.get("content", "")
+
+
+class UserNotificationSerializer(serializers.ModelSerializer):
+    """Serialize user notification information."""
+
+    thread = NotificationThreadSerializer(read_only=True)
+    thread_event = NotificationThreadEventSerializer(read_only=True)
+
+    class Meta:
+        model = models.UserNotification
+        fields = [
+            "id",
+            "user",
+            "type",
+            "is_done",
+            "data",
+            "thread",
+            "thread_event",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "user",
+            "type",
+            "data",
+            "thread",
+            "thread_event",
+            "created_at",
+            "updated_at",
+        ]
+
+
 class MailboxAccessReadSerializer(serializers.ModelSerializer):
     """Serialize mailbox access information for read operations with nested user details.
     Mailbox context is implied by the URL, so mailbox details are not included here.

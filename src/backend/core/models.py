@@ -1432,6 +1432,45 @@ class ThreadEvent(BaseModel):
                 raise ValidationError({"data": exception.message}) from exception
         super().clean()
 
+class UserNotification(BaseModel):
+    """User notification model for mentions, assignments, etc."""
+
+    user = models.ForeignKey(
+        "User", on_delete=models.CASCADE, related_name="notifications"
+    )
+    type = models.CharField("type", max_length=36)
+    is_done = models.BooleanField("is done", default=False)
+    data = models.JSONField("data", default=dict, blank=True)
+    thread = models.ForeignKey(
+        "Thread",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="notifications",
+    )
+    thread_event = models.ForeignKey(
+        "ThreadEvent",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="notifications",
+    )
+
+    class Meta:
+        db_table = "messages_usernotification"
+        verbose_name = "user notification"
+        verbose_name_plural = "user notifications"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["user", "is_done", "-created_at"],
+                name="notif_user_done_created_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} - {self.type} - {self.is_done}"
+
 
 class Contact(BaseModel):
     """Contact model to store contact information."""

@@ -1,0 +1,38 @@
+.notification-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 1000;
+  width: 360px;
+  background: var(--c--contextuals--background--surface--primary);
+  border: 1px solid var(--c--contextuals--border--default);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+
+  &__empty {
+    padding: var(--c--globals--spacings--lg);
+    text-align: center;
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--tertiary);
+  }
+
+  &__footer {
+    padding: var(--c--globals--spacings--sm) var(--c--globals--spacings--base);
+    text-align: center;
+    border-top: 1px solid var(--c--contextuals--border--default);
+  }
+
+  &__see-all {
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--brand--primary);
+    text-decoration: none;
+    cursor: pointer;
+    background: none;
+    border: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}

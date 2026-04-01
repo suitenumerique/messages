@@ -40,6 +40,17 @@ export const MAILBOX_FOLDERS = () => [
         },
     },
     {
+        id: "for_me",
+        name: i18n.t("For me"),
+        icon: "alternate_email",
+        searchable: false,
+        conditional: true,
+        showStats: true,
+        filter: {
+            has_notification: "1"
+        },
+    },
+    {
         id: "all_messages",
         name: i18n.t("All messages"),
         icon: "mark_as_unread",
@@ -169,6 +180,7 @@ const FolderItem = ({ folder }: FolderItemProps) => {
     const stats_fields = useMemo(() => {
         if (folder.id === 'drafts') return ThreadsStatsRetrieveStatsFields.all;
         if (folder.id === 'outbox') return ThreadsStatsRetrieveStatsFields.all;
+        if (folder.id === 'for_me') return ThreadsStatsRetrieveStatsFields.has_notification;
         return ThreadsStatsRetrieveStatsFields.all_unread;
     }, [folder.id]);
     const { data } = useThreadsStatsRetrieve({

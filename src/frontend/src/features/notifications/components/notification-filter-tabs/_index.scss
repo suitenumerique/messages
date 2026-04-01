@@ -1,0 +1,31 @@
+.notification-filter-tabs {
+  display: flex;
+  gap: var(--c--globals--spacings--md);
+  margin-bottom: var(--c--globals--spacings--md);
+
+  &__tab {
+    padding: var(--c--globals--spacings--xs) 0;
+    font-size: var(--c--globals--font--sizes--sm);
+    font-weight: var(--c--globals--font--weights--regular);
+    color: var(--c--contextuals--content--semantic--neutral--tertiary);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition:
+      color 0.15s,
+      border-color 0.15s;
+
+    &:hover {
+      color: var(--c--contextuals--content--semantic--neutral--primary);
+    }
+
+    &--active {
+      font-weight: var(--c--globals--font--weights--bold);
+      color: var(--c--contextuals--content--semantic--brand--primary);
+      border-bottom-color: var(
+        --c--contextuals--background--semantic--brand--primary
+      );
+    }
+  }
+}

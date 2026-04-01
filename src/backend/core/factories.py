@@ -156,6 +156,17 @@ class ThreadEventFactory(factory.django.DjangoModelFactory):
     author = factory.SubFactory(UserFactory)
 
 
+class UserNotificationFactory(factory.django.DjangoModelFactory):
+    """A factory to create user notifications for testing purposes."""
+
+    class Meta:
+        model = models.UserNotification
+
+    user = factory.SubFactory(UserFactory)
+    type = "mention"
+    thread = factory.SubFactory(ThreadFactory)
+
+
 class ContactFactory(factory.django.DjangoModelFactory):
     """A factory to random contacts for testing purposes."""
 

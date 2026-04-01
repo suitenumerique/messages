@@ -4485,6 +4485,381 @@
                 }
             }
         },
+        "/api/v1.0/notifications/": {
+            "get": {
+                "operationId": "notifications_list",
+                "description": "ViewSet for UserNotification model.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "is_done",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Filter notifications by done status."
+                    },
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter notifications by thread ID."
+                    },
+                    {
+                        "in": "query",
+                        "name": "type",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Filter notifications by type."
+                    }
+                ],
+                "tags": [
+                    "notifications"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedUserNotificationList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/notifications/{id}/": {
+            "get": {
+                "operationId": "notifications_retrieve",
+                "description": "ViewSet for UserNotification model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "is_done",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Filter notifications by done status."
+                    },
+                    {
+                        "in": "query",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter notifications by thread ID."
+                    },
+                    {
+                        "in": "query",
+                        "name": "type",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Filter notifications by type."
+                    }
+                ],
+                "tags": [
+                    "notifications"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserNotification"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "notifications_update",
+                "description": "ViewSet for UserNotification model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "is_done",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Filter notifications by done status."
+                    },
+                    {
+                        "in": "query",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter notifications by thread ID."
+                    },
+                    {
+                        "in": "query",
+                        "name": "type",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Filter notifications by type."
+                    }
+                ],
+                "tags": [
+                    "notifications"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UserNotificationRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UserNotificationRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserNotification"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "notifications_partial_update",
+                "description": "ViewSet for UserNotification model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "is_done",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Filter notifications by done status."
+                    },
+                    {
+                        "in": "query",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter notifications by thread ID."
+                    },
+                    {
+                        "in": "query",
+                        "name": "type",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Filter notifications by type."
+                    }
+                ],
+                "tags": [
+                    "notifications"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedUserNotificationRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedUserNotificationRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserNotification"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/notifications/count/": {
+            "get": {
+                "operationId": "notifications_count_retrieve",
+                "description": "Return the count of unread notifications for the authenticated user.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "is_done",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Filter notifications by done status."
+                    },
+                    {
+                        "in": "query",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter notifications by thread ID."
+                    },
+                    {
+                        "in": "query",
+                        "name": "type",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Filter notifications by type."
+                    }
+                ],
+                "tags": [
+                    "notifications"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotificationCount"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/notifications/mark-all-done/": {
+            "post": {
+                "operationId": "notifications_mark_all_done_create",
+                "description": "Mark all notifications as done for the authenticated user.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "is_done",
+                        "schema": {
+                            "type": "boolean"
+                        },
+                        "description": "Filter notifications by done status."
+                    },
+                    {
+                        "in": "query",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Filter notifications by thread ID."
+                    },
+                    {
+                        "in": "query",
+                        "name": "type",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Filter notifications by type."
+                    }
+                ],
+                "tags": [
+                    "notifications"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NotificationMarkAllDone"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/placeholders/": {
             "get": {
                 "operationId": "placeholders_retrieve",
@@ -5882,7 +6257,8 @@
                                 "all",
                                 "all_unread",
                                 "has_delivery_failed",
-                                "has_delivery_pending"
+                                "has_delivery_pending",
+                                "has_notification"
                             ]
                         },
                         "description": "Comma-separated list of fields to aggregate.\n                Special values: 'all' (count all threads), 'all_unread' (count all unread threads).\n                Boolean fields: has_trashed, has_draft, has_starred, has_attachments, has_archived,\n                has_sender, has_active, has_delivery_pending, has_delivery_failed, is_spam, has_messages.\n                Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.\n                Examples: 'all,all_unread', 'has_starred,has_starred_unread', 'is_spam,is_spam_unread'",
@@ -7781,6 +8157,78 @@
                     "autoreply"
                 ]
             },
+            "NotificationCount": {
+                "type": "object",
+                "properties": {
+                    "count": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "count"
+                ]
+            },
+            "NotificationMarkAllDone": {
+                "type": "object",
+                "properties": {
+                    "updated": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "updated"
+                ]
+            },
+            "NotificationThread": {
+                "type": "object",
+                "description": "Serialize thread data nested within a notification.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "subject": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "id",
+                    "subject"
+                ]
+            },
+            "NotificationThreadEvent": {
+                "type": "object",
+                "description": "Serialize thread event data nested within a notification.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "author": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/UserWithoutAbilities"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "content": {
+                        "type": "string",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "author",
+                    "content",
+                    "id"
+                ]
+            },
             "PaginatedDriveItemResponse": {
                 "type": "object",
                 "properties": {
@@ -7960,6 +8408,37 @@
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/Thread"
+                        }
+                    }
+                }
+            },
+            "PaginatedUserNotificationList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UserNotification"
                         }
                     }
                 }
@@ -8190,6 +8669,15 @@
                                 "additionalProperties": false
                             }
                         ]
+                    }
+                }
+            },
+            "PatchedUserNotificationRequest": {
+                "type": "object",
+                "description": "Serialize user notification information.",
+                "properties": {
+                    "is_done": {
+                        "type": "boolean"
                     }
                 }
             },
@@ -8991,6 +9479,83 @@
                     "name",
                     "slug"
                 ]
+            },
+            "UserNotification": {
+                "type": "object",
+                "description": "Serialize user notification information.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "user": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID",
+                        "readOnly": true
+                    },
+                    "type": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "is_done": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "readOnly": true
+                    },
+                    "thread": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/NotificationThread"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "thread_event": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/NotificationThreadEvent"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "data",
+                    "id",
+                    "thread",
+                    "thread_event",
+                    "type",
+                    "updated_at",
+                    "user"
+                ]
+            },
+            "UserNotificationRequest": {
+                "type": "object",
+                "description": "Serialize user notification information.",
+                "properties": {
+                    "is_done": {
+                        "type": "boolean"
+                    }
+                }
             },
             "UserWithAbilities": {
                 "type": "object",

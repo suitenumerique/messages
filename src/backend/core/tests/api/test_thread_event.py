@@ -123,6 +123,62 @@ class TestThreadEventCreate:
         assert response.data["type"][0].code == "invalid_choice"
         assert str(response.data["type"][0]) == '"notification" is not a valid choice.'
 
+    def test_create_thread_event_with_mentions(self, api_client):
+        """Test creating a thread event that mentions other users."""
+        user, mailbox, thread = setup_user_with_thread_access()
+        api_client.force_authenticate(user=user)
+
+        # Create another user with access to the same mailbox
+        mentioned_user = factories.UserFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=mentioned_user,
+            role=enums.MailboxRoleChoices.VIEWER,
+        )
+
+        data = {
+            "type": "im",
+            "data": {
+                "content": f"Hey @{mentioned_user.full_name}, check this out!"
+            },
+            "mention_ids": [str(mentioned_user.id)],
+        }
+
+        response = api_client.post(
+            get_thread_event_url(thread.id), data, format="json"
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Verify notification was created
+        notification = models.UserNotification.objects.filter(
+            user=mentioned_user, type="mention"
+        ).first()
+        assert notification is not None
+        assert notification.thread == thread
+        assert notification.thread_event_id == uuid.UUID(response.data["id"])
+
+    def test_create_thread_event_mention_invalid_user_ignored(self, api_client):
+        """Test that mentioning a user without mailbox access is silently ignored."""
+        user, _mailbox, thread = setup_user_with_thread_access()
+        api_client.force_authenticate(user=user)
+
+        # User without access to the mailbox
+        outsider = factories.UserFactory()
+
+        data = {
+            "type": "im",
+            "data": {"content": "Hey @outsider"},
+            "mention_ids": [str(outsider.id)],
+        }
+
+        response = api_client.post(
+            get_thread_event_url(thread.id), data, format="json"
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # No notification created for the outsider
+        assert not models.UserNotification.objects.filter(user=outsider).exists()
+
     def test_create_thread_event_forbidden(self, api_client):
         """Test creating a thread event without thread access."""
         user = factories.UserFactory()

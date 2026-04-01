@@ -111,6 +111,14 @@ class ThreadViewSet(
         }
 
         query_params = self.request.GET
+
+        # Dynamic per-user filter: threads with unresolved notifications for current user
+        if query_params.get("has_notification") == "1":
+            queryset = queryset.filter(
+                notifications__user=self.request.user,
+                notifications__is_done=False,
+            ).distinct()
+
         for param, filter_field in filter_mapping.items():
             # Exclude fully trashed threads by default
             if exclude_trashed and param == "is_trashed":
@@ -297,8 +305,8 @@ class ThreadViewSet(
             "has_messages",
         }
 
-        # Special fields
-        special_fields = {"all", "all_unread"}
+        # Special fields (includes dynamic per-user fields)
+        special_fields = {"all", "all_unread", "has_notification"}
 
         # Validate requested fields
         for field in requested_fields:
@@ -320,12 +328,30 @@ class ThreadViewSet(
                     status=drf.status.HTTP_400_BAD_REQUEST,
                 )
 
+        # Separate has_notification (per-user dynamic) from aggregatable fields
+        result = {}
+        aggregatable_fields = []
+        for field in requested_fields:
+            if field == "has_notification":
+                # Count threads where user has unresolved notifications
+                result["has_notification"] = (
+                    queryset.filter(
+                        notifications__user=request.user,
+                        notifications__is_done=False,
+                    )
+                    .distinct()
+                    .count()
+                )
+            else:
+                aggregatable_fields.append(field)
+
         # Build unread/starred conditions from annotations (always available)
         unread_condition = Q(_has_unread=True)
         starred_condition = Q(_has_starred=True)
 
         aggregations = {}
-        for field in requested_fields:
+        for field in aggregatable_fields:
+            # Use a unique key for the aggregation to avoid naming conflicts
             agg_key = f"count_{field}"
 
             if field == "all":
@@ -347,20 +373,18 @@ class ThreadViewSet(
             else:
                 aggregations[agg_key] = Count("pk", filter=Q(**{field: True}))
 
-        if not aggregations:
+        if aggregations:
+            aggregated_data = queryset.aggregate(**aggregations)
+            for field in aggregatable_fields:
+                agg_key = f"count_{field}"
+                value = aggregated_data.get(agg_key, 0)
+                result[field] = value if value is not None else 0
+
+        if not result:
             return drf.response.Response(
                 {"detail": "No valid fields provided in stats_fields."},
                 status=drf.status.HTTP_400_BAD_REQUEST,
             )
-
-        aggregated_data = queryset.aggregate(**aggregations)
-
-        # Map back to the original field names and replace None with 0
-        result = {}
-        for field in requested_fields:
-            agg_key = f"count_{field}"
-            value = aggregated_data.get(agg_key, 0)
-            result[field] = value if value is not None else 0
 
         return drf.response.Response(result)
 
