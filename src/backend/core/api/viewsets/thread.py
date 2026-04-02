@@ -3,6 +3,7 @@
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models.functions import Coalesce
 
 import rest_framework as drf
 from drf_spectacular.types import OpenApiTypes
@@ -131,13 +132,13 @@ class ThreadViewSet(
                 else:
                     queryset = queryset.filter(**{filter_field: False})
 
-        order_field = self._get_order_field(query_params)
-        queryset = queryset.order_by(f"-{order_field}", "-created_at")
+        order_expression = self._get_order_expression(query_params)
+        queryset = queryset.order_by(order_expression, "-created_at")
         return queryset
 
     @staticmethod
-    def _get_order_field(query_params):
-        """Return the appropriate ordering field based on the active view filter."""
+    def _get_order_expression(query_params):
+        """Return the ordering expression based on the active view filter."""
         view_field_map = {
             "has_trashed": "trashed_messaged_at",
             "has_draft": "draft_messaged_at",
@@ -148,8 +149,10 @@ class ThreadViewSet(
         }
         for param, field in view_field_map.items():
             if query_params.get(param) == "1":
-                return field
-        return "messaged_at"
+                return f"-{field}"
+
+        # Draft-only threads have messaged_at=NULL, fall back to draft_messaged_at
+        return Coalesce("messaged_at", "draft_messaged_at").desc()
 
     def destroy(self, request, *args, **kwargs):
         """Delete a thread, requiring EDITOR role on the thread."""

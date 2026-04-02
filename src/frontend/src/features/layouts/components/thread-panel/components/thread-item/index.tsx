@@ -47,7 +47,9 @@ export const ThreadItem = ({ thread, isSelected, onToggleSelection, selectedThre
         if (ViewHelper.isTrashedView() && thread.trashed_messaged_at) {
             return thread.trashed_messaged_at;
         }
-        return thread.messaged_at;
+
+        // Draft-only threads have messaged_at=null, fall back to draft_messaged_at
+        return thread.messaged_at || thread.draft_messaged_at;
     }, [thread])
 
     const hasUnread = useMemo(() => {
