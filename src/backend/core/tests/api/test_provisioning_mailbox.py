@@ -272,3 +272,89 @@ class TestMailboxListByEmail:
 
         assert response.status_code == 200
         assert response.json()["results"] == []
+
+
+# =============================================================================
+# add_maildomain_custom_attributes
+# =============================================================================
+
+
+@pytest.mark.django_db
+class TestMaildomainCustomAttributes:
+    """Test the add_maildomain_custom_attributes query parameter."""
+
+    def test_user_email_with_custom_attributes(self, client, auth_header, domain):
+        domain.custom_attributes = {"siret": "123456789", "org_name": "ACME"}
+        domain.save()
+        mb = MailboxFactory(local_part="info", domain=domain)
+        user = UserFactory(email="alice@oidc.example.com")
+        MailboxAccessFactory(mailbox=mb, user=user, role=MailboxRoleChoices.ADMIN)
+
+        response = client.get(
+            MAILBOX_URL,
+            {
+                "user_email": "alice@oidc.example.com",
+                "add_maildomain_custom_attributes": "siret,org_name",
+            },
+            **auth_header,
+        )
+
+        assert response.status_code == 200
+        result = response.json()["results"][0]
+        assert result["maildomain_custom_attributes"]["siret"] == "123456789"
+        assert result["maildomain_custom_attributes"]["org_name"] == "ACME"
+
+    def test_email_with_custom_attributes(self, client, auth_header, domain):
+        domain.custom_attributes = {"siret": "987654321"}
+        domain.save()
+        MailboxFactory(local_part="info", domain=domain)
+
+        response = client.get(
+            MAILBOX_URL,
+            {
+                "email": "info@company.com",
+                "add_maildomain_custom_attributes": "siret",
+            },
+            **auth_header,
+        )
+
+        assert response.status_code == 200
+        result = response.json()["results"][0]
+        assert result["maildomain_custom_attributes"]["siret"] == "987654321"
+
+    def test_missing_key_returns_none(self, client, auth_header, domain):
+        domain.custom_attributes = {"siret": "123"}
+        domain.save()
+        mb = MailboxFactory(local_part="info", domain=domain)
+        user = UserFactory(email="alice@oidc.example.com")
+        MailboxAccessFactory(mailbox=mb, user=user, role=MailboxRoleChoices.ADMIN)
+
+        response = client.get(
+            MAILBOX_URL,
+            {
+                "user_email": "alice@oidc.example.com",
+                "add_maildomain_custom_attributes": "siret,nonexistent",
+            },
+            **auth_header,
+        )
+
+        result = response.json()["results"][0]
+        assert result["maildomain_custom_attributes"]["siret"] == "123"
+        assert result["maildomain_custom_attributes"]["nonexistent"] is None
+
+    def test_no_param_means_no_field(self, client, auth_header, domain):
+        """Without the param, maildomain_custom_attributes is absent."""
+        domain.custom_attributes = {"siret": "123"}
+        domain.save()
+        mb = MailboxFactory(local_part="info", domain=domain)
+        user = UserFactory(email="alice@oidc.example.com")
+        MailboxAccessFactory(mailbox=mb, user=user, role=MailboxRoleChoices.ADMIN)
+
+        response = client.get(
+            MAILBOX_URL,
+            {"user_email": "alice@oidc.example.com"},
+            **auth_header,
+        )
+
+        result = response.json()["results"][0]
+        assert "maildomain_custom_attributes" not in result

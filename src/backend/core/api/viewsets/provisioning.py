@@ -93,7 +93,9 @@ class ProvisioningMailDomainView(APIView):
         )
 
 
-def _serialize_mailbox_with_users(mailbox, role=None):
+def _serialize_mailbox_with_users(
+    mailbox, role=None, maildomain_custom_attributes=None
+):
     """Serialize a mailbox with all its users and their roles."""
     data = MailboxLightSerializer(mailbox).data
     if role is not None:
@@ -105,6 +107,11 @@ def _serialize_mailbox_with_users(mailbox, role=None):
         }
         for access in mailbox.accesses.select_related("user").all()
     ]
+    if maildomain_custom_attributes:
+        domain_attrs = mailbox.domain.custom_attributes or {}
+        data["maildomain_custom_attributes"] = {
+            key: domain_attrs.get(key) for key in maildomain_custom_attributes
+        }
     return data
 
 
@@ -127,17 +134,22 @@ class ProvisioningMailboxView(APIView):
         user_email = request.query_params.get("user_email")
         email = request.query_params.get("email")
 
+        # Optional: include specific keys from MailDomain.custom_attributes
+        # e.g. ?add_maildomain_custom_attributes=siret,org_name
+        raw = request.query_params.get("add_maildomain_custom_attributes", "")
+        maildomain_attrs = [k.strip() for k in raw.split(",") if k.strip()] or None
+
         if user_email:
-            return self._list_by_user(user_email)
+            return self._list_by_user(user_email, maildomain_attrs)
         if email:
-            return self._list_by_email(email)
+            return self._list_by_email(email, maildomain_attrs)
 
         return Response(
             {"detail": "Provide either 'user_email' or 'email' query parameter."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    def _list_by_user(self, user_email):
+    def _list_by_user(self, user_email, maildomain_attrs=None):
         accesses = (
             models.MailboxAccess.objects.filter(user__email=user_email)
             .select_related("mailbox__domain", "mailbox__contact")
@@ -148,12 +160,13 @@ class ProvisioningMailboxView(APIView):
             _serialize_mailbox_with_users(
                 access.mailbox,
                 role=MailboxRoleChoices(access.role).label,
+                maildomain_custom_attributes=maildomain_attrs,
             )
             for access in accesses
         ]
         return Response({"results": results})
 
-    def _list_by_email(self, email):
+    def _list_by_email(self, email, maildomain_attrs=None):
         if "@" not in email:
             return Response({"results": []})
 
@@ -166,5 +179,10 @@ class ProvisioningMailboxView(APIView):
             .prefetch_related("accesses__user")
         )
 
-        results = [_serialize_mailbox_with_users(mailbox) for mailbox in mailboxes]
+        results = [
+            _serialize_mailbox_with_users(
+                mailbox, maildomain_custom_attributes=maildomain_attrs
+            )
+            for mailbox in mailboxes
+        ]
         return Response({"results": results})
