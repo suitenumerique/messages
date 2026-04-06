@@ -145,7 +145,7 @@ class SubmitRawEmailView(APIView):
                         type=models.MessageRecipientTypeChoices.BCC,
                     )
                 except Exception:  # pylint: disable=broad-exception-caught
-                    logger.warning("Failed to add BCC recipient %s", addr)
+                    logger.warning("Failed to add BCC recipient (masked)")
 
         # Synchronous: validate recipients, throttle, DKIM sign, create blob.
         # This is a one-shot API — clean up on any failure so no orphan
