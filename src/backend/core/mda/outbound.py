@@ -310,7 +310,9 @@ def prepare_outbound_message(
         # Raw MIME path: the caller already composed the MIME.
         validate_mime_size(len(raw_mime), message.id)
         message.sender_user = user
-        return _sign_and_store(mailbox_sender, message, raw_mime)
+        message.blob = _sign_and_store_blob(mailbox_sender, raw_mime)
+        _finalize_sent_message(mailbox_sender, message)
+        return True
 
     # --- Web/API path: compose MIME from text/html body --- #
 
@@ -378,33 +380,12 @@ def prepare_outbound_message(
 
     draft_blob = message.draft_blob
 
-    message.is_draft = False
     message.sender_user = user
-    message.draft_blob = None
     # has_attachments is already set by compose_and_store_mime (includes
     # inline signature images), so we do not overwrite it here.
-    message.created_at = timezone.now()
-    message.updated_at = timezone.now()
-    message.save(
-        update_fields=[
-            "updated_at",
-            "blob",
-            "mime_id",
-            "is_draft",
-            "sender_user",
-            "draft_blob",
-            "has_attachments",
-            "created_at",
-        ]
+    _finalize_sent_message(
+        mailbox_sender, message, extra_update_fields=("mime_id", "has_attachments")
     )
-
-    # Mark the thread as read for the sender
-    models.ThreadAccess.objects.filter(
-        thread=message.thread,
-        mailbox=mailbox_sender,
-    ).update(read_at=message.created_at)
-
-    message.thread.update_stats()
 
     # Clean up the draft blob and the attachment blobs
     if draft_blob:
@@ -417,17 +398,10 @@ def prepare_outbound_message(
     return True
 
 
-def _sign_and_store(
-    mailbox_sender: models.Mailbox,
-    message: models.Message,
-    raw_mime: bytes,
-    has_attachments: Optional[bool] = None,
-) -> bool:
-    """Sign raw MIME with DKIM, store as a blob, and finalize the message.
-
-    Used by the raw MIME submission path (e.g. /submit/ endpoint).
-    """
-    # Sign the message with DKIM
+def _sign_and_store_blob(
+    mailbox_sender: models.Mailbox, raw_mime: bytes
+) -> models.Blob:
+    """DKIM-sign raw MIME bytes and persist them as a blob on the mailbox."""
     dkim_signature_header: Optional[bytes] = sign_message_dkim(
         raw_mime_message=raw_mime, maildomain=mailbox_sender.domain
     )
@@ -436,13 +410,20 @@ def _sign_and_store(
     if dkim_signature_header:
         raw_mime_signed = dkim_signature_header + b"\r\n" + raw_mime
 
-    # Create a blob to store the raw MIME content
-    blob = mailbox_sender.create_blob(
+    return mailbox_sender.create_blob(
         content=raw_mime_signed,
         content_type="message/rfc822",
     )
 
-    message.blob = blob
+
+def _finalize_sent_message(
+    mailbox_sender: models.Mailbox,
+    message: models.Message,
+    extra_update_fields: tuple = (),
+) -> None:
+    """Finalize an outbound message once its blob is attached: clear draft
+    state, stamp timestamps, save, mark the thread as read for the sender,
+    and refresh thread stats."""
     message.is_draft = False
     message.draft_blob = None
     message.created_at = timezone.now()
@@ -455,26 +436,16 @@ def _sign_and_store(
         "sender_user",
         "draft_blob",
         "created_at",
+        *extra_update_fields,
     ]
-
-    if has_attachments is not None:
-        message.has_attachments = has_attachments
-        update_fields.append("has_attachments")
-
-    if message.mime_id:
-        update_fields.append("mime_id")
-
     message.save(update_fields=update_fields)
 
-    # Mark the thread as read for the sender
     models.ThreadAccess.objects.filter(
         thread=message.thread,
         mailbox=mailbox_sender,
     ).update(read_at=message.created_at)
 
     message.thread.update_stats()
-
-    return True
 
 
 def send_message(message: models.Message, force_mta_out: bool = False):

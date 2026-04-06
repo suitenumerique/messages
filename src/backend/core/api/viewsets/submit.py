@@ -9,6 +9,8 @@ creation) and dispatches SMTP delivery asynchronously via Celery.
 
 import logging
 
+from django.core.exceptions import ValidationError as DjangoValidationError
+
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.response import Response
@@ -58,7 +60,7 @@ class SubmitRawEmailView(APIView):
         # Resolve mailbox
         try:
             mailbox = models.Mailbox.objects.select_related("domain").get(id=mailbox_id)
-        except (models.Mailbox.DoesNotExist, ValueError):
+        except (models.Mailbox.DoesNotExist, ValueError, DjangoValidationError):
             return Response(
                 {"detail": "Mailbox not found."},
                 status=status.HTTP_404_NOT_FOUND,

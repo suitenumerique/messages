@@ -5,8 +5,10 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
+from dkim import verify as dkim_verify
 
 from core.factories import MailboxFactory, MailDomainFactory
+from core.mda.signing import generate_dkim_key
 
 SUBMIT_URL = "/api/v1.0/submit/"
 
@@ -147,7 +149,7 @@ class TestSubmitValidation:
         )
         assert response.status_code == 404
 
-    def test_invalid_uuid_in_x_mail_from_returns_error(self, client, auth_header):
+    def test_invalid_uuid_in_x_mail_from_returns_404(self, client, auth_header):
         response = client.post(
             SUBMIT_URL,
             data=MINIMAL_MIME,
@@ -156,7 +158,7 @@ class TestSubmitValidation:
             HTTP_X_RCPT_TO="attendee@example.com",
             **auth_header,
         )
-        assert response.status_code in (400, 404)
+        assert response.status_code == 404
 
     def test_empty_body_returns_400(self, client, auth_header, mailbox):
         response = client.post(
@@ -463,3 +465,45 @@ class TestSubmitIntegration:
             contact__email="cc@example.com",
             type=MessageRecipientTypeChoices.CC,
         ).exists()
+
+    @patch(TASK_MOCK)
+    def test_stored_blob_is_dkim_signed(self, mock_task, client, auth_header, mailbox):
+        """The blob persisted for the outbound message must be DKIM-signed
+        with the domain's active key and verifiable against its public key."""
+        from core.models import DKIMKey, Message
+
+        private_key, public_key = generate_dkim_key(key_size=1024)
+        dkim_key = DKIMKey.objects.create(
+            selector="testselector",
+            private_key=private_key,
+            public_key=public_key,
+            key_size=1024,
+            is_active=True,
+            domain=mailbox.domain,
+        )
+
+        response = client.post(
+            SUBMIT_URL,
+            data=MINIMAL_MIME,
+            content_type="message/rfc822",
+            HTTP_X_MAIL_FROM=str(mailbox.id),
+            HTTP_X_RCPT_TO="attendee@example.com",
+            **auth_header,
+        )
+        assert response.status_code == 202
+
+        message = Message.objects.get(id=response.json()["message_id"])
+        stored = message.blob.get_content()
+
+        # Header is present and prepended before the original MIME.
+        assert stored.startswith(b"DKIM-Signature:"), stored[:200]
+
+        # Verify the signature cryptographically using the stored public key.
+        def get_dns_txt(fqdn, **kwargs):
+            if fqdn == b"testselector._domainkey.%s." % mailbox.domain.name.encode():
+                return f"v=DKIM1; k=rsa; p={dkim_key.public_key}".encode()
+            return None
+
+        assert dkim_verify(stored, dnsfunc=get_dns_txt), (
+            "DKIM verification failed on stored blob"
+        )
