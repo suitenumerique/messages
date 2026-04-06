@@ -1,12 +1,21 @@
 """Tests for the Maildomain users metrics endpoint."""
 # pylint: disable=redefined-outer-name, unused-argument, too-many-lines
 
+import hashlib
+import uuid
+
 from django.urls import reverse
 from django.utils import timezone
 
 import pytest
 
-from core.enums import MessageTemplateTypeChoices
+from core import models
+from core.enums import (
+    ChannelApiKeyScope,
+    ChannelScopeLevel,
+    ChannelTypes,
+    MessageTemplateTypeChoices,
+)
 from core.factories import (
     AttachmentFactory,
     BlobFactory,
@@ -21,6 +30,20 @@ from core.factories import (
     UserFactory,
 )
 from core.models import MailboxAccess, MailDomain
+
+
+def _make_metrics_api_key():
+    plaintext = f"msg_test_{uuid.uuid4().hex}"
+    digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+    channel = models.Channel(
+        name=f"metrics-{uuid.uuid4().hex[:6]}",
+        type=ChannelTypes.API_KEY,
+        scope_level=ChannelScopeLevel.GLOBAL,
+        settings={"scopes": [ChannelApiKeyScope.METRICS_READ.value]},
+        encrypted_settings={"api_key_hashes": [digest]},
+    )
+    channel.save()
+    return channel, plaintext
 
 
 def check_results_for_key(
@@ -69,11 +92,16 @@ def url_with_siret_query_param(url):
 
 
 @pytest.fixture
-def correctly_configured_header(settings):
+def correctly_configured_header(db):
     """
-    Returns the authentication header for the metrics endpoint.
+    Returns the authentication headers for the metrics endpoint via a
+    scope_level=global api_key Channel with metrics:read.
     """
-    return {"HTTP_AUTHORIZATION": f"Bearer {settings.METRICS_API_KEY}"}
+    channel, plaintext = _make_metrics_api_key()
+    return {
+        "HTTP_X_CHANNEL_ID": str(channel.id),
+        "HTTP_X_API_KEY": plaintext,
+    }
 
 
 def grant_access_to_mailbox_accessed_at(mailbox, user, accessed_at: timezone = None):
@@ -131,18 +159,22 @@ class TestMailDomainUsersMetrics:
         self, api_client, url, correctly_configured_header
     ):
         """
-        Requires valid API key for access.
+        Requires a valid api_key Channel to access.
 
-        Asserts that requests without or with invalid authentication are rejected (403),
-        and requests with the correct API key are accepted (200).
+        No headers → 401 (NotAuthenticated). Invalid credentials → 401
+        (AuthenticationFailed). Valid → 200.
         """
         # Test without authentication
         response = api_client.get(url)
-        assert response.status_code == 403
+        assert response.status_code == 401
 
         # Test with invalid authentication
-        response = api_client.get(url, HTTP_AUTHORIZATION="Bearer invalid_token")
-        assert response.status_code == 403
+        response = api_client.get(
+            url,
+            HTTP_X_CHANNEL_ID=str(uuid.uuid4()),
+            HTTP_X_API_KEY="invalid_token",
+        )
+        assert response.status_code == 401
 
         # Test with authentication
         response = api_client.get(url, **correctly_configured_header)

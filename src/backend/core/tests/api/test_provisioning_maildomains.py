@@ -1,12 +1,37 @@
 """Tests for the provisioning maildomains endpoint."""
 # pylint: disable=redefined-outer-name
 
+import hashlib
+import uuid
+
 from django.urls import reverse
 
 import pytest
 
+from core import models
+from core.enums import ChannelApiKeyScope, ChannelScopeLevel, ChannelTypes
 from core.factories import MailDomainFactory
 from core.models import MailDomain
+
+
+def _make_api_key_channel(
+    scope_level=ChannelScopeLevel.GLOBAL,
+    scopes=(ChannelApiKeyScope.MAILDOMAINS_CREATE.value,),
+    *,
+    maildomain=None,
+):
+    plaintext = f"msg_test_{uuid.uuid4().hex}"
+    digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+    channel = models.Channel(
+        name=f"provisioning-{uuid.uuid4().hex[:6]}",
+        type=ChannelTypes.API_KEY,
+        scope_level=scope_level,
+        maildomain=maildomain,
+        settings={"scopes": list(scopes)},
+        encrypted_settings={"api_key_hashes": [digest]},
+    )
+    channel.save()
+    return channel, plaintext
 
 
 @pytest.fixture
@@ -16,46 +41,68 @@ def url():
 
 
 @pytest.fixture
-def auth_header(settings):
-    """Returns the authentication header for the provisioning endpoint."""
-    settings.PROVISIONING_API_KEY = "test-provisioning-key"
-    return {"HTTP_AUTHORIZATION": "Bearer test-provisioning-key"}
+def auth_header():
+    """Global-scope api_key with maildomains:write."""
+    channel, plaintext = _make_api_key_channel()
+    return {
+        "HTTP_X_CHANNEL_ID": str(channel.id),
+        "HTTP_X_API_KEY": plaintext,
+    }
 
 
 # -- Authentication tests --
 
 
 @pytest.mark.django_db
-def test_provisioning_no_auth_returns_403(client, url):
-    """Request without Authorization header returns 403."""
+def test_provisioning_no_auth_returns_401(client, url):
+    """Request without X-Channel-Id/X-API-Key returns 401 (not authenticated)."""
     response = client.post(
         url, data={"domains": ["test.fr"]}, content_type="application/json"
     )
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 @pytest.mark.django_db
-def test_provisioning_wrong_token_returns_403(client, url, settings):
-    """Request with wrong token returns 403."""
-    settings.PROVISIONING_API_KEY = "correct-key"
+def test_provisioning_wrong_token_returns_401(client, url):
+    """Request with wrong token returns 401 (invalid credentials)."""
+    channel, _plaintext = _make_api_key_channel()
     response = client.post(
         url,
         data={"domains": ["test.fr"]},
         content_type="application/json",
-        HTTP_AUTHORIZATION="Bearer wrong-key",
+        HTTP_X_CHANNEL_ID=str(channel.id),
+        HTTP_X_API_KEY="not-the-real-key",
     )
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 @pytest.mark.django_db
-def test_provisioning_no_key_configured_returns_403(client, url, settings):
-    """When PROVISIONING_API_KEY is not configured, returns 403."""
-    settings.PROVISIONING_API_KEY = None
+def test_provisioning_unknown_channel_returns_401(client, url):
+    """Unknown channel id returns 401 (invalid credentials)."""
     response = client.post(
         url,
         data={"domains": ["test.fr"]},
         content_type="application/json",
-        HTTP_AUTHORIZATION="Bearer some-key",
+        HTTP_X_CHANNEL_ID=str(uuid.uuid4()),
+        HTTP_X_API_KEY="anything",
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.django_db
+def test_provisioning_non_global_scope_returns_403(client, url):
+    """A maildomain-scope key cannot call maildomain provisioning."""
+    domain = MailDomainFactory(name="test.fr")
+    channel, plaintext = _make_api_key_channel(
+        scope_level=ChannelScopeLevel.MAILDOMAIN,
+        maildomain=domain,
+    )
+    response = client.post(
+        url,
+        data={"domains": ["new.fr"]},
+        content_type="application/json",
+        HTTP_X_CHANNEL_ID=str(channel.id),
+        HTTP_X_API_KEY=plaintext,
     )
     assert response.status_code == 403
 

@@ -12,21 +12,22 @@ from rest_framework.views import APIView
 from sentry_sdk import capture_exception
 
 from core import models
-from core.api.permissions import HasCalendarsApiKey, HasProvisioningApiKey
+from core.api.authentication import ChannelApiKeyAuthentication
+from core.api.permissions import IsGlobalChannelMixin, channel_scope
 from core.api.serializers import (
     MailboxLightSerializer,
     ProvisioningMailDomainSerializer,
 )
-from core.enums import MailboxRoleChoices
+from core.enums import ChannelApiKeyScope, MailboxRoleChoices
 
 logger = logging.getLogger(__name__)
 
 
-class ProvisioningMailDomainView(APIView):
-    """Provision mail domains from DeployCenter webhooks."""
+class ProvisioningMailDomainView(IsGlobalChannelMixin, APIView):
+    """Provision mail domains from DeployCenter webhooks. Global-only."""
 
-    permission_classes = [HasProvisioningApiKey]
-    authentication_classes = []
+    authentication_classes = [ChannelApiKeyAuthentication]
+    permission_classes = [channel_scope(ChannelApiKeyScope.MAILDOMAINS_CREATE)]
 
     @extend_schema(exclude=True)
     def post(self, request):
@@ -115,7 +116,7 @@ def _serialize_mailbox_with_users(
     return data
 
 
-class ProvisioningMailboxView(APIView):
+class ProvisioningMailboxView(IsGlobalChannelMixin, APIView):
     """List mailboxes for a user or look up a mailbox by email.
 
     Each mailbox includes a ``users`` array with all users who have
@@ -123,10 +124,17 @@ class ProvisioningMailboxView(APIView):
 
     GET /api/v1.0/provisioning/mailboxes/?user_email=...
     GET /api/v1.0/provisioning/mailboxes/?email=...
+
+    **Global-scope api_key channels only.** This endpoint is intentionally
+    not exposed to maildomain- or mailbox-scope keys, even though such a key
+    could only see a subset of the data — the threat model is that any
+    leak of a credential able to enumerate mailboxes is treated as a
+    privileged event, and only ops/CI keys should be able to do it. The
+    ``IsGlobalChannelMixin`` enforces that.
     """
 
-    permission_classes = [HasCalendarsApiKey]
-    authentication_classes = []
+    authentication_classes = [ChannelApiKeyAuthentication]
+    permission_classes = [channel_scope(ChannelApiKeyScope.MAILBOXES_READ)]
 
     @extend_schema(exclude=True)
     def get(self, request):

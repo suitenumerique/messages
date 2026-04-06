@@ -6,7 +6,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from core.api.viewsets.blob import BlobViewSet
-from core.api.viewsets.channel import ChannelViewSet
+from core.api.viewsets.channel import ChannelViewSet, UserChannelViewSet
 from core.api.viewsets.config import ConfigView
 from core.api.viewsets.contacts import ContactViewSet
 from core.api.viewsets.draft import DraftMessageView
@@ -53,6 +53,7 @@ from core.authentication.urls import urlpatterns as oidc_urls
 
 # - Main endpoints
 router = DefaultRouter()
+router.register("users/me/channels", UserChannelViewSet, basename="user-channels")
 router.register("users", UserViewSet, basename="users")
 router.register("messages", MessageViewSet, basename="messages")
 router.register("blob", BlobViewSet, basename="blob")
@@ -143,6 +144,8 @@ mailbox_channel_nested_router.register(
     ChannelViewSet,
     basename="mailbox-channels",
 )
+# /users/me/channels/ is registered directly on the main `router` above —
+# no nested router needed for a single viewset.
 
 urlpatterns = [
     path(

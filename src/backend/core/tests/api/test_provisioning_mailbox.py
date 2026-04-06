@@ -1,12 +1,21 @@
 """Tests for the provisioning mailbox lookup endpoint."""
 # pylint: disable=redefined-outer-name,missing-function-docstring
 
+import hashlib
+import uuid
+
 from django.urls import reverse
 
 import pytest
 from rest_framework.test import APIClient
 
-from core.enums import MailboxRoleChoices
+from core import models
+from core.enums import (
+    ChannelApiKeyScope,
+    ChannelScopeLevel,
+    ChannelTypes,
+    MailboxRoleChoices,
+)
 from core.factories import (
     MailboxAccessFactory,
     MailboxFactory,
@@ -17,11 +26,36 @@ from core.factories import (
 MAILBOX_URL = reverse("provisioning-mailboxes")
 
 
+def _make_api_key_channel(
+    scope_level=ChannelScopeLevel.GLOBAL,
+    scopes=(ChannelApiKeyScope.MAILBOXES_READ.value,),
+    *,
+    mailbox=None,
+    maildomain=None,
+):
+    plaintext = f"msg_test_{uuid.uuid4().hex}"
+    digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+    channel = models.Channel(
+        name=f"test-{uuid.uuid4().hex[:6]}",
+        type=ChannelTypes.API_KEY,
+        scope_level=scope_level,
+        mailbox=mailbox,
+        maildomain=maildomain,
+        settings={"scopes": list(scopes)},
+        encrypted_settings={"api_key_hashes": [digest]},
+    )
+    channel.save()
+    return channel, plaintext
+
+
 @pytest.fixture
-def auth_header(settings):
-    """Returns the authentication header for service-to-service calls."""
-    settings.CALENDARS_API_KEY = "test-calendar-key"
-    return {"HTTP_X_SERVICE_AUTH": "Bearer test-calendar-key"}
+def auth_header():
+    """Global-scope api_key with mailboxes:read."""
+    channel, plaintext = _make_api_key_channel()
+    return {
+        "HTTP_X_CHANNEL_ID": str(channel.id),
+        "HTTP_X_API_KEY": plaintext,
+    }
 
 
 @pytest.fixture
@@ -43,49 +77,44 @@ def mailbox(domain):
 class TestServiceAuthSecurity:
     """Verify that the provisioning endpoint requires HasCalendarsApiKey."""
 
-    def test_user_email_no_auth_returns_403(self, client):
+    def test_user_email_no_auth_returns_401(self, client):
         response = client.get(MAILBOX_URL, {"user_email": "a@b.com"})
-        assert response.status_code == 403
+        assert response.status_code == 401
 
-    def test_user_email_wrong_token_returns_403(self, client, settings):
-        settings.CALENDARS_API_KEY = "correct-key"
+    def test_user_email_wrong_token_returns_401(self, client):
+        channel, _plaintext = _make_api_key_channel()
         response = client.get(
             MAILBOX_URL,
             {"user_email": "a@b.com"},
-            HTTP_X_SERVICE_AUTH="Bearer wrong-key",
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_X_API_KEY="not-the-real-key",
         )
-        assert response.status_code == 403
+        assert response.status_code == 401
 
-    def test_user_email_no_key_configured_returns_403(self, client, settings):
-        settings.CALENDARS_API_KEY = None
+    def test_user_email_unknown_channel_returns_401(self, client):
         response = client.get(
             MAILBOX_URL,
             {"user_email": "a@b.com"},
-            HTTP_X_SERVICE_AUTH="Bearer some-key",
+            HTTP_X_CHANNEL_ID=str(uuid.uuid4()),
+            HTTP_X_API_KEY="anything",
         )
-        assert response.status_code == 403
+        assert response.status_code == 401
 
-    def test_user_email_empty_key_configured_returns_403(self, client, settings):
-        settings.CALENDARS_API_KEY = ""
+    def test_user_email_wrong_scope_returns_403(self, client):
+        channel, plaintext = _make_api_key_channel(
+            scopes=(ChannelApiKeyScope.METRICS_READ.value,),
+        )
         response = client.get(
             MAILBOX_URL,
             {"user_email": "a@b.com"},
-            HTTP_X_SERVICE_AUTH="Bearer ",
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_X_API_KEY=plaintext,
         )
         assert response.status_code == 403
 
-    def test_email_no_auth_returns_403(self, client):
+    def test_email_no_auth_returns_401(self, client):
         response = client.get(MAILBOX_URL, {"email": "a@b.com"})
-        assert response.status_code == 403
-
-    def test_email_wrong_token_returns_403(self, client, settings):
-        settings.CALENDARS_API_KEY = "correct-key"
-        response = client.get(
-            MAILBOX_URL,
-            {"email": "a@b.com"},
-            HTTP_X_SERVICE_AUTH="Bearer wrong-key",
-        )
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     def test_oidc_user_cannot_use_user_email_param(self, mailbox):
         user = UserFactory(email="attacker@oidc.example.com")
@@ -358,3 +387,40 @@ class TestMaildomainCustomAttributes:
 
         result = response.json()["results"][0]
         assert "maildomain_custom_attributes" not in result
+
+
+# =============================================================================
+# ProvisioningMailboxView is global-only — non-global api_key channels are
+# rejected, regardless of which scope filter would otherwise narrow results.
+# =============================================================================
+
+
+@pytest.mark.django_db
+class TestMailboxListGlobalOnly:
+    """The endpoint refuses any non-global api_key channel."""
+
+    def test_maildomain_scope_returns_403(self, client, domain):
+        channel, plaintext = _make_api_key_channel(
+            scope_level=ChannelScopeLevel.MAILDOMAIN,
+            maildomain=domain,
+        )
+        response = client.get(
+            MAILBOX_URL,
+            {"user_email": "alice@oidc.example.com"},
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_X_API_KEY=plaintext,
+        )
+        assert response.status_code == 403
+
+    def test_mailbox_scope_returns_403(self, client, mailbox):
+        channel, plaintext = _make_api_key_channel(
+            scope_level=ChannelScopeLevel.MAILBOX,
+            mailbox=mailbox,
+        )
+        response = client.get(
+            MAILBOX_URL,
+            {"email": "contact@company.com"},
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_X_API_KEY=plaintext,
+        )
+        assert response.status_code == 403

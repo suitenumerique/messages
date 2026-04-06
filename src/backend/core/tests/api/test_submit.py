@@ -1,12 +1,15 @@
 """Tests for the generic email submission endpoint (POST /submit/)."""
 # pylint: disable=redefined-outer-name,missing-function-docstring,unused-argument,import-outside-toplevel
 
+import hashlib
 import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
 from dkim import verify as dkim_verify
 
+from core import models
+from core.enums import ChannelApiKeyScope, ChannelScopeLevel, ChannelTypes
 from core.factories import MailboxFactory, MailDomainFactory
 from core.mda.signing import generate_dkim_key
 
@@ -29,11 +32,39 @@ PREPARE_MOCK = "core.api.viewsets.submit.prepare_outbound_message"
 TASK_MOCK = "core.api.viewsets.submit.send_message_task"
 
 
+def _make_api_key_channel(
+    scope_level=ChannelScopeLevel.GLOBAL,
+    scopes=(ChannelApiKeyScope.MESSAGES_SEND.value,),
+    *,
+    mailbox=None,
+    maildomain=None,
+    name="test-key",
+):
+    """Create an api_key Channel at the requested scope and return
+    (channel, plaintext)."""
+    plaintext = f"msg_test_{uuid.uuid4().hex}"
+    digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+    channel = models.Channel(
+        name=name,
+        type=ChannelTypes.API_KEY,
+        scope_level=scope_level,
+        mailbox=mailbox,
+        maildomain=maildomain,
+        settings={"scopes": list(scopes)},
+        encrypted_settings={"api_key_hashes": [digest]},
+    )
+    channel.save()
+    return channel, plaintext
+
+
 @pytest.fixture
-def auth_header(settings):
-    """Returns the authentication header for the submit endpoint."""
-    settings.CALENDARS_API_KEY = "test-calendar-key"
-    return {"HTTP_X_SERVICE_AUTH": "Bearer test-calendar-key"}
+def auth_header():
+    """Build a global-scope api_key with messages:send and return the auth headers."""
+    channel, plaintext = _make_api_key_channel()
+    return {
+        "HTTP_X_CHANNEL_ID": str(channel.id),
+        "HTTP_X_API_KEY": plaintext,
+    }
 
 
 @pytest.fixture
@@ -55,7 +86,8 @@ def mailbox(domain):
 class TestSubmitAuth:
     """Authentication tests for the submit endpoint."""
 
-    def test_no_auth_returns_403(self, client, mailbox):
+    def test_no_auth_returns_401(self, client, mailbox):
+        """No auth headers → 401 via DRF NotAuthenticated."""
         response = client.post(
             SUBMIT_URL,
             data=MINIMAL_MIME,
@@ -63,27 +95,78 @@ class TestSubmitAuth:
             HTTP_X_MAIL_FROM=str(mailbox.id),
             HTTP_X_RCPT_TO="attendee@example.com",
         )
-        assert response.status_code == 403
+        assert response.status_code == 401
 
-    def test_wrong_token_returns_403(self, client, settings, mailbox):
-        settings.CALENDARS_API_KEY = "correct-key"
+    def test_wrong_token_returns_401(self, client, mailbox):
+        """Invalid credentials are an authentication failure → 401."""
+        channel, _plaintext = _make_api_key_channel()
         response = client.post(
             SUBMIT_URL,
             data=MINIMAL_MIME,
             content_type="message/rfc822",
-            HTTP_X_SERVICE_AUTH="Bearer wrong-key",
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_X_API_KEY="not-the-real-key",
+            HTTP_X_MAIL_FROM=str(mailbox.id),
+            HTTP_X_RCPT_TO="attendee@example.com",
+        )
+        assert response.status_code == 401
+
+    def test_unknown_channel_returns_401(self, client, mailbox):
+        response = client.post(
+            SUBMIT_URL,
+            data=MINIMAL_MIME,
+            content_type="message/rfc822",
+            HTTP_X_CHANNEL_ID=str(uuid.uuid4()),
+            HTTP_X_API_KEY="anything",
+            HTTP_X_MAIL_FROM=str(mailbox.id),
+            HTTP_X_RCPT_TO="attendee@example.com",
+        )
+        assert response.status_code == 401
+
+    def test_missing_scope_returns_403(self, client, mailbox):
+        channel, plaintext = _make_api_key_channel(
+            scopes=(ChannelApiKeyScope.MAILBOXES_READ.value,),
+        )
+        response = client.post(
+            SUBMIT_URL,
+            data=MINIMAL_MIME,
+            content_type="message/rfc822",
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_X_API_KEY=plaintext,
             HTTP_X_MAIL_FROM=str(mailbox.id),
             HTTP_X_RCPT_TO="attendee@example.com",
         )
         assert response.status_code == 403
 
-    def test_no_key_configured_returns_403(self, client, settings, mailbox):
-        settings.CALENDARS_API_KEY = None
+    def test_mailbox_scope_wrong_mailbox_returns_403(self, client, domain, mailbox):
+        other_mailbox = MailboxFactory(local_part="other", domain=domain)
+        channel, plaintext = _make_api_key_channel(
+            scope_level=ChannelScopeLevel.MAILBOX,
+            mailbox=other_mailbox,
+        )
+        response = client.post(
+            SUBMIT_URL,
+            data=MINIMAL_MIME,  # from contact@company.com
+            content_type="message/rfc822",
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_X_API_KEY=plaintext,
+            HTTP_X_MAIL_FROM=str(mailbox.id),  # contact@company.com
+            HTTP_X_RCPT_TO="attendee@example.com",
+        )
+        assert response.status_code == 403
+
+    def test_maildomain_scope_wrong_domain_returns_403(self, client, mailbox):
+        other_domain = MailDomainFactory(name="other.test")
+        channel, plaintext = _make_api_key_channel(
+            scope_level=ChannelScopeLevel.MAILDOMAIN,
+            maildomain=other_domain,
+        )
         response = client.post(
             SUBMIT_URL,
             data=MINIMAL_MIME,
             content_type="message/rfc822",
-            HTTP_X_SERVICE_AUTH="Bearer some-key",
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_X_API_KEY=plaintext,
             HTTP_X_MAIL_FROM=str(mailbox.id),
             HTTP_X_RCPT_TO="attendee@example.com",
         )
@@ -97,6 +180,101 @@ class TestSubmitAuth:
             **auth_header,
         )
         assert response.status_code == 405
+
+    @pytest.mark.parametrize(
+        "role_name",
+        ["VIEWER", "EDITOR"],
+    )
+    def test_user_scope_non_sending_role_cannot_submit(
+        self, client, mailbox, role_name
+    ):
+        """Regression: a user-scope api_key whose owner does not have a
+        SENDER-or-better role on the mailbox MUST NOT be able to submit.
+        Both VIEWER and EDITOR are below the threshold —
+        ``MAILBOX_ROLES_CAN_SEND = [SENDER, ADMIN]`` — so neither can
+        send through a personal api_key. The fix is in
+        ``Channel.api_key_covers``'s ``mailbox_roles=`` path."""
+        from core.enums import MailboxRoleChoices
+        from core.factories import MailboxAccessFactory, UserFactory
+
+        owner = UserFactory(email=f"{role_name.lower()}@oidc.example.com")
+        MailboxAccessFactory(
+            mailbox=mailbox,
+            user=owner,
+            role=getattr(MailboxRoleChoices, role_name),
+        )
+
+        plaintext = f"msg_test_{uuid.uuid4().hex}"
+        digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+        channel = models.Channel.objects.create(
+            name=f"{role_name.lower()}-personal",
+            type=ChannelTypes.API_KEY,
+            scope_level=ChannelScopeLevel.USER,
+            user=owner,
+            settings={"scopes": [ChannelApiKeyScope.MESSAGES_SEND.value]},
+            encrypted_settings={"api_key_hashes": [digest]},
+        )
+
+        response = client.post(
+            SUBMIT_URL,
+            data=MINIMAL_MIME,
+            content_type="message/rfc822",
+            HTTP_X_CHANNEL_ID=str(channel.id),
+            HTTP_X_API_KEY=plaintext,
+            HTTP_X_MAIL_FROM=str(mailbox.id),
+            HTTP_X_RCPT_TO="attendee@example.com",
+        )
+        assert response.status_code == 403, response.content
+
+    @pytest.mark.parametrize(
+        "role_name",
+        ["SENDER", "ADMIN"],
+    )
+    def test_user_scope_sending_role_can_submit(self, client, mailbox, role_name):
+        """Companion to the negative test: a user-scope api_key whose
+        owner has SENDER or ADMIN access *is* allowed through. Both roles
+        are in ``MAILBOX_ROLES_CAN_SEND``. The pipeline is mocked so this
+        test only exercises the auth+permission+covers layer."""
+        from core.enums import MailboxRoleChoices
+        from core.factories import MailboxAccessFactory, UserFactory
+
+        owner = UserFactory(email=f"{role_name.lower()}@oidc.example.com")
+        MailboxAccessFactory(
+            mailbox=mailbox,
+            user=owner,
+            role=getattr(MailboxRoleChoices, role_name),
+        )
+
+        plaintext = f"msg_test_{uuid.uuid4().hex}"
+        digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+        channel = models.Channel.objects.create(
+            name=f"{role_name.lower()}-personal",
+            type=ChannelTypes.API_KEY,
+            scope_level=ChannelScopeLevel.USER,
+            user=owner,
+            settings={"scopes": [ChannelApiKeyScope.MESSAGES_SEND.value]},
+            encrypted_settings={"api_key_hashes": [digest]},
+        )
+
+        fake_message = MagicMock()
+        fake_message.id = uuid.uuid4()
+        fake_message.recipients.values_list.return_value = []
+
+        with (
+            patch(CREATE_MSG_MOCK, return_value=fake_message),
+            patch(PREPARE_MOCK, return_value=True),
+            patch(TASK_MOCK),
+        ):
+            response = client.post(
+                SUBMIT_URL,
+                data=MINIMAL_MIME,
+                content_type="message/rfc822",
+                HTTP_X_CHANNEL_ID=str(channel.id),
+                HTTP_X_API_KEY=plaintext,
+                HTTP_X_MAIL_FROM=str(mailbox.id),
+                HTTP_X_RCPT_TO="attendee@example.com",
+            )
+        assert response.status_code == 202, response.content
 
 
 # =============================================================================

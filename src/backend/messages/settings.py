@@ -798,16 +798,15 @@ class Base(Configuration):
         None, environ_name="PROMETHEUS_API_KEY", environ_prefix=None
     )
 
+    # DEPRECATED: ignored since global api_key Channels landed.
+    # Kept only so AppConfig.ready() can emit a deprecation warning when
+    # either env var is set. Migrate to a global api_key Channel.
     METRICS_API_KEY = values.Value(
         None, environ_name="METRICS_API_KEY", environ_prefix=None
     )
 
     PROVISIONING_API_KEY = values.Value(
         None, environ_name="PROVISIONING_API_KEY", environ_prefix=None
-    )
-
-    CALENDARS_API_KEY = values.Value(
-        None, environ_name="CALENDARS_API_KEY", environ_prefix=None
     )
 
     METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE = values.PositiveIntegerValue(
@@ -847,8 +846,15 @@ class Base(Configuration):
     FEATURE_IMPORT_MESSAGES = values.BooleanValue(
         default=True, environ_name="FEATURE_IMPORT_MESSAGES", environ_prefix=None
     )
+    # NOTE: "webhook" is intentionally NOT in the default list — the
+    # outbound webhook delivery pipeline is not wired yet. Keeping the
+    # type creatable would let users mint dead-letter channels that look
+    # functional. Add "webhook" here once core/mda/webhook_tasks.py and
+    # the post_save signal land.
     FEATURE_MAILBOX_ADMIN_CHANNELS = values.ListValue(
-        default=[], environ_name="FEATURE_MAILBOX_ADMIN_CHANNELS", environ_prefix=None
+        default=["api_key"],
+        environ_name="FEATURE_MAILBOX_ADMIN_CHANNELS",
+        environ_prefix=None,
     )
     FEATURE_MAILDOMAIN_CREATE = values.BooleanValue(
         default=True, environ_name="FEATURE_MAILDOMAIN_CREATE", environ_prefix=None

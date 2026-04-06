@@ -13,11 +13,14 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core import models
-from core.api.permissions import HasCalendarsApiKey
+from core.api.authentication import ChannelApiKeyAuthentication
+from core.api.permissions import channel_scope
+from core.enums import MAILBOX_ROLES_CAN_SEND, ChannelApiKeyScope
 from core.mda.inbound_create import _create_message_from_inbound
 from core.mda.outbound import prepare_outbound_message
 from core.mda.outbound_tasks import send_message_task
@@ -32,9 +35,10 @@ class SubmitRawEmailView(APIView):
     POST /api/v1.0/submit/
     Content-Type: message/rfc822
     Headers:
-        X-Service-Auth: Bearer <CALENDARS_API_KEY>
-        X-Mail-From: <mailbox_id>   (UUID of the sending mailbox)
-        X-Rcpt-To: <addr>[,<addr>]  (comma-separated recipient addresses)
+        X-Channel-Id: <channel uuid>  (api_key channel with messages:send scope)
+        X-API-Key:    <raw secret>
+        X-Mail-From:  <mailbox uuid>  (UUID of the sending mailbox)
+        X-Rcpt-To:    <addr>[,<addr>] (comma-separated recipient addresses)
 
     The endpoint creates a Message record, DKIM-signs the raw MIME
     synchronously, and dispatches SMTP delivery via Celery.
@@ -42,8 +46,8 @@ class SubmitRawEmailView(APIView):
     Returns: ``{"message_id": "<…>", "status": "accepted"}`` (HTTP 202).
     """
 
-    permission_classes = [HasCalendarsApiKey]
-    authentication_classes = []
+    authentication_classes = [ChannelApiKeyAuthentication]
+    permission_classes = [channel_scope(ChannelApiKeyScope.MESSAGES_SEND)]
 
     @extend_schema(exclude=True)
     def post(self, request):
@@ -65,6 +69,18 @@ class SubmitRawEmailView(APIView):
                 {"detail": "Mailbox not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        # Enforce the api_key channel's resource scope. A scope_level=mailbox
+        # credential can only send as that mailbox; a scope_level=maildomain
+        # credential only within that domain; a global credential is
+        # unrestricted. For scope_level=user we additionally require the
+        # target user to have a SENDER-or-better role on the mailbox via
+        # MailboxAccess — without this, a viewer-only user could mint a
+        # personal api_key and submit messages.
+        if not request.auth.api_key_covers(
+            mailbox=mailbox, mailbox_roles=MAILBOX_ROLES_CAN_SEND
+        ):
+            raise PermissionDenied("API key is not authorized to send as this mailbox.")
 
         # Parse envelope recipients.  _create_message_from_inbound creates
         # MessageRecipient rows from MIME To/Cc headers; any address that

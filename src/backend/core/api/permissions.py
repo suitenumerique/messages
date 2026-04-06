@@ -1,8 +1,5 @@
 """Permission handlers for the messages core app."""
 
-from secrets import compare_digest
-
-from django.conf import settings
 from django.core import exceptions
 
 from rest_framework import permissions
@@ -458,37 +455,82 @@ class IsMailboxAdmin(permissions.BasePermission):
         return is_domain_admin
 
 
-class HasCalendarsApiKey(permissions.BasePermission):
-    """Allows access only to requests bearing the calendars integration API key
-    in the ``X-Service-Auth`` header (``Bearer <token>``)."""
+class HasChannelScope(permissions.BasePermission):
+    """Scope-based permission for service calls authenticated as a Channel.
+
+    Auth-scheme-agnostic: it only inspects ``request.auth`` (which must be a
+    ``Channel`` set by an authentication class like ``ChannelApiKeyAuthentication``)
+    and checks that ``required_scope`` is listed in the channel's
+    ``settings["scopes"]``. Additionally, if the required scope is in
+    ``CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY``, the calling channel must itself
+    be ``scope_level=global`` — this is the second of two enforcement points
+    for global-only scopes (the first is the serializer at write time).
+
+    The view remains responsible for resource-level bounds via
+    ``request.auth.api_key_covers(...)`` — this class does not know which
+    mailbox or domain the action is about to touch.
+
+    Subclasses set ``required_scope`` — use the ``channel_scope()`` factory
+    below to create one on the fly so ``permission_classes`` can reference it
+    declaratively.
+    """
+
+    required_scope: str = ""
 
     def has_permission(self, request, view):
-        if not settings.CALENDARS_API_KEY:
+        channel = request.auth
+        if not isinstance(channel, models.Channel):
             return False
-        header = request.headers.get("X-Service-Auth") or ""
-        return compare_digest(header, f"Bearer {settings.CALENDARS_API_KEY}")
-
-
-class HasMetricsApiKey(permissions.BasePermission):
-    """Allows access only to users with the metrics API key."""
-
-    def has_permission(self, request, view):
-        return compare_digest(
-            request.headers.get("Authorization") or "",
-            f"Bearer {settings.METRICS_API_KEY}",
-        )
-
-
-class HasProvisioningApiKey(permissions.BasePermission):
-    """Allows access only to requests bearing the provisioning API key."""
-
-    def has_permission(self, request, view):
-        if not settings.PROVISIONING_API_KEY:
+        scopes = (channel.settings or {}).get("scopes") or []
+        if self.required_scope not in scopes:
             return False
-        return compare_digest(
-            request.headers.get("Authorization") or "",
-            f"Bearer {settings.PROVISIONING_API_KEY}",
-        )
+        if (
+            self.required_scope in enums.CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY
+            and channel.scope_level != enums.ChannelScopeLevel.GLOBAL
+        ):
+            return False
+        return True
+
+
+def channel_scope(required_scope: str) -> type:
+    """Return a ``HasChannelScope`` subclass with ``required_scope`` pre-bound.
+
+    DRF's ``permission_classes`` expects a list of classes, not instances, so
+    we synthesize a tiny subclass per scope. Usage:
+
+        permission_classes = [channel_scope(ChannelApiKeyScope.MESSAGES_SEND)]
+    """
+    return type(
+        f"HasChannelScope_{required_scope}",
+        (HasChannelScope,),
+        {"required_scope": str(required_scope)},
+    )
+
+
+class IsGlobalChannelMixin:
+    """Mixin for APIViews that require ``request.auth`` to be a Channel
+    with ``scope_level=global``. Drop this onto a view *in addition to*
+    ``ChannelApiKeyAuthentication`` + ``channel_scope(...)``.
+
+    Two-layer defense in depth: even when the required scope is in
+    ``CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY`` (and ``HasChannelScope`` already
+    rejects non-global callers), the view itself re-asserts the requirement
+    so a future scope-set typo can't accidentally weaken the endpoint. The
+    mixin's ``initial()`` runs after authentication+permission, so by the
+    time it executes ``request.auth`` is guaranteed to be a Channel.
+    """
+
+    def initial(self, request, *args, **kwargs):
+        """Re-assert scope_level=global after authentication+permission run."""
+        super().initial(request, *args, **kwargs)
+        channel = getattr(request, "auth", None)
+        if (
+            not isinstance(channel, models.Channel)
+            or channel.scope_level != enums.ChannelScopeLevel.GLOBAL
+        ):
+            raise exceptions.PermissionDenied(
+                "This endpoint requires a global-scope API key."
+            )
 
 
 class HasThreadEditAccess(IsAuthenticated):

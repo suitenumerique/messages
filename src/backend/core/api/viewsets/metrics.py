@@ -13,7 +13,9 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.api.permissions import HasMetricsApiKey
+from core.api.authentication import ChannelApiKeyAuthentication
+from core.api.permissions import IsGlobalChannelMixin, channel_scope
+from core.enums import ChannelApiKeyScope
 from core.models import (
     Attachment,
     Blob,
@@ -33,13 +35,18 @@ ACTIVE_USER_METRICS = {
 }
 
 
-class MailDomainUsersMetricsApiView(APIView):
+class MailDomainUsersMetricsApiView(IsGlobalChannelMixin, APIView):
     """
-    API view to expose MailDomain Users custom metrics
+    API view to expose MailDomain Users custom metrics. Global-only.
+
+    ``METRICS_READ`` is in CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY (so the
+    permission layer rejects non-global api_key channels), and
+    ``IsGlobalChannelMixin`` re-asserts the same invariant in the view as
+    a second defense-in-depth layer.
     """
 
-    permission_classes = [HasMetricsApiKey]
-    authentication_classes = []  # Disable any authentication
+    authentication_classes = [ChannelApiKeyAuthentication]
+    permission_classes = [channel_scope(ChannelApiKeyScope.METRICS_READ)]
 
     @extend_schema(exclude=True)
     def get(self, request):
@@ -54,7 +61,6 @@ class MailDomainUsersMetricsApiView(APIView):
         metrics = defaultdict(lambda: {"metrics": {}})
 
         for metric, threshold in ACTIVE_USER_METRICS.items():
-            # Build the base queryset
             queryset = MailboxAccess.objects.select_related(
                 "mailbox", "mailbox__domain"
             )
@@ -195,13 +201,14 @@ class MailDomainUsersMetricsApiView(APIView):
         return Response({"count": len(metrics), "results": list(metrics.values())})
 
 
-class MailboxUsageMetricsApiView(APIView):
+class MailboxUsageMetricsApiView(IsGlobalChannelMixin, APIView):
     """
-    API view to expose per-mailbox storage usage metrics.
+    API view to expose per-mailbox storage usage metrics. Global-only —
+    see ``MailDomainUsersMetricsApiView`` for the rationale.
     """
 
-    permission_classes = [HasMetricsApiKey]
-    authentication_classes = []  # Disable any authentication
+    authentication_classes = [ChannelApiKeyAuthentication]
+    permission_classes = [channel_scope(ChannelApiKeyScope.METRICS_READ)]
 
     @extend_schema(exclude=True)
     def get(self, request):

@@ -258,7 +258,15 @@ class AttachmentFactory(factory.django.DjangoModelFactory):
 
 
 class ChannelFactory(factory.django.DjangoModelFactory):
-    """A factory to create channels for testing purposes."""
+    """A factory to create channels for testing purposes.
+
+    ``scope_level`` is derived from the FKs by default:
+      - mailbox set → "mailbox" (default)
+      - maildomain set → "maildomain"
+      - user set → "user"
+      - none of the above → "global"
+    Callers can always override ``scope_level=`` explicitly.
+    """
 
     class Meta:
         model = models.Channel
@@ -267,6 +275,19 @@ class ChannelFactory(factory.django.DjangoModelFactory):
     type = factory.fuzzy.FuzzyChoice(["widget", "mta"])
     settings = factory.Dict({"config": {"enabled": True}})
     mailbox = factory.SubFactory(MailboxFactory)
+    maildomain = None
+    user = None
+    scope_level = factory.LazyAttribute(
+        lambda o: (
+            "mailbox"
+            if o.mailbox is not None
+            else "maildomain"
+            if o.maildomain is not None
+            else "user"
+            if o.user is not None
+            else "global"
+        )
+    )
 
 
 class BlobFactory(factory.django.DjangoModelFactory):

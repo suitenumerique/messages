@@ -1,11 +1,20 @@
 """Tests for the mailbox usage metrics endpoint."""
-# pylint: disable=redefined-outer-name, too-many-public-methods
+# pylint: disable=redefined-outer-name, too-many-public-methods, too-many-lines, unused-argument
+
+import hashlib
+import uuid
 
 from django.urls import reverse
 
 import pytest
 
-from core.enums import MessageTemplateTypeChoices
+from core import models
+from core.enums import (
+    ChannelApiKeyScope,
+    ChannelScopeLevel,
+    ChannelTypes,
+    MessageTemplateTypeChoices,
+)
 from core.factories import (
     AttachmentFactory,
     BlobFactory,
@@ -26,9 +35,22 @@ def url():
 
 
 @pytest.fixture
-def correctly_configured_header(settings):
-    """Returns the authentication header for the metrics endpoint."""
-    return {"HTTP_AUTHORIZATION": f"Bearer {settings.METRICS_API_KEY}"}
+def correctly_configured_header(db):
+    """Returns the authentication headers via a global api_key Channel."""
+    plaintext = f"msg_test_{uuid.uuid4().hex}"
+    digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+    channel = models.Channel(
+        name=f"metrics-{uuid.uuid4().hex[:6]}",
+        type=ChannelTypes.API_KEY,
+        scope_level=ChannelScopeLevel.GLOBAL,
+        settings={"scopes": [ChannelApiKeyScope.METRICS_READ.value]},
+        encrypted_settings={"api_key_hashes": [digest]},
+    )
+    channel.save()
+    return {
+        "HTTP_X_CHANNEL_ID": str(channel.id),
+        "HTTP_X_API_KEY": plaintext,
+    }
 
 
 CUSTOM_ATTRIBUTES_SCHEMA = {
@@ -52,14 +74,21 @@ class TestMailboxUsageMetrics:
 
     @pytest.mark.django_db
     def test_requires_auth(self, api_client, url, correctly_configured_header):
-        """Requires valid API key for access."""
+        """Requires a valid api_key Channel to access.
+
+        No headers → 401 (NotAuthenticated). Invalid → 401. Valid → 200.
+        """
         # Without authentication
         response = api_client.get(url)
-        assert response.status_code == 403
+        assert response.status_code == 401
 
         # Invalid authentication
-        response = api_client.get(url, HTTP_AUTHORIZATION="Bearer invalid_token")
-        assert response.status_code == 403
+        response = api_client.get(
+            url,
+            HTTP_X_CHANNEL_ID=str(uuid.uuid4()),
+            HTTP_X_API_KEY="invalid_token",
+        )
+        assert response.status_code == 401
 
         # Valid authentication
         response = api_client.get(url, **correctly_configured_header)

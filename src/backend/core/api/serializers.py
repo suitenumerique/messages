@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import secrets
 import uuid
 
 from django.conf import settings
@@ -1547,6 +1548,9 @@ class ChannelSerializer(serializers.ModelSerializer):
     # Explicitly mark nullable fields to fix OpenAPI schema
     mailbox = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
     maildomain = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
+    user = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
+    scope_level = serializers.CharField(read_only=True)
+    last_used_at = serializers.DateTimeField(read_only=True, allow_null=True)
 
     class Meta:
         model = models.Channel
@@ -1554,16 +1558,30 @@ class ChannelSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "type",
+            "scope_level",
             "settings",
             "mailbox",
             "maildomain",
+            "user",
+            "last_used_at",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "mailbox", "maildomain", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "mailbox",
+            "maildomain",
+            "user",
+            "scope_level",
+            "last_used_at",
+            "created_at",
+            "updated_at",
+        ]
 
     # Keys in settings that should be moved to encrypted_settings, per channel type.
-    ENCRYPTED_SETTINGS_KEYS = {}
+    ENCRYPTED_SETTINGS_KEYS = {
+        enums.ChannelTypes.API_KEY: ["api_key_hashes"],
+    }
 
     def _move_sensitive_settings(self, validated_data):
         """Move sensitive keys from settings to encrypted_settings."""
@@ -1590,9 +1608,45 @@ class ChannelSerializer(serializers.ModelSerializer):
 
         return validated_data
 
+    @staticmethod
+    def _generate_api_key_material(validated_data):
+        """Create a fresh api_key secret and write a single-element
+        ``encrypted_settings.api_key_hashes`` list, REPLACING any prior
+        contents. Returns the plaintext so the viewset can surface it once.
+
+        DRF flows (create, regenerate) are always single-active: one
+        secret, replaced atomically. Dual-active "smooth" rotation —
+        appending without removing the old hash so clients can migrate —
+        is a superadmin-only feature exposed in the Django admin. Mailbox- and
+        user-scope api_keys do not currently expose dual-active rotation
+        in DRF; the row's owner is expected to update their client when
+        they rotate.
+        """
+        plaintext = "msg_" + secrets.token_urlsafe(32)
+        digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+        existing_encrypted = validated_data.get("encrypted_settings") or {}
+        validated_data["encrypted_settings"] = {
+            **existing_encrypted,
+            "api_key_hashes": [digest],
+        }
+        return plaintext
+
     def create(self, validated_data):
         validated_data = self._move_sensitive_settings(validated_data)
-        return super().create(validated_data)
+
+        generated_api_key = None
+        if validated_data.get("type") == enums.ChannelTypes.API_KEY:
+            generated_api_key = self._generate_api_key_material(validated_data)
+
+        instance = super().create(validated_data)
+
+        # Stash the plaintext on the instance so ChannelViewSet.create() can
+        # surface it exactly once in the response. Mirrors the existing
+        # `_generated_password` pattern at channel.py:68-74.
+        # pylint: disable=protected-access
+        if generated_api_key is not None:
+            instance._generated_api_key = generated_api_key  # noqa: SLF001
+        return instance
 
     def update(self, instance, validated_data):
         validated_data = self._move_sensitive_settings(validated_data)
@@ -1645,16 +1699,97 @@ class ChannelSerializer(serializers.ModelSerializer):
 
         return value
 
+    def _validate_api_key_scopes(self, attrs):
+        """Validate the ``settings["scopes"]`` list on api_key channels.
+
+        - Every value must be a member of ``ChannelApiKeyScope``.
+        - Global-only scopes (e.g. ``maildomains:write``) can only be requested
+          when the channel itself has ``scope_level=global``. Since DRF clients
+          cannot set scope_level, this always rejects global-only scopes on the
+          mailbox-nested path — mailbox admins cannot escalate.
+        """
+        if attrs.get("type") != enums.ChannelTypes.API_KEY:
+            return
+
+        settings_data = attrs.get("settings") or {}
+        raw_scopes = settings_data.get("scopes")
+        if raw_scopes is None:
+            raise serializers.ValidationError(
+                {
+                    "settings": "api_key channels require settings.scopes (a list of strings)."
+                }
+            )
+        if not isinstance(raw_scopes, list) or not all(
+            isinstance(s, str) for s in raw_scopes
+        ):
+            raise serializers.ValidationError(
+                {"settings": "settings.scopes must be a list of strings."}
+            )
+
+        valid_values = {choice.value for choice in enums.ChannelApiKeyScope}
+        unknown = [s for s in raw_scopes if s not in valid_values]
+        if unknown:
+            raise serializers.ValidationError(
+                {"settings": f"Unknown api_key scopes: {unknown}"}
+            )
+
+        # Any DRF path to this serializer is mailbox-nested today, so the
+        # effective scope_level on save will be MAILBOX. Global-only scopes
+        # are therefore never grantable via DRF. If that ever changes,
+        # ChannelViewSet must still pass scope_level=MAILBOX explicitly.
+        global_only = enums.CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY
+        escalation = [s for s in raw_scopes if s in global_only]
+        if escalation:
+            raise serializers.ValidationError(
+                {
+                    "settings": (
+                        f"Scopes {escalation} may only be granted to a global "
+                        "Channel (scope_level=global), which is creatable only "
+                        "via Django admin."
+                    )
+                }
+            )
+
+    def _validate_webhook_settings(self, attrs):
+        """Validate required fields on webhook channel settings."""
+        if attrs.get("type") != enums.ChannelTypes.WEBHOOK:
+            return
+
+        settings_data = attrs.get("settings") or {}
+
+        url = settings_data.get("url")
+        if not url or not isinstance(url, str):
+            raise serializers.ValidationError(
+                {"settings": "webhook channels require settings.url (a string)."}
+            )
+        if not url.startswith(("http://", "https://")):
+            raise serializers.ValidationError(
+                {"settings": "webhook settings.url must be http:// or https://"}
+            )
+
+        events = settings_data.get("events")
+        if not events or not isinstance(events, list):
+            raise serializers.ValidationError(
+                {
+                    "settings": "webhook channels require settings.events (a non-empty list)."
+                }
+            )
+        unknown = [e for e in events if e not in enums.WebhookEvents.ALL]
+        if unknown:
+            raise serializers.ValidationError(
+                {"settings": f"Unknown webhook events: {unknown}"}
+            )
+
     def validate(self, attrs):
         """Validate channel data.
 
-        When used in the nested mailbox context (via ChannelViewSet),
-        the mailbox is set from context and doesn't need to be validated here.
+        When used in the nested mailbox context (via ChannelViewSet) or the
+        user context (via UserChannelViewSet), the target FK is set by the
+        viewset and doesn't need to be validated here. Otherwise this is
+        the Django-admin / management-command path which still requires an
+        explicit mailbox or maildomain.
         """
-        # If we have a mailbox in context (from ChannelViewSet), validate channel type
-        # and skip mailbox/maildomain validation.
-        # This allows Django admin to create any channel type.
-        if self.context.get("mailbox"):
+        if self.context.get("mailbox") or self.context.get("user_channel"):
             channel_type = attrs.get("type")
             if channel_type:
                 allowed_types = list(settings.FEATURE_MAILBOX_ADMIN_CHANNELS)
@@ -1665,6 +1800,8 @@ class ChannelSerializer(serializers.ModelSerializer):
                             f"Allowed types: {', '.join(allowed_types)}"
                         }
                     )
+            self._validate_api_key_scopes(attrs)
+            self._validate_webhook_settings(attrs)
             return attrs
 
         mailbox = attrs.get("mailbox")
@@ -1681,6 +1818,8 @@ class ChannelSerializer(serializers.ModelSerializer):
                 "Cannot specify both mailbox and maildomain."
             )
 
+        self._validate_api_key_scopes(attrs)
+        self._validate_webhook_settings(attrs)
         return attrs
 
 

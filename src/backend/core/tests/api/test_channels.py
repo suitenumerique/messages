@@ -468,14 +468,24 @@ class TestChannelEncryptedSettings:
         for item in response.data:
             assert "encrypted_settings" not in item
 
-    def test_user_field_on_channel(self, user, mailbox):
-        """Channel.user can be set to track who created it."""
+    def test_user_field_target_on_user_scope_channel(self, user):
+        """Channel.user is the *target* user for scope_level=user channels."""
+        channel = ChannelFactory(
+            user=user, scope_level="user", mailbox=None, maildomain=None
+        )
+        channel.refresh_from_db()
+        assert channel.user == user
+
+    def test_user_field_creator_audit_on_mailbox_scope_channel(self, user, mailbox):
+        """On non-user-scope channels, Channel.user is the creator audit
+        — an OPTIONAL FK pointing at the User who created it via DRF."""
         channel = ChannelFactory(mailbox=mailbox, type="widget", user=user)
         channel.refresh_from_db()
         assert channel.user == user
 
-    def test_user_field_nullable(self, mailbox):
-        """Channel.user is optional (null for legacy channels)."""
+    def test_user_field_nullable_on_mailbox_scope_channel(self, mailbox):
+        """The creator FK is nullable — channels created by the CLI / data
+        migration / Django admin may not have a creator stamped."""
         channel = ChannelFactory(mailbox=mailbox, type="widget")
         assert channel.user is None
 

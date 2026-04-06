@@ -1,6 +1,10 @@
 """Messages Core application"""
 
+import logging
+
 from django.apps import AppConfig
+
+logger = logging.getLogger(__name__)
 
 
 class CoreConfig(AppConfig):
@@ -26,3 +30,11 @@ class CoreConfig(AppConfig):
         # Import signal handlers to register them
         # pylint: disable=unused-import, import-outside-toplevel
         import core.signals  # noqa
+
+        # Deprecation warning for legacy static API keys.
+        for deprecated in ("METRICS_API_KEY", "PROVISIONING_API_KEY"):
+            if getattr(settings, deprecated, None):
+                logger.warning(
+                    "%s is set but deprecated and ignored. Migrate to a channel.",
+                    deprecated,
+                )

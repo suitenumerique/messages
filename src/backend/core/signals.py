@@ -9,6 +9,7 @@ from django.db.models.signals import post_delete, post_save, pre_delete
 from django.dispatch import receiver
 
 from core import models
+from core.enums import ChannelScopeLevel
 from core.services.identity.keycloak import (
     sync_mailbox_to_keycloak_user,
     sync_maildomain_to_keycloak_group,
@@ -286,3 +287,27 @@ def update_unread_mailboxes_on_access_delete(sender, instance, **kwargs):
             instance.thread_id,
             e,
         )
+
+
+@receiver(pre_delete, sender=models.User)
+def delete_user_scope_channels_on_user_delete(sender, instance, **kwargs):
+    """Delete the user's personal (scope_level=user) Channels before the
+    user row is removed.
+
+    Channel.user uses on_delete=SET_NULL deliberately — the FK alone must
+    not blanket-cascade, because a future relaxation of the
+    channel_scope_level_targets check constraint could otherwise let a
+    user delete silently sweep up unrelated channels. This handler is the
+    *only* place where user-scope channels are removed in response to a
+    user deletion. The query is filtered explicitly on
+    ``scope_level=user``, never on the FK alone.
+
+    If we did not delete these rows here, SET_NULL on the FK would null
+    ``user_id`` on the user-scope rows, immediately violating the check
+    constraint and aborting the user delete with an IntegrityError — so
+    this signal is also load-bearing for user deletion to succeed at all.
+    """
+    models.Channel.objects.filter(
+        user=instance,
+        scope_level=ChannelScopeLevel.USER,
+    ).delete()

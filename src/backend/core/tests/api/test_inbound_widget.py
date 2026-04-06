@@ -58,18 +58,20 @@ def fixture_channel_without_mailbox():
 
 @pytest.mark.django_db
 def test_inbound_widget_channel_model():
-    """Test the Channel model."""
+    """Test the Channel model scope_level invariants.
+
+    - mailbox AND maildomain both set → rejected (scope_level must pick one).
+    - neither set → valid global channel (scope_level=global).
+    """
     with pytest.raises(ValidationError):
         factories.ChannelFactory(
             mailbox=factories.MailboxFactory(),
             maildomain=factories.MailDomainFactory(),
         )
 
-    with pytest.raises(ValidationError):
-        factories.ChannelFactory(
-            mailbox=None,
-            maildomain=None,
-        )
+    # A channel with neither mailbox nor maildomain is now a valid global channel.
+    global_channel = factories.ChannelFactory(mailbox=None, maildomain=None)
+    assert global_channel.scope_level == "global"
 
 
 @pytest.mark.django_db

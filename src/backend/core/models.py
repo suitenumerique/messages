@@ -33,6 +33,7 @@ from encrypted_fields.fields import EncryptedJSONField, EncryptedTextField
 from timezone_field import TimeZoneField
 
 from core.enums import (
+    ChannelScopeLevel,
     CompressionTypeChoices,
     CRUDAbilities,
     DKIMAlgorithmChoices,
@@ -442,6 +443,18 @@ class Channel(BaseModel):
         "type", max_length=255, help_text="Type of channel", default="mta"
     )
 
+    scope_level = models.CharField(
+        "scope level",
+        max_length=16,
+        choices=ChannelScopeLevel.choices,
+        db_index=True,
+        help_text=(
+            "Resource scope the channel is bound to: 'global' (instance-wide, "
+            "no target — admin/CLI only), 'maildomain', 'mailbox', or 'user' "
+            "(personal channel bound to ``user``)."
+        ),
+    )
+
     settings = models.JSONField(
         "settings",
         default=dict,
@@ -465,13 +478,24 @@ class Channel(BaseModel):
         help_text="Encrypted channel settings (e.g., app-specific passwords)",
     )
 
+    # Dual-purpose FK:
+    #  - For ``scope_level=user`` channels, this is the target user the
+    #    channel is bound to. The check constraint forces it NOT NULL.
+    #  - For every other scope level, this is the creator audit (the user
+    #    who created the channel via DRF). May be NULL for channels created
+    #    by the CLI / Django admin / data migration.
+    # The FK uses SET_NULL rather than CASCADE so a user delete cannot
+    # blanket-cascade unrelated channels; user-scope channels are
+    # explicitly deleted by the pre_delete signal in core.signals before
+    # the User row is removed (otherwise SET_NULL would null user_id on a
+    # user-scope row and immediately violate the check constraint).
     user = models.ForeignKey(
         "User",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="channels",
-        help_text="User who created this channel (used for permissions and auditing)",
+        help_text="User who owns (scope_level=user) or created (audit) this channel",
     )
 
     maildomain = models.ForeignKey(
@@ -483,6 +507,16 @@ class Channel(BaseModel):
         help_text="Mail domain that owns this channel",
     )
 
+    last_used_at = models.DateTimeField(
+        "last used at",
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=(
+            "Operational timestamp updated (throttled) whenever the channel is used."
+        ),
+    )
+
     class Meta:
         db_table = "messages_channel"
         verbose_name = "channel"
@@ -491,14 +525,141 @@ class Channel(BaseModel):
         constraints = [
             models.CheckConstraint(
                 check=(
-                    models.Q(mailbox__isnull=False) ^ models.Q(maildomain__isnull=False)
+                    # The constraint enforces the mailbox/maildomain shape
+                    # for each scope level. ``user`` is NOT in any of these
+                    # clauses on purpose: it can be set on any scope as a
+                    # creator-audit FK. The only place ``user`` shows up is
+                    # the user-scope clause, where it must be NOT NULL
+                    # (it's the target).
+                    (
+                        Q(scope_level=ChannelScopeLevel.GLOBAL)
+                        & Q(mailbox__isnull=True)
+                        & Q(maildomain__isnull=True)
+                    )
+                    | (
+                        Q(scope_level=ChannelScopeLevel.MAILDOMAIN)
+                        & Q(mailbox__isnull=True)
+                        & Q(maildomain__isnull=False)
+                    )
+                    | (
+                        Q(scope_level=ChannelScopeLevel.MAILBOX)
+                        & Q(mailbox__isnull=False)
+                        & Q(maildomain__isnull=True)
+                    )
+                    | (
+                        Q(scope_level=ChannelScopeLevel.USER)
+                        & Q(mailbox__isnull=True)
+                        & Q(maildomain__isnull=True)
+                        & Q(user__isnull=False)
+                    )
                 ),
-                name="channel_has_target",
+                name="channel_scope_level_targets",
             ),
         ]
 
     def __str__(self):
         return self.name
+
+    # BaseModel.save already calls full_clean() on every save, which runs
+    # our clean() override. No custom save() override is needed here.
+
+    def clean(self):
+        """Re-assert the scope_level ↔ target invariant at the ORM layer.
+
+        Second of several defense-in-depth layers guarding against
+        accidental escalation to scope_level=global (the DB check
+        constraint is the first). The ``user`` FK is permitted on any
+        scope as a creator-audit pointer; only ``scope_level=user``
+        REQUIRES it (as the target).
+        """
+        super().clean()
+        if self.scope_level == ChannelScopeLevel.GLOBAL:
+            if self.mailbox_id is not None or self.maildomain_id is not None:
+                raise ValidationError(
+                    "Global channels must have no mailbox or maildomain."
+                )
+        elif self.scope_level == ChannelScopeLevel.MAILDOMAIN:
+            if self.mailbox_id is not None or self.maildomain_id is None:
+                raise ValidationError(
+                    "Maildomain-scope channels must have a maildomain and no mailbox."
+                )
+        elif self.scope_level == ChannelScopeLevel.MAILBOX:
+            if self.mailbox_id is None or self.maildomain_id is not None:
+                raise ValidationError(
+                    "Mailbox-scope channels must have a mailbox and no maildomain."
+                )
+        elif self.scope_level == ChannelScopeLevel.USER:
+            if (
+                self.mailbox_id is not None
+                or self.maildomain_id is not None
+                or self.user_id is None
+            ):
+                raise ValidationError(
+                    "User-scope channels must have a user and no mailbox/maildomain."
+                )
+
+    # --- api_key helpers --- #
+
+    def api_key_covers(
+        self, *, mailbox=None, maildomain=None, mailbox_roles=None
+    ) -> bool:
+        """Return True if an action on the given resource is within this
+        channel's scope, assuming the channel is an api_key and the scope
+        check has already passed.
+
+        - Global channels cover everything.
+        - Maildomain channels cover any mailbox in their domain.
+        - Mailbox channels cover only their mailbox.
+        - User channels cover any mailbox the target user has access to via
+          ``MailboxAccess`` — and crucially, only if that access carries a
+          role in ``mailbox_roles`` when the kwarg is supplied. This is what
+          stops a viewer-only user from submitting via a personal api_key:
+          /submit/ passes ``MAILBOX_ROLES_CAN_SEND``, so a VIEWER access is
+          rejected here.
+
+        For mailbox / maildomain / global scopes the channel was bound by an
+        admin who already had authority over the resource, so the role check
+        does not apply — the api_key inherits the binding directly.
+
+        ``mailbox_roles`` is ignored for non-user scopes.
+        """
+        if self.scope_level == ChannelScopeLevel.GLOBAL:
+            return True
+        if self.scope_level == ChannelScopeLevel.MAILDOMAIN:
+            if maildomain is not None:
+                return maildomain.id == self.maildomain_id
+            if mailbox is not None:
+                return mailbox.domain_id == self.maildomain_id
+            return False
+        if self.scope_level == ChannelScopeLevel.MAILBOX:
+            if mailbox is not None:
+                return mailbox.id == self.mailbox_id
+            return False
+        if self.scope_level == ChannelScopeLevel.USER:
+            if mailbox is None:
+                return False
+            qs = MailboxAccess.objects.filter(user_id=self.user_id, mailbox=mailbox)
+            if mailbox_roles is not None:
+                qs = qs.filter(role__in=mailbox_roles)
+            return qs.exists()
+        return False
+
+    def mark_used(self, only_if_older_than_seconds: int = 300):
+        """Throttled update of last_used_at.
+
+        Mirrors MailboxAccess.mark_accessed at models.py:759 — only persists
+        when the existing timestamp is older than the throttle window. Avoids
+        write amplification under bursty api_key/webhook traffic.
+        """
+        now = timezone.now()
+        if self.last_used_at is None or self.last_used_at < now - timedelta(
+            seconds=only_if_older_than_seconds
+        ):
+            self.last_used_at = now
+            # Use filter().update() rather than self.save() to avoid re-triggering
+            # full_clean() on global channels and to avoid racing with other
+            # writers on adjacent fields.
+            Channel.objects.filter(pk=self.pk).update(last_used_at=now)
 
 
 class Mailbox(BaseModel):

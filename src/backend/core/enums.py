@@ -141,6 +141,119 @@ class ThreadEventTypeChoices(models.TextChoices):
     IM = "im", "Instant message"
 
 
+class ChannelScopeLevel(models.TextChoices):
+    """Scope level for a Channel: which resource the channel is bound to.
+
+    - GLOBAL: instance-wide, no target. Creatable only via Django admin or CLI.
+    - MAILDOMAIN: bound to one MailDomain; actions limited to that domain.
+    - MAILBOX: bound to one Mailbox; actions limited to that mailbox.
+    - USER: personal channel bound to a User; actions limited to mailboxes
+      the user has MailboxAccess to.
+    """
+
+    GLOBAL = "global", "Global"
+    MAILDOMAIN = "maildomain", "Maildomain"
+    MAILBOX = "mailbox", "Mailbox"
+    USER = "user", "User"
+
+
+class ChannelTypes:
+    """Known Channel.type values.
+
+    Plain Python constants (not a TextChoices): Channel.type is a free-form
+    CharField so that adding a new type does not require a DB migration.
+    """
+
+    MTA = "mta"
+    WIDGET = "widget"
+    API_KEY = "api_key"
+    WEBHOOK = "webhook"
+
+
+class WebhookEvents:
+    """Known webhook event identifiers.
+
+    Stored as strings in Channel.settings["events"]; validated by the serializer
+    against ALL at write time. Adding a new event is a Python-only change.
+    """
+
+    MESSAGE_RECEIVED = "message.received"
+    MESSAGE_SENT = "message.sent"
+
+    ALL = frozenset({MESSAGE_RECEIVED, MESSAGE_SENT})
+
+
+class ChannelApiKeyScope(models.TextChoices):
+    """Capability scopes granted to an api_key Channel.
+
+    Stored as a list of string values in Channel.settings["scopes"] and
+    enforced by the serializer + HasChannelScope permission at the API layer.
+    Adding a new scope is a Python-only change (no DB choices, no migration).
+
+    A credential's blast radius for any scope is automatically bounded by its
+    channel's scope_level + target FK: a scope_level=mailbox api_key can only
+    act on that mailbox, regardless of which scopes it holds.
+
+    WRITE vs CREATE distinction: ``*_WRITE`` scopes modify an object the
+    channel already has resource-scope access to (e.g. archiving a thread in
+    a mailbox-scope channel's mailbox). ``*_CREATE`` scopes mint a brand-new
+    top-level resource, which is an escalation — these are global-only and
+    listed in ``CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY``. Most resources only
+    need WRITE because their "create" never escalates; only mailboxes and
+    maildomains have a meaningful _CREATE counterpart.
+
+    **Only scopes wired to a real endpoint live in this enum.** Adding a new
+    scope is a one-line change here once the endpoint exists. Forward-looking
+    scopes are sketched in the comment block below for design reference but
+    intentionally not enabled — having them in the enum without an enforcing
+    endpoint is dead surface area an attacker could probe.
+    """
+
+    METRICS_READ = "metrics:read", "Read usage metrics"
+    MAILBOXES_READ = "mailboxes:read", "Read mailboxes (and their users/roles)"
+    MESSAGES_SEND = "messages:send", "Send outbound messages"
+    MAILDOMAINS_CREATE = "maildomains:create", "Create new maildomains"
+
+    # Forward-looking scopes — DO NOT uncomment without a real endpoint
+    # enforcing them. Listed here so the planned vocabulary is visible at a
+    # glance and so the WRITE/CREATE convention is documented.
+    #
+    # Reads:
+    #   MAILDOMAINS_READ   = "maildomains:read",       "Read maildomains"
+    #   USERS_READ         = "users:read",             "Read users"
+    #   LABELS_READ        = "labels:read",            "Read labels"
+    #   CONTACTS_READ      = "contacts:read",          "Read contacts"
+    #   THREADS_READ       = "threads:read",           "Read thread metadata"
+    #   MESSAGES_READ      = "messages:read",          "Read message metadata"
+    #   MESSAGES_READ_BODY = "messages:read.body",     "Read message bodies"
+    #   ATTACHMENTS_READ   = "attachments:read",       "Read attachments"
+    #   BLOBS_READ         = "blobs:read",             "Read raw MIME blobs"
+    #
+    # Writes (update an object the channel already has access to):
+    #   MESSAGES_WRITE     = "messages:write",         "Create/modify drafts"
+    #   THREADS_WRITE      = "threads:write",          "Archive/star/label"
+    #   LABELS_WRITE       = "labels:write",           "Create/modify labels"
+    #   CONTACTS_WRITE     = "contacts:write",         "Create/modify contacts"
+    #   MAILBOXES_WRITE    = "mailboxes:write",        "Update existing mailboxes"
+    #   MAILDOMAINS_WRITE  = "maildomains:write",      "Update existing maildomains"
+    #
+    # Creates (mint a brand-new top-level object — global-only):
+    #   MAILBOXES_CREATE   = "mailboxes:create",       "Create new mailboxes"
+
+
+# Scopes that can only be granted to / used by a scope_level=global Channel.
+# Two enforcement points use this set:
+#  - the serializer (write time) rejects non-global channels asking for these
+#  - HasChannelScope (request time) rejects requests where the calling
+#    channel is not global but a global-only scope is required
+CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY = frozenset(
+    {
+        ChannelApiKeyScope.METRICS_READ.value,
+        ChannelApiKeyScope.MAILDOMAINS_CREATE.value,
+    }
+)
+
+
 class MessageTemplateTypeChoices(models.IntegerChoices):
     """Defines the possible types of message templates."""
 
