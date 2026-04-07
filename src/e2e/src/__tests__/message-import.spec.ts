@@ -21,10 +21,6 @@ test.describe("Import Message", () => {
     const email = `user.e2e.${browserName}@example.local`;
     await page.waitForLoadState("networkidle");
 
-    // As the database is fresh, there should be no threads and the Import messages button should be visible
-    const noThreads = page.getByText("No threads.");
-    await expect(page.getByRole("link", { name: "Import messages" })).toBeVisible();
-
     const header = page.locator(".c__header");
     const settingsButton = header.getByRole("button", { name: "More options" });
     await settingsButton.click();

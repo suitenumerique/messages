@@ -385,6 +385,7 @@ down-e2e: stop-e2e ## alias for stop-e2e
 demo-e2e: ## Populate the e2e database with demo data
 	@echo "$(BLUE)\n\n| 📝 Bootstrapping E2E demo data... \n$(RESET)"
 	@$(COMPOSE_E2E) run --rm backend python manage.py e2e_demo
+	@$(COMPOSE_E2E) run --rm backend python manage.py e2e_clientbridge
 .PHONY: demo-e2e
 
 start-e2e: ## Start e2e services (migrate, seed, etc.)

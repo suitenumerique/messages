@@ -14,7 +14,7 @@ import {
   CLIENTBRIDGE_APP_PASSWORD,
   API_URL,
 } from "../constants";
-import { getMailboxEmail } from "../utils";
+import { bootstrapClientBridge } from "../utils";
 import { signInKeycloakIfNeeded } from "../utils-test";
 
 const IMAP_USER = "user.e2e.chromium@example.local";
@@ -35,6 +35,10 @@ async function createImapClient(): Promise<ImapFlow> {
 }
 
 test.describe("Client Bridge IMAP", () => {
+  test.beforeAll(async () => {
+    await bootstrapClientBridge();
+  });
+
   test("should authenticate and list INBOX", async () => {
     const client = await createImapClient();
     try {
@@ -97,7 +101,7 @@ test.describe("Client Bridge IMAP", () => {
     }
   });
 
-  test("should sync read state from IMAP to webmail API", async ({ page, browserName }) => {
+  test("should sync read state from IMAP to webmail API", async ({ page }) => {
     // Sign in to get an authenticated session for API calls
     await signInKeycloakIfNeeded({ page, username: `user.e2e.chromium` });
 
@@ -126,24 +130,16 @@ test.describe("Client Bridge IMAP", () => {
     }
 
     // Verify via the API that the thread is now read
-    // The API returns is_unread on messages when mailbox_id is provided
-    const mailboxEmail = getMailboxEmail("user", "chromium");
-
-    // Get threads to find the one with "IMAP unread test"
     const threadsResp = await page.request.get(`${API_URL}/api/v1.0/threads/`, {
-      params: { mailbox_id: "" }, // We'll search by subject
+      params: { page_size: "100" },
     });
-
-    // Use the page context to make API requests (authenticated via session)
-    // Navigate to inbox first to ensure we have the right mailbox context
-    await page.goto(`${API_URL}/api/v1.0/threads/?page_size=100`);
-    const threadsData = JSON.parse(await page.locator("body").innerText());
+    expect(threadsResp.ok()).toBe(true);
+    const threadsData = await threadsResp.json();
     const targetThread = threadsData.results?.find(
       (t: any) => t.subject === "IMAP unread test"
     );
 
-    // If we found the thread, the read state should have been synced
-    // (the IMAP STORE +FLAGS \Seen should have set read_at on the thread access)
+    // The IMAP STORE +FLAGS \Seen should have set read_at on the thread access
     expect(targetThread).toBeTruthy();
   });
 
@@ -177,16 +173,20 @@ test.describe("Client Bridge IMAP", () => {
 
     // Mark as unread via the webmail flag API
     // We need to find the thread ID first
-    await page.goto(`${API_URL}/api/v1.0/threads/?page_size=100`);
-    const threadsData = JSON.parse(await page.locator("body").innerText());
+    const threadsResp = await page.request.get(`${API_URL}/api/v1.0/threads/`, {
+      params: { page_size: "100" },
+    });
+    expect(threadsResp.ok()).toBe(true);
+    const threadsData = await threadsResp.json();
     const targetThread = threadsData.results?.find(
       (t: any) => t.subject === targetSubject
     );
     expect(targetThread).toBeTruthy();
 
     // Get mailbox ID for the user
-    await page.goto(`${API_URL}/api/v1.0/mailboxes/`);
-    const mailboxData = JSON.parse(await page.locator("body").innerText());
+    const mailboxResp = await page.request.get(`${API_URL}/api/v1.0/mailboxes/`);
+    expect(mailboxResp.ok()).toBe(true);
+    const mailboxData = await mailboxResp.json();
     const mailbox = mailboxData.results?.find(
       (m: any) => m.local_part === "user.e2e.chromium"
     );
