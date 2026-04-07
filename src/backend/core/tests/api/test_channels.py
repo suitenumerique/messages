@@ -491,6 +491,7 @@ class TestChannelEncryptedSettings:
 
 
 @pytest.mark.django_db
+@override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["api_key"])
 class TestChannelReservedSettingsKeys:
     """The serializer rejects callers that try to write reserved settings
     keys (e.g. ``api_key_hashes``). Server-side generators write directly

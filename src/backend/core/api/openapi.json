@@ -2602,13 +2602,7 @@
                                 }
                             }
                         },
-                        "description": "Channel created successfully"
-                    },
-                    "400": {
-                        "description": "Invalid input data"
-                    },
-                    "403": {
-                        "description": "Permission denied"
+                        "description": ""
                     }
                 }
             }
@@ -2814,6 +2808,53 @@
                 "responses": {
                     "204": {
                         "description": "Channel deleted successfully"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Channel not found"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/channels/{id}/regenerate-api-key/": {
+            "post": {
+                "operationId": "mailboxes_channels_regenerate_api_key_create",
+                "description": "Manage integration channels for a mailbox",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Returns the freshly generated plaintext api_key. The previous secret is invalidated immediately. The plaintext is shown ONCE and cannot be retrieved later."
+                    },
+                    "400": {
+                        "description": "Channel is not an api_key channel"
                     },
                     "403": {
                         "description": "Permission denied"
@@ -6007,6 +6048,287 @@
                     }
                 }
             }
+        },
+        "/api/v1.0/users/me/channels/": {
+            "get": {
+                "operationId": "users_me_channels_list",
+                "description": "Manage personal (scope_level=user) integration channels",
+                "tags": [
+                    "channels"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Channel"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "users_me_channels_create",
+                "description": "Manage personal (scope_level=user) integration channels",
+                "tags": [
+                    "channels"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChannelRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChannelRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Channel"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/users/me/channels/{id}/": {
+            "get": {
+                "operationId": "users_me_channels_retrieve",
+                "description": "Manage personal (scope_level=user) integration channels",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Channel"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "users_me_channels_update",
+                "description": "Manage personal (scope_level=user) integration channels",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChannelRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChannelRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Channel"
+                                }
+                            }
+                        },
+                        "description": "Channel updated successfully"
+                    },
+                    "400": {
+                        "description": "Invalid input data"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Channel not found"
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "users_me_channels_partial_update",
+                "description": "Manage personal (scope_level=user) integration channels",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedChannelRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedChannelRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Channel"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "users_me_channels_destroy",
+                "description": "Manage personal (scope_level=user) integration channels",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Channel deleted successfully"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Channel not found"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/users/me/channels/{id}/regenerate-api-key/": {
+            "post": {
+                "operationId": "users_me_channels_regenerate_api_key_create",
+                "description": "Manage personal (scope_level=user) integration channels",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Returns the freshly generated plaintext api_key. The previous secret is invalidated immediately. The plaintext is shown ONCE and cannot be retrieved later."
+                    },
+                    "400": {
+                        "description": "Channel is not an api_key channel"
+                    },
+                    "403": {
+                        "description": "Permission denied"
+                    },
+                    "404": {
+                        "description": "Channel not found"
+                    }
+                }
+            }
         }
     },
     "components": {
@@ -6131,6 +6453,10 @@
                         "description": "Type of channel",
                         "maxLength": 255
                     },
+                    "scope_level": {
+                        "type": "string",
+                        "readOnly": true
+                    },
                     "settings": {
                         "description": "Channel-specific configuration settings"
                     },
@@ -6145,6 +6471,19 @@
                         "type": "string",
                         "format": "uuid",
                         "description": "primary key for the record as UUID",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "user": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "primary key for the record as UUID",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "last_used_at": {
+                        "type": "string",
+                        "format": "date-time",
                         "readOnly": true,
                         "nullable": true
                     },
@@ -6166,10 +6505,13 @@
                 "required": [
                     "created_at",
                     "id",
+                    "last_used_at",
                     "mailbox",
                     "maildomain",
                     "name",
-                    "updated_at"
+                    "scope_level",
+                    "updated_at",
+                    "user"
                 ]
             },
             "ChannelRequest": {

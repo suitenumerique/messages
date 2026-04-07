@@ -224,30 +224,12 @@ export type mailboxesChannelsCreateResponse201 = {
   status: 201;
 };
 
-export type mailboxesChannelsCreateResponse400 = {
-  data: void;
-  status: 400;
-};
-
-export type mailboxesChannelsCreateResponse403 = {
-  data: void;
-  status: 403;
-};
-
 export type mailboxesChannelsCreateResponseSuccess =
   mailboxesChannelsCreateResponse201 & {
     headers: Headers;
   };
-export type mailboxesChannelsCreateResponseError = (
-  | mailboxesChannelsCreateResponse400
-  | mailboxesChannelsCreateResponse403
-) & {
-  headers: Headers;
-};
-
 export type mailboxesChannelsCreateResponse =
-  | mailboxesChannelsCreateResponseSuccess
-  | mailboxesChannelsCreateResponseError;
+  mailboxesChannelsCreateResponseSuccess;
 
 export const getMailboxesChannelsCreateUrl = (mailboxId: string) => {
   return `/api/v1.0/mailboxes/${mailboxId}/channels/`;
@@ -270,7 +252,7 @@ export const mailboxesChannelsCreate = async (
 };
 
 export const getMailboxesChannelsCreateMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<unknown>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -311,10 +293,10 @@ export type MailboxesChannelsCreateMutationResult = NonNullable<
   Awaited<ReturnType<typeof mailboxesChannelsCreate>>
 >;
 export type MailboxesChannelsCreateMutationBody = ChannelRequest;
-export type MailboxesChannelsCreateMutationError = ErrorType<void>;
+export type MailboxesChannelsCreateMutationError = ErrorType<unknown>;
 
 export const useMailboxesChannelsCreate = <
-  TError = ErrorType<void>,
+  TError = ErrorType<unknown>,
   TContext = unknown,
 >(
   options?: {
@@ -896,6 +878,1066 @@ export const useMailboxesChannelsDestroy = <
   TContext
 > => {
   const mutationOptions = getMailboxesChannelsDestroyMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Manage integration channels for a mailbox
+ */
+export type mailboxesChannelsRegenerateApiKeyCreateResponse200 = {
+  data: void;
+  status: 200;
+};
+
+export type mailboxesChannelsRegenerateApiKeyCreateResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type mailboxesChannelsRegenerateApiKeyCreateResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type mailboxesChannelsRegenerateApiKeyCreateResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type mailboxesChannelsRegenerateApiKeyCreateResponseSuccess =
+  mailboxesChannelsRegenerateApiKeyCreateResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesChannelsRegenerateApiKeyCreateResponseError = (
+  | mailboxesChannelsRegenerateApiKeyCreateResponse400
+  | mailboxesChannelsRegenerateApiKeyCreateResponse403
+  | mailboxesChannelsRegenerateApiKeyCreateResponse404
+) & {
+  headers: Headers;
+};
+
+export type mailboxesChannelsRegenerateApiKeyCreateResponse =
+  | mailboxesChannelsRegenerateApiKeyCreateResponseSuccess
+  | mailboxesChannelsRegenerateApiKeyCreateResponseError;
+
+export const getMailboxesChannelsRegenerateApiKeyCreateUrl = (
+  mailboxId: string,
+  id: string,
+) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/channels/${id}/regenerate-api-key/`;
+};
+
+export const mailboxesChannelsRegenerateApiKeyCreate = async (
+  mailboxId: string,
+  id: string,
+  options?: RequestInit,
+): Promise<mailboxesChannelsRegenerateApiKeyCreateResponse> => {
+  return fetchAPI<mailboxesChannelsRegenerateApiKeyCreateResponse>(
+    getMailboxesChannelsRegenerateApiKeyCreateUrl(mailboxId, id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getMailboxesChannelsRegenerateApiKeyCreateMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mailboxesChannelsRegenerateApiKeyCreate>>,
+    TError,
+    { mailboxId: string; id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mailboxesChannelsRegenerateApiKeyCreate>>,
+  TError,
+  { mailboxId: string; id: string },
+  TContext
+> => {
+  const mutationKey = ["mailboxesChannelsRegenerateApiKeyCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mailboxesChannelsRegenerateApiKeyCreate>>,
+    { mailboxId: string; id: string }
+  > = (props) => {
+    const { mailboxId, id } = props ?? {};
+
+    return mailboxesChannelsRegenerateApiKeyCreate(
+      mailboxId,
+      id,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MailboxesChannelsRegenerateApiKeyCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesChannelsRegenerateApiKeyCreate>>
+>;
+
+export type MailboxesChannelsRegenerateApiKeyCreateMutationError =
+  ErrorType<void>;
+
+export const useMailboxesChannelsRegenerateApiKeyCreate = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof mailboxesChannelsRegenerateApiKeyCreate>>,
+      TError,
+      { mailboxId: string; id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof mailboxesChannelsRegenerateApiKeyCreate>>,
+  TError,
+  { mailboxId: string; id: string },
+  TContext
+> => {
+  const mutationOptions =
+    getMailboxesChannelsRegenerateApiKeyCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Manage personal (scope_level=user) integration channels
+ */
+export type usersMeChannelsListResponse200 = {
+  data: Channel[];
+  status: 200;
+};
+
+export type usersMeChannelsListResponseSuccess =
+  usersMeChannelsListResponse200 & {
+    headers: Headers;
+  };
+export type usersMeChannelsListResponse = usersMeChannelsListResponseSuccess;
+
+export const getUsersMeChannelsListUrl = () => {
+  return `/api/v1.0/users/me/channels/`;
+};
+
+export const usersMeChannelsList = async (
+  options?: RequestInit,
+): Promise<usersMeChannelsListResponse> => {
+  return fetchAPI<usersMeChannelsListResponse>(getUsersMeChannelsListUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getUsersMeChannelsListQueryKey = () => {
+  return [`/api/v1.0/users/me/channels/`] as const;
+};
+
+export const getUsersMeChannelsListQueryOptions = <
+  TData = Awaited<ReturnType<typeof usersMeChannelsList>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<
+      Awaited<ReturnType<typeof usersMeChannelsList>>,
+      TError,
+      TData
+    >
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getUsersMeChannelsListQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof usersMeChannelsList>>
+  > = ({ signal }) => usersMeChannelsList({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof usersMeChannelsList>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type UsersMeChannelsListQueryResult = NonNullable<
+  Awaited<ReturnType<typeof usersMeChannelsList>>
+>;
+export type UsersMeChannelsListQueryError = ErrorType<unknown>;
+
+export function useUsersMeChannelsList<
+  TData = Awaited<ReturnType<typeof usersMeChannelsList>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersMeChannelsList>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof usersMeChannelsList>>,
+          TError,
+          Awaited<ReturnType<typeof usersMeChannelsList>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useUsersMeChannelsList<
+  TData = Awaited<ReturnType<typeof usersMeChannelsList>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersMeChannelsList>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof usersMeChannelsList>>,
+          TError,
+          Awaited<ReturnType<typeof usersMeChannelsList>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useUsersMeChannelsList<
+  TData = Awaited<ReturnType<typeof usersMeChannelsList>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersMeChannelsList>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useUsersMeChannelsList<
+  TData = Awaited<ReturnType<typeof usersMeChannelsList>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersMeChannelsList>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getUsersMeChannelsListQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Manage personal (scope_level=user) integration channels
+ */
+export type usersMeChannelsCreateResponse201 = {
+  data: Channel;
+  status: 201;
+};
+
+export type usersMeChannelsCreateResponseSuccess =
+  usersMeChannelsCreateResponse201 & {
+    headers: Headers;
+  };
+export type usersMeChannelsCreateResponse =
+  usersMeChannelsCreateResponseSuccess;
+
+export const getUsersMeChannelsCreateUrl = () => {
+  return `/api/v1.0/users/me/channels/`;
+};
+
+export const usersMeChannelsCreate = async (
+  channelRequest: ChannelRequest,
+  options?: RequestInit,
+): Promise<usersMeChannelsCreateResponse> => {
+  return fetchAPI<usersMeChannelsCreateResponse>(
+    getUsersMeChannelsCreateUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(channelRequest),
+    },
+  );
+};
+
+export const getUsersMeChannelsCreateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersMeChannelsCreate>>,
+    TError,
+    { data: ChannelRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersMeChannelsCreate>>,
+  TError,
+  { data: ChannelRequest },
+  TContext
+> => {
+  const mutationKey = ["usersMeChannelsCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersMeChannelsCreate>>,
+    { data: ChannelRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return usersMeChannelsCreate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersMeChannelsCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersMeChannelsCreate>>
+>;
+export type UsersMeChannelsCreateMutationBody = ChannelRequest;
+export type UsersMeChannelsCreateMutationError = ErrorType<unknown>;
+
+export const useUsersMeChannelsCreate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof usersMeChannelsCreate>>,
+      TError,
+      { data: ChannelRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof usersMeChannelsCreate>>,
+  TError,
+  { data: ChannelRequest },
+  TContext
+> => {
+  const mutationOptions = getUsersMeChannelsCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Manage personal (scope_level=user) integration channels
+ */
+export type usersMeChannelsRetrieveResponse200 = {
+  data: Channel;
+  status: 200;
+};
+
+export type usersMeChannelsRetrieveResponseSuccess =
+  usersMeChannelsRetrieveResponse200 & {
+    headers: Headers;
+  };
+export type usersMeChannelsRetrieveResponse =
+  usersMeChannelsRetrieveResponseSuccess;
+
+export const getUsersMeChannelsRetrieveUrl = (id: string) => {
+  return `/api/v1.0/users/me/channels/${id}/`;
+};
+
+export const usersMeChannelsRetrieve = async (
+  id: string,
+  options?: RequestInit,
+): Promise<usersMeChannelsRetrieveResponse> => {
+  return fetchAPI<usersMeChannelsRetrieveResponse>(
+    getUsersMeChannelsRetrieveUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getUsersMeChannelsRetrieveQueryKey = (id?: string) => {
+  return [`/api/v1.0/users/me/channels/${id}/`] as const;
+};
+
+export const getUsersMeChannelsRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof usersMeChannelsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersMeChannelsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getUsersMeChannelsRetrieveQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof usersMeChannelsRetrieve>>
+  > = ({ signal }) =>
+    usersMeChannelsRetrieve(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof usersMeChannelsRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type UsersMeChannelsRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof usersMeChannelsRetrieve>>
+>;
+export type UsersMeChannelsRetrieveQueryError = ErrorType<unknown>;
+
+export function useUsersMeChannelsRetrieve<
+  TData = Awaited<ReturnType<typeof usersMeChannelsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersMeChannelsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof usersMeChannelsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof usersMeChannelsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useUsersMeChannelsRetrieve<
+  TData = Awaited<ReturnType<typeof usersMeChannelsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersMeChannelsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof usersMeChannelsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof usersMeChannelsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useUsersMeChannelsRetrieve<
+  TData = Awaited<ReturnType<typeof usersMeChannelsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersMeChannelsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useUsersMeChannelsRetrieve<
+  TData = Awaited<ReturnType<typeof usersMeChannelsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersMeChannelsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getUsersMeChannelsRetrieveQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Manage personal (scope_level=user) integration channels
+ */
+export type usersMeChannelsUpdateResponse200 = {
+  data: Channel;
+  status: 200;
+};
+
+export type usersMeChannelsUpdateResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type usersMeChannelsUpdateResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type usersMeChannelsUpdateResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type usersMeChannelsUpdateResponseSuccess =
+  usersMeChannelsUpdateResponse200 & {
+    headers: Headers;
+  };
+export type usersMeChannelsUpdateResponseError = (
+  | usersMeChannelsUpdateResponse400
+  | usersMeChannelsUpdateResponse403
+  | usersMeChannelsUpdateResponse404
+) & {
+  headers: Headers;
+};
+
+export type usersMeChannelsUpdateResponse =
+  | usersMeChannelsUpdateResponseSuccess
+  | usersMeChannelsUpdateResponseError;
+
+export const getUsersMeChannelsUpdateUrl = (id: string) => {
+  return `/api/v1.0/users/me/channels/${id}/`;
+};
+
+export const usersMeChannelsUpdate = async (
+  id: string,
+  channelRequest: ChannelRequest,
+  options?: RequestInit,
+): Promise<usersMeChannelsUpdateResponse> => {
+  return fetchAPI<usersMeChannelsUpdateResponse>(
+    getUsersMeChannelsUpdateUrl(id),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(channelRequest),
+    },
+  );
+};
+
+export const getUsersMeChannelsUpdateMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersMeChannelsUpdate>>,
+    TError,
+    { id: string; data: ChannelRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersMeChannelsUpdate>>,
+  TError,
+  { id: string; data: ChannelRequest },
+  TContext
+> => {
+  const mutationKey = ["usersMeChannelsUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersMeChannelsUpdate>>,
+    { id: string; data: ChannelRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return usersMeChannelsUpdate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersMeChannelsUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersMeChannelsUpdate>>
+>;
+export type UsersMeChannelsUpdateMutationBody = ChannelRequest;
+export type UsersMeChannelsUpdateMutationError = ErrorType<void>;
+
+export const useUsersMeChannelsUpdate = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof usersMeChannelsUpdate>>,
+      TError,
+      { id: string; data: ChannelRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof usersMeChannelsUpdate>>,
+  TError,
+  { id: string; data: ChannelRequest },
+  TContext
+> => {
+  const mutationOptions = getUsersMeChannelsUpdateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Manage personal (scope_level=user) integration channels
+ */
+export type usersMeChannelsPartialUpdateResponse200 = {
+  data: Channel;
+  status: 200;
+};
+
+export type usersMeChannelsPartialUpdateResponseSuccess =
+  usersMeChannelsPartialUpdateResponse200 & {
+    headers: Headers;
+  };
+export type usersMeChannelsPartialUpdateResponse =
+  usersMeChannelsPartialUpdateResponseSuccess;
+
+export const getUsersMeChannelsPartialUpdateUrl = (id: string) => {
+  return `/api/v1.0/users/me/channels/${id}/`;
+};
+
+export const usersMeChannelsPartialUpdate = async (
+  id: string,
+  patchedChannelRequest: PatchedChannelRequest,
+  options?: RequestInit,
+): Promise<usersMeChannelsPartialUpdateResponse> => {
+  return fetchAPI<usersMeChannelsPartialUpdateResponse>(
+    getUsersMeChannelsPartialUpdateUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(patchedChannelRequest),
+    },
+  );
+};
+
+export const getUsersMeChannelsPartialUpdateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersMeChannelsPartialUpdate>>,
+    TError,
+    { id: string; data: PatchedChannelRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersMeChannelsPartialUpdate>>,
+  TError,
+  { id: string; data: PatchedChannelRequest },
+  TContext
+> => {
+  const mutationKey = ["usersMeChannelsPartialUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersMeChannelsPartialUpdate>>,
+    { id: string; data: PatchedChannelRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return usersMeChannelsPartialUpdate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersMeChannelsPartialUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersMeChannelsPartialUpdate>>
+>;
+export type UsersMeChannelsPartialUpdateMutationBody = PatchedChannelRequest;
+export type UsersMeChannelsPartialUpdateMutationError = ErrorType<unknown>;
+
+export const useUsersMeChannelsPartialUpdate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof usersMeChannelsPartialUpdate>>,
+      TError,
+      { id: string; data: PatchedChannelRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof usersMeChannelsPartialUpdate>>,
+  TError,
+  { id: string; data: PatchedChannelRequest },
+  TContext
+> => {
+  const mutationOptions =
+    getUsersMeChannelsPartialUpdateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Manage personal (scope_level=user) integration channels
+ */
+export type usersMeChannelsDestroyResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type usersMeChannelsDestroyResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type usersMeChannelsDestroyResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type usersMeChannelsDestroyResponseSuccess =
+  usersMeChannelsDestroyResponse204 & {
+    headers: Headers;
+  };
+export type usersMeChannelsDestroyResponseError = (
+  | usersMeChannelsDestroyResponse403
+  | usersMeChannelsDestroyResponse404
+) & {
+  headers: Headers;
+};
+
+export type usersMeChannelsDestroyResponse =
+  | usersMeChannelsDestroyResponseSuccess
+  | usersMeChannelsDestroyResponseError;
+
+export const getUsersMeChannelsDestroyUrl = (id: string) => {
+  return `/api/v1.0/users/me/channels/${id}/`;
+};
+
+export const usersMeChannelsDestroy = async (
+  id: string,
+  options?: RequestInit,
+): Promise<usersMeChannelsDestroyResponse> => {
+  return fetchAPI<usersMeChannelsDestroyResponse>(
+    getUsersMeChannelsDestroyUrl(id),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getUsersMeChannelsDestroyMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersMeChannelsDestroy>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersMeChannelsDestroy>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["usersMeChannelsDestroy"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersMeChannelsDestroy>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return usersMeChannelsDestroy(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersMeChannelsDestroyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersMeChannelsDestroy>>
+>;
+
+export type UsersMeChannelsDestroyMutationError = ErrorType<void>;
+
+export const useUsersMeChannelsDestroy = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof usersMeChannelsDestroy>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof usersMeChannelsDestroy>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationOptions = getUsersMeChannelsDestroyMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Manage personal (scope_level=user) integration channels
+ */
+export type usersMeChannelsRegenerateApiKeyCreateResponse200 = {
+  data: void;
+  status: 200;
+};
+
+export type usersMeChannelsRegenerateApiKeyCreateResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type usersMeChannelsRegenerateApiKeyCreateResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type usersMeChannelsRegenerateApiKeyCreateResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type usersMeChannelsRegenerateApiKeyCreateResponseSuccess =
+  usersMeChannelsRegenerateApiKeyCreateResponse200 & {
+    headers: Headers;
+  };
+export type usersMeChannelsRegenerateApiKeyCreateResponseError = (
+  | usersMeChannelsRegenerateApiKeyCreateResponse400
+  | usersMeChannelsRegenerateApiKeyCreateResponse403
+  | usersMeChannelsRegenerateApiKeyCreateResponse404
+) & {
+  headers: Headers;
+};
+
+export type usersMeChannelsRegenerateApiKeyCreateResponse =
+  | usersMeChannelsRegenerateApiKeyCreateResponseSuccess
+  | usersMeChannelsRegenerateApiKeyCreateResponseError;
+
+export const getUsersMeChannelsRegenerateApiKeyCreateUrl = (id: string) => {
+  return `/api/v1.0/users/me/channels/${id}/regenerate-api-key/`;
+};
+
+export const usersMeChannelsRegenerateApiKeyCreate = async (
+  id: string,
+  options?: RequestInit,
+): Promise<usersMeChannelsRegenerateApiKeyCreateResponse> => {
+  return fetchAPI<usersMeChannelsRegenerateApiKeyCreateResponse>(
+    getUsersMeChannelsRegenerateApiKeyCreateUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getUsersMeChannelsRegenerateApiKeyCreateMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersMeChannelsRegenerateApiKeyCreate>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersMeChannelsRegenerateApiKeyCreate>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["usersMeChannelsRegenerateApiKeyCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersMeChannelsRegenerateApiKeyCreate>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return usersMeChannelsRegenerateApiKeyCreate(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersMeChannelsRegenerateApiKeyCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersMeChannelsRegenerateApiKeyCreate>>
+>;
+
+export type UsersMeChannelsRegenerateApiKeyCreateMutationError =
+  ErrorType<void>;
+
+export const useUsersMeChannelsRegenerateApiKeyCreate = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof usersMeChannelsRegenerateApiKeyCreate>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof usersMeChannelsRegenerateApiKeyCreate>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationOptions =
+    getUsersMeChannelsRegenerateApiKeyCreateMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };

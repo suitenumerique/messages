@@ -22,6 +22,7 @@ export interface Channel {
    * @maxLength 255
    */
   type?: string;
+  readonly scope_level: string;
   /** Channel-specific configuration settings */
   settings?: unknown;
   /**
@@ -34,6 +35,13 @@ export interface Channel {
    * @nullable
    */
   readonly maildomain: string | null;
+  /**
+   * primary key for the record as UUID
+   * @nullable
+   */
+  readonly user: string | null;
+  /** @nullable */
+  readonly last_used_at: string | null;
   /** date and time at which a record was created */
   readonly created_at: string;
   /** date and time at which a record was last updated */

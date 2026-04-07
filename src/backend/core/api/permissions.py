@@ -481,7 +481,11 @@ class HasChannelScope(permissions.BasePermission):
         channel = request.auth
         if not isinstance(channel, models.Channel):
             return False
-        scopes = (channel.settings or {}).get("scopes") or []
+        if not isinstance(channel.settings, dict):
+            return False
+        scopes = channel.settings.get("scopes")
+        if not isinstance(scopes, list) or not all(isinstance(s, str) for s in scopes):
+            return False
         if self.required_scope not in scopes:
             return False
         if (
