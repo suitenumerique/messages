@@ -4,14 +4,18 @@ Single schema change for this PR.
 
 - Adds ``encrypted_settings`` (EncryptedJSONField) for per-type secrets.
 - Adds ``user`` (FK to User, SET_NULL). Set on scope_level=user channels —
-  the User the channel is bound to. NULL for any other scope level.
-  Personal channels are explicitly deleted by a pre_delete signal in
-  core.signals before the User is removed; the FK is SET_NULL rather than
-  CASCADE so a future constraint relaxation cannot silently sweep up
+  the User the channel is bound to. Otherwise an optional creator-audit
+  pointer (the user who created the row via DRF). May be NULL on any
+  scope. Personal channels are explicitly deleted by a pre_delete signal
+  in core.signals before the User is removed; the FK is SET_NULL rather
+  than CASCADE so a future constraint relaxation cannot silently sweep up
   unrelated channels.
 - Adds ``scope_level`` (global / maildomain / mailbox / user) with a backfill
   from the existing mailbox/maildomain FKs.
 - Adds ``last_used_at`` for operational metadata.
+- Drops the ``type`` field's ``default="mta"``: every supported caller
+  (DRF serializer, factories, admin) now passes ``type`` explicitly, and
+  the implicit default was a bypass for FEATURE_MAILBOX_ADMIN_CHANNELS.
 - Replaces the old ``channel_has_target`` XOR constraint with a
   scope-level-driven ``channel_scope_level_targets`` check.
 """
@@ -44,6 +48,22 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # -- drop the implicit "mta" default on Channel.type ------------------
+        # The default was a silent FEATURE_MAILBOX_ADMIN_CHANNELS bypass:
+        # a nested mailbox/user POST that omitted ``type`` would land an
+        # "mta" channel even when "mta" was not in the allowlist. Every
+        # supported caller (DRF serializer, factories, admin) now passes
+        # ``type`` explicitly; the field is therefore required at the DB
+        # layer too, so any future regression fails loudly on INSERT.
+        migrations.AlterField(
+            model_name="channel",
+            name="type",
+            field=models.CharField(
+                help_text="Type of channel",
+                max_length=255,
+                verbose_name="type",
+            ),
+        ),
         # -- encrypted_settings + creator user --------------------------------
         migrations.AddField(
             model_name="channel",
@@ -66,7 +86,10 @@ class Migration(migrations.Migration):
             name="user",
             field=models.ForeignKey(
                 blank=True,
-                help_text="User who owns this channel (only for scope_level=user)",
+                help_text=(
+                    "User who owns (scope_level=user) or created (audit) "
+                    "this channel"
+                ),
                 null=True,
                 on_delete=django.db.models.deletion.SET_NULL,
                 related_name="channels",
@@ -103,8 +126,7 @@ class Migration(migrations.Migration):
                 db_index=True,
                 help_text=(
                     "Operational timestamp updated (throttled) whenever the "
-                    "channel is used to authenticate an api_key call or "
-                    "deliver a webhook."
+                    "channel is used."
                 ),
                 null=True,
                 verbose_name="last used at",

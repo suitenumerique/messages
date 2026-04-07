@@ -252,6 +252,20 @@ class TestChannelCreate:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data["type"] == "widget"
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
+    def test_create_channel_missing_type_is_rejected(self, api_client, mailbox):
+        """Omitting ``type`` on CREATE must be a 400 — never silently default
+        to "mta" and bypass FEATURE_MAILBOX_ADMIN_CHANNELS. Regression lock
+        for the bug where the model field default and the serializer's
+        ``if channel_type:`` short-circuit combined to let "mta" channels
+        through on any nested mailbox/user POST."""
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        response = api_client.post(
+            url, {"name": "no type", "settings": {}}, format="json"
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "type" in response.data
+
 
 @pytest.mark.django_db
 class TestChannelRetrieve:
@@ -440,7 +454,8 @@ class TestChannelEncryptedSettings:
         assert channel.settings["public"] == "value"
 
     def test_encrypted_settings_not_in_api_response(self, api_client, mailbox):
-        """encrypted_settings must never leak in the REST API."""
+        """encrypted_settings must never leak in the REST API — neither as
+        a top-level key nor smuggled into the visible ``settings`` payload."""
         channel = ChannelFactory(mailbox=mailbox, type="widget")
         channel.encrypted_settings = {"password": "s3cret"}
         channel.save()
@@ -455,8 +470,16 @@ class TestChannelEncryptedSettings:
         assert "encrypted_settings" not in response.data
         assert "password" not in response.data
 
+        # Defense in depth: a serializer bug that copied encrypted_settings
+        # into the visible ``settings`` JSON would also be a leak. Inspect
+        # both the secret keys and the secret values.
+        settings_payload = response.data.get("settings") or {}
+        assert "password" not in settings_payload
+        assert "s3cret" not in settings_payload.values()
+
     def test_encrypted_settings_not_in_list_response(self, api_client, mailbox):
-        """encrypted_settings must not appear in list responses either."""
+        """encrypted_settings must not appear in list responses either —
+        same defense-in-depth check on each item's ``settings`` payload."""
         channel = ChannelFactory(mailbox=mailbox, type="widget")
         channel.encrypted_settings = {"token": "abc"}
         channel.save()
@@ -467,6 +490,9 @@ class TestChannelEncryptedSettings:
         assert response.status_code == status.HTTP_200_OK
         for item in response.data:
             assert "encrypted_settings" not in item
+            settings_payload = item.get("settings") or {}
+            assert "token" not in settings_payload
+            assert "abc" not in settings_payload.values()
 
     def test_user_field_target_on_user_scope_channel(self, user):
         """Channel.user is the *target* user for scope_level=user channels."""

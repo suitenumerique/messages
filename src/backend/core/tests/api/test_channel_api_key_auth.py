@@ -8,7 +8,7 @@ viewset's own test file (test_submit, test_provisioning_*, test_*_metrics).
 
 import hashlib
 import uuid
-from functools import partial
+from datetime import timedelta
 
 from django.utils import timezone
 
@@ -20,12 +20,12 @@ from core.factories import MailboxFactory, make_api_key_channel
 
 SUBMIT_URL = "/api/v1.0/submit/"
 
-# Default to messages:send for the auth-class tests; callers can still
-# override scopes/scope_level/extra_settings via kwargs.
-_make_channel = partial(
-    make_api_key_channel,
-    scopes=(ChannelApiKeyScope.MESSAGES_SEND.value,),
-)
+
+def _make_channel(scopes=(ChannelApiKeyScope.MESSAGES_SEND.value,), **kwargs):
+    """Wrapper around the shared factory pre-loaded with the auth-class
+    test default scope (messages:send). Callers can still override
+    ``scopes`` and any other kwarg."""
+    return make_api_key_channel(scopes=scopes, **kwargs)
 
 
 @pytest.mark.django_db
@@ -55,7 +55,7 @@ class TestChannelApiKeyAuth:
         assert response.status_code == 401
 
     def test_expired_key_returns_401(self, client):
-        past = (timezone.now() - timezone.timedelta(days=1)).isoformat()
+        past = (timezone.now() - timedelta(days=1)).isoformat()
         channel, plaintext = _make_channel(extra_settings={"expires_at": past})
         response = client.post(
             SUBMIT_URL,
@@ -102,8 +102,11 @@ class TestChannelApiKeyAuth:
             HTTP_X_MAIL_FROM=str(mailbox.id),
             HTTP_X_RCPT_TO="to@x.test",
         )
-        # 400 (empty body) or 202 or 403 (scope mismatch) — but auth passed.
-        assert response.status_code in (400, 403, 500, 202)
+        # Auth must have passed; the post-auth pipeline is allowed to
+        # produce 202 (accepted), 400 (empty body / validation), or 403
+        # (scope mismatch). 500 is NOT accepted — a server error here
+        # would mask a real bug behind a "test still green" signal.
+        assert response.status_code in (202, 400, 403)
 
         channel.refresh_from_db()
         # Only check that last_used_at moved past the None state when

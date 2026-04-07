@@ -2,7 +2,6 @@
 # pylint: disable=redefined-outer-name
 
 import uuid
-from functools import partial
 
 from django.urls import reverse
 
@@ -12,13 +11,14 @@ from core.enums import ChannelApiKeyScope, ChannelScopeLevel
 from core.factories import MailDomainFactory, make_api_key_channel
 from core.models import MailDomain
 
-# Pre-load the shared factory with the maildomains-write scope used by
-# every test in this module.
-_make_api_key_channel = partial(
-    make_api_key_channel,
-    scopes=(ChannelApiKeyScope.MAILDOMAINS_CREATE.value,),
-    name="provisioning-test",
-)
+
+def _make_api_key_channel(
+    scopes=(ChannelApiKeyScope.MAILDOMAINS_CREATE.value,), **kwargs
+):
+    """Wrapper around the shared factory pre-loaded with the
+    maildomains-write scope used by every test in this module."""
+    kwargs.setdefault("name", "provisioning-test")
+    return make_api_key_channel(scopes=scopes, **kwargs)
 
 
 @pytest.fixture

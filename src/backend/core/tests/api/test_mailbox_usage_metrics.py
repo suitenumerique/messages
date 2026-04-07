@@ -1,8 +1,6 @@
 """Tests for the mailbox usage metrics endpoint."""
 # pylint: disable=redefined-outer-name, too-many-public-methods, too-many-lines, unused-argument
 
-import uuid
-
 from django.urls import reverse
 
 import pytest
@@ -73,10 +71,12 @@ class TestMailboxUsageMetrics:
         response = api_client.get(url)
         assert response.status_code == 401
 
-        # Invalid authentication
+        # Invalid authentication: reuse the real channel id with a wrong
+        # secret so the hash-mismatch branch (not just Channel.DoesNotExist)
+        # is exercised.
         response = api_client.get(
             url,
-            HTTP_X_CHANNEL_ID=str(uuid.uuid4()),
+            HTTP_X_CHANNEL_ID=correctly_configured_header["HTTP_X_CHANNEL_ID"],
             HTTP_X_API_KEY="invalid_token",
         )
         assert response.status_code == 401

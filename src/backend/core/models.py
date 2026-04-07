@@ -440,9 +440,7 @@ class Channel(BaseModel):
         "name", max_length=255, help_text="Human-readable name for this channel"
     )
 
-    type = models.CharField(
-        "type", max_length=255, help_text="Type of channel", default="mta"
-    )
+    type = models.CharField("type", max_length=255, help_text="Type of channel")
 
     scope_level = models.CharField(
         "scope level",

@@ -2,7 +2,6 @@
 # pylint: disable=redefined-outer-name,missing-function-docstring
 
 import uuid
-from functools import partial
 
 from django.urls import reverse
 
@@ -24,11 +23,12 @@ from core.factories import (
 
 MAILBOX_URL = reverse("provisioning-mailboxes")
 
-# Pre-load the shared factory with the provisioning-endpoint default scope.
-_make_api_key_channel = partial(
-    make_api_key_channel,
-    scopes=(ChannelApiKeyScope.MAILBOXES_READ.value,),
-)
+
+def _make_api_key_channel(scopes=(ChannelApiKeyScope.MAILBOXES_READ.value,), **kwargs):
+    """Wrapper around the shared factory pre-loaded with the
+    provisioning-endpoint default scope (mailboxes:read). Callers can
+    still override ``scopes`` and any other kwarg."""
+    return make_api_key_channel(scopes=scopes, **kwargs)
 
 
 @pytest.fixture
@@ -58,7 +58,7 @@ def mailbox(domain):
 
 @pytest.mark.django_db
 class TestServiceAuthSecurity:
-    """Verify that the provisioning endpoint requires HasCalendarsApiKey."""
+    """Verify that the provisioning endpoint requires ChannelApiKeyScope.MAILBOXES_READ."""
 
     def test_user_email_no_auth_returns_401(self, client):
         response = client.get(MAILBOX_URL, {"user_email": "a@b.com"})
