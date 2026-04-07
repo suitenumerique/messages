@@ -9,8 +9,9 @@ from django.utils.functional import cached_property
 from drf_spectacular.utils import (
     OpenApiResponse,
     extend_schema,
+    inline_serializer,
 )
-from rest_framework import mixins, status, viewsets
+from rest_framework import mixins, serializers as drf_serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -157,6 +158,20 @@ class ChannelViewSet(
         request=None,
         responses={
             200: OpenApiResponse(
+                response=inline_serializer(
+                    name="RegeneratedApiKeyResponse",
+                    fields={
+                        "id": drf_serializers.CharField(
+                            help_text="Channel id (also the X-Channel-Id header value).",
+                        ),
+                        "api_key": drf_serializers.CharField(
+                            help_text=(
+                                "Freshly generated plaintext api_key. Returned "
+                                "ONCE on regeneration and cannot be retrieved later."
+                            ),
+                        ),
+                    },
+                ),
                 description=(
                     "Returns the freshly generated plaintext api_key. The "
                     "previous secret is invalidated immediately. The plaintext "

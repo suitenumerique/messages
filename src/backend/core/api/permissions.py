@@ -3,6 +3,7 @@
 from django.core import exceptions
 
 from rest_framework import permissions
+from rest_framework.exceptions import PermissionDenied
 
 from core import enums, models
 
@@ -534,7 +535,7 @@ class IsGlobalChannelMixin:
         ):
             # Generic message — do not leak the scope_level requirement
             # to the caller.
-            raise exceptions.PermissionDenied()
+            raise PermissionDenied()
 
 
 class HasThreadEditAccess(IsAuthenticated):

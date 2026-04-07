@@ -2851,6 +2851,13 @@
                 ],
                 "responses": {
                     "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RegeneratedApiKeyResponse"
+                                }
+                            }
+                        },
                         "description": "Returns the freshly generated plaintext api_key. The previous secret is invalidated immediately. The plaintext is shown ONCE and cannot be retrieved later."
                     },
                     "400": {
@@ -6316,6 +6323,13 @@
                 ],
                 "responses": {
                     "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RegeneratedApiKeyResponse"
+                                }
+                            }
+                        },
                         "description": "Returns the freshly generated plaintext api_key. The previous secret is invalidated immediately. The plaintext is shown ONCE and cannot be retrieved later."
                     },
                     "400": {
@@ -6454,7 +6468,11 @@
                         "maxLength": 255
                     },
                     "scope_level": {
-                        "type": "string",
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/ScopeLevelEnum"
+                            }
+                        ],
                         "readOnly": true
                     },
                     "settings": {
@@ -8629,6 +8647,23 @@
                     "updated_at"
                 ]
             },
+            "RegeneratedApiKeyResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Channel id (also the X-Channel-Id header value)."
+                    },
+                    "api_key": {
+                        "type": "string",
+                        "description": "Freshly generated plaintext api_key. Returned ONCE on regeneration and cannot be retrieved later."
+                    }
+                },
+                "required": [
+                    "api_key",
+                    "id"
+                ]
+            },
             "ResetPasswordError": {
                 "type": "object",
                 "properties": {
@@ -8672,6 +8707,16 @@
                 "required": [
                     "one_time_password"
                 ]
+            },
+            "ScopeLevelEnum": {
+                "enum": [
+                    "global",
+                    "maildomain",
+                    "mailbox",
+                    "user"
+                ],
+                "type": "string",
+                "description": "* `global` - Global\n* `maildomain` - Maildomain\n* `mailbox` - Mailbox\n* `user` - User"
             },
             "SendMessageRequest": {
                 "type": "object",

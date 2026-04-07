@@ -25,6 +25,7 @@ import type {
   Channel,
   ChannelRequest,
   PatchedChannelRequest,
+  RegeneratedApiKeyResponse,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -885,7 +886,7 @@ export const useMailboxesChannelsDestroy = <
  * Manage integration channels for a mailbox
  */
 export type mailboxesChannelsRegenerateApiKeyCreateResponse200 = {
-  data: void;
+  data: RegeneratedApiKeyResponse;
   status: 200;
 };
 
@@ -1819,7 +1820,7 @@ export const useUsersMeChannelsDestroy = <
  * Manage personal (scope_level=user) integration channels
  */
 export type usersMeChannelsRegenerateApiKeyCreateResponse200 = {
-  data: void;
+  data: RegeneratedApiKeyResponse;
   status: 200;
 };
 

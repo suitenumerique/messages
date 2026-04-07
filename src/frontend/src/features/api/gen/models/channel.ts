@@ -5,6 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
+import type { ScopeLevelEnum } from "./scope_level_enum";
 
 /**
  * Serialize Channel model.
@@ -22,7 +23,7 @@ export interface Channel {
    * @maxLength 255
    */
   type?: string;
-  readonly scope_level: string;
+  readonly scope_level: ScopeLevelEnum;
   /** Channel-specific configuration settings */
   settings?: unknown;
   /**

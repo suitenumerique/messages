@@ -1549,7 +1549,9 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
     mailbox = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
     maildomain = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
     user = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
-    scope_level = serializers.CharField(read_only=True)
+    scope_level = serializers.ChoiceField(
+        choices=enums.ChannelScopeLevel.choices, read_only=True
+    )
     last_used_at = serializers.DateTimeField(read_only=True, allow_null=True)
 
     class Meta:
