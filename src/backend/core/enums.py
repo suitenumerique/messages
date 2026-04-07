@@ -2,6 +2,8 @@
 Core application enums declaration
 """
 
+from enum import StrEnum
+
 from django.conf import global_settings
 from django.db import models
 
@@ -157,11 +159,13 @@ class ChannelScopeLevel(models.TextChoices):
     USER = "user", "User"
 
 
-class ChannelTypes:
+class ChannelTypes(StrEnum):
     """Known Channel.type values.
 
-    Plain Python constants (not a TextChoices): Channel.type is a free-form
-    CharField so that adding a new type does not require a DB migration.
+    ``StrEnum`` (not a Django ``TextChoices``): Channel.type is intentionally
+    a free-form CharField so adding a new type never requires a migration.
+    Members ARE strings (``ChannelTypes.MTA == "mta"``) so comparisons,
+    dict keys and ORM filters work transparently.
     """
 
     MTA = "mta"
@@ -170,17 +174,15 @@ class ChannelTypes:
     WEBHOOK = "webhook"
 
 
-class WebhookEvents:
+class WebhookEvents(StrEnum):
     """Known webhook event identifiers.
 
-    Stored as strings in Channel.settings["events"]; validated by the serializer
-    against ALL at write time. Adding a new event is a Python-only change.
+    Stored as strings in ``Channel.settings["events"]``; validated by the
+    serializer at write time. Adding a new event is a Python-only change.
     """
 
     MESSAGE_RECEIVED = "message.received"
     MESSAGE_SENT = "message.sent"
-
-    ALL = frozenset({MESSAGE_RECEIVED, MESSAGE_SENT})
 
 
 class ChannelApiKeyScope(models.TextChoices):

@@ -1,0 +1,24 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{% block extrastyle %}
+{{ block.super }}
+{% include "admin/_object_tools_button_styles.html" %}
+{% endblock %}
+
+{% block object-tools-items %}
+{% if original and original.type == "api_key" %}
+<li>
+    <form method="post"
+          action="{% url 'admin:core_channel_regenerate_api_key' original.pk %}"
+          style="display: inline;"
+          onsubmit="return confirm('Regenerate the api_key for this channel? The previous secret will stop working immediately.');">
+        {% csrf_token %}
+        <button type="submit" class="historylink">
+            {% translate "Regenerate api_key" %}
+        </button>
+    </form>
+</li>
+{% endif %}
+{{ block.super }}
+{% endblock %}

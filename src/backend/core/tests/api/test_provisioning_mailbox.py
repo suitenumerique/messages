@@ -1,19 +1,17 @@
 """Tests for the provisioning mailbox lookup endpoint."""
 # pylint: disable=redefined-outer-name,missing-function-docstring
 
-import hashlib
 import uuid
+from functools import partial
 
 from django.urls import reverse
 
 import pytest
 from rest_framework.test import APIClient
 
-from core import models
 from core.enums import (
     ChannelApiKeyScope,
     ChannelScopeLevel,
-    ChannelTypes,
     MailboxRoleChoices,
 )
 from core.factories import (
@@ -21,31 +19,16 @@ from core.factories import (
     MailboxFactory,
     MailDomainFactory,
     UserFactory,
+    make_api_key_channel,
 )
 
 MAILBOX_URL = reverse("provisioning-mailboxes")
 
-
-def _make_api_key_channel(
-    scope_level=ChannelScopeLevel.GLOBAL,
+# Pre-load the shared factory with the provisioning-endpoint default scope.
+_make_api_key_channel = partial(
+    make_api_key_channel,
     scopes=(ChannelApiKeyScope.MAILBOXES_READ.value,),
-    *,
-    mailbox=None,
-    maildomain=None,
-):
-    plaintext = f"msg_test_{uuid.uuid4().hex}"
-    digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
-    channel = models.Channel(
-        name=f"test-{uuid.uuid4().hex[:6]}",
-        type=ChannelTypes.API_KEY,
-        scope_level=scope_level,
-        mailbox=mailbox,
-        maildomain=maildomain,
-        settings={"scopes": list(scopes)},
-        encrypted_settings={"api_key_hashes": [digest]},
-    )
-    channel.save()
-    return channel, plaintext
+)
 
 
 @pytest.fixture

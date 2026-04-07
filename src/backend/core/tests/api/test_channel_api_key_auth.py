@@ -8,40 +8,24 @@ viewset's own test file (test_submit, test_provisioning_*, test_*_metrics).
 
 import hashlib
 import uuid
+from functools import partial
 
 from django.utils import timezone
 
 import pytest
 
 from core import models
-from core.enums import ChannelApiKeyScope, ChannelScopeLevel, ChannelTypes
-from core.factories import MailboxFactory
+from core.enums import ChannelApiKeyScope, ChannelScopeLevel
+from core.factories import MailboxFactory, make_api_key_channel
 
 SUBMIT_URL = "/api/v1.0/submit/"
 
-
-def _make_channel(
+# Default to messages:send for the auth-class tests; callers can still
+# override scopes/scope_level/extra_settings via kwargs.
+_make_channel = partial(
+    make_api_key_channel,
     scopes=(ChannelApiKeyScope.MESSAGES_SEND.value,),
-    scope_level=ChannelScopeLevel.GLOBAL,
-    extra_settings=None,
-    *,
-    mailbox=None,
-    maildomain=None,
-):
-    plaintext = f"msg_test_{uuid.uuid4().hex}"
-    digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
-    settings = {"scopes": list(scopes), **(extra_settings or {})}
-    channel = models.Channel(
-        name=f"test-{uuid.uuid4().hex[:6]}",
-        type=ChannelTypes.API_KEY,
-        scope_level=scope_level,
-        mailbox=mailbox,
-        maildomain=maildomain,
-        settings=settings,
-        encrypted_settings={"api_key_hashes": [digest]},
-    )
-    channel.save()
-    return channel, plaintext
+)
 
 
 @pytest.mark.django_db

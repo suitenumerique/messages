@@ -1,7 +1,6 @@
 """Tests for the Maildomain users metrics endpoint."""
 # pylint: disable=redefined-outer-name, unused-argument, too-many-lines
 
-import hashlib
 import uuid
 
 from django.urls import reverse
@@ -9,11 +8,8 @@ from django.utils import timezone
 
 import pytest
 
-from core import models
 from core.enums import (
     ChannelApiKeyScope,
-    ChannelScopeLevel,
-    ChannelTypes,
     MessageTemplateTypeChoices,
 )
 from core.factories import (
@@ -28,22 +24,17 @@ from core.factories import (
     ThreadAccessFactory,
     ThreadFactory,
     UserFactory,
+    make_api_key_channel,
 )
 from core.models import MailboxAccess, MailDomain
 
 
 def _make_metrics_api_key():
-    plaintext = f"msg_test_{uuid.uuid4().hex}"
-    digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
-    channel = models.Channel(
-        name=f"metrics-{uuid.uuid4().hex[:6]}",
-        type=ChannelTypes.API_KEY,
-        scope_level=ChannelScopeLevel.GLOBAL,
-        settings={"scopes": [ChannelApiKeyScope.METRICS_READ.value]},
-        encrypted_settings={"api_key_hashes": [digest]},
+    """Create a global-scope api_key channel with metrics:read."""
+    return make_api_key_channel(
+        scopes=(ChannelApiKeyScope.METRICS_READ.value,),
+        name="metrics-test",
     )
-    channel.save()
-    return channel, plaintext
 
 
 def check_results_for_key(

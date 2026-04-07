@@ -1,8 +1,5 @@
 """API ViewSet for Channel model."""
 
-import hashlib
-import secrets
-
 from django.shortcuts import get_object_or_404
 from django.utils.functional import cached_property
 
@@ -203,13 +200,7 @@ class ChannelViewSet(
                 {"type": "Only api_key channels can have their secret regenerated."}
             )
 
-        plaintext = "msg_" + secrets.token_urlsafe(32)
-        digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
-        instance.encrypted_settings = {
-            **(instance.encrypted_settings or {}),
-            "api_key_hashes": [digest],
-        }
-        instance.save(update_fields=["encrypted_settings", "updated_at"])
+        plaintext = instance.rotate_api_key()
 
         return Response(
             {"id": str(instance.id), "api_key": plaintext},

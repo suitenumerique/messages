@@ -3,7 +3,6 @@
 
 import hashlib
 import json
-import secrets
 import uuid
 
 from django.conf import settings
@@ -1596,39 +1595,20 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         enums.ChannelTypes.API_KEY: ["api_key_hashes"],
     }
 
-    @staticmethod
-    def _generate_api_key_material(validated_data):
-        """Create a fresh api_key secret and write a single-element
-        ``encrypted_settings.api_key_hashes`` list, REPLACING any prior
-        contents. Returns the plaintext so the viewset can surface it once.
-
-        DRF flows (create, regenerate) are always single-active: one
-        secret, replaced atomically. Dual-active "smooth" rotation —
-        appending without removing the old hash so clients can migrate —
-        is a superadmin-only feature exposed in the Django admin. Mailbox- and
-        user-scope api_keys do not currently expose dual-active rotation
-        in DRF; the row's owner is expected to update their client when
-        they rotate.
-        """
-        plaintext = "msg_" + secrets.token_urlsafe(32)
-        digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
-        existing_encrypted = validated_data.get("encrypted_settings") or {}
-        validated_data["encrypted_settings"] = {
-            **existing_encrypted,
-            "api_key_hashes": [digest],
-        }
-        return plaintext
-
     def create(self, validated_data):
+        # For api_key channels, mint the secret on a transient instance so
+        # the resulting ``encrypted_settings`` rides through the normal
+        # ``super().create()`` save path. The plaintext is stashed on the
+        # saved row for ChannelViewSet.create() to surface exactly once,
+        # mirroring the ``_generated_password`` pattern at channel.py:68-74.
         generated_api_key = None
         if validated_data.get("type") == enums.ChannelTypes.API_KEY:
-            generated_api_key = self._generate_api_key_material(validated_data)
+            transient = models.Channel(**validated_data)
+            generated_api_key = transient.rotate_api_key(save=False)
+            validated_data["encrypted_settings"] = transient.encrypted_settings
 
         instance = super().create(validated_data)
 
-        # Stash the plaintext on the instance so ChannelViewSet.create() can
-        # surface it exactly once in the response. Mirrors the existing
-        # `_generated_password` pattern at channel.py:68-74.
         # pylint: disable=protected-access
         if generated_api_key is not None:
             instance._generated_api_key = generated_api_key  # noqa: SLF001
@@ -1830,7 +1810,7 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
                     "settings": "webhook channels require settings.events (a non-empty list)."
                 }
             )
-        unknown = [e for e in events if e not in enums.WebhookEvents.ALL]
+        unknown = [e for e in events if e not in enums.WebhookEvents]
         if unknown:
             raise serializers.ValidationError(
                 {"settings": f"Unknown webhook events: {unknown}"}

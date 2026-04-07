@@ -1,18 +1,14 @@
 """Tests for the mailbox usage metrics endpoint."""
 # pylint: disable=redefined-outer-name, too-many-public-methods, too-many-lines, unused-argument
 
-import hashlib
 import uuid
 
 from django.urls import reverse
 
 import pytest
 
-from core import models
 from core.enums import (
     ChannelApiKeyScope,
-    ChannelScopeLevel,
-    ChannelTypes,
     MessageTemplateTypeChoices,
 )
 from core.factories import (
@@ -25,6 +21,7 @@ from core.factories import (
     MessageTemplateFactory,
     ThreadAccessFactory,
     ThreadFactory,
+    make_api_key_channel,
 )
 
 
@@ -37,16 +34,10 @@ def url():
 @pytest.fixture
 def correctly_configured_header(db):
     """Returns the authentication headers via a global api_key Channel."""
-    plaintext = f"msg_test_{uuid.uuid4().hex}"
-    digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
-    channel = models.Channel(
-        name=f"metrics-{uuid.uuid4().hex[:6]}",
-        type=ChannelTypes.API_KEY,
-        scope_level=ChannelScopeLevel.GLOBAL,
-        settings={"scopes": [ChannelApiKeyScope.METRICS_READ.value]},
-        encrypted_settings={"api_key_hashes": [digest]},
+    channel, plaintext = make_api_key_channel(
+        scopes=(ChannelApiKeyScope.METRICS_READ.value,),
+        name="metrics-test",
     )
-    channel.save()
     return {
         "HTTP_X_CHANNEL_ID": str(channel.id),
         "HTTP_X_API_KEY": plaintext,

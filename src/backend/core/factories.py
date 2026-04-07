@@ -3,6 +3,7 @@ Core application factories
 """
 
 import json
+import uuid
 
 from django.conf import settings
 from django.contrib.auth.hashers import make_password
@@ -288,6 +289,40 @@ class ChannelFactory(factory.django.DjangoModelFactory):
             else "global"
         )
     )
+
+
+def make_api_key_channel(
+    *,
+    scope_level=enums.ChannelScopeLevel.GLOBAL,
+    scopes=(),
+    mailbox=None,
+    maildomain=None,
+    user=None,
+    name=None,
+    extra_settings=None,
+):
+    """Create an api_key Channel and return ``(channel, plaintext)``.
+
+    Single source of truth for tests that need a working api_key. Mints
+    the secret via ``Channel.rotate_api_key`` so the production helper is
+    exercised on the same code path the DRF/admin flows use, and so the
+    plaintext prefix stays consistent across production and tests.
+
+    Returned plaintext is the only chance to capture it — the row's
+    ``encrypted_settings.api_key_hashes`` only stores the SHA-256 digest.
+    """
+    channel = models.Channel(
+        name=name or f"test-{uuid.uuid4().hex[:6]}",
+        type=enums.ChannelTypes.API_KEY,
+        scope_level=scope_level,
+        mailbox=mailbox,
+        maildomain=maildomain,
+        user=user,
+        settings={"scopes": list(scopes), **(extra_settings or {})},
+    )
+    plaintext = channel.rotate_api_key(save=False)
+    channel.save()
+    return channel, plaintext
 
 
 class BlobFactory(factory.django.DjangoModelFactory):

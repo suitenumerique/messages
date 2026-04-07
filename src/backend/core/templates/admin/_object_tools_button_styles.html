@@ -1,0 +1,28 @@
+{# Shared <style> block for admin change-form pages that add a custom    #}
+{# button to the ``object-tools`` row via a <form><button> pair (instead #}
+{# of the usual <a class="historylink"> link). Mirrors the link styling  #}
+{# so the buttons are visually indistinguishable from the built-in ones. #}
+<style>
+    .object-tools button.historylink {
+        appearance: none;
+        background: var(--object-tools-bg);
+        border-radius: 15px;
+        border: none;
+        color: var(--object-tools-fg);
+        cursor: pointer;
+        display: block;
+        float: left;
+        font-size: 0.6875rem;
+        font-weight: 400;
+        letter-spacing: 0.5px;
+        line-height: inherit;
+        padding: 3px 12px;
+        text-transform: uppercase;
+        transition: color 0.15s, background 0.15s;
+    }
+
+    .object-tools button:focus,
+    .object-tools button:hover {
+        background-color: var(--object-tools-hover-bg);
+    }
+</style>

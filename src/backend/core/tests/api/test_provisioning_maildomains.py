@@ -1,37 +1,24 @@
 """Tests for the provisioning maildomains endpoint."""
 # pylint: disable=redefined-outer-name
 
-import hashlib
 import uuid
+from functools import partial
 
 from django.urls import reverse
 
 import pytest
 
-from core import models
-from core.enums import ChannelApiKeyScope, ChannelScopeLevel, ChannelTypes
-from core.factories import MailDomainFactory
+from core.enums import ChannelApiKeyScope, ChannelScopeLevel
+from core.factories import MailDomainFactory, make_api_key_channel
 from core.models import MailDomain
 
-
-def _make_api_key_channel(
-    scope_level=ChannelScopeLevel.GLOBAL,
+# Pre-load the shared factory with the maildomains-write scope used by
+# every test in this module.
+_make_api_key_channel = partial(
+    make_api_key_channel,
     scopes=(ChannelApiKeyScope.MAILDOMAINS_CREATE.value,),
-    *,
-    maildomain=None,
-):
-    plaintext = f"msg_test_{uuid.uuid4().hex}"
-    digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
-    channel = models.Channel(
-        name=f"provisioning-{uuid.uuid4().hex[:6]}",
-        type=ChannelTypes.API_KEY,
-        scope_level=scope_level,
-        maildomain=maildomain,
-        settings={"scopes": list(scopes)},
-        encrypted_settings={"api_key_hashes": [digest]},
-    )
-    channel.save()
-    return channel, plaintext
+    name="provisioning-test",
+)
 
 
 @pytest.fixture

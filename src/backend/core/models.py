@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import re
+import secrets
 import uuid
 from datetime import datetime as dt
 from datetime import time, timedelta
@@ -599,6 +600,30 @@ class Channel(BaseModel):
                 )
 
     # --- api_key helpers --- #
+
+    API_KEY_PREFIX = "msgk_"
+
+    def rotate_api_key(self, *, save: bool = True) -> str:
+        """Mint a fresh api_key plaintext, replace ``api_key_hashes`` with
+        the new SHA-256 digest, and return the plaintext exactly once.
+
+        Single-active rotation: any prior secret is invalidated immediately.
+        Dual-active "smooth" rotation (appending without removing) is not
+        exposed here — callers that need it must mutate ``encrypted_settings``
+        directly via the Django admin.
+
+        Set ``save=False`` for the DRF create path, where the row is being
+        built and ``super().create()`` will persist it shortly after.
+        """
+        plaintext = self.API_KEY_PREFIX + secrets.token_urlsafe(32)
+        digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+        self.encrypted_settings = {
+            **(self.encrypted_settings or {}),
+            "api_key_hashes": [digest],
+        }
+        if save:
+            self.save(update_fields=["encrypted_settings", "updated_at"])
+        return plaintext
 
     def api_key_covers(
         self, *, mailbox=None, maildomain=None, mailbox_roles=None

@@ -1,0 +1,28 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    &rsaquo; <a href="{% url 'admin:core_channel_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+    &rsaquo; <a href="{% url 'admin:core_channel_change' original.pk %}">{{ original }}</a>
+    &rsaquo; {% translate "Regenerated api_key" %}
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>{% translate "New api_key generated" %}</h1>
+
+<p><strong>{% translate "Copy this value now. It will not be shown again." %}</strong></p>
+
+<p>{% blocktranslate %}The previous secret has been invalidated immediately. Any client still using the old api_key will start failing on its next call.{% endblocktranslate %}</p>
+
+<pre style="padding: 12px; background: #f5f5f5; border: 1px solid #ccc; border-radius: 4px; user-select: all; word-break: break-all;">{{ api_key }}</pre>
+
+<p style="margin-top: 24px;">
+    <a class="button" href="{% url 'admin:core_channel_change' original.pk %}">
+        {% translate "Back to channel" %}
+    </a>
+</p>
+{% endblock %}

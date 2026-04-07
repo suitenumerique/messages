@@ -221,7 +221,7 @@ class TestChannelViewSetIsolation:  # pylint: disable=too-many-public-methods
         assert created.scope_level == ChannelScopeLevel.MAILBOX
         assert created.mailbox_id == mailbox.id
         # Response should include plaintext api_key once and the row id.
-        assert response.data.get("api_key", "").startswith("msg_")
+        assert response.data.get("api_key", "").startswith("msgk_")
         assert response.data["id"] == str(created.id)
         # The returned plaintext must hash to the single stored entry in
         # encrypted_settings.api_key_hashes.
@@ -724,7 +724,7 @@ class TestUserChannelViewSet:
         )
         assert response.status_code == 201, response.content
         assert "id" in response.data
-        assert response.data.get("api_key", "").startswith("msg_")
+        assert response.data.get("api_key", "").startswith("msgk_")
 
         created = models.Channel.objects.get(pk=response.data["id"])
         assert created.scope_level == ChannelScopeLevel.USER
@@ -1072,7 +1072,7 @@ class TestRegenerateApiKey:
         )
         assert response.status_code == 200, response.content
         new_plaintext = response.data["api_key"]
-        assert new_plaintext.startswith("msg_")
+        assert new_plaintext.startswith("msgk_")
         assert new_plaintext != original_plaintext
         assert response.data["id"] == str(channel_id)
 

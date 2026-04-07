@@ -1,16 +1,14 @@
 """Tests for the generic email submission endpoint (POST /submit/)."""
 # pylint: disable=redefined-outer-name,missing-function-docstring,unused-argument,import-outside-toplevel
 
-import hashlib
 import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
 from dkim import verify as dkim_verify
 
-from core import models
-from core.enums import ChannelApiKeyScope, ChannelScopeLevel, ChannelTypes
-from core.factories import MailboxFactory, MailDomainFactory
+from core.enums import ChannelApiKeyScope, ChannelScopeLevel
+from core.factories import MailboxFactory, MailDomainFactory, make_api_key_channel
 from core.mda.signing import generate_dkim_key
 
 SUBMIT_URL = "/api/v1.0/submit/"
@@ -32,29 +30,12 @@ PREPARE_MOCK = "core.api.viewsets.submit.prepare_outbound_message"
 TASK_MOCK = "core.api.viewsets.submit.send_message_task"
 
 
-def _make_api_key_channel(
-    scope_level=ChannelScopeLevel.GLOBAL,
-    scopes=(ChannelApiKeyScope.MESSAGES_SEND.value,),
-    *,
-    mailbox=None,
-    maildomain=None,
-    name="test-key",
-):
-    """Create an api_key Channel at the requested scope and return
-    (channel, plaintext)."""
-    plaintext = f"msg_test_{uuid.uuid4().hex}"
-    digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
-    channel = models.Channel(
-        name=name,
-        type=ChannelTypes.API_KEY,
-        scope_level=scope_level,
-        mailbox=mailbox,
-        maildomain=maildomain,
-        settings={"scopes": list(scopes)},
-        encrypted_settings={"api_key_hashes": [digest]},
-    )
-    channel.save()
-    return channel, plaintext
+def _make_api_key_channel(**kwargs):
+    """Thin wrapper around the shared factory pre-loaded with the
+    submit-endpoint default scope (messages:send)."""
+    kwargs.setdefault("scopes", (ChannelApiKeyScope.MESSAGES_SEND.value,))
+    kwargs.setdefault("name", "test-key")
+    return make_api_key_channel(**kwargs)
 
 
 @pytest.fixture
@@ -204,15 +185,10 @@ class TestSubmitAuth:
             role=getattr(MailboxRoleChoices, role_name),
         )
 
-        plaintext = f"msg_test_{uuid.uuid4().hex}"
-        digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
-        channel = models.Channel.objects.create(
-            name=f"{role_name.lower()}-personal",
-            type=ChannelTypes.API_KEY,
+        channel, plaintext = _make_api_key_channel(
             scope_level=ChannelScopeLevel.USER,
             user=owner,
-            settings={"scopes": [ChannelApiKeyScope.MESSAGES_SEND.value]},
-            encrypted_settings={"api_key_hashes": [digest]},
+            name=f"{role_name.lower()}-personal",
         )
 
         response = client.post(
@@ -245,15 +221,10 @@ class TestSubmitAuth:
             role=getattr(MailboxRoleChoices, role_name),
         )
 
-        plaintext = f"msg_test_{uuid.uuid4().hex}"
-        digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
-        channel = models.Channel.objects.create(
-            name=f"{role_name.lower()}-personal",
-            type=ChannelTypes.API_KEY,
+        channel, plaintext = _make_api_key_channel(
             scope_level=ChannelScopeLevel.USER,
             user=owner,
-            settings={"scopes": [ChannelApiKeyScope.MESSAGES_SEND.value]},
-            encrypted_settings={"api_key_hashes": [digest]},
+            name=f"{role_name.lower()}-personal",
         )
 
         fake_message = MagicMock()
