@@ -21,7 +21,7 @@ export interface ChannelRequest {
    * @minLength 1
    * @maxLength 255
    */
-  type?: string;
+  type: string;
   /** Channel-specific configuration settings */
   settings?: unknown;
 }

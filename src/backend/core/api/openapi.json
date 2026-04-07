@@ -6528,6 +6528,7 @@
                     "maildomain",
                     "name",
                     "scope_level",
+                    "type",
                     "updated_at",
                     "user"
                 ]
@@ -6553,7 +6554,8 @@
                     }
                 },
                 "required": [
-                    "name"
+                    "name",
+                    "type"
                 ]
             },
             "Contact": {

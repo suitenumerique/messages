@@ -22,7 +22,7 @@ export interface Channel {
    * Type of channel
    * @maxLength 255
    */
-  type?: string;
+  type: string;
   readonly scope_level: ScopeLevelEnum;
   /** Channel-specific configuration settings */
   settings?: unknown;

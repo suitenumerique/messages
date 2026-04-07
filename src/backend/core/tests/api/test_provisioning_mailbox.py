@@ -83,6 +83,19 @@ class TestServiceAuthSecurity:
         )
         assert response.status_code == 401
 
+    def test_user_email_malformed_channel_returns_401(self, client):
+        """A non-UUID X-Channel-Id must be rejected by the auth class
+        before any DB lookup. Exercises the ValueError/ValidationError
+        branch in ChannelApiKeyAuthentication, distinct from the
+        DoesNotExist branch covered by the unknown-channel test above."""
+        response = client.get(
+            MAILBOX_URL,
+            {"user_email": "a@b.com"},
+            HTTP_X_CHANNEL_ID="not-a-uuid",
+            HTTP_X_API_KEY="anything",
+        )
+        assert response.status_code == 401
+
     def test_user_email_wrong_scope_returns_403(self, client):
         channel, plaintext = _make_api_key_channel(
             scopes=(ChannelApiKeyScope.METRICS_READ.value,),
