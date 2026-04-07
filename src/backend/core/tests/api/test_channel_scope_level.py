@@ -5,7 +5,7 @@ scope_level=global row is exercised here. If the DB constraint is removed,
 these tests still catch escalation at the ORM layer. If the ORM layer is
 bypassed via a raw insert, the check constraint catches it.
 """
-# pylint: disable=import-outside-toplevel,missing-function-docstring
+# pylint: disable=import-outside-toplevel,missing-function-docstring,too-many-lines
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
@@ -157,7 +157,7 @@ class TestScopeLevelCleanValidation:
 
 
 @pytest.mark.django_db
-class TestChannelViewSetIsolation:
+class TestChannelViewSetIsolation:  # pylint: disable=too-many-public-methods
     """The existing mailbox-nested ChannelViewSet only sees mailbox-scope rows
     and only creates mailbox-scope rows — no matter what the client sends."""
 
@@ -356,6 +356,335 @@ class TestChannelViewSetIsolation:
         assert response.status_code == 201, response.content
         assert "id" in response.data
         assert "channel_id" not in response.data  # no duplicate field
+
+    # ----- PATCH escalation: scope validation must run on partial updates -- #
+
+    def _detail_url(self, mailbox, channel):
+        return reverse(
+            "mailbox-channels-detail",
+            kwargs={"mailbox_id": mailbox.id, "pk": channel.id},
+        )
+
+    def _create_with_send_scope(self, api_client, mailbox):
+        from core.enums import MailboxRoleChoices
+
+        admin = UserFactory()
+        MailboxAccessFactory(mailbox=mailbox, user=admin, role=MailboxRoleChoices.ADMIN)
+        api_client.force_authenticate(user=admin)
+        response = api_client.post(
+            self._url_list(mailbox),
+            data={
+                "name": "legit",
+                "type": "api_key",
+                "settings": {"scopes": ["messages:send"]},
+            },
+            format="json",
+        )
+        assert response.status_code == 201, response.content
+        return models.Channel.objects.get(pk=response.data["id"])
+
+    def test_patch_cannot_grant_global_only_scope(self, api_client):
+        """PATCH escalation: a mailbox admin cannot grant a global-only
+        scope by PATCHing settings on an existing api_key channel.
+
+        This is the airtight test for the bug where
+        ``_validate_api_key_scopes`` returned early when ``type`` wasn't in
+        attrs (the typical PATCH shape), letting the new scopes through
+        unvalidated."""
+        mailbox = MailboxFactory()
+        channel = self._create_with_send_scope(api_client, mailbox)
+
+        response = api_client.patch(
+            self._detail_url(mailbox, channel),
+            data={"settings": {"scopes": ["maildomains:create"]}},
+            format="json",
+        )
+        assert response.status_code == 400, response.content
+
+        # And the row was NOT mutated.
+        channel.refresh_from_db()
+        assert channel.settings["scopes"] == ["messages:send"]
+
+    def test_patch_cannot_inject_unknown_scope(self, api_client):
+        """PATCH must also reject scope strings outside ChannelApiKeyScope."""
+        mailbox = MailboxFactory()
+        channel = self._create_with_send_scope(api_client, mailbox)
+
+        response = api_client.patch(
+            self._detail_url(mailbox, channel),
+            data={"settings": {"scopes": ["messages:send", "evil:do_anything"]}},
+            format="json",
+        )
+        assert response.status_code == 400, response.content
+        channel.refresh_from_db()
+        assert channel.settings["scopes"] == ["messages:send"]
+
+    def test_patch_cannot_empty_scopes(self, api_client):
+        """PATCH replacing settings to one without scopes must fail —
+        api_key channels require settings.scopes."""
+        mailbox = MailboxFactory()
+        channel = self._create_with_send_scope(api_client, mailbox)
+
+        response = api_client.patch(
+            self._detail_url(mailbox, channel),
+            data={"settings": {"expires_at": "2030-01-01T00:00:00Z"}},
+            format="json",
+        )
+        assert response.status_code == 400, response.content
+        channel.refresh_from_db()
+        # Original scopes preserved.
+        assert channel.settings["scopes"] == ["messages:send"]
+
+    def test_patch_legitimate_scope_change_works(self, api_client):
+        """The fix must NOT break legit narrowing PATCHes — a mailbox
+        admin can still PATCH from one valid mailbox-allowed scope set
+        to another."""
+        mailbox = MailboxFactory()
+        channel = self._create_with_send_scope(api_client, mailbox)
+
+        response = api_client.patch(
+            self._detail_url(mailbox, channel),
+            data={
+                "settings": {
+                    "scopes": ["messages:send", "mailboxes:read"],
+                }
+            },
+            format="json",
+        )
+        # mailboxes:read isn't in CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY, so
+        # it's grantable on a mailbox-scope channel.
+        assert response.status_code == 200, response.content
+        channel.refresh_from_db()
+        assert sorted(channel.settings["scopes"]) == sorted(
+            ["messages:send", "mailboxes:read"]
+        )
+
+    def test_patch_rename_does_not_require_settings(self, api_client):
+        """A pure rename PATCH must NOT trip the api_key validators."""
+        mailbox = MailboxFactory()
+        channel = self._create_with_send_scope(api_client, mailbox)
+
+        response = api_client.patch(
+            self._detail_url(mailbox, channel),
+            data={"name": "renamed"},
+            format="json",
+        )
+        assert response.status_code == 200, response.content
+        channel.refresh_from_db()
+        assert channel.name == "renamed"
+        assert channel.settings["scopes"] == ["messages:send"]
+
+    # ----- Regression locks: read-only fields stay read-only on PATCH ----- #
+    #
+    # These tests assert behaviors that are CURRENTLY airtight (read-only
+    # fields, the constraint, etc.). They exist so that any future change
+    # that accidentally makes one of these writable trips a failing test.
+    # Do NOT delete these as "redundant" — they are the regression net.
+
+    def test_patch_scope_level_in_body_is_ignored(self, api_client):
+        """PATCH cannot escalate scope_level via the body."""
+        mailbox = MailboxFactory()
+        channel = self._create_with_send_scope(api_client, mailbox)
+
+        response = api_client.patch(
+            self._detail_url(mailbox, channel),
+            data={"scope_level": "global"},
+            format="json",
+        )
+        assert response.status_code == 200, response.content
+        channel.refresh_from_db()
+        assert channel.scope_level == ChannelScopeLevel.MAILBOX
+
+    def test_patch_mailbox_in_body_is_ignored(self, api_client):
+        """PATCH cannot rebind a channel to a different mailbox."""
+        mailbox = MailboxFactory()
+        other_mailbox = MailboxFactory()
+        channel = self._create_with_send_scope(api_client, mailbox)
+
+        response = api_client.patch(
+            self._detail_url(mailbox, channel),
+            data={"mailbox": str(other_mailbox.id)},
+            format="json",
+        )
+        assert response.status_code == 200, response.content
+        channel.refresh_from_db()
+        assert channel.mailbox_id == mailbox.id
+
+    def test_patch_maildomain_in_body_is_ignored(self, api_client):
+        """PATCH cannot rebind a channel to a different maildomain."""
+        from core import factories
+
+        mailbox = MailboxFactory()
+        unrelated_domain = factories.MailDomainFactory()
+        channel = self._create_with_send_scope(api_client, mailbox)
+
+        response = api_client.patch(
+            self._detail_url(mailbox, channel),
+            data={"maildomain": str(unrelated_domain.id)},
+            format="json",
+        )
+        assert response.status_code == 200, response.content
+        channel.refresh_from_db()
+        assert channel.maildomain_id is None
+
+    def test_patch_user_in_body_is_ignored(self, api_client):
+        """PATCH cannot rebind the creator/target user via the body."""
+        mailbox = MailboxFactory()
+        channel = self._create_with_send_scope(api_client, mailbox)
+        original_user_id = channel.user_id
+        attacker = UserFactory()
+
+        response = api_client.patch(
+            self._detail_url(mailbox, channel),
+            data={"user": str(attacker.id)},
+            format="json",
+        )
+        assert response.status_code == 200, response.content
+        channel.refresh_from_db()
+        assert channel.user_id == original_user_id
+
+    def test_create_encrypted_settings_in_body_is_ignored(self, api_client):
+        """``encrypted_settings`` is not in ChannelSerializer.fields, so the
+        whole top-level field is silently dropped — the row's
+        encrypted_settings is what the server generated, never what the
+        caller sent."""
+        from core.enums import MailboxRoleChoices
+
+        user = UserFactory()
+        mailbox = MailboxFactory()
+        MailboxAccessFactory(mailbox=mailbox, user=user, role=MailboxRoleChoices.ADMIN)
+        api_client.force_authenticate(user=user)
+
+        response = api_client.post(
+            self._url_list(mailbox),
+            data={
+                "name": "ess",
+                "type": "api_key",
+                "settings": {"scopes": ["messages:send"]},
+                "encrypted_settings": {"api_key_hashes": ["evil" * 16]},
+            },
+            format="json",
+        )
+        assert response.status_code == 201, response.content
+        created = models.Channel.objects.get(pk=response.data["id"])
+        # The server-generated hash is what landed; the caller's "evil"
+        # injection was dropped because encrypted_settings isn't a field.
+        assert created.encrypted_settings["api_key_hashes"] != ["evil" * 16]
+
+    def test_patch_encrypted_settings_in_body_is_ignored(self, api_client):
+        """Same protection on PATCH."""
+        mailbox = MailboxFactory()
+        channel = self._create_with_send_scope(api_client, mailbox)
+        original_hashes = list(channel.encrypted_settings["api_key_hashes"])
+
+        response = api_client.patch(
+            self._detail_url(mailbox, channel),
+            data={"encrypted_settings": {"api_key_hashes": ["evil" * 16]}},
+            format="json",
+        )
+        assert response.status_code == 200, response.content
+        channel.refresh_from_db()
+        assert channel.encrypted_settings["api_key_hashes"] == original_hashes
+
+    # ----- Real holes that need fixing -------------------------------------- #
+
+    def test_patch_settings_with_api_key_hashes_is_rejected(self, api_client):
+        """A mailbox admin must NOT be able to inject their own api_key_hash
+        by smuggling it into ``settings``. The serializer's
+        _move_sensitive_settings hook would otherwise extract it from
+        settings and write it into encrypted_settings, letting the attacker
+        choose the hash that authenticates the channel."""
+        import hashlib
+
+        mailbox = MailboxFactory()
+        channel = self._create_with_send_scope(api_client, mailbox)
+        legit_hashes = list(channel.encrypted_settings["api_key_hashes"])
+        evil_plaintext = "evil_known_secret"
+        evil_hash = hashlib.sha256(evil_plaintext.encode()).hexdigest()
+
+        response = api_client.patch(
+            self._detail_url(mailbox, channel),
+            data={
+                "settings": {
+                    "scopes": ["messages:send"],
+                    "api_key_hashes": [evil_hash],
+                }
+            },
+            format="json",
+        )
+        assert response.status_code == 400, response.content
+        channel.refresh_from_db()
+        # The attacker's hash MUST NOT have been written to encrypted_settings.
+        assert channel.encrypted_settings["api_key_hashes"] == legit_hashes
+
+    def test_create_settings_with_api_key_hashes_is_rejected(self, api_client):
+        """Same defense on CREATE — even though _generate_api_key_material
+        currently overwrites the hash, the request itself should be
+        rejected so the caller's intent is loud, not silently dropped."""
+        from core.enums import MailboxRoleChoices
+
+        user = UserFactory()
+        mailbox = MailboxFactory()
+        MailboxAccessFactory(mailbox=mailbox, user=user, role=MailboxRoleChoices.ADMIN)
+        api_client.force_authenticate(user=user)
+
+        response = api_client.post(
+            self._url_list(mailbox),
+            data={
+                "name": "evil-create",
+                "type": "api_key",
+                "settings": {
+                    "scopes": ["messages:send"],
+                    "api_key_hashes": ["a" * 64],
+                },
+            },
+            format="json",
+        )
+        assert response.status_code == 400, response.content
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["api_key", "widget"])
+    def test_patch_type_is_immutable(self, api_client):
+        """The ``type`` of an existing channel is immutable from DRF.
+
+        Allowing PATCH ``type=widget → api_key`` would let a mailbox admin
+        sneak around the create-time scope checks; allowing the reverse
+        would let them strand a row whose type the auth class no longer
+        recognizes. We override FEATURE_MAILBOX_ADMIN_CHANNELS to include
+        BOTH types so this test exercises type-mutability itself, not the
+        (separate) feature-flag allowlist check.
+
+        DRF's standard behavior for read-only fields is silent drop on
+        write — same as the other read-only FKs (mailbox, scope_level,
+        etc.). The PATCH succeeds with 200 but the type is unchanged.
+        """
+        mailbox = MailboxFactory()
+        channel = self._create_with_send_scope(api_client, mailbox)
+        assert channel.type == "api_key"
+
+        response = api_client.patch(
+            self._detail_url(mailbox, channel),
+            data={"type": "widget"},
+            format="json",
+        )
+        assert response.status_code == 200, response.content
+        channel.refresh_from_db()
+        assert channel.type == "api_key"
+
+    def test_patch_disallowed_type_in_body_is_silently_dropped(self, api_client):
+        """A PATCH with a type that isn't even in the allowlist still has
+        no effect — type is read-only on update, so DRF drops the field
+        silently regardless of whether the value would have been allowed."""
+        mailbox = MailboxFactory()
+        channel = self._create_with_send_scope(api_client, mailbox)
+
+        response = api_client.patch(
+            self._detail_url(mailbox, channel),
+            data={"type": "mta"},  # not in FEATURE_MAILBOX_ADMIN_CHANNELS
+            format="json",
+        )
+        assert response.status_code == 200, response.content
+        channel.refresh_from_db()
+        assert channel.type == "api_key"
 
 
 @pytest.mark.django_db

@@ -491,91 +491,50 @@ class TestChannelEncryptedSettings:
 
 
 @pytest.mark.django_db
-class TestChannelMoveSensitiveSettings:
-    """Test _move_sensitive_settings mechanism on ChannelSerializer."""
+class TestChannelReservedSettingsKeys:
+    """The serializer rejects callers that try to write reserved settings
+    keys (e.g. ``api_key_hashes``). Server-side generators write directly
+    to encrypted_settings, callers cannot influence its contents."""
 
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["custom_type"])
-    def test_sensitive_keys_moved_to_encrypted_on_create(
-        self, api_client, mailbox, monkeypatch
-    ):
-        """When ENCRYPTED_SETTINGS_KEYS is configured, matching keys are extracted."""
-        from core.api.serializers import ChannelSerializer
-
-        monkeypatch.setattr(
-            ChannelSerializer,
-            "ENCRYPTED_SETTINGS_KEYS",
-            {"custom_type": ["api_token"]},
-        )
-
+    def test_post_with_reserved_key_in_settings_is_rejected(self, api_client, mailbox):
+        """Smuggling api_key_hashes via settings is a 400."""
         url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
-        data = {
-            "name": "Custom Channel",
-            "type": "custom_type",
-            "settings": {"api_token": "tok_secret123", "public_url": "https://a.com"},
-        }
-
-        response = api_client.post(url, data, format="json")
-
-        assert response.status_code == status.HTTP_201_CREATED
-        # api_token should NOT be in the public settings response
-        assert "api_token" not in response.data["settings"]
-        assert response.data["settings"]["public_url"] == "https://a.com"
-
-        # Verify it was moved to encrypted_settings in DB
-        channel = models.Channel.objects.get(id=response.data["id"])
-        assert channel.encrypted_settings["api_token"] == "tok_secret123"
-        assert "api_token" not in channel.settings
-
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["custom_type"])
-    def test_sensitive_keys_moved_on_update(self, api_client, mailbox, monkeypatch):
-        """Sensitive keys are also extracted on update."""
-        from core.api.serializers import ChannelSerializer
-
-        monkeypatch.setattr(
-            ChannelSerializer,
-            "ENCRYPTED_SETTINGS_KEYS",
-            {"custom_type": ["api_token"]},
+        response = api_client.post(
+            url,
+            data={
+                "name": "Tries to inject a hash",
+                "type": "api_key",
+                "settings": {
+                    "scopes": ["messages:send"],
+                    "api_key_hashes": ["a" * 64],
+                },
+            },
+            format="json",
         )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-        channel = ChannelFactory(
-            mailbox=mailbox,
-            type="custom_type",
-            settings={"public_url": "https://old.com"},
-        )
-
-        url = reverse(
-            "mailbox-channels-detail",
-            kwargs={"mailbox_id": mailbox.id, "pk": channel.id},
-        )
-        data = {
-            "name": channel.name,
-            "type": "custom_type",
-            "settings": {"api_token": "new_secret", "public_url": "https://new.com"},
-        }
-
-        response = api_client.put(url, data, format="json")
-
-        assert response.status_code == status.HTTP_200_OK
-        assert "api_token" not in response.data["settings"]
-
-        channel.refresh_from_db()
-        assert channel.encrypted_settings["api_token"] == "new_secret"
-
-    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
-    def test_no_sensitive_keys_for_unconfigured_type(self, api_client, mailbox):
-        """Types not in ENCRYPTED_SETTINGS_KEYS keep all settings in plain settings."""
+    def test_unrelated_settings_keys_pass_through(self, api_client, mailbox):
+        """Non-reserved keys in settings (e.g. expires_at) flow through
+        the API as caller-supplied data — only the reserved list is locked
+        down."""
         url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
-        data = {
-            "name": "Plain Widget",
-            "type": "widget",
-            "settings": {"some_key": "some_value"},
-        }
-
-        response = api_client.post(url, data, format="json")
-
+        response = api_client.post(
+            url,
+            data={
+                "name": "Has expires_at",
+                "type": "api_key",
+                "settings": {
+                    "scopes": ["messages:send"],
+                    "expires_at": "2030-01-01T00:00:00Z",
+                },
+            },
+            format="json",
+        )
         assert response.status_code == status.HTTP_201_CREATED
-        assert response.data["settings"]["some_key"] == "some_value"
-
         channel = models.Channel.objects.get(id=response.data["id"])
-        assert channel.encrypted_settings == {}
-        assert channel.settings["some_key"] == "some_value"
+        assert channel.settings["expires_at"] == "2030-01-01T00:00:00Z"
+        # And api_key_hashes is what the server generated, not what the
+        # caller smuggled (the caller didn't smuggle anything here, but
+        # we still assert the encrypted_settings shape).
+        assert "api_key_hashes" in channel.encrypted_settings
+        assert "api_key_hashes" not in channel.settings

@@ -49,7 +49,7 @@ class TestChannelApiKeyAuth:
     """Direct edge-case coverage for the authentication class."""
 
     def test_missing_headers_returns_401(self, client):
-        """No headers at all → DRF returns 403 (permission check fails)."""
+        """No headers at all → DRF NotAuthenticated → 401."""
         response = client.post(SUBMIT_URL)
         assert response.status_code == 401
 

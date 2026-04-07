@@ -528,9 +528,9 @@ class IsGlobalChannelMixin:
             not isinstance(channel, models.Channel)
             or channel.scope_level != enums.ChannelScopeLevel.GLOBAL
         ):
-            raise exceptions.PermissionDenied(
-                "This endpoint requires a global-scope API key."
-            )
+            # Generic message — do not leak the scope_level requirement
+            # to the caller.
+            raise exceptions.PermissionDenied()
 
 
 class HasThreadEditAccess(IsAuthenticated):

@@ -647,19 +647,28 @@ class Channel(BaseModel):
     def mark_used(self, only_if_older_than_seconds: int = 300):
         """Throttled update of last_used_at.
 
-        Mirrors MailboxAccess.mark_accessed at models.py:759 — only persists
-        when the existing timestamp is older than the throttle window. Avoids
-        write amplification under bursty api_key/webhook traffic.
+        The throttle predicate is evaluated in the DB, not in Python:
+        ``filter(pk=..., Q(last_used_at < cutoff) | Q(last_used_at IS NULL))
+        .update(last_used_at=now)``. This means concurrent requests racing
+        on the same channel coalesce into a single UPDATE — only the first
+        one matches, the others see the freshly written timestamp and
+        affect zero rows. Filtering on ``self.last_used_at`` in Python
+        would not give that guarantee because each worker would see a
+        stale in-memory value and all of them would issue the UPDATE.
+
+        We deliberately go through ``filter().update()`` rather than
+        ``self.save()`` to skip full_clean() on global channels and to
+        avoid racing with other writers on adjacent fields.
         """
         now = timezone.now()
-        if self.last_used_at is None or self.last_used_at < now - timedelta(
-            seconds=only_if_older_than_seconds
-        ):
+        cutoff = now - timedelta(seconds=only_if_older_than_seconds)
+        rows_affected = (
+            Channel.objects.filter(pk=self.pk)
+            .filter(Q(last_used_at__lt=cutoff) | Q(last_used_at__isnull=True))
+            .update(last_used_at=now)
+        )
+        if rows_affected:
             self.last_used_at = now
-            # Use filter().update() rather than self.save() to avoid re-triggering
-            # full_clean() on global channels and to avoid racing with other
-            # writers on adjacent fields.
-            Channel.objects.filter(pk=self.pk).update(last_used_at=now)
 
 
 class Mailbox(BaseModel):
