@@ -491,12 +491,12 @@ class TestChannelEncryptedSettings:
 
 
 @pytest.mark.django_db
-@override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["api_key"])
 class TestChannelReservedSettingsKeys:
     """The serializer rejects callers that try to write reserved settings
     keys (e.g. ``api_key_hashes``). Server-side generators write directly
     to encrypted_settings, callers cannot influence its contents."""
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["api_key"])
     def test_post_with_reserved_key_in_settings_is_rejected(self, api_client, mailbox):
         """Smuggling api_key_hashes via settings is a 400."""
         url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
@@ -514,6 +514,7 @@ class TestChannelReservedSettingsKeys:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["api_key"])
     def test_unrelated_settings_keys_pass_through(self, api_client, mailbox):
         """Non-reserved keys in settings (e.g. expires_at) flow through
         the API as caller-supplied data — only the reserved list is locked
