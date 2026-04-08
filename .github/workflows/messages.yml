@@ -42,7 +42,7 @@ jobs:
       - name: Create msg-imports bucket
         run: make import-bucket
       - name: Run backend tests
-        run: make test-back
+        run: make test-back-parallel
 
   test-front:
     runs-on: ubuntu-latest
