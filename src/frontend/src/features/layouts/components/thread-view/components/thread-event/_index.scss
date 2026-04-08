@@ -49,6 +49,15 @@
     border-radius: var(--c--globals--spacings--3xs) var(--c--globals--spacings--base) var(--c--globals--spacings--base) var(--c--globals--spacings--base);
 }
 
+// Unread mention: a compact accessible badge (icon + text) sits in the
+// header, pushed to the right. Keeping the indicator on the header — not
+// on the bubble — avoids distracting from the message content itself.
+.thread-event__mention-badge {
+    margin-left: auto;
+    gap: var(--c--globals--spacings--4xs);
+    transition: opacity 0.2s ease;
+}
+
 // Condensed: consecutive IMs from same author within 2 min
 .thread-event--condensed {
     margin-top: calc(-1 * var(--c--globals--spacings--xs));

@@ -1,5 +1,5 @@
 import { useSearchParams } from "next/navigation";
-import { MAILBOX_FOLDERS } from "../../mailbox-panel/components/mailbox-list";
+import { findRootFolder } from "../../mailbox-panel/components/mailbox-list";
 import { useLabelsList } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useTranslation } from "react-i18next";
@@ -12,8 +12,8 @@ import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
 import useTrash from "@/features/message/use-trash";
 import useStarred from "@/features/message/use-starred";
-import { ThreadPanelFilter, THREAD_PANEL_FILTER_PARAMS } from "./thread-panel-filter";
-import { useThreadPanelFilters } from "../hooks/use-thread-panel-filters";
+import { ThreadPanelFilter } from "./thread-panel-filter";
+import { THREAD_PANEL_FILTER_PARAMS, useThreadPanelFilters } from "../hooks/use-thread-panel-filters";
 import { SelectionReadStatus, SelectionStarredStatus } from "@/features/providers/thread-selection";
 
 type ThreadPanelTitleProps = {
@@ -47,19 +47,18 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const isSentView = ViewHelper.isSentView();
     const isDraftsView = ViewHelper.isDraftsView();
 
-    const { hasActiveFilters, activeFilters } = useThreadPanelFilters();
-
-    const folderSearchParams = useMemo(() => {
-        const params = new URLSearchParams(searchParams.toString());
-        THREAD_PANEL_FILTER_PARAMS.forEach((param) => params.delete(param));
-        return params;
-    }, [searchParams]);
+    const { activeFilters } = useThreadPanelFilters();
 
     const title = useMemo(() => {
         if (searchParams.has('search')) return t('folder.search', { defaultValue: 'Search' });
         if (searchParams.has('label_slug')) return (labelsQuery.data?.data || []).find((label) => label.slug === searchParams.get('label_slug'))?.name;
-        return MAILBOX_FOLDERS().find((folder) => new URLSearchParams(folder.filter).toString() === folderSearchParams.toString())?.name;
-    }, [searchParams, folderSearchParams, labelsQuery.data?.data, selectedMailbox, t])
+        // Thread panel filters stack on top of the folder filter — strip them
+        // so the matching resolves to the underlying folder.
+        const folderParams = new URLSearchParams(searchParams.toString());
+        THREAD_PANEL_FILTER_PARAMS.forEach((param) => folderParams.delete(param));
+        const activeFolder = findRootFolder((folder) => new URLSearchParams(folder.filter).toString() === folderParams.toString());
+        return activeFolder?.name;
+    }, [searchParams, labelsQuery.data?.data, selectedMailbox, t])
 
     const handleSelectAllToggle = () => {
         if (isAllSelected) {
@@ -96,6 +95,18 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const unstarLabel = t('Unstar');
     const countLabel = useMemo(() => {
         if (isSearch) {
+            if (activeFilters.has_mention && activeFilters.has_unread && activeFilters.has_starred) {
+                return t('{{count}} unread starred results mentioning you', { count: threads?.count, defaultValue_one: '{{count}} unread starred result mentioning you' });
+            }
+            if (activeFilters.has_mention && activeFilters.has_unread) {
+                return t('{{count}} unread results mentioning you', { count: threads?.count, defaultValue_one: '{{count}} unread result mentioning you' });
+            }
+            if (activeFilters.has_mention && activeFilters.has_starred) {
+                return t('{{count}} starred results mentioning you', { count: threads?.count, defaultValue_one: '{{count}} starred result mentioning you' });
+            }
+            if (activeFilters.has_mention) {
+                return t('{{count}} results mentioning you', { count: threads?.count, defaultValue_one: '{{count}} result mentioning you' });
+            }
             if (activeFilters.has_unread && activeFilters.has_starred) {
                 return t('{{count}} unread starred results', { count: threads?.count, defaultValue_one: '{{count}} unread starred result' });
             }
@@ -108,6 +119,18 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
             return t('{{count}} results', { count: threads?.count, defaultValue_one: '{{count}} result' });
         }
         else {
+            if (activeFilters.has_mention && activeFilters.has_unread && activeFilters.has_starred) {
+                return t('{{count}} unread starred messages mentioning you', { count: threads?.count, defaultValue_one: '{{count}} unread starred message mentioning you' });
+            }
+            if (activeFilters.has_mention && activeFilters.has_unread) {
+                return t('{{count}} unread messages mentioning you', { count: threads?.count, defaultValue_one: '{{count}} unread message mentioning you' });
+            }
+            if (activeFilters.has_mention && activeFilters.has_starred) {
+                return t('{{count}} starred messages mentioning you', { count: threads?.count, defaultValue_one: '{{count}} starred message mentioning you' });
+            }
+            if (activeFilters.has_mention) {
+                return t('{{count}} messages mentioning you', { count: threads?.count, defaultValue_one: '{{count}} message mentioning you' });
+            }
             if (activeFilters.has_unread && activeFilters.has_starred) {
                 return t('{{count}} unread starred messages', { count: threads?.count, defaultValue_one: '{{count}} unread starred message' });
             }
@@ -119,7 +142,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
             }
             return t('{{count}} messages', { count: threads?.count, defaultValue_one: '{{count}} message' });
         }
-    }, [hasActiveFilters, activeFilters, isSearch, threads?.count, t]);
+    }, [activeFilters, isSearch, threads?.count, t]);
 
     return (
         <header className="thread-panel__header">
@@ -137,7 +160,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                         className="thread-panel__header--checkbox"
                     />
                 )}
-                <p className="thread-panel__header--count">
+                <p className="thread-panel__header--count" title={countLabel}>
                     {countLabel}
                 </p>
                 <div className="thread-panel__bar">

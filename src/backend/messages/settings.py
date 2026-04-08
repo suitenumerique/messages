@@ -120,6 +120,16 @@ class Base(Configuration):
         500, environ_name="MAX_RECIPIENTS_PER_MESSAGE", environ_prefix=None
     )
 
+    # Thread events
+    # Time window (in seconds) during which a ThreadEvent can be edited or
+    # deleted after creation. Set to 0 to disable the restriction and allow
+    # edits indefinitely.
+    MAX_THREAD_EVENT_EDIT_DELAY = values.PositiveIntegerValue(
+        60 * 60,  # 1 hour in seconds
+        environ_name="MAX_THREAD_EVENT_EDIT_DELAY",
+        environ_prefix=None,
+    )
+
     # Throttling - limits external recipients per mailbox/maildomain per time period
     # Format: "count/period" where period is minute, hour, or day. None to disable.
     THROTTLE_MAILBOX_OUTBOUND_EXTERNAL_RECIPIENTS = ThrottleRateValue(

@@ -28,6 +28,10 @@ export type ThreadsListParams = {
    */
   has_draft?: number;
   /**
+   * Filter threads with any mention (read or unread) for the current user (1=true, 0=false).
+   */
+  has_mention?: number;
+  /**
    * Filter threads that have messages (1=true, 0=false).
    */
   has_messages?: number;
@@ -47,6 +51,10 @@ export type ThreadsListParams = {
    * Filter threads with unread messages (1=true, 0=false). Requires mailbox_id.
    */
   has_unread?: number;
+  /**
+   * Filter threads with unread mentions for the current user (1=true, 0=false).
+   */
+  has_unread_mention?: number;
   /**
    * Filter threads that are spam (1=true, 0=false).
    */

@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import { TextLoader } from "@/features/ui/components/text-loader";
 import { useSearchParams } from "next/navigation";
+import { getMailboxThreadsListQueryKey } from "@/features/providers/mailbox";
 
 const SUMMARIZE_TOAST_ID = "summarize-toast";
 
@@ -33,11 +34,7 @@ export const ThreadSummary = ({
   // Build the cache key for the thread
   const threadQueryKey = useMemo(() => {
     if (!selectedMailboxId || !searchParams) return ["threads"];
-    const queryKey = ["threads", selectedMailboxId];
-    if (searchParams.get("search")) {
-      return [...queryKey, "search"];
-    }
-    return [...queryKey, searchParams.toString()];
+    return getMailboxThreadsListQueryKey(selectedMailboxId, searchParams);
   }, [selectedMailboxId, searchParams]);
 
   const queryClient = useQueryClient();

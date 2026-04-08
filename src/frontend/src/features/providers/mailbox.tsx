@@ -72,6 +72,81 @@ type MailboxContextType = {
 
 export const isThreadEvent = (item: TimelineItem | null): item is Extract<TimelineItem, { type: 'event' }> => item?.type === 'event';
 
+/**
+ * Canonical query key for the threads stats query.
+ *
+ * Single source of truth shared by:
+ *   - query definition sites (`useThreadsStatsRetrieve` call sites that
+ *     pass `queryParams` to scope the cache per filter/label)
+ *   - invalidation / optimistic-update sites that target the whole
+ *     per-mailbox stats subtree (omit `queryParams` for prefix matching)
+ *
+ * Keep in sync with the `invalidateThreadsStats` predicate, which relies
+ * on `queryParams` being the last entry to filter out `label_slug=*` keys.
+ */
+export const getThreadsStatsQueryKey = (
+    mailboxId: string | undefined,
+    queryParams?: string,
+) => {
+    const base = ['threads', 'stats', mailboxId];
+    return queryParams !== undefined ? [...base, queryParams] : base;
+};
+
+/** Minimal subset of URLSearchParams we read from. Accepts both
+ *  `URLSearchParams` and Next's `ReadonlyURLSearchParams`. */
+type ReadonlySearchParamsLike = {
+    get: (key: string) => string | null;
+    toString: () => string;
+};
+
+/**
+ * Query key prefix for the threads LIST query of a mailbox.
+ *
+ * Used for invalidation and for prefix-matching optimistic updates
+ * (`setQueriesData`) that should apply to every filter variant of
+ * the same mailbox (list, search, all filter combinations…) in one shot.
+ */
+export const getMailboxThreadsListQueryKeyPrefix = (mailboxId: string | undefined) =>
+    ['threads', mailboxId];
+
+/**
+ * Query key prefix for the SEARCH subtree of a mailbox's threads list.
+ *
+ * Matches every search variant of the mailbox (different filter combinations
+ * applied on top of a search term). Used by the search cleanup effect to
+ * purge or reset all search cache entries in one shot.
+ */
+export const getMailboxThreadsListSearchQueryKeyPrefix = (mailboxId: string | undefined) =>
+    [...getMailboxThreadsListQueryKeyPrefix(mailboxId), 'search'];
+
+/**
+ * Full query key for a threads LIST query, disambiguated by filter.
+ *
+ * Key shape: `['threads', mailboxId, bucket, otherParams]`
+ *   - `bucket`: `'search'` when a search term is active, `'list'` otherwise.
+ *     This lets us target the whole search subtree by prefix without
+ *     enumerating filter variants.
+ *   - `otherParams`: stringified searchParams **without** the `search` value.
+ *     Keeping non-search params in the key ensures that applying a filter
+ *     (e.g. `has_unread=1`) while in search mode spawns a distinct cache
+ *     entry instead of reusing stale pages from another filter variant.
+ *
+ * The search term itself is intentionally dropped from the key so that
+ * typing in the search box mutates a single, stable entry per filter
+ * combination — the cleanup effect then forces a refetch when the term
+ * actually changes, avoiding a trail of orphaned cache entries.
+ */
+export const getMailboxThreadsListQueryKey = (
+    mailboxId: string | undefined,
+    searchParams: ReadonlySearchParamsLike,
+) => {
+    const prefix = getMailboxThreadsListQueryKeyPrefix(mailboxId);
+    const normalized = new URLSearchParams(searchParams.toString());
+    const hasSearch = Boolean(normalized.get('search'));
+    if (hasSearch) normalized.delete('search');
+    return [...prefix, hasSearch ? 'search' : 'list', normalized.toString()];
+};
+
 const MailboxContext = createContext<MailboxContextType>({
     mailboxes: null,
     threads: null,
@@ -148,8 +223,10 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         if (!mailboxQuery.data?.data.length) return null;
 
         const mailboxId = router.query.mailboxId;
-        return mailboxQuery.data?.data.find((mailbox) => mailbox.id === mailboxId)
-            ?? mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.admin)
+        const matched = mailboxQuery.data.data.find((mailbox) => mailbox.id === mailboxId);
+        if (matched) return matched;
+
+        return mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.admin)
             ?? mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.editor)
             ?? mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.sender)
             ?? mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.viewer)
@@ -158,13 +235,11 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
 
     const previousUnreadThreadsCount = usePrevious(selectedMailbox?.count_unread_threads);
     const previousDeliveringCount = usePrevious(selectedMailbox?.count_delivering);
-    const threadQueryKey = useMemo(() => {
-        const queryKey = ['threads', selectedMailbox?.id];
-        if (searchParams.get('search')) {
-            return [...queryKey, 'search'];
-        }
-        return [...queryKey, searchParams.toString()];
-    }, [selectedMailbox?.id, searchParams]);
+    const previousUnreadMentionsCount = usePrevious(selectedMailbox?.count_unread_mentions);
+    const threadQueryKey = useMemo(
+        () => getMailboxThreadsListQueryKey(selectedMailbox?.id, searchParams),
+        [selectedMailbox?.id, searchParams]
+    );
     const threadsQuery = useThreadsListInfinite(undefined, {
         query: {
             enabled: !!selectedMailbox,
@@ -294,6 +369,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         return flattenThreads?.results.find((thread) => thread.id === threadId) ?? null;
     }, [router.query.threadId, flattenThreads])
     const previousSelectedThreadMessagesCount = usePrevious(selectedThread?.messages.length);
+    const previousSelectedThreadEventsCount = usePrevious(selectedThread?.events_count);
 
     const messagesQuery = useMessagesList({
         query: {
@@ -379,7 +455,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         readAt: string | null,
     ) => {
         queryClient.setQueriesData<InfiniteData<threadsListResponse>>(
-            { queryKey: ['threads', mailboxId] },
+            { queryKey: getMailboxThreadsListQueryKeyPrefix(mailboxId) },
             (oldData) => {
                 if (!oldData) return oldData;
                 return {
@@ -419,7 +495,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         starredAt: string | null,
     ) => {
         queryClient.setQueriesData<InfiniteData<threadsListResponse>>(
-            { queryKey: ['threads', mailboxId] },
+            { queryKey: getMailboxThreadsListQueryKeyPrefix(mailboxId) },
             (oldData) => {
                 if (!oldData) return oldData;
                 return {
@@ -499,7 +575,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             (source?.metadata.threadIds ?? []).forEach(id =>
                 optimisticThreadIdsRef.current.delete(id)
             );
-            await queryClient.invalidateQueries({ queryKey: ['threads', selectedMailbox?.id] });
+            await queryClient.invalidateQueries({ queryKey: getMailboxThreadsListQueryKeyPrefix(selectedMailbox?.id) });
         }
 
         if (selectedThread) {
@@ -515,7 +591,12 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
 
     const invalidateThreadsStats = async () => {
         await queryClient.invalidateQueries({
-            queryKey: ['threads', 'stats', selectedMailbox?.id],
+            queryKey: getThreadsStatsQueryKey(selectedMailbox?.id),
+            // Exclude per-label stats queries (`label_slug=…`) from the
+            // fan-out: a global invalidation would otherwise trigger one
+            // re-fetch per label in the sidebar, which is wasteful. Label
+            // counts stay fresh via their own targeted refetch paths
+            // (label mutations) and by the mailbox polling loop.
             predicate: ({ queryKey }) => !(queryKey[queryKey.length - 1] as string).startsWith('label_slug=')
         });
     }
@@ -613,7 +694,8 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         }
     }, [flattenThreads]);
 
-    // Invalidate the threads query when mailbox stats change (unread messages or delivering count)
+    // Invalidate the threads query when mailbox stats change (unread messages,
+    // delivering count or unread mentions)
     useEffect(() => {
         if (!selectedMailbox) return;
 
@@ -625,11 +707,15 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             previousDeliveringCount !== undefined &&
             previousDeliveringCount !== selectedMailbox.count_delivering;
 
-        if (hasUnreadCountChanged || hasDeliveringCountChanged) {
+        const hasUnreadMentionsCountChanged =
+            previousUnreadMentionsCount !== undefined &&
+            previousUnreadMentionsCount !== selectedMailbox.count_unread_mentions;
+
+        if (hasUnreadCountChanged || hasDeliveringCountChanged || hasUnreadMentionsCountChanged) {
             invalidateThreadsStats();
-            queryClient.invalidateQueries({ queryKey: ['threads', selectedMailbox?.id] });
+            queryClient.invalidateQueries({ queryKey: getMailboxThreadsListQueryKeyPrefix(selectedMailbox?.id) });
         }
-    }, [selectedMailbox?.count_unread_threads, selectedMailbox?.count_delivering]);
+    }, [selectedMailbox?.count_unread_threads, selectedMailbox?.count_delivering, selectedMailbox?.count_unread_mentions]);
 
     // Invalidate the thread messages query to refresh the thread messages when there is a new message
     useEffect(() => {
@@ -638,6 +724,15 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             invalidateThreadMessages();
         }
     }, [selectedThread?.messages.length]);
+
+    // Invalidate the thread events query to refresh the thread events when a new
+    // event (e.g. a mention) is added to the currently open thread.
+    useEffect(() => {
+        if (!selectedThread || previousSelectedThreadEventsCount === undefined) return;
+        if (previousSelectedThreadEventsCount < (selectedThread?.events_count ?? 0)) {
+            invalidateThreadEvents();
+        }
+    }, [selectedThread?.events_count]);
 
     // Unselect the thread when it no longer has any messages (e.g. after
     // sending the only draft in the thread).
@@ -660,16 +755,20 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         const currentSearch = searchParams.get('search');
 
         if (previousSearch && !currentSearch) {
-            // Exiting search mode: purge cached search results so re-entering
-            // search doesn't briefly flash stale results from the previous query.
+            // Exiting search mode: purge every cached search variant so
+            // re-entering search doesn't briefly flash stale results from
+            // the previous query (prefix match covers all filter variants).
             queryClient.removeQueries({
-                queryKey: ['threads', selectedMailbox?.id, 'search'],
-                exact: true,
+                queryKey: getMailboxThreadsListSearchQueryKeyPrefix(selectedMailbox?.id),
             });
         } else if (previousSearch && currentSearch && currentSearch !== previousSearch) {
-            // Search term changed while already in search mode:
-            // reset the query to force a refetch with the new params.
-            queryClient.resetQueries({ queryKey: ['threads', selectedMailbox?.id, 'search'] });
+            // Search term changed while already in search mode: the query key
+            // intentionally omits the search term so React Query would reuse
+            // the cache — reset every search variant to force a refetch with
+            // the new term.
+            queryClient.resetQueries({
+                queryKey: getMailboxThreadsListSearchQueryKeyPrefix(selectedMailbox?.id),
+            });
         }
 
         unselectThread();

@@ -48,6 +48,8 @@ from core.enums import (
     ThreadAccessRoleChoices,
     ThreadEventTypeChoices,
     UserAbilities,
+    thread_event_type_choices,
+    user_event_type_choices,
 )
 from core.mda.rfc5322 import EmailParseError, parse_email_message
 from core.mda.signing import generate_dkim_key as _generate_dkim_key
@@ -1567,7 +1569,7 @@ class ThreadEvent(BaseModel):
     type = models.CharField(
         "type",
         max_length=36,
-        choices=ThreadEventTypeChoices.choices,
+        choices=thread_event_type_choices,
     )
     channel = models.ForeignKey(
         "Channel",
@@ -1613,6 +1615,88 @@ class ThreadEvent(BaseModel):
             except jsonschema.ValidationError as exception:
                 raise ValidationError({"data": exception.message}) from exception
         super().clean()
+
+    def is_editable(self):
+        """Return whether the event can still be edited or deleted.
+
+        The time window is controlled by ``settings.MAX_THREAD_EVENT_EDIT_DELAY``
+        (in seconds). A value of 0 disables the restriction.
+        """
+        delay = settings.MAX_THREAD_EVENT_EDIT_DELAY
+        if not delay:
+            return True
+        return timezone.now() - self.created_at <= timedelta(seconds=delay)
+
+
+class UserEvent(BaseModel):
+    """User event model to track user-specific events like mentions and assignments.
+
+    Semantics: a UserEvent is a *global* notification for the (user, thread)
+    pair. It is intentionally **not** scoped to a specific mailbox: a user who
+    accesses the same thread through multiple mailboxes sees the notification
+    in each of them, because the notification targets the user, not a given
+    access path. This is why there is no FK to ``Mailbox`` / ``ThreadAccess``.
+
+    Any future ``UserEventTypeChoices`` that would carry a mailbox-specific
+    context (e.g. quota or delivery failure on a given BAL) does **not** fit
+    this model as-is and should either introduce nullable discriminators keyed
+    on ``type``, or live in a separate model.
+
+    Note: ``thread`` is denormalized from ``thread_event.thread`` so that the
+    ``Exists(...)`` annotations used by ThreadViewSet.get_queryset() can filter
+    on the thread FK directly, avoiding an extra JOIN on every thread list.
+    """
+
+    user = models.ForeignKey(
+        "User",
+        on_delete=models.CASCADE,
+        related_name="user_events",
+    )
+    thread = models.ForeignKey(
+        "Thread",
+        on_delete=models.CASCADE,
+        related_name="user_events",
+    )
+    thread_event = models.ForeignKey(
+        "ThreadEvent",
+        on_delete=models.CASCADE,
+        related_name="user_events",
+    )
+    type = models.CharField(
+        "type",
+        max_length=36,
+        choices=user_event_type_choices,
+    )
+    read_at = models.DateTimeField(
+        "read at",
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        db_table = "messages_userevent"
+        verbose_name = "user event"
+        verbose_name_plural = "user events"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "thread_event", "type"],
+                name="usrevt_user_event_type_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["user", "type", "read_at"],
+                name="usrevt_user_type_read",
+            ),
+            models.Index(
+                fields=["thread", "type"],
+                name="usrevt_thread_type",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} - {self.type} - {self.thread} - {self.created_at}"
 
 
 class Contact(BaseModel):

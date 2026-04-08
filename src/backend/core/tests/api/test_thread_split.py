@@ -19,10 +19,12 @@ from core.factories import (
     MailboxFactory,
     MessageFactory,
     ThreadAccessFactory,
+    ThreadEventFactory,
     ThreadFactory,
+    UserEventFactory,
     UserFactory,
 )
-from core.models import Thread, ThreadAccess
+from core.models import Thread, ThreadAccess, ThreadEvent, UserEvent
 
 pytestmark = pytest.mark.django_db
 
@@ -645,3 +647,167 @@ def test_split_thread_returns_new_thread_data(
     assert "subject" in response.data
     assert "messages" in response.data
     assert "accesses" in response.data
+
+
+# --- ThreadEvent / UserEvent split tests ---
+
+
+def _force_event_created_at(event, created_at):
+    """Bypass ``auto_now_add`` to pin a ThreadEvent at a specific timestamp."""
+    ThreadEvent.objects.filter(pk=event.pk).update(created_at=created_at)
+    event.refresh_from_db()
+
+
+@patch("core.signals.reindex_thread_task")
+@patch("core.signals.index_message_task")
+def test_split_thread_moves_free_event_after_split_point(
+    _mock_index_msg, _mock_reindex_thread, api_client
+):
+    """A ThreadEvent without a message FK created at or after the split point
+    must follow the new thread, symmetric with how messages are split."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+
+    mailbox = MailboxFactory()
+    thread, messages = _create_thread_with_messages(mailbox, count=3)
+    _setup_editor_access(user, mailbox, thread)
+
+    # Free event posted after messages[1] (the split point)
+    event_after = ThreadEventFactory(thread=thread, author=user, message=None)
+    _force_event_created_at(event_after, messages[1].created_at + timedelta(seconds=30))
+    # Free event posted before the split point — must stay on the old thread.
+    # NOTE: ``_create_thread_with_messages`` doesn't bypass ``auto_now_add`` so
+    # all messages[*].created_at are within microseconds of each other. We
+    # anchor offsets on messages[1].created_at (the split point) to guarantee
+    # strict ordering.
+    event_before = ThreadEventFactory(thread=thread, author=user, message=None)
+    _force_event_created_at(
+        event_before, messages[1].created_at - timedelta(seconds=30)
+    )
+
+    url = _get_split_url(thread.id)
+    response = api_client.post(url, {"message_id": str(messages[1].id)})
+    assert response.status_code == status.HTTP_201_CREATED
+    new_thread_id = response.data["id"]
+
+    event_after.refresh_from_db()
+    event_before.refresh_from_db()
+    assert str(event_after.thread_id) == new_thread_id
+    assert event_before.thread_id == thread.id
+
+
+@patch("core.signals.reindex_thread_task")
+@patch("core.signals.index_message_task")
+def test_split_thread_moves_event_attached_to_moved_message(
+    _mock_index_msg, _mock_reindex_thread, api_client
+):
+    """A ThreadEvent attached to a moved message must follow its message, even
+    if its own created_at is earlier than the split point."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+
+    mailbox = MailboxFactory()
+    thread, messages = _create_thread_with_messages(mailbox, count=3)
+    _setup_editor_access(user, mailbox, thread)
+
+    # Event attached to the split message itself, with a created_at BEFORE
+    # the split point — the FK must win over the timestamp.
+    event_on_moved = ThreadEventFactory(thread=thread, author=user, message=messages[1])
+    _force_event_created_at(event_on_moved, messages[0].created_at - timedelta(hours=1))
+    # Event attached to a message that stays — must not move.
+    event_on_staying = ThreadEventFactory(
+        thread=thread, author=user, message=messages[0]
+    )
+    _force_event_created_at(
+        event_on_staying, messages[2].created_at + timedelta(hours=1)
+    )
+
+    url = _get_split_url(thread.id)
+    response = api_client.post(url, {"message_id": str(messages[1].id)})
+    assert response.status_code == status.HTTP_201_CREATED
+    new_thread_id = response.data["id"]
+
+    event_on_moved.refresh_from_db()
+    event_on_staying.refresh_from_db()
+    assert str(event_on_moved.thread_id) == new_thread_id
+    assert event_on_staying.thread_id == thread.id
+
+
+@patch("core.signals.reindex_thread_task")
+@patch("core.signals.index_message_task")
+def test_split_thread_moves_user_events_with_their_thread_event(
+    _mock_index_msg, _mock_reindex_thread, api_client
+):
+    """UserEvent.thread is denormalized from thread_event.thread. When an
+    event is moved, its UserEvents must be updated to keep the invariant."""
+    user = UserFactory()
+    mentioned = UserFactory()
+    api_client.force_authenticate(user=user)
+
+    mailbox = MailboxFactory()
+    thread, messages = _create_thread_with_messages(mailbox, count=3)
+    _setup_editor_access(user, mailbox, thread)
+
+    event_after = ThreadEventFactory(thread=thread, author=user, message=None)
+    _force_event_created_at(event_after, messages[1].created_at + timedelta(seconds=30))
+    mention_after = UserEventFactory(
+        user=mentioned, thread=thread, thread_event=event_after
+    )
+
+    event_before = ThreadEventFactory(thread=thread, author=user, message=None)
+    _force_event_created_at(
+        event_before, messages[1].created_at - timedelta(seconds=30)
+    )
+    mention_before = UserEventFactory(
+        user=mentioned, thread=thread, thread_event=event_before
+    )
+
+    url = _get_split_url(thread.id)
+    response = api_client.post(url, {"message_id": str(messages[1].id)})
+    assert response.status_code == status.HTTP_201_CREATED
+    new_thread_id = response.data["id"]
+
+    mention_after.refresh_from_db()
+    mention_before.refresh_from_db()
+    assert str(mention_after.thread_id) == new_thread_id
+    assert mention_before.thread_id == thread.id
+
+    # Invariant: every UserEvent.thread matches its thread_event.thread.
+    for ue in UserEvent.objects.all():
+        assert ue.thread_id == ue.thread_event.thread_id
+
+
+@patch("core.signals.reindex_thread_task")
+@patch("core.signals.index_message_task")
+def test_split_thread_events_are_counted_on_new_thread(
+    _mock_index_msg, _mock_reindex_thread, api_client
+):
+    """After split, events must be distributed so that counts add up on both
+    threads — guards against a regression where events would stay on the old
+    thread or be duplicated."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+
+    mailbox = MailboxFactory()
+    thread, messages = _create_thread_with_messages(mailbox, count=3)
+    _setup_editor_access(user, mailbox, thread)
+
+    # Two events before split, three after.
+    for i in range(2):
+        event = ThreadEventFactory(thread=thread, author=user, message=None)
+        _force_event_created_at(
+            event, messages[1].created_at - timedelta(seconds=i + 1)
+        )
+    for i in range(3):
+        event = ThreadEventFactory(thread=thread, author=user, message=None)
+        _force_event_created_at(
+            event, messages[1].created_at + timedelta(seconds=i + 1)
+        )
+
+    url = _get_split_url(thread.id)
+    response = api_client.post(url, {"message_id": str(messages[1].id)})
+    assert response.status_code == status.HTTP_201_CREATED
+    new_thread_id = response.data["id"]
+
+    assert ThreadEvent.objects.filter(thread=thread).count() == 2
+    assert ThreadEvent.objects.filter(thread_id=new_thread_id).count() == 3

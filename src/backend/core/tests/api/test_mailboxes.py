@@ -119,6 +119,7 @@ class TestMailboxViewSet:
         assert response.data[0]["count_unread_threads"] == 1
         assert response.data[0]["count_threads"] == 2
         assert response.data[0]["count_delivering"] == 1
+        assert response.data[0]["count_unread_mentions"] == 0
 
         assert response.data[1]["id"] == str(user_mailbox1.id)
         assert response.data[1]["email"] == str(user_mailbox1)
@@ -127,6 +128,7 @@ class TestMailboxViewSet:
         assert response.data[1]["count_unread_threads"] == 1
         assert response.data[1]["count_threads"] == 1
         assert response.data[1]["count_delivering"] == 1
+        assert response.data[1]["count_unread_mentions"] == 0
 
     def test_list_is_identity_false(self):
         """A mailbox that is not an identity should return is_identity=False."""
@@ -342,6 +344,114 @@ class TestMailboxViewSet:
         assert response.data["count_unread_threads"] == 1
         assert response.data["count_threads"] == 1
         assert response.data["count_delivering"] == 1
+        assert response.data["count_unread_mentions"] == 0
+
+    def test_list_count_unread_mentions(self):
+        """count_unread_mentions should count distinct threads with an active
+        unread MENTION UserEvent for the current user, scoped per mailbox."""
+        user = factories.UserFactory()
+        other_user = factories.UserFactory()
+
+        mailbox_a = factories.MailboxFactory()
+        mailbox_b = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox_a, user=user, role=models.MailboxRoleChoices.EDITOR
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox_b, user=user, role=models.MailboxRoleChoices.EDITOR
+        )
+
+        # Thread in mailbox_a with one unread mention for `user`
+        thread_a1 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_a,
+            thread=thread_a1,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        event_a1 = factories.ThreadEventFactory(thread=thread_a1, author=other_user)
+        factories.UserEventFactory(
+            user=user,
+            thread=thread_a1,
+            thread_event=event_a1,
+            type=enums.UserEventTypeChoices.MENTION,
+        )
+
+        # Thread in mailbox_a with two unread mentions for `user` — still counted once
+        thread_a2 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_a,
+            thread=thread_a2,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        event_a2a = factories.ThreadEventFactory(thread=thread_a2, author=other_user)
+        event_a2b = factories.ThreadEventFactory(thread=thread_a2, author=other_user)
+        factories.UserEventFactory(
+            user=user,
+            thread=thread_a2,
+            thread_event=event_a2a,
+            type=enums.UserEventTypeChoices.MENTION,
+        )
+        factories.UserEventFactory(
+            user=user,
+            thread=thread_a2,
+            thread_event=event_a2b,
+            type=enums.UserEventTypeChoices.MENTION,
+        )
+
+        # Thread in mailbox_a with a mention already read — must be excluded
+        thread_a3 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_a,
+            thread=thread_a3,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        event_a3 = factories.ThreadEventFactory(thread=thread_a3, author=other_user)
+        factories.UserEventFactory(
+            user=user,
+            thread=thread_a3,
+            thread_event=event_a3,
+            type=enums.UserEventTypeChoices.MENTION,
+            read_at=timezone.now(),
+        )
+
+        # Thread in mailbox_a mentioning someone else — must be excluded
+        thread_a5 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_a,
+            thread=thread_a5,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        event_a5 = factories.ThreadEventFactory(thread=thread_a5, author=user)
+        factories.UserEventFactory(
+            user=other_user,
+            thread=thread_a5,
+            thread_event=event_a5,
+            type=enums.UserEventTypeChoices.MENTION,
+        )
+
+        # Thread in mailbox_b with one unread mention — scoping check
+        thread_b1 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_b,
+            thread=thread_b1,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        event_b1 = factories.ThreadEventFactory(thread=thread_b1, author=other_user)
+        factories.UserEventFactory(
+            user=user,
+            thread=thread_b1,
+            thread_event=event_b1,
+            type=enums.UserEventTypeChoices.MENTION,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("mailboxes-list"))
+        assert response.status_code == status.HTTP_200_OK
+
+        by_id = {m["id"]: m for m in response.data}
+        assert by_id[str(mailbox_a.id)]["count_unread_mentions"] == 2
+        assert by_id[str(mailbox_b.id)]["count_unread_mentions"] == 1
 
     def test_retrieve_mailbox_unauthorized(self):
         """Test that users cannot retrieve mailboxes they don't have access to."""

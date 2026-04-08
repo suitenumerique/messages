@@ -1,4 +1,4 @@
-import { MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
+import { ALL_MESSAGES_FOLDER, MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
 import { SearchHelper } from "@/features/utils/search-helper";
 import { Label } from "@gouvfr-lasuite/ui-kit";
 import { Button, Checkbox, Input, Select } from "@gouvfr-lasuite/cunningham-react";
@@ -74,7 +74,7 @@ export const SearchFiltersForm = ({ query, onChange }: SearchFiltersFormProps) =
                 value={parsedQuery.in as string ?? 'all_messages'}
                 showLabelWhenSelected={false}
                 onChange={handleChange}
-                options={MAILBOX_FOLDERS().filter((folder) => folder.searchable).map((folder) => ({
+                options={[ALL_MESSAGES_FOLDER(), ...MAILBOX_FOLDERS().filter((folder) => folder.searchable)].map((folder) => ({
                     label: t(folder.name),
                     render: () => <FolderOption label={t(folder.name)} icon={folder.icon} />,
                     value: folder.id

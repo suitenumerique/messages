@@ -1,6 +1,6 @@
 import { TreeLabel, ThreadsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useThreadsStatsRetrieve, ThreadsStatsRetrieve200, useLabelsAddThreadsCreate, useLabelsRemoveThreadsCreate, useLabelsPartialUpdate } from "@/features/api/gen";
-import { useMailboxContext } from "@/features/providers/mailbox";
-import { DropdownMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit";
+import { getThreadsStatsQueryKey, useMailboxContext } from "@/features/providers/mailbox";
+import { DropdownMenu, Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
 import { Button, useModals } from "@gouvfr-lasuite/cunningham-react";
 import clsx from "clsx";
 import Link from "next/link";
@@ -44,7 +44,7 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
     label_slug: label.slug
   }, {
     query: {
-      queryKey: ['threads', 'stats', selectedMailbox!.id, queryParams],
+      queryKey: getThreadsStatsQueryKey(selectedMailbox!.id, queryParams),
     }
   });
   const unreadCount = (stats?.data as ThreadsStatsRetrieve200)?.all_unread ?? 0;
@@ -270,7 +270,7 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
               className='label-item__toggle'
               aria-expanded={isFolded}
               title={isFolded ? t('Collapse') : t('Expand')}
-              icon={<Icon name={isFolded ? "chevron_right" : "expand_more"} />}
+              icon={<Icon name={isFolded ? "chevron_right" : "expand_more"} size={IconSize.MEDIUM} />}
               aria-label={isFolded ? t('Expand') : t('Collapse')}
             />
           )}

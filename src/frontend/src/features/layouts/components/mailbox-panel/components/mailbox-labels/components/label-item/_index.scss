@@ -4,7 +4,7 @@
     display: flex;
     align-items: center;
     gap: var(--c--globals--spacings--2xs);
-    padding-block: var(--c--globals--spacings--xs);
+    padding-block: var(--c--globals--spacings--3xs);
     padding-inline: var(--c--globals--spacings--3xs);
     color: inherit;
     font-weight: 500;
@@ -39,9 +39,6 @@
     transform: translateY(-50%);
     width: var(--label-toggle-size);
     height: var(--label-toggle-size);
-    & .c__button__icon > span {
-        font-size: var(--c--globals--font--sizes--h3);
-    }
 }
 
 .label-item__column:last-child {
@@ -75,9 +72,9 @@
     min-width: 0;
 
     .label-item__icon {
-        border: 2px solid var(--c--contextuals--border--semantic--contextual--primary);
-        width: 0.875rem;
-        height: 0.875rem;
+        border: 1px solid var(--c--contextuals--border--semantic--contextual--primary);
+        width: 0.75rem;
+        height: 0.75rem;
         border-radius: 4px;
         box-sizing: border-box;
         padding: 0;

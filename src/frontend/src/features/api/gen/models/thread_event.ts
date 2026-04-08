@@ -30,6 +30,8 @@ export interface ThreadEvent {
   message?: string | null;
   readonly author: UserWithoutAbilities;
   data: ThreadEventDataOneOf;
+  readonly has_unread_mention: boolean;
+  readonly is_editable: boolean;
   /** date and time at which a record was created */
   readonly created_at: string;
   /** date and time at which a record was last updated */

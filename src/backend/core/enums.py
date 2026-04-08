@@ -91,6 +91,8 @@ THREAD_STATS_FIELDS_MAP = {
     "all_unread": "all_unread",
     "has_delivery_pending": "has_delivery_pending",
     "has_delivery_failed": "has_delivery_failed",
+    "has_unread_mention": "has_unread_mention",
+    "has_mention": "has_mention",
 }
 
 
@@ -254,6 +256,32 @@ CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY = frozenset(
         ChannelApiKeyScope.MAILDOMAINS_CREATE.value,
     }
 )
+
+
+def thread_event_type_choices():
+    """Return ThreadEventTypeChoices.choices as a callable.
+
+    Used as ``choices=`` argument on ``ThreadEvent.type`` so Django stores the
+    import path of this function in migrations rather than the resolved list.
+    Adding new enum values then no longer triggers a schema migration.
+    """
+    return ThreadEventTypeChoices.choices
+
+
+class UserEventTypeChoices(models.TextChoices):
+    """Defines the possible types of user events."""
+
+    MENTION = "mention", "Mention"
+
+
+def user_event_type_choices():
+    """Return UserEventTypeChoices.choices as a callable.
+
+    Used as ``choices=`` argument on ``UserEvent.type`` so Django stores the
+    import path of this function in migrations rather than the resolved list.
+    Adding new enum values then no longer triggers a schema migration.
+    """
+    return UserEventTypeChoices.choices
 
 
 class MessageTemplateTypeChoices(models.IntegerChoices):

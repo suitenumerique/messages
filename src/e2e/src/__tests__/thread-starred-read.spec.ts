@@ -1,6 +1,6 @@
 import test, { expect } from "@playwright/test";
 import { resetDatabase } from "../utils";
-import { signInKeycloakIfNeeded } from "../utils-test";
+import { signInKeycloakIfNeeded, inboxFolderLink } from "../utils-test";
 
 test.describe("Thread starred", () => {
   test.beforeAll(async () => {
@@ -107,7 +107,7 @@ test.describe("Thread read / unread", () => {
     await page.waitForLoadState("networkidle");
 
     // Navigate to inbox where received threads exist
-    await page.getByRole("link", { name: /^inbox/i }).click();
+    await inboxFolderLink(page).click();
     await page.waitForLoadState("networkidle");
 
     // Open the thread (the IntersectionObserver auto-marks messages as read)
@@ -146,7 +146,7 @@ test.describe("Thread read / unread", () => {
     await page.waitForLoadState("networkidle");
 
     // Navigate to inbox
-    await page.getByRole("link", { name: /^inbox/i }).click();
+    await inboxFolderLink(page).click();
     await page.waitForLoadState("networkidle");
 
     // Apply the unread filter first
@@ -196,7 +196,7 @@ test.describe("Thread read / unread", () => {
     await page.waitForLoadState("networkidle");
 
     // Navigate to inbox
-    await page.getByRole("link", { name: /^inbox/i }).click();
+    await inboxFolderLink(page).click();
     await page.waitForLoadState("networkidle");
 
     // Verify both threads are visible initially

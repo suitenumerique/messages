@@ -13,6 +13,7 @@ import factory.fuzzy
 from faker import Faker
 
 from core import enums, models
+from core.enums import UserEventTypeChoices
 
 fake = Faker()
 
@@ -155,6 +156,21 @@ class ThreadEventFactory(factory.django.DjangoModelFactory):
     type = "im"
     data = factory.LazyAttribute(lambda o: {"content": fake.sentence()})
     author = factory.SubFactory(UserFactory)
+
+
+class UserEventFactory(factory.django.DjangoModelFactory):
+    """A factory to create user events for testing purposes."""
+
+    class Meta:
+        model = models.UserEvent
+
+    user = factory.SubFactory(UserFactory)
+    thread = factory.SubFactory(ThreadFactory)
+    thread_event = factory.SubFactory(
+        ThreadEventFactory,
+        thread=factory.SelfAttribute("..thread"),
+    )
+    type = UserEventTypeChoices.MENTION
 
 
 class ContactFactory(factory.django.DjangoModelFactory):

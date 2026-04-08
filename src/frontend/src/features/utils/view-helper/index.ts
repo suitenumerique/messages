@@ -1,21 +1,27 @@
 import { SearchHelper } from "../search-helper";
-import { MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
+import { ALL_MESSAGES_FOLDER, MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/components/mailbox-list";
 
 // Type for the union of all folder id values, generated from MAILBOX_FOLDERS
-export type ViewName = ReturnType<typeof MAILBOX_FOLDERS>[number]['id'];
+// plus the virtual "all_messages" folder which lives outside the sidebar.
+export type ViewName =
+    | ReturnType<typeof MAILBOX_FOLDERS>[number]['id']
+    | ReturnType<typeof ALL_MESSAGES_FOLDER>['id'];
 
 class ViewHelper {
     #isView(viewName: ViewName): boolean {
         if (typeof window === 'undefined') return false;
 
         const searchParams = new URLSearchParams(window.location.search);
-        const folder = MAILBOX_FOLDERS().find((folder) => folder.id === viewName);
+        const folder = viewName === 'all_messages'
+            ? ALL_MESSAGES_FOLDER()
+            : MAILBOX_FOLDERS().find((folder) => folder.id === viewName);
         if (!folder) throw new Error(`${viewName} folder not found. Invalid folder id "${viewName}".`);
 
         const matchViewFilters = Object.entries(folder.filter || {}).every(([key, value]) => searchParams.get(key) === value);
         if (matchViewFilters) return true;
 
-        const matchSearchParams = folder.searchable && SearchHelper.parseSearchQuery(searchParams.get('search') || '')?.in === viewName;
+        const isSearchable = viewName === 'all_messages' || ('searchable' in folder && folder.searchable);
+        const matchSearchParams = isSearchable && SearchHelper.parseSearchQuery(searchParams.get('search') || '')?.in === viewName;
         return matchSearchParams;
     }
 

@@ -4854,6 +4854,14 @@
                     },
                     {
                         "in": "query",
+                        "name": "has_mention",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads with any mention (read or unread) for the current user (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
                         "name": "has_messages",
                         "schema": {
                             "type": "integer"
@@ -4891,6 +4899,14 @@
                             "type": "integer"
                         },
                         "description": "Filter threads with unread messages (1=true, 0=false). Requires mailbox_id."
+                    },
+                    {
+                        "in": "query",
+                        "name": "has_unread_mention",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads with unread mentions for the current user (1=true, 0=false)."
                     },
                     {
                         "in": "query",
@@ -5800,6 +5816,49 @@
                 }
             }
         },
+        "/api/v1.0/threads/{thread_id}/events/{id}/read-mention/": {
+            "patch": {
+                "operationId": "threads_events_read_mention_partial_update",
+                "description": "Mark the current user's unread MENTION on this ThreadEvent as read.\n\nReturns 204 even when no UserEvent matches (idempotent); the thread\nevent itself is resolved via the standard ``get_object`` lookup so a\nmissing event yields 404.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "thread_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "thread-events"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    },
+                    "404": {
+                        "description": "Thread event not found"
+                    }
+                }
+            }
+        },
         "/api/v1.0/threads/{thread_id}/users/": {
             "get": {
                 "operationId": "threads_users_list",
@@ -5879,6 +5938,14 @@
                     },
                     {
                         "in": "query",
+                        "name": "has_mention",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads with any mention (read or unread) for the current user (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
                         "name": "has_sender",
                         "schema": {
                             "type": "integer"
@@ -5900,6 +5967,14 @@
                             "type": "integer"
                         },
                         "description": "Filter threads that are trashed (1=true, 0=false)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "has_unread_mention",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "Filter threads with unread mentions for the current user (1=true, 0=false)."
                     },
                     {
                         "in": "query",
@@ -5935,10 +6010,12 @@
                                 "all",
                                 "all_unread",
                                 "has_delivery_failed",
-                                "has_delivery_pending"
+                                "has_delivery_pending",
+                                "has_mention",
+                                "has_unread_mention"
                             ]
                         },
-                        "description": "Comma-separated list of fields to aggregate.\n                Special values: 'all' (count all threads), 'all_unread' (count all unread threads).\n                Boolean fields: has_trashed, has_draft, has_starred, has_attachments, has_archived,\n                has_sender, has_active, has_delivery_pending, has_delivery_failed, is_spam, has_messages.\n                Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.\n                Examples: 'all,all_unread', 'has_starred,has_starred_unread', 'is_spam,is_spam_unread'",
+                        "description": "Comma-separated list of fields to aggregate.\n                Special values: 'all' (count all threads), 'all_unread' (count all unread threads).\n                Boolean fields: has_trashed, has_draft, has_starred, has_attachments, has_archived,\n                has_sender, has_active, has_delivery_pending, has_delivery_failed, is_spam, has_messages, has_unread_mention, has_mention.\n                Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.\n                Examples: 'all,all_unread', 'has_starred,has_starred_unread', 'is_spam,is_spam_unread'",
                         "required": true,
                         "explode": false,
                         "style": "form"
@@ -7132,15 +7209,23 @@
                         "readOnly": true
                     },
                     "count_unread_threads": {
-                        "type": "string",
+                        "type": "integer",
+                        "description": "Return the number of threads with unread messages in the mailbox.",
                         "readOnly": true
                     },
                     "count_threads": {
-                        "type": "string",
+                        "type": "integer",
+                        "description": "Return the number of threads in the mailbox.",
                         "readOnly": true
                     },
                     "count_delivering": {
-                        "type": "string",
+                        "type": "integer",
+                        "description": "Return the number of threads with messages being delivered.",
+                        "readOnly": true
+                    },
+                    "count_unread_mentions": {
+                        "type": "integer",
+                        "description": "Return the number of threads with unread mentions for the current user.",
                         "readOnly": true
                     },
                     "abilities": {
@@ -7212,6 +7297,7 @@
                     "abilities",
                     "count_delivering",
                     "count_threads",
+                    "count_unread_mentions",
                     "count_unread_threads",
                     "email",
                     "id",
@@ -8830,6 +8916,10 @@
                         "type": "boolean",
                         "readOnly": true
                     },
+                    "has_unread_mention": {
+                        "type": "boolean",
+                        "readOnly": true
+                    },
                     "has_trashed": {
                         "type": "boolean",
                         "readOnly": true
@@ -8961,6 +9051,10 @@
                     "summary": {
                         "type": "string",
                         "readOnly": true
+                    },
+                    "events_count": {
+                        "type": "integer",
+                        "readOnly": true
                     }
                 },
                 "required": [
@@ -8968,6 +9062,7 @@
                     "active_messaged_at",
                     "archived_messaged_at",
                     "draft_messaged_at",
+                    "events_count",
                     "has_active",
                     "has_archived",
                     "has_attachments",
@@ -8979,6 +9074,7 @@
                     "has_starred",
                     "has_trashed",
                     "has_unread",
+                    "has_unread_mention",
                     "id",
                     "is_spam",
                     "is_trashed",
@@ -9191,6 +9287,14 @@
                             }
                         ]
                     },
+                    "has_unread_mention": {
+                        "type": "boolean",
+                        "readOnly": true
+                    },
+                    "is_editable": {
+                        "type": "boolean",
+                        "readOnly": true
+                    },
                     "created_at": {
                         "type": "string",
                         "format": "date-time",
@@ -9211,7 +9315,9 @@
                     "channel",
                     "created_at",
                     "data",
+                    "has_unread_mention",
                     "id",
+                    "is_editable",
                     "thread",
                     "type",
                     "updated_at"

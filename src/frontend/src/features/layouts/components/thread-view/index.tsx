@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { ThreadActionBar } from "./components/thread-action-bar"
 import { ThreadMessage } from "./components/thread-message"
-import { ThreadEvent } from "./components/thread-event"
+import { ThreadEvent, isCondensed } from "./components/thread-event"
 import { ThreadEventInput } from "./components/thread-event-input"
 import { useMailboxContext, TimelineItem, isThreadEvent } from "@/features/providers/mailbox"
 import useRead from "@/features/message/use-read"
+import useMentionRead from "@/features/message/use-mention-read"
 import { useDebounceCallback } from "@/hooks/use-debounce-callback"
+import { useVisibilityObserver } from "@/hooks/use-visibility-observer"
 import { Message, Thread, ThreadAccessRoleChoices, ThreadEvent as ThreadEventModel } from "@/features/api/gen/models"
 import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit"
 import { Banner } from "@/features/ui/components/banner"
@@ -18,6 +20,13 @@ import clsx from "clsx";
 import ThreadViewProvider, { useThreadViewContext } from "./provider";
 import useSpam from "@/features/message/use-spam";
 import ViewHelper from "@/features/utils/view-helper";
+
+/**
+ * Fallback height (px) used when measuring the sticky header before the
+ * DOM ref is populated. Matches the rendered header height closely enough
+ * for the IntersectionObserver to ignore content hidden behind it.
+ */
+const STICKY_HEADER_FALLBACK_HEIGHT = 125;
 
 type MessageWithDraftChild = Message & {
     draft_message?: Message;
@@ -49,10 +58,72 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
     const { isReady, reset, hasBeenInitialized, setHasBeenInitialized } = useThreadViewContext();
     // Refs for all unread messages
     const unreadRefs = useRef<Record<string, HTMLElement | null>>({});
+    // Refs for thread events with unread mentions
+    const mentionRefs = useRef<Record<string, HTMLElement | null>>({});
+    const { markMentionsRead } = useMentionRead(thread.id);
     // Find all unread message IDs
     const messages = useMemo(() => threadItems.filter(item => item.type === 'message').map(item => item.data as MessageWithDraftChild), [threadItems]);
     const unreadMessageIds = useMemo(() => messages.filter((m) => m.is_unread).map((m) => m.id), [messages]);
     const draftMessageIds = useMemo(() => messages.filter((m) => m.draft_message).map((m) => m.id), [messages]);
+    const unreadMentionEventIds = useMemo(() =>
+        threadItems
+            .filter((item): item is Extract<typeof item, { type: 'event' }> =>
+                item.type === 'event' && (item.data as ThreadEventModel).has_unread_mention === true
+            )
+            .map(item => item.data.id),
+        [threadItems]
+    );
+    /**
+     * Walks the timeline once to build a map <rootId, true> for
+     * condensed-IM groups that contain at least one unread mention.
+     *
+     * A "root" is an IM event whose header is rendered (first event
+     * of a condensed run). Surfacing the unread-mention badge on the root
+     * means that a mention on a condensed sibling — whose own header is
+     * hidden — still draws the user's eye via the root's header.
+     */
+    const unreadMentionGroupMap = useMemo(() => {
+        const map = new Map<string, boolean>();
+        let currentRootId: string | null = null;
+        let prevEvent: ThreadEventModel | null = null;
+        for (const item of threadItems) {
+            if (!isThreadEvent(item)) {
+                currentRootId = null;
+                prevEvent = null;
+                continue;
+            }
+            const current = item.data as ThreadEventModel;
+            if (!isCondensed(current, prevEvent)) {
+                currentRootId = current.id;
+            }
+            if (current.has_unread_mention && currentRootId) {
+                map.set(currentRootId, true);
+            }
+            prevEvent = current;
+        }
+        return map;
+    }, [threadItems]);
+
+    // Mention IDs accumulated across debounce windows. The intersection
+    // observer can fire several times within the 150ms window; using a ref
+    // (instead of a value passed to the debounced callback) preserves earlier
+    // batches that would otherwise be overwritten by the trailing-edge debounce.
+    const pendingMentionIdsRef = useRef<Set<string>>(new Set());
+    // Mentions already PATCHed during this thread session. `useMentionRead`
+    // intentionally does not update the thread events cache (to keep the
+    // "Mentioned" badge visible for the whole session), so an event stays in
+    // `unreadMentionEventIds` until the next natural refetch. Without this
+    // guard, scrolling back onto a flagged event would re-enqueue it on every
+    // visibility pass and trigger redundant PATCH + stats invalidations.
+    // Cleared on thread switch via the cleanup effect below.
+    const sentMentionIdsRef = useRef<Set<string>>(new Set());
+    const flushPendingMentions = useCallback(() => {
+        if (pendingMentionIdsRef.current.size === 0) return;
+        const ids = [...pendingMentionIdsRef.current];
+        pendingMentionIdsRef.current.clear();
+        markMentionsRead(ids);
+    }, [markMentionsRead]);
+    const debouncedFlushMentions = useDebounceCallback(flushPendingMentions, 150);
     const isThreadTrashed = stats.trashed === stats.total;
     const isThreadArchived = stats.archived === stats.total;
     const isThreadSender = messages?.some((m) => m.is_sender);
@@ -76,52 +147,69 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
     }, []);
 
     /**
-     * Setup an intersection observer to mark messages as read when they are
-     * scrolled into view.
+     * Mark messages as read once they scroll into view. Tracks the latest
+     * timestamp seen so a single debounced call covers all messages above it.
      */
-    useEffect(() => {
-        if (!unreadMessageIds.length || !isReady) return;
-
-        const stickyContainerHeight = stickyContainerRef.current?.getBoundingClientRect().height || 125;
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (!entry.isIntersecting) return;
-
-                const createdAt = entry.target.getAttribute('data-created-at');
-                if (!createdAt) return;
-
-
-                // Track the most recent message scrolled into view
-                if (!latestSeenDate.current || new Date(createdAt) > new Date(latestSeenDate.current)) {
-                    latestSeenDate.current = createdAt;
-                }
-                debouncedMarkAsRead(thread.id, latestSeenDate.current);
-            });
-
-        }, { root: rootRef.current, rootMargin: `-${stickyContainerHeight}px 0px 0px 0px` });
-
-        unreadMessageIds.forEach(messageId => {
-            const el = unreadRefs.current[messageId];
-            if (el) {
-                observer.observe(el);
+    const topOffset = stickyContainerRef.current?.getBoundingClientRect().height || STICKY_HEADER_FALLBACK_HEIGHT;
+    useVisibilityObserver({
+        enabled: isReady,
+        ids: unreadMessageIds,
+        refs: unreadRefs,
+        rootRef,
+        topOffset,
+        onVisible: (entry) => {
+            const createdAt = entry.target.getAttribute('data-created-at');
+            if (!createdAt) return;
+            // Track the most recent message scrolled into view
+            if (!latestSeenDate.current || new Date(createdAt) > new Date(latestSeenDate.current)) {
+                latestSeenDate.current = createdAt;
             }
-        });
+            debouncedMarkAsRead(thread.id, latestSeenDate.current);
+        },
+    });
 
-        return () => {
-            observer.disconnect();
-        };
-    }, [isReady, unreadMessageIds.join(","), thread.id]);
+    /**
+     * Mark mentions as read when their ThreadEvent scrolls into view.
+     * IDs are accumulated through `pendingMentionIdsRef` so several batches
+     * within the same debounce window are flushed together.
+     */
+    useVisibilityObserver({
+        enabled: isReady,
+        ids: unreadMentionEventIds,
+        refs: mentionRefs,
+        rootRef,
+        topOffset,
+        onVisible: (entry) => {
+            const eventId = entry.target.getAttribute('data-event-id');
+            if (!eventId) return;
+            if (sentMentionIdsRef.current.has(eventId)) return;
+            sentMentionIdsRef.current.add(eventId);
+            pendingMentionIdsRef.current.add(eventId);
+            debouncedFlushMentions();
+        },
+    });
 
     useEffect(() => {
         if (isReady && !hasBeenInitialized) {
-            let messageToScroll = latestMessage?.id;
-            let selector = `#thread-message-${messageToScroll}`;
+            let selector = `#thread-message-${latestMessage?.id}`;
             if (draftMessageIds.length > 0) {
-                messageToScroll = draftMessageIds[0];
-                selector = `#thread-message-${messageToScroll} > .thread-message__reply-form`;
-            } else if (unreadMessageIds.length > 0) {
-                messageToScroll = unreadMessageIds[0];
-                selector = `#thread-message-${messageToScroll}`;
+                // Drafts take precedence: jump straight to the reply form.
+                selector = `#thread-message-${draftMessageIds[0]} > .thread-message__reply-form`;
+            } else {
+                // Otherwise, scroll to the earliest unread item in chronological
+                // order — either an unread message or a ThreadEvent (IM) carrying
+                // an unread mention of the current user.
+                const firstUnreadItem = threadItems.find((item) => {
+                    if (item.type === 'message') {
+                        return (item.data as MessageWithDraftChild).is_unread;
+                    }
+                    return (item.data as ThreadEventModel).has_unread_mention === true;
+                });
+                if (firstUnreadItem) {
+                    selector = firstUnreadItem.type === 'message'
+                        ? `#thread-message-${firstUnreadItem.data.id}`
+                        : `#thread-event-${firstUnreadItem.data.id}`;
+                }
             }
 
             const el = document.querySelector<HTMLElement>(selector);
@@ -141,6 +229,8 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
     useEffect(() => () => {
         reset();
         setEditingEvent(null);
+        pendingMentionIdsRef.current.clear();
+        sentMentionIdsRef.current.clear();
     }, [thread.id]);
 
     return (
@@ -202,7 +292,26 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
                     if (isThreadEvent(item)) {
                         const prevItem = index > 0 ? threadItems[index - 1] : null;
                         const prevEvent = isThreadEvent(prevItem) ? prevItem.data : null;
-                        return <ThreadEvent key={`event-${item.data.id}`} event={item.data} previousEvent={prevEvent} onEdit={setEditingEvent} onDelete={handleEventDelete} />;
+                        const eventData = item.data as ThreadEventModel;
+                        return (
+                            <ThreadEvent
+                                key={`event-${item.data.id}`}
+                                event={item.data}
+                                onEdit={setEditingEvent}
+                                onDelete={handleEventDelete}
+                                isCondensed={isCondensed(eventData, prevEvent)}
+                                // `hasUnreadMention` is group-aware so the badge surfaces on the
+                                // condensed root, but `mentionRef` stays gated by the raw event
+                                // flag on purpose: the read is only acknowledged once the bubble
+                                // that actually carries the mention scrolls into view, not when
+                                // the root header alone is visible.
+                                hasUnreadMention={unreadMentionGroupMap.get(item.data.id) ?? false}
+                                mentionRef={eventData.has_unread_mention
+                                    ? (el: HTMLDivElement | null) => { mentionRefs.current[item.data.id] = el; }
+                                    : undefined
+                                }
+                            />
+                        );
                     }
                     const message = item.data as MessageWithDraftChild;
                     const isLatest = latestMessage?.id === message.id;

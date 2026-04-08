@@ -9,16 +9,13 @@ import { useSearchParams } from "next/navigation";
 import ThreadPanelHeader from "./components/thread-panel-header";
 import { useThreadSelection } from "@/features/providers/thread-selection";
 import { useScrollRestore } from "@/features/providers/scroll-restore";
-import { THREAD_PANEL_FILTER_PARAMS } from "./components/thread-panel-filter";
-import { useSafeRouterPush } from "@/hooks/use-safe-router-push";
 import { useThreadPanelFilters } from "./hooks/use-thread-panel-filters";
 
 export const ThreadPanel = () => {
     const { threads, queryStates, unselectThread, loadNextThreads, selectedThread, selectedMailbox } = useMailboxContext();
     const searchParams = useSearchParams();
-    const safePush = useSafeRouterPush();
     const isSearch = searchParams.has('search');
-    const { hasActiveFilters } = useThreadPanelFilters();
+    const { hasActiveFilters, clearFilters } = useThreadPanelFilters();
     const { t } = useTranslation();
     const loaderRef = useRef<HTMLDivElement>(null);
     const scrollContextKey = `${selectedMailbox?.id}:${searchParams.toString()}`;
@@ -73,12 +70,6 @@ export const ThreadPanel = () => {
             </div>
         );
     }
-
-    const clearFilters = () => {
-        const params = new URLSearchParams(searchParams.toString());
-        THREAD_PANEL_FILTER_PARAMS.forEach((param) => params.delete(param));
-        safePush(params);
-    };
 
     const isEmpty = !threads?.results.length;
 

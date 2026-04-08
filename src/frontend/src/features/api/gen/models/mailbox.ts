@@ -18,9 +18,14 @@ export interface Mailbox {
   /** Whether this mailbox identifies a person (i.e. is not an alias or a group) */
   readonly is_identity: boolean;
   readonly role: MailboxRoleChoices;
-  readonly count_unread_threads: string;
-  readonly count_threads: string;
-  readonly count_delivering: string;
+  /** Return the number of threads with unread messages in the mailbox. */
+  readonly count_unread_threads: number;
+  /** Return the number of threads in the mailbox. */
+  readonly count_threads: number;
+  /** Return the number of threads with messages being delivered. */
+  readonly count_delivering: number;
+  /** Return the number of threads with unread mentions for the current user. */
+  readonly count_unread_mentions: number;
   /** Instance permissions and capabilities */
   readonly abilities: MailboxAbilities;
 }

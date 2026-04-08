@@ -544,11 +544,36 @@ class ThreadEventInline(admin.TabularInline):
     extra = 0
 
 
+class UserEventInline(admin.TabularInline):
+    """Inline class for the UserEvent model.
+
+    UserEvent entries are created exclusively by business logic (mentions,
+    assignments) and must never be edited via the admin: editing ``thread_event``
+    would desynchronize ``user_event.thread`` from
+    ``user_event.thread_event.thread``, breaking mention filters and unread flags.
+    """
+
+    model = models.UserEvent
+    readonly_fields = (
+        "user",
+        "thread",
+        "thread_event",
+        "type",
+        "read_at",
+        "created_at",
+    )
+    can_delete = False
+    extra = 0
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(models.Thread)
 class ThreadAdmin(admin.ModelAdmin):
     """Admin class for the Thread model"""
 
-    inlines = [ThreadAccessInline, ThreadEventInline]
+    inlines = [ThreadAccessInline, ThreadEventInline, UserEventInline]
     list_display = (
         "id",
         "subject",

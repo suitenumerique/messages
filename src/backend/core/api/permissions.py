@@ -168,16 +168,11 @@ class IsAllowedToAccess(IsAuthenticated):
             return models.MailboxAccess.objects.filter(mailbox=obj, user=user).exists()
 
         if isinstance(obj, models.ThreadEvent):
-            thread = obj.thread
-            has_access = models.ThreadAccess.objects.filter(
-                thread=thread, mailbox__accesses__user=user
+            # Write actions are handled by HasThreadEditAccess, so we only
+            # need to gate read access on any ThreadAccess for the thread.
+            return models.ThreadAccess.objects.filter(
+                thread=obj.thread, mailbox__accesses__user=user
             ).exists()
-            if not has_access:
-                return False
-            # Only the author can update or delete their own events
-            if view.action in ["update", "partial_update", "destroy"]:
-                return obj.author_id == user.id
-            return True
 
         if isinstance(obj, (models.Message, models.Thread)):
             thread = obj.thread if isinstance(obj, models.Message) else obj
@@ -543,10 +538,47 @@ class HasThreadEditAccess(IsAuthenticated):
 
     message = "You do not have permission to perform this action on this thread."
 
-    def has_object_permission(self, request, view, obj):
-        """Check if user has editor access to the thread."""
+    def has_permission(self, request, view):
+        """Check editor access up-front on nested thread routes.
+
+        On nested routes (e.g. ``/threads/{thread_id}/events/``), the thread
+        id comes from the URL and we can enforce the editor role before the
+        view resolves any object — required for ``create`` where no object
+        exists yet. On top-level routes (e.g. ``/threads/{pk}/``), defer to
+        ``has_object_permission``.
+        """
+        if not super().has_permission(request, view):
+            return False
+
+        thread_id_from_url = view.kwargs.get("thread_id")
+        if thread_id_from_url is None:
+            return True
+
         return models.ThreadAccess.objects.filter(
-            thread=obj,
+            thread_id=thread_id_from_url,
+            role__in=enums.THREAD_ROLES_CAN_EDIT,
+            mailbox__accesses__user=request.user,
+        ).exists()
+
+    def has_object_permission(self, request, view, obj):
+        """Check editor access on the thread the object belongs to.
+
+        Supports both ``Thread`` and ``ThreadEvent`` objects. For
+        ``ThreadEvent``, also enforces that only the event author can perform
+        update or destroy actions.
+        """
+        if isinstance(obj, models.ThreadEvent):
+            if (
+                view.action in ("update", "partial_update", "destroy")
+                and obj.author_id != request.user.id
+            ):
+                return False
+            thread = obj.thread
+        else:
+            thread = obj
+
+        return models.ThreadAccess.objects.filter(
+            thread=thread,
             mailbox__accesses__user=request.user,
             role__in=enums.THREAD_ROLES_CAN_EDIT,
         ).exists()

@@ -6,6 +6,34 @@
     flex-shrink: 0;
 }
 
+// Wraps a folder link together with its disclosure chevron button. The
+// two stay visually attached (one hover background spanning both) but the
+// DOM keeps them as siblings so interactive content is not nested inside
+// the anchor.
+.mailbox__item-row {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    border-radius: 4px;
+
+    &:has(.mailbox__item--drag-over),
+    &:has(.mailbox__item:not(.mailbox__item--active):hover),
+    &:has(.mailbox__item:not(.mailbox__item--active):focus),
+    &:has(.mailbox__item-chevron:hover),
+    &:has(.mailbox__item-chevron:focus-visible),
+    &:has(.mailbox__item--active) {
+        background-color: var(--c--contextuals--background--semantic--contextual--primary);
+        & > .mailbox__item {
+            background: none;
+        }
+    }
+
+    .mailbox__item {
+        flex: 1;
+        min-width: 0;
+    }
+}
+
 .mailbox__item {
     color: inherit;
     display: flex;
@@ -14,9 +42,17 @@
     align-items: center;
     width: auto;
     padding-inline: var(--c--globals--spacings--xs);
-    padding-block: var(--c--globals--font--sizes--t);
+    padding-block: var(--c--globals--spacings--3xs);
+    min-height: 2rem;
     border-radius: 4px;
     text-decoration: none;
+}
+
+// When the folder has a disclosure chevron, the button sits flush to the
+// left of the link — remove the link's left padding so the label lines up
+// where the chevron used to live and children keep their existing indent.
+.mailbox__item--with-chevron {
+    padding-inline-start: 0;
 }
 
 .mailbox__item--drag-over,
@@ -60,4 +96,39 @@
 .mailbox__item-warning {
     color: var(--c--contextuals--content--semantic--error--tertiary);
     font-size: var(--c--globals--font--sizes--xl);
+}
+
+// Native <button> acting as the disclosure control. Reset the browser
+// defaults (background/border/padding) so it blends into the row while
+// keeping the inherited focus ring for keyboard users.
+.mailbox__item-chevron {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s ease;
+    font-size: var(--c--globals--font--sizes--lg);
+    color: var(--c--contextuals--content--semantic--neutral--tertiary);
+    background: transparent;
+    border: none;
+    padding-inline: var(--c--globals--spacings--4xs);
+    border-radius: 4px;
+
+    &--collapsed {
+        transform: rotate(-90deg);
+    }
+}
+
+.mailbox__children {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.mailbox__children--collapsed {
+    display: none;
+}
+
+.mailbox__item--child {
+    padding-inline-start: 2.125rem; // 34px
 }

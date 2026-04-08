@@ -5,6 +5,7 @@ This command creates demo users, mailboxes, shared mailboxes, and outbox test da
 for E2E testing across different browsers (chromium, firefox, webkit).
 """
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
@@ -15,6 +16,7 @@ from core.enums import (
     MailDomainAccessRoleChoices,
     MessageDeliveryStatusChoices,
     ThreadAccessRoleChoices,
+    ThreadEventTypeChoices,
 )
 from core.services.identity.keycloak import get_keycloak_admin_client
 
@@ -142,7 +144,7 @@ class Command(BaseCommand):
 
         # Step 8: Create shared mailbox thread data for IM testing
         self.stdout.write("\n-- 7/7 💬 Creating shared mailbox thread for IM testing")
-        self._create_shared_mailbox_thread_data(shared_mailbox)
+        self._create_shared_mailbox_thread_data(shared_mailbox, regular_users)
 
     def _create_user_with_mailbox(
         self, email, domain, is_domain_admin=False, is_superuser=False
@@ -469,8 +471,14 @@ class Command(BaseCommand):
 
         return thread
 
-    def _create_shared_mailbox_thread_data(self, shared_mailbox):
-        """Create a thread in the shared mailbox for testing internal messages (IM)."""
+    def _create_shared_mailbox_thread_data(self, shared_mailbox, regular_users):
+        """Create a thread in the shared mailbox for testing internal messages (IM).
+
+        Also seeds one pre-aged ThreadEvent per browser user so the
+        "edit delay elapsed" e2e test can assert on a message whose
+        `is_editable` has already flipped to false — no runtime ageing
+        required, keeps the test deterministic and fast.
+        """
         subject = "Shared inbox thread for IM"
 
         # Clean up existing thread
@@ -508,6 +516,38 @@ class Command(BaseCommand):
             is_sender=False,
             is_draft=False,
         )
+
+        # Seed one pre-aged IM ThreadEvent per browser user.
+        #
+        # The "edit delay elapsed" test needs a ThreadEvent whose
+        # `created_at` is older than `MAX_THREAD_EVENT_EDIT_DELAY`, so that
+        # `is_editable` returns false and the UI hides Edit/Delete actions.
+        #
+        # Each browser gets its own aged event authored by its own user so
+        # the `canModify = isAuthor && is_editable` check in the frontend
+        # exercises the `is_editable: false` branch (not the `isAuthor: false`
+        # one).
+        past = timezone.now() - timezone.timedelta(
+            seconds=settings.MAX_THREAD_EVENT_EDIT_DELAY + 1
+        )
+        for user, _mailbox in regular_users:
+            # Extract "{browser}" from "user.e2e.{browser}@{domain}".
+            browser = user.email.split("@")[0].removeprefix("user.e2e.")
+            content = f"[e2e-aged-{browser}] Message past edit delay"
+            event = models.ThreadEvent.objects.create(
+                thread=thread,
+                type=ThreadEventTypeChoices.IM,
+                author=user,
+                data={"content": content},
+            )
+            # Bypass `auto_now` / `auto_now_add` with a raw UPDATE so the
+            # timestamps actually land in the past.
+            models.ThreadEvent.objects.filter(pk=event.pk).update(
+                created_at=past, updated_at=past
+            )
+            self.stdout.write(
+                self.style.SUCCESS(f"  ✓ Seeded aged ThreadEvent for {user.email}")
+            )
 
         thread.update_stats()
 

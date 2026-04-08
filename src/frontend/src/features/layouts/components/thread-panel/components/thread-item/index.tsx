@@ -170,27 +170,81 @@ export const ThreadItem = ({ thread, isSelected, onToggleSelection, selectedThre
                                         type={IconType.FILLED}
                                         name="mode_edit"
                                         className="icon--size-sm"
+                                        aria-hidden="true"
                                     />
                                 </Badge>
                             )}
                             {thread.has_attachments ? (
-                                <Badge aria-label={t('Attachments')} title={t('Attachments')} color="neutral" variant="tertiary" compact>
-                                    <Icon name="attachment" size={IconSize.SMALL} />
+                                <Badge
+                                    aria-label={t('Attachments')}
+                                    title={t('Attachments')}
+                                    color="neutral"
+                                    variant="tertiary"
+                                    compact>
+                                    <Icon
+                                        name="attachment"
+                                        size={IconSize.SMALL}
+                                        aria-hidden="true"
+                                    />
                                 </Badge>
                             ) : null}
+                            {thread.has_starred && (
+                                <Badge
+                                    aria-label={t('Starred')}
+                                    title={t('Starred')}
+                                    color="yellow"
+                                    variant="tertiary"
+                                    compact>
+                                    <Icon
+                                        name="star"
+                                        size={IconSize.SMALL}
+                                        aria-hidden="true"
+                                    />
+                                </Badge>
+                            )}
+                            {thread.has_unread_mention && (
+                                <Badge
+                                    aria-label={t('Unread mention')}
+                                    title={t('Unread mention')}
+                                    color="warning"
+                                    variant="tertiary"
+                                    compact>
+                                    <Icon
+                                        type={IconType.OUTLINED}
+                                        name="alternate_email"
+                                        aria-hidden="true"
+                                        className="icon--size-sm"
+                                    />
+                                </Badge>
+                            )}
                             {thread.has_delivery_failed && (
-                                <Badge aria-label={t('Delivery failed')} title={t('Some recipients have not received this message!')} color="error" variant="tertiary" compact>
-                                    <Icon name="error" type={IconType.OUTLINED} size={IconSize.SMALL} />
+                                <Badge
+                                    aria-label={t('Delivery failed')}
+                                    title={t('Some recipients have not received this message!')}
+                                    color="error"
+                                    variant="tertiary"
+                                    compact>
+                                    <Icon
+                                        name="error"
+                                        type={IconType.OUTLINED}
+                                        size={IconSize.SMALL}
+                                        aria-hidden="true"
+                                    />
                                 </Badge>
                             )}
                             {!thread.has_delivery_failed && thread.has_delivery_pending && (
-                                <Badge aria-label={t('Delivering')} title={t('This message has not yet been delivered to all recipients.')} color="warning" variant="tertiary" compact>
-                                    <Icon name="update" type={IconType.OUTLINED} size={IconSize.SMALL} />
-                                </Badge>
-                            )}
-                            {thread.has_starred && (
-                                <Badge aria-label={t('Starred')} title={t('Starred')} color="yellow" variant="tertiary" compact>
-                                    <Icon name="star" size={IconSize.SMALL} />
+                                <Badge
+                                    aria-label={t('Delivering')}
+                                    title={t('This message has not yet been delivered to all recipients.')}
+                                    color="warning"
+                                    variant="tertiary"
+                                    compact>
+                                    <Icon
+                                        name="update"
+                                        type={IconType.OUTLINED}
+                                        size={IconSize.SMALL}
+                                        aria-hidden="true"
+                                    />
                                 </Badge>
                             )}
                         </div>

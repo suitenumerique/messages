@@ -823,3 +823,124 @@ export const useThreadsEventsDestroy = <
 
   return useMutation(mutationOptions, queryClient);
 };
+/**
+ * Mark the current user's unread MENTION on this ThreadEvent as read.
+
+Returns 204 even when no UserEvent matches (idempotent); the thread
+event itself is resolved via the standard ``get_object`` lookup so a
+missing event yields 404.
+ */
+export type threadsEventsReadMentionPartialUpdateResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type threadsEventsReadMentionPartialUpdateResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type threadsEventsReadMentionPartialUpdateResponseSuccess =
+  threadsEventsReadMentionPartialUpdateResponse204 & {
+    headers: Headers;
+  };
+export type threadsEventsReadMentionPartialUpdateResponseError =
+  threadsEventsReadMentionPartialUpdateResponse404 & {
+    headers: Headers;
+  };
+
+export type threadsEventsReadMentionPartialUpdateResponse =
+  | threadsEventsReadMentionPartialUpdateResponseSuccess
+  | threadsEventsReadMentionPartialUpdateResponseError;
+
+export const getThreadsEventsReadMentionPartialUpdateUrl = (
+  threadId: string,
+  id: string,
+) => {
+  return `/api/v1.0/threads/${threadId}/events/${id}/read-mention/`;
+};
+
+export const threadsEventsReadMentionPartialUpdate = async (
+  threadId: string,
+  id: string,
+  options?: RequestInit,
+): Promise<threadsEventsReadMentionPartialUpdateResponse> => {
+  return fetchAPI<threadsEventsReadMentionPartialUpdateResponse>(
+    getThreadsEventsReadMentionPartialUpdateUrl(threadId, id),
+    {
+      ...options,
+      method: "PATCH",
+    },
+  );
+};
+
+export const getThreadsEventsReadMentionPartialUpdateMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof threadsEventsReadMentionPartialUpdate>>,
+    TError,
+    { threadId: string; id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof threadsEventsReadMentionPartialUpdate>>,
+  TError,
+  { threadId: string; id: string },
+  TContext
+> => {
+  const mutationKey = ["threadsEventsReadMentionPartialUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof threadsEventsReadMentionPartialUpdate>>,
+    { threadId: string; id: string }
+  > = (props) => {
+    const { threadId, id } = props ?? {};
+
+    return threadsEventsReadMentionPartialUpdate(threadId, id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ThreadsEventsReadMentionPartialUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof threadsEventsReadMentionPartialUpdate>>
+>;
+
+export type ThreadsEventsReadMentionPartialUpdateMutationError =
+  ErrorType<void>;
+
+export const useThreadsEventsReadMentionPartialUpdate = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof threadsEventsReadMentionPartialUpdate>>,
+      TError,
+      { threadId: string; id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof threadsEventsReadMentionPartialUpdate>>,
+  TError,
+  { threadId: string; id: string },
+  TContext
+> => {
+  const mutationOptions =
+    getThreadsEventsReadMentionPartialUpdateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};

@@ -256,6 +256,7 @@ class MailboxSerializer(AbilitiesModelSerializer):
     count_unread_threads = serializers.SerializerMethodField(read_only=True)
     count_threads = serializers.SerializerMethodField(read_only=True)
     count_delivering = serializers.SerializerMethodField(read_only=True)
+    count_unread_mentions = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = models.Mailbox
@@ -267,6 +268,7 @@ class MailboxSerializer(AbilitiesModelSerializer):
             "count_unread_threads",
             "count_threads",
             "count_delivering",
+            "count_unread_mentions",
         ]
         read_only_fields = fields
 
@@ -298,7 +300,7 @@ class MailboxSerializer(AbilitiesModelSerializer):
         return None
 
     def _get_cached_counts(self, instance):
-        """Get or compute cached counts for the instance in a single query."""
+        """Get or compute cached counts for the instance."""
         cache_key = f"_counts_{instance.pk}"
         if not hasattr(self, cache_key):
             counts = instance.thread_accesses.aggregate(
@@ -313,20 +315,42 @@ class MailboxSerializer(AbilitiesModelSerializer):
                     distinct=True,
                 ),
             )
+            # Count distinct threads in this mailbox with an active unread
+            # mention UserEvent for the current user. Done in a separate query
+            # to avoid join-multiplication breaking the other counts above.
+            request = self.context.get("request")
+            if request and request.user.is_authenticated:
+                counts["count_unread_mentions"] = (
+                    models.UserEvent.objects.filter(
+                        user=request.user,
+                        type=enums.UserEventTypeChoices.MENTION,
+                        read_at__isnull=True,
+                        thread__accesses__mailbox=instance,
+                    )
+                    .values("thread_id")
+                    .distinct()
+                    .count()
+                )
+            else:
+                counts["count_unread_mentions"] = 0
             setattr(self, cache_key, counts)
         return getattr(self, cache_key)
 
-    def get_count_unread_threads(self, instance):
+    def get_count_unread_threads(self, instance) -> int:
         """Return the number of threads with unread messages in the mailbox."""
         return self._get_cached_counts(instance)["count_unread_threads"]
 
-    def get_count_threads(self, instance):
+    def get_count_threads(self, instance) -> int:
         """Return the number of threads in the mailbox."""
         return self._get_cached_counts(instance)["count_threads"]
 
-    def get_count_delivering(self, instance):
+    def get_count_delivering(self, instance) -> int:
         """Return the number of threads with messages being delivered."""
         return self._get_cached_counts(instance)["count_delivering"]
+
+    def get_count_unread_mentions(self, instance) -> int:
+        """Return the number of threads with unread mentions for the current user."""
+        return self._get_cached_counts(instance)["count_unread_mentions"]
 
     @extend_schema_field(
         {
@@ -621,10 +645,12 @@ class ThreadSerializer(serializers.ModelSerializer):
     sender_names = serializers.ListField(child=serializers.CharField(), read_only=True)
     user_role = serializers.SerializerMethodField(read_only=True)
     has_unread = serializers.SerializerMethodField(read_only=True)
+    has_unread_mention = serializers.SerializerMethodField(read_only=True)
     has_starred = serializers.SerializerMethodField(read_only=True)
     accesses = serializers.SerializerMethodField()
     labels = serializers.SerializerMethodField()
     summary = serializers.CharField(read_only=True)
+    events_count = serializers.IntegerField(read_only=True)
 
     @extend_schema_field(serializers.BooleanField())
     def get_has_unread(self, instance):
@@ -634,6 +660,15 @@ class ThreadSerializer(serializers.ModelSerializer):
         Returns False when the annotation is absent (no mailbox context).
         """
         return getattr(instance, "_has_unread", False)
+
+    @extend_schema_field(serializers.BooleanField())
+    def get_has_unread_mention(self, instance):
+        """Return whether the thread has unread mentions for the current user.
+
+        Requires the _has_unread_mention annotation (set by ThreadViewSet).
+        Returns False when the annotation is absent (no mailbox context).
+        """
+        return getattr(instance, "_has_unread_mention", False)
 
     @extend_schema_field(serializers.BooleanField())
     def get_has_starred(self, instance):
@@ -689,6 +724,7 @@ class ThreadSerializer(serializers.ModelSerializer):
             "snippet",
             "messages",
             "has_unread",
+            "has_unread_mention",
             "has_trashed",
             "is_trashed",
             "has_archived",
@@ -713,6 +749,7 @@ class ThreadSerializer(serializers.ModelSerializer):
             "accesses",
             "labels",
             "summary",
+            "events_count",
         ]
         read_only_fields = fields  # Mark all as read-only for safety
 
@@ -968,6 +1005,8 @@ class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
 
     author = UserWithoutAbilitiesSerializer(read_only=True)
     data = ThreadEventDataField()
+    has_unread_mention = serializers.SerializerMethodField()
+    is_editable = serializers.SerializerMethodField()
 
     class Meta:
         model = models.ThreadEvent
@@ -979,6 +1018,8 @@ class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             "message",
             "author",
             "data",
+            "has_unread_mention",
+            "is_editable",
             "created_at",
             "updated_at",
         ]
@@ -987,10 +1028,22 @@ class ThreadEventSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             "thread",
             "channel",
             "author",
+            "has_unread_mention",
+            "is_editable",
             "created_at",
             "updated_at",
         ]
         create_only_fields = ["type", "message"]
+
+    @extend_schema_field(serializers.BooleanField())
+    def get_has_unread_mention(self, obj):
+        """Return whether the event has an unread mention for the current user."""
+        return getattr(obj, "_has_unread_mention", False)
+
+    @extend_schema_field(serializers.BooleanField())
+    def get_is_editable(self, obj):
+        """Return whether the event is still within the edit delay window."""
+        return obj.is_editable()
 
 
 class MailboxAccessReadSerializer(serializers.ModelSerializer):

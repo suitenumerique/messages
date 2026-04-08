@@ -20,6 +20,7 @@ export interface Thread {
   readonly snippet: string;
   readonly messages: string;
   readonly has_unread: boolean;
+  readonly has_unread_mention: boolean;
   readonly has_trashed: boolean;
   /** Whether all messages in the thread are trashed */
   readonly is_trashed: boolean;
@@ -69,4 +70,5 @@ export interface Thread {
   readonly accesses: readonly ThreadAccessDetail[];
   readonly labels: readonly ThreadLabel[];
   readonly summary: string;
+  readonly events_count: number;
 }

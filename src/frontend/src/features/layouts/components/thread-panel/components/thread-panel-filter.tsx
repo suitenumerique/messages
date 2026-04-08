@@ -1,69 +1,55 @@
-import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
 import { ContextMenu, Icon, IconType } from "@gouvfr-lasuite/ui-kit";
 import { THREAD_SELECTED_FILTERS_KEY } from "@/features/config/constants";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { useSafeRouterPush } from "@/hooks/use-safe-router-push";
-import { useThreadPanelFilters } from "../hooks/use-thread-panel-filters";
-
-export const THREAD_PANEL_FILTER_PARAMS = [
-  "has_unread",
-  "has_starred",
-] as const;
-
-export type FilterType = (typeof THREAD_PANEL_FILTER_PARAMS)[number];
+import {
+  DEFAULT_SELECTED_FILTERS,
+  THREAD_PANEL_FILTER_PARAMS,
+  useThreadPanelFilters,
+  type FilterType,
+} from "../hooks/use-thread-panel-filters";
 
 const getStoredSelectedFilters = (): FilterType[] => {
   try {
     const stored = JSON.parse(
       localStorage.getItem(THREAD_SELECTED_FILTERS_KEY) ?? "[]",
     );
-    if (
-      Array.isArray(stored) &&
-      stored.length > 0 &&
-      stored.every((s: string) => THREAD_PANEL_FILTER_PARAMS.includes(s as FilterType))
-    ) {
-      return stored;
+    if (Array.isArray(stored) && stored.length > 0) {
+      const validFilters = stored.filter(
+        (value): value is FilterType =>
+          typeof value === "string" &&
+          THREAD_PANEL_FILTER_PARAMS.includes(value as FilterType),
+      );
+      if (validFilters.length > 0) {
+        return validFilters;
+      }
     }
   } catch {
     // ignore
   }
-  return ["has_unread"];
+  return DEFAULT_SELECTED_FILTERS;
 };
 
 export const ThreadPanelFilter = () => {
   const { t } = useTranslation();
-  const searchParams = useSearchParams();
-  const safePush = useSafeRouterPush();
   const [selectedFilters, setSelectedFilters] =
     useState<FilterType[]>(getStoredSelectedFilters);
 
   const { threads } = useMailboxContext();
-  const { hasActiveFilters, activeFilters } = useThreadPanelFilters();
+  const { hasActiveFilters, activeFilters, applyFilters, clearFilters } =
+    useThreadPanelFilters();
   const isDisabled = !threads?.results.length && !hasActiveFilters;
 
   const filterLabels: Record<FilterType, string> = useMemo(
     () => ({
       has_unread: t("Unread"),
       has_starred: t("Starred"),
+      has_mention: t("Mentioned"),
     }),
     [t],
   );
-
-  const applyFilters = (filters: FilterType[]) => {
-    const params = new URLSearchParams(searchParams.toString());
-    THREAD_PANEL_FILTER_PARAMS.forEach((param) => params.delete(param));
-    filters.forEach((filter) => params.set(filter, "1"));
-    safePush(params);
-  };
-
-  const clearFilters = () => {
-    const params = new URLSearchParams(searchParams.toString());
-    THREAD_PANEL_FILTER_PARAMS.forEach((param) => params.delete(param));
-    safePush(params);
-  };
 
   const handleToggleClick = () => {
     if (hasActiveFilters) {
@@ -77,7 +63,7 @@ export const ThreadPanelFilter = () => {
     const toggled = selectedFilters.includes(type)
       ? selectedFilters.filter((f) => f !== type)
       : [...selectedFilters, type];
-    const next = toggled.length > 0 ? toggled : ["has_unread"] as FilterType[];
+    const next = toggled.length > 0 ? toggled : DEFAULT_SELECTED_FILTERS;
     setSelectedFilters(next);
     localStorage.setItem(THREAD_SELECTED_FILTERS_KEY, JSON.stringify(next));
     if (hasActiveFilters) {

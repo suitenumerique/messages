@@ -20,6 +20,7 @@ from core.factories import (
     MessageFactory,
     MessageRecipientFactory,
     ThreadAccessFactory,
+    ThreadEventFactory,
     ThreadFactory,
     UserFactory,
 )
@@ -1685,3 +1686,93 @@ class TestThreadListAPI:
             )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+class TestThreadListEventsCount:
+    """Test that ThreadSerializer exposes events_count on the list endpoint.
+
+    This count drives the frontend refetch-on-new-event effect in MailboxProvider.
+    """
+
+    @pytest.fixture
+    def url(self):
+        """Return the URL for the list endpoint."""
+        return reverse("threads-list")
+
+    @staticmethod
+    def _setup_user_with_thread(user=None):
+        """Create a user with an admin mailbox and an editor thread access."""
+        user = user or UserFactory()
+        mailbox = MailboxFactory()
+        MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        thread = ThreadFactory()
+        ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        return user, mailbox, thread
+
+    def test_list_threads_events_count_zero_when_no_events(self, api_client, url):
+        """A thread without any ThreadEvent should expose events_count == 0."""
+        user, mailbox, thread = self._setup_user_with_thread()
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(url, {"mailbox_id": str(mailbox.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = next(t for t in response.data["results"] if t["id"] == str(thread.id))
+        assert payload["events_count"] == 0
+
+    def test_list_threads_events_count_matches_thread_events(self, api_client, url):
+        """events_count should equal the number of ThreadEvents attached to the thread."""
+        user, mailbox, thread = self._setup_user_with_thread()
+        api_client.force_authenticate(user=user)
+
+        ThreadEventFactory(thread=thread, author=user)
+        ThreadEventFactory(thread=thread, author=user)
+        ThreadEventFactory(thread=thread, author=user)
+
+        response = api_client.get(url, {"mailbox_id": str(mailbox.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = next(t for t in response.data["results"] if t["id"] == str(thread.id))
+        assert payload["events_count"] == 3
+
+    def test_list_threads_events_count_distinct_per_thread(self, api_client, url):
+        """events_count must use distinct counting to avoid JOIN multiplication.
+
+        The queryset joins on accesses__mailbox, so without ``distinct=True`` the
+        count would be multiplied by the number of ThreadAccess rows. Guard against
+        regressions by creating several accesses and expecting the raw event count.
+        """
+        user, mailbox, thread = self._setup_user_with_thread()
+        api_client.force_authenticate(user=user)
+
+        # Add two extra accesses on the same thread from other mailboxes the user
+        # also has access to, to force multiple JOIN rows.
+        for _ in range(2):
+            extra_mailbox = MailboxFactory()
+            MailboxAccessFactory(
+                mailbox=extra_mailbox,
+                user=user,
+                role=enums.MailboxRoleChoices.ADMIN,
+            )
+            ThreadAccessFactory(
+                mailbox=extra_mailbox,
+                thread=thread,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+            )
+
+        ThreadEventFactory(thread=thread, author=user)
+        ThreadEventFactory(thread=thread, author=user)
+
+        response = api_client.get(url, {"mailbox_id": str(mailbox.id)})
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = next(t for t in response.data["results"] if t["id"] == str(thread.id))
+        assert payload["events_count"] == 2

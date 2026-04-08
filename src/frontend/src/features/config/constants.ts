@@ -21,6 +21,7 @@ export const MESSAGE_IMPORT_TASK_KEY = APP_STORAGE_PREFIX + "message-import-task
 export const EXTERNAL_IMAGES_CONSENT_KEY = APP_STORAGE_PREFIX + "external-images-consent";
 export const THREAD_SELECTED_FILTERS_KEY = APP_STORAGE_PREFIX + "thread-selected-filters";
 export const SILENT_LOGIN_RETRY_KEY = APP_STORAGE_PREFIX + "silent-login-retry";
+export const EXPANDED_FOLDERS_KEY = APP_STORAGE_PREFIX + "expanded-folders";
 
 
 // Enums
