@@ -112,7 +112,9 @@ class TestScopeLevelCheckConstraint:
 
 @pytest.mark.django_db
 class TestScopeLevelCleanValidation:
-    """Model-level validation: full_clean() raises ValidationError."""
+    """Model-level validation: full_clean() (via validate_constraints, called
+    automatically from BaseModel.save) rejects every illegal scope_level/target
+    combination before the row reaches the DB."""
 
     def test_global_with_mailbox_full_clean(self):
         mailbox = MailboxFactory()
@@ -121,6 +123,17 @@ class TestScopeLevelCleanValidation:
             type=ChannelTypes.API_KEY,
             scope_level=ChannelScopeLevel.GLOBAL,
             mailbox=mailbox,
+        )
+        with pytest.raises(ValidationError):
+            channel.full_clean()
+
+    def test_global_with_maildomain_full_clean(self):
+        maildomain = MailDomainFactory()
+        channel = models.Channel(
+            name="x",
+            type=ChannelTypes.API_KEY,
+            scope_level=ChannelScopeLevel.GLOBAL,
+            maildomain=maildomain,
         )
         with pytest.raises(ValidationError):
             channel.full_clean()
@@ -138,8 +151,61 @@ class TestScopeLevelCleanValidation:
         with pytest.raises(ValidationError):
             channel.full_clean()
 
-    def test_save_triggers_full_clean_only_for_global(self):
-        """save() full-cleans global channels automatically (belt-and-suspenders)."""
+    def test_maildomain_without_maildomain_full_clean(self):
+        channel = models.Channel(
+            name="x",
+            type=ChannelTypes.API_KEY,
+            scope_level=ChannelScopeLevel.MAILDOMAIN,
+        )
+        with pytest.raises(ValidationError):
+            channel.full_clean()
+
+    def test_mailbox_without_mailbox_full_clean(self):
+        channel = models.Channel(
+            name="x",
+            type=ChannelTypes.API_KEY,
+            scope_level=ChannelScopeLevel.MAILBOX,
+        )
+        with pytest.raises(ValidationError):
+            channel.full_clean()
+
+    def test_mailbox_with_maildomain_full_clean(self):
+        mailbox = MailboxFactory()
+        maildomain = MailDomainFactory()
+        channel = models.Channel(
+            name="x",
+            type=ChannelTypes.API_KEY,
+            scope_level=ChannelScopeLevel.MAILBOX,
+            mailbox=mailbox,
+            maildomain=maildomain,
+        )
+        with pytest.raises(ValidationError):
+            channel.full_clean()
+
+    def test_user_without_user_full_clean(self):
+        channel = models.Channel(
+            name="x",
+            type=ChannelTypes.API_KEY,
+            scope_level=ChannelScopeLevel.USER,
+        )
+        with pytest.raises(ValidationError):
+            channel.full_clean()
+
+    def test_user_with_mailbox_full_clean(self):
+        mailbox = MailboxFactory()
+        user = UserFactory()
+        channel = models.Channel(
+            name="x",
+            type=ChannelTypes.API_KEY,
+            scope_level=ChannelScopeLevel.USER,
+            user=user,
+            mailbox=mailbox,
+        )
+        with pytest.raises(ValidationError):
+            channel.full_clean()
+
+    def test_save_triggers_full_clean(self):
+        """BaseModel.save() runs full_clean() and rejects bad rows before the DB."""
         mailbox = MailboxFactory()
         bad = models.Channel(
             name="bad",

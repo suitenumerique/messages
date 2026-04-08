@@ -559,43 +559,11 @@ class Channel(BaseModel):
     def __str__(self):
         return self.name
 
-    # BaseModel.save already calls full_clean() on every save, which runs
-    # our clean() override. No custom save() override is needed here.
-
-    def clean(self):
-        """Re-assert the scope_level ↔ target invariant at the ORM layer.
-
-        Second of several defense-in-depth layers guarding against
-        accidental escalation to scope_level=global (the DB check
-        constraint is the first). The ``user`` FK is permitted on any
-        scope as a creator-audit pointer; only ``scope_level=user``
-        REQUIRES it (as the target).
-        """
-        super().clean()
-        if self.scope_level == ChannelScopeLevel.GLOBAL:
-            if self.mailbox_id is not None or self.maildomain_id is not None:
-                raise ValidationError(
-                    "Global channels must have no mailbox or maildomain."
-                )
-        elif self.scope_level == ChannelScopeLevel.MAILDOMAIN:
-            if self.mailbox_id is not None or self.maildomain_id is None:
-                raise ValidationError(
-                    "Maildomain-scope channels must have a maildomain and no mailbox."
-                )
-        elif self.scope_level == ChannelScopeLevel.MAILBOX:
-            if self.mailbox_id is None or self.maildomain_id is not None:
-                raise ValidationError(
-                    "Mailbox-scope channels must have a mailbox and no maildomain."
-                )
-        elif self.scope_level == ChannelScopeLevel.USER:
-            if (
-                self.mailbox_id is not None
-                or self.maildomain_id is not None
-                or self.user_id is None
-            ):
-                raise ValidationError(
-                    "User-scope channels must have a user and no mailbox/maildomain."
-                )
+    # The scope_level ↔ target invariant is enforced by the
+    # ``channel_scope_level_targets`` CheckConstraint above. BaseModel.save
+    # calls full_clean(), which calls validate_constraints(), which evaluates
+    # that Q() in Python and raises ValidationError before the row is sent
+    # to the DB. No custom clean() override is needed.
 
     # --- api_key helpers --- #
 
