@@ -29,7 +29,7 @@ def url():
 
 @pytest.fixture
 def auth_header():
-    """Global-scope api_key with maildomains:write."""
+    """Global-scope api_key with ChannelApiKeyScope.MAILDOMAINS_CREATE."""
     channel, plaintext = _make_api_key_channel()
     return {
         "HTTP_X_CHANNEL_ID": str(channel.id),

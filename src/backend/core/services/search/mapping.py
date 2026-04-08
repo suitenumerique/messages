@@ -1,7 +1,14 @@
 """OpenSearch index and mapping configuration."""
 
-# Index name constants
-MESSAGE_INDEX = "messages"
+import os
+
+# Index name constants. When running under pytest-xdist, give every worker its
+# own index so parallel test workers do not race on the same shared index
+# (create/delete/index operations would otherwise step on each other and
+# surface as flaky `resource_already_exists_exception` / missing-doc errors).
+# In production PYTEST_XDIST_WORKER is unset, so the name stays "messages".
+_XDIST_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
+MESSAGE_INDEX = f"messages_{_XDIST_WORKER}" if _XDIST_WORKER else "messages"
 
 # Schema definitions
 MESSAGE_MAPPING = {

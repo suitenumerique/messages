@@ -614,6 +614,11 @@ class Channel(BaseModel):
 
         ``mailbox_roles`` is ignored for non-user scopes.
         """
+        # Fail closed on ambiguous input: callers must ask about exactly one
+        # resource at a time, otherwise branch order below would silently
+        # decide which one "wins".
+        if mailbox is not None and maildomain is not None:
+            return False
         if self.scope_level == ChannelScopeLevel.GLOBAL:
             return True
         if self.scope_level == ChannelScopeLevel.MAILDOMAIN:
