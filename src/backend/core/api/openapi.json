@@ -253,6 +253,10 @@
                                             "type": "boolean",
                                             "readOnly": true
                                         },
+                                        "FEATURE_THREAD_SPLIT": {
+                                            "type": "boolean",
+                                            "readOnly": true
+                                        },
                                         "MESSAGES_MANUAL_RETRY_MAX_AGE": {
                                             "type": "integer",
                                             "description": "Maximum age in seconds for a message to be eligible for manual retry of failed deliveries",
@@ -282,6 +286,7 @@
                                         "IMAGE_PROXY_ENABLED",
                                         "FEATURE_MAILDOMAIN_CREATE",
                                         "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
+                                        "FEATURE_THREAD_SPLIT",
                                         "MESSAGES_MANUAL_RETRY_MAX_AGE",
                                         "FRONTEND_SILENT_LOGIN_ENABLED"
                                     ]

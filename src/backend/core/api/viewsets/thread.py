@@ -655,6 +655,12 @@ class ThreadViewSet(
     )
     def split(self, request, pk=None):  # pylint: disable=unused-argument
         """Split a thread at the given message, moving it and all later messages to a new thread."""
+        # Kill-switch: when the feature is disabled at the instance level,
+        # behave as if the endpoint does not exist so clients cannot probe
+        # it via error messages.
+        if not settings.FEATURE_THREAD_SPLIT:
+            raise drf.exceptions.NotFound()
+
         old_thread = self.get_object()
 
         # Validate request

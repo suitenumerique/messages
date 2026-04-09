@@ -4,6 +4,7 @@ import uuid
 from datetime import timedelta
 from unittest.mock import patch
 
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -105,6 +106,26 @@ def test_split_thread_viewer_only(api_client):
     url = _get_split_url(thread.id)
     response = api_client.post(url, {"message_id": str(messages[1].id)})
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+# --- Feature flag tests ---
+
+
+@override_settings(FEATURE_THREAD_SPLIT=False)
+def test_split_thread_feature_disabled(api_client):
+    """When FEATURE_THREAD_SPLIT is False the action is not reachable."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+
+    mailbox = MailboxFactory()
+    thread, messages = _create_thread_with_messages(mailbox, count=3)
+    _setup_editor_access(user, mailbox, thread)
+
+    url = _get_split_url(thread.id)
+    response = api_client.post(url, {"message_id": str(messages[1].id)})
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    # No actual split happened.
+    assert Thread.objects.filter(id=thread.id).count() == 1
 
 
 # --- Validation tests ---

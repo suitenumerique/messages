@@ -864,6 +864,12 @@ class Base(Configuration):
         environ_name="FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
         environ_prefix=None,
     )
+    # Kill-switch for the "split thread" feature. When False, the
+    # corresponding API action is disabled and the frontend hides the
+    # related menu entry.
+    FEATURE_THREAD_SPLIT = values.BooleanValue(
+        default=True, environ_name="FEATURE_THREAD_SPLIT", environ_prefix=None
+    )
 
     # Logging
     # We want to make it easy to log to console but by default we log production

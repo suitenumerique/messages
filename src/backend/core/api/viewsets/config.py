@@ -119,6 +119,10 @@ class ConfigView(drf.views.APIView):
                             "type": "boolean",
                             "readOnly": True,
                         },
+                        "FEATURE_THREAD_SPLIT": {
+                            "type": "boolean",
+                            "readOnly": True,
+                        },
                         "MESSAGES_MANUAL_RETRY_MAX_AGE": {
                             "type": "integer",
                             "description": (
@@ -151,6 +155,7 @@ class ConfigView(drf.views.APIView):
                         "IMAGE_PROXY_ENABLED",
                         "FEATURE_MAILDOMAIN_CREATE",
                         "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
+                        "FEATURE_THREAD_SPLIT",
                         "MESSAGES_MANUAL_RETRY_MAX_AGE",
                         "FRONTEND_SILENT_LOGIN_ENABLED",
                     ],
@@ -176,6 +181,7 @@ class ConfigView(drf.views.APIView):
             "FEATURE_MAILBOX_ADMIN_CHANNELS",
             "FEATURE_MAILDOMAIN_CREATE",
             "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
+            "FEATURE_THREAD_SPLIT",
             "MAX_OUTGOING_ATTACHMENT_SIZE",
             "MAX_OUTGOING_BODY_SIZE",
             "MAX_INCOMING_EMAIL_SIZE",

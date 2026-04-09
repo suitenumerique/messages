@@ -9,6 +9,7 @@ import usePrint from "@/features/message/use-print";
 import useRead from "@/features/message/use-read";
 import useSplitThread from "@/features/message/use-split-thread";
 import useTrash from "@/features/message/use-trash";
+import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import { ThreadMessageActionsProps } from "./types";
 
 const ThreadMessageActions = ({
@@ -30,6 +31,7 @@ const ThreadMessageActions = ({
     const { splitThread } = useSplitThread();
     const { print } = usePrint();
     const modals = useModals();
+    const isThreadSplitEnabled = useFeatureFlag(FEATURE_KEYS.THREAD_SPLIT);
 
     const hasSiblingMessages = useMemo(() => {
         if (!selectedThread) return false;
@@ -37,13 +39,14 @@ const ThreadMessageActions = ({
     }, [selectedThread]);
 
     const canSplitThread = useMemo(() => {
+        if (!isThreadSplitEnabled) return false;
         if (!selectedThread || !hasSiblingMessages) return false;
         if (message.is_draft) return false;
         if (selectedThread.user_role !== "editor") return false;
         // Cannot split at the first message
         if (selectedThread.messages[0] === message.id) return false;
         return true;
-    }, [selectedThread, hasSiblingMessages, message.id, message.is_draft]);
+    }, [isThreadSplitEnabled, selectedThread, hasSiblingMessages, message.id, message.is_draft]);
 
     // Handlers specific to actions
     const toggleReadStateFrom = useCallback((is_unread: boolean) => {
