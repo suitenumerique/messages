@@ -546,6 +546,26 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     external_recipients.add(recipient_email)
 
             if external_recipients:
+                # Check SPF include chain if enabled (only for external recipients)
+                if settings.MESSAGES_SPF_CHECK_OUTGOING:
+                    from core.services.dns.check import (
+                        check_spf_status,  # pylint: disable=import-outside-toplevel
+                    )
+
+                    sender_domain = message.sender.mailbox.domain
+                    if not check_spf_status(sender_domain):
+                        error_msg = f"SPF check failed for domain {sender_domain.name}"
+                        logger.warning(
+                            "SPF check failed for message %s (domain: %s), marking recipients for retry",
+                            message.id,
+                            sender_domain.name,
+                        )
+                        for recipient_email in external_recipients:
+                            _mark_delivered(
+                                recipient_email, False, False, error_msg, True
+                            )
+                        return
+
                 # Verify DKIM signature if enabled (only for external recipients)
                 if settings.MESSAGES_DKIM_VERIFY_OUTGOING:
                     sender_domain = message.sender.mailbox.domain

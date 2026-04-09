@@ -2,12 +2,22 @@
 DNS checking functionality for mail domains.
 """
 
+import collections
+import logging
 import re
 from typing import Dict, List, Optional, Tuple
+
+from django.conf import settings
+from django.core.cache import cache
 
 import dns.resolver
 
 from core.models import MailDomain
+
+logger = logging.getLogger(__name__)
+
+SPF_CHECK_CACHE_KEY_PREFIX = "dns:spf_check:"
+SPF_CHECK_CACHE_TIMEOUT = 600  # 10 minutes
 
 
 def normalize_txt_value(value: str) -> str:
@@ -82,14 +92,19 @@ def _check_dkim_semantic(
     return None
 
 
-def _check_spf_semantic(
-    expected_value: str, found_values: List[str]
-) -> Optional[Dict[str, any]]:
-    """Semantic comparison for SPF records (term order doesn't matter)."""
+def _check_spf(expected_value: str, found_values: List[str]) -> Dict[str, any]:
+    """Full SPF check: semantic comparison, recursive include verification.
+
+    1. Compares SPF terms ignoring order (RFC 7208).
+    2. If there are include: targets under the technical domain, verifies
+       they resolve to valid SPF records via BFS.
+    """
     expected_spf = parse_spf_terms(expected_value)
     if not expected_spf:
-        return None
+        return {"status": "incorrect", "found": found_values}
+
     expected_all, expected_terms = expected_spf
+    terms_match = False
     for found_value in found_values:
         found_spf = parse_spf_terms(found_value)
         if not found_spf:
@@ -97,11 +112,103 @@ def _check_spf_semantic(
         found_all, found_terms = found_spf
         if not expected_terms <= found_terms:
             continue
-        if expected_all == found_all:
-            return {"status": "correct", "found": found_values}
-        if expected_all == "-all" and found_all == "~all":
-            return {"status": "correct", "found": found_values}
-    return None
+        if expected_all == found_all or (
+            expected_all == "-all" and found_all == "~all"
+        ):
+            terms_match = True
+            break
+
+    # Verify include chain if there are technical domain includes
+    expected_includes = _extract_include_domains(expected_value)
+    technical_domain = settings.MESSAGES_TECHNICAL_DOMAIN
+    includes_ok = None  # None = no check needed
+    if expected_includes and technical_domain:
+        expected_technical = {
+            d for d in expected_includes if d.endswith(f".{technical_domain}")
+        }
+        if expected_technical:
+            resolved, error = _resolve_spf_includes(found_values)
+            if error and error.startswith("duplicate:"):
+                return {"status": "duplicate", "found": found_values}
+            if error == "limit_reached":
+                return {"status": "invalid", "found": found_values}
+            includes_ok = expected_technical <= resolved
+
+    if terms_match and includes_ok is not False:
+        return {"status": "correct", "found": found_values}
+    if includes_ok is True:
+        # Terms don't match our template but includes chain is valid
+        return {"status": "correct", "found": found_values}
+    if terms_match:
+        # Terms match but includes don't resolve
+        return {"status": "incomplete", "found": found_values}
+    return {"status": "incorrect", "found": found_values}
+
+
+def _extract_include_domains(spf_value: str) -> List[str]:
+    """Extract include: domains from an SPF value, preserving order."""
+    return [
+        term[len("include:") :]
+        for term in spf_value.split()
+        if term.startswith("include:")
+    ]
+
+
+def _resolve_spf_includes(
+    found_values: List[str], max_lookups: int = 10
+) -> Tuple[set, Optional[str]]:
+    """BFS through SPF include chains, return all domains with valid SPF records.
+
+    Seeds from include: domains in found_values, follows the chain via BFS.
+    Per RFC 7208, stops after max_lookups DNS lookups.
+
+    Returns:
+        (resolved_domains, error) where error is None on success, or a string
+        describing the issue ("limit_reached", "duplicate:domain.com").
+    """
+    queue = collections.deque()
+    for found_value in found_values:
+        if found_value.startswith("v=spf1"):
+            queue.extend(_extract_include_domains(found_value))
+
+    visited = set()
+    resolved = set()
+    lookup_count = 0
+
+    while queue:
+        if lookup_count >= max_lookups:
+            return resolved, "limit_reached"
+
+        include_domain = queue.popleft()
+        if include_domain in visited:
+            continue
+        visited.add(include_domain)
+        lookup_count += 1
+
+        try:
+            answers = dns.resolver.resolve(include_domain, "TXT")
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.debug("DNS resolution failed for %s", include_domain)
+            continue
+
+        spf_records = []
+        for answer in answers:
+            txt_value = normalize_txt_value(answer.to_text())
+            if txt_value.startswith("v=spf1"):
+                spf_records.append(txt_value)
+
+        if len(spf_records) > 1:
+            return resolved, f"duplicate:{include_domain}"
+
+        if not spf_records:
+            continue
+
+        resolved.add(include_domain)
+        for child_domain in _extract_include_domains(spf_records[0]):
+            if child_domain not in visited:
+                queue.append(child_domain)
+
+    return resolved, None
 
 
 def _resolve_dns_values(record_type, target, query_name):
@@ -179,24 +286,18 @@ def check_single_record(
             if security_result:
                 return security_result
 
-        # Exact match
+        # SPF: always use semantic check (handles exact match, reordering,
+        # ~all acceptance, and recursive include verification)
+        if record_type.upper() == "TXT" and expected_value.startswith("v=spf1"):
+            return _check_spf(expected_value, found_values)
+
+        # Exact match (non-SPF)
         if expected_value in found_values:
             return {"status": "correct", "found": found_values}
 
-        # Accept ~all as correct when -all is expected for SPF records
-        if record_type.upper() == "TXT" and expected_value.endswith("-all"):
-            softfail_variant = expected_value[:-4] + "~all"
-            if softfail_variant in found_values:
-                return {"status": "correct", "found": found_values}
-
-        # Semantic fallback comparisons for DKIM and SPF
+        # Semantic fallback for DKIM
         if record_type.upper() == "TXT" and target.endswith("._domainkey"):
             result = _check_dkim_semantic(expected_value, found_values)
-            if result:
-                return result
-
-        if record_type.upper() == "TXT" and expected_value.startswith("v=spf1"):
-            result = _check_spf_semantic(expected_value, found_values)
             if result:
                 return result
 
@@ -214,6 +315,50 @@ def check_single_record(
         return {"status": "error", "error": "Domain name too long"}
     except Exception as e:  # pylint: disable=broad-exception-caught
         return {"status": "error", "error": f"DNS query failed: {str(e)}"}
+
+
+def _spf_check_cache_key(maildomain: MailDomain) -> str:
+    return f"{SPF_CHECK_CACHE_KEY_PREFIX}{maildomain.pk}"
+
+
+def check_spf_status(maildomain: MailDomain) -> bool:
+    """Check if the SPF include chain is correctly set up for a mail domain.
+
+    Results are cached for 10 minutes. Returns True if SPF is correct
+    (or if no SPF record is expected), False otherwise.
+    """
+    cache_key = _spf_check_cache_key(maildomain)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = _check_spf_status_uncached(maildomain)
+    cache.set(cache_key, result, SPF_CHECK_CACHE_TIMEOUT)
+    return result
+
+
+def _check_spf_status_uncached(maildomain: MailDomain) -> bool:
+    """Perform the actual SPF check (no cache)."""
+    expected_records = maildomain.get_expected_dns_records()
+    spf_records = [
+        r
+        for r in expected_records
+        if r["type"].upper() == "TXT" and r["value"].startswith("v=spf1")
+    ]
+    if not spf_records:
+        return True
+
+    for expected_record in spf_records:
+        result = check_single_record(maildomain, expected_record)
+        if result.get("status") != "correct":
+            return False
+
+    return True
+
+
+def invalidate_spf_check_cache(maildomain: MailDomain) -> None:
+    """Clear the cached SPF check result for a mail domain."""
+    cache.delete(_spf_check_cache_key(maildomain))
 
 
 def check_dns_records(maildomain: MailDomain) -> List[Dict[str, any]]:

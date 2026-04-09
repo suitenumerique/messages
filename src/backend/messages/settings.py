@@ -392,6 +392,13 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    # Block outgoing messages when SPF includes are not correctly set up
+    MESSAGES_SPF_CHECK_OUTGOING = values.BooleanValue(
+        default=False,
+        environ_name="MESSAGES_SPF_CHECK_OUTGOING",
+        environ_prefix=None,
+    )
+
     # Technical domain for DNS records (MX, SPF, DKIM hosting)
     MESSAGES_TECHNICAL_DOMAIN = values.Value(
         "localhost", environ_name="MESSAGES_TECHNICAL_DOMAIN", environ_prefix=None

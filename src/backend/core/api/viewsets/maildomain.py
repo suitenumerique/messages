@@ -31,7 +31,7 @@ from core.api import serializers as core_serializers
 from core.api.viewsets.message_template import BODIES_PARAMETER
 from core.api.viewsets.mixins import MessageTemplateResponseMixin
 from core.enums import MessageTemplateTypeChoices
-from core.services.dns.check import check_dns_records
+from core.services.dns.check import check_dns_records, invalidate_spf_check_cache
 
 logger = getLogger(__name__)
 
@@ -130,8 +130,11 @@ class AdminMailDomainViewSet(
         """
         maildomain = get_object_or_404(models.MailDomain, pk=maildomain_pk)
 
-        # Perform DNS check
+        # Perform DNS check (always fresh, never cached)
         check_results = check_dns_records(maildomain)
+
+        # Invalidate outgoing SPF cache so send path picks up this fresh result
+        invalidate_spf_check_cache(maildomain)
 
         return Response(
             {
