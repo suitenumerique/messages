@@ -468,7 +468,11 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                 relay = smtp_host if not internal else "internal"
 
                 logger.info(
-                    'module=core.mda.outbound.send_message message_id=%s to=%s from=%s relay=%s socks=%s status=%s error="%s"',
+                    (
+                        "module=core.mda.outbound.send_message "
+                        "message_id=%s to=%s from=%s "
+                        'relay=%s socks=%s status=%s error="%s"'
+                    ),
                     message.id,
                     recipient_email,
                     message.sender.email,
