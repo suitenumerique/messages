@@ -462,18 +462,20 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                 error: Optional[str] = None,
                 retry: Optional[bool] = False,
                 smtp_host: Optional[str] = None,
+                proxy_host: Optional[str] = None,
             ) -> None:
                 status = "delivered" if delivered else "failed"
                 relay = smtp_host if not internal else "internal"
 
                 logger.info(
-                    "module=core.mda.outbound.send_message message_id=%s to=%s from=%s relay=%s status=%s error=(%s)",
+                    'module=core.mda.outbound.send_message message_id=%s to=%s from=%s relay=%s socks=%s status=%s error="%s"',
                     message.id,
                     recipient_email,
                     message.sender.email,
                     relay,
+                    proxy_host or "nil",
                     status,
-                    error or "nil",
+                    (error or "nil").replace('"', '\\"'),
                 )
                 if delivered:
                     # TODO also update message.updated_at?
@@ -582,6 +584,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                             status.get("error"),
                             status.get("retry", False),
                             status.get("smtp_host"),
+                            status.get("proxy_host"),
                         )
                 except Exception as e:  # pylint: disable=broad-exception-caught
                     logger.error(
