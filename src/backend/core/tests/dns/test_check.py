@@ -31,16 +31,10 @@ def _txt_rr(value):
 
 
 def _txt_answer(*values):
-    """Create a mock dns.resolver answer for TXT records.
-
-    Returns an object that works with both iteration and .rrset access.
-    Each value becomes a separate TXT record in the rrset.
-    """
+    """Create a mock dns.resolver answer for TXT records."""
     rrs = [_txt_rr(v) for v in values]
     answer = MagicMock()
     answer.rrset = rrs
-    answer.__iter__ = lambda self: iter(rrs)
-    answer.__len__ = lambda self: len(rrs)
     return answer
 
 
