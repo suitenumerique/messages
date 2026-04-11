@@ -1214,11 +1214,11 @@ class TestSendMessageSPFCheck:
 
         def resolve_side_effect(name, record_type):
             if name == mailbox_sender.domain.name:
-                return [
-                    MagicMock(
-                        to_text=MagicMock(return_value='"v=spf1 ip4:1.2.3.4 -all"')
-                    )
-                ]
+                rr = MagicMock()
+                rr.strings = (b"v=spf1 ip4:1.2.3.4 -all",)
+                answer = MagicMock()
+                answer.rrset = [rr]
+                return answer
             raise dns.resolver.NXDOMAIN()
 
         mock_dns_resolve.side_effect = resolve_side_effect

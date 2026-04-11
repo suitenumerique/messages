@@ -23,6 +23,27 @@ from core.services.dns.check import (
 )
 
 
+def _txt_rr(value):
+    """Create a mock TXT resource record with .strings for dnspython rrset."""
+    rr = MagicMock()
+    rr.strings = (value.encode(),)
+    return rr
+
+
+def _txt_answer(*values):
+    """Create a mock dns.resolver answer for TXT records.
+
+    Returns an object that works with both iteration and .rrset access.
+    Each value becomes a separate TXT record in the rrset.
+    """
+    rrs = [_txt_rr(v) for v in values]
+    answer = MagicMock()
+    answer.rrset = rrs
+    answer.__iter__ = lambda self: iter(rrs)
+    answer.__len__ = lambda self: len(rrs)
+    return answer
+
+
 @pytest.mark.django_db
 class TestDNSChecking:  # pylint: disable=too-many-public-methods
     """Test DNS checking functionality."""
@@ -72,9 +93,9 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock correct TXT record
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=spf1 include:_spf.example.com -all"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer(
+                "v=spf1 include:_spf.example.com -all"
+            )
 
             result = check_single_record(maildomain, expected_record)
 
@@ -255,24 +276,18 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
                         return [mock_mx_answer]
 
                     if record_type == "TXT" and name == "@.example.com":
-                        mock_txt_answer = MagicMock()
-                        mock_txt_answer.to_text.return_value = (
-                            '"v=spf1 include:_spf.example.com -all"'
+                        return _txt_answer(
+                            "some-garbage",
+                            "v=spf1 include:_spf.example.com -all",
+                            "some-garbage",
                         )
-                        garbage = MagicMock()
-                        garbage.to_text.return_value = "some-garbage"
-                        return [garbage, mock_txt_answer, garbage]
 
                     if (
                         record_type == "TXT"
                         and name == "_dmarc.example.com"
                         or name == "_dmarc_stripped.example.com"
                     ):
-                        mock_txt_dmarc_answer = MagicMock()
-                        mock_txt_dmarc_answer.to_text.return_value = (
-                            '"v=DMARC1; p=reject; adkim=s; aspf=s;"'
-                        )
-                        return [mock_txt_dmarc_answer]
+                        return _txt_answer("v=DMARC1; p=reject; adkim=s; aspf=s;")
 
                     return []
 
@@ -315,7 +330,7 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
 
                 mock_resolve.side_effect = [
                     [mock_mx_answer],  # Correct MX
-                    [],  # Incorrect TXT (empty response)
+                    _txt_answer("some-unrelated-record"),  # Incorrect TXT
                     NoAnswer(),  # Missing A record
                 ]
 
@@ -343,13 +358,10 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Mock two SPF TXT records (invalid per RFC 7208)
-            mock_answer1 = MagicMock()
-            mock_answer1.to_text.return_value = '"v=spf1 include:_spf.example.com -all"'
-            mock_answer2 = MagicMock()
-            mock_answer2.to_text.return_value = (
-                '"v=spf1 include:_spf.legacy-provider.com ~all"'
+            mock_resolve.return_value = _txt_answer(
+                "v=spf1 include:_spf.example.com -all",
+                "v=spf1 include:_spf.legacy-provider.com ~all",
             )
-            mock_resolve.return_value = [mock_answer1, mock_answer2]
 
             result = check_single_record(maildomain, expected_record)
 
@@ -370,13 +382,10 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_correct = MagicMock()
-            mock_correct.to_text.return_value = '"v=spf1 include:_spf.example.com -all"'
-            mock_legacy = MagicMock()
-            mock_legacy.to_text.return_value = (
-                '"v=spf1 include:_spf.legacy-provider.com ~all"'
+            mock_resolve.return_value = _txt_answer(
+                "v=spf1 include:_spf.example.com -all",
+                "v=spf1 include:_spf.legacy-provider.com ~all",
             )
-            mock_resolve.return_value = [mock_correct, mock_legacy]
 
             result = check_single_record(maildomain, expected_record)
 
@@ -393,15 +402,41 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_spf = MagicMock()
-            mock_spf.to_text.return_value = '"v=spf1 include:_spf.example.com -all"'
             # Also has a non-SPF TXT record
-            mock_other = MagicMock()
-            mock_other.to_text.return_value = '"google-site-verification=abc123"'
-            mock_resolve.return_value = [mock_spf, mock_other]
+            mock_resolve.return_value = _txt_answer(
+                "v=spf1 include:_spf.example.com -all",
+                "google-site-verification=abc123",
+            )
 
             result = check_single_record(maildomain, expected_record)
 
+            assert result["status"] == "correct"
+
+    def test_check_single_record_spf_found_when_resolver_merges_txt_records(
+        self, maildomain_factory
+    ):
+        """Regression: some local resolvers (e.g. systemd-resolved) merge
+        separate TXT records into a single RR with multiple strings. SPF must
+        still be found by iterating individual strings."""
+        maildomain = maildomain_factory(name="example.com")
+        expected_record = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf.example.com -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            # Single RR with two strings (merged by local resolver)
+            merged_rr = MagicMock()
+            merged_rr.strings = (
+                b"google-site-verification=abc123",
+                b"v=spf1 include:_spf.example.com -all",
+            )
+            answer = MagicMock()
+            answer.rrset = [merged_rr]
+            mock_resolve.return_value = answer
+
+            result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
 
     def test_check_single_record_dmarc_not_affected_by_spf_duplicate_check(
@@ -416,9 +451,9 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=DMARC1; p=reject; adkim=s; aspf=s;"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer(
+                "v=DMARC1; p=reject; adkim=s; aspf=s;"
+            )
 
             result = check_single_record(maildomain, expected_record)
 
@@ -434,9 +469,9 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=spf1 include:_spf.example.com +all"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer(
+                "v=spf1 include:_spf.example.com +all"
+            )
 
             result = check_single_record(maildomain, expected_record)
 
@@ -453,9 +488,9 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=spf1 include:_spf.example.com ?all"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer(
+                "v=spf1 include:_spf.example.com ?all"
+            )
 
             result = check_single_record(maildomain, expected_record)
 
@@ -473,9 +508,9 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=spf1 include:_spf.example.com ~all"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer(
+                "v=spf1 include:_spf.example.com ~all"
+            )
 
             result = check_single_record(maildomain, expected_record)
 
@@ -494,9 +529,9 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=spf1 include:_spf.example.com +all"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer(
+                "v=spf1 include:_spf.example.com +all"
+            )
 
             result = check_single_record(maildomain, expected_record)
 
@@ -513,11 +548,10 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer1 = MagicMock()
-            mock_answer1.to_text.return_value = '"v=DMARC1;p=reject;adkim=s;aspf=s"'
-            mock_answer2 = MagicMock()
-            mock_answer2.to_text.return_value = '"v=DMARC1;p=none"'
-            mock_resolve.return_value = [mock_answer1, mock_answer2]
+            mock_resolve.return_value = _txt_answer(
+                "v=DMARC1;p=reject;adkim=s;aspf=s",
+                "v=DMARC1;p=none",
+            )
 
             result = check_single_record(maildomain, expected_record)
 
@@ -534,9 +568,7 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=DMARC1;p=none"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer("v=DMARC1;p=none")
 
             result = check_single_record(maildomain, expected_record)
 
@@ -555,9 +587,7 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=DMARC1;p=none"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer("v=DMARC1;p=none")
 
             result = check_single_record(maildomain, expected_record)
 
@@ -869,9 +899,7 @@ class TestDKIMSemanticComparison:
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=DKIM1; k=rsa; p=MIGfMA0; t=s"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer("v=DKIM1; k=rsa; p=MIGfMA0; t=s")
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
@@ -886,9 +914,7 @@ class TestDKIMSemanticComparison:
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=DKIM1; k=rsa; p=MIGfMA0; t=y"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer("v=DKIM1; k=rsa; p=MIGfMA0; t=y")
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "insecure"
@@ -903,9 +929,7 @@ class TestDKIMSemanticComparison:
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=DKIM1; k=rsa; p=MIGfMA0; t=y:s"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer("v=DKIM1; k=rsa; p=MIGfMA0; t=y:s")
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "insecure"
@@ -920,9 +944,7 @@ class TestDKIMSemanticComparison:
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=DKIM1; p=MIGfMA0; k=rsa"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer("v=DKIM1; p=MIGfMA0; k=rsa")
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
@@ -937,9 +959,7 @@ class TestDKIMSemanticComparison:
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=DKIM1; k=rsa; p=WRONG_KEY"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer("v=DKIM1; k=rsa; p=WRONG_KEY")
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "incorrect"
@@ -956,11 +976,16 @@ class TestDKIMSemanticComparison:
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
             # Simulate DNS returning a split TXT record with extra t=s tag
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = (
-                '"v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBA" "QUAA4GNADCBiQKBgQC; t=s"'
+            rr = MagicMock()
+            rr.strings = (
+                b"v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBA",
+                b"QUAA4GNADCBiQKBgQC; t=s",
             )
-            mock_resolve.return_value = [mock_answer]
+            answer = MagicMock()
+            answer.rrset = [rr]
+            answer.__iter__ = lambda self: iter([rr])
+            answer.__len__ = lambda self: 1
+            mock_resolve.return_value = answer
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
@@ -976,11 +1001,16 @@ class TestDKIMSemanticComparison:
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = (
-                '"v=DKIM1; t=y; p=MIGfMA0GCSqGSIb3DQEBA" "QUAA4GNADCBiQKBgQC; k=rsa"'
+            rr = MagicMock()
+            rr.strings = (
+                b"v=DKIM1; t=y; p=MIGfMA0GCSqGSIb3DQEBA",
+                b"QUAA4GNADCBiQKBgQC; k=rsa",
             )
-            mock_resolve.return_value = [mock_answer]
+            answer = MagicMock()
+            answer.rrset = [rr]
+            answer.__iter__ = lambda self: iter([rr])
+            answer.__len__ = lambda self: 1
+            mock_resolve.return_value = answer
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "insecure"
@@ -1000,11 +1030,9 @@ class TestSPFSemanticComparison:
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = (
-                '"v=spf1 include:other.com include:_spf.example.com -all"'
+            mock_resolve.return_value = _txt_answer(
+                "v=spf1 include:other.com include:_spf.example.com -all"
             )
-            mock_resolve.return_value = [mock_answer]
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
@@ -1019,9 +1047,9 @@ class TestSPFSemanticComparison:
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=spf1 include:_spf.example.com ~all"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer(
+                "v=spf1 include:_spf.example.com ~all"
+            )
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
@@ -1036,11 +1064,9 @@ class TestSPFSemanticComparison:
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = (
-                '"v=spf1 include:_spf.example.com include:extra.com -all"'
+            mock_resolve.return_value = _txt_answer(
+                "v=spf1 include:_spf.example.com include:extra.com -all"
             )
-            mock_resolve.return_value = [mock_answer]
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "correct"
@@ -1055,9 +1081,7 @@ class TestSPFSemanticComparison:
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=spf1 include:other.com -all"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer("v=spf1 include:other.com -all")
 
             result = check_single_record(maildomain, expected_record)
             assert result["status"] == "incorrect"
@@ -1088,18 +1112,12 @@ class TestSPFRecursiveCheck:
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_spf_main = MagicMock()
-            mock_spf_main.to_text.return_value = (
-                '"v=spf1 include:_spf.messages.org -all"'
-            )
-            mock_spf_include = MagicMock()
-            mock_spf_include.to_text.return_value = '"v=spf1 ip4:1.2.3.4 -all"'
 
             def resolve_side_effect(name, _record_type):
                 if name == "example.com":
-                    return [mock_spf_main]
+                    return _txt_answer("v=spf1 include:_spf.messages.org -all")
                 if name == "_spf.messages.org":
-                    return [mock_spf_include]
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
                 return []
 
             mock_resolve.side_effect = resolve_side_effect
@@ -1120,12 +1138,10 @@ class TestSPFRecursiveCheck:
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_spf_main = MagicMock()
-            mock_spf_main.to_text.return_value = '"v=spf1 include:_spf.other.com -all"'
 
             def resolve_side_effect(name, _record_type):
                 if name == "example.com":
-                    return [mock_spf_main]
+                    return _txt_answer("v=spf1 include:_spf.other.com -all")
                 raise NXDOMAIN()
 
             mock_resolve.side_effect = resolve_side_effect
@@ -1143,9 +1159,7 @@ class TestSPFRecursiveCheck:
         }
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_answer = MagicMock()
-            mock_answer.to_text.return_value = '"v=spf1 ip4:1.2.3.4 -all"'
-            mock_resolve.return_value = [mock_answer]
+            mock_resolve.return_value = _txt_answer("v=spf1 ip4:1.2.3.4 -all")
 
             result = check_single_record(maildomain, expected_record)
 
@@ -1168,29 +1182,13 @@ class TestSPFRecursiveCheck:
             def resolve_side_effect(name, _record_type):
                 if name == "example.com":
                     # Found: includes _spf.messages.org (not _spf2 directly)
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(
-                                return_value='"v=spf1 include:_spf.messages.org -all"'
-                            )
-                        )
-                    ]
+                    return _txt_answer("v=spf1 include:_spf.messages.org -all")
                 # Level 1: _spf.messages.org includes _spf2.messages.org
                 if name == "_spf.messages.org":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(
-                                return_value='"v=spf1 include:_spf2.messages.org -all"'
-                            )
-                        )
-                    ]
+                    return _txt_answer("v=spf1 include:_spf2.messages.org -all")
                 # Level 2: _spf2.messages.org has actual IPs
                 if name == "_spf2.messages.org":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(return_value='"v=spf1 ip4:1.2.3.4 -all"')
-                        )
-                    ]
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
                 raise NXDOMAIN()
 
             mock_resolve.side_effect = resolve_side_effect
@@ -1214,34 +1212,16 @@ class TestSPFRecursiveCheck:
 
             def resolve_side_effect(name, _record_type):
                 if name == "example.com":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(
-                                return_value='"v=spf1 include:a.messages.org include:b.messages.org -all"'
-                            )
-                        )
-                    ]
+                    return _txt_answer(
+                        "v=spf1 include:a.messages.org include:b.messages.org -all"
+                    )
                 resolved_order.append(name)
                 if name == "a.messages.org":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(
-                                return_value='"v=spf1 include:child-a.messages.org -all"'
-                            )
-                        )
-                    ]
+                    return _txt_answer("v=spf1 include:child-a.messages.org -all")
                 if name == "b.messages.org":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(return_value='"v=spf1 ip4:2.3.4.5 -all"')
-                        )
-                    ]
+                    return _txt_answer("v=spf1 ip4:2.3.4.5 -all")
                 if name == "child-a.messages.org":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(return_value='"v=spf1 ip4:1.2.3.4 -all"')
-                        )
-                    ]
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
                 raise NXDOMAIN()
 
             mock_resolve.side_effect = resolve_side_effect
@@ -1256,42 +1236,60 @@ class TestSPFRecursiveCheck:
             ]
 
     def test_spf_10_lookup_limit(self, maildomain_factory, settings):
-        """RFC 7208: max 10 DNS lookups total. Hitting the limit = invalid."""
+        """RFC 7208: max 10 DNS lookups for mechanisms. Chain of exactly 10
+        includes succeeds, 11th triggers the limit."""
         settings.MESSAGES_TECHNICAL_DOMAIN = "messages.org"
         maildomain = maildomain_factory(name="example.com")
-        # Expected include is deep — unreachable within 10 lookups
+
+        # Chain of 10: _spf1 -> _spf2 -> ... -> _spf10 (= target)
+        # Should succeed: exactly 10 lookups.
         expected_record = {
             "type": "TXT",
             "target": "",
-            "value": "v=spf1 include:_spf-final.messages.org -all",
+            "value": "v=spf1 include:_spf10.messages.org -all",
         }
-        lookup_count = {"n": 0}
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
 
             def resolve_side_effect(name, _record_type):
                 if name == "example.com":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(
-                                return_value='"v=spf1 include:_spf1.messages.org -all"'
-                            )
+                    return _txt_answer("v=spf1 include:_spf1.messages.org -all")
+                for i in range(1, 10):
+                    if name == f"_spf{i}.messages.org":
+                        return _txt_answer(
+                            f"v=spf1 include:_spf{i + 1}.messages.org -all"
                         )
-                    ]
-                # Each include points to the next, creating a long chain
-                lookup_count["n"] += 1
-                level = lookup_count["n"]
-                return [
-                    MagicMock(
-                        to_text=MagicMock(
-                            return_value=f'"v=spf1 include:_spf{level + 1}.messages.org -all"'
-                        )
-                    )
-                ]
+                if name == "_spf10.messages.org":
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
+                raise NXDOMAIN()
 
             mock_resolve.side_effect = resolve_side_effect
             result = check_single_record(maildomain, expected_record)
+            assert result["status"] == "correct"
 
+        # Chain of 11: needs 11 lookups, should hit the limit.
+        expected_record_11 = {
+            "type": "TXT",
+            "target": "",
+            "value": "v=spf1 include:_spf11.messages.org -all",
+        }
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+
+            def resolve_side_effect_11(name, _record_type):
+                if name == "example.com":
+                    return _txt_answer("v=spf1 include:_spf1.messages.org -all")
+                for i in range(1, 11):
+                    if name == f"_spf{i}.messages.org":
+                        return _txt_answer(
+                            f"v=spf1 include:_spf{i + 1}.messages.org -all"
+                        )
+                if name == "_spf11.messages.org":
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
+                raise NXDOMAIN()
+
+            mock_resolve.side_effect = resolve_side_effect_11
+            result = check_single_record(maildomain, expected_record_11)
             assert result["status"] == "invalid"
 
     def test_spf_dns_error_means_not_found(self, maildomain_factory, settings):
@@ -1308,13 +1306,7 @@ class TestSPFRecursiveCheck:
 
             def resolve_side_effect(name, _record_type):
                 if name == "example.com":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(
-                                return_value='"v=spf1 include:_spf.messages.org -all"'
-                            )
-                        )
-                    ]
+                    return _txt_answer("v=spf1 include:_spf.messages.org -all")
                 # Include target fails to resolve
                 raise NXDOMAIN()
 
@@ -1337,23 +1329,13 @@ class TestSPFRecursiveCheck:
 
             def resolve_side_effect(name, _record_type):
                 if name == "example.com":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(
-                                return_value='"v=spf1 include:_spf.messages.org -all"'
-                            )
-                        )
-                    ]
+                    return _txt_answer("v=spf1 include:_spf.messages.org -all")
                 if name == "_spf.messages.org":
                     # Two SPF records — customer duplicated the record
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(return_value='"v=spf1 ip4:1.2.3.4 -all"')
-                        ),
-                        MagicMock(
-                            to_text=MagicMock(return_value='"v=spf1 ip4:5.6.7.8 -all"')
-                        ),
-                    ]
+                    return _txt_answer(
+                        "v=spf1 ip4:1.2.3.4 -all",
+                        "v=spf1 ip4:5.6.7.8 -all",
+                    )
                 raise NXDOMAIN()
 
             mock_resolve.side_effect = resolve_side_effect
@@ -1383,19 +1365,9 @@ class TestCheckSPFStatus:
 
             def resolve_side_effect(name, _record_type):
                 if name == "example.com":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(
-                                return_value='"v=spf1 include:_spf.messages.org -all"'
-                            )
-                        )
-                    ]
+                    return _txt_answer("v=spf1 include:_spf.messages.org -all")
                 if name == "_spf.messages.org":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(return_value='"v=spf1 ip4:1.2.3.4 -all"')
-                        )
-                    ]
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
                 raise NXDOMAIN()
 
             mock_resolve.side_effect = resolve_side_effect
@@ -1427,13 +1399,7 @@ class TestCheckSPFStatus:
 
             def resolve_side_effect(name, _record_type):
                 if name == "example.com":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(
-                                return_value='"v=spf1 include:_spf.messages.org -all"'
-                            )
-                        )
-                    ]
+                    return _txt_answer("v=spf1 include:_spf.messages.org -all")
                 raise NXDOMAIN()
 
             mock_resolve.side_effect = resolve_side_effect
@@ -1452,19 +1418,9 @@ class TestCheckSPFStatus:
 
             def resolve_side_effect(name, _record_type):
                 if name == "example.com":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(
-                                return_value='"v=spf1 include:_spf.messages.org -all"'
-                            )
-                        )
-                    ]
+                    return _txt_answer("v=spf1 include:_spf.messages.org -all")
                 if name == "_spf.messages.org":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(return_value='"v=spf1 ip4:1.2.3.4 -all"')
-                        )
-                    ]
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
                 raise NXDOMAIN()
 
             mock_resolve.side_effect = resolve_side_effect
@@ -1490,19 +1446,9 @@ class TestCheckSPFStatus:
 
             def resolve_side_effect(name, _record_type):
                 if name == "example.com":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(
-                                return_value='"v=spf1 include:_spf.messages.org -all"'
-                            )
-                        )
-                    ]
+                    return _txt_answer("v=spf1 include:_spf.messages.org -all")
                 if name == "_spf.messages.org":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(return_value='"v=spf1 ip4:1.2.3.4 -all"')
-                        )
-                    ]
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
                 raise NXDOMAIN()
 
             mock_resolve.side_effect = resolve_side_effect
@@ -1519,6 +1465,50 @@ class TestCheckSPFStatus:
             assert mock_resolve.call_count > first_call_count
 
     @override_settings(
+        MESSAGES_TECHNICAL_DOMAIN="messages.org",
+        MESSAGES_DNS_RECORDS='[{"target":"","type":"txt",'
+        '"value":"v=spf1 include:_spf.messages.org -all"}]',
+    )
+    def test_transient_dns_error_not_cached(self, maildomain_factory):
+        """DNS timeout should return False but NOT cache the result."""
+        maildomain = maildomain_factory(name="example.com")
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            # First call: DNS timeout (transient error)
+            mock_resolve.side_effect = Timeout()
+            assert check_spf_status(maildomain) is False
+
+            # Second call: DNS works now — should NOT use cache
+            def resolve_side_effect(name, _record_type):
+                if name == "example.com":
+                    return _txt_answer("v=spf1 include:_spf.messages.org -all")
+                if name == "_spf.messages.org":
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
+                raise NXDOMAIN()
+
+            mock_resolve.side_effect = resolve_side_effect
+            assert check_spf_status(maildomain) is True
+
+    @override_settings(
+        MESSAGES_TECHNICAL_DOMAIN="messages.org",
+        MESSAGES_DNS_RECORDS='[{"target":"","type":"txt",'
+        '"value":"v=spf1 include:_spf.messages.org -all"}]',
+    )
+    def test_definitive_failure_is_cached(self, maildomain_factory):
+        """A definitive SPF misconfiguration (missing record) should be cached."""
+        maildomain = maildomain_factory(name="example.com")
+
+        with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
+            # NXDOMAIN is a definitive failure (status=missing, not error)
+            mock_resolve.side_effect = NXDOMAIN()
+            assert check_spf_status(maildomain) is False
+            first_call_count = mock_resolve.call_count
+
+            # Second call should use cache — no additional DNS queries
+            assert check_spf_status(maildomain) is False
+            assert mock_resolve.call_count == first_call_count
+
+    @override_settings(
         MESSAGES_DNS_RECORDS='[{"target":"","type":"txt",'
         '"value":"v=spf1 ip4:1.2.3.4 -all"}]',
     )
@@ -1527,9 +1517,7 @@ class TestCheckSPFStatus:
         maildomain = maildomain_factory(name="example.com")
 
         with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-            mock_resolve.return_value = [
-                MagicMock(to_text=MagicMock(return_value='"v=spf1 ip4:1.2.3.4 -all"'))
-            ]
+            mock_resolve.return_value = _txt_answer("v=spf1 ip4:1.2.3.4 -all")
             assert check_spf_status(maildomain) is True
 
     def test_spf_non_technical_domain_includes_still_traversed(
@@ -1550,27 +1538,15 @@ class TestCheckSPFStatus:
 
             def resolve_side_effect(name, _record_type):
                 if name == "example.com":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(
-                                return_value='"v=spf1 include:_spf.other.com include:_spf.messages.org -all"'
-                            )
-                        )
-                    ]
+                    return _txt_answer(
+                        "v=spf1 include:_spf.other.com include:_spf.messages.org -all"
+                    )
                 resolved_names.append(name)
                 if name == "_spf.other.com":
                     # Non-technical include resolves fine, has no children
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(return_value='"v=spf1 ip4:9.9.9.9 -all"')
-                        )
-                    ]
+                    return _txt_answer("v=spf1 ip4:9.9.9.9 -all")
                 if name == "_spf.messages.org":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(return_value='"v=spf1 ip4:1.2.3.4 -all"')
-                        )
-                    ]
+                    return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
                 raise NXDOMAIN()
 
             mock_resolve.side_effect = resolve_side_effect
@@ -1613,18 +1589,10 @@ class TestCheckSPFStatus:
 
             def resolve_side_effect(name, _record_type):
                 if name == "example.com":
-                    return [
-                        MagicMock(
-                            to_text=MagicMock(
-                                return_value='"v=spf1 include:_spf.messages.org -all"'
-                            )
-                        )
-                    ]
+                    return _txt_answer("v=spf1 include:_spf.messages.org -all")
                 if name == "_spf.messages.org":
                     # TXT record exists but is not SPF
-                    return [
-                        MagicMock(to_text=MagicMock(return_value='"not an spf record"'))
-                    ]
+                    return _txt_answer("not an spf record")
                 raise NXDOMAIN()
 
             mock_resolve.side_effect = resolve_side_effect

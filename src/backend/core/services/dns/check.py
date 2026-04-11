@@ -137,7 +137,7 @@ def _check_spf(expected_value: str, found_values: List[str]) -> Dict[str, any]:
     if terms_match and includes_ok is not False:
         return {"status": "correct", "found": found_values}
     if includes_ok is True:
-        # Terms don't match our template but includes chain is valid
+        # Terms don't literally match but the include chain resolves
         return {"status": "correct", "found": found_values}
     if terms_match:
         # Terms match but includes don't resolve
@@ -192,10 +192,11 @@ def _resolve_spf_includes(
             continue
 
         spf_records = []
-        for answer in answers:
-            txt_value = normalize_txt_value(answer.to_text())
-            if txt_value.startswith("v=spf1"):
-                spf_records.append(txt_value)
+        for rr in answers.rrset:
+            for s in rr.strings:
+                txt_value = normalize_txt_value(s.decode())
+                if txt_value.startswith("v=spf1"):
+                    spf_records.append(txt_value)
 
         if len(spf_records) > 1:
             return resolved, f"duplicate:{include_domain}"
@@ -219,12 +220,21 @@ def _resolve_dns_values(record_type, target, query_name):
 
     if record_type.upper() == "TXT":
         answers = dns.resolver.resolve(query_name, "TXT")
-        if target.endswith("._domainkey"):
-            return [
-                normalize_txt_value(answer.to_text().strip('"').replace('" "', ""))
-                for answer in answers
-            ]
-        return [normalize_txt_value(answer.to_text()) for answer in answers]
+        # Some local resolvers (e.g. systemd-resolved) merge separate TXT
+        # records into a single RR with multiple strings. DKIM keys can also
+        # legitimately span multiple strings within one record. We handle
+        # both by emitting each individual string as a value, plus the
+        # concatenated form for DKIM.
+        values = []
+        for rr in answers.rrset:
+            if target.endswith("._domainkey"):
+                # DKIM: concatenate strings (long key split across strings)
+                values.append(normalize_txt_value(b"".join(rr.strings).decode()))
+            else:
+                # Other TXT: treat each string as a separate value
+                for s in rr.strings:
+                    values.append(normalize_txt_value(s.decode()))
+        return values
 
     answers = dns.resolver.resolve(query_name, record_type)
     return [answer.to_text() for answer in answers]
@@ -332,13 +342,19 @@ def check_spf_status(maildomain: MailDomain) -> bool:
     if cached is not None:
         return cached
 
-    result = _check_spf_status_uncached(maildomain)
-    cache.set(cache_key, result, SPF_CHECK_CACHE_TIMEOUT)
+    result, is_definitive = _check_spf_status_uncached(maildomain)
+    if is_definitive:
+        cache.set(cache_key, result, SPF_CHECK_CACHE_TIMEOUT)
     return result
 
 
-def _check_spf_status_uncached(maildomain: MailDomain) -> bool:
-    """Perform the actual SPF check (no cache)."""
+def _check_spf_status_uncached(maildomain: MailDomain) -> Tuple[bool, bool]:
+    """Perform the actual SPF check (no cache).
+
+    Returns:
+        (is_correct, is_definitive) where is_definitive is False when the
+        result was caused by a transient DNS error (timeout, no nameservers).
+    """
     expected_records = maildomain.get_expected_dns_records()
     spf_records = [
         r
@@ -346,14 +362,15 @@ def _check_spf_status_uncached(maildomain: MailDomain) -> bool:
         if r["type"].upper() == "TXT" and r["value"].startswith("v=spf1")
     ]
     if not spf_records:
-        return True
+        return True, True
 
     for expected_record in spf_records:
         result = check_single_record(maildomain, expected_record)
         if result.get("status") != "correct":
-            return False
+            is_transient = result.get("status") == "error"
+            return False, not is_transient
 
-    return True
+    return True, True
 
 
 def invalidate_spf_check_cache(maildomain: MailDomain) -> None:
