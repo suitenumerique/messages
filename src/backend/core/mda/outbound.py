@@ -25,6 +25,7 @@ from core.mda.rfc5322 import (
 )
 from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
+from core.services.dns.check import check_spf_status
 from core.services.throttle import check_and_increment_throttle
 from core.utils import ThreadStatsUpdateDeferrer
 
@@ -548,10 +549,6 @@ def send_message(message: models.Message, force_mta_out: bool = False):
             if external_recipients:
                 # Check SPF include chain if enabled (only for external recipients)
                 if settings.MESSAGES_SPF_CHECK_OUTGOING:
-                    from core.services.dns.check import (
-                        check_spf_status,  # pylint: disable=import-outside-toplevel
-                    )
-
                     sender_domain = message.sender.mailbox.domain
                     if not check_spf_status(sender_domain):
                         error_msg = f"SPF check failed for domain {sender_domain.name}"

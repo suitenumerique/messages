@@ -1164,7 +1164,6 @@ class TestSPFRecursiveCheck:
             result = check_single_record(maildomain, expected_record)
 
             assert result["status"] == "correct"
-            assert result["status"] == "correct"
 
     def test_spf_real_recursion_two_levels(self, maildomain_factory, settings):
         """BFS follows found chain to reach expected technical include 2 levels deep."""

@@ -1110,6 +1110,47 @@ class TestSendMessageDKIMVerification:
         assert mock_deliver_inbound.called
 
 
+def _create_spf_test_message(mailbox_sender):
+    """Create the common objects needed by SPF check tests.
+
+    Returns (message, sender_contact, external_contact, recipient, thread).
+    """
+    thread = factories.ThreadFactory()
+    factories.ThreadAccessFactory(
+        mailbox=mailbox_sender,
+        thread=thread,
+        role=enums.ThreadAccessRoleChoices.EDITOR,
+    )
+    sender_contact = factories.ContactFactory(mailbox=mailbox_sender)
+    message = factories.MessageFactory(
+        thread=thread,
+        sender=sender_contact,
+        is_draft=False,
+        is_sender=True,
+        subject="Test SPF",
+    )
+
+    raw_mime = (
+        f"From: {sender_contact.email}\r\n"
+        "To: external@other.com\r\n"
+        "Subject: Test\r\n\r\nBody\r\n"
+    ).encode()
+    blob = mailbox_sender.create_blob(content=raw_mime, content_type="message/rfc822")
+    message.blob = blob
+    message.save()
+
+    external_contact = factories.ContactFactory(
+        mailbox=mailbox_sender, email="external@other.com"
+    )
+    recipient = factories.MessageRecipientFactory(
+        message=message,
+        contact=external_contact,
+        type=models.MessageRecipientTypeChoices.TO,
+    )
+
+    return message, sender_contact, external_contact, recipient, thread
+
+
 @pytest.mark.django_db
 class TestSendMessageSPFCheck:
     """Test SPF check in send_message."""
@@ -1121,40 +1162,7 @@ class TestSendMessageSPFCheck:
         self, mock_send_outbound, mock_dns_resolve, mailbox_sender
     ):
         """When SPF check fails, external recipients are marked for retry."""
-        thread = factories.ThreadFactory()
-        factories.ThreadAccessFactory(
-            mailbox=mailbox_sender,
-            thread=thread,
-            role=enums.ThreadAccessRoleChoices.EDITOR,
-        )
-        sender_contact = factories.ContactFactory(mailbox=mailbox_sender)
-        message = factories.MessageFactory(
-            thread=thread,
-            sender=sender_contact,
-            is_draft=False,
-            is_sender=True,
-            subject="Test SPF",
-        )
-
-        raw_mime = (
-            f"From: {sender_contact.email}\r\n"
-            "To: external@other.com\r\n"
-            "Subject: Test\r\n\r\nBody\r\n"
-        ).encode()
-        blob = mailbox_sender.create_blob(
-            content=raw_mime, content_type="message/rfc822"
-        )
-        message.blob = blob
-        message.save()
-
-        external_contact = factories.ContactFactory(
-            mailbox=mailbox_sender, email="external@other.com"
-        )
-        recipient = factories.MessageRecipientFactory(
-            message=message,
-            contact=external_contact,
-            type=models.MessageRecipientTypeChoices.TO,
-        )
+        message, _, _, recipient, _ = _create_spf_test_message(mailbox_sender)
 
         # DNS returns no SPF record → check_spf_status returns False
         mock_dns_resolve.side_effect = dns.resolver.NXDOMAIN()
@@ -1177,40 +1185,7 @@ class TestSendMessageSPFCheck:
         self, mock_send_outbound, mock_dns_resolve, mailbox_sender
     ):
         """When SPF check passes, message is sent normally."""
-        thread = factories.ThreadFactory()
-        factories.ThreadAccessFactory(
-            mailbox=mailbox_sender,
-            thread=thread,
-            role=enums.ThreadAccessRoleChoices.EDITOR,
-        )
-        sender_contact = factories.ContactFactory(mailbox=mailbox_sender)
-        message = factories.MessageFactory(
-            thread=thread,
-            sender=sender_contact,
-            is_draft=False,
-            is_sender=True,
-            subject="Test SPF",
-        )
-
-        raw_mime = (
-            f"From: {sender_contact.email}\r\n"
-            "To: external@other.com\r\n"
-            "Subject: Test\r\n\r\nBody\r\n"
-        ).encode()
-        blob = mailbox_sender.create_blob(
-            content=raw_mime, content_type="message/rfc822"
-        )
-        message.blob = blob
-        message.save()
-
-        external_contact = factories.ContactFactory(
-            mailbox=mailbox_sender, email="external@other.com"
-        )
-        factories.MessageRecipientFactory(
-            message=message,
-            contact=external_contact,
-            type=models.MessageRecipientTypeChoices.TO,
-        )
+        message, _, _, _, _ = _create_spf_test_message(mailbox_sender)
 
         def resolve_side_effect(name, record_type):
             if name == mailbox_sender.domain.name:
@@ -1231,40 +1206,7 @@ class TestSendMessageSPFCheck:
     @patch("core.mda.outbound.send_outbound_message")
     def test_spf_check_skipped_when_disabled(self, mock_send_outbound, mailbox_sender):
         """When MESSAGES_SPF_CHECK_OUTGOING is False (default), no SPF check."""
-        thread = factories.ThreadFactory()
-        factories.ThreadAccessFactory(
-            mailbox=mailbox_sender,
-            thread=thread,
-            role=enums.ThreadAccessRoleChoices.EDITOR,
-        )
-        sender_contact = factories.ContactFactory(mailbox=mailbox_sender)
-        message = factories.MessageFactory(
-            thread=thread,
-            sender=sender_contact,
-            is_draft=False,
-            is_sender=True,
-            subject="Test SPF",
-        )
-
-        raw_mime = (
-            f"From: {sender_contact.email}\r\n"
-            "To: external@other.com\r\n"
-            "Subject: Test\r\n\r\nBody\r\n"
-        ).encode()
-        blob = mailbox_sender.create_blob(
-            content=raw_mime, content_type="message/rfc822"
-        )
-        message.blob = blob
-        message.save()
-
-        external_contact = factories.ContactFactory(
-            mailbox=mailbox_sender, email="external@other.com"
-        )
-        factories.MessageRecipientFactory(
-            message=message,
-            contact=external_contact,
-            type=models.MessageRecipientTypeChoices.TO,
-        )
+        message, _, _, _, _ = _create_spf_test_message(mailbox_sender)
 
         mock_send_outbound.return_value = {"external@other.com": {"delivered": True}}
 
