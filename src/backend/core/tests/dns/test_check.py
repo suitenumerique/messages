@@ -282,6 +282,9 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
                             "some-garbage",
                         )
 
+                    if record_type == "TXT" and name == "_spf.example.com":
+                        return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
+
                     if (
                         record_type == "TXT"
                         and name == "_dmarc.example.com"
@@ -308,7 +311,7 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
                 assert results[4]["_check"]["status"] == "missing"
 
     def test_check_dns_records_mixed_status(self, maildomain_factory):
-        """Test checking DNS records with mixed status (correct, incorrect, missing)."""
+        """Test checking DNS records with mixed status (correct, missing SPF, missing A)."""
         maildomain = maildomain_factory(name="example.com")
 
         with patch.object(maildomain, "get_expected_dns_records") as mock_get_records:
@@ -323,14 +326,14 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
             ]
 
             with patch("core.services.dns.check.dns.resolver.resolve") as mock_resolve:
-                # Mock responses: correct MX, incorrect TXT, missing A
+                # Mock responses: correct MX, no SPF found, missing A
                 mock_mx_answer = MagicMock()
                 mock_mx_answer.preference = 10
                 mock_mx_answer.exchange = "mx1.example.com"
 
                 mock_resolve.side_effect = [
                     [mock_mx_answer],  # Correct MX
-                    _txt_answer("some-unrelated-record"),  # Incorrect TXT
+                    _txt_answer("some-unrelated-record"),  # No SPF record
                     NoAnswer(),  # Missing A record
                 ]
 
@@ -338,7 +341,7 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
 
                 assert len(results) == 3
                 assert results[0]["_check"]["status"] == "correct"
-                assert results[1]["_check"]["status"] == "incorrect"
+                assert results[1]["_check"]["status"] == "missing"
                 assert results[2]["_check"]["status"] == "missing"
 
     def test_check_single_record_spf_duplicate(self, maildomain_factory):
@@ -517,10 +520,8 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
             # ~all is accepted as correct when -all is expected
             assert result["status"] == "correct"
 
-    def test_check_single_record_spf_insecure_not_triggered_when_expected_not_dash_all(
-        self, maildomain_factory
-    ):
-        """Test that insecure check is skipped when expected SPF doesn't end with -all."""
+    def test_check_single_record_spf_insecure_when_all_weaker(self, maildomain_factory):
+        """Test that weaker 'all' mechanism is reported as insecure when includes resolve."""
         maildomain = maildomain_factory(name="example.com")
         expected_record = {
             "type": "TXT",
@@ -535,8 +536,8 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
 
             result = check_single_record(maildomain, expected_record)
 
-            # Expected uses ~all, so insecure check doesn't apply
-            assert result["status"] == "incorrect"
+            # Includes resolve but +all is weaker than ~all
+            assert result["status"] == "insecure"
 
     def test_check_single_record_dmarc_duplicate(self, maildomain_factory):
         """Test that duplicate DMARC records are detected."""
@@ -1289,7 +1290,7 @@ class TestSPFRecursiveCheck:
 
             mock_resolve.side_effect = resolve_side_effect_11
             result = check_single_record(maildomain, expected_record_11)
-            assert result["status"] == "invalid"
+            assert result["status"] == "incorrect"
 
     def test_spf_dns_error_means_not_found(self, maildomain_factory, settings):
         """DNS resolution failure on an include target = include_found: False."""
@@ -1312,7 +1313,7 @@ class TestSPFRecursiveCheck:
             mock_resolve.side_effect = resolve_side_effect
             result = check_single_record(maildomain, expected_record)
 
-            assert result["status"] == "incomplete"
+            assert result["status"] == "incorrect"
 
     def test_spf_duplicate_record_in_include_chain(self, maildomain_factory, settings):
         """Duplicate SPF records on an include target = duplicate status."""
@@ -1597,4 +1598,4 @@ class TestCheckSPFStatus:
             mock_resolve.side_effect = resolve_side_effect
             result = check_single_record(maildomain, expected_record)
 
-            assert result["status"] == "incomplete"
+            assert result["status"] == "incorrect"

@@ -7,7 +7,6 @@ import logging
 import re
 from typing import Dict, List, Optional, Tuple
 
-from django.conf import settings
 from django.core.cache import cache
 
 import dns.resolver
@@ -93,56 +92,60 @@ def _check_dkim_semantic(
 
 
 def _check_spf(expected_value: str, found_values: List[str]) -> Dict[str, any]:
-    """Full SPF check: semantic comparison, recursive include verification.
-
-    1. Compares SPF terms ignoring order (RFC 7208).
-    2. If there are include: targets under the technical domain, verifies
-       they resolve to valid SPF records via BFS.
-    """
-    expected_spf = parse_spf_terms(expected_value)
-    if not expected_spf:
+    """SPF check: verify expected includes resolve, fall back to terms comparison."""
+    expected = parse_spf_terms(expected_value)
+    if not expected:
         return {"status": "incorrect", "found": found_values}
 
-    expected_all, expected_terms = expected_spf
-    terms_match = False
+    expected_all, expected_terms = expected
+    expected_includes = set(_extract_include_domains(expected_value))
+
+    # Check there's at least one valid SPF record in found values
+    found_spf_values = [v for v in found_values if parse_spf_terms(v)]
+    if not found_spf_values:
+        return {"status": "missing", "found": found_values}
+
+    # If there are expected includes, check they resolve via BFS.
+    # This is the primary signal: includes being set up is what matters.
+    if expected_includes:
+        resolved, error = _resolve_spf_includes(found_values)
+        if error and error.startswith("duplicate:"):
+            return {"status": "duplicate", "found": found_values}
+        if error == "limit_reached":
+            return {"status": "incorrect", "found": found_values}
+        if not expected_includes <= resolved:
+            return {"status": "incorrect", "found": found_values}
+        # Includes resolve — check if "all" mechanism is acceptable
+        if _found_all_matches(expected_all, found_spf_values):
+            return {"status": "correct", "found": found_values}
+        return {"status": "insecure", "found": found_values}
+
+    # No includes: direct terms comparison (order-independent, ~all accepted for -all)
+    for found_value in found_spf_values:
+        found_all, found_terms = parse_spf_terms(found_value)
+        all_ok = expected_all == found_all or (
+            expected_all == "-all" and found_all == "~all"
+        )
+        if expected_terms <= found_terms:
+            if all_ok:
+                return {"status": "correct", "found": found_values}
+            return {"status": "insecure", "found": found_values}
+
+    return {"status": "incorrect", "found": found_values}
+
+
+def _found_all_matches(expected_all: str, found_values: List[str]) -> bool:
+    """Check if any found SPF record has an acceptable "all" mechanism."""
     for found_value in found_values:
-        found_spf = parse_spf_terms(found_value)
-        if not found_spf:
+        found = parse_spf_terms(found_value)
+        if not found:
             continue
-        found_all, found_terms = found_spf
-        if not expected_terms <= found_terms:
-            continue
+        found_all, _ = found
         if expected_all == found_all or (
             expected_all == "-all" and found_all == "~all"
         ):
-            terms_match = True
-            break
-
-    # Verify include chain if there are technical domain includes
-    expected_includes = _extract_include_domains(expected_value)
-    technical_domain = settings.MESSAGES_TECHNICAL_DOMAIN
-    includes_ok = None  # None = no check needed
-    if expected_includes and technical_domain:
-        expected_technical = {
-            d for d in expected_includes if d.endswith(f".{technical_domain}")
-        }
-        if expected_technical:
-            resolved, error = _resolve_spf_includes(found_values)
-            if error and error.startswith("duplicate:"):
-                return {"status": "duplicate", "found": found_values}
-            if error == "limit_reached":
-                return {"status": "invalid", "found": found_values}
-            includes_ok = expected_technical <= resolved
-
-    if terms_match and includes_ok is not False:
-        return {"status": "correct", "found": found_values}
-    if includes_ok is True:
-        # Terms don't literally match but the include chain resolves
-        return {"status": "correct", "found": found_values}
-    if terms_match:
-        # Terms match but includes don't resolve
-        return {"status": "incomplete", "found": found_values}
-    return {"status": "incorrect", "found": found_values}
+            return True
+    return False
 
 
 def _extract_include_domains(spf_value: str) -> List[str]:
@@ -187,16 +190,15 @@ def _resolve_spf_includes(
 
         try:
             answers = dns.resolver.resolve(include_domain, "TXT")
+            spf_records = []
+            for rr in answers.rrset:
+                for s in rr.strings:
+                    txt_value = normalize_txt_value(s.decode())
+                    if txt_value.startswith("v=spf1"):
+                        spf_records.append(txt_value)
         except Exception:  # pylint: disable=broad-exception-caught
             logger.debug("DNS resolution failed for %s", include_domain)
             continue
-
-        spf_records = []
-        for rr in answers.rrset:
-            for s in rr.strings:
-                txt_value = normalize_txt_value(s.decode())
-                if txt_value.startswith("v=spf1"):
-                    spf_records.append(txt_value)
 
         if len(spf_records) > 1:
             return resolved, f"duplicate:{include_domain}"
@@ -366,8 +368,9 @@ def _check_spf_status_uncached(maildomain: MailDomain) -> Tuple[bool, bool]:
 
     for expected_record in spf_records:
         result = check_single_record(maildomain, expected_record)
-        if result.get("status") != "correct":
-            is_transient = result.get("status") == "error"
+        status = result.get("status")
+        if status not in ("correct", "insecure"):
+            is_transient = status == "error"
             return False, not is_transient
 
     return True, True

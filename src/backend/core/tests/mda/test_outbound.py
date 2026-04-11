@@ -1155,6 +1155,10 @@ def _create_spf_test_message(mailbox_sender):
 class TestSendMessageSPFCheck:
     """Test SPF check in send_message."""
 
+    def setup_method(self):
+        """Clear SPF cache so each test hits the mocked DNS resolver."""
+        cache.clear()
+
     @override_settings(MESSAGES_SPF_CHECK_OUTGOING=True)
     @patch("core.services.dns.check.dns.resolver.resolve")
     @patch("core.mda.outbound.send_outbound_message")
