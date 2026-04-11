@@ -279,10 +279,9 @@ class TestDNSChecking:  # pylint: disable=too-many-public-methods
                     if record_type == "TXT" and name == "_spf.example.com":
                         return _txt_answer("v=spf1 ip4:1.2.3.4 -all")
 
-                    if (
-                        record_type == "TXT"
-                        and name == "_dmarc.example.com"
-                        or name == "_dmarc_stripped.example.com"
+                    if record_type == "TXT" and name in (
+                        "_dmarc.example.com",
+                        "_dmarc_stripped.example.com",
                     ):
                         return _txt_answer("v=DMARC1; p=reject; adkim=s; aspf=s;")
 
@@ -978,8 +977,6 @@ class TestDKIMSemanticComparison:
             )
             answer = MagicMock()
             answer.rrset = [rr]
-            answer.__iter__ = lambda self: iter([rr])
-            answer.__len__ = lambda self: 1
             mock_resolve.return_value = answer
 
             result = check_single_record(maildomain, expected_record)
@@ -1003,8 +1000,6 @@ class TestDKIMSemanticComparison:
             )
             answer = MagicMock()
             answer.rrset = [rr]
-            answer.__iter__ = lambda self: iter([rr])
-            answer.__len__ = lambda self: 1
             mock_resolve.return_value = answer
 
             result = check_single_record(maildomain, expected_record)
