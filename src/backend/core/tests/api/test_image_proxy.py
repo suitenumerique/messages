@@ -191,7 +191,7 @@ class TestImageProxyViewSet:
             "https://localhost:8080/image.jpg",
         ],
     )
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     def test_api_image_proxy_localhost_hostname_blocked(
         self, mock_getaddrinfo, api_client, user_mailbox, test_url
     ):
@@ -210,7 +210,7 @@ class TestImageProxyViewSet:
         assert response["Content-Type"] == "image/svg+xml"
 
     @override_settings(IMAGE_PROXY_ENABLED=True)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     def test_api_image_proxy_domain_resolving_to_private_ip_blocked(
         self, mock_getaddrinfo, api_client, user_mailbox
     ):
@@ -229,7 +229,7 @@ class TestImageProxyViewSet:
         assert response["Content-Type"] == "image/svg+xml"
 
     @override_settings(IMAGE_PROXY_ENABLED=True)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     def test_api_image_proxy_unresolvable_hostname(
         self, mock_getaddrinfo, api_client, user_mailbox
     ):
@@ -249,7 +249,7 @@ class TestImageProxyViewSet:
     # Content-Type Validation Tests
 
     @override_settings(IMAGE_PROXY_ENABLED=True, IMAGE_PROXY_MAX_SIZE=10)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     def test_api_image_proxy_non_image_content_type_blocked(
         self, mock_get, mock_getaddrinfo, api_client, user_mailbox
@@ -273,7 +273,7 @@ class TestImageProxyViewSet:
         assert response["Content-Type"] == "image/svg+xml"
 
     @override_settings(IMAGE_PROXY_ENABLED=True, IMAGE_PROXY_MAX_SIZE=10)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     @patch("magic.from_buffer")
     def test_api_image_proxy_content_not_actually_image(
@@ -301,7 +301,7 @@ class TestImageProxyViewSet:
         assert response["Content-Type"] == "image/svg+xml"
 
     @override_settings(IMAGE_PROXY_ENABLED=True, IMAGE_PROXY_MAX_SIZE=10)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     @patch("magic.from_buffer")
     @pytest.mark.parametrize(
@@ -342,7 +342,7 @@ class TestImageProxyViewSet:
     # Size Limit Tests
 
     @override_settings(IMAGE_PROXY_ENABLED=True, IMAGE_PROXY_MAX_SIZE=1)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     def test_api_image_proxy_image_too_large_via_content_length(
         self, mock_get, mock_getaddrinfo, api_client, user_mailbox
@@ -367,7 +367,7 @@ class TestImageProxyViewSet:
         assert "Image too large" in str(response.data)
 
     @override_settings(IMAGE_PROXY_ENABLED=True, IMAGE_PROXY_MAX_SIZE=4096)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     @patch("magic.from_buffer")
     def test_api_image_proxy_image_too_large_actual_content(
@@ -395,39 +395,13 @@ class TestImageProxyViewSet:
         assert response.status_code == status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
         assert "Image too large" in str(response.data)
 
-    # Redirect Tests
-
-    @override_settings(IMAGE_PROXY_ENABLED=True)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
-    @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
-    def test_api_image_proxy_redirects_blocked(
-        self, mock_get, mock_getaddrinfo, api_client, user_mailbox
-    ):
-        """Test that redirects are not followed (SSRF protection)."""
-        # Mock DNS resolution
-        mock_getaddrinfo.return_value = [(2, 1, 6, "", ("1.2.3.4", 80))]
-
-        client, _ = api_client
-        url = self._get_image_proxy_url(
-            user_mailbox.id, "http://example.com/redirect.jpg"
-        )
-
-        mock_get.return_value = self._mock_requests_response(
-            content=b"", content_type="text/plain", status_code=302
-        )
-
-        # Call the endpoint
-        client.get(url)
-
-        # Verify that allow_redirects=False was passed to requests.get
-        mock_get.assert_called_once()
-        call_kwargs = mock_get.call_args[1]
-        assert call_kwargs["allow_redirects"] is False
+    # Redirect handling is covered end-to-end in core/tests/services/test_ssrf.py:
+    # SSRFSafeSession follows redirects internally, re-validating every hop.
 
     # Success Cases
 
     @override_settings(IMAGE_PROXY_ENABLED=True, IMAGE_PROXY_CACHE_TTL=3600)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     @patch("magic.from_buffer")
     def test_api_image_proxy_successfully_jpg_image(
@@ -459,7 +433,7 @@ class TestImageProxyViewSet:
         assert response["Cache-Control"] == "public, max-age=3600"
 
     @override_settings(IMAGE_PROXY_ENABLED=True)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     @patch("magic.from_buffer")
     def test_api_image_proxy_successfully_png_image(
@@ -488,7 +462,7 @@ class TestImageProxyViewSet:
         assert response["Content-Type"] == "image/png"
 
     @override_settings(IMAGE_PROXY_ENABLED=True)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     @patch("magic.from_buffer")
     def test_api_image_proxy_successfully_with_octet_stream_content_type(
@@ -517,7 +491,7 @@ class TestImageProxyViewSet:
         assert response["Content-Type"] == "image/jpeg"
 
     @override_settings(IMAGE_PROXY_ENABLED=True, IMAGE_PROXY_CACHE_TTL=3600)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     @patch("magic.from_buffer")
     def test_api_image_proxy_no_content(
@@ -547,7 +521,7 @@ class TestImageProxyViewSet:
         assert response["Content-Type"] == "image/svg+xml"
 
     @override_settings(IMAGE_PROXY_ENABLED=True)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     @patch("magic.from_buffer")
     def test_api_image_proxy_url_with_special_characters(
@@ -578,7 +552,7 @@ class TestImageProxyViewSet:
         assert mock_get.call_args[0][0] == test_url
 
     @override_settings(IMAGE_PROXY_ENABLED=True, IMAGE_PROXY_CACHE_TTL=3600)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     @patch("magic.from_buffer")
     def test_api_image_proxy_successfully_secure_headers(
@@ -617,7 +591,7 @@ class TestImageProxyViewSet:
     # Error Handling Tests
 
     @override_settings(IMAGE_PROXY_ENABLED=True, IMAGE_PROXY_MAX_SIZE=10)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     def test_api_image_proxy_network_timeout(
         self, mock_get, mock_getaddrinfo, api_client, user_mailbox
@@ -638,7 +612,7 @@ class TestImageProxyViewSet:
         assert "Failed to fetch image" in str(response.data)
 
     @override_settings(IMAGE_PROXY_ENABLED=True, IMAGE_PROXY_MAX_SIZE=10)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     def test_api_image_proxy_connection_error(
         self, mock_get, mock_getaddrinfo, api_client, user_mailbox
@@ -659,7 +633,7 @@ class TestImageProxyViewSet:
         assert "Failed to fetch image" in str(response.data)
 
     @override_settings(IMAGE_PROXY_ENABLED=True, IMAGE_PROXY_MAX_SIZE=10)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     def test_api_image_proxy_http_error_404(
         self, mock_get, mock_getaddrinfo, api_client, user_mailbox
@@ -687,7 +661,7 @@ class TestImageProxyViewSet:
         assert "Failed to fetch image" in str(response.data)
 
     @override_settings(IMAGE_PROXY_ENABLED=True)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     @patch("magic.from_buffer")
     def test_api_image_proxy_invalid_content_length_header(
@@ -716,7 +690,7 @@ class TestImageProxyViewSet:
         assert response.status_code == status.HTTP_200_OK
 
     @override_settings(IMAGE_PROXY_ENABLED=True)
-    @patch("core.api.viewsets.image_proxy.socket.getaddrinfo")
+    @patch("core.services.ssrf.socket.getaddrinfo")
     @patch("core.api.viewsets.image_proxy.SSRFSafeSession.get")
     @patch("magic.from_buffer")
     def test_api_image_proxy_missing_content_length_header(

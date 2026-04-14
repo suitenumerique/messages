@@ -2,6 +2,7 @@
 # pylint: disable=redefined-outer-name, unused-argument, no-value-for-parameter, too-many-lines
 
 import datetime
+import socket
 from unittest.mock import patch
 
 from django.core.files.storage import storages
@@ -18,6 +19,25 @@ from core.services.importer.eml_tasks import process_eml_file_task
 from core.services.importer.mbox_tasks import process_mbox_file_task
 
 pytestmark = pytest.mark.django_db
+
+
+@pytest.fixture(autouse=True)
+def _mock_ssrf_dns():
+    """Short-circuit SSRF DNS validation for IMAP import tests.
+
+    The IMAP endpoint validates the server hostname via
+    ``core.services.ssrf.validate_hostname``; tests use unresolvable fixtures
+    like ``imap.example.com`` so we return a public IP to reach the mocked
+    IMAP task code.
+    """
+    with patch(
+        "core.services.ssrf.socket.getaddrinfo",
+        return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))
+        ],
+    ):
+        yield
+
 
 IMPORT_FILE_URL = "/api/v1.0/import/file/"
 IMPORT_IMAP_URL = "/api/v1.0/import/imap/"

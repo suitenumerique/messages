@@ -22,6 +22,7 @@ from celery.utils.log import get_task_logger
 
 from core.mda.inbound import deliver_inbound_message
 from core.mda.rfc5322 import parse_email_message
+from core.services.ssrf import SSRFValidationError, validate_hostname
 
 logger = get_task_logger(__name__)
 
@@ -62,6 +63,21 @@ def decode_imap_utf7(s):
     return re.sub(r"&([^-]*)-", decode_match, s)
 
 
+def _validate_imap_host(server: str) -> None:
+    """Validate that the IMAP server hostname is not a private/internal address.
+
+    Wraps the shared SSRF validator but allows public IP literals, which are
+    legitimate addresses for customer-supplied IMAP servers.
+
+    Raises:
+        ValueError: If the hostname resolves to a blocked IP address.
+    """
+    try:
+        validate_hostname(server, allow_ip_literal=True)
+    except SSRFValidationError as exc:
+        raise ValueError(f"IMAP server {server} is not allowed: {exc}") from exc
+
+
 class IMAPConnectionManager:
     """Context manager for IMAP connections with proper cleanup."""
 
@@ -76,6 +92,9 @@ class IMAPConnectionManager:
         self.connection = None
 
     def __enter__(self):
+        # Validate the server hostname to prevent SSRF
+        _validate_imap_host(self.server)
+
         # Port 143 typically uses STARTTLS, port 993 uses SSL direct
         # If use_ssl=True and port is 143, use STARTTLS instead of SSL direct
         use_starttls = self.use_ssl and self.port == 143

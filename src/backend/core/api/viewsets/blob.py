@@ -4,6 +4,7 @@ import logging
 
 from django.http import HttpResponse
 from django.utils.decorators import method_decorator
+from django.utils.http import content_disposition_header
 from django.views.decorators.csrf import csrf_exempt
 
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
@@ -177,8 +178,8 @@ class BlobViewSet(ViewSet):
                 )
 
                 # Add appropriate headers for download
-                response["Content-Disposition"] = (
-                    f'attachment; filename="{attachment["name"]}"'
+                response["Content-Disposition"] = content_disposition_header(
+                    True, attachment["name"]
                 )
                 response["Content-Length"] = attachment["size"]
                 # Enable browser caching for 30 days (inline images benefit from this)
@@ -207,7 +208,9 @@ class BlobViewSet(ViewSet):
                 )
 
                 # Add appropriate headers for download
-                response["Content-Disposition"] = f'attachment; filename="{filename}"'
+                response["Content-Disposition"] = content_disposition_header(
+                    True, filename
+                )
                 response["Content-Length"] = blob.size
                 # Enable browser caching for 30 days (inline images benefit from this)
                 response["Cache-Control"] = "private, max-age=2592000"

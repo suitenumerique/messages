@@ -35,9 +35,9 @@ class WidgetAuthentication(BaseAuthentication):
         if not channel_id:
             raise AuthenticationFailed("Missing channel_id")
 
-        # API key authentication for check endpoint
+        # Only allow widget-type channels
         try:
-            channel = models.Channel.objects.get(id=channel_id)
+            channel = models.Channel.objects.get(id=channel_id, type="widget")
         except models.Channel.DoesNotExist as e:
             raise AuthenticationFailed("Invalid channel_id") from e
 
