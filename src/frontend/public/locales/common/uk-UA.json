@@ -606,7 +606,7 @@
   "Message templates": "Шаблони повідомлень",
   "Messages": "Повідомлення",
   "Messages Logo": "Логотип повідомлень",
-  "Messaging": "Листування",
+  "Messaging": "Mosa Mail",
   "Method": "Метод",
   "mime.archive": "Архів",
   "mime.audio": "Аудіо",
@@ -1027,5 +1027,7 @@
   "You were unassigned": "Ви виключені з учасників",
   "You will no longer have access to the mailbox \"{{mailboxName}}\".": "У вас більше не буде доступу до поштової скриньки \"{{mailboxName}}\".",
   "Your email...": "Ваша ел. адреса...",
-  "Your session has expired. Please log in again.": "Ваш сеанс закінчився. Будь ласка, увійдіть знову."
+  "Your messages have been imported successfully!": "Ваші повідомлення успішно імпортовано!",
+  "Your session has expired. Please log in again.": "Ваш сеанс закінчився. Будь ласка, увійдіть знову.",
+  "Log in": "Увійти"
 }

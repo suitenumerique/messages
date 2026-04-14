@@ -76,6 +76,7 @@
     "react-resizable-panels": "4.2.2",
     "react-toastify": "11.1.0",
     "sass": "1.97.3",
+    "styled-components": "^6.3.6",
     "ts-ics": "2.4.0",
     "zod": "4.3.6",
     "zod-from-json-schema": "0.5.2"

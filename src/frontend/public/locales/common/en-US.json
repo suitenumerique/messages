@@ -606,7 +606,7 @@
   "Message templates": "Message templates",
   "Messages": "Messages",
   "Messages Logo": "Messages Logo",
-  "Messaging": "Messaging",
+  "Messaging": "Mosa Mail",
   "Method": "Method",
   "mime.archive": "Archive",
   "mime.audio": "Audio",
@@ -1027,5 +1027,15 @@
   "You were unassigned": "You were unassigned",
   "You will no longer have access to the mailbox \"{{mailboxName}}\".": "You will no longer have access to the mailbox \"{{mailboxName}}\".",
   "Your email...": "Your email...",
-  "Your session has expired. Please log in again.": "Your session has expired. Please log in again."
+  "Your messages have been imported successfully!": "Your messages have been imported successfully!",
+  "Your session has expired. Please log in again.": "Your session has expired. Please log in again.",
+  "Log in": "Log in",
+  "Sign in to Mail - mosa.cloud": "Sign in to Mail - mosa.cloud",
+  "Collaborate without compromise": "Collaborate without compromise",
+  "Built in the EU": "Built in the EU",
+  "Welcome to": "Welcome to",
+  "Email without boundaries": "Email without boundaries",
+  "Sign in with your account": "Sign in with your account",
+  "Don't have an account?": "Don't have an account?",
+  "Contact us": "Contact us"
 }

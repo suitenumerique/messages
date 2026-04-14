@@ -15,10 +15,10 @@ $themes: (
         'brand-350': #8F94FD,
         'brand-400': #8184FC,
         'brand-450': #7576EE,
-        'brand-500': #6969DF,
-        'brand-550': #5E5CD0,
-        'brand-600': #534FC2,
-        'brand-650': #4844AD,
+        'brand-500': #0443F2,
+        'brand-550': #0443F2,
+        'brand-600': #033BD9,
+        'brand-650': #0334C0,
         'brand-700': #3E3B98,
         'brand-750': #36347D,
         'brand-800': #2D2F5F,
@@ -334,7 +334,8 @@ $themes: (
         'white-850': #F8F8F9D9,
         'white-900': #F8F8F9E5,
         'white-950': #F8F8F9F2,
-        'white-975': #F8F8F9F9
+        'white-975': #F8F8F9F9,
+        'logo-1': #0443F2
       ),
       'transitions': (
         'ease-in': #{cubic-bezier(0.32, 0, 0.67, 0)},
@@ -441,8 +442,8 @@ $themes: (
             'primary-hover': #1B1B231A
           ),
           'brand': (
-            'primary': #5E5CD0,
-            'primary-hover': #4844AD,
+            'primary': #0443F2,
+            'primary-hover': #0334C0,
             'secondary': #DDE2F5,
             'secondary-hover': #CED3F1,
             'tertiary': #EEF1FA,
@@ -495,7 +496,7 @@ $themes: (
         ),
         'palette': (
           'brand': (
-            'primary': #6969DF,
+            'primary': #0443F2,
             'secondary': #8F94FD,
             'tertiary': #CED3F1
           ),
@@ -564,8 +565,8 @@ $themes: (
           ),
           'brand': (
             'primary': #3E3B98,
-            'secondary': #534FC2,
-            'tertiary': #5E5CD0,
+            'secondary': #033BD9,
+            'tertiary': #0443F2,
             'on-brand': #EEF1FA
           ),
           'neutral': (
@@ -605,7 +606,7 @@ $themes: (
         ),
         'palette': (
           'brand': (
-            'primary': #6969DF
+            'primary': #0443F2
           ),
           'red': (
             'primary': #DA3B49
@@ -651,7 +652,7 @@ $themes: (
             'primary': #F8F8F933
           ),
           'brand': (
-            'primary': #5E5CD0,
+            'primary': #0443F2,
             'secondary': #A0A5F6,
             'tertiary': #CED3F1
           ),
@@ -951,7 +952,7 @@ $themes: (
         'padding-block': 0.375rem,
         'accent': (
           'background-color': #DDE2F5,
-          'color': #534FC2
+          'color': #033BD9
         ),
         'neutral': (
           'background-color': #E2E2EA,
@@ -1418,8 +1419,8 @@ $themes: (
             'transparent': #1B1B2300
           ),
           'brand': (
-            'primary': #5E5CD0,
-            'primary-hover': #4844AD,
+            'primary': #0443F2,
+            'primary-hover': #0334C0,
             'secondary': #3E3B98,
             'secondary-hover': #36347D,
             'tertiary': #36347D,
@@ -1474,7 +1475,7 @@ $themes: (
           'brand': (
             'primary': #8F94FD,
             'secondary': #7576EE,
-            'tertiary': #5E5CD0
+            'tertiary': #0443F2
           ),
           'red': (
             'primary': #F37B7E,
@@ -1582,7 +1583,7 @@ $themes: (
         ),
         'palette': (
           'brand': (
-            'primary': #6969DF
+            'primary': #0443F2
           ),
           'red': (
             'primary': #DA3B49
@@ -1629,7 +1630,7 @@ $themes: (
           ),
           'brand': (
             'primary': #7576EE,
-            'secondary': #534FC2,
+            'secondary': #033BD9,
             'tertiary': #3E3B98
           ),
           'neutral': (
@@ -1928,7 +1929,7 @@ $themes: (
         'padding-block': 0.375rem,
         'accent': (
           'background-color': #DDE2F5,
-          'color': #534FC2
+          'color': #033BD9
         ),
         'neutral': (
           'background-color': #E2E2EA,
@@ -2368,8 +2369,8 @@ $themes: (
             'primary-hover': #1B1B231A
           ),
           'brand': (
-            'primary': #5E5CD0,
-            'primary-hover': #4844AD,
+            'primary': #0443F2,
+            'primary-hover': #0334C0,
             'secondary': #DDE2F5,
             'secondary-hover': #CED3F1,
             'tertiary': #EEF1FA,
@@ -2422,7 +2423,7 @@ $themes: (
         ),
         'palette': (
           'brand': (
-            'primary': #6969DF,
+            'primary': #0443F2,
             'secondary': #8F94FD,
             'tertiary': #CED3F1
           ),
@@ -2491,8 +2492,8 @@ $themes: (
           ),
           'brand': (
             'primary': #3E3B98,
-            'secondary': #534FC2,
-            'tertiary': #5E5CD0,
+            'secondary': #033BD9,
+            'tertiary': #0443F2,
             'on-brand': #EEF1FA
           ),
           'neutral': (
@@ -2532,7 +2533,7 @@ $themes: (
         ),
         'palette': (
           'brand': (
-            'primary': #6969DF
+            'primary': #0443F2
           ),
           'red': (
             'primary': #DA3B49
@@ -2578,7 +2579,7 @@ $themes: (
             'primary': #F8F8F933
           ),
           'brand': (
-            'primary': #5E5CD0,
+            'primary': #0443F2,
             'secondary': #A0A5F6,
             'tertiary': #CED3F1
           ),
@@ -2878,7 +2879,7 @@ $themes: (
         'padding-block': 0.375rem,
         'accent': (
           'background-color': #DDE2F5,
-          'color': #534FC2
+          'color': #033BD9
         ),
         'neutral': (
           'background-color': #E2E2EA,
@@ -3318,8 +3319,8 @@ $themes: (
             'transparent': #1B1B2300
           ),
           'brand': (
-            'primary': #5E5CD0,
-            'primary-hover': #4844AD,
+            'primary': #0443F2,
+            'primary-hover': #0334C0,
             'secondary': #3E3B98,
             'secondary-hover': #36347D,
             'tertiary': #36347D,
@@ -3374,7 +3375,7 @@ $themes: (
           'brand': (
             'primary': #8F94FD,
             'secondary': #7576EE,
-            'tertiary': #5E5CD0
+            'tertiary': #0443F2
           ),
           'red': (
             'primary': #F37B7E,
@@ -3482,7 +3483,7 @@ $themes: (
         ),
         'palette': (
           'brand': (
-            'primary': #6969DF
+            'primary': #0443F2
           ),
           'red': (
             'primary': #DA3B49
@@ -3529,7 +3530,7 @@ $themes: (
           ),
           'brand': (
             'primary': #7576EE,
-            'secondary': #534FC2,
+            'secondary': #033BD9,
             'tertiary': #3E3B98
           ),
           'neutral': (
@@ -3828,7 +3829,7 @@ $themes: (
         'padding-block': 0.375rem,
         'accent': (
           'background-color': #DDE2F5,
-          'color': #534FC2
+          'color': #033BD9
         ),
         'neutral': (
           'background-color': #E2E2EA,
@@ -4271,8 +4272,8 @@ $themes: (
             'primary-hover': #1B1B231A
           ),
           'brand': (
-            'primary': #5E5CD0,
-            'primary-hover': #4844AD,
+            'primary': #0443F2,
+            'primary-hover': #0334C0,
             'secondary': #DDE2F5,
             'secondary-hover': #CED3F1,
             'tertiary': #EEF1FA,
@@ -4325,7 +4326,7 @@ $themes: (
         ),
         'palette': (
           'brand': (
-            'primary': #6969DF,
+            'primary': #0443F2,
             'secondary': #8F94FD,
             'tertiary': #CED3F1
           ),
@@ -4394,8 +4395,8 @@ $themes: (
           ),
           'brand': (
             'primary': #3E3B98,
-            'secondary': #534FC2,
-            'tertiary': #5E5CD0,
+            'secondary': #033BD9,
+            'tertiary': #0443F2,
             'on-brand': #EEF1FA
           ),
           'neutral': (
@@ -4435,7 +4436,7 @@ $themes: (
         ),
         'palette': (
           'brand': (
-            'primary': #6969DF
+            'primary': #0443F2
           ),
           'red': (
             'primary': #DA3B49
@@ -4481,7 +4482,7 @@ $themes: (
             'primary': #F8F8F933
           ),
           'brand': (
-            'primary': #5E5CD0,
+            'primary': #0443F2,
             'secondary': #A0A5F6,
             'tertiary': #CED3F1
           ),
@@ -4781,7 +4782,7 @@ $themes: (
         'padding-block': 0.375rem,
         'accent': (
           'background-color': #DDE2F5,
-          'color': #534FC2
+          'color': #033BD9
         ),
         'neutral': (
           'background-color': #E2E2EA,
@@ -5224,8 +5225,8 @@ $themes: (
             'transparent': #1B1B2300
           ),
           'brand': (
-            'primary': #5E5CD0,
-            'primary-hover': #4844AD,
+            'primary': #0443F2,
+            'primary-hover': #0334C0,
             'secondary': #3E3B98,
             'secondary-hover': #36347D,
             'tertiary': #36347D,
@@ -5280,7 +5281,7 @@ $themes: (
           'brand': (
             'primary': #8F94FD,
             'secondary': #7576EE,
-            'tertiary': #5E5CD0
+            'tertiary': #0443F2
           ),
           'red': (
             'primary': #F37B7E,
@@ -5388,7 +5389,7 @@ $themes: (
         ),
         'palette': (
           'brand': (
-            'primary': #6969DF
+            'primary': #0443F2
           ),
           'red': (
             'primary': #DA3B49
@@ -5435,7 +5436,7 @@ $themes: (
           ),
           'brand': (
             'primary': #7576EE,
-            'secondary': #534FC2,
+            'secondary': #033BD9,
             'tertiary': #3E3B98
           ),
           'neutral': (
@@ -5734,7 +5735,7 @@ $themes: (
         'padding-block': 0.375rem,
         'accent': (
           'background-color': #DDE2F5,
-          'color': #534FC2
+          'color': #033BD9
         ),
         'neutral': (
           'background-color': #E2E2EA,

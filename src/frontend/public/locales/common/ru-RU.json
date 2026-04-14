@@ -606,7 +606,7 @@
   "Message templates": "Шаблоны сообщений",
   "Messages": "Сообщения",
   "Messages Logo": "Логотип сообщений",
-  "Messaging": "Переписка",
+  "Messaging": "Mosa Mail",
   "Method": "Метод",
   "mime.archive": "Архив",
   "mime.audio": "Аудио",
@@ -1027,5 +1027,7 @@
   "You were unassigned": "Вы исключены из числа участников",
   "You will no longer have access to the mailbox \"{{mailboxName}}\".": "У вас больше нет доступа к почтовому ящику \"{{mailboxName}}\".",
   "Your email...": "Ваш e-mail...",
-  "Your session has expired. Please log in again.": "Время сеанса истекло. Пожалуйста, войдите снова."
+  "Your messages have been imported successfully!": "Ваши сообщения успешно импортированы!",
+  "Your session has expired. Please log in again.": "Время сеанса истекло. Пожалуйста, войдите снова.",
+  "Log in": "Войти"
 }

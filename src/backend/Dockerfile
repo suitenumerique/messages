@@ -64,6 +64,7 @@ RUN chmod g=u /etc/passwd
 RUN <<EOR
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
+  ca-certificates \
   libmagic1
 rm -rf /var/lib/apt/lists/*
 EOR
@@ -163,6 +164,8 @@ ARG MESSAGES_STATIC_ROOT=/data/static
 
 WORKDIR /app
 
+# CA certificates for TLS verification (not included in distroless)
+COPY --from=uv /etc/ssl/certs/ca-certificates.crt /etc/ssl/cert.pem
 # Stripped Python installation (python-build-standalone via uv)
 COPY --from=python-stripped-runtime /opt/python /opt/python
 # Python dependencies

@@ -1,11 +1,11 @@
 {
-  "name": "Messages",
-  "short_name": "Messages",
-  "description": "Gérer vos messages professionnels en toute sécurité",
+  "name": "Mosa Mail",
+  "short_name": "Mosa Mail",
+  "description": "Manage your mails securely and professionally",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#2845C1",
+  "theme_color": "#0443F2",
   "orientation": "portrait-primary",
   "icons": [
     {

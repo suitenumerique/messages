@@ -26,10 +26,10 @@ const ThemeContext = createContext<undefined | {
 const CUNNINGHAM_THEME_MAP: Record<ThemeWithVariant, CunninghamTheme> = {
     "white-label-light": "default",
     "white-label-dark": "dark",
-    "anct-light": "anct-light",
-    "anct-dark": "anct-dark",
-    "dsfr-light": "dsfr-light",
-    "dsfr-dark": "dsfr-dark",
+    "anct-light": "default",
+    "anct-dark": "dark",
+    "dsfr-light": "default",
+    "dsfr-dark": "dark",
 }
 
 

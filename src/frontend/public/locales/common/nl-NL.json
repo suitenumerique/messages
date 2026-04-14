@@ -579,7 +579,7 @@
   "Message templates": "",
   "Messages": "",
   "Messages Logo": "",
-  "Messaging": "Berichten",
+  "Messaging": "Mosa Mail",
   "Method": "Methode",
   "Missing": "Ontbreekt",
   "Modified": "",
@@ -976,5 +976,15 @@
   "You were unassigned": "",
   "You will no longer have access to the mailbox \"{{mailboxName}}\".": "",
   "Your email...": "Jouw email...",
-  "Your session has expired. Please log in again.": "Je sessie is verlopen. Log opnieuw in."
+  "Your messages have been imported successfully!": "Je berichten zijn succesvol geïmporteerd!",
+  "Your session has expired. Please log in again.": "Je sessie is verlopen. Log opnieuw in.",
+  "Log in": "Inloggen",
+  "Sign in to Mail - mosa.cloud": "Inloggen bij Mail - mosa.cloud",
+  "Collaborate without compromise": "Samenwerken zonder compromis",
+  "Built in the EU": "Gemaakt in de EU",
+  "Welcome to": "Welkom bij",
+  "Email without boundaries": "E-mail zonder grenzen",
+  "Sign in with your account": "Inloggen met uw account",
+  "Don't have an account?": "Heeft u geen account?",
+  "Contact us": "Neem contact op"
 }

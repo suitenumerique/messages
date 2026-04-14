@@ -9,27 +9,43 @@ name: Build and publish OCI images
 
 jobs:
 
-  # Shared base (debian-trixie + uv + managed CPython), built + pushed once
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend_version: ${{ steps.versions.outputs.frontend_version }}
+      backend_version: ${{ steps.versions.outputs.backend_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Extract versions
+        id: versions
+        run: |
+          FRONTEND_VERSION=$(jq -r .version src/frontend/package.json)
+          BACKEND_VERSION=$(grep '^version' src/backend/pyproject.toml | cut -d'"' -f2)
+          echo "frontend_version=${FRONTEND_VERSION}-mosa.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "backend_version=${BACKEND_VERSION}-mosa.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+  # Shared base (debian-trixie + uv + managed CPython 3.14.6), built + pushed once
   # from deploy/python-uv/Dockerfile, then referenced by digest via
   # PYTHON_UV_IMAGE in the backend and MTA builds below.
   docker-publish-python-uv:
+    needs: get-version
     uses: ./.github/workflows/docker-publish.yml
     permissions:
       contents: read
-      packages: write
       attestations: write
       id-token: write
     secrets: inherit
     with:
       image_name: "python-uv"
       context: "deploy/python-uv"
+      version: ${{ needs.get-version.outputs.backend_version }}
 
   docker-publish-mta-in:
-    needs: docker-publish-python-uv
+    needs: [get-version, docker-publish-python-uv]
     uses: ./.github/workflows/docker-publish.yml
     permissions:
       contents: read
-      packages: write
       attestations: write
       id-token: write
     secrets: inherit
@@ -37,17 +53,17 @@ jobs:
       image_name: "mta-in"
       context: "src/mta-in"
       target: runtime-prod
+      version: ${{ needs.get-version.outputs.backend_version }}
       build_args: |
         PYTHON_UV_IMAGE=${{ needs.docker-publish-python-uv.outputs.image_ref }}
 
   # Pure-Python (aiosmtpd) inbound MTA — built from Dockerfile.pymta, published
   # alongside the Postfix mta-in image while the two run side-by-side.
   docker-publish-mta-in-py:
-    needs: docker-publish-python-uv
+    needs: [get-version, docker-publish-python-uv]
     uses: ./.github/workflows/docker-publish.yml
     permissions:
       contents: read
-      packages: write
       attestations: write
       id-token: write
     secrets: inherit
@@ -56,26 +72,44 @@ jobs:
       context: "src/mta-in"
       dockerfile: "src/mta-in/Dockerfile.pymta"
       target: runtime-prod
+      version: ${{ needs.get-version.outputs.backend_version }}
+      build_args: |
+        PYTHON_UV_IMAGE=${{ needs.docker-publish-python-uv.outputs.image_ref }}
+
+  docker-publish-mta-out:
+    needs: [get-version, docker-publish-python-uv]
+    uses: ./.github/workflows/docker-publish.yml
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    secrets: inherit
+    with:
+      image_name: "mta-out"
+      context: "src/mta-out"
+      target: runtime-prod
+      version: ${{ needs.get-version.outputs.backend_version }}
       build_args: |
         PYTHON_UV_IMAGE=${{ needs.docker-publish-python-uv.outputs.image_ref }}
 
   docker-publish-socks-proxy:
+    needs: get-version
     uses: ./.github/workflows/docker-publish.yml
     permissions:
       contents: read
-      packages: write
       attestations: write
       id-token: write
     secrets: inherit
     with:
       image_name: "socks-proxy"
       context: "src/socks-proxy"
+      version: ${{ needs.get-version.outputs.backend_version }}
 
   docker-publish-frontend:
+    needs: get-version
     uses: ./.github/workflows/docker-publish.yml
     permissions:
       contents: read
-      packages: write
       attestations: write
       id-token: write
     secrets: inherit
@@ -83,6 +117,7 @@ jobs:
       image_name: "frontend"
       context: "src/frontend"
       target: runtime-prod
+      version: ${{ needs.get-version.outputs.frontend_version }}
       arm64_reuse_amd64_build_arg: "FRONTEND_IMAGE"
       # Bakes the commit SHA into the build as the asset cache-buster
       # (vite.config.ts → __SOURCE_VERSION__); without it the build falls back to a
@@ -92,11 +127,10 @@ jobs:
       build_args: "SOURCE_VERSION=${{ github.sha }}"
 
   docker-publish-backend:
-    needs: docker-publish-python-uv
+    needs: [get-version, docker-publish-python-uv]
     uses: ./.github/workflows/docker-publish.yml
     permissions:
       contents: read
-      packages: write
       attestations: write
       id-token: write
     secrets: inherit
@@ -104,17 +138,19 @@ jobs:
       image_name: "backend"
       context: "src/backend"
       target: runtime-prod
+      version: ${{ needs.get-version.outputs.backend_version }}
       build_args: |
         PYTHON_UV_IMAGE=${{ needs.docker-publish-python-uv.outputs.image_ref }}
 
   docker-publish-keycloak:
+    needs: get-version
     uses: ./.github/workflows/docker-publish.yml
     permissions:
       contents: read
-      packages: write
       attestations: write
       id-token: write
     secrets: inherit
     with:
       image_name: "keycloak"
       context: "src/keycloak"
+      version: ${{ needs.get-version.outputs.backend_version }}

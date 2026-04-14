@@ -12,10 +12,10 @@
 	--c--globals--colors--brand-350: #8F94FD;
 	--c--globals--colors--brand-400: #8184FC;
 	--c--globals--colors--brand-450: #7576EE;
-	--c--globals--colors--brand-500: #6969DF;
-	--c--globals--colors--brand-550: #5E5CD0;
-	--c--globals--colors--brand-600: #534FC2;
-	--c--globals--colors--brand-650: #4844AD;
+	--c--globals--colors--brand-500: #0443F2;
+	--c--globals--colors--brand-550: #0443F2;
+	--c--globals--colors--brand-600: #033BD9;
+	--c--globals--colors--brand-650: #0334C0;
 	--c--globals--colors--brand-700: #3E3B98;
 	--c--globals--colors--brand-750: #36347D;
 	--c--globals--colors--brand-800: #2D2F5F;
@@ -332,6 +332,7 @@
 	--c--globals--colors--white-900: #F8F8F9E5;
 	--c--globals--colors--white-950: #F8F8F9F2;
 	--c--globals--colors--white-975: #F8F8F9F9;
+	--c--globals--colors--logo-1: #0443F2;
 	--c--globals--transitions--ease-in: cubic-bezier(0.32, 0, 0.67, 0);
 	--c--globals--transitions--ease-out: cubic-bezier(0.33, 1, 0.68, 1);
 	--c--globals--transitions--ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
