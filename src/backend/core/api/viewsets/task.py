@@ -103,6 +103,16 @@ class TaskDetailView(APIView):
             result_data["status"] = task_result.result["status"]
             result_data["result"] = task_result.result["result"]
             result_data["error"] = task_result.result["error"]
+        elif isinstance(task_result.result, Exception):
+            logger.exception(
+                "Task %s failed with unhandled exception", task_id,
+                exc_info=task_result.result,
+            )
+            result_data["status"] = "FAILURE"
+            result_data["result"] = None
+            result_data["error"] = (
+                str(task_result.result) or type(task_result.result).__name__
+            )
         else:
             result_data["result"] = task_result.result
         if task_result.state == "PROGRESS" and task_result.info:

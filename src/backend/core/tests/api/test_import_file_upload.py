@@ -81,6 +81,56 @@ class TestTaskDetailViewPermissions:
             assert response.data["result"]["imported"] == 42
 
 
+    def test_api_task_detail_worker_crash_exception_should_be_serialized(self):
+        """Test that a task with an exception result (e.g. WorkerLostError)
+        returns a properly serialized error instead of a 500."""
+        user = factories.UserFactory()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        task_id = "test-task-crashed-worker"
+        register_task_owner(task_id, user.id)
+        url = reverse("task-detail", kwargs={"task_id": task_id})
+
+        with mock.patch("core.api.viewsets.task.AsyncResult") as mock_async_result:
+            mock_result = mock.MagicMock()
+            mock_result.status = "FAILURE"
+            mock_result.state = "FAILURE"
+            mock_result.result = Exception("Worker lost")
+            mock_result.info = None
+            mock_async_result.return_value = mock_result
+
+            response = client.get(url)
+            assert response.status_code == status.HTTP_200_OK
+            assert response.data["status"] == "FAILURE"
+            assert response.data["result"] is None
+            assert response.data["error"] == "Worker lost"
+
+    def test_api_task_detail_exception_without_message_should_use_class_name(self):
+        """Test that an exception with an empty str() uses the class name."""
+        user = factories.UserFactory()
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        task_id = "test-task-empty-exception"
+        register_task_owner(task_id, user.id)
+        url = reverse("task-detail", kwargs={"task_id": task_id})
+
+        with mock.patch("core.api.viewsets.task.AsyncResult") as mock_async_result:
+            mock_result = mock.MagicMock()
+            mock_result.status = "FAILURE"
+            mock_result.state = "FAILURE"
+            mock_result.result = ConnectionResetError()
+            mock_result.info = None
+            mock_async_result.return_value = mock_result
+
+            response = client.get(url)
+            assert response.status_code == status.HTTP_200_OK
+            assert response.data["status"] == "FAILURE"
+            assert response.data["result"] is None
+            assert response.data["error"] == "ConnectionResetError"
+
+
 class TestImportViewSetPermissions:
     """Test that ImportViewSet enforces proper role checks."""
 

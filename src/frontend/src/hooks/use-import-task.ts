@@ -1,6 +1,9 @@
 import { StatusEnum, useTasksRetrieve } from "@/features/api/gen";
 import { TaskMetadata } from "@/features/controlled-modals/message-importer/step-loader";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+
+const MAX_POLL_ERRORS = 10;
 
 export function useImportTaskStatus(
   taskId: string | null,
@@ -9,7 +12,10 @@ export function useImportTaskStatus(
     enabled = true,
   }: { refetchInterval?: number; enabled?: boolean } = {}
 ) {
+  const { t } = useTranslation();
   const [queryEnabled, setQueryEnabled] = useState(enabled);
+  const [hasExhaustedRetries, setHasExhaustedRetries] = useState(false);
+  const errorCountRef = useRef(0);
   const taskQuery = useTasksRetrieve(taskId || "", {
     query: {
       enabled: Boolean(taskId) && queryEnabled === true,
@@ -36,20 +42,34 @@ export function useImportTaskStatus(
   }, [taskStatus, taskMetadata, hasKnownTotal]);
 
   useEffect(() => {
-    if (!enabled || taskStatus === StatusEnum.FAILURE || taskStatus === StatusEnum.SUCCESS) {
+    if (taskQuery.isError) {
+      errorCountRef.current += 1;
+      if (errorCountRef.current >= MAX_POLL_ERRORS) {
+        setHasExhaustedRetries(true);
+      }
+    } else if (taskQuery.data) {
+      errorCountRef.current = 0;
+    }
+  }, [taskQuery.dataUpdatedAt, taskQuery.errorUpdatedAt]);
+
+  useEffect(() => {
+    if (!enabled || taskStatus === StatusEnum.FAILURE || taskStatus === StatusEnum.SUCCESS || hasExhaustedRetries) {
       setQueryEnabled(false);
     } else if (enabled || taskStatus === StatusEnum.PROGRESS || taskStatus === StatusEnum.PENDING) {
       setQueryEnabled(true);
     }
-  }, [taskStatus, enabled]);
+  }, [taskStatus, enabled, hasExhaustedRetries]);
 
   if (!taskId) return null;
   return {
     progress: progress !== null ? Math.ceil(progress) : null,
-    state: taskQuery.data?.data.status,
+    state: hasExhaustedRetries ? StatusEnum.FAILURE : taskQuery.data?.data.status,
     loading: taskQuery.isPending || progress === null,
-    error: taskQuery.data?.data.error,
+    error: hasExhaustedRetries
+      ? t('An error occurred while importing messages.')
+      : taskQuery.data?.data.error,
     hasKnownTotal,
     currentMessage,
+    successCount: taskMetadata?.success_count ?? 0,
   };
 }

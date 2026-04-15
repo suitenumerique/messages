@@ -49,14 +49,23 @@ export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => 
             onCompleteRef.current();
         } else if (importStatus?.state === StatusEnum.FAILURE) {
             const error = importStatus?.error || '';
-            let errorKey = t('An error occurred while importing messages.');
-            if (
+            const isAuthError =
                 error.includes("AUTHENTICATIONFAILED") ||
-                error.includes("IMAP authentication failed")
-            ) {
-                errorKey = t('Authentication failed. Please check your credentials and ensure you have enabled IMAP connections in your account.');
+                error.includes("IMAP authentication failed");
+
+            const parts: string[] = [];
+
+            if (isAuthError) {
+                parts.push(t('Authentication failed. Please check your credentials and ensure you have enabled IMAP connections in your account.'));
+            } else {
+                parts.push(t('An error occurred while importing messages.'));
+                if (importStatus.successCount > 0) {
+                    parts.push(t('{{count}} messages were imported before the error.', { count: importStatus.successCount }));
+                }
+                parts.push(t('You can safely retry the import — messages already imported will not be duplicated.'));
             }
-            onErrorRef.current(errorKey);
+
+            onErrorRef.current(parts.join(' '));
         }
     }, [importStatus?.state, t]);
 

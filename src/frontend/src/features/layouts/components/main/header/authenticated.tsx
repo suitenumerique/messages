@@ -169,7 +169,7 @@ const ApplicationMenu = () => {
       }
       if (taskStatus.state === StatusEnum.FAILURE) {
         label = t("Import failed");
-        icon = <Icon name="error" type={IconType.OUTLINED} />;
+          icon = <Icon name="error" type={IconType.OUTLINED} style={{ color: "var(--c--contextuals--content--semantic--error--primary)" }} />;
       }
     }
 

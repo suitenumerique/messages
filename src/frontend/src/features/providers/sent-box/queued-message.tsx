@@ -45,12 +45,26 @@ export const QueueMessage = ({ taskId, onSettled }: QueueMessageProps) => {
     }, []);
 
     useEffect(() => {
+        if (taskQuery.isError) {
+            toast.update(toastId, {
+                render: (
+                    <ToasterItem type="error">
+                        <span className="material-icons">error</span>
+                        <span>{t('The message could not be sent.')}</span>
+                    </ToasterItem>
+                ),
+                autoClose: QUEUED_MESSAGE_CLOSE_DELAY * 2,
+            });
+            onSettled?.();
+            return;
+        }
+
         const status_code = taskQuery?.data?.status;
-        
+
         if (!status_code) return;
 
         setRetryCount(retryCount => retryCount + 1);
-        
+
         const status = taskQuery.data!.data.status;
 
         if (status === StatusEnum.SUCCESS) {
