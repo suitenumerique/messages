@@ -545,6 +545,98 @@ class IsGlobalChannelMixin:
             raise PermissionDenied()
 
 
+def _user_can_comment_on_thread(user, thread_id):
+    """True if ``user`` can post/read internal comments on ``thread_id``.
+
+    Requires any ``ThreadAccess`` (viewer or editor) on a mailbox where the
+    user has ``MAILBOX_ROLES_CAN_EDIT``. Writing an internal comment is a
+    personal authoring act that does not mutate the thread's shared state,
+    so VIEWER ThreadAccess is enough as long as the user is at least editor
+    on the mailbox.
+    """
+    return models.ThreadAccess.objects.filter(
+        thread_id=thread_id,
+        mailbox__accesses__user=user,
+        mailbox__accesses__role__in=enums.MAILBOX_ROLES_CAN_EDIT,
+    ).exists()
+
+
+class HasThreadCommentAccess(IsAuthenticated):
+    """Allows users who can author internal comments on the thread.
+
+    Used for endpoints that serve the comment authoring flow (posting an
+    ``im`` ThreadEvent, listing thread users to pick mention targets): both
+    must stay accessible to Thread VIEWERs as long as they are at least
+    editor on one of the mailboxes sharing the thread.
+    """
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+
+        thread_id = view.kwargs.get("thread_id")
+        if not thread_id:
+            return False
+
+        return _user_can_comment_on_thread(request.user, thread_id)
+
+
+class HasThreadEventWriteAccess(IsAuthenticated):
+    """Gates write actions on ThreadEvent — rules depend on the event type.
+
+    Only ``im`` events (internal comments) relax the thread-level role: a
+    Thread VIEWER with mailbox edit rights can create/update/destroy their
+    own ``im`` events. Any other event type is considered a shared-state
+    mutation (system event, status change, …) and keeps the stricter
+    full-edit-rights policy (``MailboxAccess`` in ``MAILBOX_ROLES_CAN_EDIT``
+    AND ``ThreadAccess.role == EDITOR``).
+
+    Author check for update/destroy is enforced here regardless of type —
+    no user can edit or delete another user's event.
+    """
+
+    message = "You do not have permission to perform this action on this thread."
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+
+        thread_id = view.kwargs.get("thread_id")
+        if thread_id is None:
+            return True
+
+        if view.action == "create":
+            event_type = request.data.get("type") if hasattr(request, "data") else None
+            if event_type == enums.ThreadEventTypeChoices.IM:
+                return _user_can_comment_on_thread(request.user, thread_id)
+            # Non-IM (or missing) types require full edit rights. Using the
+            # stricter path as the default keeps unknown types safe.
+            return (
+                models.ThreadAccess.objects.editable_by(request.user)
+                .filter(thread_id=thread_id)
+                .exists()
+            )
+
+        # update / partial_update / destroy: defer to object-level check
+        # (type is resolved from the stored instance, not the payload).
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        if not isinstance(obj, models.ThreadEvent):
+            return False
+
+        if (
+            view.action in ("update", "partial_update", "destroy")
+            and obj.author_id != request.user.id
+        ):
+            return False
+
+        if obj.type == enums.ThreadEventTypeChoices.IM:
+            return _user_can_comment_on_thread(request.user, obj.thread_id)
+
+        return obj.thread.get_abilities(request.user)[enums.ThreadAbilities.CAN_EDIT]
+
+
 class HasThreadEditAccess(IsAuthenticated):
     """Allows access only to users with full edit rights on the thread.
 

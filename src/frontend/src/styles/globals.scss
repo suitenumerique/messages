@@ -76,6 +76,11 @@ body {
   font-size: var(--c--globals--font--sizes--sm);
 }
 
+a.c__button.c__button--brand--primary.c__button--disabled {
+    background-color: var(--c--contextuals--background--semantic--disabled--primary);
+    color: var(--c--contextuals--content--semantic--disabled--primary);
+}
+
 // Cunningham: force label up for datetime-local/time inputs
 // The browser always renders native placeholder text for these input types,
 // which overlaps with Cunningham's floating label in "placeholder" position.

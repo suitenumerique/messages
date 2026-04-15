@@ -36,16 +36,18 @@ class ThreadEventViewSet(
     lookup_url_kwarg = "id"
 
     def get_permissions(self):
-        """Use HasThreadEditAccess for write actions.
+        """Route write actions through the type-aware permission class.
 
-        ThreadEvent write operations require editor access, except
-        ``read_mention`` which is a personal acknowledgement and only
-        requires read access on the thread.
+        Reads (``list``, ``retrieve``) and the personal ``read_mention``
+        acknowledgement only need read access on the thread. Writes are
+        gated by :class:`HasThreadEventWriteAccess`, which relaxes the
+        ThreadAccess role for ``im`` (comment) events while keeping the
+        stricter full-edit-rights rule for every other event type.
         """
         if self.action in ["list", "retrieve", "read_mention"]:
             return [permissions.IsAuthenticated(), permissions.IsAllowedToAccess()]
 
-        return [permissions.HasThreadEditAccess()]
+        return [permissions.HasThreadEventWriteAccess()]
 
     def get_queryset(self):
         """Restrict results to events for the specified thread."""

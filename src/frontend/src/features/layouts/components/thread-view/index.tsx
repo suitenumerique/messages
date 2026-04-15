@@ -9,7 +9,7 @@ import useRead from "@/features/message/use-read"
 import useMentionRead from "@/features/message/use-mention-read"
 import { useDebounceCallback } from "@/hooks/use-debounce-callback"
 import { useVisibilityObserver } from "@/hooks/use-visibility-observer"
-import { Message, Thread, ThreadAccessRoleChoices, ThreadEvent as ThreadEventModel } from "@/features/api/gen/models"
+import { MailboxRoleChoices, Message, Thread, ThreadEvent as ThreadEventModel } from "@/features/api/gen/models"
 import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit"
 import { Banner } from "@/features/ui/components/banner"
 import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link"
@@ -363,15 +363,18 @@ export const ThreadView = () => {
         archived: messagesWithDraftChildren?.filter((m) => m.is_archived).length || 0,
         total: messagesWithDraftChildren?.length || 0,
     }), [messagesWithDraftChildren]);
-    // Show IM input for shared mailboxes, or when the current mailbox
-    // has editor access on a thread shared with other mailboxes.
-    const hasEditorAccess = selectedThread?.accesses?.some(
-        access => access.mailbox.id === selectedMailbox?.id
-            && access.role === ThreadAccessRoleChoices.editor
+    // Show IM input when the user has at least edit rights on the mailbox
+    // (editor/sender/admin), regardless of the thread-level role.
+    // Still gated to shared contexts: either a shared mailbox or a thread
+    // shared across multiple mailboxes.
+    const hasMailboxEditAccess = !!selectedMailbox && (
+        selectedMailbox.role === MailboxRoleChoices.editor
+        || selectedMailbox.role === MailboxRoleChoices.sender
+        || selectedMailbox.role === MailboxRoleChoices.admin
     );
     const hasMultipleAccesses = (selectedThread?.accesses?.length ?? 0) > 1;
     const isSharedMailbox = selectedMailbox?.is_identity === false;
-    const showIMInput = Boolean((isSharedMailbox || hasMultipleAccesses) && hasEditorAccess);
+    const showIMInput = Boolean((isSharedMailbox || hasMultipleAccesses) && hasMailboxEditAccess);
 
     // Build filtered timeline items: enrich messages with draft children,
     // apply trash filtering, and keep all events.

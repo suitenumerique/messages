@@ -62,9 +62,10 @@ class TestThreadUserListAuthentication:
 class TestThreadUserListPermissions:
     """Test permission matrix for GET /threads/{thread_id}/users/.
 
-    The endpoint uses IsAllowedToManageThreadAccess which requires:
-    - ThreadAccess role = EDITOR on the thread
-    - MailboxAccess role in MAILBOX_ROLES_CAN_EDIT (EDITOR, SENDER, ADMIN)
+    The endpoint backs the mention picker in the comment composer, so it
+    must stay reachable to anyone who can post an ``im`` comment: mailbox
+    role in MAILBOX_ROLES_CAN_EDIT (EDITOR, SENDER, ADMIN) + any
+    ThreadAccess (VIEWER or EDITOR).
     """
 
     @pytest.mark.parametrize(
@@ -73,12 +74,17 @@ class TestThreadUserListPermissions:
             (enums.ThreadAccessRoleChoices.EDITOR, enums.MailboxRoleChoices.ADMIN),
             (enums.ThreadAccessRoleChoices.EDITOR, enums.MailboxRoleChoices.EDITOR),
             (enums.ThreadAccessRoleChoices.EDITOR, enums.MailboxRoleChoices.SENDER),
+            # Thread VIEWER with editor-level mailbox role: allowed because
+            # the user can still author comments and needs to pick mentions.
+            (enums.ThreadAccessRoleChoices.VIEWER, enums.MailboxRoleChoices.ADMIN),
+            (enums.ThreadAccessRoleChoices.VIEWER, enums.MailboxRoleChoices.EDITOR),
+            (enums.ThreadAccessRoleChoices.VIEWER, enums.MailboxRoleChoices.SENDER),
         ],
     )
     def test_list_thread_users_allowed(
         self, api_client, thread_access_role, mailbox_access_role
     ):
-        """Users with EDITOR thread access + EDITOR/SENDER/ADMIN mailbox role can list."""
+        """Any ThreadAccess + editor-level MailboxAccess grants list access."""
         user, _mailbox, thread = setup_user_with_thread_access(
             thread_role=thread_access_role,
             mailbox_role=mailbox_access_role,
@@ -91,12 +97,9 @@ class TestThreadUserListPermissions:
     @pytest.mark.parametrize(
         "thread_access_role, mailbox_access_role",
         [
-            # VIEWER on thread — regardless of mailbox role
-            (enums.ThreadAccessRoleChoices.VIEWER, enums.MailboxRoleChoices.ADMIN),
-            (enums.ThreadAccessRoleChoices.VIEWER, enums.MailboxRoleChoices.EDITOR),
-            (enums.ThreadAccessRoleChoices.VIEWER, enums.MailboxRoleChoices.SENDER),
-            # EDITOR on thread but only VIEWER on mailbox
+            # Mailbox VIEWER: mailbox role too low regardless of thread role.
             (enums.ThreadAccessRoleChoices.EDITOR, enums.MailboxRoleChoices.VIEWER),
+            (enums.ThreadAccessRoleChoices.VIEWER, enums.MailboxRoleChoices.VIEWER),
         ],
     )
     def test_list_thread_users_forbidden(

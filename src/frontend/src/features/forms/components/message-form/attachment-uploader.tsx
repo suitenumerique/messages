@@ -69,7 +69,7 @@ export const AttachmentUploader = ({
                 >
                     {t("Add attachments")}
                 </Button>
-                <DriveAttachmentPicker onPick={onDriveAttachmentPick} />
+                <DriveAttachmentPicker onPick={onDriveAttachmentPick} disabled={disabled} />
                 <p className="attachment-uploader__input__helper-text">
                     {t("or drag and drop some files")}
                 </p>

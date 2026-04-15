@@ -97,7 +97,7 @@ export const MessageForm = ({
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
     const saveDraftRef = useRef<() => void>(() => {});
     const quoteType: QuoteType | undefined = mode !== "new" ? (mode === "forward" ? "forward" : "reply") : undefined;
-    const { selectedMailbox, mailboxes, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
+    const { selectedMailbox, selectedThread, mailboxes, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
     const hideSubjectField = Boolean(draftMessage?.parent_id ?? parentMessage);
     const defaultSenderId = mailboxes?.find((mailbox) => {
         if (draft?.sender) return draft.sender.email === mailbox.email;
@@ -221,8 +221,10 @@ export const MessageForm = ({
         name: "from",
     });
     const currentSender = mailboxes?.find((mailbox) => mailbox.id === currentSenderId);
-    const canSendMessages = useAbility(Abilities.CAN_SEND_MESSAGES, currentSender!);
-    const canWriteMessages = useAbility(Abilities.CAN_WRITE_MESSAGES, currentSender!);
+    const canEditCurrentThread = useAbility(Abilities.CAN_EDIT_THREAD, selectedThread);
+    const canEditThread = mode === "new" ? true : canEditCurrentThread;
+    const canSendMessages = useAbility(Abilities.CAN_SEND_MESSAGES, currentSender!) && canEditThread;
+    const canWriteMessages = useAbility(Abilities.CAN_WRITE_MESSAGES, currentSender!) && canEditThread;
     const canChangeSender = !draft || canWriteMessages;
 
     const initialAttachments = useMemo((): (Attachment | DriveFile)[] => {

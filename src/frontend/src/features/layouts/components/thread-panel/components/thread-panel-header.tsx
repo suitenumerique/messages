@@ -17,6 +17,7 @@ import { ThreadPanelFilter } from "./thread-panel-filter";
 import { THREAD_PANEL_FILTER_PARAMS, useThreadPanelFilters } from "../hooks/use-thread-panel-filters";
 import { SelectionReadStatus, SelectionStarredStatus } from "@/features/providers/thread-selection";
 import { LabelsWidget } from "@/features/layouts/components/labels-widget";
+import useAbility, { Abilities } from "@/hooks/use-ability";
 
 type ThreadPanelTitleProps = {
     selectedThreadIds: Set<string>;
@@ -101,6 +102,14 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
 
     const starLabel = t('Star');
     const unstarLabel = t('Unstar');
+
+    const canArchive = canEditSelection && !isSpamView && !isTrashedView && !isDraftsView;
+    const canReportSpam = canEditSelection && !isTrashedView && !isSentView && !isDraftsView;
+    const canTrash = canEditSelection && !isDraftsView;
+    const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
+    const canAssignLabel = canManageLabels && !isSpamView && !isTrashedView && !isDraftsView;
+    const hasSelectionActions = canArchive || canReportSpam || canTrash || canAssignLabel;
+
     const countLabel = useMemo(() => {
         if (isSearch) {
             if (activeFilters.has_mention && activeFilters.has_unread && activeFilters.has_starred) {
@@ -192,8 +201,8 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                     </Tooltip>
                     {isSelectionMode && (
                         <>
-                            <VerticalSeparator withPadding={false} />
-                            {canEditSelection && !isSpamView && !isTrashedView && !isDraftsView && (
+                            {hasSelectionActions && <VerticalSeparator withPadding={false} />}
+                            {canArchive && (
                                 <Tooltip content={archiveLabel} className={selectedThreadIds.size === 0 ? 'hidden' : ''}>
                                     <Button
                                         onClick={() => {
@@ -213,7 +222,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                     />
                                 </Tooltip>
                             )}
-                            {canEditSelection && !isTrashedView && !isSentView && !isDraftsView && (
+                            {canReportSpam && (
                                 <Tooltip content={spamLabel} className={selectedThreadIds.size === 0 ? 'hidden' : ''}>
                                     <Button
                                         onClick={() => {
@@ -233,7 +242,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                     />
                                 </Tooltip>
                             )}
-                            {canEditSelection && !isDraftsView && (
+                            {canTrash && (
                                 <Tooltip content={trashLabel} className={selectedThreadIds.size === 0 ? 'hidden' : ''}>
                                     <Button
                                         onClick={() => {
@@ -253,7 +262,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                     />
                                 </Tooltip>
                             )}
-                            {!isSpamView && !isTrashedView && !isDraftsView && (
+                            {canAssignLabel && (
                                 <LabelsWidget
                                     threadIds={Array.from(selectedThreadIds)}
                                 />

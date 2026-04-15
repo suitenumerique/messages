@@ -197,6 +197,7 @@
   &::after {
     content: attr(data-value) ' ';
     white-space: pre-wrap;
+    visibility: hidden;
     pointer-events: none;
   }
 

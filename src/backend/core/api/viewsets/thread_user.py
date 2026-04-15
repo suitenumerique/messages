@@ -19,7 +19,7 @@ class ThreadUserViewSet(
     pagination_class = None
     permission_classes = [
         permissions.IsAuthenticated,
-        permissions.IsAllowedToManageThreadAccess,
+        permissions.HasThreadCommentAccess,
     ]
 
     def get_queryset(self):

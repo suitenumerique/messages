@@ -280,22 +280,27 @@ class TestNonAuthorEventManipulation:
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
 
-class TestViewerCannotCreateEvents:
-    """Test that VIEWER-role users cannot create events (only EDITOR+)."""
+class TestImEventCreationPermissions:
+    """Permission matrix for creating ``im`` ThreadEvents (internal comments).
 
-    def test_viewer_cannot_create_event(self, api_client):
-        """Users with only VIEWER role on a thread should not create events."""
+    ``im`` events are personal authoring acts (not shared-state mutations),
+    so Thread VIEWERs may post them as long as they are at least editor on
+    the mailbox. The mailbox role is the hard floor.
+    """
+
+    def test_thread_viewer_mailbox_editor_can_create_im(self, api_client):
+        """Thread VIEWER + mailbox editor: must be allowed to comment."""
         user, _mailbox, thread = setup_user_with_thread_access(
             role=enums.ThreadAccessRoleChoices.VIEWER
         )
         api_client.force_authenticate(user=user)
 
-        data = {"type": "im", "data": {"content": "from a viewer"}}
+        data = {"type": "im", "data": {"content": "from a thread viewer"}}
         response = api_client.post(get_thread_event_url(thread.id), data, format="json")
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_201_CREATED
 
-    def test_editor_can_create_event(self, api_client):
-        """Users with EDITOR role should be able to create events (sanity check)."""
+    def test_thread_editor_can_create_im(self, api_client):
+        """Thread EDITOR + mailbox admin: sanity check."""
         user, _mailbox, thread = setup_user_with_thread_access(
             role=enums.ThreadAccessRoleChoices.EDITOR
         )
@@ -305,20 +310,18 @@ class TestViewerCannotCreateEvents:
         response = api_client.post(get_thread_event_url(thread.id), data, format="json")
         assert response.status_code == status.HTTP_201_CREATED
 
-    def test_viewer_mailbox_with_editor_thread_access_cannot_create_event(
-        self, api_client
-    ):
-        """Previously-missed scenario: a user with only VIEWER MailboxAccess
-        cannot post events even when the mailbox has EDITOR ThreadAccess.
-        Creating a ThreadEvent mutates shared state, so both role checks
-        must pass.
+    def test_viewer_mailbox_cannot_create_im(self, api_client):
+        """Mailbox VIEWER cannot post comments even with EDITOR thread access.
+
+        Authoring a comment requires at least editor-level mailbox role,
+        otherwise a read-only teammate could inject content into threads.
         """
         user = factories.UserFactory()
         mailbox = factories.MailboxFactory()
         factories.MailboxAccessFactory(
             mailbox=mailbox,
             user=user,
-            role=enums.MailboxRoleChoices.VIEWER,  # VIEWER mailbox role
+            role=enums.MailboxRoleChoices.VIEWER,
         )
         thread = factories.ThreadFactory()
         factories.ThreadAccessFactory(
@@ -330,6 +333,87 @@ class TestViewerCannotCreateEvents:
 
         data = {"type": "im", "data": {"content": "from a mailbox viewer"}}
         response = api_client.post(get_thread_event_url(thread.id), data, format="json")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_no_thread_access_cannot_create_im(self, api_client):
+        """A user without any ThreadAccess on the thread is denied."""
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        thread = factories.ThreadFactory()  # no ThreadAccess for user's mailbox
+        api_client.force_authenticate(user=user)
+
+        data = {"type": "im", "data": {"content": "from outsider"}}
+        response = api_client.post(get_thread_event_url(thread.id), data, format="json")
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+class TestImEventAuthorEditsOwnComment:
+    """Authors of ``im`` events must be able to edit/delete their own
+    comment even if they are only VIEWER on the thread.
+
+    If we allowed them to create the comment, we must let them take it
+    back — no orphan comments the author can't retract.
+    """
+
+    def test_thread_viewer_author_can_update_own_im(self, api_client):
+        """
+        A user with VIEWER access to a thread can update their own ``im`` event.
+        """
+        user, _mailbox, thread = setup_user_with_thread_access(
+            role=enums.ThreadAccessRoleChoices.VIEWER
+        )
+        api_client.force_authenticate(user=user)
+        event = factories.ThreadEventFactory(thread=thread, author=user, type="im")
+
+        response = api_client.patch(
+            get_thread_event_url(thread.id, event.id),
+            {"data": {"content": "edited from viewer"}},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_200_OK
+        event.refresh_from_db()
+        assert event.data["content"] == "edited from viewer"
+
+    def test_thread_viewer_author_can_destroy_own_im(self, api_client):
+        """
+        A user with VIEWER access to a thread can destroy their own ``im`` event.
+        """
+        user, _mailbox, thread = setup_user_with_thread_access(
+            role=enums.ThreadAccessRoleChoices.VIEWER
+        )
+        api_client.force_authenticate(user=user)
+        event = factories.ThreadEventFactory(thread=thread, author=user, type="im")
+
+        response = api_client.delete(get_thread_event_url(thread.id, event.id))
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not models.ThreadEvent.objects.filter(id=event.id).exists()
+
+    def test_mailbox_viewer_author_cannot_update_own_im(self, api_client):
+        """Mailbox role dropped to VIEWER after the event was created:
+        the author has lost comment rights and can no longer edit.
+        """
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox, user=user, role=enums.MailboxRoleChoices.VIEWER
+        )
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox, thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+        )
+        event = factories.ThreadEventFactory(thread=thread, author=user, type="im")
+
+        api_client.force_authenticate(user=user)
+        response = api_client.patch(
+            get_thread_event_url(thread.id, event.id),
+            {"data": {"content": "nope"}},
+            format="json",
+        )
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
