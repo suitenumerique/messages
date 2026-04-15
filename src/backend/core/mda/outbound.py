@@ -479,7 +479,11 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     relay,
                     proxy_host or "nil",
                     status,
-                    (error or "nil").replace('"', '\\"'),
+                    (error or "nil")
+                    .replace("\\", "\\\\")
+                    .replace('"', '\\"')
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r"),
                 )
                 if delivered:
                     # TODO also update message.updated_at?
