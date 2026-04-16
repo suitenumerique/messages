@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { getRequestUrl, getApiOrigin } from "@/features/api/utils";
 import { getBlobDownloadRetrieveUrl } from "@/features/api/gen/blob/blob";
 import { UnquoteMessage } from '@/features/utils/unquote-message';
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { tokens } from '@/styles/cunningham-tokens'
 import { useTheme } from "@/features/providers/theme";
 import { useConfig } from "@/features/providers/config";
@@ -14,6 +14,11 @@ import { getMailboxesImageProxyListUrl } from "@/features/api/gen/mailboxes/mail
 import { EXTERNAL_IMAGES_CONSENT_KEY } from "@/features/config/constants";
 import { renderBodyParts } from "./renderers";
 import { ThreadMessageBodyProps } from "./types";
+import { LinkPreviewModal, useLinkPreviewModal } from "./link-preview-modal";
+import { Alert, Button, iconFromType, VariantType } from "@gouvfr-lasuite/cunningham-react";
+import { handle } from "@/features/utils/errors";
+import { set } from "zod";
+import Link from "next/link";
 
 const CSP = [
     // Allow images from our domain, data URIs, and API endpoints
@@ -44,7 +49,7 @@ const CSP = [
 ].join('; ');
 
 const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, messageId, onLoad }: ThreadMessageBodyProps) => {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const { cunninghamTheme, variant } = useTheme();
     const { selectedMailbox } = useMailboxContext();
@@ -63,6 +68,8 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
         sessionStorage.setItem(EXTERNAL_IMAGES_CONSENT_KEY, Array.from(oldConsentMessageIds).join('|'));
         setDisplayExternalImages(true);
     };
+
+    const { askConfirmation: askLinkConfirmation, modal: linkConfirmationModal } = useLinkPreviewModal();
 
     // Build CID to blob URL mapping for inline image resolution
     const cidToBlobUrlMap = useMemo(() => {
@@ -321,9 +328,27 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
             doc.querySelectorAll('details.email-quoted-content').forEach(node => {
                 node.addEventListener('toggle', resizeIframe);
             });
+
+            // Handle link clicks
+            doc.querySelectorAll('a').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    if (link.href != link.textContent) {
+                        e.preventDefault();
+                        handleLinkClick(link.href, link.textContent);
+                    }
+                });
+            });
         }
         onLoad?.();
     }, [onLoad, resizeIframe]);
+
+    const handleLinkClick = async (url: string, text: string) => {
+        const lang = i18n.language.split('-')[0]; // Get base language for documentation link
+        const decision = await askLinkConfirmation(url, false, text);
+        if (decision) {
+            window.open(url, '_blank');
+        }
+    }
 
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
@@ -380,6 +405,7 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
                 sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
                 onLoad={handleIframeLoad}
             />
+            {linkConfirmationModal}
         </>
     )
 }

@@ -18,6 +18,8 @@ and this project adheres to
 - Add unread and starred filters in thread panel #581
 - Add better filtering and granularity for usage metrics
 - Expose `oidc_autojoin` and `identity_sync` flags in provisioning API
+- Add a link preview modal : instead of opening the link directly when clicked on in an email, a modal now shows the true URL and asks to confirm.
+
 
 ### Changed
 
