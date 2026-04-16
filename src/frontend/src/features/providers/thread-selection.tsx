@@ -243,6 +243,9 @@ const useThreadSelectionState = (threads: Thread[] | undefined, selectedThread: 
             if (!isSelectionMode) return;
 
             if (e.key === 'Escape') {
+                // Defer to any modal dialog / popup stacked above (labels widget popup,
+                // Cunningham modal, etc.) — they own the Escape while open.
+                if (document.querySelector('[aria-modal="true"]')) return;
                 e.preventDefault();
                 clearSelection();
                 return;

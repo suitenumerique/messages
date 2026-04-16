@@ -1,7 +1,7 @@
 import { ThreadLabel, TreeLabel, useLabelsAddThreadsCreate, useLabelsList, useLabelsRemoveThreadsCreate } from "@/features/api/gen";
 import { Thread } from "@/features/api/gen/models";
 import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, Checkbox, Input, Tooltip, useModal } from "@gouvfr-lasuite/cunningham-react";
+import { Button, Checkbox, Input, Tooltip } from "@gouvfr-lasuite/cunningham-react";
 import { RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -18,16 +18,42 @@ type LabelsWidgetProps = {
     initialLabels?: readonly ThreadLabel[];
 }
 
+type CreateModalState = {
+    isOpen: boolean;
+    initialName: string;
+}
+
 export const LabelsWidget = ({ threadIds, initialLabels }: LabelsWidgetProps) => {
     const { t } = useTranslation();
-    const { selectedMailbox, threads } = useMailboxContext();
+    const { selectedMailbox, threads, invalidateThreadMessages } = useMailboxContext();
     const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
     const { data: labelsList, isLoading: isLoadingLabelsList } = useLabelsList(
         { mailbox_id: selectedMailbox!.id },
         { query: { enabled: canManageLabels } }
     );
     const [isPopupOpen, setIsPopupOpen] = useState(false);
+    const [createModal, setCreateModal] = useState<CreateModalState>({ isOpen: false, initialName: '' });
     const anchorRef = useRef<HTMLDivElement>(null);
+
+    const addLabelMutation = useLabelsAddThreadsCreate({
+        mutation: { onSuccess: () => invalidateThreadMessages() }
+    });
+    const deleteLabelMutation = useLabelsRemoveThreadsCreate({
+        mutation: { onSuccess: () => invalidateThreadMessages() }
+    });
+
+    const handleAddLabel = (labelId: string) => {
+        addLabelMutation.mutate({
+            id: labelId,
+            data: { thread_ids: threadIds },
+        });
+    }
+    const handleDeleteLabel = (labelId: string) => {
+        deleteLabelMutation.mutate({
+            id: labelId,
+            data: { thread_ids: threadIds },
+        });
+    }
 
     const labelCounts = useMemo(() => {
         const counts = new Map<string, number>();
@@ -89,8 +115,18 @@ export const LabelsWidget = ({ threadIds, initialLabels }: LabelsWidgetProps) =>
                     labels={labelsList!.data || []}
                     threadIds={threadIds}
                     labelCounts={labelCounts}
+                    onAddLabel={handleAddLabel}
+                    onDeleteLabel={handleDeleteLabel}
+                    onCreateLabel={(initialName) => setCreateModal({ isOpen: true, initialName })}
+                    closeOnEsc={!createModal.isOpen}
                 />
             )}
+            <LabelModal
+                isOpen={createModal.isOpen}
+                onClose={() => setCreateModal((s) => ({ ...s, isOpen: false }))}
+                label={{ display_name: createModal.initialName }}
+                onSuccess={(label) => handleAddLabel(label.id)}
+            />
         </div>
     );
 };
@@ -101,6 +137,12 @@ export type LabelsPopupProps = {
     labelCounts: Map<string, number>;
     anchorRef: RefObject<HTMLElement | null>;
     onClose: () => void;
+    onAddLabel: (labelId: string) => void;
+    onDeleteLabel: (labelId: string) => void;
+    onCreateLabel: (initialName: string) => void;
+    // Set to false when a modal stacked above should own Escape — otherwise
+    // the popup's capture-phase listener races with the modal's and both close.
+    closeOnEsc?: boolean;
 }
 
 type LabelOption = {
@@ -110,11 +152,19 @@ type LabelOption = {
     indeterminate: boolean;
 }
 
-export const LabelsPopup = ({ labels = [], threadIds, labelCounts, anchorRef, onClose }: LabelsPopupProps) => {
+export const LabelsPopup = ({
+    labels = [],
+    threadIds,
+    labelCounts,
+    anchorRef,
+    onClose,
+    onAddLabel,
+    onDeleteLabel,
+    onCreateLabel,
+    closeOnEsc = true,
+}: LabelsPopupProps) => {
     const { t } = useTranslation();
-    const {open, close, isOpen} = useModal();
     const [searchQuery, setSearchQuery] = useState('');
-    const { invalidateThreadMessages } = useMailboxContext();
     const totalThreads = threadIds.length;
     const position = usePopupPosition(anchorRef, true, (rect) => {
         const top = rect.bottom + 4;
@@ -126,6 +176,7 @@ export const LabelsPopup = ({ labels = [], threadIds, labelCounts, anchorRef, on
     });
 
     useEffect(() => {
+        if (!closeOnEsc) return;
         const onKey = (e: KeyboardEvent) => {
             if (e.key !== 'Escape') return;
             e.stopImmediatePropagation();
@@ -133,7 +184,7 @@ export const LabelsPopup = ({ labels = [], threadIds, labelCounts, anchorRef, on
         };
         window.addEventListener('keydown', onKey, true);
         return () => window.removeEventListener('keydown', onKey, true);
-    }, [onClose]);
+    }, [onClose, closeOnEsc]);
 
     const getFlattenLabelOptions = (label: TreeLabel): LabelOption[] => {
         const children: LabelOption[] = label.children.length > 0
@@ -165,46 +216,36 @@ export const LabelsPopup = ({ labels = [], threadIds, labelCounts, anchorRef, on
             return a.label.localeCompare(b.label);
         });
 
-    const addLabelMutation = useLabelsAddThreadsCreate({
-        mutation: {
-            onSuccess: () => invalidateThreadMessages()
-        }
-    });
-    const deleteLabelMutation = useLabelsRemoveThreadsCreate({
-        mutation: {
-            onSuccess: () => invalidateThreadMessages()
-        }
-    });
-
-    const handleAddLabel = (labelId: string) => {
-        addLabelMutation.mutate({
-            id: labelId,
-            data: { thread_ids: threadIds },
-        });
-    }
-    const handleDeleteLabel = (labelId: string) => {
-        deleteLabelMutation.mutate({
-            id: labelId,
-            data: { thread_ids: threadIds },
-        });
-    }
-
     const handleToggle = (option: LabelOption) => {
         if (option.checked) {
-            handleDeleteLabel(option.value);
+            onDeleteLabel(option.value);
         } else {
-            handleAddLabel(option.value);
+            onAddLabel(option.value);
         }
     }
 
     if (!position) return null;
+
+    // Portal into #__next rather than document.body so the popup shares the
+    // same stacking context as Cunningham's Modal (rendered via ModalProvider
+    // inside #__next). Portalling to body places the popup on a higher paint
+    // layer than anything isolated inside #__next, regardless of z-index.
+    const portalTarget = document.getElementById('__next') ?? document.body;
 
     return createPortal(
         <>
             <div className="labels-widget__popup__overlay" onClick={onClose}></div>
             <div
                 className="labels-widget__popup"
-                style={{ position: 'fixed', top: position.top, right: position.right, maxHeight: position.maxHeight }}
+                role="dialog"
+                aria-modal="true"
+                aria-label={t('Add labels')}
+                style={{
+                    position: 'fixed',
+                    top: position.top,
+                    right: position.right,
+                    maxHeight: position.maxHeight,
+                }}
             >
                 <header className="labels-widget__popup__header">
                     <h3><Icon type={IconType.OUTLINED} name="new_label" /> {t('Add labels')}</h3>
@@ -230,21 +271,15 @@ export const LabelsPopup = ({ labels = [], threadIds, labelCounts, anchorRef, on
                         </li>
                     ))}
                     <li className="labels-widget__popup__content__empty">
-                        <Button color="brand" variant="primary" onClick={open} fullWidth icon={<Icon type={IconType.OUTLINED} name="add" />}>
+                        <Button color="brand" variant="primary" onClick={() => onCreateLabel(searchQuery)} fullWidth icon={<Icon type={IconType.OUTLINED} name="add" />}>
                             <span className="labels-widget__popup__content__empty__button-label">
                             {searchQuery && labelsOptions.length === 0 ? t('Create the label "{{label}}"', { label: searchQuery }) : t('Create a new label')}
                             </span>
                         </Button>
-                        <LabelModal
-                            isOpen={isOpen}
-                            onClose={close}
-                            label={{ display_name: searchQuery }}
-                            onSuccess={(label) => { handleAddLabel(label.id)}}
-                         />
                     </li>
                 </ul>
             </div>
         </>,
-        document.body
+        portalTarget
     );
 };
