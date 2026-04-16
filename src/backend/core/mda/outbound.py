@@ -1,6 +1,7 @@
 """Handles outbound email delivery logic: composing and sending messages."""
 # pylint: disable=broad-exception-caught
 
+import json
 import logging
 from typing import Any, Optional
 
@@ -471,7 +472,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     (
                         "module=core.mda.outbound.send_message "
                         "message_id=%s to=%s from=%s "
-                        'relay=%s socks=%s status=%s error="%s"'
+                        "relay=%s socks=%s status=%s error=%s"
                     ),
                     message.id,
                     recipient_email,
@@ -479,11 +480,7 @@ def send_message(message: models.Message, force_mta_out: bool = False):
                     relay,
                     proxy_host or "nil",
                     status,
-                    (error or "nil")
-                    .replace("\\", "\\\\")
-                    .replace('"', '\\"')
-                    .replace("\n", "\\n")
-                    .replace("\r", "\\r"),
+                    json.dumps(error or "nil"),
                 )
                 if delivered:
                     # TODO also update message.updated_at?
