@@ -102,10 +102,11 @@ class TestRspamdSpamCheck:
         mock_post.return_value = mock_response
 
         raw_data = b"Spam email content"
-        is_spam, error = _check_spam_with_rspamd(raw_data, spam_config)
+        is_spam, error, rspamd_result = _check_spam_with_rspamd(raw_data, spam_config)
 
         assert is_spam is True
         assert error is None
+        assert rspamd_result is not None
         mock_post.assert_called_once()
         call_args = mock_post.call_args
         assert call_args[0][0] == "http://rspamd:8010/_api/checkv2"
@@ -126,7 +127,7 @@ class TestRspamdSpamCheck:
         mock_post.return_value = mock_response
 
         raw_data = b"Legitimate email content"
-        is_spam, error = _check_spam_with_rspamd(raw_data, spam_config)
+        is_spam, error, _rspamd_result = _check_spam_with_rspamd(raw_data, spam_config)
 
         assert is_spam is False
         assert error is None
@@ -164,10 +165,11 @@ class TestRspamdSpamCheck:
         """Test that spam check is skipped when rspamd is not configured."""
         spam_config = {}
         raw_data = b"Email content"
-        is_spam, error = _check_spam_with_rspamd(raw_data, spam_config)
+        is_spam, error, rspamd_result = _check_spam_with_rspamd(raw_data, spam_config)
 
         assert is_spam is False
         assert error is None
+        assert rspamd_result is None
 
     @override_settings(SPAM_CONFIG={"rspamd_url": "http://rspamd:8010/_api"})
     @patch("core.mda.inbound_tasks.requests.post")
@@ -177,11 +179,12 @@ class TestRspamdSpamCheck:
         mock_post.side_effect = requests.exceptions.RequestException("Connection error")
 
         raw_data = b"Email content"
-        is_spam, error = _check_spam_with_rspamd(raw_data, spam_config)
+        is_spam, error, rspamd_result = _check_spam_with_rspamd(raw_data, spam_config)
 
         # On error, treat as not spam to avoid blocking legitimate messages
         assert is_spam is False
         assert error is not None
+        assert rspamd_result is None
 
     @override_settings(
         SPAM_CONFIG={
@@ -709,7 +712,7 @@ class TestProcessInboundMessageTask:
             raw_data=raw_data,
         )
 
-        mock_check_spam.return_value = (True, None)  # is_spam=True
+        mock_check_spam.return_value = (True, None, None)  # is_spam=True
         mock_create_message.return_value = True
 
         # Call the bound task directly using .run() method
@@ -742,7 +745,7 @@ class TestProcessInboundMessageTask:
             raw_data=raw_data,
         )
 
-        mock_check_spam.return_value = (False, None)  # is_spam=False
+        mock_check_spam.return_value = (False, None, None)  # is_spam=False
         mock_create_message.return_value = True
 
         # Call the bound task directly using .run() method
@@ -771,7 +774,7 @@ class TestProcessInboundMessageTask:
             raw_data=raw_data,
         )
 
-        mock_check_spam.return_value = (False, None)
+        mock_check_spam.return_value = (False, None, None)
         mock_create_message.return_value = False  # Creation failed
 
         # Call the bound task directly using .run() method

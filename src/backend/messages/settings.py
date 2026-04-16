@@ -283,7 +283,16 @@ class Base(Configuration):
 
     # Spam filtering settings
 
-    # Default spam configuration for all mail domains, overrideable per mail domain in custom_settings
+    # Default spam configuration for all mail domains, overrideable per mail
+    # domain in custom_settings. Recognised keys include:
+    #   rspamd_url / rspamd_auth : rspamd /checkv2 endpoint + optional auth header
+    #   trusted_relays           : int, how many upstream Received blocks to trust
+    #                              for header-based rules (default 1)
+    #   rules                    : list of hardcoded header-match spam rules
+    #   inbound_auth             : sender authentication backend — one of
+    #                              "native", "rspamd", "authentication-results",
+    #                              or None/absent to disable. See
+    #                              core.mda.inbound_auth for semantics.
     SPAM_CONFIG = values.DictValue({}, environ_name="SPAM_CONFIG", environ_prefix=None)
 
     # MTA settings

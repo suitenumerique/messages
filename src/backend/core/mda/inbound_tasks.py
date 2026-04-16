@@ -5,6 +5,7 @@
 import re
 from typing import Any, Dict, Optional, Tuple
 
+from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
@@ -12,12 +13,34 @@ import requests
 from celery.utils.log import get_task_logger
 
 from core import models
+from core.mda.inbound_auth import check_inbound_authentication
 from core.mda.inbound_create import _create_message_from_inbound
 from core.mda.rfc5322 import parse_email_message
 
 from messages.celery_app import app as celery_app
 
 logger = get_task_logger(__name__)
+
+
+def _is_selfcheck_message(
+    parsed_email: Dict[str, Any], recipient_email: str
+) -> bool:
+    """Return True when this message is the self-check probe.
+
+    Match is strict on both envelope ends: the From address must equal
+    MESSAGES_SELFCHECK_FROM and the recipient must equal MESSAGES_SELFCHECK_TO.
+    """
+    selfcheck_from = (settings.MESSAGES_SELFCHECK_FROM or "").strip().lower()
+    selfcheck_to = (settings.MESSAGES_SELFCHECK_TO or "").strip().lower()
+
+    if not selfcheck_from or not selfcheck_to:
+        return False
+
+    from_email = ((parsed_email.get("from") or {}).get("email") or "").strip().lower()
+    if from_email != selfcheck_from:
+        return False
+
+    return (recipient_email or "").strip().lower() == selfcheck_to
 
 
 def _check_spam_with_hardcoded_rules(
@@ -108,7 +131,7 @@ def _check_spam_with_hardcoded_rules(
 
 def _check_spam_with_rspamd(
     raw_data: bytes, spam_config: Dict[str, Any]
-) -> Tuple[bool, Optional[str]]:
+) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
     """Check if a message is spam using rspamd.
 
     Args:
@@ -116,14 +139,16 @@ def _check_spam_with_rspamd(
         spam_config: Spam configuration
 
     Returns:
-        Tuple of (is_spam, error_message). error_message is None on success.
+        Tuple of (is_spam, error_message, rspamd_result). error_message is None on
+        success. rspamd_result is the full parsed JSON response when available, so
+        other inspectors (e.g. inbound auth) can reuse symbols without re-querying.
     """
 
     spam_url = spam_config.get("rspamd_url")
     if not spam_url:
         # If rspamd is not configured, treat all messages as not spam
         logger.debug("SPAM_CONFIG.rspamd_url not configured, skipping spam check")
-        return False, None
+        return False, None, None
 
     try:
         headers = {"Content-Type": "message/rfc822"}
@@ -156,15 +181,15 @@ def _check_spam_with_rspamd(
             is_spam,
         )
 
-        return is_spam, None
+        return is_spam, None, result
 
     except requests.exceptions.RequestException as e:
         logger.exception("Error checking spam with rspamd: %s", e)
         # On error, treat as not spam to avoid blocking legitimate messages
-        return False, str(e)
+        return False, str(e), None
     except Exception as e:
         logger.exception("Unexpected error checking spam with rspamd: %s", e)
-        return False, str(e)
+        return False, str(e), None
 
 
 @celery_app.task(bind=True)
@@ -225,19 +250,46 @@ def process_inbound_message_task(self, inbound_message_id: str):
         # Get spam config from maildomain (includes global settings + domain-specific overrides)
         spam_config = mailbox.domain.get_spam_config()
 
-        # If we have hardcoded rules, check them sequentially
-        is_spam = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
-
-        # If no rules matched, check with rspamd
-        if is_spam is None:
-            is_spam, spam_check_error = _check_spam_with_rspamd(
-                raw_data_bytes, spam_config
+        rspamd_result: Optional[Dict[str, Any]] = None
+        if _is_selfcheck_message(parsed_email, recipient_email):
+            logger.debug(
+                "Bypassing spam checks for selfcheck message %s", inbound_message_id
             )
-            if spam_check_error:
+            is_spam = False
+        else:
+            # If we have hardcoded rules, check them sequentially
+            is_spam = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
+
+            # If no rules matched, check with rspamd
+            if is_spam is None:
+                is_spam, spam_check_error, rspamd_result = _check_spam_with_rspamd(
+                    raw_data_bytes, spam_config
+                )
+                if spam_check_error:
+                    logger.warning(
+                        "Spam check error for inbound message %s: %s (treating as not spam)",
+                        inbound_message_id,
+                        spam_check_error,
+                    )
+
+        # Run inbound authentication checks (DKIM / DMARC). A failure prepends
+        # X-StMsg-Sender-Auth: none so the frontend renders the "unverified
+        # sender" warning.
+        inbound_auth_mode = (spam_config.get("inbound_auth") or "").strip().lower()
+        if rspamd_result is None and inbound_auth_mode == "rspamd":
+            _, _, rspamd_result = _check_spam_with_rspamd(raw_data_bytes, spam_config)
+        auth_failed = check_inbound_authentication(
+            raw_data_bytes, parsed_email, spam_config, rspamd_result
+        )
+        if auth_failed:
+            raw_data_bytes = (
+                b"X-StMsg-Sender-Auth: none\r\n" + raw_data_bytes
+            )
+            try:
+                parsed_email = parse_email_message(raw_data_bytes)
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.warning(
-                    "Spam check error for inbound message %s: %s (treating as not spam)",
-                    inbound_message_id,
-                    spam_check_error,
+                    "Failed to re-parse email after prepending auth header: %s", e
                 )
 
         # Create the message using the extracted function
