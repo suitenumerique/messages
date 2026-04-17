@@ -13,7 +13,10 @@ import requests
 from celery.utils.log import get_task_logger
 
 from core import models
-from core.mda.inbound_auth import check_inbound_authentication
+from core.mda.inbound_auth import (
+    check_inbound_authentication,
+    get_inbound_auth_mode,
+)
 from core.mda.inbound_create import _create_message_from_inbound
 from core.mda.rfc5322 import parse_email_message
 
@@ -22,9 +25,7 @@ from messages.celery_app import app as celery_app
 logger = get_task_logger(__name__)
 
 
-def _is_selfcheck_message(
-    parsed_email: Dict[str, Any], recipient_email: str
-) -> bool:
+def _is_selfcheck_message(parsed_email: Dict[str, Any], recipient_email: str) -> bool:
     """Return True when this message is the self-check probe.
 
     Match is strict on both envelope ends: the From address must equal
@@ -275,22 +276,28 @@ def process_inbound_message_task(self, inbound_message_id: str):
         # Run inbound authentication checks (DKIM / DMARC). The verdict, if
         # any, is stamped as X-StMsg-Sender-Auth so the frontend can render
         # "unverified" (none) or "likely forged" (fail) warnings.
-        inbound_auth_mode = (spam_config.get("inbound_auth") or "").strip().lower()
-        if rspamd_result is None and inbound_auth_mode == "rspamd":
+        if rspamd_result is None and get_inbound_auth_mode(spam_config) == "rspamd":
             _, _, rspamd_result = _check_spam_with_rspamd(raw_data_bytes, spam_config)
         auth_verdict = check_inbound_authentication(
             raw_data_bytes, parsed_email, spam_config, rspamd_result
         )
         if auth_verdict:
-            raw_data_bytes = (
+            prepended = (
                 f"X-StMsg-Sender-Auth: {auth_verdict}\r\n".encode("ascii")
                 + raw_data_bytes
             )
             try:
-                parsed_email = parse_email_message(raw_data_bytes)
+                parsed_email = parse_email_message(prepended)
+                raw_data_bytes = prepended
             except Exception as e:  # pylint: disable=broad-exception-caught
+                # Keep raw_data_bytes / parsed_email in lockstep: if the
+                # re-parse breaks, store the original bytes so the blob stays
+                # parseable for display (subject/body/recipients). The
+                # sender-auth banner is sacrificed in this rare case.
                 logger.warning(
-                    "Failed to re-parse email after prepending auth header: %s", e
+                    "Failed to re-parse email after prepending auth header, "
+                    "dropping the prepend: %s",
+                    e,
                 )
 
         # Create the message using the extracted function

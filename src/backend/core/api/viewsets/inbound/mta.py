@@ -17,7 +17,7 @@ from rest_framework.response import Response
 
 from core import models
 from core.mda.inbound import check_local_recipients, deliver_inbound_message
-from core.mda.rfc5322 import EmailParseError, parse_email_message
+from core.mda.rfc5322 import EmailParseError, parse_email_message, remove_mime_headers
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +159,11 @@ class InboundMTAViewSet(viewsets.GenericViewSet):
             len(raw_data),
             mta_metadata["original_recipients"],  # Log all intended recipients
         )
+
+        # Drop any sender-supplied X-StMsg-* headers so only values we prepend
+        # further down the pipeline (sender-auth verdict, widget-referer, ...)
+        # are visible to storage and the frontend.
+        raw_data = remove_mime_headers(raw_data, prefixes=["x-stmsg-"])
 
         def sanitize_header(header: str) -> str:
             return header.replace("\r", "").replace("\n", "")[0:255]

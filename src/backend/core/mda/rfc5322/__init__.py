@@ -21,7 +21,11 @@ from .parser import (
     parse_email_addresses,
     parse_email_message,
 )
-from .utils import extract_base64_images_from_html, extract_base64_images_from_text
+from .utils import (
+    extract_base64_images_from_html,
+    extract_base64_images_from_text,
+    remove_mime_headers,
+)
 
 __all__ = [
     # Parser functions
@@ -41,4 +45,5 @@ __all__ = [
     # Utility functions
     "extract_base64_images_from_html",
     "extract_base64_images_from_text",
+    "remove_mime_headers",
 ]

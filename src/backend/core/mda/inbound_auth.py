@@ -39,7 +39,7 @@ from core.mda.signing import verify_message_dkim
 logger = logging.getLogger(__name__)
 
 
-_PASS = "pass"
+_PASS = "pass"  # noqa: S105 (auth-result token, not a password)
 _FAIL = "fail"
 _NONE = "none"  # explicitly no signature / policy
 
@@ -66,15 +66,35 @@ _RSPAMD_SYMBOLS: Dict[str, Dict[str, str]] = {
 }
 
 
-# Matches `dkim=pass`, `dmarc=fail`, etc. in an Authentication-Results header.
+# Matches `dkim=pass`, `dmarc=fail`, etc. in an Authentication-Results header
+# value, after CFWS comments and quoted strings have been scrubbed. The leading
+# (^|(?<=[\s;])) requires the method token to start at the beginning of the
+# value or right after whitespace/`;` — RFC 8601's only legitimate token
+# separators — so labels like `x-dkim=fail` or `arc.dkim=pass` are not
+# mistaken for a bare `dkim=` token.
 _AR_METHOD_RE = re.compile(
-    r"\b(?P<method>dkim|dmarc)\s*=\s*(?P<result>[a-zA-Z]+)",
+    r"(?:^|(?<=[\s;]))(?P<method>dkim|dmarc)\s*=\s*(?P<result>[a-zA-Z]+)",
     re.IGNORECASE,
 )
 
 _AR_PASS = {"pass"}
 _AR_FAIL = {"fail", "softfail", "permerror", "temperror", "policy"}
 _AR_NONE = {"none", "neutral"}
+
+
+# Aggressive scrubbers run before the method/result regex so attacker-controlled
+# free text inside a comment or quoted string can't masquerade as a real token.
+# An unmatched opener consumes through end-of-string (the trailing close is
+# optional in the pattern), which is the safe direction: prefer dropping
+# suspicious bytes over honouring them.
+_AR_COMMENT_RE = re.compile(r"\([^)]*\)?")
+_AR_QUOTED_STRING_RE = re.compile(r'"(?:[^"\\]|\\.)*"?')
+
+
+def _scrub_ar_value(value: str) -> str:
+    """Erase RFC 5322 comments and quoted-string contents from an AR value."""
+    value = _AR_COMMENT_RE.sub(" ", value)
+    return _AR_QUOTED_STRING_RE.sub(" ", value)
 
 
 def _rspamd_outcome(
@@ -128,7 +148,8 @@ def _ar_outcome(check: str, ar_values: List[str]) -> Optional[str]:
     found = False
     outcome: Optional[str] = None
     for value in ar_values:
-        for match in _AR_METHOD_RE.finditer(value):
+        scrubbed = _scrub_ar_value(value)
+        for match in _AR_METHOD_RE.finditer(scrubbed):
             if match.group("method").lower() != check:
                 continue
             found = True
@@ -154,6 +175,16 @@ VERDICT_UNVERIFIED = "none"
 VERDICT_FORGED = "fail"
 
 
+def get_inbound_auth_mode(spam_config: Dict[str, Any]) -> str:
+    """Return the normalized ``inbound_auth`` mode from a spam config.
+
+    Empty or missing values become an empty string. Callers can treat the
+    result with ``if not mode`` as "disabled" and compare directly against
+    the supported mode names.
+    """
+    return (spam_config.get("inbound_auth") or "").strip().lower()
+
+
 def check_inbound_authentication(
     raw_data: bytes,
     parsed_email: Dict[str, Any],
@@ -164,7 +195,7 @@ def check_inbound_authentication(
 
     See module docstring for the rule set and supported backends.
     """
-    mode = (spam_config.get("inbound_auth") or "").strip().lower() or None
+    mode = get_inbound_auth_mode(spam_config)
     if not mode:
         return None
 
