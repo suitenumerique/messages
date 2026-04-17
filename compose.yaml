@@ -333,7 +333,7 @@ services:
     pull_policy: build
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.5.4
+    image: quay.io/keycloak/keycloak:26.6.1
     volumes:
       - ./src/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
       - ./src/keycloak/themes/dsfr-2.2.1.jar:/opt/keycloak/providers/keycloak-theme.jar:ro
