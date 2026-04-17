@@ -1,12 +1,17 @@
 """Inbound sender authentication checks (DKIM / DMARC).
 
-The check is binary: if the message doesn't clear sender authentication, the
-caller prepends `X-StMsg-Sender-Auth: none` so the frontend surfaces an
-"unverified sender" warning.
+Returns the verdict the caller should stamp as ``X-StMsg-Sender-Auth``:
+  - ``None``: verified, do not add the header.
+  - ``"none"``: cannot verify (missing DKIM, backend unreachable, no AR
+    header from a trusted relay). Frontend shows a yellow "unverified" hint.
+  - ``"fail"``: explicit forgery signal (DMARC fail). Frontend shows a red
+    "likely forged" warning — stronger than "none" because the sender's own
+    domain disavows the message.
 
 Rules applied for every backend:
-  - DKIM must be present AND pass.
-  - If DMARC is present, it must pass.
+  - DKIM must be present AND pass (else ``"none"``).
+  - If DMARC is present and fails, return ``"fail"`` — even if DKIM passes.
+  - If DMARC is absent or passes, DKIM alone decides.
 
 The backend is picked by ``SPAM_CONFIG["inbound_auth"]``:
   - ``"native"``: verify DKIM locally (crypto + DNS). DMARC is not yet
@@ -17,11 +22,12 @@ The backend is picked by ``SPAM_CONFIG["inbound_auth"]``:
     ``Authentication-Results`` header set by a trusted upstream relay. The
     header slice respects ``SPAM_CONFIG["trusted_relays"]`` so forged headers
     from untrusted hops are ignored.
-  - missing / ``None``: disabled, always returns False.
+  - missing / ``None``: disabled, always returns ``None``.
 
 Backend failures (DNS lookup blowing up, rspamd unreachable, no AR header from
-any trusted relay) are treated as "cannot verify" and flag the message — we
-never claim a sender is verified without positive evidence.
+any trusted relay) collapse to ``"none"`` — we never claim a sender is
+verified without positive evidence, but we also don't claim forgery without
+an explicit DMARC fail.
 """
 
 import logging
@@ -144,19 +150,23 @@ def _native_dkim_outcome(raw_data: bytes) -> Optional[str]:
         return None
 
 
+VERDICT_UNVERIFIED = "none"
+VERDICT_FORGED = "fail"
+
+
 def check_inbound_authentication(
     raw_data: bytes,
     parsed_email: Dict[str, Any],
     spam_config: Dict[str, Any],
     rspamd_result: Optional[Dict[str, Any]] = None,
-) -> bool:
-    """Return True when the message should be flagged as unverified.
+) -> Optional[str]:
+    """Return the ``X-StMsg-Sender-Auth`` verdict for this message.
 
     See module docstring for the rule set and supported backends.
     """
     mode = (spam_config.get("inbound_auth") or "").strip().lower() or None
     if not mode:
-        return False
+        return None
 
     if mode == "native":
         dkim = _native_dkim_outcome(raw_data)
@@ -171,12 +181,14 @@ def check_inbound_authentication(
         dmarc = _ar_outcome("dmarc", ar_values)
     else:
         logger.warning("Unknown inbound_auth mode: %s", mode)
-        return False
+        return None
 
     logger.info("Inbound auth: mode=%s dkim=%s dmarc=%s", mode, dkim, dmarc)
 
-    if dkim != _PASS:
-        return True
+    # DMARC fail is an explicit disavowal by the sender's domain — stronger
+    # signal than a missing DKIM, so it wins regardless of DKIM's state.
     if dmarc == _FAIL:
-        return True
-    return False
+        return VERDICT_FORGED
+    if dkim != _PASS:
+        return VERDICT_UNVERIFIED
+    return None

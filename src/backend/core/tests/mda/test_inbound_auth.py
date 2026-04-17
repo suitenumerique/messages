@@ -7,7 +7,11 @@ from django.test import override_settings
 import pytest
 
 from core import factories, models
-from core.mda.inbound_auth import check_inbound_authentication
+from core.mda.inbound_auth import (
+    VERDICT_FORGED,
+    VERDICT_UNVERIFIED,
+    check_inbound_authentication,
+)
 from core.mda.inbound_tasks import process_inbound_message_task
 from core.mda.rfc5322 import parse_email_message
 
@@ -25,26 +29,26 @@ RAW_EMAIL = (
 class TestCheckInboundAuthenticationDisabled:
     """When inbound_auth is absent or empty the check is a no-op."""
 
-    def test_missing_key_returns_false(self):
-        assert check_inbound_authentication(RAW_EMAIL, {}, {}) is False
+    def test_missing_key_returns_none(self):
+        assert check_inbound_authentication(RAW_EMAIL, {}, {}) is None
 
-    def test_none_value_returns_false(self):
+    def test_none_value_returns_none(self):
         assert (
             check_inbound_authentication(RAW_EMAIL, {}, {"inbound_auth": None})
-            is False
+            is None
         )
 
-    def test_empty_string_returns_false(self):
+    def test_empty_string_returns_none(self):
         assert (
             check_inbound_authentication(RAW_EMAIL, {}, {"inbound_auth": ""})
-            is False
+            is None
         )
 
-    def test_unknown_mode_returns_false(self):
+    def test_unknown_mode_returns_none(self):
         """An unrecognised mode is treated as disabled (with a log warning)."""
         assert (
             check_inbound_authentication(RAW_EMAIL, {}, {"inbound_auth": "wat"})
-            is False
+            is None
         )
 
 
@@ -55,20 +59,26 @@ class TestCheckInboundAuthenticationNative:
     def test_dkim_pass(self, mock_verify):
         mock_verify.return_value = True
         config = {"inbound_auth": "native"}
-        assert check_inbound_authentication(RAW_EMAIL, {}, config) is False
+        assert check_inbound_authentication(RAW_EMAIL, {}, config) is None
 
     @patch("core.mda.inbound_auth.verify_message_dkim")
     def test_dkim_fail(self, mock_verify):
         mock_verify.return_value = False
         config = {"inbound_auth": "native"}
-        assert check_inbound_authentication(RAW_EMAIL, {}, config) is True
+        assert (
+            check_inbound_authentication(RAW_EMAIL, {}, config)
+            == VERDICT_UNVERIFIED
+        )
 
     @patch("core.mda.inbound_auth.verify_message_dkim")
-    def test_dkim_error_flags(self, mock_verify):
-        """Transient errors -> can't verify -> flag (fail-closed)."""
+    def test_dkim_error_unverified(self, mock_verify):
+        """Transient errors -> cannot verify -> "none" (not forgery)."""
         mock_verify.side_effect = RuntimeError("dns broken")
         config = {"inbound_auth": "native"}
-        assert check_inbound_authentication(RAW_EMAIL, {}, config) is True
+        assert (
+            check_inbound_authentication(RAW_EMAIL, {}, config)
+            == VERDICT_UNVERIFIED
+        )
 
     @patch("core.mda.inbound_auth.verify_message_dkim")
     def test_dmarc_header_ignored(self, mock_verify):
@@ -80,7 +90,7 @@ class TestCheckInboundAuthenticationNative:
             ]
         }
         config = {"inbound_auth": "native"}
-        assert check_inbound_authentication(RAW_EMAIL, parsed, config) is False
+        assert check_inbound_authentication(RAW_EMAIL, parsed, config) is None
 
     @patch("core.mda.inbound_auth.verify_message_dkim")
     def test_dmarc_rspamd_ignored(self, mock_verify):
@@ -89,7 +99,7 @@ class TestCheckInboundAuthenticationNative:
         rspamd = {"symbols": {"DMARC_POLICY_REJECT": {"score": 5}}}
         config = {"inbound_auth": "native"}
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is False
+            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is None
         )
 
 
@@ -100,7 +110,7 @@ class TestCheckInboundAuthenticationRspamd:
         config = {"inbound_auth": "rspamd"}
         rspamd = {"symbols": {"R_DKIM_ALLOW": {"score": 0.1}}}
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is False
+            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is None
         )
 
     def test_dkim_pass_dmarc_pass(self):
@@ -112,10 +122,11 @@ class TestCheckInboundAuthenticationRspamd:
             }
         }
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is False
+            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is None
         )
 
-    def test_dkim_pass_dmarc_fail(self):
+    def test_dkim_pass_dmarc_fail_forged(self):
+        """DMARC fail on a message that otherwise has DKIM -> 'fail' (forgery)."""
         config = {"inbound_auth": "rspamd"}
         rspamd = {
             "symbols": {
@@ -124,10 +135,12 @@ class TestCheckInboundAuthenticationRspamd:
             }
         }
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is True
+            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd)
+            == VERDICT_FORGED
         )
 
-    def test_dkim_pass_dmarc_quarantine(self):
+    def test_dkim_pass_dmarc_quarantine_forged(self):
+        """DMARC quarantine is a fail-equivalent signal -> 'fail'."""
         config = {"inbound_auth": "rspamd"}
         rspamd = {
             "symbols": {
@@ -136,7 +149,8 @@ class TestCheckInboundAuthenticationRspamd:
             }
         }
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is True
+            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd)
+            == VERDICT_FORGED
         )
 
     def test_dkim_pass_dmarc_na(self):
@@ -149,26 +163,28 @@ class TestCheckInboundAuthenticationRspamd:
             }
         }
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is False
+            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is None
         )
 
     def test_dkim_fail(self):
         config = {"inbound_auth": "rspamd"}
         rspamd = {"symbols": {"R_DKIM_REJECT": {"score": 5}}}
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is True
+            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd)
+            == VERDICT_UNVERIFIED
         )
 
     def test_dkim_missing(self):
-        """DKIM_NA means no DKIM-Signature header -> flag."""
+        """DKIM_NA means no DKIM-Signature header -> 'none'."""
         config = {"inbound_auth": "rspamd"}
         rspamd = {"symbols": {"DKIM_NA": {"score": 0}}}
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is True
+            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd)
+            == VERDICT_UNVERIFIED
         )
 
     def test_dkim_fail_dominates_pass(self):
-        """Two DKIM symbols in one response: fail wins."""
+        """Two DKIM symbols in one response: fail wins -> 'none'."""
         config = {"inbound_auth": "rspamd"}
         rspamd = {
             "symbols": {
@@ -177,21 +193,38 @@ class TestCheckInboundAuthenticationRspamd:
             }
         }
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd) is True
+            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd)
+            == VERDICT_UNVERIFIED
         )
 
-    def test_no_rspamd_result_flags(self):
-        """Backend unavailable -> can't verify -> flag."""
+    def test_dkim_fail_and_dmarc_fail_is_forged(self):
+        """DMARC fail is stronger than DKIM fail -> 'fail'."""
         config = {"inbound_auth": "rspamd"}
+        rspamd = {
+            "symbols": {
+                "R_DKIM_REJECT": {"score": 5},
+                "DMARC_POLICY_REJECT": {"score": 5},
+            }
+        }
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, None) is True
+            check_inbound_authentication(RAW_EMAIL, {}, config, rspamd)
+            == VERDICT_FORGED
         )
 
-    def test_rspamd_result_without_symbols_flags(self):
-        """Response missing `symbols` key -> no evidence -> flag."""
+    def test_no_rspamd_result_unverified(self):
+        """Backend unavailable -> can't verify -> 'none' (not 'fail')."""
         config = {"inbound_auth": "rspamd"}
         assert (
-            check_inbound_authentication(RAW_EMAIL, {}, config, {}) is True
+            check_inbound_authentication(RAW_EMAIL, {}, config, None)
+            == VERDICT_UNVERIFIED
+        )
+
+    def test_rspamd_result_without_symbols_unverified(self):
+        """Response missing `symbols` key -> no evidence -> 'none'."""
+        config = {"inbound_auth": "rspamd"}
+        assert (
+            check_inbound_authentication(RAW_EMAIL, {}, config, {})
+            == VERDICT_UNVERIFIED
         )
 
 
@@ -211,21 +244,23 @@ class TestCheckInboundAuthenticationResults:
     def test_dkim_pass_no_dmarc(self):
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
         parsed = self._parsed([["mx.example.net; dkim=pass"]])
-        assert check_inbound_authentication(b"", parsed, config) is False
+        assert check_inbound_authentication(b"", parsed, config) is None
 
     def test_dkim_pass_dmarc_pass(self):
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
         parsed = self._parsed(
             [["mx.example.net; dkim=pass; dmarc=pass"]]
         )
-        assert check_inbound_authentication(b"", parsed, config) is False
+        assert check_inbound_authentication(b"", parsed, config) is None
 
-    def test_dkim_pass_dmarc_fail(self):
+    def test_dkim_pass_dmarc_fail_forged(self):
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
         parsed = self._parsed(
             [["mx.example.net; dkim=pass; dmarc=fail"]]
         )
-        assert check_inbound_authentication(b"", parsed, config) is True
+        assert (
+            check_inbound_authentication(b"", parsed, config) == VERDICT_FORGED
+        )
 
     def test_dkim_pass_dmarc_none(self):
         """dmarc=none -> no policy -> don't require DMARC pass."""
@@ -233,35 +268,50 @@ class TestCheckInboundAuthenticationResults:
         parsed = self._parsed(
             [["mx.example.net; dkim=pass; dmarc=none"]]
         )
-        assert check_inbound_authentication(b"", parsed, config) is False
+        assert check_inbound_authentication(b"", parsed, config) is None
 
     def test_dkim_fail(self):
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
         parsed = self._parsed([["mx.example.net; dkim=fail"]])
-        assert check_inbound_authentication(b"", parsed, config) is True
+        assert (
+            check_inbound_authentication(b"", parsed, config)
+            == VERDICT_UNVERIFIED
+        )
 
     def test_dkim_softfail_is_fail(self):
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
         parsed = self._parsed([["mx; dkim=softfail"]])
-        assert check_inbound_authentication(b"", parsed, config) is True
+        assert (
+            check_inbound_authentication(b"", parsed, config)
+            == VERDICT_UNVERIFIED
+        )
 
-    def test_dkim_none_is_flag(self):
-        """dkim=none (no signature) is not a pass -> flag."""
+    def test_dkim_none_is_unverified(self):
+        """dkim=none (no signature) is not a pass -> 'none'."""
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
         parsed = self._parsed([["mx; dkim=none"]])
-        assert check_inbound_authentication(b"", parsed, config) is True
+        assert (
+            check_inbound_authentication(b"", parsed, config)
+            == VERDICT_UNVERIFIED
+        )
 
-    def test_header_absent_flags(self):
-        """No AR header anywhere -> can't verify -> flag."""
+    def test_header_absent_unverified(self):
+        """No AR header anywhere -> can't verify -> 'none'."""
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
         parsed = {"headers_blocks": [{}]}
-        assert check_inbound_authentication(b"", parsed, config) is True
+        assert (
+            check_inbound_authentication(b"", parsed, config)
+            == VERDICT_UNVERIFIED
+        )
 
-    def test_no_dkim_entry_flags(self):
-        """AR present but no dkim= entry -> unknown -> flag."""
+    def test_no_dkim_entry_unverified(self):
+        """AR present but no dkim= entry -> unknown -> 'none'."""
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
         parsed = self._parsed([["mx; spf=pass"]])
-        assert check_inbound_authentication(b"", parsed, config) is True
+        assert (
+            check_inbound_authentication(b"", parsed, config)
+            == VERDICT_UNVERIFIED
+        )
 
     def test_untrusted_block_ignored(self):
         """trusted_relays=0 -> only block 0 (our MTA) is trusted."""
@@ -272,7 +322,10 @@ class TestCheckInboundAuthenticationResults:
                 {"authentication-results": ["mx; dkim=pass"]},  # untrusted
             ]
         }
-        assert check_inbound_authentication(b"", parsed, config) is True
+        assert (
+            check_inbound_authentication(b"", parsed, config)
+            == VERDICT_UNVERIFIED
+        )
 
     def test_trusted_block_used(self):
         """Default trusted_relays=1 -> block 1 is trusted."""
@@ -283,15 +336,18 @@ class TestCheckInboundAuthenticationResults:
                 {"authentication-results": ["mx; dkim=pass"]},
             ]
         }
-        assert check_inbound_authentication(b"", parsed, config) is False
+        assert check_inbound_authentication(b"", parsed, config) is None
 
     def test_dkim_fail_dominates_pass_across_values(self):
-        """Multiple AR values in one block: fail wins over pass."""
+        """Multiple AR values in one block: fail wins -> 'none'."""
         config = {"inbound_auth": "authentication-results", "trusted_relays": 1}
         parsed = self._parsed(
             [["mx1; dkim=pass", "mx2; dkim=fail"]]
         )
-        assert check_inbound_authentication(b"", parsed, config) is True
+        assert (
+            check_inbound_authentication(b"", parsed, config)
+            == VERDICT_UNVERIFIED
+        )
 
     def test_single_string_ar_value(self):
         """AR header may be a bare string (single occurrence) rather than list."""
@@ -301,17 +357,17 @@ class TestCheckInboundAuthenticationResults:
                 {"authentication-results": "mx; dkim=pass"}
             ]
         }
-        assert check_inbound_authentication(b"", parsed, config) is False
+        assert check_inbound_authentication(b"", parsed, config) is None
 
 
 @pytest.mark.django_db
 class TestProcessInboundMessageAuthIntegration:
-    """End-to-end: a failing auth check prepends X-StMsg-Sender-Auth: none."""
+    """End-to-end: a verdict prepends X-StMsg-Sender-Auth with its value."""
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "native"})
     @patch("core.mda.inbound_tasks.check_inbound_authentication")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    def test_failed_auth_injects_header(
+    def test_unverified_verdict_injects_none_header(
         self, mock_create_message, mock_auth_check
     ):
         mailbox = factories.MailboxFactory()
@@ -319,7 +375,7 @@ class TestProcessInboundMessageAuthIntegration:
             mailbox=mailbox,
             raw_data=RAW_EMAIL,
         )
-        mock_auth_check.return_value = True
+        mock_auth_check.return_value = VERDICT_UNVERIFIED
         mock_create_message.return_value = True
 
         with patch.object(process_inbound_message_task, "update_state", Mock()):
@@ -331,10 +387,10 @@ class TestProcessInboundMessageAuthIntegration:
         parsed = call_kwargs["parsed_email"]
         assert parsed["headers"].get("x-stmsg-sender-auth") == "none"
 
-    @override_settings(SPAM_CONFIG={"inbound_auth": "native"})
+    @override_settings(SPAM_CONFIG={"inbound_auth": "rspamd"})
     @patch("core.mda.inbound_tasks.check_inbound_authentication")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
-    def test_passing_auth_does_not_inject_header(
+    def test_forged_verdict_injects_fail_header(
         self, mock_create_message, mock_auth_check
     ):
         mailbox = factories.MailboxFactory()
@@ -342,7 +398,29 @@ class TestProcessInboundMessageAuthIntegration:
             mailbox=mailbox,
             raw_data=RAW_EMAIL,
         )
-        mock_auth_check.return_value = False
+        mock_auth_check.return_value = VERDICT_FORGED
+        mock_create_message.return_value = True
+
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            process_inbound_message_task.run(str(inbound_message.id))
+
+        call_kwargs = mock_create_message.call_args[1]
+        assert call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth: fail\r\n")
+        parsed = call_kwargs["parsed_email"]
+        assert parsed["headers"].get("x-stmsg-sender-auth") == "fail"
+
+    @override_settings(SPAM_CONFIG={"inbound_auth": "native"})
+    @patch("core.mda.inbound_tasks.check_inbound_authentication")
+    @patch("core.mda.inbound_tasks._create_message_from_inbound")
+    def test_verified_does_not_inject_header(
+        self, mock_create_message, mock_auth_check
+    ):
+        mailbox = factories.MailboxFactory()
+        inbound_message = models.InboundMessage.objects.create(
+            mailbox=mailbox,
+            raw_data=RAW_EMAIL,
+        )
+        mock_auth_check.return_value = None
         mock_create_message.return_value = True
 
         with patch.object(process_inbound_message_task, "update_state", Mock()):
@@ -385,6 +463,42 @@ class TestProcessInboundMessageAuthIntegration:
         assert mock_post.call_count == 1
         call_kwargs = mock_create_message.call_args[1]
         assert call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth: none\r\n")
+
+    @override_settings(
+        SPAM_CONFIG={
+            "rspamd_url": "http://rspamd:8010/_api",
+            "inbound_auth": "rspamd",
+        }
+    )
+    @patch("core.mda.inbound_tasks.requests.post")
+    @patch("core.mda.inbound_tasks._create_message_from_inbound")
+    def test_dmarc_fail_injects_fail_header_end_to_end(
+        self, mock_create_message, mock_post
+    ):
+        mailbox = factories.MailboxFactory()
+        inbound_message = models.InboundMessage.objects.create(
+            mailbox=mailbox,
+            raw_data=RAW_EMAIL,
+        )
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "action": "no action",
+            "score": 1.0,
+            "required_score": 15.0,
+            "symbols": {
+                "R_DKIM_ALLOW": {"score": 0.1},
+                "DMARC_POLICY_REJECT": {"score": 5},
+            },
+        }
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+        mock_create_message.return_value = True
+
+        with patch.object(process_inbound_message_task, "update_state", Mock()):
+            process_inbound_message_task.run(str(inbound_message.id))
+
+        call_kwargs = mock_create_message.call_args[1]
+        assert call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth: fail\r\n")
 
     @override_settings(
         SPAM_CONFIG={
@@ -435,6 +549,6 @@ class TestProcessInboundMessageAuthIntegration:
 
     def test_header_injection_propagates_to_stmsg(self):
         """After prepending, the parser exposes the header via x-stmsg-*."""
-        tagged = b"X-StMsg-Sender-Auth: none\r\n" + RAW_EMAIL
+        tagged = b"X-StMsg-Sender-Auth: fail\r\n" + RAW_EMAIL
         parsed = parse_email_message(tagged)
-        assert parsed["headers"].get("x-stmsg-sender-auth") == "none"
+        assert parsed["headers"].get("x-stmsg-sender-auth") == "fail"

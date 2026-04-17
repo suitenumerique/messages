@@ -663,6 +663,7 @@
   "These tags will be automatically applied to every incoming message from the widget.": "Ces libellés seront automatiquement appliqués à chaque message entrant provenant du widget.",
   "This action cannot be undone and the user will need the new password to access its mailbox.": "Cette action est irréversible et l'utilisateur aura besoin du nouveau mot de passe pour accéder à sa boîte aux lettres.",
   "This contact's identity could not be verified. Proceed with caution.": "L'identité de ce contact n'a pas pu être vérifiée. Faites attention.",
+  "This message failed sender authentication and is likely a forgery. Do not trust it.": "L'authentification de l'expéditeur a échoué pour ce message, qui est probablement frauduleux. Ne lui faites pas confiance.",
   "This description will be used by the AI to automatically assign this label to your messages.": "Cette description sera utilisée par l'IA pour assigner automatiquement cette étiquette à vos messages.",
   "This email prefix is not allowed for personal mailboxes. Please choose a different prefix.": "Ce préfixe d'adresse n'est pas autorisé pour les boîtes aux lettres personnelles. Veuillez choisir un autre préfixe.",
   "This event has been cancelled": "Cet événement a été annulé",

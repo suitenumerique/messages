@@ -466,6 +466,7 @@
   "These tags will be automatically applied to every incoming message from the widget.": "Deze tags worden automatisch toegepast op elk inkomend bericht vanuit de widget.",
   "This action cannot be undone and the user will need the new password to access its mailbox.": "Deze actie kan niet ongedaan worden gemaakt en de gebruiker heeft het nieuwe wachtwoord nodig om toegang te krijgen tot de mailbox.",
   "This contact's identity could not be verified. Proceed with caution.": "De identiteit van deze contactpersoon kon niet worden geverifieerd. Wees voorzichtig.",
+  "This message failed sender authentication and is likely a forgery. Do not trust it.": "Dit bericht heeft de afzenderauthenticatie niet doorstaan en is waarschijnlijk vervalst. Vertrouw het niet.",
   "This description will be used by the AI to automatically assign this label to your messages.": "Deze beschrijving wordt gebruikt door de AI om dit label automatisch aan je berichten toe te wijzen.",
   "This email prefix is not allowed for personal mailboxes. Please choose a different prefix.": "Dit emailvoorvoegsel is niet toegestaan voor persoonlijke mailboxen. Kies een andere voorvoegsel.",
   "This event has been cancelled": "Deze afspraak is geannuleerd",

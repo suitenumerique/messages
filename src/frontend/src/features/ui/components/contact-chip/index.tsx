@@ -14,7 +14,7 @@ export type ContactChipDeliveryStatus = {
     timestamp: string | null;
     message: string | null;
 }
-type ContactChipSenderStatus = 'unverified';
+type ContactChipSenderStatus = 'unverified' | 'forged';
 
 export type ContactChipDeliveryAction = {
     label: string;
@@ -35,7 +35,7 @@ export const ContactChip = ({ contact, status, displayEmail = false, isUser = fa
     const popoverTriggerRef = useRef<HTMLButtonElement | null>(null);
     const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
-    // Get delivery status info for popover (only if status is an object, not 'unverified')
+    // Get delivery status info for popover (only if status is an object, not a sender status)
     const deliveryStatusInfo = status instanceof Object ? status : undefined;
 
     const chipContent = (
@@ -43,6 +43,9 @@ export const ContactChip = ({ contact, status, displayEmail = false, isUser = fa
             <button type="button" ref={popoverTriggerRef} className="contact-chip__content" onClick={() => setIsPopoverOpen(open => !open)}>
                 {status === 'unverified' && (
                     <Icon name="warning" type={IconType.OUTLINED} size={IconSize.SMALL} className="contact-chip__icon contact-chip__icon--warning" />
+                )}
+                {status === 'forged' && (
+                    <Icon name="gpp_bad" type={IconType.FILLED} size={IconSize.SMALL} className="contact-chip__icon contact-chip__icon--error" />
                 )}
                 {status instanceof Object && status.status === 'undelivered' && (
                     <Icon name="error" type={IconType.FILLED} size={IconSize.SMALL} className="contact-chip__icon contact-chip__icon--error" />
@@ -79,6 +82,13 @@ export const ContactChip = ({ contact, status, displayEmail = false, isUser = fa
     if (status === 'unverified') {
         return (
             <Tooltip content={t("This contact's identity could not be verified. Proceed with caution.")}>
+                {chipContent}
+            </Tooltip>
+        );
+    }
+    if (status === 'forged') {
+        return (
+            <Tooltip content={t("This message failed sender authentication and is likely a forgery. Do not trust it.")}>
                 {chipContent}
             </Tooltip>
         );

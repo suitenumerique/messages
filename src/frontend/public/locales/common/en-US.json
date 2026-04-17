@@ -602,6 +602,7 @@
   "These tags will be automatically applied to every incoming message from the widget.": "These tags will be automatically applied to every incoming message from the widget.",
   "This action cannot be undone and the user will need the new password to access its mailbox.": "This action cannot be undone and the user will need the new password to access its mailbox.",
   "This contact's identity could not be verified. Proceed with caution.": "This contact's identity could not be verified. Proceed with caution.",
+  "This message failed sender authentication and is likely a forgery. Do not trust it.": "This message failed sender authentication and is likely a forgery. Do not trust it.",
   "This description will be used by the AI to automatically assign this label to your messages.": "This description will be used by the AI to automatically assign this label to your messages.",
   "This email prefix is not allowed for personal mailboxes. Please choose a different prefix.": "This email prefix is not allowed for personal mailboxes. Please choose a different prefix.",
   "This event has been cancelled": "This event has been cancelled",

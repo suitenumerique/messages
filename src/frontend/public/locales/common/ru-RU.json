@@ -538,6 +538,7 @@
   "These tags will be automatically applied to every incoming message from the widget.": "Эти теги будут автоматически применяться к каждому входящему сообщению из виджета.",
   "This action cannot be undone and the user will need the new password to access its mailbox.": "Это действие не может быть отменено, и пользователю потребуется новый пароль для доступа к его почтовому ящику.",
   "This contact's identity could not be verified. Proceed with caution.": "Невозможно проверить личность этого контакта. Будьте осторожны.",
+  "This message failed sender authentication and is likely a forgery. Do not trust it.": "Это сообщение не прошло аутентификацию отправителя и, вероятно, является подделкой. Не доверяйте ему.",
   "This description will be used by the AI to automatically assign this label to your messages.": "Это описание будет использоваться ИИ для автоматического присвоения ярлыка вашим сообщениям.",
   "This email prefix is not allowed for personal mailboxes. Please choose a different prefix.": "Этот префикс электронной почты не допускается для личных почтовых ящиков. Пожалуйста, выберите другой префикс.",
   "This event has been cancelled": "Это событие отменено",

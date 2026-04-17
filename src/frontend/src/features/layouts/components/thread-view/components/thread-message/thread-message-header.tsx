@@ -34,8 +34,12 @@ const ThreadMessageHeader = ({
     // to users who have full edit rights on the thread.
     const canEditThread = useAbility(Abilities.CAN_EDIT_THREAD, selectedThread ?? null);
 
-    // Derived state specific to header
-    const isSuspiciousSender = Boolean(message.stmsg_headers?.['sender-auth'] === 'none');
+    // Derived state specific to header. 'none' = we couldn't verify the sender
+    // (missing DKIM, no upstream auth data); 'fail' = explicit DMARC disavowal
+    // from the sender's domain, i.e. almost certainly a forgery.
+    const senderAuth = message.stmsg_headers?.['sender-auth'];
+    const isUnverifiedSender = senderAuth === 'none';
+    const isForgedSender = senderAuth === 'fail';
 
     const isUserSender = useMemo(() => {
         if (!message.is_sender) return false;
@@ -144,7 +148,14 @@ const ThreadMessageHeader = ({
                     </Banner>
                 )}
                 <div className="thread-message__header-rows" style={{ marginBottom: 'var(--c--globals--spacings--sm)' }}>
-                    {isSuspiciousSender && (
+                    {isForgedSender && (
+                        <Banner type="error" compact fullWidth>
+                            <div className="thread-message__header-banner__content">
+                                <p>{t("This message failed sender authentication and is likely a forgery. Do not trust it.")}</p>
+                            </div>
+                        </Banner>
+                    )}
+                    {isUnverifiedSender && (
                         <Banner type="warning" compact fullWidth>
                             <div className="thread-message__header-banner__content">
                                 <p>{t("This contact's identity could not be verified. Proceed with caution.")}</p>
@@ -164,7 +175,7 @@ const ThreadMessageHeader = ({
                                     contact={message.sender}
                                     isUser={isUserSender}
                                     senderUserName={senderUserName}
-                                    status={isSuspiciousSender ? 'unverified' : undefined}
+                                    status={isForgedSender ? 'forged' : isUnverifiedSender ? 'unverified' : undefined}
                                     displayEmail
                                 />
                             </div>

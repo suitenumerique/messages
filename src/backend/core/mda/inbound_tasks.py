@@ -272,18 +272,19 @@ def process_inbound_message_task(self, inbound_message_id: str):
                         spam_check_error,
                     )
 
-        # Run inbound authentication checks (DKIM / DMARC). A failure prepends
-        # X-StMsg-Sender-Auth: none so the frontend renders the "unverified
-        # sender" warning.
+        # Run inbound authentication checks (DKIM / DMARC). The verdict, if
+        # any, is stamped as X-StMsg-Sender-Auth so the frontend can render
+        # "unverified" (none) or "likely forged" (fail) warnings.
         inbound_auth_mode = (spam_config.get("inbound_auth") or "").strip().lower()
         if rspamd_result is None and inbound_auth_mode == "rspamd":
             _, _, rspamd_result = _check_spam_with_rspamd(raw_data_bytes, spam_config)
-        auth_failed = check_inbound_authentication(
+        auth_verdict = check_inbound_authentication(
             raw_data_bytes, parsed_email, spam_config, rspamd_result
         )
-        if auth_failed:
+        if auth_verdict:
             raw_data_bytes = (
-                b"X-StMsg-Sender-Auth: none\r\n" + raw_data_bytes
+                f"X-StMsg-Sender-Auth: {auth_verdict}\r\n".encode("ascii")
+                + raw_data_bytes
             )
             try:
                 parsed_email = parse_email_message(raw_data_bytes)
