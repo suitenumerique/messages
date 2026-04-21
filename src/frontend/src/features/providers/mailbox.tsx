@@ -6,6 +6,9 @@ import { useRouter } from "next/router";
 import usePrevious from "@/hooks/use-previous";
 import { useSearchParams } from "next/navigation";
 import { MAILBOX_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
+import { applyMessageUpdate, mergeOptimisticThreads, trimTrailingEmptyPages, type MessageQueryInvalidationSource } from "./mailbox-cache";
+import { threadsList } from "../api/gen/threads/threads";
+import { APIError } from "../api/api-error";
 
 type QueryState = {
     status: QueryStatus,
@@ -16,24 +19,6 @@ type QueryState = {
 
 type PaginatedQueryState = QueryState & {
     isFetchingNextPage: boolean;
-}
-
-type MessageQueryInvalidationSource = {
-    type: 'delete' | 'update';
-    metadata: { ids?: Message['id'][], threadIds?: Thread['id'][] };
-    payload?: Partial<Message>;
-    /** When updating read state, optimistically patch ThreadAccess.read_at in the threads cache. */
-    threadAccessReadAt?: { mailboxId: string; readAt: string | null };
-    /** Optimistically patch ThreadAccess.starred_at in the threads cache. */
-    threadAccessStarredAt?: { mailboxId: string; starredAt: string | null };
-    /**
-     * When set, only messages created at or before this timestamp
-     * will receive the payload update (used for read pointer).
-     * Messages after this date keep their current state.
-     */
-    readAt?: string | null;
-    /** When true, skip the threads list refetch (rely on optimistic cache only). */
-    skipThreadsRefetch?: boolean;
 }
 
 export type TimelineItem =
@@ -245,107 +230,59 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             enabled: !!selectedMailbox,
             initialPageParam: 1,
             queryKey: threadQueryKey,
+            // `fetchNextPage` must stop at the true last page of the server.
+            // Returning `undefined` is the React Query idiom for "no more
+            // pages" — without it the hook would keep asking for pages the
+            // backend has since dropped (bulk trash/archive shrinks the list).
             getNextPageParam: (lastPage, pages) => {
+                if (lastPage?.data?.next === null) return undefined;
                 return pages.length + 1;
             },
-            /**
-             * Merge-back optimistic threads on refetch.
-             *
-             * Problem: when a filter is active (e.g. "unread" or "starred"),
-             * a read/starred mutation optimistically patches the thread in
-             * cache but skips the list refetch (`skipThreadsRefetch`). Later,
-             * when a refetch does happen (polling, navigation…), the server
-             * no longer returns that thread (it no longer matches the filter)
-             * → it would vanish from the UI.
-             *
-             * Solution: `structuralSharing` runs *before* React re-renders.
-             * It compares old cache (with optimistic threads) to the new
-             * server response. Any thread tracked in `optimisticThreadIdsRef`
-             * that is missing from the server response is re-inserted at its
-             * original position so the user sees no flash.
-             *
-             * Lifecycle of an optimistic thread ID:
-             * - Added to the set by `invalidateThreadMessages({ skipThreadsRefetch })`
-             * - Removed from the set here when the server response includes it
-             *   (meaning the server still considers it valid for the current query)
-             * - Cleared entirely when the user changes filters or mailbox
-             *   (via the cleanup `useEffect` on `selectedMailbox?.id` / `searchParams`)
-             */
-            structuralSharing: (oldData, newData) => {
-                const optimisticIds = optimisticThreadIdsRef.current;
-                if (!oldData || optimisticIds.size === 0) return newData;
-
-                const oldInfinite = oldData as InfiniteData<threadsListResponse>;
-                const newInfinite = newData as InfiniteData<threadsListResponse>;
-
-                // 1. Build flat index of old thread positions to restore ordering later
-                const oldOrderedIds: string[] = [];
-                oldInfinite.pages.forEach(page =>
-                    page.data.results.forEach(t => oldOrderedIds.push(t.id))
-                );
-
-                // 2. Collect all thread IDs the server returned
-                const newThreadIds = new Set<string>();
-                newInfinite.pages.forEach(page =>
-                    page.data.results.forEach(t => newThreadIds.add(t.id))
-                );
-
-                // 3. Identify optimistic threads the server filtered out,
-                //    remembering their original flat index for position-preserving re-insertion
-                const missingByOldIndex = new Map<number, Thread>();
-                oldInfinite.pages.forEach(page =>
-                    page.data.results.forEach(thread => {
-                        if (optimisticIds.has(thread.id) && !newThreadIds.has(thread.id)) {
-                            missingByOldIndex.set(oldOrderedIds.indexOf(thread.id), thread);
-                        }
-                    })
-                );
-
-                // 4. Stop protecting threads the server still returns
-                //    (they don't need merge-back anymore)
-                optimisticIds.forEach(id => {
-                    if (newThreadIds.has(id)) optimisticIds.delete(id);
-                });
-
-                if (missingByOldIndex.size === 0) return newData;
-
-                // 5. Flatten new server results then splice missing threads
-                //    back at their original positions (sorted ascending so
-                //    earlier splices don't shift later indices)
-                const flatNewResults: Thread[] = [];
-                newInfinite.pages.forEach(page =>
-                    flatNewResults.push(...page.data.results)
-                );
-
-                const sortedEntries = [...missingByOldIndex.entries()].sort(([a], [b]) => a - b);
-                for (const [originalIndex, thread] of sortedEntries) {
-                    const insertAt = Math.min(originalIndex, flatNewResults.length);
-                    flatNewResults.splice(insertAt, 0, thread);
-                }
-
-                // 6. Return merged results in page 1
-                return {
-                    ...newInfinite,
-                    pages: newInfinite.pages.map((page, i) => {
-                        if (i !== 0) return page;
+            // Intercept the 404 DRF raises for out-of-range pages. The list
+            // may legitimately shrink between two refetches (e.g. user bulk
+            // trashes threads), and React Query refetches every cached page
+            // sequentially — a raw 404 on a trailing page would fail the
+            // whole infinite query and flash an error toast. Convert it into
+            // an empty terminal page so `trimTrailingEmptyPages` in
+            // `structuralSharing` can drop it cleanly.
+            queryFn: async ({ signal, pageParam }) => {
+                try {
+                    return await threadsList(
+                        {
+                            ...(router.query as Record<string, string>),
+                            mailbox_id: selectedMailbox?.id ?? '',
+                            page: pageParam as number,
+                        },
+                        { signal },
+                    );
+                } catch (error) {
+                    const page = typeof pageParam === 'number' ? pageParam : 1;
+                    if (error instanceof APIError && error.code === 404 && page > 1) {
                         return {
-                            ...page,
+                            status: 200,
                             data: {
-                                ...page.data,
-                                count: page.data.count + missingByOldIndex.size,
-                                results: flatNewResults,
-                            },
-                        };
-                    }),
-                };
+                                count: 0,
+                                results: [],
+                                next: null,
+                                previous: page > 1 ? page - 1 : null,
+                            } as PaginatedThreadList,
+                            headers: new Headers(),
+                        } as threadsListResponse;
+                    }
+                    throw error;
+                }
+            },
+            // Merge-back optimistic threads filtered out by the server, then
+            // drop trailing empty pages left over by shrunk result sets.
+            structuralSharing: (oldData, newData) => {
+                const merged = mergeOptimisticThreads(
+                    oldData as InfiniteData<threadsListResponse> | undefined,
+                    newData as InfiniteData<threadsListResponse>,
+                    optimisticThreadIdsRef.current,
+                );
+                return trimTrailingEmptyPages(merged);
             },
         },
-        request: {
-            params: {
-                ...(router.query as Record<string, string>),
-                mailbox_id: selectedMailbox?.id ?? '',
-            }
-        }
     });
 
     /**
@@ -415,35 +352,9 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
 
 
     const _updateThreadMessagesQueryData = (threadId: Thread['id'], source: MessageQueryInvalidationSource) => {
-        queryClient.setQueryData(['messages', threadId], (oldData: messagesListResponse200 | undefined) => {
-            if (!oldData?.data) return oldData;
-            let newResults = [ ...oldData.data ];
-            if (source.type === 'delete') {
-                newResults = newResults.filter((message: Message) => {
-                    if ((source.metadata.threadIds ?? []).includes(threadId)) return true;
-                    return !(source.metadata.ids ?? []).includes(message.id);
-                });
-            } else if (source.type === 'update') {
-                newResults = newResults.map((message: Message) => {
-                    const isTargeted =
-                        (source.metadata.threadIds ?? []).includes(threadId)
-                        || (source.metadata.ids ?? []).includes(message.id);
-
-                    if (!isTargeted) return message;
-
-                    // When a readAt pointer is provided, only update messages
-                    // created at or before that timestamp. When readAt is null
-                    // (mark all unread), update every message.
-                    if (source.readAt !== undefined && source.readAt !== null) {
-                        if (message.created_at > source.readAt) return message;
-                    }
-
-                    return { ...message, ...source.payload };
-                });
-            }
-
-            return {...oldData, data: newResults};
-        });
+        queryClient.setQueryData(['messages', threadId], (oldData: messagesListResponse200 | undefined) =>
+            applyMessageUpdate(oldData, threadId, source)
+        );
     }
     /**
      * Optimistically update ThreadAccess.read_at in the infinite threads cache

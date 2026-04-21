@@ -184,7 +184,14 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                     {
                         label: t('Mark as unread'),
                         icon: <Icon name="mark_email_unread" type={IconType.OUTLINED} />,
-                        callback: () => markAsReadAt({ threadIds: [selectedThread!.id], readAt: null, onSuccess: unselectThread })
+                        // Unmount the thread view before firing the mutation. If we waited for
+                        // onSuccess, the cache patch would re-flag visible messages as unread
+                        // while the view is still mounted, letting the visibility observer
+                        // debounce a mark-as-read request that silently reverts this action.
+                        callback: () => {
+                            unselectThread();
+                            markAsReadAt({ threadIds: [selectedThread!.id], readAt: null });
+                        },
                     },
                     ...(canLeaveThread ? [{
                         label: t('Leave this thread'),
