@@ -4,9 +4,10 @@ import { useState } from "react";
 import { ThreadAccessRoleChoices, ThreadAccessDetail, MailboxLight } from "@/features/api/gen/models";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useTranslation } from "react-i18next";
-import { useMailboxesSearchList, useThreadsAccessesCreate, useThreadsAccessesDestroy, useThreadsAccessesUpdate } from "@/features/api/gen";
+import { useMailboxesSearchList, useThreadsAccessesCreate, useThreadsAccessesUpdate } from "@/features/api/gen";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import useAbility, { Abilities } from "@/hooks/use-ability";
+import useDeleteThreadAccess from "@/features/message/use-delete-thread-access";
 
 
 
@@ -27,11 +28,11 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
     const { t } = useTranslation();
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
-    const { selectedMailbox, selectedThread, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
+    const { selectedMailbox, selectedThread, invalidateMailbox } = useMailboxContext();
     const modals = useModals();
-    const { mutate: removeThreadAccess } = useThreadsAccessesDestroy({ mutation: { onSuccess: () => invalidateThreadMessages() } });
-    const { mutate: createThreadAccess } = useThreadsAccessesCreate({ mutation: { onSuccess: () => invalidateThreadMessages() } });
-    const { mutate: updateThreadAccess } = useThreadsAccessesUpdate({ mutation: { onSuccess: () => invalidateThreadMessages() } });
+    const { deleteThreadAccess } = useDeleteThreadAccess();
+    const { mutate: createThreadAccess } = useThreadsAccessesCreate({ mutation: { onSuccess: () => invalidateMailbox() } });
+    const { mutate: updateThreadAccess } = useThreadsAccessesUpdate({ mutation: { onSuccess: () => invalidateMailbox() } });
     const searchMailboxesQuery = useMailboxesSearchList(selectedMailbox?.id ?? "", {
         q: searchQuery,
     }, {
@@ -105,24 +106,18 @@ export const ThreadAccessesWidget = ({ accesses }: ThreadAccessesWidgetProps) =>
                 ),
         });
         if (decision !== 'delete') return;
-        removeThreadAccess({
-            id: access.id,
-            threadId: selectedThread!.id
-        }, {
+        deleteThreadAccess({
+            accessId: access.id,
+            accessMailboxId: access.mailbox.id,
+            threadId: selectedThread!.id,
             onSuccess: () => {
                 addToast(<ToasterItem>
                     <p>{t('Thread access removed')}</p>
                 </ToasterItem>);
                 if (isSelfRemoval) {
                     setIsShareModalOpen(false);
-                    invalidateThreadMessages({
-                        type: 'delete',
-                        metadata: { threadIds: [selectedThread!.id] },
-                    });
-                    invalidateThreadsStats();
-                    unselectThread();
                 }
-            }
+            },
         });
     }
 

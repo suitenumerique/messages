@@ -1,4 +1,4 @@
-import { ThreadLabel, TreeLabel, useLabelsAddThreadsCreate, useLabelsList, useLabelsRemoveThreadsCreate } from "@/features/api/gen";
+import { Label, ThreadLabel, TreeLabel, useLabelsList } from "@/features/api/gen";
 import { Thread } from "@/features/api/gen/models";
 import { Icon, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button, Checkbox, Input, Tooltip } from "@gouvfr-lasuite/cunningham-react";
@@ -10,6 +10,8 @@ import StringHelper from "@/features/utils/string-helper";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { usePopupPosition } from "@/hooks/use-popup-position";
 import { LabelModal } from "@/features/layouts/components/mailbox-panel/components/mailbox-labels/components/label-form-modal";
+import useDeleteLabel from "@/features/message/use-delete-label";
+import useAddLabel from "@/features/message/use-add-label";
 
 type LabelsWidgetProps = {
     threadIds: string[];
@@ -23,9 +25,30 @@ type CreateModalState = {
     initialName: string;
 }
 
+// Project either a TreeLabel (from the labels list) or a Label (from the
+// create endpoint) onto the ThreadLabel shape stored on `Thread.labels`.
+const toThreadLabel = (label: TreeLabel | Label): ThreadLabel => ({
+    id: label.id,
+    name: label.name,
+    slug: label.slug,
+    color: label.color,
+    display_name: label.display_name,
+    description: label.description,
+    is_auto: label.is_auto,
+});
+
+const findTreeLabelById = (labels: readonly TreeLabel[], id: string): TreeLabel | undefined => {
+    for (const label of labels) {
+        if (label.id === id) return label;
+        const found = findTreeLabelById(label.children, id);
+        if (found) return found;
+    }
+    return undefined;
+};
+
 export const LabelsWidget = ({ threadIds, initialLabels }: LabelsWidgetProps) => {
     const { t } = useTranslation();
-    const { selectedMailbox, threads, invalidateThreadMessages } = useMailboxContext();
+    const { selectedMailbox, threads } = useMailboxContext();
     const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
     const { data: labelsList, isLoading: isLoadingLabelsList } = useLabelsList(
         { mailbox_id: selectedMailbox!.id },
@@ -35,24 +58,16 @@ export const LabelsWidget = ({ threadIds, initialLabels }: LabelsWidgetProps) =>
     const [createModal, setCreateModal] = useState<CreateModalState>({ isOpen: false, initialName: '' });
     const anchorRef = useRef<HTMLDivElement>(null);
 
-    const addLabelMutation = useLabelsAddThreadsCreate({
-        mutation: { onSuccess: () => invalidateThreadMessages() }
-    });
-    const deleteLabelMutation = useLabelsRemoveThreadsCreate({
-        mutation: { onSuccess: () => invalidateThreadMessages() }
-    });
+    const { addLabel } = useAddLabel();
+    const { deleteLabel } = useDeleteLabel();
 
     const handleAddLabel = (labelId: string) => {
-        addLabelMutation.mutate({
-            id: labelId,
-            data: { thread_ids: threadIds },
-        });
+        const treeLabel = findTreeLabelById(labelsList?.data ?? [], labelId);
+        if (!treeLabel) return;
+        addLabel({ label: toThreadLabel(treeLabel), threadIds });
     }
-    const handleDeleteLabel = (labelId: string) => {
-        deleteLabelMutation.mutate({
-            id: labelId,
-            data: { thread_ids: threadIds },
-        });
+    const handleDeleteLabel = (labelId: string, labelSlug: string) => {
+        deleteLabel({ labelId, labelSlug, threadIds });
     }
 
     const labelCounts = useMemo(() => {
@@ -125,7 +140,7 @@ export const LabelsWidget = ({ threadIds, initialLabels }: LabelsWidgetProps) =>
                 isOpen={createModal.isOpen}
                 onClose={() => setCreateModal((s) => ({ ...s, isOpen: false }))}
                 label={{ display_name: createModal.initialName }}
-                onSuccess={(label) => handleAddLabel(label.id)}
+                onSuccess={(label) => addLabel({ label: toThreadLabel(label), threadIds })}
             />
         </div>
     );
@@ -138,7 +153,7 @@ export type LabelsPopupProps = {
     anchorRef: RefObject<HTMLElement | null>;
     onClose: () => void;
     onAddLabel: (labelId: string) => void;
-    onDeleteLabel: (labelId: string) => void;
+    onDeleteLabel: (labelId: string, labelSlug: string) => void;
     onCreateLabel: (initialName: string) => void;
     // Set to false when a modal stacked above should own Escape — otherwise
     // the popup's capture-phase listener races with the modal's and both close.
@@ -148,6 +163,7 @@ export type LabelsPopupProps = {
 type LabelOption = {
     label: string;
     value: string;
+    slug: string;
     checked: boolean;
     indeterminate: boolean;
 }
@@ -198,6 +214,7 @@ export const LabelsPopup = ({
         return [{
             label: label.name,
             value: label.id,
+            slug: label.slug,
             checked,
             indeterminate,
         }, ...children];
@@ -218,7 +235,7 @@ export const LabelsPopup = ({
 
     const handleToggle = (option: LabelOption) => {
         if (option.checked) {
-            onDeleteLabel(option.value);
+            onDeleteLabel(option.value, option.slug);
         } else {
             onAddLabel(option.value);
         }

@@ -20,7 +20,7 @@ const SentBoxContext = createContext<SentBoxContextType>({
  * toast to inform the user of the sending status.
  */
 export const SentBoxProvider = ({ children }: PropsWithChildren) => {
-    const { invalidateThreadsStats, invalidateThreadMessages } = useMailboxContext();
+    const { invalidateThreadsStats, invalidateMailbox } = useMailboxContext();
     const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
 
     const addQueuedMessage = (taskId: string) => {
@@ -36,7 +36,7 @@ export const SentBoxProvider = ({ children }: PropsWithChildren) => {
     const handleSettled = (taskId: string) => {
         removeQueuedMessage(taskId);
         invalidateThreadsStats();
-        invalidateThreadMessages();
+        invalidateMailbox();
     }
 
     const context = useMemo(

@@ -19,7 +19,7 @@ export type SubLabelCreation = Partial<Pick<TreeLabel, 'name' | 'color' | 'displ
 type LabelModalProps = {
     isOpen: boolean;
     onClose: () => void;
-    onSuccess?: (label: TreeLabel) => void;
+    onSuccess?: (label: Label) => void;
     label?: TreeLabel | SubLabelCreation
 }
 
@@ -111,7 +111,7 @@ export const LabelModal = ({ isOpen, onClose, label, onSuccess }: LabelModalProp
             newSearchParams.set('label_slug', (data.data as Label).slug);
             router.push(`${pathname}?${newSearchParams.toString()}`);
           }
-          onSuccess?.(data.data as TreeLabel);
+          onSuccess?.(data.data as Label);
           handleClose();
         }
       });

@@ -213,7 +213,7 @@ export function useLabelsList<
  * View and manage labels
  */
 export type labelsCreateResponse201 = {
-  data: TreeLabel[];
+  data: Label;
   status: 201;
 };
 

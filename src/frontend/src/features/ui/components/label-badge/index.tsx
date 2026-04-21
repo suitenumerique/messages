@@ -1,6 +1,6 @@
 import { Badge } from "@/features/ui/components/badge"
 import { ColorHelper } from "@/features/utils/color-helper"
-import { ThreadLabel, useLabelsAddThreadsCreate, useLabelsRemoveThreadsCreate } from "@/features/api/gen"
+import { ThreadLabel } from "@/features/api/gen"
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useTranslation } from "react-i18next";
 import { Icon, IconSize, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
@@ -11,6 +11,8 @@ import { useMemo } from "react";
 import { addToast, ToasterItem } from "../toaster";
 import { toast } from "react-toastify";
 import useAbility, { Abilities } from "@/hooks/use-ability";
+import useDeleteLabel from "@/features/message/use-delete-label";
+import useAddLabel from "@/features/message/use-add-label";
 import clsx from "clsx";
 
 type LabelBadgeProps = {
@@ -29,39 +31,39 @@ export const LabelBadge = ({ label, removable = false, linkable = false, compact
         return `${pathname}?${params.toString()}`;
     }, [label, pathname]);
     const isActive = searchParams.get('label_slug') === label.slug;
-    const { invalidateThreadMessages, selectedThread, selectedMailbox } = useMailboxContext();
+    const { selectedThread, selectedMailbox } = useMailboxContext();
     const canManageLabels = useAbility(Abilities.CAN_MANAGE_MAILBOX_LABELS, selectedMailbox);
     const badgeColor = ColorHelper.getContrastColor(label.color!, { lightColor: `var(--c--globals--colors--white-850)`, darkColor: `var(--c--globals--colors--black-850)`});
-    const { mutate: deleteLabelMutation, isPending: isDeletingLabel } = useLabelsRemoveThreadsCreate({
-        mutation: {
-            onSuccess: (_, variables) => {
-                invalidateThreadMessages();
+    const { addLabel } = useAddLabel();
+    const { deleteLabel, status: deleteStatus } = useDeleteLabel();
+    const isDeletingLabel = deleteStatus === 'pending';
+    const handleDelete = () => {
+        if (!selectedThread?.id) return;
+        const toastId = JSON.stringify({ id: label.id, threadId: selectedThread.id });
+        deleteLabel({
+            labelId: label.id,
+            labelSlug: label.slug,
+            threadIds: [selectedThread.id],
+            onSuccess: () => {
                 addToast(
                     <ToasterItem
                         type="info"
                         actions={[{
                             label: t('Undo'),
-                            onClick: () => addLabelMutation(variables)
+                            onClick: () => {
+                                addLabel({ label, threadIds: [selectedThread.id] });
+                                toast.dismiss(toastId);
+                            }
                         }]}
                     >
                         <span className="material-icons">label_off</span>
                         <span>{t('Label "{{label}}" removed from this conversation.', { label: label.name })}</span>
                     </ToasterItem>,
-                    {
-                        toastId: JSON.stringify(variables),
-                    }
-                )
-            }
-        }
-    });
-    const { mutate: addLabelMutation, } = useLabelsAddThreadsCreate({
-        mutation: {
-            onSuccess: (_, variables) => {
-                invalidateThreadMessages();
-                toast.dismiss(JSON.stringify(variables));
-            }
-        }
-    });
+                    { toastId }
+                );
+            },
+        });
+    };
     const showLink = linkable && !isActive;
 
     return (
@@ -71,7 +73,7 @@ export const LabelBadge = ({ label, removable = false, linkable = false, compact
                 <Tooltip content={t('Delete')} placement="right">
                     <button
                         className="label-badge__remove-cta"
-                        onClick={() => deleteLabelMutation({ id: label.id, data: { thread_ids: [selectedThread.id] } })}
+                        onClick={handleDelete}
                         disabled={isDeletingLabel}
                         aria-busy={isDeletingLabel}
                     >

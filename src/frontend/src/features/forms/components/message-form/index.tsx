@@ -6,7 +6,7 @@ import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Attachment, DraftMessageRequestRequest, Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
+import { Attachment, DraftMessageRequestRequest, draftCreateResponse200, Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
 import { MessageComposer, MessageComposerHandle, QuoteType } from "@/features/forms/components/message-composer";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import MailHelper from "@/features/utils/mail-helper";
@@ -97,7 +97,7 @@ export const MessageForm = ({
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
     const saveDraftRef = useRef<() => void>(() => {});
     const quoteType: QuoteType | undefined = mode !== "new" ? (mode === "forward" ? "forward" : "reply") : undefined;
-    const { selectedMailbox, selectedThread, mailboxes, invalidateThreadMessages, invalidateThreadsStats, unselectThread } = useMailboxContext();
+    const { selectedMailbox, selectedThread, mailboxes, removeMessages, invalidateMailbox, invalidateThreadsStats, unselectThread, unpinThreads, pinThreads } = useMailboxContext();
     const hideSubjectField = Boolean(draftMessage?.parent_id ?? parentMessage);
     const defaultSenderId = mailboxes?.find((mailbox) => {
         if (draft?.sender) return draft.sender.email === mailbox.email;
@@ -286,7 +286,21 @@ export const MessageForm = ({
 
     const draftCreateMutation = useDraftCreate({
         mutation: {
-            onSuccess: () => {
+            onSuccess: (response) => {
+                const message = (response as draftCreateResponse200).data;
+                // Patch + pin so a thread that just acquired a draft stays
+                // accurate even when filtered out of the next refetch (e.g.
+                // marked-as-read while viewing "unread"): mergePinnedThreads
+                // would otherwise re-insert the cached version with
+                // `has_draft: false` and the drafts filter would miss it.
+                if (message.thread_id) {
+                    pinThreads([message.thread_id], (thread) => ({
+                        ...thread,
+                        has_draft: true,
+                        draft_messaged_at: message.created_at,
+                    }));
+                }
+                invalidateMailbox();
                 invalidateThreadsStats();
                 handleDraftMutationSuccess();
             }
@@ -318,7 +332,14 @@ export const MessageForm = ({
             onSuccess: () => {
                 onClose?.();
                 setDraft(undefined);
-                invalidateThreadMessages({ type: 'delete', metadata: { ids: [messageId] } });
+                if (selectedThread) {
+                    removeMessages(selectedThread.id, [messageId]);
+                    // The thread may exit the active filter (e.g. drafts) once
+                    // its only draft is gone. Drop any pin so the next refetch
+                    // is authoritative.
+                    unpinThreads([selectedThread.id]);
+                }
+                invalidateMailbox();
                 invalidateThreadsStats();
                 // Unselect the thread if we are in the draft view
                 if (searchParams.get('has_draft') === '1') {
@@ -511,6 +532,11 @@ export const MessageForm = ({
             const { htmlBody, textBody } = await composerRef.current.exportContent();
 
             stopAutoSave();
+            // Send (and "send and archive") moves the thread out of the drafts
+            // filter — and possibly out of the inbox when archived. Drop the
+            // pin upfront so the eventual refetch is authoritative.
+            const draftThreadId = draft?.thread_id ?? selectedThread?.id;
+            if (draftThreadId) unpinThreads([draftThreadId]);
             messageMutation.mutate({
                 data: {
                     messageId,

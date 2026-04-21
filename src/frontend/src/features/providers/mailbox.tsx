@@ -1,11 +1,23 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useRef } from "react";
-import { Mailbox, MailboxRoleChoices, Message, messagesListResponse200, PaginatedThreadList, Thread, ThreadEvent, useLabelsList, useMailboxesList, useMessagesList, useThreadsEventsList, useThreadsListInfinite, getThreadsEventsListQueryKey } from "../api/gen";
+import { Mailbox, MailboxRoleChoices, Message, PaginatedThreadList, Thread, ThreadEvent, ThreadsListParams, useLabelsList, useMailboxesList, useMessagesList, useThreadsEventsList, useThreadsListInfinite, getThreadsEventsListQueryKey } from "../api/gen";
 import { FetchStatus, InfiniteData, QueryStatus, RefetchOptions, useQueryClient } from "@tanstack/react-query";
 import type { threadsListResponse } from "../api/gen/threads/threads";
 import { useRouter } from "next/router";
 import usePrevious from "@/hooks/use-previous";
 import { useSearchParams } from "next/navigation";
 import { MAILBOX_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
+import {
+    getMailboxThreadsListQueryKeyPrefix,
+    mergePinnedThreads,
+    patchMessagesInCache,
+    patchThreadsInCache,
+    removeMessagesFromCache,
+    trimTrailingEmptyPages,
+    type MessagePatcher,
+    type ThreadPatcher,
+} from "./mailbox-cache";
+import { threadsList } from "../api/gen/threads/threads";
+import { APIError } from "../api/api-error";
 
 type QueryState = {
     status: QueryStatus,
@@ -16,24 +28,6 @@ type QueryState = {
 
 type PaginatedQueryState = QueryState & {
     isFetchingNextPage: boolean;
-}
-
-type MessageQueryInvalidationSource = {
-    type: 'delete' | 'update';
-    metadata: { ids?: Message['id'][], threadIds?: Thread['id'][] };
-    payload?: Partial<Message>;
-    /** When updating read state, optimistically patch ThreadAccess.read_at in the threads cache. */
-    threadAccessReadAt?: { mailboxId: string; readAt: string | null };
-    /** Optimistically patch ThreadAccess.starred_at in the threads cache. */
-    threadAccessStarredAt?: { mailboxId: string; starredAt: string | null };
-    /**
-     * When set, only messages created at or before this timestamp
-     * will receive the payload update (used for read pointer).
-     * Messages after this date keep their current state.
-     */
-    readAt?: string | null;
-    /** When true, skip the threads list refetch (rely on optimistic cache only). */
-    skipThreadsRefetch?: boolean;
 }
 
 export type TimelineItem =
@@ -50,7 +44,24 @@ type MailboxContextType = {
     selectedThread: Thread | null;
     unselectThread: () => void;
     loadNextThreads: () => Promise<unknown>;
-    invalidateThreadMessages: (source?: MessageQueryInvalidationSource) => Promise<void>;
+    /** Patch threads in every cached list variant of the current mailbox AND
+     *  pin them so they survive the next refetch even when filtered out. */
+    pinThreads: (threadIds: Thread['id'][], patcher: ThreadPatcher) => void;
+    /** Drop the pin protection for the given thread ids. Use it from mutations
+     *  that intentionally remove a thread from the current view (archive,
+     *  spam, trash, draft delete/send) so the next refetch lets it disappear
+     *  instead of being re-injected by the pin merge. */
+    unpinThreads: (threadIds: Thread['id'][]) => void;
+    /** Patch every message of a thread in cache. */
+    patchMessages: (threadId: Thread['id'], patcher: MessagePatcher) => void;
+    /** Remove messages from a thread's cache (e.g. draft deletion). */
+    removeMessages: (threadId: Thread['id'], messageIds: Message['id'][]) => void;
+    /** Refetch the threads list of the current mailbox (every filter variant). */
+    invalidateThreadList: () => Promise<void>;
+    /** Refetch only the messages of the currently selected thread. */
+    invalidateThreadMessages: () => Promise<void>;
+    /** Shorthand: refetch threads list + messages of the selected thread. */
+    invalidateMailbox: () => Promise<void>;
     invalidateThreadEvents: () => Promise<void>;
     invalidateThreadsStats: () => Promise<void>;
     invalidateLabels: () => Promise<void>;
@@ -100,16 +111,6 @@ type ReadonlySearchParamsLike = {
 };
 
 /**
- * Query key prefix for the threads LIST query of a mailbox.
- *
- * Used for invalidation and for prefix-matching optimistic updates
- * (`setQueriesData`) that should apply to every filter variant of
- * the same mailbox (list, search, all filter combinations…) in one shot.
- */
-export const getMailboxThreadsListQueryKeyPrefix = (mailboxId: string | undefined) =>
-    ['threads', mailboxId];
-
-/**
  * Query key prefix for the SEARCH subtree of a mailbox's threads list.
  *
  * Matches every search variant of the mailbox (different filter combinations
@@ -147,6 +148,32 @@ export const getMailboxThreadsListQueryKey = (
     return [...prefix, hasSearch ? 'search' : 'list', normalized.toString()];
 };
 
+// Allow-list of `ThreadsListParams` keys we accept from the URL. `router.query`
+// also exposes dynamic path segments (mailboxId, threadId) — spreading it raw
+// would leak them as query params and bypass the typed contract.
+// Exhaustiveness vs `ThreadsListParams` is enforced in `mailbox.test.ts`.
+export const THREADS_LIST_NUMERIC_FILTERS = [
+    "has_active",
+    "has_archived",
+    "has_attachments",
+    "has_delivery_pending",
+    "has_draft",
+    "has_mention",
+    "has_messages",
+    "has_sender",
+    "has_starred",
+    "has_trashed",
+    "has_unread",
+    "has_unread_mention",
+    "is_spam",
+    "is_trashed",
+] as const satisfies ReadonlyArray<keyof ThreadsListParams>;
+
+export const THREADS_LIST_STRING_FILTERS = [
+    "label_slug",
+    "search",
+] as const satisfies ReadonlyArray<keyof ThreadsListParams>;
+
 const MailboxContext = createContext<MailboxContextType>({
     mailboxes: null,
     threads: null,
@@ -157,7 +184,13 @@ const MailboxContext = createContext<MailboxContextType>({
     selectedThread: null,
     loadNextThreads: async () => {},
     unselectThread: () => {},
+    pinThreads: () => {},
+    unpinThreads: () => {},
+    patchMessages: () => {},
+    removeMessages: () => {},
+    invalidateThreadList: async () => {},
     invalidateThreadMessages: async () => {},
+    invalidateMailbox: async () => {},
     invalidateThreadEvents: async () => {},
     invalidateThreadsStats: async () => {},
     invalidateLabels: async () => {},
@@ -206,7 +239,7 @@ const MailboxContext = createContext<MailboxContextType>({
 export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const queryClient = useQueryClient();
     const router = useRouter();
-    const optimisticThreadIdsRef = useRef(new Set<string>());
+    const pinnedThreadIdsRef = useRef(new Set<string>());
     const searchParams = useSearchParams();
     const previousSearchParams = usePrevious(searchParams);
     const hasSearchParamsChanged = useMemo(() => {
@@ -245,107 +278,64 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             enabled: !!selectedMailbox,
             initialPageParam: 1,
             queryKey: threadQueryKey,
+            // `fetchNextPage` must stop at the true last page of the server.
+            // Returning `undefined` is the React Query idiom for "no more
+            // pages" — without it the hook would keep asking for pages the
+            // backend has since dropped (bulk trash/archive shrinks the list).
             getNextPageParam: (lastPage, pages) => {
+                if (lastPage?.data?.next === null) return undefined;
                 return pages.length + 1;
             },
-            /**
-             * Merge-back optimistic threads on refetch.
-             *
-             * Problem: when a filter is active (e.g. "unread" or "starred"),
-             * a read/starred mutation optimistically patches the thread in
-             * cache but skips the list refetch (`skipThreadsRefetch`). Later,
-             * when a refetch does happen (polling, navigation…), the server
-             * no longer returns that thread (it no longer matches the filter)
-             * → it would vanish from the UI.
-             *
-             * Solution: `structuralSharing` runs *before* React re-renders.
-             * It compares old cache (with optimistic threads) to the new
-             * server response. Any thread tracked in `optimisticThreadIdsRef`
-             * that is missing from the server response is re-inserted at its
-             * original position so the user sees no flash.
-             *
-             * Lifecycle of an optimistic thread ID:
-             * - Added to the set by `invalidateThreadMessages({ skipThreadsRefetch })`
-             * - Removed from the set here when the server response includes it
-             *   (meaning the server still considers it valid for the current query)
-             * - Cleared entirely when the user changes filters or mailbox
-             *   (via the cleanup `useEffect` on `selectedMailbox?.id` / `searchParams`)
-             */
-            structuralSharing: (oldData, newData) => {
-                const optimisticIds = optimisticThreadIdsRef.current;
-                if (!oldData || optimisticIds.size === 0) return newData;
-
-                const oldInfinite = oldData as InfiniteData<threadsListResponse>;
-                const newInfinite = newData as InfiniteData<threadsListResponse>;
-
-                // 1. Build flat index of old thread positions to restore ordering later
-                const oldOrderedIds: string[] = [];
-                oldInfinite.pages.forEach(page =>
-                    page.data.results.forEach(t => oldOrderedIds.push(t.id))
-                );
-
-                // 2. Collect all thread IDs the server returned
-                const newThreadIds = new Set<string>();
-                newInfinite.pages.forEach(page =>
-                    page.data.results.forEach(t => newThreadIds.add(t.id))
-                );
-
-                // 3. Identify optimistic threads the server filtered out,
-                //    remembering their original flat index for position-preserving re-insertion
-                const missingByOldIndex = new Map<number, Thread>();
-                oldInfinite.pages.forEach(page =>
-                    page.data.results.forEach(thread => {
-                        if (optimisticIds.has(thread.id) && !newThreadIds.has(thread.id)) {
-                            missingByOldIndex.set(oldOrderedIds.indexOf(thread.id), thread);
-                        }
-                    })
-                );
-
-                // 4. Stop protecting threads the server still returns
-                //    (they don't need merge-back anymore)
-                optimisticIds.forEach(id => {
-                    if (newThreadIds.has(id)) optimisticIds.delete(id);
-                });
-
-                if (missingByOldIndex.size === 0) return newData;
-
-                // 5. Flatten new server results then splice missing threads
-                //    back at their original positions (sorted ascending so
-                //    earlier splices don't shift later indices)
-                const flatNewResults: Thread[] = [];
-                newInfinite.pages.forEach(page =>
-                    flatNewResults.push(...page.data.results)
-                );
-
-                const sortedEntries = [...missingByOldIndex.entries()].sort(([a], [b]) => a - b);
-                for (const [originalIndex, thread] of sortedEntries) {
-                    const insertAt = Math.min(originalIndex, flatNewResults.length);
-                    flatNewResults.splice(insertAt, 0, thread);
-                }
-
-                // 6. Return merged results in page 1
-                return {
-                    ...newInfinite,
-                    pages: newInfinite.pages.map((page, i) => {
-                        if (i !== 0) return page;
-                        return {
-                            ...page,
-                            data: {
-                                ...page.data,
-                                count: page.data.count + missingByOldIndex.size,
-                                results: flatNewResults,
-                            },
-                        };
-                    }),
+            queryFn: async ({ signal, pageParam }) => {
+                const params: ThreadsListParams = {
+                    mailbox_id: selectedMailbox?.id ?? '',
+                    page: pageParam as number,
                 };
+                for (const key of THREADS_LIST_NUMERIC_FILTERS) {
+                    const value = searchParams.get(key);
+                    if (value !== null) params[key] = Number(value);
+                }
+                for (const key of THREADS_LIST_STRING_FILTERS) {
+                    const value = searchParams.get(key);
+                    if (value !== null) params[key] = value;
+                }
+                try {
+                    return await threadsList(params, { signal });
+                } catch (error) {
+                    // Intercept the 404 DRF raises for out-of-range pages. The list
+                    // may legitimately shrink between two refetches (e.g. user bulk
+                    // trashes threads), and React Query refetches every cached page
+                    // sequentially — a raw 404 on a trailing page would fail the
+                    // whole infinite query and flash an error toast. Convert it into
+                    // an empty terminal page so `trimTrailingEmptyPages` in
+                    // `structuralSharing` can drop it cleanly.
+                    const page = typeof pageParam === 'number' ? pageParam : 1;
+                    if (error instanceof APIError && error.code === 404 && page > 1) {
+                        return {
+                            status: 200,
+                            data: {
+                                count: 0,
+                                results: [],
+                                next: null,
+                                previous: null,
+                            } as PaginatedThreadList,
+                            headers: new Headers(),
+                        } as threadsListResponse;
+                    }
+                    throw error;
+                }
+            },
+            // Merge-back pinned threads filtered out by the server, then drop
+            // trailing empty pages left over by shrunk result sets.
+            structuralSharing: (oldData, newData) => {
+                const merged = mergePinnedThreads(
+                    oldData as InfiniteData<threadsListResponse> | undefined,
+                    newData as InfiniteData<threadsListResponse>,
+                    pinnedThreadIdsRef.current,
+                );
+                return trimTrailingEmptyPages(merged);
             },
         },
-        request: {
-            params: {
-                ...(router.query as Record<string, string>),
-                mailbox_id: selectedMailbox?.id ?? '',
-            }
-        }
     });
 
     /**
@@ -414,174 +404,55 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     });
 
 
-    const _updateThreadMessagesQueryData = (threadId: Thread['id'], source: MessageQueryInvalidationSource) => {
-        queryClient.setQueryData(['messages', threadId], (oldData: messagesListResponse200 | undefined) => {
-            if (!oldData?.data) return oldData;
-            let newResults = [ ...oldData.data ];
-            if (source.type === 'delete') {
-                newResults = newResults.filter((message: Message) => {
-                    if ((source.metadata.threadIds ?? []).includes(threadId)) return true;
-                    return !(source.metadata.ids ?? []).includes(message.id);
-                });
-            } else if (source.type === 'update') {
-                newResults = newResults.map((message: Message) => {
-                    const isTargeted =
-                        (source.metadata.threadIds ?? []).includes(threadId)
-                        || (source.metadata.ids ?? []).includes(message.id);
+    /**
+     * Patch threads in every cached list variant of the current mailbox AND
+     * mark them as pinned so they survive the next server refetch even when
+     * filtered out (e.g. mark-as-read while viewing the "unread" filter).
+     *
+     * The patcher itself encodes the domain semantics — recomputing
+     * `has_unread`, flipping `has_starred`, mutating `accesses`, etc. is the
+     * caller hook's responsibility, not the cache's.
+     */
+    const pinThreads = (threadIds: Thread['id'][], patcher: ThreadPatcher) => {
+        if (threadIds.length === 0) return;
+        patchThreadsInCache(queryClient, selectedMailbox?.id, threadIds, patcher);
+        threadIds.forEach((id) => pinnedThreadIdsRef.current.add(id));
+    };
 
-                    if (!isTargeted) return message;
+    /**
+     * Symmetric of `pinThreads`: drop the pin so the next server refetch is
+     * authoritative again. Mutations that move a thread out of the current
+     * view (archive, spam, trash, draft delete/send) call this BEFORE
+     * invalidating, otherwise `mergePinnedThreads` would re-insert the thread
+     * the server just filtered out.
+     */
+    const unpinThreads = (threadIds: Thread['id'][]) => {
+        threadIds.forEach((id) => pinnedThreadIdsRef.current.delete(id));
+    };
 
-                    // When a readAt pointer is provided, only update messages
-                    // created at or before that timestamp. When readAt is null
-                    // (mark all unread), update every message.
-                    if (source.readAt !== undefined && source.readAt !== null) {
-                        if (message.created_at > source.readAt) return message;
-                    }
+    const patchMessages = (threadId: Thread['id'], patcher: MessagePatcher) => {
+        patchMessagesInCache(queryClient, threadId, patcher);
+    };
 
-                    return { ...message, ...source.payload };
-                });
-            }
+    const removeMessages = (threadId: Thread['id'], messageIds: Message['id'][]) => {
+        removeMessagesFromCache(queryClient, threadId, messageIds);
+    };
 
-            return {...oldData, data: newResults};
+    const invalidateThreadList = async () => {
+        await queryClient.invalidateQueries({
+            queryKey: getMailboxThreadsListQueryKeyPrefix(selectedMailbox?.id),
         });
-    }
-    /**
-     * Optimistically update ThreadAccess.read_at in the infinite threads cache
-     * so ThreadItem sees the new read state immediately without waiting for re-fetch.
-     */
-    const _updateThreadAccessReadAt = (
-        threadIds: Thread['id'][],
-        mailboxId: string,
-        readAt: string | null,
-    ) => {
-        queryClient.setQueriesData<InfiniteData<threadsListResponse>>(
-            { queryKey: getMailboxThreadsListQueryKeyPrefix(mailboxId) },
-            (oldData) => {
-                if (!oldData) return oldData;
-                return {
-                    ...oldData,
-                    pages: oldData.pages.map((page) => ({
-                        ...page,
-                        data: {
-                            ...page.data,
-                            results: page.data.results.map((thread) => {
-                                if (!threadIds.includes(thread.id)) return thread;
-                                return {
-                                    ...thread,
-                                    has_unread: thread.messaged_at
-                                        ? (readAt === null || new Date(thread.messaged_at) > new Date(readAt))
-                                        : false,
-                                    accesses: thread.accesses.map((access) =>
-                                        access.mailbox.id === mailboxId
-                                            ? { ...access, read_at: readAt }
-                                            : access
-                                    ),
-                                };
-                            }),
-                        },
-                    })),
-                };
-            },
-        );
     };
 
-    /**
-     * Optimistically update ThreadAccess.starred_at in the infinite threads cache
-     * so ThreadItem sees the new starred state immediately without waiting for re-fetch.
-     */
-    const _updateThreadAccessStarredAt = (
-        threadIds: Thread['id'][],
-        mailboxId: string,
-        starredAt: string | null,
-    ) => {
-        queryClient.setQueriesData<InfiniteData<threadsListResponse>>(
-            { queryKey: getMailboxThreadsListQueryKeyPrefix(mailboxId) },
-            (oldData) => {
-                if (!oldData) return oldData;
-                return {
-                    ...oldData,
-                    pages: oldData.pages.map((page) => ({
-                        ...page,
-                        data: {
-                            ...page.data,
-                            results: page.data.results.map((thread) => {
-                                if (!threadIds.includes(thread.id)) return thread;
-                                return {
-                                    ...thread,
-                                    has_starred: starredAt !== null,
-                                    accesses: thread.accesses.map((access) =>
-                                        access.mailbox.id === mailboxId
-                                            ? { ...access, starred_at: starredAt }
-                                            : access
-                                    ),
-                                };
-                            }),
-                        },
-                    })),
-                };
-            },
-        );
-    };
-
-    /**
-     * Invalidate the threads and messages queries to refresh the data
-     * If a source is provided, it could be used to update query cache from the source data
-     */
-    const invalidateThreadMessages = async (source?: MessageQueryInvalidationSource) => {
-        // Optimistically patch caches before invalidating so the UI
-        // renders the correct state immediately while re-fetches are in flight.
-        if (source?.threadAccessReadAt) {
-            const affectedThreadIds = source.metadata.threadIds ?? [];
-            if (affectedThreadIds.length > 0) {
-                _updateThreadAccessReadAt(
-                    affectedThreadIds,
-                    source.threadAccessReadAt.mailboxId,
-                    source.threadAccessReadAt.readAt,
-                );
-            }
-        }
-
-        if (source?.threadAccessStarredAt) {
-            const affectedThreadIds = source.metadata.threadIds ?? [];
-            if (affectedThreadIds.length > 0) {
-                _updateThreadAccessStarredAt(
-                    affectedThreadIds,
-                    source.threadAccessStarredAt.mailboxId,
-                    source.threadAccessStarredAt.starredAt,
-                );
-            }
-        }
-
-        if (source && ((source.metadata.threadIds ?? []).length ?? 0) > 0) {
-            source.metadata.threadIds!.forEach(threadId => {
-                if (queryClient.getQueryState(['messages', threadId])) {
-                    _updateThreadMessagesQueryData(threadId, source);
-                }
-            });
-        }
-
-        if (source && selectedThread && ((source.metadata.ids ?? []).length ?? 0) > 0) {
-            _updateThreadMessagesQueryData(selectedThread.id, source);
-        }
-
-        if (source?.skipThreadsRefetch) {
-            // Track these threads so structuralSharing merges them back on future refetches
-            (source.metadata.threadIds ?? []).forEach(id =>
-                optimisticThreadIdsRef.current.add(id)
-            );
-        } else {
-            // Remove affected threads from optimistic tracking since the
-            // server response is authoritative after a real refetch.
-            (source?.metadata.threadIds ?? []).forEach(id =>
-                optimisticThreadIdsRef.current.delete(id)
-            );
-            await queryClient.invalidateQueries({ queryKey: getMailboxThreadsListQueryKeyPrefix(selectedMailbox?.id) });
-        }
-
+    const invalidateThreadMessages = async () => {
         if (selectedThread) {
             await queryClient.invalidateQueries({ queryKey: ['messages', selectedThread.id] });
         }
-    }
+    };
+
+    const invalidateMailbox = async () => {
+        await Promise.all([invalidateThreadList(), invalidateThreadMessages()]);
+    };
 
     const invalidateThreadEvents = async () => {
         if (selectedThread) {
@@ -627,7 +498,13 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         selectedThread,
         unselectThread,
         loadNextThreads: threadsQuery.fetchNextPage,
+        pinThreads,
+        unpinThreads,
+        patchMessages,
+        removeMessages,
+        invalidateThreadList,
         invalidateThreadMessages,
+        invalidateMailbox,
         invalidateThreadEvents,
         invalidateThreadsStats,
         invalidateLabels,
@@ -679,7 +556,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
                 } else {
                     router.replace(`/mailbox/${selectedMailbox.id}?${new URLSearchParams(defaultFolder.filter).toString()}${hash}`);
                 }
-                invalidateThreadMessages();
+                invalidateMailbox();
             }
         }
     }, [selectedMailbox]);
@@ -744,10 +621,10 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         }
     }, [messagesQuery.data?.data]);
 
-    // Clear optimistic thread IDs when filters or mailbox change so the next
+    // Clear pinned thread IDs when filters or mailbox change so the next
     // refetch shows the pure server-side list.
     useEffect(() => {
-        optimisticThreadIdsRef.current.clear();
+        pinnedThreadIdsRef.current.clear();
     }, [selectedMailbox?.id, searchParams.toString()]);
 
     useEffect(() => {

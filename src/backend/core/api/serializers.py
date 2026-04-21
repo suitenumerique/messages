@@ -539,7 +539,7 @@ class AttachmentSerializer(serializers.ModelSerializer):
 class ThreadLabelSerializer(serializers.ModelSerializer):
     """Serializer to get labels details for a thread."""
 
-    display_name = serializers.SerializerMethodField(read_only=True)
+    display_name = serializers.CharField(source="get_display_name", read_only=True)
 
     class Meta:
         model = models.Label
@@ -554,10 +554,6 @@ class ThreadLabelSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "slug", "display_name"]
 
-    def get_display_name(self, instance):
-        """Return the display name of the label."""
-        return instance.name.split("/")[-1]
-
 
 class TreeLabelSerializer(serializers.ModelSerializer):
     """Serializer for tree label response structure (OpenAPI purpose only...)."""
@@ -566,7 +562,7 @@ class TreeLabelSerializer(serializers.ModelSerializer):
     name = serializers.CharField(read_only=True)
     slug = serializers.CharField(read_only=True)
     color = serializers.CharField(read_only=True)
-    display_name = serializers.CharField(read_only=True)
+    display_name = serializers.CharField(source="get_display_name", read_only=True)
     children = serializers.SerializerMethodField(read_only=True)
     description = serializers.CharField(read_only=True)
     is_auto = serializers.BooleanField(read_only=True)
@@ -598,6 +594,8 @@ class TreeLabelSerializer(serializers.ModelSerializer):
 class LabelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
     """Serializer for Label model."""
 
+    display_name = serializers.CharField(source="get_display_name", read_only=True)
+
     class Meta:
         model = models.Label
         fields = [
@@ -605,12 +603,13 @@ class LabelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             "name",
             "slug",
             "color",
+            "display_name",
             "mailbox",
             "threads",
             "description",
             "is_auto",
         ]
-        read_only_fields = ["id", "slug"]
+        read_only_fields = ["id", "slug", "display_name"]
         create_only_fields = ["mailbox"]
 
     def validate_mailbox(self, value):

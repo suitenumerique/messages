@@ -4,18 +4,20 @@ import { addToast, ToasterItem } from "../ui/components/toaster";
 import { toast, ToastContentProps } from "react-toastify";
 import { useTranslation } from "react-i18next";
 
+type FlagOnSuccess = (data: ChangeFlagRequestRequest, updatedCount?: number) => void;
+
 type MarkAsOptions = {
     threadIds?: Thread["id"][],
     messageIds?: Message['id'][],
     mailboxId?: string,
     readAt?: string | null,
     starredAt?: string | null,
-    onSuccess?: (data: ChangeFlagRequestRequest) => void,
+    onSuccess?: FlagOnSuccess,
 }
 
 type FlagOptions = {
     toastMessages?: FlagToastMessages;
-    onSuccess?: (data: ChangeFlagRequestRequest) => void;
+    onSuccess?: FlagOnSuccess;
     showToast?: boolean;
 }
 
@@ -23,6 +25,11 @@ type FlagToastMessages = {
     thread: (updatedCount: number, submittedCount: number) => string;
     message: (updatedCount: number, submittedCount: number) => string;
 }
+
+const extractUpdatedCount = (response: { data: unknown }): number | undefined => {
+    const data = response.data as Record<string, unknown>;
+    return typeof data.updated_threads === 'number' ? data.updated_threads : undefined;
+};
 
 /**
  * Generic hook to update thread/message flags
@@ -34,12 +41,9 @@ const useFlag = (flag: FlagEnum, options?: FlagOptions) => {
     const { mutate, status } = useFlagCreate({
         mutation: {
             onSuccess: (response, { data }) => {
-                options?.onSuccess?.(data);
+                const updatedCount = extractUpdatedCount(response);
+                options?.onSuccess?.(data, updatedCount);
                 if (options?.showToast !== false && data.value === true) {
-                    const responseData = response.data as Record<string, unknown>;
-                    const updatedCount = typeof responseData.updated_threads === 'number'
-                        ? responseData.updated_threads
-                        : undefined;
                     const threadIds = data.thread_ids ?? [];
                     const type = updatedCount === undefined ? 'success'
                         : updatedCount === 0 ? 'error'
@@ -75,7 +79,7 @@ const useFlag = (flag: FlagEnum, options?: FlagOptions) => {
                     ...(starredAt !== undefined && { starred_at: starredAt }),
                 },
             }, {
-                onSuccess: (_, { data }) => onSuccess?.(data)
+                onSuccess: (response, { data }) => onSuccess?.(data, extractUpdatedCount(response))
             });
 
     return {
@@ -92,7 +96,7 @@ type FlagUpdateSuccessToastProps = {
     mailboxId?: Mailbox['id'];
     toastId: string;
     messages?: FlagToastMessages;
-    onUndo?: (data: ChangeFlagRequestRequest) => void;
+    onUndo?: FlagOnSuccess;
     updatedCount?: number;
 }
 const FlagUpdateSuccessToast = ({ flag, threadIds = [], messageIds = [], mailboxId, toastId, messages, onUndo, updatedCount, closeToast }: FlagUpdateSuccessToastProps & Partial<ToastContentProps>) => {

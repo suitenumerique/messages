@@ -7,7 +7,7 @@ import useFlag from "./use-flag";
  */
 const useTrash = () => {
     const { t } = useTranslation();
-    const { invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
+    const { invalidateMailbox, invalidateThreadsStats, unpinThreads } = useMailboxContext();
 
     const { mark, unmark, status } = useFlag('trashed', {
         toastMessages: {
@@ -23,10 +23,8 @@ const useTrash = () => {
             },
         },
         onSuccess: (data) => {
-            invalidateThreadMessages({
-                type: 'update',
-                metadata: { threadIds: data.thread_ids, ids: data.message_ids },
-            });
+            unpinThreads(data.thread_ids ?? []);
+            invalidateMailbox();
             invalidateThreadsStats();
         }
     });

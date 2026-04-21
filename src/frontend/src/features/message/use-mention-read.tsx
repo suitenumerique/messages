@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getMailboxThreadsListQueryKeyPrefix, useMailboxContext } from "@/features/providers/mailbox";
+import { useMailboxContext } from "@/features/providers/mailbox";
+import { getMailboxThreadsListQueryKeyPrefix } from "@/features/providers/mailbox-cache";
 import { threadsEventsReadMentionPartialUpdate } from "@/features/api/gen/thread-events/thread-events";
 
 type UseMentionReadReturn = {

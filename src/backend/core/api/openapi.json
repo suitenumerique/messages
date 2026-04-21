@@ -1860,14 +1860,11 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/components/schemas/TreeLabel"
-                                    }
+                                    "$ref": "#/components/schemas/Label"
                                 }
                             }
                         },
-                        "description": "Created labels in hierarchical structure"
+                        "description": "Created label"
                     },
                     "400": {
                         "content": {
@@ -6933,6 +6930,10 @@
                         "description": "Color of the label in hex format (e.g. #FF0000)",
                         "maxLength": 7
                     },
+                    "display_name": {
+                        "type": "string",
+                        "readOnly": true
+                    },
                     "mailbox": {
                         "type": "string",
                         "format": "uuid",
@@ -6958,6 +6959,7 @@
                     }
                 },
                 "required": [
+                    "display_name",
                     "id",
                     "mailbox",
                     "name",

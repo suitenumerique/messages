@@ -14,7 +14,7 @@ type MarkAsStarredOptions = {
  */
 const useStarred = () => {
     const { t } = useTranslation();
-    const { selectedMailbox, invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
+    const { selectedMailbox, pinThreads, invalidateThreadsStats } = useMailboxContext();
     const mailboxId = selectedMailbox?.id;
 
     const { mark, unmark, status } = useFlag('starred', {
@@ -32,15 +32,24 @@ const useStarred = () => {
         },
         onSuccess: (data) => {
             const starredAt = data.value ? (data.starred_at ?? new Date().toISOString()) : null;
-            invalidateThreadMessages({
-                type: 'update',
-                metadata: { ids: [], threadIds: data.thread_ids ?? [] },
-                payload: {},
-                threadAccessStarredAt: mailboxId
-                    ? { mailboxId, starredAt }
-                    : undefined,
-                skipThreadsRefetch: true,
-            });
+            const affectedThreadIds = data.thread_ids ?? [];
+            const targetMailboxId = data.mailbox_id;
+
+            // Patch + pin so a thread starred under the "starred" filter stays
+            // visible (and conversely an unstarred one stays out instead of
+            // ghost-reappearing on the next refetch).
+            if (targetMailboxId) {
+                pinThreads(affectedThreadIds, (thread) => ({
+                    ...thread,
+                    has_starred: starredAt !== null,
+                    accesses: thread.accesses.map((access) =>
+                        access.mailbox.id === targetMailboxId
+                            ? { ...access, starred_at: starredAt }
+                            : access
+                    ),
+                }));
+            }
+
             invalidateThreadsStats();
         },
     });

@@ -2,14 +2,19 @@ import { useMailboxContext } from "../providers/mailbox";
 import { useTranslation } from "react-i18next";
 import useFlag from "./use-flag";
 
+type UseArchiveOptions = {
+    showToast?: boolean;
+}
+
 /**
  * Hook to mark messages or threads as archived
  */
-const useArchive = () => {
+const useArchive = (options?: UseArchiveOptions) => {
     const { t } = useTranslation();
-    const { invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
+    const { invalidateMailbox, invalidateThreadsStats, unpinThreads } = useMailboxContext();
 
     const { mark, unmark, status } = useFlag('archived', {
+        showToast: options?.showToast,
         toastMessages: {
             thread: (updatedCount, submittedCount) => {
                 if (updatedCount === 0) return t('No thread could be archived.');
@@ -23,10 +28,8 @@ const useArchive = () => {
             },
         },
         onSuccess: (data) => {
-            invalidateThreadMessages({
-                type: 'update',
-                metadata: { threadIds: data.thread_ids, ids: data.message_ids },
-            });
+            unpinThreads(data.thread_ids ?? []);
+            invalidateMailbox();
             invalidateThreadsStats();
         }
     });

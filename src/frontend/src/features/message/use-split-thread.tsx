@@ -13,7 +13,7 @@ import { handle } from "../utils/errors";
 const useSplitThread = () => {
     const { t } = useTranslation();
     const router = useRouter();
-    const { selectedMailbox, invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
+    const { selectedMailbox, invalidateMailbox, invalidateThreadsStats } = useMailboxContext();
     const { mutateAsync, status } = useThreadsSplitCreate();
 
     const splitThread = useCallback(async ({ threadId, messageId }: { threadId: string; messageId: string }) => {
@@ -23,7 +23,7 @@ const useSplitThread = () => {
                 data: { message_id: messageId },
             }) as threadsSplitCreateResponse201;
 
-            await invalidateThreadMessages();
+            await invalidateMailbox();
             await invalidateThreadsStats();
 
             // Navigate to the new thread
@@ -40,7 +40,7 @@ const useSplitThread = () => {
         } catch (error) {
             handle(error);
         }
-    }, [mutateAsync, invalidateThreadMessages, invalidateThreadsStats, selectedMailbox, router, t]);
+    }, [mutateAsync, invalidateMailbox, invalidateThreadsStats, selectedMailbox, router, t]);
 
     return { splitThread, status };
 };

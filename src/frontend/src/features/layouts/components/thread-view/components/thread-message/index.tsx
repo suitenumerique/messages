@@ -25,7 +25,7 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
         const { t } = useTranslation();
         const replyFormRef = useRef<HTMLDivElement>(null);
         const threadViewContext = useThreadViewContext();
-        const { selectedMailbox, selectedThread, queryStates, invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
+        const { selectedMailbox, selectedThread, queryStates, invalidateMailbox, invalidateThreadsStats } = useMailboxContext();
         const config = useConfig();
         const shouldSkipDelivery = !message.is_sender || message.is_draft || message.is_trashed;
 
@@ -156,11 +156,11 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
 
             updateDeliveryStatus({ id: message.id, data }, {
                 onSuccess: () => {
-                    invalidateThreadMessages();
+                    invalidateMailbox();
                     invalidateThreadsStats();
                 }
             });
-        }, [message.id, failedRecipients, updateDeliveryStatus, invalidateThreadMessages, invalidateThreadsStats]);
+        }, [message.id, failedRecipients, updateDeliveryStatus, invalidateMailbox, invalidateThreadsStats]);
 
         const handleRetryFailures = useCallback(() => {
             // Build the payload with recipient IDs mapped to 'retry' status
@@ -171,11 +171,11 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
 
             updateDeliveryStatus({ id: message.id, data }, {
                 onSuccess: () => {
-                    invalidateThreadMessages();
+                    invalidateMailbox();
                     invalidateThreadsStats();
                 }
             });
-        }, [message.id, failedRecipients, updateDeliveryStatus, invalidateThreadMessages, invalidateThreadsStats]);
+        }, [message.id, failedRecipients, updateDeliveryStatus, invalidateMailbox, invalidateThreadsStats]);
 
         const handleCancelRetries = useCallback(() => {
             // Build the payload with recipient IDs mapped to 'cancelled' status
@@ -186,11 +186,11 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
 
             updateDeliveryStatus({ id: message.id, data }, {
                 onSuccess: () => {
-                    invalidateThreadMessages();
+                    invalidateMailbox();
                     invalidateThreadsStats();
                 }
             });
-        }, [message.id, retryRecipients, updateDeliveryStatus, invalidateThreadMessages, invalidateThreadsStats]);
+        }, [message.id, retryRecipients, updateDeliveryStatus, invalidateMailbox, invalidateThreadsStats]);
 
         // Handler for individual recipient status updates
         const handleUpdateRecipientStatus = useCallback((recipientId: string, status: 'cancelled' | 'retry') => {
@@ -198,11 +198,11 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
 
             updateDeliveryStatus({ id: message.id, data }, {
                 onSuccess: () => {
-                    invalidateThreadMessages();
+                    invalidateMailbox();
                     invalidateThreadsStats();
                 }
             });
-        }, [message.id, updateDeliveryStatus, invalidateThreadMessages, invalidateThreadsStats]);
+        }, [message.id, updateDeliveryStatus, invalidateMailbox, invalidateThreadsStats]);
 
         // Effects
         useEffect(() => {

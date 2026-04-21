@@ -198,8 +198,8 @@ class LabelViewSet(
         request=serializers.LabelSerializer,
         responses={
             201: OpenApiResponse(
-                response=serializers.TreeLabelSerializer(many=True),
-                description="Created labels in hierarchical structure",
+                response=serializers.LabelSerializer,
+                description="Created label",
             ),
             400: OpenApiResponse(
                 response={"detail": "Validation error"},

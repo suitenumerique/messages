@@ -1,6 +1,8 @@
-import { TreeLabel, ThreadsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useThreadsStatsRetrieve, ThreadsStatsRetrieve200, useLabelsAddThreadsCreate, useLabelsRemoveThreadsCreate, useLabelsPartialUpdate, useFlagCreate } from "@/features/api/gen";
-import { FlagEnum } from "@/features/api/gen/models";
+import { TreeLabel, ThreadsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useThreadsStatsRetrieve, ThreadsStatsRetrieve200, useLabelsPartialUpdate } from "@/features/api/gen";
 import { getThreadsStatsQueryKey, useMailboxContext } from "@/features/providers/mailbox";
+import useArchive from "@/features/message/use-archive";
+import useDeleteLabel from "@/features/message/use-delete-label";
+import useAddLabel from "@/features/message/use-add-label";
 import { DropdownMenu, Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
 import { Button, useModals } from "@gouvfr-lasuite/cunningham-react";
 import clsx from "clsx";
@@ -32,7 +34,7 @@ type LabelItemProps = TreeLabel & {
 }
 
 export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...label }: LabelItemProps) => {
-  const { selectedMailbox, invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
+  const { selectedMailbox, invalidateThreadsStats } = useMailboxContext();
   const modals = useModals();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -62,7 +64,9 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
   const foldTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const shouldAutoArchive = !ViewHelper.isArchivedView() && !ViewHelper.isSpamView() && !ViewHelper.isTrashedView() && !ViewHelper.isDraftsView();
 
-  const { mutate: flagMutate } = useFlagCreate();
+  // Suppress the default archive toast: we render our own combined
+  // "Label assigned + N archived" toast below.
+  const { markAsArchived, markAsUnarchived } = useArchive({ showToast: false });
 
   const unfoldIfNeeded = useEffectEvent(() => {
     if (isFolded) {
@@ -100,23 +104,18 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
     toggle();
   }
 
-  const deleteThreadMutation = useLabelsRemoveThreadsCreate({
-    mutation: {
-      onSuccess: (_, variables) => {
-        invalidateThreadMessages();
-        toast.dismiss(JSON.stringify(variables));
-      },
-    },
-  });
-
-  const addThreadMutation = useLabelsAddThreadsCreate({
-    mutation: {
-      onSuccess: () => {
-        invalidateThreadMessages();
-        invalidateThreadsStats();
-      },
-    },
-  });
+  const { deleteLabel } = useDeleteLabel();
+  const { addLabel } = useAddLabel();
+  // ThreadLabel shape (no `children`) for the local cache patcher in `addLabel`.
+  const threadLabel = useMemo(() => ({
+    id: label.id,
+    name: label.name,
+    slug: label.slug,
+    color: label.color,
+    display_name: label.display_name,
+    description: label.description,
+    is_auto: label.is_auto,
+  }), [label]);
 
   const handleDragStart = (e: React.DragEvent<HTMLAnchorElement>) => {
     e.dataTransfer.setData('application/json', JSON.stringify({
@@ -178,47 +177,35 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
     const doArchive = !shiftKeyHeld && shouldAutoArchive && transferData.hasEditable === true;
     const toastId = `label-assign-${label.id}-${Date.now()}`;
 
-    addThreadMutation.mutate({
-      id: label.id,
-      data: { thread_ids: threadIds },
-    }, {
+    addLabel({
+      label: threadLabel,
+      threadIds,
       onSuccess: () => {
+        invalidateThreadsStats();
         if (doArchive) {
-          flagMutate({
-            data: { flag: FlagEnum.archived, value: true, thread_ids: threadIds },
-          }, {
-            onSuccess: (response) => {
-              invalidateThreadMessages();
-              invalidateThreadsStats();
-
-              // Mirror the `useFlag` toast pattern: label assignment is
-              // fully successful under the current permission model (we
-              // relaxed the per-thread edit check; all dragged threads
-              // belong to the label's mailbox), so partial/none status
-              // is driven by the archive mutation alone.
-              const responseData = response.data as Record<string, unknown>;
-              const archivedCount = typeof responseData.updated_threads === 'number'
-                ? responseData.updated_threads
-                : threadIds.length;
+          markAsArchived({
+            threadIds,
+            onSuccess: (_, updatedCount) => {
+              // Label assignment is fully successful under the current
+              // permission model (all dragged threads belong to the
+              // label's mailbox), so partial/none status is driven by
+              // the archive mutation alone.
+              const archivedCount = updatedCount ?? threadIds.length;
               const submittedCount = threadIds.length;
               const isNone = archivedCount === 0;
               const isPartial = archivedCount > 0 && archivedCount < submittedCount;
               const toastType = isNone ? 'error' : isPartial ? 'warning' : 'info';
 
               const undo = () => {
-                deleteThreadMutation.mutate({
-                  id: label.id,
-                  data: { thread_ids: threadIds },
+                deleteLabel({
+                  labelId: label.id,
+                  labelSlug: label.slug,
+                  threadIds,
                 });
                 if (archivedCount > 0) {
-                  flagMutate({
-                    data: { flag: FlagEnum.archived, value: false, thread_ids: threadIds },
-                  }, {
-                    onSuccess: () => {
-                      invalidateThreadMessages();
-                      invalidateThreadsStats();
-                      toast.dismiss(toastId);
-                    },
+                  markAsUnarchived({
+                    threadIds,
+                    onSuccess: () => toast.dismiss(toastId),
                   });
                 } else {
                   toast.dismiss(toastId);
@@ -256,9 +243,10 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
           });
         } else {
           const undo = () => {
-            deleteThreadMutation.mutate({
-              id: label.id,
-              data: { thread_ids: threadIds },
+            deleteLabel({
+              labelId: label.id,
+              labelSlug: label.slug,
+              threadIds,
             });
             toast.dismiss(toastId);
           };

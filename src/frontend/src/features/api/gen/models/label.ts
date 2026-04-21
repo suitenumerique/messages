@@ -27,6 +27,7 @@ export interface Label {
    * @maxLength 7
    */
   color?: string;
+  readonly display_name: string;
   /** Mailbox that owns this label */
   mailbox: string;
   /** Threads that have this label */

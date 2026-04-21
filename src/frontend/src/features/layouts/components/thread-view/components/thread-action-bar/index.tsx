@@ -11,7 +11,8 @@ import { LabelsWidget } from "@/features/layouts/components/labels-widget";
 import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
 import useStarred from "@/features/message/use-starred";
-import { MailboxRoleChoices, ThreadAccessRoleChoices, useThreadsAccessesDestroy } from "@/features/api/gen";
+import useDeleteThreadAccess from "@/features/message/use-delete-thread-access";
+import { MailboxRoleChoices, ThreadAccessRoleChoices } from "@/features/api/gen";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 
 type ThreadActionBarProps = {
@@ -21,13 +22,13 @@ type ThreadActionBarProps = {
 
 export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarProps) => {
     const { t } = useTranslation();
-    const { selectedMailbox, selectedThread, unselectThread, invalidateThreadMessages, invalidateThreadsStats } = useMailboxContext();
+    const { selectedMailbox, selectedThread, unselectThread } = useMailboxContext();
     const { markAsReadAt } = useRead();
     const { markAsTrashed, markAsUntrashed } = useTrash();
     const { markAsArchived, markAsUnarchived } = useArchive();
     const { markAsSpam, markAsNotSpam } = useSpam();
     const { markAsStarred, markAsUnstarred } = useStarred();
-    const { mutate: removeThreadAccess } = useThreadsAccessesDestroy();
+    const { deleteThreadAccess } = useDeleteThreadAccess();
     const modals = useModals();
     // Full edit rights on the thread — gates archive, spam, delete.
     // Star and "mark as unread" remain visible because they are personal
@@ -52,19 +53,13 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
             ),
         });
         if (decision !== 'delete') return;
-        removeThreadAccess({
-            id: mailboxAccess.id,
+        deleteThreadAccess({
+            accessId: mailboxAccess.id,
+            accessMailboxId: mailboxAccess.mailbox.id,
             threadId: selectedThread.id,
-        }, {
             onSuccess: () => {
                 addToast(<ToasterItem><p>{t('You left the thread')}</p></ToasterItem>);
-                invalidateThreadMessages({
-                    type: 'delete',
-                    metadata: { threadIds: [selectedThread.id] },
-                });
-                invalidateThreadsStats();
-                unselectThread();
-            }
+            },
         });
     };
 
@@ -184,7 +179,14 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                     {
                         label: t('Mark as unread'),
                         icon: <Icon name="mark_email_unread" type={IconType.OUTLINED} />,
-                        callback: () => markAsReadAt({ threadIds: [selectedThread!.id], readAt: null, onSuccess: unselectThread })
+                        // Unmount the thread view before firing the mutation. If we waited for
+                        // onSuccess, the cache patch would re-flag visible messages as unread
+                        // while the view is still mounted, letting the visibility observer
+                        // debounce a mark-as-read request that silently reverts this action.
+                        callback: () => {
+                            unselectThread();
+                            markAsReadAt({ threadIds: [selectedThread!.id], readAt: null });
+                        },
                     },
                     ...(canLeaveThread ? [{
                         label: t('Leave this thread'),

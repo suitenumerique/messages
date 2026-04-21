@@ -194,13 +194,15 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                     <Tooltip content={mainReadTooltip}>
                         <Button
                             onClick={() => {
+                                // Close the open thread before firing the mutation. Waiting for
+                                // onSuccess would let the visibility observer re-observe the
+                                // newly-unread messages and debounce a mark-as-read that silently
+                                // reverts the action.
+                                unselectThread();
+                                onClearSelection();
                                 markAsReadAt({
                                     threadIds: threadIdsToMark,
                                     readAt: selectionReadStatus === SelectionReadStatus.READ ? null : new Date().toISOString(),
-                                    onSuccess: () => {
-                                        unselectThread();
-                                        onClearSelection();
-                                    }
                                 });
                             }}
                             icon={<Icon name={selectionReadStatus === SelectionReadStatus.READ ? 'mark_email_unread' : 'mark_email_read'} type={IconType.OUTLINED} />}
@@ -314,13 +316,13 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                 label: markAllUnreadLabel,
                                 icon: <span className="material-icons">mark_email_unread</span>,
                                 callback: () => {
+                                    // Close the open thread before the mutation so the visibility
+                                    // observer cannot re-mark the newly-unread messages as read.
+                                    unselectThread();
+                                    onClearSelection();
                                     markAsReadAt({
                                         threadIds: threadIdsToMark,
                                         readAt: null,
-                                        onSuccess: () => {
-                                            unselectThread();
-                                            onClearSelection();
-                                        }
                                     });
                                 },
                             }] : []),

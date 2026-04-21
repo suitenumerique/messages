@@ -23,7 +23,7 @@ export type IMPORT_STEP = 'idle' | 'uploading' | 'importing' | 'completed';
  * - completed : Importing completed once the task is SUCCESS
  */
 export const ModalMessageImporter = () => {
-    const { invalidateThreadMessages, invalidateThreadsStats, invalidateLabels,refetchMailboxes, selectedMailbox } = useMailboxContext();
+    const { invalidateMailbox, invalidateThreadsStats, invalidateLabels, refetchMailboxes, selectedMailbox } = useMailboxContext();
     const { t } = useTranslation();
     const modals = useModals();
     const taskImportCacheHelper = new TaskImportCacheHelper(selectedMailbox?.id);
@@ -66,7 +66,7 @@ export const ModalMessageImporter = () => {
         await Promise.all([
             refetchMailboxes(),
             invalidateThreadsStats(),
-            invalidateThreadMessages(),
+            invalidateMailbox(),
             invalidateLabels(),
         ]);
     }
