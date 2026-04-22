@@ -1,13 +1,15 @@
 """API ViewSet for MailboxAccess model, managed by MailDomain admins or Mailbox admins."""
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, viewsets
 
-from core import models
+from core import enums, models
 from core.api import permissions as core_permissions
 from core.api import serializers as core_serializers
+from core.services import thread_events as thread_events_service
 
 
 @extend_schema(tags=["mailbox-accesses"])
@@ -67,3 +69,32 @@ class MailboxAccessViewSet(
         """Set the mailbox from the URL when creating a MailboxAccess."""
         mailbox = self.get_mailbox_object()
         serializer.save(mailbox=mailbox)
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        """Cleanup assignments when the role leaves ``MAILBOX_ROLES_CAN_EDIT``.
+
+        Mentions are not cleaned up here: every MailboxAccess role still
+        grants read access to the shared threads, so a downgrade alone
+        never invalidates a mention.
+        """
+        previous_role = serializer.instance.role
+        mailbox_access = serializer.save()
+        was_editor = previous_role in enums.MAILBOX_ROLES_CAN_EDIT
+        is_editor = mailbox_access.role in enums.MAILBOX_ROLES_CAN_EDIT
+        if was_editor and not is_editor:
+            thread_events_service.downgrade_mailbox_access(
+                mailbox_access=mailbox_access
+            )
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        """Delete the access then cleanup assignments and mentions.
+
+        Cleanup runs *after* the row is gone so the editor/viewer-rights
+        queries inside ``revoke_mailbox_access`` reflect the new state.
+        ``instance.mailbox_id`` and ``instance.user_id`` are still
+        readable from the in-memory instance.
+        """
+        super().perform_destroy(instance)
+        thread_events_service.revoke_mailbox_access(mailbox_access=instance)

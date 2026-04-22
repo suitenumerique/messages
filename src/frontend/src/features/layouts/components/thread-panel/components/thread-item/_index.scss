@@ -179,6 +179,7 @@
 .thread-item__column--badges {
     gap: var(--c--globals--spacings--4xs);
     font-size: var(--c--globals--font--sizes--t);
+    align-items: center;
 }
 
 .thread-item__labels {

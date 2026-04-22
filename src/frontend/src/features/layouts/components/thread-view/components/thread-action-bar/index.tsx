@@ -4,9 +4,10 @@ import useTrash from "@/features/message/use-trash";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { DropdownMenu, Icon, IconType, VerticalSeparator } from "@gouvfr-lasuite/ui-kit"
 import { Button, Tooltip, useModals } from "@gouvfr-lasuite/cunningham-react"
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ThreadAccessesWidget } from "../thread-accesses-widget";
+import { ThreadAccessesWidget, type ThreadAccessesWidgetHandle } from "../thread-accesses-widget";
+import { AssigneesWidget } from "../assignees-widget";
 import { LabelsWidget } from "@/features/layouts/components/labels-widget";
 import useArchive from "@/features/message/use-archive";
 import useSpam from "@/features/message/use-spam";
@@ -29,6 +30,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
     const { markAsStarred, markAsUnstarred } = useStarred();
     const { mutate: removeThreadAccess } = useThreadsAccessesDestroy();
     const modals = useModals();
+    const accessesWidgetRef = useRef<ThreadAccessesWidgetHandle>(null);
     // Full edit rights on the thread — gates archive, spam, delete.
     // Star and "mark as unread" remain visible because they are personal
     // state on the user's ThreadAccess (read_at / starred_at).
@@ -68,9 +70,13 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
         });
     };
 
-    return (
+  return (
+    <div className="thread-action-bar__container">
+      <div className="thread-action-bar">
+        <AssigneesWidget onClick={() => accessesWidgetRef.current?.open()} />
+      </div>
         <div className="thread-action-bar">
-            <Tooltip content={t('Close this thread')} placement="left">
+            <Tooltip content={t('Close this thread')} placement="bottom">
                 <Button
                     onClick={unselectThread}
                     variant="tertiary"
@@ -176,7 +182,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                 </Tooltip>
             )}
             <LabelsWidget threadIds={[selectedThread!.id]} initialLabels={selectedThread!.labels} />
-            <ThreadAccessesWidget accesses={selectedThread!.accesses} />
+            <ThreadAccessesWidget ref={accessesWidgetRef} accesses={selectedThread!.accesses} />
             <DropdownMenu
                 isOpen={isDropdownOpen}
                 onOpenChange={setIsDropdownOpen}
@@ -203,6 +209,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                     />
                 </Tooltip>
             </DropdownMenu>
-        </div>
+      </div>
+      </div>
     )
 }

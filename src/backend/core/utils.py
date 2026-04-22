@@ -8,6 +8,9 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
+from django.core.exceptions import ValidationError
+
+import jsonschema
 from configurations import values
 
 logger = logging.getLogger(__name__)
@@ -31,6 +34,20 @@ def extract_snippet(parsed_data: dict[str, Any], fallback: str = "") -> str:
         return " ".join(html.unescape(clean_text).strip().split())[:SNIPPET_MAX_LENGTH]
 
     return fallback[:SNIPPET_MAX_LENGTH]
+
+
+def validate_json_schema(value, schema, *, field):
+    """Validate ``value`` against ``schema`` and raise a Django ValidationError
+    keyed by ``field`` when it does not match.
+
+    A ``FormatChecker`` is always supplied so JSON Schema ``format`` keywords
+    (e.g. ``uuid``) are actually enforced — without it they are annotation-only
+    and invalid values slip through silently.
+    """
+    try:
+        jsonschema.validate(value, schema, format_checker=jsonschema.FormatChecker())
+    except jsonschema.ValidationError as exception:
+        raise ValidationError({field: exception.message}) from exception
 
 
 class AbstractBatchingDeferrer:

@@ -146,6 +146,60 @@ class TestMailboxViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert response.data[0]["is_identity"] is False
 
+    def test_list_is_shared_solo_identity_is_false(self):
+        """An identity mailbox with a single access is not shared."""
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory(is_identity=True)
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=models.MailboxRoleChoices.EDITOR,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("mailboxes-list"))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data[0]["is_shared"] is False
+
+    def test_list_is_shared_identity_with_multiple_accesses_is_true(self):
+        """An identity mailbox shared via delegation (>1 access) is shared."""
+        user = factories.UserFactory()
+        delegate = factories.UserFactory()
+        mailbox = factories.MailboxFactory(is_identity=True)
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=models.MailboxRoleChoices.EDITOR,
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=delegate,
+            role=models.MailboxRoleChoices.VIEWER,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("mailboxes-list"))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data[0]["is_shared"] is True
+
+    def test_list_is_shared_non_identity_is_true(self):
+        """A non-identity mailbox is always shared, even with a single access."""
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory(is_identity=False)
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=models.MailboxRoleChoices.EDITOR,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("mailboxes-list"))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data[0]["is_shared"] is True
+
     def test_list_unauthorized(self):
         """Anonymous user cannot access the list of mailboxes."""
         client = APIClient()

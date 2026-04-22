@@ -13,6 +13,10 @@ export type ThreadsStatsRetrieveParams = {
    */
   has_archived?: number;
   /**
+   * Filter threads assigned to the current user (1=true, 0=false).
+   */
+  has_assigned_to_me?: number;
+  /**
    * Filter threads with attachments (1=true, 0=false).
    */
   has_attachments?: number;
@@ -41,6 +45,10 @@ export type ThreadsStatsRetrieveParams = {
    */
   has_trashed?: number;
   /**
+   * Filter threads with no active assignment from any user (1=true, 0=false).
+   */
+  has_unassigned?: number;
+  /**
    * Filter threads with unread mentions for the current user (1=true, 0=false).
    */
   has_unread_mention?: number;
@@ -60,7 +68,7 @@ export type ThreadsStatsRetrieveParams = {
  * Comma-separated list of fields to aggregate.
                 Special values: 'all' (count all threads), 'all_unread' (count all unread threads).
                 Boolean fields: has_trashed, has_draft, has_starred, has_attachments, has_archived,
-                has_sender, has_active, has_delivery_pending, has_delivery_failed, is_spam, has_messages, has_unread_mention, has_mention.
+                has_sender, has_active, has_delivery_pending, has_delivery_failed, is_spam, has_messages, has_unread_mention, has_mention, has_assigned_to_me, has_unassigned.
                 Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.
                 Examples: 'all,all_unread', 'has_starred,has_starred_unread', 'is_spam,is_spam_unread'
  */

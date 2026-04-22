@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 import type { ThreadEventTypeEnum } from "./thread_event_type_enum";
-import type { PatchedThreadEventRequestDataOneOf } from "./patched_thread_event_request_data_one_of";
+import type { ThreadEventDataRequest } from "./thread_event_data_request";
 
 /**
  * Serialize thread event information.
@@ -18,5 +18,5 @@ export interface PatchedThreadEventRequest {
    * @nullable
    */
   message?: string | null;
-  data?: PatchedThreadEventRequestDataOneOf;
+  data?: ThreadEventDataRequest;
 }

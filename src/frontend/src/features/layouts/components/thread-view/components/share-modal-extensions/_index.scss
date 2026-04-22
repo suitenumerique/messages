@@ -1,0 +1,198 @@
+.c__share-modal:has(.share-modal-extensions__assigned) .c__separator {
+    margin-bottom: 0;
+}
+
+.share-modal-extensions {
+    // ---------- shared row primitive ----------
+    // Used by both the "Assigned" section at the top of the modal and the
+    // per-mailbox users sub-list so a user looks identical wherever they
+    // appear. The row hosts a `<UserRow>` upstream component (avatar +
+    // name + email) followed by the assign/unassign toggle.
+
+    &__row {
+        display: flex;
+        align-items: center;
+        gap: var(--c--globals--spacings--xs);
+        padding: var(--c--globals--spacings--2xs) var(--c--globals--spacings--xs);
+        border-radius: 4px;
+
+        &:hover {
+            background: var(--c--contextuals--background--surface--tertiary);
+        }
+
+        // Let the upstream UserRow consume the available width so the
+        // toggle pinpoints to the right edge.
+        > .c__user-row {
+            flex: 1;
+            min-width: 0;
+        }
+    }
+
+    // The mailbox rows (rendered by upstream `c__share-member-item`) get
+    // the same hover affordance as the sub-list rows so the whole list
+    // reacts consistently to pointer movement.
+    &__member > .c__share-member-item {
+        border-radius: 4px;
+        transition: background 120ms ease-out;
+
+        &:hover {
+            background: var(--c--contextuals--background--surface--tertiary);
+        }
+    }
+
+    // ---------- "assigned" avatar badge ----------
+    // The state of an assigned user is signalled by a small brand-colored
+    // bubble in the top-right corner of their avatar, carrying a `person`
+    // glyph rendered through the Material Icons font. This satisfies RGAA
+    // 9.4 / WCAG 1.4.1 — the state is conveyed by both colour AND a
+    // distinct shape, not colour alone.
+    //
+    // Implemented via `::after` on the upstream `.c__avatar` so we don't
+    // have to fork the surrounding components (UserRow, ShareMemberItem)
+    // to inject DOM. The trade-off is that screen readers can't read a
+    // pseudo-element — the parent row provides `aria-label="Assigned to
+    // this thread"` for that.
+
+    &__row--assigned .c__avatar,
+    &__share-member-item--assigned .c__avatar {
+        position: relative;
+
+        &::after {
+            // Mirror Cunningham's `.material-icons` rule because pseudo-
+            // elements can't inherit class-level styles. The "liga" feature
+            // setting is what turns the `person` literal into the glyph.
+            content: "person";
+            font-family: 'Material Icons';
+            font-weight: 400;
+            font-style: normal;
+            font-feature-settings: "liga";
+            font-size: 11px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            white-space: nowrap;
+            position: absolute;
+            top: -6px;
+            right: -7px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--c--contextuals--background--semantic--neutral--primary);
+            color: color-mix(in srgb, var(--c--contextuals--background--surface--tertiary) 95%, transparent);
+            border: 1px solid color-mix(in srgb, var(--c--contextuals--background--surface--tertiary) 80%, transparent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    }
+
+    // ---------- toggle button reveal ----------
+    // Assign / Unassign buttons stay invisible until the row is hovered or
+    // a child gets keyboard focus — keeps the list quiet by default while
+    // remaining a11y-accessible.
+
+    &__toggle {
+        opacity: 0;
+        transition: opacity 120ms ease-out;
+    }
+
+    &__row:hover &__toggle,
+    &__row:focus-within &__toggle,
+    &__member > .c__share-member-item:hover &__toggle,
+    &__member > .c__share-member-item:focus-within &__toggle,
+    &__toggle:focus-visible {
+        opacity: 1;
+    }
+
+    // Visually distinguish shared (non-identity) mailboxes from personal
+    // ones by swapping the avatar initials for a `group` glyph. Both stay
+    // round — the icon alone signals "team" vs "person" so the layout
+    // reads consistently across the list.
+    //
+    // Two anchors trigger the treatment:
+    //   - `__share-member-item--shared` for mailbox rows in the members list,
+    //   - `__shared-avatar` for entries in the search-results dropdown
+    //     (wraps the upstream UserRow whose c__avatar we can't tag directly).
+    &__share-member-item--shared .c__avatar,
+    &__shared-avatar .c__avatar {
+        position: relative;
+
+        // Hide the upstream initials without removing them from the DOM —
+        // keeps the avatar's intrinsic sizing untouched.
+        .c__avatar__initials {
+            visibility: hidden;
+        }
+
+        &::before {
+            content: "group";
+            font-family: 'Material Icons';
+            font-feature-settings: "liga";
+            font-weight: 400;
+            font-style: normal;
+            font-size: 16px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            white-space: nowrap;
+
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: inherit;
+        }
+    }
+
+    // ---------- "Assigned to N people" section ----------
+
+    &__assigned {
+        display: flex;
+        flex-direction: column;
+        gap: var(--c--globals--spacings--2xs);
+        margin-bottom: var(--c--globals--spacings--md);
+        padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--base);
+        background: var(--c--contextuals--background--surface--tertiary);
+        border-bottom: 1px solid var(--c--contextuals--border--surface--primary);
+
+        &__title {
+            font-size: var(--c--globals--typography--font-size--sm);
+            font-weight: 600;
+            color: var(--c--globals--colors--greyscale--700);
+            margin: 0 0 var(--c--globals--spacings--2xs) 0;
+        }
+
+        &__list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: var(--c--globals--spacings--2xs);
+        }
+    }
+
+    // ---------- per-mailbox users sub-list ----------
+
+    &__users {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+
+        // Inset the user rows so they read as belonging to the mailbox row above.
+        > .share-modal-extensions__row {
+            padding-left: var(--c--globals--spacings--xl);
+        }
+    }
+
+    // ---------- modal footer ----------
+
+    &__footer {
+        display: flex;
+        justify-content: flex-end;
+        padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--sm);
+        border-top: 1px solid var(--c--contextuals--border--surface--primary);
+    }
+}

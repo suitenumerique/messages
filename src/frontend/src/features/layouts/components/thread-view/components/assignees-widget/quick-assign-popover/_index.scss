@@ -1,0 +1,137 @@
+// react-aria-components emits its own data attributes on the rendered
+// elements ([data-focused], [data-selected], [data-disabled],
+// [data-focus-visible]). The selectors below target those instead of
+// :hover/:focus so the visual states match what the keyboard user
+// actually feels (e.g. arrow-key "virtual focus" inside the Menu).
+
+.quick-assign-popover {
+    display: flex;
+    flex-direction: column;
+    width: 280px;
+    max-height: 360px;
+    background-color: var(--c--contextuals--background--surface--secondary);
+    border: 1px solid var(--c--contextuals--border--surface--primary);
+    border-radius: var(--c--globals--spacings--3xs, 4px);
+    box-shadow: 0 4px 16px 0 var(--c--contextuals--background--semantic--contextual--primary-hover);
+    overflow: hidden;
+    outline: none;
+}
+
+.quick-assign-popover__body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    // Without min-height:0 a flex item refuses to shrink below the
+    // intrinsic height of its content, so the inner Menu would push
+    // past the Dialog's max-height and the overflow:auto would never
+    // engage — meaning the list could not be scrolled.
+    min-height: 0;
+    overflow: hidden;
+}
+
+.quick-assign-popover__search {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs);
+    padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--base);
+    border-bottom: 1px solid var(--c--contextuals--border--surface--primary);
+
+    // Brand-colored ring around the whole field when the inner Input has
+    // visible keyboard focus. Matches WCAG 2.4.7.
+    &:focus-within {
+        box-shadow: inset 0 0 0 2px var(--c--contextuals--border--semantic--brand--primary);
+    }
+}
+
+.quick-assign-popover__search-icon {
+    color: var(--c--contextuals--text--surface--tertiary);
+    flex-shrink: 0;
+}
+
+.quick-assign-popover__search-input {
+    flex: 1;
+    border: none;
+    background: none;
+    outline: none;
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--text--surface--primary);
+    min-width: 0;
+
+    &::placeholder {
+        color: var(--c--contextuals--text--surface--tertiary);
+    }
+}
+
+.quick-assign-popover__list {
+    list-style: none;
+    margin: 0;
+    /* padding: var(--c--globals--spacings--2xs); */
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    outline: none;
+}
+
+.quick-assign-popover__status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--c--globals--spacings--xs);
+    padding: var(--c--globals--spacings--sm);
+    color: var(--c--contextuals--text--surface--tertiary);
+    font-size: var(--c--globals--font--sizes--sm);
+}
+
+.quick-assign-popover__row {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--sm);
+    min-height: 36px;
+    padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--sm);
+    /* border-radius: 4px; */
+    cursor: pointer;
+    color: var(--c--contextuals--text--surface--primary);
+    font-size: var(--c--globals--font--sizes--sm);
+    outline: none;
+
+    // [data-focused] is set by react-aria when the item has either real
+    // or virtual focus (arrow keys from the search field). The background
+    // change is enough as a focus indicator — adding a ring on top would
+    // be visual noise since hover and focus already share the same fill.
+    &[data-focused],
+    &[data-hovered] {
+        background-color: var(--c--contextuals--background--semantic--contextual--primary-hover);
+    }
+
+    &[data-disabled] {
+        cursor: default;
+        opacity: 0.6;
+    }
+
+    &[data-selected] {
+        .quick-assign-popover__row-name {
+            font-weight: 600;
+        }
+    }
+
+    // Hide the check icon when the row is not selected so only assigned
+    // rows show it. Matches the design and avoids a layout shift on
+    // toggle (icon stays in the layout but invisible).
+    &:not([data-selected]) {
+        .quick-assign-popover__row-check {
+            visibility: hidden;
+        }
+    }
+}
+
+.quick-assign-popover__row-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.quick-assign-popover__row-check {
+    color: var(--c--contextuals--border--semantic--brand--primary);
+    flex-shrink: 0;
+}

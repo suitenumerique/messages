@@ -1,10 +1,11 @@
 import { RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon, IconSize, IconType, UserRow } from "@gouvfr-lasuite/ui-kit";
-import { useThreadsEventsCreate, useThreadsEventsPartialUpdate, useThreadsUsersList, UserWithoutAbilities, ThreadEventTypeEnum, ThreadEvent } from "@/features/api/gen";
+import { useThreadsEventsCreate, useThreadsEventsPartialUpdate, useThreadsUsersList, ThreadMentionableUser, ThreadEventTypeEnum, ThreadEvent, ThreadEventIMData } from "@/features/api/gen";
 import { StringHelper } from "@/features/utils/string-helper";
 import { TextHelper } from "@/features/utils/text-helper";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
+import { Badge } from "@/features/ui/components/badge";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useAuth } from "@/features/auth";
 import { SuggestionInput } from "@/features/ui/components/suggestion-input";
@@ -57,7 +58,7 @@ export const ThreadEventInput = ({ threadId, editingEvent, onCancelEdit, onEvent
 
     const users = usersData?.data ?? [];
     const mentionedIds = new Set(mentions.map((m) => m.id));
-    const filteredUsers = users.filter((user: UserWithoutAbilities) => {
+    const filteredUsers = users.filter((user: ThreadMentionableUser) => {
         if (user.id === currentUser?.id) return false;
         if (mentionedIds.has(user.id)) return false;
         if (!mentionFilter) return true;
@@ -145,7 +146,7 @@ export const ThreadEventInput = ({ threadId, editingEvent, onCancelEdit, onEvent
         onCancelEdit?.();
     }, [resetInput, onCancelEdit]);
 
-    const insertMention = (user: UserWithoutAbilities) => {
+    const insertMention = (user: ThreadMentionableUser) => {
         const name = user.full_name || user.email || "";
 
         if (!mentions.some((m) => m.id === user.id)) {
@@ -216,9 +217,10 @@ export const ThreadEventInput = ({ threadId, editingEvent, onCancelEdit, onEvent
     // Populate input when entering edit mode, reset when leaving
     useEffect(() => {
         if (editingEvent) {
-            const eventContent = editingEvent?.data?.content ?? "";
+            const eventData = editingEvent?.data as ThreadEventIMData | null;
+            const eventContent = eventData?.content ?? "";
             // Restore mentions from persisted data.mentions (contains real user IDs)
-            const persistedMentions = editingEvent?.data?.mentions ?? [];
+            const persistedMentions = eventData?.mentions ?? [];
             // Build a lookup to map name → id from persisted mentions
             const mentionsByName = new Map(persistedMentions.map((m) => [m.name, m.id]));
             // Convert @[Name] to @Name for display, rebuild mentions list with real IDs
@@ -292,10 +294,17 @@ export const ThreadEventInput = ({ threadId, editingEvent, onCancelEdit, onEvent
                     itemToString={(item) => item?.full_name || item?.email || ""}
                     keyExtractor={(user) => user.id}
                     renderItem={(user) => (
-                        <UserRow
-                            fullName={user.full_name || undefined}
-                            email={user.email || undefined}
-                        />
+                        <div className="thread-event-input__suggestion">
+                            <UserRow
+                                fullName={user.full_name || undefined}
+                                email={user.email || undefined}
+                            />
+                            {!user.can_post_comments && (
+                                <Badge color="warning" variant="secondary">
+                                    {t("Read-only")}
+                                </Badge>
+                            )}
+                        </div>
                     )}
                 />
                 <Button

@@ -47,6 +47,7 @@ export const ThreadPanelFilter = () => {
       has_unread: t("Unread"),
       has_starred: t("Starred"),
       has_mention: t("Mentioned"),
+      has_assigned_to_me: t("Assigned to me"),
     }),
     [t],
   );

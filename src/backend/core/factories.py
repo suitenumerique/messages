@@ -147,15 +147,54 @@ class ThreadAccessFactory(factory.django.DjangoModelFactory):
 
 
 class ThreadEventFactory(factory.django.DjangoModelFactory):
-    """A factory to create thread events for testing purposes."""
+    """A factory to create thread events for testing purposes.
+
+    Mirrors the side effects that production code attaches to the
+    creation of these events — namely the matching ``UserEvent`` rows —
+    so existing tests that exercise the resulting state via the factory
+    keep working without having to call ``thread_events_service``
+    explicitly. Production code reaches the same effect by calling the
+    service from viewsets / admin; this hook is the test-only
+    equivalent.
+    """
 
     class Meta:
         model = models.ThreadEvent
+        skip_postgeneration_save = True
 
     thread = factory.SubFactory(ThreadFactory)
     type = "im"
     data = factory.LazyAttribute(lambda o: {"content": fake.sentence()})
     author = factory.SubFactory(UserFactory)
+
+    # pylint: disable=protected-access,no-member
+    # ``self.data`` is a real dict at runtime (factory_boy resolves
+    # ``LazyAttribute`` before post_generation hooks fire) but pylint sees
+    # the class-level descriptor and reports ``no-member``. Reaching into
+    # the private service helpers is intentional — see the docstring above.
+    @factory.post_generation
+    def _sync_user_events(self, create, _extracted, **_kwargs):
+        # pylint: disable=import-outside-toplevel
+        from core.services import thread_events as thread_events_service
+
+        if not create:
+            return
+        data = self.data or {}
+        if self.type == enums.ThreadEventTypeChoices.IM:
+            if data.get("mentions"):
+                thread_events_service.sync_im_mentions(thread_event=self)
+        elif self.type == enums.ThreadEventTypeChoices.ASSIGN:
+            assignees = data.get("assignees") or []
+            if assignees:
+                thread_events_service._create_user_event_assigns(  # noqa: SLF001
+                    self, self.thread, assignees
+                )
+        elif self.type == enums.ThreadEventTypeChoices.UNASSIGN:
+            assignees = data.get("assignees") or []
+            if assignees:
+                thread_events_service._delete_user_event_assigns(  # noqa: SLF001
+                    self.thread, assignees, context=str(self.id)
+                )
 
 
 class UserEventFactory(factory.django.DjangoModelFactory):

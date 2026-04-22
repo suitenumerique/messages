@@ -1,0 +1,17 @@
+.assignees-widget {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 6px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--c--globals--border-radius--sm);
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+// Wraps Tooltip + Button so react-aria-components Popover has a stable
+// DOM node to anchor against (Cunningham's Button ref doesn't always
+// reach the underlying element through the Tooltip clone).
+.assignees-widget__trigger-wrapper {
+    display: inline-flex;
+}

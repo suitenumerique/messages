@@ -561,6 +561,20 @@ def _user_can_comment_on_thread(user, thread_id):
     ).exists()
 
 
+def _is_thread_event_mutation_by_non_author(request, view, obj):
+    """True when a ThreadEvent update/destroy is attempted by a non-author.
+
+    Shared owner-only invariant enforced by every permission class that
+    guards ThreadEvent writes — factored out so the rule is expressed once
+    and the two classes below cannot drift.
+    """
+    if not isinstance(obj, models.ThreadEvent):
+        return False
+    if view.action not in ("update", "partial_update", "destroy"):
+        return False
+    return obj.author_id != request.user.id
+
+
 class HasThreadCommentAccess(IsAuthenticated):
     """Allows users who can author internal comments on the thread.
 
@@ -625,10 +639,7 @@ class HasThreadEventWriteAccess(IsAuthenticated):
         if not isinstance(obj, models.ThreadEvent):
             return False
 
-        if (
-            view.action in ("update", "partial_update", "destroy")
-            and obj.author_id != request.user.id
-        ):
+        if _is_thread_event_mutation_by_non_author(request, view, obj):
             return False
 
         if obj.type == enums.ThreadEventTypeChoices.IM:
@@ -679,16 +690,10 @@ class HasThreadEditAccess(IsAuthenticated):
         ``ThreadEvent``, also enforces that only the event author can perform
         update or destroy actions.
         """
-        if isinstance(obj, models.ThreadEvent):
-            if (
-                view.action in ("update", "partial_update", "destroy")
-                and obj.author_id != request.user.id
-            ):
-                return False
-            thread = obj.thread
-        else:
-            thread = obj
+        if _is_thread_event_mutation_by_non_author(request, view, obj):
+            return False
 
+        thread = obj.thread if isinstance(obj, models.ThreadEvent) else obj
         return thread.get_abilities(request.user)[enums.ThreadAbilities.CAN_EDIT]
 
 

@@ -1,4 +1,4 @@
-import { ThreadsStatsRetrieve200, ThreadsStatsRetrieveStatsFields, useThreadsStatsRetrieve } from "@/features/api/gen"
+import { Mailbox, ThreadsStatsRetrieve200, ThreadsStatsRetrieveStatsFields, useThreadsStatsRetrieve } from "@/features/api/gen"
 import { getThreadsStatsQueryKey, useMailboxContext } from "@/features/providers/mailbox"
 import clsx from "clsx"
 import Link from "next/link"
@@ -17,6 +17,14 @@ import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Tooltip } from "@gouvfr-lasuite/cunningham-react"
 import { EXPANDED_FOLDERS_KEY } from "@/features/config/constants"
 
+type FolderVisibilityContext = {
+    mailbox: Mailbox;
+    folderCount: number;
+    folderStats: ThreadsStatsRetrieve200;
+};
+
+type FolderVisibilityRule = (ctx: FolderVisibilityContext) => boolean;
+
 // @TODO: replace with real data when folder will be ready
 type Folder = {
     id: string;
@@ -25,9 +33,32 @@ type Folder = {
     filter?: Record<string, string>;
     showStats: boolean;
     searchable?: boolean;
-    conditional?: boolean;
+    isVisible?: FolderVisibilityRule;
     children?: Folder[];
 }
+
+// Hidden when empty — used for transient queues like the outbox that should
+// disappear when nothing is in flight.
+const visibleIfNonEmpty: FolderVisibilityRule = ({ folderCount }) => folderCount > 0;
+
+// Hidden in mono-user identity mailboxes — used for collaboration entries
+// (e.g. "Unassigned") whose semantics require multiple humans on the box.
+const visibleIfSharedMailbox: FolderVisibilityRule = ({ mailbox }) => mailbox.is_shared;
+
+// Hidden in mono-user identity mailboxes unless the folder already has
+// content — used for entries (e.g. "Assigned to me") that only matter in
+// collaborative contexts but should remain reachable when content exists
+// (delegation history, ex-shared mailboxes).
+const visibleIfSharedOrNonEmpty: FolderVisibilityRule = ({ mailbox, folderCount }) =>
+    mailbox.is_shared || folderCount > 0;
+
+// Same intent as visibleIfSharedOrNonEmpty but anchored on the existence
+// of any mention (read or unread). The badge counter still reflects the
+// unread count; visibility persists as long as the user has ever been
+// mentioned, even after the mentions are read.
+const visibleIfSharedOrHasMention: FolderVisibilityRule = ({ mailbox, folderStats }) =>
+    mailbox.is_shared
+    || (folderStats?.[ThreadsStatsRetrieveStatsFields.has_mention] ?? 0) > 0;
 
 export const MAILBOX_FOLDERS = () => [
     {
@@ -68,9 +99,34 @@ export const MAILBOX_FOLDERS = () => [
                 icon: "alternate_email",
                 searchable: false,
                 showStats: true,
+                isVisible: visibleIfSharedOrHasMention,
                 filter: {
                     has_active: "1",
                     has_mention: "1",
+                },
+            },
+            {
+                id: "assigned_to_me",
+                name: i18n.t("Assigned to me"),
+                icon: "person",
+                searchable: false,
+                showStats: true,
+                isVisible: visibleIfSharedOrNonEmpty,
+                filter: {
+                    has_assigned_to_me: "1",
+                    has_active: "1",
+                },
+            },
+            {
+                id: "unassigned",
+                name: i18n.t("Unassigned"),
+                icon: "person_off",
+                searchable: false,
+                showStats: true,
+                isVisible: visibleIfSharedMailbox,
+                filter: {
+                    has_unassigned: "1",
+                    has_active: "1",
                 },
             },
         ],
@@ -90,7 +146,7 @@ export const MAILBOX_FOLDERS = () => [
         name: i18n.t("Outbox"),
         icon: "schedule_send",
         searchable: false,
-        conditional: true,
+        isVisible: visibleIfNonEmpty,
         showStats: true,
         filter: {
             has_sender: "1",
@@ -185,10 +241,14 @@ export const findRootFolder = (predicate: (folder: Folder) => boolean): Folder |
 };
 
 export const MailboxList = () => {
+    const { selectedMailbox } = useMailboxContext();
     const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(() => {
-        if (typeof window === 'undefined') return { 'inbox': true };
+        // Solo identity mailboxes start with Inbox collapsed: they have no
+        // collaboration sub-folders to surface so the tree stays compact.
+        const defaultState = { inbox: selectedMailbox?.is_shared ?? true };
+        if (typeof window === 'undefined') return defaultState;
         const savedState = localStorage.getItem(EXPANDED_FOLDERS_KEY);
-        if (savedState === null) return { 'inbox': true };
+        if (savedState === null) return defaultState;
         return JSON.parse(savedState) as Record<string, boolean>;
     });
 
@@ -277,13 +337,25 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
         if (folder.id === 'drafts') return ThreadsStatsRetrieveStatsFields.all;
         if (folder.id === 'outbox') return ThreadsStatsRetrieveStatsFields.all;
         if (folder.id === 'mentioned') return ThreadsStatsRetrieveStatsFields.has_unread_mention;
+        if (folder.id === 'assigned_to_me') return ThreadsStatsRetrieveStatsFields.all;
+        if (folder.id === 'unassigned') return ThreadsStatsRetrieveStatsFields.all;
         return ThreadsStatsRetrieveStatsFields.all_unread;
     }, [folder.id]);
+    const requestedStatsFields = useMemo(() => {
+        if (folder.id === "outbox") {
+            return combineStatsFields(stats_fields, ThreadsStatsRetrieveStatsFields.has_delivery_failed);
+        }
+        // The Mentioned folder needs `has_mention` (any mention, read or
+        // unread) to drive sidebar visibility, while the badge keeps showing
+        // `has_unread_mention`.
+        if (folder.id === "mentioned") {
+            return combineStatsFields(stats_fields, ThreadsStatsRetrieveStatsFields.has_mention);
+        }
+        return stats_fields;
+    }, [folder.id, stats_fields]);
     const { data } = useThreadsStatsRetrieve({
         mailbox_id: selectedMailbox?.id,
-        stats_fields: folder.id === "outbox"
-            ? combineStatsFields(stats_fields, ThreadsStatsRetrieveStatsFields.has_delivery_failed)
-            : stats_fields,
+        stats_fields: requestedStatsFields,
         ...folder.filter
     }, {
         query: {
@@ -439,7 +511,11 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
         }
     };
 
-    if (folder.conditional && folderCount === 0) {
+    if (folder.isVisible && selectedMailbox && !folder.isVisible({
+        mailbox: selectedMailbox,
+        folderCount,
+        folderStats,
+    })) {
         return null;
     }
 

@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-export type ThreadEventDataOneOfMentionsItem = {
-  id: string;
-  name: string;
-};
+/**
+ * Get custom attributes for the instance.
+ */
+export type ThreadMentionableUserCustomAttributes = { [key: string]: unknown };

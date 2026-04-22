@@ -52,6 +52,7 @@ type MailboxContextType = {
     loadNextThreads: () => Promise<unknown>;
     invalidateThreadMessages: (source?: MessageQueryInvalidationSource) => Promise<void>;
     invalidateThreadEvents: () => Promise<void>;
+    invalidateThreadsList: () => Promise<void>;
     invalidateThreadsStats: () => Promise<void>;
     invalidateLabels: () => Promise<void>;
     refetchMailboxes: (options?: RefetchOptions) => Promise<unknown>;
@@ -159,6 +160,7 @@ const MailboxContext = createContext<MailboxContextType>({
     unselectThread: () => {},
     invalidateThreadMessages: async () => {},
     invalidateThreadEvents: async () => {},
+    invalidateThreadsList: async () => {},
     invalidateThreadsStats: async () => {},
     invalidateLabels: async () => {},
     refetchMailboxes: async () => {},
@@ -589,6 +591,12 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         }
     }
 
+    const invalidateThreadsList = async () => {
+        await queryClient.invalidateQueries({
+            queryKey: getMailboxThreadsListQueryKeyPrefix(selectedMailbox?.id),
+        });
+    }
+
     const invalidateThreadsStats = async () => {
         await queryClient.invalidateQueries({
             queryKey: getThreadsStatsQueryKey(selectedMailbox?.id),
@@ -629,6 +637,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         loadNextThreads: threadsQuery.fetchNextPage,
         invalidateThreadMessages,
         invalidateThreadEvents,
+        invalidateThreadsList,
         invalidateThreadsStats,
         invalidateLabels,
         refetchMailboxes: mailboxQuery.refetch,
