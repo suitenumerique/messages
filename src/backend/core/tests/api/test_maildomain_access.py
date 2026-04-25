@@ -220,6 +220,31 @@ class TestMaildomainAccessViewSet:
             role=MailDomainAccessRoleChoices.ADMIN,
         ).exists()
 
+    def test_admin_api_maildomain_accesses_create_invites_unknown_email(
+        self, api_client, super_user, maildomain_1
+    ):
+        """POSTing an unknown email should auto-create a passwordless stub user."""
+        api_client.force_authenticate(user=super_user)
+
+        unknown_email = "domain-invitee@example.com"
+        assert not models.User.objects.filter(email=unknown_email).exists()
+
+        data = {"user": unknown_email, "role": "admin"}
+        response = api_client.post(
+            self.list_create_url(maildomain_pk=maildomain_1.pk), data
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        stub = models.User.objects.get(email=unknown_email)
+        assert stub.sub is None
+        assert not stub.has_usable_password()
+        assert response.data["user"] == stub.pk
+        assert models.MailDomainAccess.objects.filter(
+            maildomain=maildomain_1,
+            user=stub,
+            role=MailDomainAccessRoleChoices.ADMIN,
+        ).exists()
+
     def test_admin_api_maildomain_accesses_create_access_by_maildomain_admin_for_unmanaged_maildomain_forbidden(
         self, api_client, maildomain_1, md2_access, md2_admin_user, regular_user
     ):

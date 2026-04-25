@@ -11,7 +11,7 @@ import responses
 from cryptography.fernet import Fernet
 from lasuite.oidc_login.backends import get_oidc_refresh_token
 
-from core import models
+from core import factories, models
 from core.authentication.backends import OIDCAuthenticationBackend
 from core.factories import UserFactory
 
@@ -149,6 +149,41 @@ def test_authentication_getter_existing_user_no_fallback_to_email_no_duplicate(
 
     # Since the sub doesn't match, it should not create a new user
     assert models.User.objects.count() == 1
+
+
+@override_settings(
+    MESSAGES_TESTDOMAIN=None,
+    OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION=False,
+    OIDC_ALLOW_DUPLICATE_EMAILS=False,
+    OIDC_CREATE_USER=True,
+)
+def test_authentication_getter_claims_passwordless_stub_by_email(monkeypatch):
+    """
+    A user with no sub (an "invited" stub created via the access-grant API or
+    the admin) should always be claimed on first OIDC login by email, even
+    when OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION is disabled. Pre-existing
+    accesses must remain attached to the same row.
+    """
+
+    klass = OIDCAuthenticationBackend()
+    stub = UserFactory(sub=None, email="invitee@example.com", full_name=None)
+    mailbox = factories.MailboxFactory()
+    factories.MailboxAccessFactory(user=stub, mailbox=mailbox)
+
+    def get_userinfo_mocked(*args):
+        return {"sub": "oidc-sub-xyz", "email": stub.email}
+
+    monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
+
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
+
+    assert user.pk == stub.pk
+    assert user.sub == "oidc-sub-xyz"
+    assert models.User.objects.count() == 1
+    # The pre-existing access still references the merged user.
+    assert models.MailboxAccess.objects.filter(user=user, mailbox=mailbox).exists()
 
 
 @override_settings(MESSAGES_TESTDOMAIN=None)

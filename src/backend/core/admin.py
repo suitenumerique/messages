@@ -133,9 +133,24 @@ retry_send_messages_action.short_description = (
 )
 
 
+class PasswordlessUserForm(forms.Form):
+    """Minimal form to create a passwordless (sub-less) User from the admin."""
+
+    email = forms.EmailField(label="Email", required=True)
+
+    def clean_email(self):
+        """Reject emails that are already in use."""
+        email = self.cleaned_data["email"]
+        if models.User.objects.filter(email=email).exists():
+            raise forms.ValidationError("A user with this email already exists.")
+        return email
+
+
 @admin.register(models.User)
 class UserAdmin(auth_admin.UserAdmin):
     """Admin class for the User model"""
+
+    change_list_template = "admin/core/user/change_list.html"
 
     fieldsets = (
         (
@@ -212,6 +227,48 @@ class UserAdmin(auth_admin.UserAdmin):
         "updated_at",
     )
     search_fields = ("id", "sub", "admin_email", "email", "full_name")
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "add-passwordless/",
+                self.admin_site.admin_view(self.add_passwordless_view),
+                name="core_user_add_passwordless",
+            ),
+        ]
+        return custom_urls + urls
+
+    def add_passwordless_view(self, request):
+        """Create a passwordless (sub-less) user from a single email field.
+
+        These users cannot authenticate locally (unusable password, no
+        ``admin_email``) and will be claimed on first OIDC login by
+        ``UserManager.get_user_by_sub_or_email``.
+        """
+        if request.method == "POST":
+            form = PasswordlessUserForm(request.POST)
+            if form.is_valid():
+                user = models.User(email=form.cleaned_data["email"])
+                user.set_unusable_password()
+                user.save()
+                messages.success(
+                    request,
+                    f"Passwordless user created: {user.email}",
+                )
+                return redirect("admin:core_user_changelist")
+        else:
+            form = PasswordlessUserForm()
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Add passwordless user",
+            "form": form,
+            "opts": self.model._meta,  # noqa: SLF001
+        }
+        return TemplateResponse(
+            request, "admin/core/user/add_passwordless.html", context
+        )
 
 
 class MailDomainAccessInline(admin.TabularInline):

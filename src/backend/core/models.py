@@ -117,6 +117,14 @@ class UserManager(auth_models.UserManager):
             if not email:
                 return None
 
+            # Always claim sub-less "stub" users (created via invite/admin) by email,
+            # regardless of OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION: a stub has no
+            # other way to ever be linked to its OIDC identity.
+            try:
+                return self.get(email=email, sub__isnull=True)
+            except self.model.DoesNotExist:
+                pass
+
             if settings.OIDC_FALLBACK_TO_EMAIL_FOR_IDENTIFICATION:
                 try:
                     return self.get(email=email)

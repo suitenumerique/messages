@@ -118,7 +118,7 @@ def fixture_access_m2d1_alpha(mailbox2_domain1, user_alpha):
     )
 
 
-class TestMailboxAccessViewSet:
+class TestMailboxAccessViewSet:  # pylint: disable=too-many-public-methods
     """Tests for the MailboxAccessViewSet API endpoints."""
 
     BASE_URL_LIST_CREATE_SUFFIX = "-list"
@@ -307,6 +307,32 @@ class TestMailboxAccessViewSet:
         assert response.data["role"] == "editor"
         assert models.MailboxAccess.objects.filter(
             mailbox=mailbox1_domain1, user=user_alpha, role=MailboxRoleChoices.EDITOR
+        ).exists()
+
+    def test_admin_maildomain_mailbox_create_access_invites_unknown_email(
+        self,
+        api_client,
+        domain_admin_user,
+        mailbox1_domain1,
+    ):
+        """POSTing an unknown email should auto-create a passwordless stub user."""
+        api_client.force_authenticate(user=domain_admin_user)
+
+        unknown_email = "invitee@example.com"
+        assert not models.User.objects.filter(email=unknown_email).exists()
+
+        data = {"user": unknown_email, "role": "editor"}
+        response = api_client.post(
+            self.list_create_url(mailbox_id=mailbox1_domain1.pk), data
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        stub = models.User.objects.get(email=unknown_email)
+        assert stub.sub is None
+        assert not stub.has_usable_password()
+        assert response.data["user"] == stub.pk
+        assert models.MailboxAccess.objects.filter(
+            mailbox=mailbox1_domain1, user=stub, role=MailboxRoleChoices.EDITOR
         ).exists()
 
     def test_admin_maildomain_mailbox_create_access_by_mailbox_admin_for_unmanaged_mailbox_forbidden(
