@@ -243,6 +243,7 @@ _Those settings are deprecated and will be removed in the future._
 | `NEXT_PUBLIC_API_ORIGIN` | `http://localhost:8901` | Frontend API origin | Dev |
 | `NEXT_PUBLIC_LANGUAGES` | `[["en-US","English"],["fr-FR","Français"],["nl-NL","Nederlands"]]` | Languages available for frontend | Optional |
 | `NEXT_PUBLIC_DEFAULT_LANGUAGE` | `en-US` | Default language for frontend | Optional |
+| `NEXT_PUBLIC_FORCED_DEFAULT_LANGUAGE` | `false` | When `true`, the default language fallback is `NEXT_PUBLIC_DEFAULT_LANGUAGE` instead of the browser language. | Optional |
 | `NEXT_PUBLIC_THEME_CONFIG` | `{theme: "white-label"}` | Theme configuration for frontend | Optional |
 | `NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL` || Feedback widget API URL | Optional |
 | `NEXT_PUBLIC_FEEDBACK_WIDGET_PATH` || Feedback widget path | Optional |
