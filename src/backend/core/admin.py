@@ -249,13 +249,21 @@ class UserAdmin(auth_admin.UserAdmin):
         if request.method == "POST":
             form = PasswordlessUserForm(request.POST)
             if form.is_valid():
-                user = models.User(email=form.cleaned_data["email"])
-                user.set_unusable_password()
-                user.save()
-                messages.success(
-                    request,
-                    f"Passwordless user created: {user.email}",
-                )
+                email = form.cleaned_data["email"]
+                user = models.User.objects.filter(email=email).first()
+                if user is None:
+                    user = models.User(email=email)
+                    user.set_unusable_password()
+                    user.save()
+                    messages.success(
+                        request,
+                        f"Passwordless user created: {user.email}",
+                    )
+                else:
+                    messages.info(
+                        request,
+                        f"User already exists: {user.email}",
+                    )
                 return redirect("admin:core_user_changelist")
         else:
             form = PasswordlessUserForm()
