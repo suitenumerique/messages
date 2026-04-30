@@ -40,14 +40,14 @@ export const SurveyButton = ({ iconOnly = false, ...props }: SurveyButtonProps) 
     // Initialize the widget array if it doesn't exist
     if (typeof window !== "undefined" && widgetPath) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any)._stmsg_widget = (window as any)._stmsg_widget || [];
+      (window as any)._lasuite_widget = (window as any)._lasuite_widget || [];
 
       // Construct script URLs from the base path
       const feedbackScript = `${widgetPath}feedback.js`;
 
       // Push the widget configuration
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any)._stmsg_widget.push([
+      (window as any)._lasuite_widget.push([
         "feedback",
         "init",
         {

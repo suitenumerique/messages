@@ -30,15 +30,15 @@ export function FeedbackWidget({
     // Initialize the widget array if it doesn't exist
     if (typeof window !== "undefined" && widgetPath) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any)._stmsg_widget = (window as any)._stmsg_widget || [];
-      
+      (window as any)._lasuite_widget = (window as any)._lasuite_widget || [];
+
       // Construct script URLs from the base path
       const loaderScript = `${widgetPath}loader.js`;
       const feedbackScript = `${widgetPath}feedback.js`;
-      
+
       // Push the widget configuration
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any)._stmsg_widget.push([
+      (window as any)._lasuite_widget.push([
         "loader",
         "init",
         {

@@ -20,7 +20,7 @@ export const LagaufreButton = () => {
     if (typeof window == "undefined" || !widgetPath || !apiUrl) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any)._stmsg_widget = (window as any)._stmsg_widget || [];
+    (window as any)._lasuite_widget = (window as any)._lasuite_widget || [];
 
     // Construct script URLs from the base path
     const feedbackScript = `${widgetPath}lagaufre.js`;
@@ -48,7 +48,7 @@ export const LagaufreButton = () => {
 
     // Initialize the widget
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any)._stmsg_widget.push([
+    (window as any)._lasuite_widget.push([
     "lagaufre",
     "init",
     {
@@ -68,7 +68,7 @@ export const LagaufreButton = () => {
     if (!isWidgetInitialized) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any)._stmsg_widget.push([
+    (window as any)._lasuite_widget.push([
       "lagaufre",
       "toggle"
     ]);
