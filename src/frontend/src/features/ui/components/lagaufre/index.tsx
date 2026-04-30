@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next"
 import { useState, useEffect, useRef } from "react"
 import { Button, ButtonElement } from "@gouvfr-lasuite/cunningham-react";
+import { WidgetHelper } from "@/features/utils/widget-helper";
 
 /**
  * A button that opens the lagaufre widget
@@ -19,12 +20,6 @@ export const LagaufreButton = () => {
   useEffect(() => {
     if (typeof window == "undefined" || !widgetPath || !apiUrl) return;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any)._lasuite_widget = (window as any)._lasuite_widget || [];
-
-    // Construct script URLs from the base path
-    const feedbackScript = `${widgetPath}lagaufre.js`;
-
     document.addEventListener("stmsg-widget-lagaufre-closed", () => {
         // Focus the button
         buttonRef.current?.focus();
@@ -35,30 +30,18 @@ export const LagaufreButton = () => {
         buttonRef.current?.setAttribute("aria-expanded", "true");
     });
 
-    // Load the loader script if not already loaded
-    if (!document.querySelector(`script[src="${feedbackScript}"]`)) {
-        const script = document.createElement("script");
-        script.async = true;
-        script.src = feedbackScript;
-        const firstScript = document.getElementsByTagName("script")[0];
-        if (firstScript && firstScript.parentNode) {
-            firstScript.parentNode.insertBefore(script, firstScript);
-        }
-    }
-
-    // Initialize the widget
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any)._lasuite_widget.push([
-    "lagaufre",
-    "init",
-    {
+    WidgetHelper.loadScript(`${widgetPath}lagaufre.js`);
+    WidgetHelper.pushCommand([
+      "lagaufre",
+      "init",
+      {
         api: apiUrl,
         label,
         closeLabel,
-        position: 'fixed',
+        position: "fixed",
         top: 53,
-        right: 12
-    },
+        right: 12,
+      },
     ]);
 
     setIsWidgetInitialized(true);
@@ -66,12 +49,7 @@ export const LagaufreButton = () => {
 
   const toggleWidget = () => {
     if (!isWidgetInitialized) return;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any)._lasuite_widget.push([
-      "lagaufre",
-      "toggle"
-    ]);
+    WidgetHelper.pushCommand(["lagaufre", "toggle"]);
   }
 
   if (!widgetPath || !apiUrl) {
