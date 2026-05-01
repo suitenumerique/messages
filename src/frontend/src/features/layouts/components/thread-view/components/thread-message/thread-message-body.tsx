@@ -346,7 +346,7 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, mess
         const lang = i18n.language.split('-')[0]; // Get base language for documentation link
         const decision = await askLinkConfirmation(url, false, text);
         if (decision) {
-            window.open(url, '_blank');
+            window.open(url, '_blank', 'rel=noopener');
         }
     }
 
