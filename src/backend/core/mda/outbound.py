@@ -456,11 +456,17 @@ def send_message(message: models.Message, force_mta_out: bool = False):
     This part is called asynchronously from the celery worker.
     """
 
-    # Refuse to send messages that are draft or not senders
+    # Refuse to send messages that are draft, not senders, or flagged spam.
+    # The spam guard is defence-in-depth: any code path that mints an
+    # is_sender=True message on a spam-flagged record (today none, but the
+    # invariant must hold for future paths) cannot exfiltrate it via the
+    # outbound pipeline.
     if message.is_draft:
         raise ValueError("Cannot send a draft message")
     if not message.is_sender:
         raise ValueError("Cannot send a message we are not sender of")
+    if message.is_spam:
+        raise ValueError("Cannot send a message flagged as spam")
 
     # Create a unique lock key for this message to prevent double sends
     lock_key = f"send_message_lock:{message.id}"

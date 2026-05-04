@@ -134,11 +134,15 @@ def retry_messages_task(self, message_ids=None, force_mta_out=False, batch_size=
         dict: A dictionary with task status and results
     """
     # Get messages to process
-    # Bulk mode - find all messages with retryable recipients that are ready for retry
+    # Bulk mode - find all messages with retryable recipients that are ready
+    # for retry. is_spam=False is a defence-in-depth filter: should any code
+    # path mint an is_sender=True spam record, it must never re-enter the
+    # outbound pipeline.
     message_filter_q = (
         Q(
             is_draft=False,
             is_sender=True,
+            is_spam=False,
         )
         & (
             Q(recipients__delivery_status=MessageDeliveryStatusChoices.RETRY)

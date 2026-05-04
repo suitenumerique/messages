@@ -451,6 +451,14 @@ class TestSendOutboundMessage:
             == 1
         )
 
+    def test_outbound_send_refuses_spam_flagged_message(self, draft_message):
+        """``send_message`` must refuse to emit a spam-flagged record."""
+        draft_message.is_spam = True
+        draft_message.save(update_fields=["is_spam"])
+
+        with pytest.raises(ValueError, match="flagged as spam"):
+            outbound.send_message(draft_message)
+
 
 class TestSendMessageRedisLock(TransactionTestCase):
     """Unit tests for the Redis lock functionality in send_message function."""

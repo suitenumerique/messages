@@ -350,11 +350,7 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
         if subject and len(subject) > 255:
             subject = subject[:255]
 
-        is_sender = (
-            is_outbound
-            or (is_import and is_import_sender)
-            or (sender_email == recipient_email)
-        )
+        is_sender = is_outbound or (is_import and is_import_sender)
 
         message = models.Message.objects.create(
             thread=thread,

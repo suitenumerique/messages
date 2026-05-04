@@ -307,11 +307,27 @@ def process_mbox_file_task(self, file_key: str, recipient_id: str) -> Dict[str, 
                             continue
 
                         parsed_email = parse_email_message(message_content)
+
+                        # Treat the message as a sent one when From matches
+                        # the destination mailbox — same heuristic as IMAP
+                        # and the EML import. Without this flag, importing
+                        # one's own sent mails would land them in the inbox
+                        # view.
+                        recipient_email = str(recipient)
+                        sender_email = (parsed_email.get("from") or {}).get(
+                            "email"
+                        ) or ""
+                        # TODO: better heuristic to determine if the message is from the sender
+                        is_import_sender = (
+                            sender_email.lower() == recipient_email.lower()
+                        )
+
                         if deliver_inbound_message(
-                            str(recipient),
+                            recipient_email,
                             parsed_email,
                             message_content,
                             is_import=True,
+                            is_import_sender=is_import_sender,
                         ):
                             success_count += 1
                         else:

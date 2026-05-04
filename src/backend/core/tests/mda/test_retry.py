@@ -642,3 +642,32 @@ class TestRetryMessagesTask:
         assert mock_update_state.call_count == 4
         # Verify it's significantly less than total messages
         assert mock_update_state.call_count < result["total_messages"]
+
+    @patch("core.mda.outbound_tasks.send_message")
+    def test_retry_excludes_spam_flagged_messages(
+        self, mock_send_message, mailbox_sender, thread
+    ):
+        """Spam-flagged messages must never be picked up by the retry filter."""
+        sender_contact = factories.ContactFactory(mailbox=mailbox_sender)
+        message = factories.MessageFactory(
+            thread=thread,
+            sender=sender_contact,
+            is_draft=False,
+            is_sender=True,
+            is_spam=True,
+            subject="Spam-flagged retry candidate",
+        )
+        recipient_contact = factories.ContactFactory(
+            mailbox=mailbox_sender, email="external@example.com"
+        )
+        factories.MessageRecipientFactory(
+            message=message,
+            contact=recipient_contact,
+            type=models.MessageRecipientTypeChoices.TO,
+            delivery_status=None,
+        )
+
+        result = retry_messages_task.apply(args=[]).get()
+
+        assert result["total_messages"] == 0
+        mock_send_message.assert_not_called()
