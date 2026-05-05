@@ -878,7 +878,7 @@ wheels = [
 [[package]]
 name = "flanker"
 version = "0.9.11"
-source = { git = "https://github.com/sylvinus/flanker?rev=f94ba2c15ab310e333610a78828d09be4e11a6b6#f94ba2c15ab310e333610a78828d09be4e11a6b6" }
+source = { git = "https://github.com/sylvinus/flanker?rev=a4248826794d446b07fb26719479c1c355411f5a#a4248826794d446b07fb26719479c1c355411f5a" }
 dependencies = [
     { name = "attrs" },
     { name = "chardet" },
@@ -1307,7 +1307,7 @@ requires-dist = [
     { name = "drf-spectacular", specifier = "==0.29.0" },
     { name = "drf-spectacular-sidecar", marker = "extra == 'dev'", specifier = "==2026.1.1" },
     { name = "factory-boy", specifier = "==3.3.3" },
-    { name = "flanker", git = "https://github.com/sylvinus/flanker?rev=f94ba2c15ab310e333610a78828d09be4e11a6b6" },
+    { name = "flanker", git = "https://github.com/sylvinus/flanker?rev=a4248826794d446b07fb26719479c1c355411f5a" },
     { name = "flower", marker = "extra == 'dev'", specifier = "==2.0.1" },
     { name = "gunicorn", specifier = "==25.1.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = "==6.151.9" },

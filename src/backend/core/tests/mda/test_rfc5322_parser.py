@@ -279,6 +279,42 @@ class TestEmailAddressParsing:
         assert name == "José García"
         assert email_addr == "jose@example.es"
 
+    def test_parse_address_with_comma_and_unicode_in_name(self):
+        """Quoted name combining ',' and non-ASCII must yield one recipient.
+
+        ',' is the address-list separator; if quote-stripping or encoded-word
+        decoding misorders, the parser can split a single recipient into two.
+        """
+        name, email_addr = parse_email_address('"García, José" <jose@example.es>')
+        assert name == "García, José"
+        assert email_addr == "jose@example.es"
+
+        # Same idea but with the non-ASCII coming through an RFC 2047
+        # encoded-word inside the quoted display-name.
+        name, email_addr = parse_email_address(
+            '"=?utf-8?q?Garc=C3=ADa=2C_Jos=C3=A9?=" <jose@example.es>'
+        )
+        assert name == "García, José"
+        assert email_addr == "jose@example.es"
+
+    def test_parse_multiple_recipients_with_comma_and_unicode_in_names(self):
+        """Address-list with ',' inside non-ASCII display names must not be split.
+
+        Three recipients where two have both a literal ',' and non-ASCII chars
+        in their names. A naive splitter that decodes encoded-words before
+        splitting on ',' (or that ignores quotes) would yield more than three
+        addresses.
+        """
+        addresses = parse_email_addresses(
+            '"Doe, Jané" <jane@example.com>, '
+            '"=?utf-8?q?M=C3=BCller=2C_Frank?=" <frank@example.com>, '
+            "third@example.com"
+        )
+        assert len(addresses) == 3
+        assert addresses[0] == ("Doe, Jané", "jane@example.com")
+        assert addresses[1] == ("Müller, Frank", "frank@example.com")
+        assert addresses[2] == ("", "third@example.com")
+
     # RFC 5322 Group Syntax Tests
     # These test cases handle email headers like "undisclosed-recipients:;"
     # which are valid RFC 5322 group syntax used to hide recipients.

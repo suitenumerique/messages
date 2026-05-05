@@ -49,7 +49,7 @@ dependencies = [
     "drf_spectacular==0.29.0",
     "opensearch-py==2.8.0",
     "factory_boy==3.3.3",
-    "flanker@git+https://github.com/sylvinus/flanker@f94ba2c15ab310e333610a78828d09be4e11a6b6",
+    "flanker@git+https://github.com/sylvinus/flanker@a4248826794d446b07fb26719479c1c355411f5a",
     "gunicorn==25.1.0",
     "jsonschema==4.26.0",
     "nested-multipart-parser==1.6.0",

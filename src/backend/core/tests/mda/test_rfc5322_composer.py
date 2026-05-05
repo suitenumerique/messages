@@ -282,6 +282,105 @@ class TestEmailComposition:
         assert parsed["Bcc"] == "Secret <secret@example.com>"
         assert parsed["Subject"] == "Email to Multiple Recipients"
 
+    def test_compose_to_header_with_non_ascii_recipients_is_rfc5322_valid(self):
+        """Long To header with non-ASCII display names must stay RFC 5322 + 2047 valid.
+
+        Regression test: when any recipient has a non-ASCII display name, the
+        underlying MIME library used to re-serialize the whole To header and join
+        addresses with '; ' instead of ', '. Because ';' is not a valid
+        address-list separator (RFC 5322 §3.4 requires ','), Python's stdlib refold
+        in compose_email() then failed to recognise the structure and refolded it
+        as unstructured text, hiding '<', '>', '@', ';' inside =?utf-8?q?...?=
+        encoded words — which also violates RFC 2047 §5.
+        """
+        jmap_data = {
+            "from": [{"name": "Sender", "email": "sender@example.com"}],
+            "to": [
+                {"name": "Alice Doe", "email": "alice@example.com"},
+                {"name": "Benoît Dupont", "email": "benoit@example.com"},
+                {"name": "GARCIA Chloé", "email": "chloe@example.com"},
+                {"name": "david.smith", "email": "david@example.com"},
+                {"name": "eve@example.com", "email": "eve@example.com"},
+                {"name": "MÜLLER Frank", "email": "frank@example.com"},
+                {"name": "MARTIN Géraldine", "email": "geraldine@example.com"},
+                {"name": "Hélène Roux", "email": "helene@example.com"},
+            ],
+            "subject": "Test",
+            "textBody": ["body"],
+        }
+
+        result_bytes = compose_email(jmap_data)
+        raw = result_bytes.decode("utf-8")
+
+        # Extract the folded To header.
+        to_match = re.search(r"^To:(.*?)(?=^\S)", raw, re.MULTILINE | re.DOTALL)
+        assert to_match, "To header not found"
+        to_value = to_match.group(1).replace("\r\n", " ").replace("\n", " ").strip()
+
+        # RFC 5322 §3.4: address-list MUST be comma-separated. ';' is only valid
+        # as the terminator of a `group:` construct, which we do not use.
+        assert "; " not in to_value, (
+            f"To header uses ';' as separator (RFC 5322 violation): {to_value!r}"
+        )
+
+        # RFC 2047 §5: encoded-words may only appear in the phrase part of an
+        # address. They must not encode addr-spec delimiters.
+        forbidden = {"=3C", "=3E", "=40", "=3B", "=2C"}  # < > @ ; ,
+        for ew in re.findall(r"=\?[^?]+\?[QqBb]\?[^?]*\?=", to_value):
+            hits = [tok for tok in forbidden if tok.lower() in ew.lower()]
+            assert not hits, (
+                f"Encoded-word encodes structural delimiter(s) {hits} "
+                f"(RFC 2047 §5 violation): {ew!r}"
+            )
+
+        # Round-trip: stdlib must parse back the same set of recipients.
+        parsed = BytesParser().parsebytes(result_bytes)
+        addrs = email.utils.getaddresses([parsed["To"]])
+        emails = {addr for _, addr in addrs}
+        expected = {a["email"] for a in jmap_data["to"]}
+        assert emails == expected, (
+            f"Recipient set mangled by header serialization. "
+            f"expected={expected}, got={emails}"
+        )
+
+    def test_compose_to_header_with_comma_in_non_ascii_name(self):
+        """Display names that contain ',' and non-ASCII chars must round-trip.
+
+        ',' is the address-list separator, so a name like "Doe, Jané" must be
+        quoted (RFC 5322 §3.2.4) AND any non-ASCII content must be encoded per
+        RFC 2047. After composing, parsing back must yield exactly one recipient
+        with the original name. Mixing both axes is the dangerous case: each
+        rule alone is fine, but together they have historically broken in the
+        underlying MIME library (e.g. naive encoded-word wrapping that drops
+        the surrounding quotes, turning the ',' into a list separator).
+        """
+        jmap_data = {
+            "from": [{"name": "Sender", "email": "sender@example.com"}],
+            "to": [
+                {"name": "Doe, Jané", "email": "jane@example.com"},
+                {"name": "Müller, Frank", "email": "frank@example.com"},
+                {"name": "Plain Bob", "email": "bob@example.com"},
+            ],
+            "subject": "Test",
+            "textBody": ["body"],
+        }
+
+        result_bytes = compose_email(jmap_data)
+        parsed = BytesParser().parsebytes(result_bytes)
+
+        addrs = email.utils.getaddresses([parsed["To"]])
+        # Decode any encoded-words inside the names before comparing.
+        decoded = [(decode_header_string(n), e) for n, e in addrs]
+
+        assert decoded == [
+            ("Doe, Jané", "jane@example.com"),
+            ("Müller, Frank", "frank@example.com"),
+            ("Plain Bob", "bob@example.com"),
+        ], (
+            f"Comma-in-non-ASCII-name lost in round-trip. "
+            f"raw To header: {parsed['To']!r}, decoded: {decoded}"
+        )
+
     def test_compose_with_custom_headers(self):
         """Test composing an email with custom headers."""
         jmap_data = {
