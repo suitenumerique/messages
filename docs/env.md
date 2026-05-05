@@ -251,7 +251,8 @@ _Those settings are deprecated and will be removed in the future._
 | `NEXT_PUBLIC_THEME_CONFIG` | `{theme: "white-label"}` | Theme configuration for frontend | Optional |
 | `NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL` || Feedback widget API URL | Optional |
 | `NEXT_PUBLIC_FEEDBACK_WIDGET_PATH` || Feedback widget path | Optional |
-| `NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL` || Feedback widget channel | Optional |
+| `NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL` || Feedback widget channel used by the in-app survey button (authenticated header) | Optional |
+| `NEXT_PUBLIC_FEEDBACK_WIDGET_HOME_CHANNEL` || Feedback widget channel used on the unauthenticated home page. Falls back to `NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL` when unset | Optional |
 | `NEXT_PUBLIC_HELP_CENTER_URL` || Help center URL | Optional |
 
 ## Development Tools
