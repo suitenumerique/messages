@@ -6,6 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 import type { ThreadAccessRoleChoices } from "./thread_access_role_choices";
+import type { UserWithoutAbilities } from "./user_without_abilities";
 
 /**
  * Serialize thread access information.
@@ -22,4 +23,5 @@ export interface ThreadAccess {
   readonly created_at: string;
   /** date and time at which a record was last updated */
   readonly updated_at: string;
+  readonly users: readonly UserWithoutAbilities[];
 }

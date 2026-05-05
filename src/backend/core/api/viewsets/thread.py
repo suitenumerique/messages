@@ -1,8 +1,9 @@
 """API ViewSet for Thread model."""
+# pylint: disable=too-many-lines
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models import Count, Exists, OuterRef, Prefetch, Q
 from django.db.models.functions import Coalesce
 
 import rest_framework as drf
@@ -110,6 +111,8 @@ class ThreadViewSet(
             "has_delivery_pending": "has_delivery_pending",
             "has_unread_mention": "_has_unread_mention",
             "has_mention": "_has_mention",
+            "has_assigned_to_me": "_has_assigned_to_me",
+            "has_unassigned": "_has_unassigned",
             "is_trashed": "is_trashed",
             "is_spam": "is_spam",
         }
@@ -141,11 +144,12 @@ class ThreadViewSet(
 
     @staticmethod
     def _annotate_thread_permissions(queryset, user, mailbox_id):
-        """Attach permission/state annotations expected by ThreadSerializer.
+        """Attach permission/state annotations and prefetches expected by ThreadSerializer.
 
         Shared between the regular DB queryset and the OpenSearch fallback so
-        both code paths always expose the same fields (e.g. ``events_count``),
-        avoiding silent divergence in the serialized payload.
+        both code paths always expose the same fields (e.g. ``events_count``,
+        ``assigned_users``), avoiding silent divergence in the serialized
+        payload.
         """
         can_edit_qs = models.ThreadAccess.objects.filter(
             thread=OuterRef("pk"),
@@ -174,8 +178,69 @@ class ThreadViewSet(
                     type=enums.UserEventTypeChoices.MENTION,
                 )
             ),
+            _has_assigned_to_me=Exists(
+                models.UserEvent.objects.filter(
+                    thread=OuterRef("pk"),
+                    user=user,
+                    type=enums.UserEventTypeChoices.ASSIGN,
+                )
+            ),
+            _has_unassigned=~Exists(
+                models.UserEvent.objects.filter(
+                    thread=OuterRef("pk"),
+                    type=enums.UserEventTypeChoices.ASSIGN,
+                )
+            ),
             events_count=Count("events", distinct=True),
             _can_edit=Exists(can_edit_qs),
+        ).prefetch_related(
+            # Feeds ThreadSerializer.get_assigned_users without N+1. UserEvent
+            # rows with type=ASSIGN are the source of truth for "currently
+            # assigned" (created on assign, deleted on unassign).
+            Prefetch(
+                "user_events",
+                queryset=models.UserEvent.objects.filter(
+                    type=enums.UserEventTypeChoices.ASSIGN
+                )
+                .select_related("user")
+                .order_by("created_at"),
+                to_attr="_assigned_user_events",
+            ),
+            # Feeds ThreadSerializer.get_accesses. ``mailbox__domain`` is
+            # needed because ``Mailbox.__str__`` (used by MailboxLightSerializer)
+            # reads ``self.domain.name`` — without it we'd get one query per
+            # thread to resolve the mail domain.
+            Prefetch(
+                "accesses",
+                queryset=models.ThreadAccess.objects.select_related(
+                    "mailbox", "mailbox__domain", "mailbox__contact"
+                ),
+                to_attr="_accesses_with_mailbox",
+            ),
+            # Feeds ThreadSerializer.get_messages. The serializer only emits
+            # message IDs in chronological order, so ordering is baked into
+            # the prefetch to avoid a re-query per thread.
+            Prefetch(
+                "messages",
+                queryset=models.Message.objects.only(
+                    "id", "thread_id", "created_at"
+                ).order_by("created_at"),
+                to_attr="_ordered_messages",
+            ),
+            # Feeds ThreadSerializer.get_labels. Labels are scoped to the
+            # mailbox context when provided; when it is absent the serializer
+            # short-circuits to ``[]`` and no prefetch is needed.
+            *(
+                [
+                    Prefetch(
+                        "labels",
+                        queryset=models.Label.objects.filter(mailbox_id=mailbox_id),
+                        to_attr="_scoped_labels",
+                    )
+                ]
+                if mailbox_id
+                else []
+            ),
         )
 
     @staticmethod
@@ -280,6 +345,18 @@ class ThreadViewSet(
                 description="Filter threads with any mention (read or unread) for the current user (1=true, 0=false).",
             ),
             OpenApiParameter(
+                name="has_assigned_to_me",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads assigned to the current user (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_unassigned",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads with no active assignment from any user (1=true, 0=false).",
+            ),
+            OpenApiParameter(
                 name="stats_fields",
                 type=OpenApiTypes.STR,
                 location=OpenApiParameter.QUERY,
@@ -287,7 +364,7 @@ class ThreadViewSet(
                 description="""Comma-separated list of fields to aggregate.
                 Special values: 'all' (count all threads), 'all_unread' (count all unread threads).
                 Boolean fields: has_trashed, has_draft, has_starred, has_attachments, has_archived,
-                has_sender, has_active, has_delivery_pending, has_delivery_failed, is_spam, has_messages, has_unread_mention, has_mention.
+                has_sender, has_active, has_delivery_pending, has_delivery_failed, is_spam, has_messages, has_unread_mention, has_mention, has_assigned_to_me, has_unassigned.
                 Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.
                 Examples: 'all,all_unread', 'has_starred,has_starred_unread', 'is_spam,is_spam_unread'""",
                 enum=list(enums.THREAD_STATS_FIELDS_MAP.keys()),
@@ -352,6 +429,8 @@ class ThreadViewSet(
             "has_delivery_pending",
             "has_unread_mention",
             "has_mention",
+            "has_assigned_to_me",
+            "has_unassigned",
             "is_spam",
             "has_messages",
         }
@@ -362,7 +441,12 @@ class ThreadViewSet(
         # Base fields that cannot be combined with the "_unread" suffix because
         # they are annotations (not real model columns) and their unread variant
         # is either already exposed (has_unread_mention) or meaningless.
-        annotation_fields = {"has_mention", "has_unread_mention"}
+        annotation_fields = {
+            "has_mention",
+            "has_unread_mention",
+            "has_assigned_to_me",
+            "has_unassigned",
+        }
 
         # Validate requested fields
         for field in requested_fields:
@@ -394,6 +478,8 @@ class ThreadViewSet(
         starred_condition = Q(_has_starred=True)
         unread_mention_condition = Q(_has_unread_mention=True)
         mention_condition = Q(_has_mention=True)
+        assigned_to_me_condition = Q(_has_assigned_to_me=True)
+        unassigned_condition = Q(_has_unassigned=True)
 
         aggregations = {}
         for field in requested_fields:
@@ -413,6 +499,10 @@ class ThreadViewSet(
                 aggregations[agg_key] = Count("pk", filter=unread_mention_condition)
             elif field == "has_mention":
                 aggregations[agg_key] = Count("pk", filter=mention_condition)
+            elif field == "has_assigned_to_me":
+                aggregations[agg_key] = Count("pk", filter=assigned_to_me_condition)
+            elif field == "has_unassigned":
+                aggregations[agg_key] = Count("pk", filter=unassigned_condition)
             elif field.endswith("_unread"):
                 base_field = field[:-7]
                 base_condition = Q(**{base_field: True})
@@ -545,6 +635,18 @@ class ThreadViewSet(
                 type=OpenApiTypes.INT,
                 location=OpenApiParameter.QUERY,
                 description="Filter threads with any mention (read or unread) for the current user (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_assigned_to_me",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads assigned to the current user (1=true, 0=false).",
+            ),
+            OpenApiParameter(
+                name="has_unassigned",
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.QUERY,
+                description="Filter threads with no active assignment from any user (1=true, 0=false).",
             ),
         ],
     )

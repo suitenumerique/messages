@@ -137,7 +137,8 @@ class TestThreadUserListResponse:
     """Test the response format and content of GET /threads/{thread_id}/users/."""
 
     def test_response_fields(self, api_client):
-        """Each user object must contain id, email, full_name, custom_attributes."""
+        """Each user object must contain id, email, full_name, custom_attributes,
+        and can_post_comments."""
         user, _mailbox, thread = setup_user_with_thread_access()
         api_client.force_authenticate(user=user)
 
@@ -150,6 +151,7 @@ class TestThreadUserListResponse:
         assert "email" in user_data
         assert "full_name" in user_data
         assert "custom_attributes" in user_data
+        assert "can_post_comments" in user_data
         # Must not contain abilities
         assert "abilities" not in user_data
 
@@ -433,3 +435,130 @@ class TestThreadUserListIsolation:
         assert str(viewer.id) in returned_ids
         assert str(editor.id) in returned_ids
         assert str(sender.id) in returned_ids
+
+
+class TestThreadUserListCanPostComments:
+    """Test the ``can_post_comments`` flag exposed per user.
+
+    Mirrors the ``_user_can_comment_on_thread`` rule: a user can post
+    comments iff they have a MailboxAccess with a role in
+    MAILBOX_ROLES_CAN_EDIT on a mailbox that has ThreadAccess to the
+    thread — regardless of the ThreadAccess role (VIEWER or EDITOR).
+    """
+
+    def test_viewer_on_mailbox_cannot_post_comments(self, api_client):
+        """A user whose only mailbox role on thread-linked mailboxes is
+        VIEWER must be flagged ``can_post_comments=False``."""
+        user, mailbox, thread = setup_user_with_thread_access()
+
+        viewer = factories.UserFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox, user=viewer, role=enums.MailboxRoleChoices.VIEWER
+        )
+
+        api_client.force_authenticate(user=user)
+        response = api_client.get(get_thread_user_url(thread.id))
+        assert response.status_code == status.HTTP_200_OK
+
+        by_id = {u["id"]: u for u in response.data}
+        assert by_id[str(viewer.id)]["can_post_comments"] is False
+
+    @pytest.mark.parametrize(
+        "mailbox_role",
+        [
+            enums.MailboxRoleChoices.EDITOR,
+            enums.MailboxRoleChoices.SENDER,
+            enums.MailboxRoleChoices.ADMIN,
+        ],
+    )
+    def test_editor_level_roles_can_post_comments(self, api_client, mailbox_role):
+        """Any mailbox role in MAILBOX_ROLES_CAN_EDIT yields
+        ``can_post_comments=True``."""
+        user, mailbox, thread = setup_user_with_thread_access()
+
+        other = factories.UserFactory()
+        factories.MailboxAccessFactory(mailbox=mailbox, user=other, role=mailbox_role)
+
+        api_client.force_authenticate(user=user)
+        response = api_client.get(get_thread_user_url(thread.id))
+        assert response.status_code == status.HTTP_200_OK
+
+        by_id = {u["id"]: u for u in response.data}
+        assert by_id[str(other.id)]["can_post_comments"] is True
+
+    def test_thread_viewer_with_editor_mailbox_can_post(self, api_client):
+        """ThreadAccess VIEWER combined with an editor-level MailboxAccess
+        still yields ``can_post_comments=True`` — the comment rule only
+        cares about the mailbox role."""
+        user, _mailbox, thread = setup_user_with_thread_access()
+
+        other_mailbox = factories.MailboxFactory()
+        other = factories.UserFactory()
+        factories.MailboxAccessFactory(
+            mailbox=other_mailbox, user=other, role=enums.MailboxRoleChoices.EDITOR
+        )
+        factories.ThreadAccessFactory(
+            mailbox=other_mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.VIEWER,
+        )
+
+        api_client.force_authenticate(user=user)
+        response = api_client.get(get_thread_user_url(thread.id))
+        assert response.status_code == status.HTTP_200_OK
+
+        by_id = {u["id"]: u for u in response.data}
+        assert by_id[str(other.id)]["can_post_comments"] is True
+
+    def test_mixed_roles_across_mailboxes_grants_true(self, api_client):
+        """A user who is VIEWER on one thread-linked mailbox and EDITOR
+        on another must be flagged ``can_post_comments=True``."""
+        user, mailbox_a, thread = setup_user_with_thread_access()
+
+        # Second mailbox also linked to the thread
+        mailbox_b = factories.MailboxFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_b,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.VIEWER,
+        )
+
+        mixed = factories.UserFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox_a, user=mixed, role=enums.MailboxRoleChoices.VIEWER
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox_b, user=mixed, role=enums.MailboxRoleChoices.EDITOR
+        )
+
+        api_client.force_authenticate(user=user)
+        response = api_client.get(get_thread_user_url(thread.id))
+        assert response.status_code == status.HTTP_200_OK
+
+        by_id = {u["id"]: u for u in response.data}
+        assert by_id[str(mixed.id)]["can_post_comments"] is True
+
+    def test_editor_role_on_unrelated_mailbox_does_not_grant(self, api_client):
+        """An editor-level MailboxAccess on a mailbox that has no
+        ThreadAccess to this thread must NOT grant ``can_post_comments``."""
+        user, mailbox, thread = setup_user_with_thread_access()
+
+        other = factories.UserFactory()
+        # VIEWER on the thread-linked mailbox
+        factories.MailboxAccessFactory(
+            mailbox=mailbox, user=other, role=enums.MailboxRoleChoices.VIEWER
+        )
+        # EDITOR on a separate mailbox NOT linked to this thread
+        unrelated_mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=unrelated_mailbox,
+            user=other,
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+
+        api_client.force_authenticate(user=user)
+        response = api_client.get(get_thread_user_url(thread.id))
+        assert response.status_code == status.HTTP_200_OK
+
+        by_id = {u["id"]: u for u in response.data}
+        assert by_id[str(other.id)]["can_post_comments"] is False

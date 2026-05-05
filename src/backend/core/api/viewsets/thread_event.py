@@ -1,5 +1,6 @@
 """API ViewSet for ThreadEvent model."""
 
+from django.db import transaction
 from django.db.models import Exists, OuterRef
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -7,10 +8,11 @@ from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from core import enums, models
+from core.services import thread_events as thread_events_service
 
 from .. import permissions, serializers
 
@@ -74,22 +76,17 @@ class ThreadEventViewSet(
 
         return queryset.order_by("created_at")
 
-    def perform_create(self, serializer):
-        """Set thread from URL and author from request user."""
-        thread = get_object_or_404(models.Thread, id=self.kwargs["thread_id"])
-        serializer.save(thread=thread, author=self.request.user)
-
+    @transaction.atomic
     def perform_update(self, serializer):
-        """Reject updates made after the configured edit delay elapsed.
-
-        Past the window, the event (and any UserEvent MENTION records derived
-        from it) is considered historical and must remain immutable.
-        """
+        """Reject IM updates after the edit delay; re-sync mentions on success."""
         if not serializer.instance.is_editable():
             raise PermissionDenied(
                 "This event can no longer be edited (edit delay expired)."
             )
-        serializer.save()
+        thread_event = serializer.save()
+        # IM is the only editable type; re-sync MENTION rows so an edit
+        # that changes the mentions list adds/removes notifications.
+        thread_events_service.sync_im_mentions(thread_event=thread_event)
 
     def perform_destroy(self, instance):
         """Reject deletions made after the configured edit delay elapsed.
@@ -126,3 +123,70 @@ class ThreadEventViewSet(
             read_at__isnull=True,
         ).update(read_at=timezone.now())
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """Create a ThreadEvent.
+
+        For ASSIGN/UNASSIGN, delegates to the service layer which owns the
+        idempotence rules, edit-rights validation and the undo window.
+        For IM, persists the event via the serializer and then re-syncs
+        MENTION rows.
+
+        Returns 204 when the service decides nothing was new (every
+        assignee already assigned, full UNASSIGN absorbed by undo, …).
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        event_type = serializer.validated_data.get("type")
+        thread = get_object_or_404(
+            models.Thread.objects.select_for_update(),
+            id=self.kwargs["thread_id"],
+        )
+
+        if event_type == enums.ThreadEventTypeChoices.ASSIGN:
+            assignees_data = serializer.validated_data["data"]["assignees"]
+            try:
+                thread_event = thread_events_service.assign_users(
+                    thread=thread, author=request.user, assignees_data=assignees_data
+                )
+            except ValueError as exc:
+                raise ValidationError(
+                    "Assignee must have editor access on the thread"
+                ) from exc
+            if thread_event is None:
+                return Response(status=status.HTTP_204_NO_CONTENT)
+            return self._serialize_created(thread_event)
+
+        if event_type == enums.ThreadEventTypeChoices.UNASSIGN:
+            assignees_data = serializer.validated_data["data"]["assignees"]
+            thread_event = thread_events_service.unassign_users(
+                thread=thread, author=request.user, assignees_data=assignees_data
+            )
+            if thread_event is None:
+                return Response(status=status.HTTP_204_NO_CONTENT)
+            return self._serialize_created(thread_event)
+
+        # IM and any future regular event type: persist via serializer,
+        # then sync MENTION rows when applicable.
+        thread_event = serializer.save(thread=thread, author=request.user)
+        thread_events_service.sync_im_mentions(thread_event=thread_event)
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            serializer.data, status=status.HTTP_201_CREATED, headers=headers
+        )
+
+    def _serialize_created(self, thread_event):
+        """Build the 201 response from a ThreadEvent created by the service.
+
+        The service path bypasses ``serializer.save()`` (it owns the
+        ThreadEvent + UserEvent atomicity) so we re-serialize the result
+        through a fresh serializer to keep the response shape identical
+        to the legacy path.
+        """
+        serializer = self.get_serializer(thread_event)
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            serializer.data, status=status.HTTP_201_CREATED, headers=headers
+        )

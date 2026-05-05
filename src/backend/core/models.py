@@ -28,7 +28,6 @@ from django.utils import timezone
 from django.utils.html import escape
 from django.utils.text import slugify
 
-import jsonschema
 import pyzstd
 from encrypted_fields.fields import EncryptedJSONField, EncryptedTextField
 from timezone_field import TimeZoneField
@@ -55,6 +54,7 @@ from core.enums import (
 )
 from core.mda.rfc5322 import EmailParseError, parse_email_message
 from core.mda.signing import generate_dkim_key as _generate_dkim_key
+from core.utils import validate_json_schema
 
 logger = getLogger(__name__)
 
@@ -228,15 +228,11 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
 
     def clean(self):
         """Validate fields values."""
-        try:
-            jsonschema.validate(
-                self.custom_attributes, settings.SCHEMA_CUSTOM_ATTRIBUTES_USER
-            )
-        except jsonschema.ValidationError as exception:
-            raise ValidationError(
-                {"custom_attributes": exception.message}
-            ) from exception
-
+        validate_json_schema(
+            self.custom_attributes,
+            settings.SCHEMA_CUSTOM_ATTRIBUTES_USER,
+            field="custom_attributes",
+        )
         super().clean()
 
     def get_abilities(self):
@@ -319,15 +315,11 @@ class MailDomain(BaseModel):
 
     def clean(self):
         """Validate custom attributes."""
-        try:
-            jsonschema.validate(
-                self.custom_attributes, settings.SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN
-            )
-        except jsonschema.ValidationError as exception:
-            raise ValidationError(
-                {"custom_attributes": exception.message}
-            ) from exception
-
+        validate_json_schema(
+            self.custom_attributes,
+            settings.SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN,
+            field="custom_attributes",
+        )
         super().clean()
 
     def get_spam_config(self) -> Dict[str, Any]:
@@ -1457,33 +1449,55 @@ class Label(BaseModel):
 class ThreadAccessQuerySet(models.QuerySet):
     """Custom queryset exposing reusable access-scoped filters."""
 
+    # Shared ORM conditions that define "editor rights on a thread":
+    #   - ThreadAccess.role == EDITOR
+    #   - MailboxAccess.role is in `MAILBOX_ROLES_CAN_EDIT`
+    _EDITOR_CONDITIONS = {
+        "role": ThreadAccessRoleChoices.EDITOR,
+        "mailbox__accesses__role__in": MAILBOX_ROLES_CAN_EDIT,
+    }
+
     def editable_by(self, user, mailbox_id=None):
         """Return ThreadAccess rows granting full edit rights to `user`.
-
-        Combines BOTH conditions, which are the single source of truth
-        for "can this user edit this thread?":
-
-        - `ThreadAccess.role == EDITOR`
-        - The user's `MailboxAccess.role` on that mailbox is in
-          `MAILBOX_ROLES_CAN_EDIT`
 
         When `mailbox_id` is provided, the result is also scoped to that
         mailbox. Used by the flag, label, thread and thread-event
         endpoints to replace ad-hoc permission checks.
-
-        IMPORTANT: the two `mailbox__accesses__*` conditions MUST stay
-        inside the same `.filter()` call. If split, Django generates two
-        independent JOINs and the query matches any pair of mailbox
-        accesses satisfying either condition — a false positive.
         """
         qs = self.filter(
-            role=ThreadAccessRoleChoices.EDITOR,
+            **self._EDITOR_CONDITIONS,
             mailbox__accesses__user=user,
-            mailbox__accesses__role__in=MAILBOX_ROLES_CAN_EDIT,
         )
         if mailbox_id is not None:
             qs = qs.filter(mailbox_id=mailbox_id)
         return qs
+
+    def editor_user_ids(self, thread_id, user_ids=None):
+        """Return user ids with full edit rights on `thread_id`"""
+        filters = {
+            "thread_id": thread_id,
+            **self._EDITOR_CONDITIONS,
+        }
+        if user_ids is not None:
+            filters["mailbox__accesses__user_id__in"] = user_ids
+
+        return (
+            self.filter(**filters)
+            .values_list("mailbox__accesses__user_id", flat=True)
+            .distinct()
+        )
+
+    def viewer_user_ids(self, thread_id, user_ids=None):
+        """Return user ids with any access on `thread_id`"""
+
+        filters = {"thread_id": thread_id}
+        if user_ids is not None:
+            filters["mailbox__accesses__user_id__in"] = user_ids
+        return (
+            self.filter(**filters)
+            .values_list("mailbox__accesses__user_id", flat=True)
+            .distinct()
+        )
 
 
 ThreadAccessManager = models.Manager.from_queryset(ThreadAccessQuerySet)
@@ -1601,32 +1615,58 @@ class ThreadAccess(BaseModel):
         return Q(starred_at__isnull=False)
 
 
+_ASSIGNEES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "assignees": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "name": {"type": "string"},
+                },
+                "required": ["id", "name"],
+                "additionalProperties": False,
+            },
+            "minItems": 1,
+        },
+    },
+    "required": ["assignees"],
+    "additionalProperties": False,
+}
+
+_IM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "content": {
+            "type": "string",
+        },
+        "mentions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "name": {"type": "string"},
+                },
+                "required": ["id", "name"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["content"],
+    "additionalProperties": False,
+}
+
+
 class ThreadEvent(BaseModel):
     """Thread event model to store events in a thread timeline (internal comments, notifications, etc.)."""
 
     DATA_SCHEMAS = {
-        ThreadEventTypeChoices.IM: {
-            "type": "object",
-            "properties": {
-                "content": {
-                    "type": "string",
-                },
-                "mentions": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string", "format": "uuid"},
-                            "name": {"type": "string"},
-                        },
-                        "required": ["id", "name"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "required": ["content"],
-            "additionalProperties": False,
-        },
+        ThreadEventTypeChoices.IM: _IM_SCHEMA,
+        ThreadEventTypeChoices.ASSIGN: _ASSIGNEES_SCHEMA,
+        ThreadEventTypeChoices.UNASSIGN: _ASSIGNEES_SCHEMA,
     }
 
     thread = models.ForeignKey(
@@ -1672,20 +1712,31 @@ class ThreadEvent(BaseModel):
     def __str__(self):
         return f"{self.thread} - {self.type} - {self.created_at}"
 
+    @classmethod
+    def validate_data(cls, event_type, data):
+        """Validate ``data`` against the JSON Schema registered for ``event_type``.
+
+        Raises ``django.core.exceptions.ValidationError`` with the offending
+        message keyed as ``data``. No-op when ``event_type`` has no schema
+        registered in ``DATA_SCHEMAS``.
+
+        Exposed at the class level so the API serializer can reuse it and
+        surface 400 errors before the viewset ever reads the payload.
+        """
+        schema = cls.DATA_SCHEMAS.get(event_type)
+        if schema is None:
+            return
+        validate_json_schema(data, schema, field="data")
+
     def clean(self):
         """Validate the data field against the schema for this event type."""
-        schema = self.DATA_SCHEMAS.get(self.type)
-        if schema:
-            try:
-                jsonschema.validate(self.data, schema)
-            except jsonschema.ValidationError as exception:
-                raise ValidationError({"data": exception.message}) from exception
+        self.validate_data(self.type, self.data)
         super().clean()
 
     def is_editable(self):
         """Return whether the event can still be edited or deleted.
 
-        The time window is controlled by ``settings.MAX_THREAD_EVENT_EDIT_DELAY``
+        The time window is controlled by `settings.MAX_THREAD_EVENT_EDIT_DELAY`
         (in seconds). A value of 0 disables the restriction.
         """
         delay = settings.MAX_THREAD_EVENT_EDIT_DELAY
@@ -1748,6 +1799,15 @@ class UserEvent(BaseModel):
             models.UniqueConstraint(
                 fields=["user", "thread_event", "type"],
                 name="usrevt_user_event_type_uniq",
+            ),
+            # Enforce at most one active ASSIGN UserEvent per (user, thread).
+            # This is the schema-level guarantee behind the idempotence logic
+            # in ThreadEventViewSet.create and absorbs races between concurrent
+            # ASSIGN requests. MENTION has no such invariant (one per message).
+            models.UniqueConstraint(
+                fields=["user", "thread"],
+                condition=Q(type="assign"),
+                name="usrevt_user_thread_assign_uniq",
             ),
         ]
         indexes = [

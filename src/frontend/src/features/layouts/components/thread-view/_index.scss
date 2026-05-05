@@ -103,24 +103,28 @@
     padding-block: var(--c--globals--spacings--b) var(--c--globals--spacings--base);
     background: linear-gradient(to top, var(--c--globals--colors--black-000), var(--c--contextuals--background--surface--tertiary) 15px, var(--c--contextuals--background--surface--tertiary) 100%);
     z-index: 10;
+    container-type: inline-size;
 }
 
 .thread-view__header__top {
     display: flow-root;
 
-    .thread-action-bar {
+    .thread-action-bar__container {
         float: right;
         width: auto;
         margin-left: var(--c--globals--spacings--base);
         margin-bottom: var(--c--globals--spacings--4xs);
     }
 
-    @media screen and (max-width: breakpoint(xs)) {
+    // Switch to a stacked layout before the title is squeezed down to a few
+    // orphan letters on its first line. Using a container query (not a media
+    // query) keeps the trigger in sync with the resizable thread panel width.
+    @container (max-width: 35rem) {
         display: flex;
         flex-direction: column;
         gap: var(--c--globals--spacings--xs);
 
-        .thread-action-bar {
+        .thread-action-bar__container {
             float: none;
             align-self: flex-end;
             margin-left: 0;

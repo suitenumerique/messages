@@ -9,6 +9,7 @@ import type { ThreadAccessRoleChoices } from "./thread_access_role_choices";
 import type { ThreadAccessDetail } from "./thread_access_detail";
 import type { ThreadLabel } from "./thread_label";
 import type { ThreadAbilities } from "./thread_abilities";
+import type { ThreadEventUser } from "./thread_event_user";
 
 /**
  * Serialize threads.
@@ -73,4 +74,5 @@ export interface Thread {
   readonly summary: string;
   readonly events_count: number;
   readonly abilities: ThreadAbilities;
+  readonly assigned_users: readonly ThreadEventUser[];
 }

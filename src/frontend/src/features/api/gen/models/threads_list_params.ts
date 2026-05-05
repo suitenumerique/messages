@@ -16,6 +16,10 @@ export type ThreadsListParams = {
    */
   has_archived?: number;
   /**
+   * Filter threads assigned to the current user (1=true, 0=false).
+   */
+  has_assigned_to_me?: number;
+  /**
    * Filter threads with attachments (1=true, 0=false).
    */
   has_attachments?: number;
@@ -47,6 +51,10 @@ export type ThreadsListParams = {
    * Filter threads that have trashed messages (1=true, 0=false).
    */
   has_trashed?: number;
+  /**
+   * Filter threads with no active assignment from any user (1=true, 0=false).
+   */
+  has_unassigned?: number;
   /**
    * Filter threads with unread messages (1=true, 0=false). Requires mailbox_id.
    */

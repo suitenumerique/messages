@@ -4,6 +4,8 @@
 from datetime import timedelta
 from unittest import mock
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -22,6 +24,7 @@ from core.factories import (
     ThreadAccessFactory,
     ThreadEventFactory,
     ThreadFactory,
+    UserEventFactory,
     UserFactory,
 )
 from core.models import MailboxAccess, Thread
@@ -1837,3 +1840,84 @@ class TestThreadListEventsCount:
         assert response.status_code == status.HTTP_200_OK
         payload = next(t for t in response.data["results"] if t["id"] == str(thread.id))
         assert payload["events_count"] == 2
+
+
+class TestThreadListQueryCount:
+    """Regression guard for N+1 queries on the thread list endpoint.
+
+    ``ThreadSerializer`` exposes nested fields (accesses, messages, labels,
+    user_role, assigned_users) that each used to trigger one or more SQL
+    queries per thread. The viewset now attaches matching prefetches so the
+    query count stays constant regardless of the number of threads listed.
+    """
+
+    @pytest.fixture
+    def url(self):
+        """Return the URL for the list endpoint."""
+        return reverse("threads-list")
+
+    def _setup(self, thread_count, with_labels=False, with_assignees=False):
+        """Provision a user + mailbox with ``thread_count`` threads."""
+        user = UserFactory()
+        mailbox = MailboxFactory()
+        MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        label = LabelFactory(mailbox=mailbox) if with_labels else None
+        assignee = UserFactory() if with_assignees else None
+        for _ in range(thread_count):
+            thread = ThreadFactory()
+            ThreadAccessFactory(
+                mailbox=mailbox,
+                thread=thread,
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+            )
+            if label is not None:
+                label.threads.add(thread)
+            if assignee is not None:
+                event = ThreadEventFactory(thread=thread, author=user)
+                UserEventFactory(
+                    user=assignee,
+                    thread=thread,
+                    thread_event=event,
+                    type=enums.UserEventTypeChoices.ASSIGN,
+                )
+        return user, mailbox
+
+    @staticmethod
+    def _count_queries(api_client, user, mailbox, url):
+        """Return the number of SQL queries emitted by the list call."""
+        api_client.force_authenticate(user=user)
+        with CaptureQueriesContext(connection) as ctx:
+            response = api_client.get(url, {"mailbox_id": str(mailbox.id)})
+        assert response.status_code == status.HTTP_200_OK
+        return len(ctx.captured_queries)
+
+    def test_base_fields_are_prefetched(self, api_client, url):
+        """With only accesses/messages, query count is constant across thread counts."""
+        user_1, mailbox_1 = self._setup(1)
+        queries_1 = self._count_queries(api_client, user_1, mailbox_1, url)
+
+        user_5, mailbox_5 = self._setup(5)
+        queries_5 = self._count_queries(api_client, user_5, mailbox_5, url)
+
+        assert queries_5 == queries_1, (
+            f"Expected constant query count (N+1 regression?), "
+            f"got 1→{queries_1} vs 5→{queries_5}"
+        )
+
+    def test_labels_and_assignees_prefetched(self, api_client, url):
+        """Adding labels + assignees on every thread must not scale queries with N."""
+        user_1, mailbox_1 = self._setup(1, with_labels=True, with_assignees=True)
+        queries_1 = self._count_queries(api_client, user_1, mailbox_1, url)
+
+        user_5, mailbox_5 = self._setup(5, with_labels=True, with_assignees=True)
+        queries_5 = self._count_queries(api_client, user_5, mailbox_5, url)
+
+        assert queries_5 == queries_1, (
+            f"Expected constant query count with labels+assignees "
+            f"(N+1 regression on prefetch chain?), "
+            f"got 1→{queries_1} vs 5→{queries_5}"
+        )

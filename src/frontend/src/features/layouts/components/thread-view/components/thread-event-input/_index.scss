@@ -119,3 +119,14 @@
         color: var(--c--contextuals--content--semantic--neutral--tertiary);
     }
 }
+
+.thread-event-input__suggestion {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs);
+
+    & > :first-child {
+        flex: 1;
+        min-width: 0;
+    }
+}

@@ -17,6 +17,12 @@ export interface Mailbox {
   readonly email: string;
   /** Whether this mailbox identifies a person (i.e. is not an alias or a group) */
   readonly is_identity: boolean;
+  /** Return True if the mailbox is shared (non-identity or has more than one access).
+
+Drives mailbox-level UI gating for collaboration features (assignment
+sub-folders, mention folder) that have no purpose in a mono-user
+identity mailbox. */
+  readonly is_shared: boolean;
   readonly role: MailboxRoleChoices;
   /** Return the number of threads with unread messages in the mailbox. */
   readonly count_unread_threads: number;
@@ -26,6 +32,8 @@ export interface Mailbox {
   readonly count_delivering: number;
   /** Return the number of threads with unread mentions for the current user. */
   readonly count_unread_mentions: number;
+  /** Return the number of threads in this mailbox currently assigned to the current user. */
+  readonly count_assigned: number;
   /** Instance permissions and capabilities */
   readonly abilities: MailboxAbilities;
 }

@@ -120,6 +120,7 @@ class TestMailboxViewSet:
         assert response.data[0]["count_threads"] == 2
         assert response.data[0]["count_delivering"] == 1
         assert response.data[0]["count_unread_mentions"] == 0
+        assert response.data[0]["count_assigned"] == 0
 
         assert response.data[1]["id"] == str(user_mailbox1.id)
         assert response.data[1]["email"] == str(user_mailbox1)
@@ -129,6 +130,7 @@ class TestMailboxViewSet:
         assert response.data[1]["count_threads"] == 1
         assert response.data[1]["count_delivering"] == 1
         assert response.data[1]["count_unread_mentions"] == 0
+        assert response.data[1]["count_assigned"] == 0
 
     def test_list_is_identity_false(self):
         """A mailbox that is not an identity should return is_identity=False."""
@@ -145,6 +147,60 @@ class TestMailboxViewSet:
         response = client.get(reverse("mailboxes-list"))
         assert response.status_code == status.HTTP_200_OK
         assert response.data[0]["is_identity"] is False
+
+    def test_list_is_shared_solo_identity_is_false(self):
+        """An identity mailbox with a single access is not shared."""
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory(is_identity=True)
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=models.MailboxRoleChoices.EDITOR,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("mailboxes-list"))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data[0]["is_shared"] is False
+
+    def test_list_is_shared_identity_with_multiple_accesses_is_true(self):
+        """An identity mailbox shared via delegation (>1 access) is shared."""
+        user = factories.UserFactory()
+        delegate = factories.UserFactory()
+        mailbox = factories.MailboxFactory(is_identity=True)
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=models.MailboxRoleChoices.EDITOR,
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=delegate,
+            role=models.MailboxRoleChoices.VIEWER,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("mailboxes-list"))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data[0]["is_shared"] is True
+
+    def test_list_is_shared_non_identity_is_true(self):
+        """A non-identity mailbox is always shared, even with a single access."""
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory(is_identity=False)
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=models.MailboxRoleChoices.EDITOR,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("mailboxes-list"))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data[0]["is_shared"] is True
 
     def test_list_unauthorized(self):
         """Anonymous user cannot access the list of mailboxes."""
@@ -345,6 +401,7 @@ class TestMailboxViewSet:
         assert response.data["count_threads"] == 1
         assert response.data["count_delivering"] == 1
         assert response.data["count_unread_mentions"] == 0
+        assert response.data["count_assigned"] == 0
 
     def test_list_count_unread_mentions(self):
         """count_unread_mentions should count distinct threads with an active
@@ -452,6 +509,93 @@ class TestMailboxViewSet:
         by_id = {m["id"]: m for m in response.data}
         assert by_id[str(mailbox_a.id)]["count_unread_mentions"] == 2
         assert by_id[str(mailbox_b.id)]["count_unread_mentions"] == 1
+
+    def test_list_count_assigned(self):
+        """count_assigned should count distinct threads in this mailbox where
+        the current user is currently assigned. UserEvent(type=ASSIGN) is the
+        source of truth (created on assign, deleted on unassign), so the
+        counter reflects the live state without read-state filtering."""
+        user = factories.UserFactory()
+        other_user = factories.UserFactory()
+
+        mailbox_a = factories.MailboxFactory()
+        mailbox_b = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox_a, user=user, role=models.MailboxRoleChoices.EDITOR
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox_b, user=user, role=models.MailboxRoleChoices.EDITOR
+        )
+
+        # Thread in mailbox_a where `user` is assigned
+        thread_a1 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_a,
+            thread=thread_a1,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        event_a1 = factories.ThreadEventFactory(thread=thread_a1, author=other_user)
+        factories.UserEventFactory(
+            user=user,
+            thread=thread_a1,
+            thread_event=event_a1,
+            type=enums.UserEventTypeChoices.ASSIGN,
+        )
+
+        # Thread in mailbox_a assigned to someone else — must be excluded
+        thread_a3 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_a,
+            thread=thread_a3,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        event_a3 = factories.ThreadEventFactory(thread=thread_a3, author=user)
+        factories.UserEventFactory(
+            user=other_user,
+            thread=thread_a3,
+            thread_event=event_a3,
+            type=enums.UserEventTypeChoices.ASSIGN,
+        )
+
+        # Thread in mailbox_a where `user` only has a MENTION (not ASSIGN) —
+        # must be excluded; cross-checks that the counter is type-scoped.
+        thread_a4 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_a,
+            thread=thread_a4,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        event_a4 = factories.ThreadEventFactory(thread=thread_a4, author=other_user)
+        factories.UserEventFactory(
+            user=user,
+            thread=thread_a4,
+            thread_event=event_a4,
+            type=enums.UserEventTypeChoices.MENTION,
+        )
+
+        # Thread in mailbox_b assigned to `user` — scoping check
+        thread_b1 = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_b,
+            thread=thread_b1,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        event_b1 = factories.ThreadEventFactory(thread=thread_b1, author=other_user)
+        factories.UserEventFactory(
+            user=user,
+            thread=thread_b1,
+            thread_event=event_b1,
+            type=enums.UserEventTypeChoices.ASSIGN,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("mailboxes-list"))
+        assert response.status_code == status.HTTP_200_OK
+
+        by_id = {m["id"]: m for m in response.data}
+        assert by_id[str(mailbox_a.id)]["count_assigned"] == 1
+        assert by_id[str(mailbox_b.id)]["count_assigned"] == 1
 
     def test_retrieve_mailbox_unauthorized(self):
         """Test that users cannot retrieve mailboxes they don't have access to."""

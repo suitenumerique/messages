@@ -177,3 +177,128 @@ class TestUserEvent:
             ).count()
             == 1
         )
+
+    def test_user_event_assign_partial_unique_rejects_second_assign_on_same_thread(
+        self,
+    ):
+        """At most one ASSIGN UserEvent is allowed per (user, thread).
+
+        This partial UniqueConstraint is the schema-level guarantee behind the
+        idempotence logic in ThreadEventViewSet.create: two concurrent ASSIGN
+        requests can both decide to create a UserEvent; the DB arbitrates.
+        The two inserts use *different* thread_event FKs, so the existing
+        (user, thread_event, type) constraint alone wouldn't catch them.
+        """
+        user = factories.UserFactory()
+        thread = factories.ThreadFactory()
+        thread_event_1 = factories.ThreadEventFactory(
+            thread=thread,
+            type="assign",
+            data={"assignees": [{"id": str(user.id), "name": "u"}]},
+        )
+        thread_event_2 = factories.ThreadEventFactory(
+            thread=thread,
+            type="assign",
+            data={"assignees": [{"id": str(user.id), "name": "u"}]},
+        )
+
+        factories.UserEventFactory(
+            user=user,
+            thread=thread,
+            thread_event=thread_event_1,
+            type=enums.UserEventTypeChoices.ASSIGN,
+        )
+
+        with transaction.atomic(), pytest.raises(IntegrityError):
+            core_models.UserEvent.objects.bulk_create(
+                [
+                    core_models.UserEvent(
+                        user=user,
+                        thread=thread,
+                        thread_event=thread_event_2,
+                        type=enums.UserEventTypeChoices.ASSIGN,
+                    )
+                ]
+            )
+
+    def test_user_event_assign_bulk_create_ignore_conflicts_absorbs_race(self):
+        """``bulk_create(..., ignore_conflicts=True)`` must absorb ASSIGN races.
+
+        Mirrors ``create_assign_user_events``: a second ASSIGN for the same
+        (user, thread) via a new ThreadEvent must be silently dropped by the
+        partial UniqueConstraint, leaving the original UserEvent intact.
+        """
+        user = factories.UserFactory()
+        thread = factories.ThreadFactory()
+        thread_event_1 = factories.ThreadEventFactory(
+            thread=thread,
+            type="assign",
+            data={"assignees": [{"id": str(user.id), "name": "u"}]},
+        )
+        thread_event_2 = factories.ThreadEventFactory(
+            thread=thread,
+            type="assign",
+            data={"assignees": [{"id": str(user.id), "name": "u"}]},
+        )
+        factories.UserEventFactory(
+            user=user,
+            thread=thread,
+            thread_event=thread_event_1,
+            type=enums.UserEventTypeChoices.ASSIGN,
+        )
+
+        core_models.UserEvent.objects.bulk_create(
+            [
+                core_models.UserEvent(
+                    user=user,
+                    thread=thread,
+                    thread_event=thread_event_2,
+                    type=enums.UserEventTypeChoices.ASSIGN,
+                )
+            ],
+            ignore_conflicts=True,
+        )
+
+        assigns = core_models.UserEvent.objects.filter(
+            user=user,
+            thread=thread,
+            type=enums.UserEventTypeChoices.ASSIGN,
+        )
+        assert assigns.count() == 1
+        assert assigns.first().thread_event_id == thread_event_1.id
+
+    def test_user_event_assign_partial_unique_allows_reassign_after_unassign(self):
+        """Re-ASSIGN after UNASSIGN must succeed.
+
+        The partial UniqueConstraint only applies while an ASSIGN UserEvent
+        exists. ``delete_assign_user_events`` removes the row on UNASSIGN, so
+        a subsequent ASSIGN for the same (user, thread) must be accepted.
+        """
+        user = factories.UserFactory()
+        thread = factories.ThreadFactory()
+        thread_event_1 = factories.ThreadEventFactory(
+            thread=thread,
+            type="assign",
+            data={"assignees": [{"id": str(user.id), "name": "u"}]},
+        )
+        thread_event_2 = factories.ThreadEventFactory(
+            thread=thread,
+            type="assign",
+            data={"assignees": [{"id": str(user.id), "name": "u"}]},
+        )
+
+        event_1 = factories.UserEventFactory(
+            user=user,
+            thread=thread,
+            thread_event=thread_event_1,
+            type=enums.UserEventTypeChoices.ASSIGN,
+        )
+        event_1.delete()
+
+        event_2 = core_models.UserEvent.objects.create(
+            user=user,
+            thread=thread,
+            thread_event=thread_event_2,
+            type=enums.UserEventTypeChoices.ASSIGN,
+        )
+        assert event_2.id is not None

@@ -1,4 +1,5 @@
 """Tests for the ThreadAccess API endpoints."""
+# pylint: disable=too-many-lines
 
 import threading
 import uuid
@@ -94,11 +95,15 @@ class TestThreadAccessList:
         )
         factories.ThreadAccessFactory.create_batch(5, thread=other_thread)
 
-        with django_assert_num_queries(3):
+        # Query count is bounded (no N+1): prefetch chain covers mailbox,
+        # domain, contact, mailbox accesses and their users in a fixed
+        # number of queries regardless of the number of thread accesses.
+        with django_assert_num_queries(5):
             response = api_client.get(get_thread_access_url(thread.id))
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 11
-        assert response.data["results"][0]["thread"] == thread.id
+        assert len(response.data) == 11
+        # Assignable serializer must expose the per-mailbox `users` payload.
+        assert "users" in response.data[0]
 
     def test_list_thread_access_filter_by_mailbox(
         self, api_client, thread_with_editor_access, django_assert_num_queries
@@ -119,13 +124,13 @@ class TestThreadAccessList:
             thread=thread,
             role=enums.ThreadAccessRoleChoices.EDITOR,
         )
-        with django_assert_num_queries(3):
+        with django_assert_num_queries(5):
             response = api_client.get(
                 f"{get_thread_access_url(thread.id)}?mailbox_id={mailbox.id}"
             )
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["count"] == 1
-        assert response.data["results"][0]["mailbox"] == mailbox.id
+        assert len(response.data) == 1
+        assert response.data[0]["mailbox"] == mailbox.id
 
     @pytest.mark.parametrize(
         "thread_access_role, mailbox_access_role",
@@ -546,6 +551,88 @@ class TestThreadAccessUpdate:
             "IDOR: ThreadAccess.mailbox was changed via PATCH"
         )
 
+    def test_update_thread_access_last_editor_rejected(self, api_client):
+        """Downgrading the last editor access on a thread must be rejected."""
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        thread = factories.ThreadFactory()
+        thread_access = factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        api_client.force_authenticate(user=user)
+
+        url = get_thread_access_url(thread.id, thread_access.id)
+        response = api_client.patch(url, {"role": "viewer"})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        thread_access.refresh_from_db()
+        assert thread_access.role == enums.ThreadAccessRoleChoices.EDITOR
+
+    def test_update_thread_access_last_editor_with_viewers_rejected(self, api_client):
+        """Downgrading the last editor is rejected even if viewers remain."""
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        thread = factories.ThreadFactory()
+        editor_access = factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        # Add viewers — they don't count as editors
+        factories.ThreadAccessFactory(
+            thread=thread, role=enums.ThreadAccessRoleChoices.VIEWER
+        )
+        api_client.force_authenticate(user=user)
+
+        url = get_thread_access_url(thread.id, editor_access.id)
+        response = api_client.patch(url, {"role": "viewer"})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        editor_access.refresh_from_db()
+        assert editor_access.role == enums.ThreadAccessRoleChoices.EDITOR
+
+    def test_update_thread_access_editor_downgrade_allowed_when_others_remain(
+        self, api_client
+    ):
+        """Downgrading an editor access is allowed when other editors remain."""
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        thread = factories.ThreadFactory()
+        editor_access = factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        # Another editor on the thread
+        factories.ThreadAccessFactory(
+            thread=thread, role=enums.ThreadAccessRoleChoices.EDITOR
+        )
+        api_client.force_authenticate(user=user)
+
+        url = get_thread_access_url(thread.id, editor_access.id)
+        response = api_client.patch(url, {"role": "viewer"})
+        assert response.status_code == status.HTTP_200_OK
+
+        editor_access.refresh_from_db()
+        assert editor_access.role == enums.ThreadAccessRoleChoices.VIEWER
+
 
 class TestThreadAccessDelete:
     """Test the DELETE /threads/{thread_id}/accesses/{id}/ endpoint."""
@@ -866,3 +953,189 @@ class TestThreadAccessDelete:
             role=enums.ThreadAccessRoleChoices.EDITOR,
         ).count()
         assert remaining == 1
+
+
+class TestThreadAccessDetailUsersField:
+    """Verify the `users` field exposed on ThreadAccessDetailSerializer.
+
+    This field feeds the share/assignment modal: it lists users of each
+    mailbox-with-access who can be assigned to the thread, excluding
+    viewers (they cannot be assignees). It is served only by the thread
+    accesses list endpoint so thread list/retrieve payloads stay lean.
+    """
+
+    def _list_thread_accesses(self, api_client, thread_id):
+        """GET /api/v1.0/threads/{thread_id}/accesses/"""
+        return api_client.get(get_thread_access_url(thread_id))
+
+    def test_excludes_viewers_includes_higher_roles(self, api_client):
+        """Viewers on a mailbox must not appear in `users`; editors/senders/admins must."""
+        requester = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=requester,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+
+        viewer_user = factories.UserFactory(full_name="Zoé Viewer")
+        editor_user = factories.UserFactory(full_name="Alice Editor")
+        sender_user = factories.UserFactory(full_name="Bob Sender")
+        admin_user = factories.UserFactory(full_name="Carol Admin")
+        factories.MailboxAccessFactory(
+            mailbox=mailbox, user=viewer_user, role=enums.MailboxRoleChoices.VIEWER
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox, user=editor_user, role=enums.MailboxRoleChoices.EDITOR
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox, user=sender_user, role=enums.MailboxRoleChoices.SENDER
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox, user=admin_user, role=enums.MailboxRoleChoices.ADMIN
+        )
+
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+
+        api_client.force_authenticate(user=requester)
+        response = self._list_thread_accesses(api_client, thread.id)
+        assert response.status_code == status.HTTP_200_OK
+
+        access = response.data[0]
+        returned_ids = {str(u["id"]) for u in access["users"]}
+        assert str(viewer_user.id) not in returned_ids
+        assert str(editor_user.id) in returned_ids
+        assert str(sender_user.id) in returned_ids
+        assert str(admin_user.id) in returned_ids
+        # Requester (admin) is included too.
+        assert str(requester.id) in returned_ids
+
+    def test_users_field_is_sorted(self, api_client):
+        """Users must be ordered by full_name then email."""
+        requester = factories.UserFactory(full_name="Zed")
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=requester,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        # Create users out of alphabetical order to ensure ordering is
+        # driven by the serializer, not insertion order.
+        names = ["Charlie", "Alice", "Bob"]
+        for name in names:
+            factories.MailboxAccessFactory(
+                mailbox=mailbox,
+                user=factories.UserFactory(full_name=name),
+                role=enums.MailboxRoleChoices.EDITOR,
+            )
+
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+
+        api_client.force_authenticate(user=requester)
+        response = self._list_thread_accesses(api_client, thread.id)
+        assert response.status_code == status.HTTP_200_OK
+        returned_names = [u["full_name"] for u in response.data[0]["users"]]
+        assert returned_names == ["Alice", "Bob", "Charlie", "Zed"]
+
+    def test_users_field_respects_mailbox_boundary(self, api_client):
+        """Each mailbox-access must only list its own mailbox users."""
+        requester = factories.UserFactory()
+        mailbox_a = factories.MailboxFactory()
+        mailbox_b = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox_a,
+            user=requester,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox_b,
+            user=requester,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        a_only = factories.UserFactory(full_name="Only A")
+        b_only = factories.UserFactory(full_name="Only B")
+        factories.MailboxAccessFactory(
+            mailbox=mailbox_a, user=a_only, role=enums.MailboxRoleChoices.EDITOR
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox_b, user=b_only, role=enums.MailboxRoleChoices.EDITOR
+        )
+
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_a,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        factories.ThreadAccessFactory(
+            mailbox=mailbox_b,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+
+        api_client.force_authenticate(user=requester)
+        response = self._list_thread_accesses(api_client, thread.id)
+        assert response.status_code == status.HTTP_200_OK
+
+        accesses_by_mailbox = {str(a["mailbox"]): a for a in response.data}
+        a_users = {
+            str(u["id"]) for u in accesses_by_mailbox[str(mailbox_a.id)]["users"]
+        }
+        b_users = {
+            str(u["id"]) for u in accesses_by_mailbox[str(mailbox_b.id)]["users"]
+        }
+
+        assert str(a_only.id) in a_users
+        assert str(a_only.id) not in b_users
+        assert str(b_only.id) in b_users
+
+    def test_thread_endpoints_do_not_expose_users(self, api_client):
+        """`users` is served only by the accesses list endpoint.
+
+        Both `GET /threads/` and `GET /threads/{id}/` embed accesses via
+        `ThreadAccessDetailSerializer`, which intentionally omits `users`
+        so thread payloads stay small and free of per-mailbox user PII.
+        """
+        requester = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=requester,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=factories.UserFactory(),
+            role=enums.MailboxRoleChoices.EDITOR,
+        )
+
+        thread = factories.ThreadFactory()
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+
+        api_client.force_authenticate(user=requester)
+
+        list_url = reverse("threads-list")
+        list_response = api_client.get(f"{list_url}?mailbox_id={mailbox.id}")
+        assert list_response.status_code == status.HTTP_200_OK
+        list_access = list_response.data["results"][0]["accesses"][0]
+        assert "users" not in list_access
+
+        detail_url = reverse("threads-detail", kwargs={"pk": thread.id})
+        detail_response = api_client.get(f"{detail_url}?mailbox_id={mailbox.id}")
+        assert detail_response.status_code == status.HTTP_200_OK
+        detail_access = detail_response.data["accesses"][0]
+        assert "users" not in detail_access

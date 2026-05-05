@@ -5,6 +5,23 @@ import { BrowserName } from "../types";
 import { API_URL } from "../constants";
 
 /**
+ * Expand the system-events disclosure group if present.
+ *
+ * 3+ consecutive non-IM events (assign/unassign) get collapsed into a
+ * "{{count}} assignment changes" toggle. The inner system lines are not
+ * rendered until the disclosure is expanded — assertions on
+ * "You assigned yourself" / "You unassigned yourself" must trigger this
+ * first when re-runs accumulate events on the same thread.
+ */
+async function expandSystemEventsGroup(page: Page) {
+  const toggle = page.locator(".thread-event--collapsed button[aria-expanded]");
+  if (!(await toggle.isVisible())) return;
+  if ((await toggle.getAttribute("aria-expanded")) === "false") {
+    await toggle.click();
+  }
+}
+
+/**
  * Navigate to the shared mailbox and open the IM test thread.
  */
 async function navigateToSharedThread(page: Page, browserName: BrowserName) {
@@ -550,5 +567,234 @@ test.describe("Thread Events (Internal Messages)", () => {
       },
     );
     expect(updateResponse.status()).toBe(403);
+  });
+});
+
+test.describe("Thread Events (Assignations)", () => {
+  test.beforeEach(async ({ page, browserName }) => {
+    await signInKeycloakIfNeeded({
+      page,
+      username: `user.e2e.${browserName}`,
+    });
+  });
+
+  test("does not show the assignees widget on a personal mailbox thread", async ({
+    page,
+  }) => {
+    // Personal mailbox threads are not collaborative (single mailbox access,
+    // is_shared=false): the widget is gated behind useIsSharedContext and
+    // must not render — assignment has no meaning when only one human can
+    // ever see the thread.
+    await page.waitForLoadState("networkidle");
+
+    await inboxFolderLink(page).click();
+    await page.waitForLoadState("networkidle");
+    await page
+      .getByRole("link", { name: "Inbox thread alpha" })
+      .first()
+      .click();
+    await page
+      .getByRole("heading", { name: "Inbox thread alpha", level: 2 })
+      .waitFor({ state: "visible" });
+
+    await expect(page.locator(".assignees-widget")).toHaveCount(0);
+  });
+
+  test("self-assign and unassign via the quick-assign popover", async ({
+    page,
+    browserName,
+  }) => {
+    await navigateToSharedThread(page, browserName);
+
+    // Reset assignment state via API to keep the test independent of any
+    // residue from previous runs (the suite has no per-test db:reset).
+    // Posting an unassign for a user not currently assigned is a no-op for
+    // `useAssignedUsers`, which walks events in reverse and only keeps the
+    // most recent decision per user.
+    const threadMatch = page.url().match(/\/thread\/([0-9a-f-]+)/i);
+    const threadId = threadMatch?.[1];
+    expect(threadId, "thread id should be present in URL").toBeTruthy();
+    const cookies = await page.context().cookies();
+    const csrfToken = cookies.find((c) => c.name === "csrftoken")?.value ?? "";
+    const meResponse = await page.request.get(`${API_URL}/api/v1.0/users/me/`);
+    expect(meResponse.ok()).toBeTruthy();
+    const me = (await meResponse.json()) as { id: string; full_name: string };
+    await page.request.post(
+      `${API_URL}/api/v1.0/threads/${threadId}/events/`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken,
+        },
+        data: {
+          type: "unassign",
+          data: { assignees: [{ id: me.id, name: me.full_name }] },
+        },
+      },
+    );
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await page.waitForLoadState("networkidle");
+
+    // Empty state: trigger advertises the action verb. The aria-label flips
+    // to "Assigned to ..." once the widget reads at least one assignee.
+    const emptyTrigger = page.getByRole("button", {
+      name: "Assign users to this thread",
+    });
+    await expect(emptyTrigger).toBeVisible();
+    await emptyTrigger.click();
+
+    // Popover renders in a portal at document.body — locate globally.
+    const popover = page.locator(".quick-assign-popover");
+    await expect(popover).toBeVisible();
+
+    // Sort order puts the current user first under the visible label "You".
+    // Multi-selection menu exposes each row as menuitemcheckbox.
+    const meRow = popover.getByRole("menuitemcheckbox", { name: /^You$/ });
+    await expect(meRow).toHaveAttribute("aria-checked", "false");
+
+    await meRow.click();
+    await expect(meRow).toHaveAttribute("aria-checked", "true");
+
+    await page.keyboard.press("Escape");
+    await expect(popover).not.toBeVisible();
+
+    // Trigger label flips to assignee-list form — confirms the cache
+    // invalidation round-trip and the widget re-derived assignedUsers.
+    await expect(
+      page.getByRole("button", { name: /^Assigned to / }),
+    ).toBeVisible();
+
+    // Single discrete system line with viewer-relative phrasing — exercises
+    // the buildAssignmentMessage code path for author=me, assignees=[me].
+    // Re-runs accumulate events on the shared thread; expand the disclosure
+    // group when the 3+ event threshold collapses the inline lines.
+    await expandSystemEventsGroup(page);
+    await expect(
+      page
+        .locator(".thread-event--system-line")
+        .filter({ hasText: "You assigned yourself" })
+        .last(),
+    ).toBeVisible();
+
+    // Toggle back to assert the unassign path produces a matching system
+    // line and reverts the trigger to its empty-state label. Keeps the
+    // database state clean for re-runs without db:reset.
+    const assignedTrigger = page.getByRole("button", { name: /^Assigned to / });
+    await assignedTrigger.click();
+    await expect(popover).toBeVisible();
+
+    const assignedRow = popover.getByRole("menuitemcheckbox", { name: /^You$/ });
+    await expect(assignedRow).toHaveAttribute("aria-checked", "true");
+    await assignedRow.click();
+    await expect(assignedRow).toHaveAttribute("aria-checked", "false");
+
+    await page.keyboard.press("Escape");
+    await expect(popover).not.toBeVisible();
+
+    await expect(
+      page.getByRole("button", { name: "Assign users to this thread" }),
+    ).toBeVisible();
+    // Within UNDO_WINDOW_SECONDS (120s, see thread_events service), an
+    // unassign by the same author retracts the original ASSIGN event
+    // instead of emitting an UNASSIGN — so the timeline shows neither a
+    // "You assigned yourself" nor a "You unassigned yourself" line for
+    // this self-assign / self-unassign pair. Assert the absence rather
+    // than chasing a system line the backend deliberately suppresses.
+    await expandSystemEventsGroup(page);
+    await expect(
+      page
+        .locator(".thread-event--system-line")
+        .filter({ hasText: "You assigned yourself" }),
+    ).toHaveCount(0);
+    await expect(
+      page
+        .locator(".thread-event--system-line")
+        .filter({ hasText: "You unassigned yourself" }),
+    ).toHaveCount(0);
+  });
+
+  test("self-assigned thread surfaces in the 'Assigned to me' folder", async ({
+    page,
+    browserName,
+  }) => {
+    await navigateToSharedThread(page, browserName);
+
+    // Drive the assignment through the API to keep this test independent
+    // of the popover flow exercised above. The cookies set during sign-in
+    // carry both the session id and the CSRF token DRF expects on POST.
+    const threadMatch = page.url().match(/\/thread\/([0-9a-f-]+)/i);
+    const threadId = threadMatch?.[1];
+    expect(threadId, "thread id should be present in URL").toBeTruthy();
+
+    const cookies = await page.context().cookies();
+    const csrfToken = cookies.find((c) => c.name === "csrftoken")?.value ?? "";
+
+    const meResponse = await page.request.get(`${API_URL}/api/v1.0/users/me/`);
+    expect(meResponse.ok()).toBeTruthy();
+    const me = (await meResponse.json()) as { id: string; full_name: string };
+
+    const assignResponse = await page.request.post(
+      `${API_URL}/api/v1.0/threads/${threadId}/events/`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken,
+        },
+        data: {
+          type: "assign",
+          data: { assignees: [{ id: me.id, name: me.full_name }] },
+        },
+      },
+    );
+    expect(assignResponse.ok()).toBeTruthy();
+
+    // Force a refetch so the sidebar stats and thread list pick up the
+    // new assignment without relying on a full page reload (which would
+    // hit the static-export hydration race that bounces shared-mailbox
+    // sessions back to the personal mailbox).
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await page.waitForLoadState("networkidle");
+
+    // The "Assigned to me" sub-folder lives under Inbox. Its visible text
+    // includes the leading "person" Material icon ligature, so the
+    // hasText filter cannot anchor on the start — substring matching
+    // mirrors the convention used by inboxFolderLink.
+    //
+    // The expanded state is initialized once at MailboxList mount based on
+    // the *first* selected mailbox: if the session started on a personal
+    // identity mailbox (is_shared=false), Inbox stays collapsed even after
+    // switching to a shared mailbox. Force-expand here so the sub-folder
+    // is reachable regardless of the initial mount state.
+    const expandInbox = page.getByRole("button", { name: "Expand Inbox" });
+    if (await expandInbox.isVisible()) {
+      await expandInbox.click();
+    }
+    await page
+      .locator("nav.mailbox-list .mailbox__item")
+      .filter({ hasText: "Assigned to me" })
+      .first()
+      .click();
+    await page.waitForLoadState("networkidle");
+
+    await expect(
+      page.getByRole("link", { name: "Shared inbox thread for IM" }).first(),
+    ).toBeVisible();
+
+    // Cleanup: drop the assignment so the test is rerun-safe even when
+    // db:reset is skipped between iterations.
+    const unassignResponse = await page.request.post(
+      `${API_URL}/api/v1.0/threads/${threadId}/events/`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken,
+        },
+        data: {
+          type: "unassign",
+          data: { assignees: [{ id: me.id, name: me.full_name }] },
+        },
+      },
+    );
+    expect(unassignResponse.ok()).toBeTruthy();
   });
 });

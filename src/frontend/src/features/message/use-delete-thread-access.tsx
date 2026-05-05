@@ -18,7 +18,7 @@ type DeleteThreadAccessOptions = {
  */
 const useDeleteThreadAccess = () => {
     const { selectedMailbox, invalidateMailbox, invalidateThreadsStats, unpinThreads, unselectThread } = useMailboxContext();
-    const { mutate, status } = useThreadsAccessesDestroy();
+    const { mutate, status, isPending, variables } = useThreadsAccessesDestroy();
 
     const deleteThreadAccess = ({ accessId, accessMailboxId, threadId, onSuccess }: DeleteThreadAccessOptions) => {
         const isSelfRemoval = accessMailboxId === selectedMailbox?.id;
@@ -37,7 +37,7 @@ const useDeleteThreadAccess = () => {
         });
     };
 
-    return { deleteThreadAccess, status };
+    return { deleteThreadAccess, status, isPending, variables };
 };
 
 export default useDeleteThreadAccess;

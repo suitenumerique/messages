@@ -1,0 +1,54 @@
+.assignees-avatar-group {
+    display: inline-flex;
+    align-items: center;
+
+    > * + * {
+        margin-left: -6px;
+    }
+}
+
+.assignees-avatar-group__overflow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background-color: var(--c--contextuals--background--semantic--neutral--secondary);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+    border: 1px solid color-mix(in srgb, var(--c--contextuals--background--surface--tertiary) 80%, transparent);
+    font-weight: 700;
+    font-family: var(--c--globals--font--families--base);
+    line-height: 1;
+    box-sizing: border-box;
+    padding: 0 var(--c--globals--spacings--4xs);
+}
+
+// Keep each size in lock-step with the matching @gouvfr-lasuite/ui-kit
+// .c__avatar.<size> rule so the overflow chip has the same footprint
+// (and font metrics) as the UserAvatars it sits next to.
+.assignees-avatar-group[data-size="xsmall"] .assignees-avatar-group__overflow {
+    min-width: 16px;
+    height: 16px;
+    font-size: 7px;
+    letter-spacing: -0.25px;
+}
+
+.assignees-avatar-group[data-size="small"] .assignees-avatar-group__overflow {
+    min-width: 24px;
+    height: 24px;
+    font-size: 10px;
+    letter-spacing: -0.35px;
+}
+
+.assignees-avatar-group[data-size="medium"] .assignees-avatar-group__overflow {
+    min-width: 32px;
+    height: 32px;
+    font-size: 11px;
+    letter-spacing: -0.38px;
+}
+
+.assignees-avatar-group[data-size="large"] .assignees-avatar-group__overflow {
+    min-width: 64px;
+    height: 64px;
+    font-size: 18px;
+    letter-spacing: -0.54px;
+}

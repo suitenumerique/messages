@@ -8,6 +8,7 @@ from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth import admin as auth_admin
 from django.core.files.storage import storages
+from django.db import transaction
 from django.db.models import JSONField, Q
 from django.http import HttpResponseNotAllowed
 from django.shortcuts import redirect
@@ -21,12 +22,13 @@ from sentry_sdk import capture_exception
 from core.api.utils import get_file_key
 from core.api.viewsets.task import register_task_owner
 from core.mda.outbound_tasks import retry_messages_task
+from core.services import thread_events as thread_events_service
 from core.services.dns.provisioning import provision_domain_dns
 from core.services.exporter.tasks import export_mailbox_task
 from core.services.importer.service import ImportService
 from core.services.throttle import get_throttle_status
 
-from . import models
+from . import enums, models
 from .enums import MessageDeliveryStatusChoices
 from .forms import IMAPImportForm, MessageImportForm
 
@@ -388,6 +390,13 @@ class MailboxAdmin(admin.ModelAdmin):
     change_form_template = "admin/core/mailbox/change_form.html"
     readonly_fields = ("throttle_status_display",)
 
+    def save_formset(self, request, form, formset, change):
+        """Route MailboxAccess inline edits through the cleanup service."""
+        if formset.model is models.MailboxAccess:
+            _cleanup_mailbox_access_formset(formset)
+            return
+        super().save_formset(request, form, formset, change)
+
     def get_queryset(self, request):
         """Optimize queryset with select_related for better performance"""
         return (
@@ -584,15 +593,152 @@ class ChannelAdmin(admin.ModelAdmin):
 
 @admin.register(models.MailboxAccess)
 class MailboxAccessAdmin(admin.ModelAdmin):
-    """Admin class for the MailboxAccess model"""
+    """Admin class for the MailboxAccess model.
+
+    Routes all writes through ``thread_events_service`` so that role
+    downgrades and deletions clean up assignments/mentions exactly the
+    same way the API viewsets do. Without these overrides, an operator
+    editing a row directly from the admin would leave stale ``UserEvent``
+    rows behind.
+    """
 
     list_display = ("id", "mailbox", "user", "role")
     search_fields = ("mailbox__local_part", "mailbox__domain__name", "user__email")
     autocomplete_fields = ("mailbox", "user")
 
+    @transaction.atomic
+    def save_model(self, request, obj, form, change):
+        """Detect role downgrades or principal changes and trigger cleanup.
+
+        When ``mailbox`` or ``user`` is reassigned, the row the previous
+        principal had is gone after save, so we must revoke against the
+        pre-save snapshot rather than the new ``obj``. Wrapped in
+        ``transaction.atomic`` so the save and the cleanup commit together
+        — the service layer requires this contract.
+        """
+        previous = None
+        if change and obj.pk:
+            previous = models.MailboxAccess.objects.filter(pk=obj.pk).first()
+        super().save_model(request, obj, form, change)
+        if previous is None:
+            return
+        if (previous.mailbox_id, previous.user_id) != (
+            obj.mailbox_id,
+            obj.user_id,
+        ):
+            thread_events_service.revoke_mailbox_access(mailbox_access=previous)
+            return
+        was_editor = previous.role in enums.MAILBOX_ROLES_CAN_EDIT
+        is_editor = obj.role in enums.MAILBOX_ROLES_CAN_EDIT
+        if was_editor and not is_editor:
+            thread_events_service.downgrade_mailbox_access(mailbox_access=obj)
+
+    @transaction.atomic
+    def delete_model(self, request, obj):
+        """Delete the row, then cleanup using the in-memory instance.
+
+        Order matters: ``revoke_mailbox_access`` re-runs the editor /
+        viewer-rights queries to decide who lost their effective access,
+        and those queries must observe a state where ``obj`` is gone.
+        Wrapped in ``transaction.atomic`` so a failing cleanup rolls the
+        delete back instead of leaving stale ``UserEvent`` rows.
+        """
+        super().delete_model(request, obj)
+        thread_events_service.revoke_mailbox_access(mailbox_access=obj)
+
+    @transaction.atomic
+    def delete_queryset(self, request, queryset):
+        """Bulk-delete then cleanup per row.
+
+        ``queryset`` is consumed before ``super().delete_queryset()``
+        deletes the rows, so each ``MailboxAccess`` is still readable in
+        memory afterwards for the cleanup pass. Wrapped in
+        ``transaction.atomic`` so a partial cleanup failure does not
+        leave half the rows deleted without their ``UserEvent`` cleanup.
+        """
+        rows = list(queryset)
+        super().delete_queryset(request, queryset)
+        for obj in rows:
+            thread_events_service.revoke_mailbox_access(mailbox_access=obj)
+
+
+@admin.register(models.ThreadAccess)
+class ThreadAccessAdmin(admin.ModelAdmin):
+    """Admin class for the ThreadAccess model.
+
+    Registered explicitly so that direct admin writes flow through the
+    cleanup service. ``ThreadAccess`` is also surfaced as an inline on
+    ``ThreadAdmin``; inline edits go through ``ThreadAdmin.save_formset``
+    rather than this class.
+    """
+
+    list_display = ("id", "thread", "mailbox", "role")
+    search_fields = (
+        "thread__subject",
+        "mailbox__local_part",
+        "mailbox__domain__name",
+    )
+    autocomplete_fields = ("thread", "mailbox")
+
+    @transaction.atomic
+    def save_model(self, request, obj, form, change):
+        """Detect EDITOR → other transitions or principal changes and cleanup.
+
+        When ``thread`` or ``mailbox`` is reassigned, the row the previous
+        principal had is gone after save, so we must revoke against the
+        pre-save snapshot rather than the new ``obj``. Wrapped in
+        ``transaction.atomic`` so the save and the cleanup commit together
+        — the service layer requires this contract.
+        """
+        previous = None
+        if change and obj.pk:
+            previous = models.ThreadAccess.objects.filter(pk=obj.pk).first()
+        super().save_model(request, obj, form, change)
+        if previous is None:
+            return
+        if (previous.thread_id, previous.mailbox_id) != (
+            obj.thread_id,
+            obj.mailbox_id,
+        ):
+            thread_events_service.revoke_thread_access(thread_access=previous)
+            return
+        if (
+            previous.role == enums.ThreadAccessRoleChoices.EDITOR
+            and obj.role != enums.ThreadAccessRoleChoices.EDITOR
+        ):
+            thread_events_service.downgrade_thread_access(thread_access=obj)
+
+    @transaction.atomic
+    def delete_model(self, request, obj):
+        """Delete the row, then cleanup using the in-memory instance.
+
+        Wrapped in ``transaction.atomic`` so a failing cleanup rolls the
+        delete back instead of leaving stale ``UserEvent`` rows.
+        """
+        super().delete_model(request, obj)
+        thread_events_service.revoke_thread_access(thread_access=obj)
+
+    @transaction.atomic
+    def delete_queryset(self, request, queryset):
+        """Bulk-delete then cleanup per row.
+
+        Wrapped in ``transaction.atomic`` so a partial cleanup failure
+        does not leave half the rows deleted without their ``UserEvent``
+        cleanup.
+        """
+        rows = list(queryset)
+        super().delete_queryset(request, queryset)
+        for obj in rows:
+            thread_events_service.revoke_thread_access(thread_access=obj)
+
 
 class ThreadAccessInline(admin.TabularInline):
-    """Inline class for the ThreadAccess model"""
+    """Inline class for the ThreadAccess model.
+
+    Inline writes are routed through ``ThreadAdmin.save_formset`` so that
+    role downgrades and deletions trigger the same assignment cleanup as
+    the standalone ``ThreadAccessAdmin`` and the API viewset.
+    """
 
     model = models.ThreadAccess
     autocomplete_fields = ("mailbox",)
@@ -600,13 +746,31 @@ class ThreadAccessInline(admin.TabularInline):
 
 
 class ThreadEventInline(admin.TabularInline):
-    """Inline class for the ThreadEvent model"""
+    """Inline class for the ThreadEvent model.
+
+    Read-only on purpose: ASSIGN/UNASSIGN/IM events have invariants tied
+    to ``UserEvent`` rows that the service layer enforces. Authoring them
+    by hand from the admin would leave the user-facing notifications
+    inconsistent with the timeline. Operators inspecting a thread can
+    still see every event and its data — the lock is on creation/edit
+    only.
+    """
 
     model = models.ThreadEvent
-    autocomplete_fields = ("author", "channel")
     raw_id_fields = ("message",)
-    readonly_fields = ("created_at",)
+    readonly_fields = (
+        "type",
+        "author",
+        "channel",
+        "message",
+        "data",
+        "created_at",
+    )
+    can_delete = False
     extra = 0
+
+    def has_add_permission(self, request, obj=None):
+        return False
 
 
 class UserEventInline(admin.TabularInline):
@@ -634,11 +798,124 @@ class UserEventInline(admin.TabularInline):
         return False
 
 
+@transaction.atomic
+def _cleanup_thread_access_formset(formset):
+    """Run the assignment cleanup service for a ThreadAccess inline formset.
+
+    Captures pre-mutation state (full snapshots, instances scheduled for
+    deletion) before ``formset.save()`` actually mutates the database,
+    then runs the cleanup service afterwards so the editor-rights
+    queries observe the post-mutation state. Snapshots the full row
+    (not just role) so reassigning ``thread`` or ``mailbox`` in place
+    revokes the old grant rather than leaving it behind. Wrapped in
+    ``transaction.atomic`` so ``formset.save()`` and the cleanup commit
+    together — partial cleanup would leave orphaned ``UserEvent`` rows.
+    """
+    previous_snapshots = {}
+    instances_to_revoke = []
+    tracked_fields = ("role", "thread", "mailbox")
+    for sub_form in formset.forms:
+        if not sub_form.instance.pk:
+            continue
+        if sub_form.cleaned_data.get("DELETE"):
+            snapshot = models.ThreadAccess.objects.filter(
+                pk=sub_form.instance.pk
+            ).first()
+            if snapshot is not None:
+                instances_to_revoke.append(snapshot)
+            continue
+        if any(field in (sub_form.changed_data or []) for field in tracked_fields):
+            previous_snapshots[sub_form.instance.pk] = (
+                models.ThreadAccess.objects.filter(pk=sub_form.instance.pk).first()
+            )
+
+    formset.save()
+
+    for instance in instances_to_revoke:
+        thread_events_service.revoke_thread_access(thread_access=instance)
+
+    for sub_form in formset.forms:
+        if not sub_form.instance.pk or sub_form.cleaned_data.get("DELETE"):
+            continue
+        previous = previous_snapshots.get(sub_form.instance.pk)
+        if previous is None:
+            continue
+        new = sub_form.instance
+        if (previous.thread_id, previous.mailbox_id) != (
+            new.thread_id,
+            new.mailbox_id,
+        ):
+            thread_events_service.revoke_thread_access(thread_access=previous)
+            continue
+        if (
+            previous.role == enums.ThreadAccessRoleChoices.EDITOR
+            and new.role != enums.ThreadAccessRoleChoices.EDITOR
+        ):
+            thread_events_service.downgrade_thread_access(thread_access=new)
+
+
+@transaction.atomic
+def _cleanup_mailbox_access_formset(formset):
+    """Run the assignment cleanup service for a MailboxAccess inline formset.
+
+    Snapshots the full row (not just role) so that reassigning ``mailbox``
+    or ``user`` in place revokes the old principal's grant rather than
+    leaving stale assignment/user-event state behind. Wrapped in
+    ``transaction.atomic`` so ``formset.save()`` and the cleanup commit
+    together — partial cleanup would leave orphaned ``UserEvent`` rows.
+    """
+    previous_snapshots = {}
+    instances_to_revoke = []
+    tracked_fields = ("role", "mailbox", "user")
+    for sub_form in formset.forms:
+        if not sub_form.instance.pk:
+            continue
+        if sub_form.cleaned_data.get("DELETE"):
+            snapshot = models.MailboxAccess.objects.filter(
+                pk=sub_form.instance.pk
+            ).first()
+            if snapshot is not None:
+                instances_to_revoke.append(snapshot)
+            continue
+        if any(field in (sub_form.changed_data or []) for field in tracked_fields):
+            previous_snapshots[sub_form.instance.pk] = (
+                models.MailboxAccess.objects.filter(pk=sub_form.instance.pk).first()
+            )
+
+    formset.save()
+
+    for instance in instances_to_revoke:
+        thread_events_service.revoke_mailbox_access(mailbox_access=instance)
+
+    for sub_form in formset.forms:
+        if not sub_form.instance.pk or sub_form.cleaned_data.get("DELETE"):
+            continue
+        previous = previous_snapshots.get(sub_form.instance.pk)
+        if previous is None:
+            continue
+        new = sub_form.instance
+        if (previous.mailbox_id, previous.user_id) != (new.mailbox_id, new.user_id):
+            thread_events_service.revoke_mailbox_access(mailbox_access=previous)
+            continue
+        was_editor = previous.role in enums.MAILBOX_ROLES_CAN_EDIT
+        is_editor = new.role in enums.MAILBOX_ROLES_CAN_EDIT
+        if was_editor and not is_editor:
+            thread_events_service.downgrade_mailbox_access(mailbox_access=new)
+
+
 @admin.register(models.Thread)
 class ThreadAdmin(admin.ModelAdmin):
     """Admin class for the Thread model"""
 
     inlines = [ThreadAccessInline, ThreadEventInline, UserEventInline]
+
+    def save_formset(self, request, form, formset, change):
+        """Route ThreadAccess inline edits through the cleanup service."""
+        if formset.model is models.ThreadAccess:
+            _cleanup_thread_access_formset(formset)
+            return
+        super().save_formset(request, form, formset, change)
+
     list_display = (
         "id",
         "subject",

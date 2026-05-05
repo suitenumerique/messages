@@ -44,6 +44,36 @@ export class DateHelper {
   }
 
   /**
+   * Bucket a date into one of three coarse ranges used by the thread-view
+   * timeline to label collapsed runs of system events.
+   */
+  public static bucketDate(dateString: string | Date): 'today' | 'this_week' | 'older' {
+    const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
+    if (isToday(date)) return 'today';
+    if (isSameWeek(date, Date.now())) return 'this_week';
+    return 'older';
+  }
+
+  /**
+   * Format a timestamp for inline event display: always includes the time,
+   * prefixed with the day/date for events outside of today so a user can tell
+   * whether an assignment happened today at 14:32 or last Tuesday at 14:32
+   * without hovering.
+   */
+  public static formatEventTimestamp(dateString: string, lng: string = 'en'): string {
+    const date = new Date(dateString);
+    const locale = lng.length > 2 ? lng.split('-')[0] : lng;
+    const dateLocale = locales[locale as keyof typeof locales];
+    const time = format(date, 'HH:mm', { locale: dateLocale });
+
+    if (isToday(date)) return time;
+    if (isYesterday(date)) return `${i18n.t('Yesterday')} ${time}`;
+    if (isSameWeek(date, Date.now())) return `${format(date, 'EEEE', { locale: dateLocale })} ${time}`;
+    if (isSameYear(date, Date.now())) return `${format(date, 'd MMM', { locale: dateLocale })} ${time}`;
+    return `${format(date, 'dd/MM/yyyy', { locale: dateLocale })} ${time}`;
+  }
+
+  /**
    * Compute a relative time between a given date and a time reference and
    * return a translation key and a count if needed.
    *

@@ -18,7 +18,7 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { UserWithoutAbilities } from ".././models";
+import type { ThreadMentionableUser } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
 import type { ErrorType } from "../../fetch-api";
@@ -29,7 +29,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
  * List distinct users who have access to a thread (via ThreadAccess → Mailbox → MailboxAccess).
  */
 export type threadsUsersListResponse200 = {
-  data: UserWithoutAbilities[];
+  data: ThreadMentionableUser[];
   status: 200;
 };
 

@@ -10,8 +10,9 @@ import { ThreadItemSenders } from "./thread-item-senders"
 import { Badge } from "@/features/ui/components/badge"
 import { ThreadDragPreview } from "./thread-drag-preview"
 import { PORTALS } from "@/features/config/constants"
-import { Checkbox } from "@gouvfr-lasuite/cunningham-react"
+import { Checkbox, Tooltip } from "@gouvfr-lasuite/cunningham-react"
 import { Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit"
+import { AssigneesAvatarGroup } from "@/features/ui/components/assignees-avatar-group"
 import { LabelBadge } from "@/features/ui/components/label-badge"
 import { useLayoutDragContext } from "@/features/layouts/components/layout-context"
 import ViewHelper from "@/features/utils/view-helper"
@@ -280,6 +281,25 @@ export const ThreadItem = ({ thread, isSelected, onToggleSelection, selectedThre
                                         aria-hidden="true"
                                     />
                                 </Badge>
+                            )}
+                            {thread.assigned_users.length > 0 && (
+                                <Tooltip
+                                    content={t('Assigned to {{names}}', {
+                                        names: thread.assigned_users.map((u) => u.name).join(', '),
+                                    })}
+                                >
+                                    <span
+                                        aria-label={t('Assigned to {{names}}', {
+                                            names: thread.assigned_users.map((u) => u.name).join(', '),
+                                        })}
+                                    >
+                                        <AssigneesAvatarGroup
+                                            users={thread.assigned_users}
+                                            maxAvatars={2}
+                                            overflowMode="replace-last"
+                                        />
+                                    </span>
+                                </Tooltip>
                             )}
                         </div>
                     </div>

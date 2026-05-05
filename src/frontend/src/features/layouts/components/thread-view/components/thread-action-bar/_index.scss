@@ -1,3 +1,10 @@
+.thread-action-bar__container {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs);
+}
+
 .thread-action-bar {
     display: flex;
     flex-direction: row;
@@ -19,4 +26,9 @@
     flex-direction: row;
     align-items: center;
     gap: var(--c--globals--spacings--4xs);
+}
+
+// Hide thread action bar if empty
+.thread-action-bar:not(:has(*)) {
+    display: none;
 }

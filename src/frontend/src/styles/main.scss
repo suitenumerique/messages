@@ -28,6 +28,7 @@
 @use "./../features/ui/components/circular-progress";
 @use "./../features/ui/components/suggestion-input";
 @use "./../features/ui/components/transient-tooltip";
+@use "./../features/ui/components/assignees-avatar-group";
 @use "./../features/layouts/components/mailbox-panel";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-actions";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-list";
@@ -45,6 +46,9 @@
 @use "./../features/layouts/components/thread-view/components/thread-attachment-list";
 @use "./../features/layouts/components/thread-view/components/calendar-invite";
 @use "./../features/layouts/components/thread-view/components/thread-accesses-widget";
+@use "./../features/layouts/components/thread-view/components/share-modal-extensions";
+@use "./../features/layouts/components/thread-view/components/assignees-widget";
+@use "./../features/layouts/components/thread-view/components/assignees-widget/quick-assign-popover";
 @use "./../features/forms/components/message-form";
 @use "./../features/forms/components/search-input";
 @use "./../features/forms/components/search-filters-form";

@@ -63,6 +63,7 @@ type MailboxContextType = {
     /** Shorthand: refetch threads list + messages of the selected thread. */
     invalidateMailbox: () => Promise<void>;
     invalidateThreadEvents: () => Promise<void>;
+    invalidateThreadsList: () => Promise<void>;
     invalidateThreadsStats: () => Promise<void>;
     invalidateLabels: () => Promise<void>;
     refetchMailboxes: (options?: RefetchOptions) => Promise<unknown>;
@@ -155,6 +156,7 @@ export const getMailboxThreadsListQueryKey = (
 export const THREADS_LIST_NUMERIC_FILTERS = [
     "has_active",
     "has_archived",
+    "has_assigned_to_me",
     "has_attachments",
     "has_delivery_pending",
     "has_draft",
@@ -163,6 +165,7 @@ export const THREADS_LIST_NUMERIC_FILTERS = [
     "has_sender",
     "has_starred",
     "has_trashed",
+    "has_unassigned",
     "has_unread",
     "has_unread_mention",
     "is_spam",
@@ -192,6 +195,7 @@ const MailboxContext = createContext<MailboxContextType>({
     invalidateThreadMessages: async () => {},
     invalidateMailbox: async () => {},
     invalidateThreadEvents: async () => {},
+    invalidateThreadsList: async () => {},
     invalidateThreadsStats: async () => {},
     invalidateLabels: async () => {},
     refetchMailboxes: async () => {},
@@ -269,6 +273,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const previousUnreadThreadsCount = usePrevious(selectedMailbox?.count_unread_threads);
     const previousDeliveringCount = usePrevious(selectedMailbox?.count_delivering);
     const previousUnreadMentionsCount = usePrevious(selectedMailbox?.count_unread_mentions);
+    const previousAssignedCount = usePrevious(selectedMailbox?.count_assigned);
     const threadQueryKey = useMemo(
         () => getMailboxThreadsListQueryKey(selectedMailbox?.id, searchParams),
         [selectedMailbox?.id, searchParams]
@@ -460,6 +465,12 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         }
     }
 
+    const invalidateThreadsList = async () => {
+        await queryClient.invalidateQueries({
+            queryKey: getMailboxThreadsListQueryKeyPrefix(selectedMailbox?.id),
+        });
+    }
+
     const invalidateThreadsStats = async () => {
         await queryClient.invalidateQueries({
             queryKey: getThreadsStatsQueryKey(selectedMailbox?.id),
@@ -506,6 +517,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         invalidateThreadMessages,
         invalidateMailbox,
         invalidateThreadEvents,
+        invalidateThreadsList,
         invalidateThreadsStats,
         invalidateLabels,
         refetchMailboxes: mailboxQuery.refetch,
@@ -572,7 +584,10 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     }, [flattenThreads]);
 
     // Invalidate the threads query when mailbox stats change (unread messages,
-    // delivering count or unread mentions)
+    // delivering count, unread mentions or assignments). The assignment
+    // counter is the cross-user notification channel: local assign/unassign
+    // mutations already invalidate explicitly, so this branch only fires
+    // when another user has assigned/unassigned the current user.
     useEffect(() => {
         if (!selectedMailbox) return;
 
@@ -588,11 +603,20 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             previousUnreadMentionsCount !== undefined &&
             previousUnreadMentionsCount !== selectedMailbox.count_unread_mentions;
 
-        if (hasUnreadCountChanged || hasDeliveringCountChanged || hasUnreadMentionsCountChanged) {
+        const hasAssignedCountChanged =
+            previousAssignedCount !== undefined &&
+            previousAssignedCount !== selectedMailbox.count_assigned;
+
+        if (
+            hasUnreadCountChanged ||
+            hasDeliveringCountChanged ||
+            hasUnreadMentionsCountChanged ||
+            hasAssignedCountChanged
+        ) {
             invalidateThreadsStats();
             queryClient.invalidateQueries({ queryKey: getMailboxThreadsListQueryKeyPrefix(selectedMailbox?.id) });
         }
-    }, [selectedMailbox?.count_unread_threads, selectedMailbox?.count_delivering, selectedMailbox?.count_unread_mentions]);
+    }, [selectedMailbox?.count_unread_threads, selectedMailbox?.count_delivering, selectedMailbox?.count_unread_mentions, selectedMailbox?.count_assigned]);
 
     // Invalidate the thread messages query to refresh the thread messages when there is a new message
     useEffect(() => {

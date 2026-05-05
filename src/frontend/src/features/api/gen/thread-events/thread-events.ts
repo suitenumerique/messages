@@ -215,7 +215,15 @@ export function useThreadsEventsList<
 }
 
 /**
- * ViewSet for ThreadEvent model.
+ * Create a ThreadEvent.
+
+For ASSIGN/UNASSIGN, delegates to the service layer which owns the
+idempotence rules, edit-rights validation and the undo window.
+For IM, persists the event via the serializer and then re-syncs
+MENTION rows.
+
+Returns 204 when the service decides nothing was new (every
+assignee already assigned, full UNASSIGN absorbed by undo, …).
  */
 export type threadsEventsCreateResponse201 = {
   data: ThreadEvent;

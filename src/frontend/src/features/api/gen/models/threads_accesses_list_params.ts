@@ -11,8 +11,4 @@ export type ThreadsAccessesListParams = {
    * Filter thread accesses by mailbox ID.
    */
   mailbox_id?: string;
-  /**
-   * A page number within the paginated result set.
-   */
-  page?: number;
 };

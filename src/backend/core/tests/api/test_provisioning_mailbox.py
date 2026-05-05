@@ -209,7 +209,14 @@ class TestMailboxListByUser:
         )
 
         result = response.json()["results"][0]
-        assert set(result.keys()) == {"id", "email", "name", "role", "users"}
+        assert set(result.keys()) == {
+            "id",
+            "email",
+            "name",
+            "role",
+            "users",
+            "is_identity",
+        }
 
     def test_users_includes_all_mailbox_users(self, client, auth_header, mailbox):
         """The users array lists ALL users with access, not just the queried one."""

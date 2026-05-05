@@ -6,6 +6,7 @@ export const THREAD_PANEL_FILTER_PARAMS = [
   "has_unread",
   "has_starred",
   "has_mention",
+  "has_assigned_to_me",
 ] as const;
 
 export type FilterType = (typeof THREAD_PANEL_FILTER_PARAMS)[number];
