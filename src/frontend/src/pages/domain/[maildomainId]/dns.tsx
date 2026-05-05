@@ -137,7 +137,7 @@ function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSData
     <div className="admin-data-grid">
       <div style={{ marginBottom: "1.5rem" }}>
         <Banner type="info">
-          <Trans i18nKey="These DNS records must be configured on the domain <strong>{{domain}}</strong> for the mail system to work properly. If you don't know how to update them, please contact your technical service provider or system administrator." values={{ domain: domain.name }} components={{ strong: <strong /> }} />
+          <Trans i18nKey="These DNS records must be configured on the domain <strong>{{domain}}</strong> for the mail system to work properly. Changes may take up to 24 hours to propagate. If you don't know how to update them, please contact your technical service provider or system administrator." values={{ domain: domain.name }} components={{ strong: <strong /> }} />
         </Banner>
       </div>
       <DataGrid
