@@ -108,7 +108,7 @@ const ThreadMessageActions = ({
         }] : []),
         ...(message.is_unread ? [{
             label: hasSiblingMessages ? t('Mark as read from here') : t('Mark as read'),
-            icon: <Icon type={IconType.FILLED} name="mark_email_read" />,
+            icon: <Icon type={IconType.FILLED} name="drafts" />,
             callback: () => toggleReadStateFrom(false)
         }] :
         [{

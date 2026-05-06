@@ -31,7 +31,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
     const { deleteThreadAccess } = useDeleteThreadAccess();
     const modals = useModals();
     // Full edit rights on the thread — gates archive, spam, delete.
-    // Star and "mark as unread" remain visible because they are personal
+    // Star and read/unread toggle remain visible because they are personal
     // state on the user's ThreadAccess (read_at / starred_at).
     // Label assignment is scoped to the mailbox (see `LabelsWidget`) and
     // therefore stays visible for viewer-only threads.
@@ -39,6 +39,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
     const canShowArchiveCTA = canEditThread && !selectedThread?.is_spam
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const isStarred = selectedThread?.has_starred;
+    const hasUnread = selectedThread?.has_unread;
     const mailboxAccess = selectedThread?.accesses.find((a) => a.mailbox.id === selectedMailbox?.id);
     const hasOnlyOneEditor = selectedThread?.accesses.filter((a) => a.role === ThreadAccessRoleChoices.editor).length === 1;
     const canLeaveThread = selectedMailbox?.role !== MailboxRoleChoices.viewer && mailboxAccess && selectedThread && (!hasOnlyOneEditor || mailboxAccess.role !== ThreadAccessRoleChoices.editor);
@@ -149,6 +150,30 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                 )
             )}
             {canEditThread && <VerticalSeparator />}
+            {hasUnread ? (
+                <Tooltip content={t('Mark as read')}>
+                    <Button
+                        variant="tertiary"
+                        aria-label={t('Mark as read')}
+                        size="nano"
+                        icon={<Icon name="drafts" type={IconType.OUTLINED} />}
+                        onClick={() => markAsReadAt({ threadIds: [selectedThread!.id], readAt: new Date().toISOString() })}
+                    />
+                </Tooltip>
+            ) : (
+                <Tooltip content={t('Mark as unread')}>
+                    <Button
+                        variant="tertiary"
+                        aria-label={t('Mark as unread')}
+                        size="nano"
+                        icon={<Icon name="mark_email_unread" type={IconType.OUTLINED} />}
+                        onClick={() => {
+                            unselectThread();
+                            markAsReadAt({ threadIds: [selectedThread!.id], readAt: null });
+                        }}
+                    />
+                </Tooltip>
+            )}
             {isStarred ? (
                 <Tooltip content={t('Unstar this thread')}>
                     <Button
@@ -172,39 +197,29 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
             )}
             <LabelsWidget threadIds={[selectedThread!.id]} initialLabels={selectedThread!.labels} />
             <ThreadAccessesWidget accesses={selectedThread!.accesses} />
-            <DropdownMenu
-                isOpen={isDropdownOpen}
-                onOpenChange={setIsDropdownOpen}
-                options={[
-                    {
-                        label: t('Mark as unread'),
-                        icon: <Icon name="mark_email_unread" type={IconType.OUTLINED} />,
-                        // Unmount the thread view before firing the mutation. If we waited for
-                        // onSuccess, the cache patch would re-flag visible messages as unread
-                        // while the view is still mounted, letting the visibility observer
-                        // debounce a mark-as-read request that silently reverts this action.
-                        callback: () => {
-                            unselectThread();
-                            markAsReadAt({ threadIds: [selectedThread!.id], readAt: null });
+            {canLeaveThread && (
+                <DropdownMenu
+                    isOpen={isDropdownOpen}
+                    onOpenChange={setIsDropdownOpen}
+                    options={[
+                        {
+                            label: t('Leave this thread'),
+                            icon: <Icon name="exit_to_app" type={IconType.OUTLINED} />,
+                            callback: handleLeaveThread,
                         },
-                    },
-                    ...(canLeaveThread ? [{
-                        label: t('Leave this thread'),
-                        icon: <Icon name="exit_to_app" type={IconType.OUTLINED} />,
-                        callback: handleLeaveThread,
-                    }] : []),
-                ]}
-            >
-                <Tooltip content={t('More options')}>
-                    <Button
-                        onClick={() => setIsDropdownOpen(true)}
-                        icon={<Icon name="more_vert" type={IconType.OUTLINED} />}
-                        variant="tertiary"
-                        aria-label={t('More options')}
-                        size="nano"
-                    />
-                </Tooltip>
-            </DropdownMenu>
+                    ]}
+                >
+                    <Tooltip content={t('More options')}>
+                        <Button
+                            onClick={() => setIsDropdownOpen(true)}
+                            icon={<Icon name="more_vert" type={IconType.OUTLINED} />}
+                            variant="tertiary"
+                            aria-label={t('More options')}
+                            size="nano"
+                        />
+                    </Tooltip>
+                </DropdownMenu>
+            )}
         </div>
     )
 }

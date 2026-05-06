@@ -119,18 +119,17 @@ test.describe("Thread read / unread", () => {
       .getByRole("heading", { name: "Inbox thread alpha", level: 2 })
       .waitFor({ state: "visible" });
 
-    // Wait for the auto-read mechanism to kick in
-    await page.waitForLoadState("networkidle");
-
-    // Click "More options" dropdown in the thread action bar
-    // Use dispatchEvent to bypass Tooltip interference with DropdownMenu click handling
+    // Wait for the auto-read mechanism to kick in: the thread becomes
+    // read, so the action bar swaps the "Mark as read" button for
+    // "Mark as unread".
     const threadActionBar = page.locator(".thread-action-bar");
-    await threadActionBar
-      .getByRole("button", { name: "More options" })
-      .dispatchEvent("click");
+    const markAsUnreadButton = threadActionBar.getByRole("button", {
+      name: "Mark as unread",
+    });
+    await expect(markAsUnreadButton).toBeVisible();
 
     // Click "Mark as unread" — this also triggers unselectThread
-    await page.getByRole("menuitem", { name: "Mark as unread" }).click();
+    await markAsUnreadButton.click();
 
     // After marking as unread, the thread is deselected and we're back at the list
     // Verify thread item shows unread indicator
@@ -174,8 +173,8 @@ test.describe("Thread read / unread", () => {
     // Close the thread to go back to the list
     await page.getByRole("button", { name: "Close this thread" }).click();
 
-    // The thread should still be visible in the list thanks to structuralSharing
-    // (optimistic update keeps it in place even though the server would filter it out)
+    // The thread should still be visible in the list thanks to thread pinning logic
+    // Check @/features/providers/mailbox-cache.ts
     await expect(
       page.getByRole("link", { name: "Inbox thread alpha" }).first(),
     ).toBeVisible();

@@ -11,7 +11,7 @@ export const StepCompleted = ({ onClose }: StepCompletedProps) => {
     return (
         <div className="importer-completed">
             <div className="importer-completed__description">
-                <span className="material-icons">mark_email_read</span>
+                <span className="material-icons">drafts</span>
                 <p>{t('Your messages have been imported successfully!')}</p>
             </div>
             <Button onClick={onClose}>{t('Close')}</Button>

@@ -205,7 +205,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                                     readAt: selectionReadStatus === SelectionReadStatus.READ ? null : new Date().toISOString(),
                                 });
                             }}
-                            icon={<Icon name={selectionReadStatus === SelectionReadStatus.READ ? 'mark_email_unread' : 'mark_email_read'} type={IconType.OUTLINED} />}
+                            icon={<Icon name={selectionReadStatus === SelectionReadStatus.READ ? 'mark_email_unread' : 'drafts'} type={IconType.OUTLINED} />}
                             variant="tertiary"
                             size="nano"
                             aria-label={mainReadTooltip}
@@ -300,7 +300,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                             },
                             ...([SelectionReadStatus.MIXED, SelectionReadStatus.UNREAD].includes(selectionReadStatus) ? [{
                                 label: markAllTooltip,
-                                icon: <span className="material-icons">mark_email_read</span>,
+                                icon: <span className="material-icons">drafts</span>,
                                 callback: () => {
                                     markAsReadAt({
                                         threadIds: threadIdsToMark,
