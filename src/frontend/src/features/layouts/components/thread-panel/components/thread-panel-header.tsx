@@ -1,6 +1,7 @@
 import { useSearchParams } from "next/navigation";
 import { findRootFolder } from "../../mailbox-panel/components/mailbox-list";
 import { useLabelsList } from "@/features/api/gen";
+import type { TreeLabel } from "@/features/api/gen/models";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
@@ -58,16 +59,25 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     // regardless.
     const canEditSelection = useCanEditThreads(selectedThreadIds);
 
+    const findLabelBySlug = (labels: readonly TreeLabel[], slug: string): TreeLabel | undefined => {
+        for (const label of labels) {
+            if (label.slug === slug) return label;
+            const found = findLabelBySlug(label.children, slug);
+            if (found) return found;
+        }
+        return undefined;
+    };
+
     const title = useMemo(() => {
         if (searchParams.has('search')) return t('folder.search', { defaultValue: 'Search' });
-        if (searchParams.has('label_slug')) return (labelsQuery.data?.data || []).find((label) => label.slug === searchParams.get('label_slug'))?.name;
+        if (searchParams.has('label_slug')) return findLabelBySlug(labelsQuery.data?.data || [], searchParams.get('label_slug')!)?.display_name;
         // Thread panel filters stack on top of the folder filter — strip them
         // so the matching resolves to the underlying folder.
         const folderParams = new URLSearchParams(searchParams.toString());
         THREAD_PANEL_FILTER_PARAMS.forEach((param) => folderParams.delete(param));
         const activeFolder = findRootFolder((folder) => new URLSearchParams(folder.filter).toString() === folderParams.toString());
         return activeFolder?.name;
-    }, [searchParams, labelsQuery.data?.data, selectedMailbox, t])
+    }, [searchParams, labelsQuery.data?.data, t, findLabelBySlug])
 
     const handleSelectAllToggle = () => {
         if (isAllSelected) {
