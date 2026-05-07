@@ -1063,8 +1063,7 @@ class TestMailDomainStorageUsedMetrics:
         )
 
         # Attachment on the draft
-        att = AttachmentFactory(mailbox=mailbox, blob_size=800)
-        att.messages.add(draft)
+        att = AttachmentFactory(mailbox=mailbox, message=draft, blob_size=800)
 
         expected = (
             2 * overhead
@@ -1147,11 +1146,16 @@ class TestMailDomainStorageUsedMetrics:
         assert result["metrics"]["storage_used"] == 3 * overhead
 
     @pytest.mark.django_db
-    def test_blobs_with_identical_sizes_counted_separately(
+    def test_identical_sized_messages_counted_once_per_domain(
         self, api_client, url, correctly_configured_header, settings
     ):
-        """Two different blobs that happen to have the same compressed size
-        must each be counted toward storage, not collapsed into one."""
+        """Two Messages with identical content share ONE Blob row (DB-level
+        dedup). The per-domain storage metric uses ``DISTINCT b.id`` in
+        the raw SQL aggregation, so the shared blob is counted ONCE per
+        domain — the right answer for "how many bytes does this domain
+        physically store". Contrast with the per-mailbox metric which
+        sums via the message-blob join and double-counts (each user
+        "feels" the storage)."""
         overhead = settings.METRICS_STORAGE_USED_OVERHEAD_BY_MESSAGE
         domain = MailDomainFactory(name="example.com")
         mailbox = MailboxFactory(domain=domain)
@@ -1166,12 +1170,13 @@ class TestMailDomainStorageUsedMetrics:
         msg2 = MessageFactory(thread=thread, sender=contact, raw_mime=same_content)
 
         assert msg1.blob.size_compressed == msg2.blob.size_compressed
-        assert msg1.blob.pk != msg2.blob.pk
+        assert msg1.blob.pk == msg2.blob.pk  # one Blob row, two Messages FK it
 
         response = api_client.get(url, **correctly_configured_header)
         result = response.json()["results"][0]
 
-        expected = 2 * overhead + msg1.blob.size_compressed + msg2.blob.size_compressed
+        # 2 messages × overhead, plus the one shared blob counted once.
+        expected = 2 * overhead + msg1.blob.size_compressed
         assert result["metrics"]["storage_used"] == expected
 
     @pytest.mark.django_db

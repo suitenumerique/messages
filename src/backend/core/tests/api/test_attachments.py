@@ -54,8 +54,20 @@ class TestBlobAPI:
         )
         return test_file
 
-    def test_upload_download_blob(self, api_client, api_client2, user_mailbox):
-        """Test uploading a file to create a blob and downloading it."""
+    def test_upload_download_blob(
+        self,
+        api_client,
+        api_client2,
+        user_mailbox,
+    ):
+        """Test uploading a file to create a blob and downloading it.
+
+        The upload reservation is now a ``MailboxBlob`` row (DB-side,
+        no Redis) so this test no longer needs ``@pytest.mark.redis``
+        — the reservation is created by the upload endpoint and
+        consumed by the subsequent download's authz check entirely
+        within the test transaction.
+        """
         client, _ = api_client
         client2, _ = api_client2
 
@@ -87,7 +99,13 @@ class TestBlobAPI:
         assert blob.content_type == "text/plain"
         assert blob.sha256.hex() == expected_hash
         assert blob.size == len(file_content)
-        assert blob.mailbox == user_mailbox
+        # Blobs no longer carry a mailbox FK; provenance lives in a
+        # ``MailboxBlob`` row created by the upload endpoint (consumed
+        # by the subsequent attach-by-id flow). The download authz
+        # check below exercises the reference-graph + reservation walk.
+        assert models.MailboxBlob.objects.filter(
+            blob=blob, mailbox=user_mailbox
+        ).exists()
 
         # Download via API
         url = reverse("blob-download", kwargs={"pk": uuid.uuid4()})
@@ -170,3 +188,37 @@ class TestBlobAPI:
 
         # Should be denied
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_upload_rejects_oversize_file(self, api_client, user_mailbox, settings):
+        """Files above MAX_OUTGOING_ATTACHMENT_SIZE are rejected with 413
+        before being read into memory.
+
+        The viewset checks ``uploaded_file.size`` (set by Django's
+        multipart parser before the body is consumed). Refusing here
+        means an oversize upload never gets ``.read()``-loaded into
+        the worker's RAM and never lands in the bucket — closes the
+        DoS / disk-fill vector flagged in the security review.
+        """
+        client, _ = api_client
+        settings.MAX_OUTGOING_ATTACHMENT_SIZE = 1024  # 1 KiB cap for the test
+
+        url = reverse("blob-upload", kwargs={"mailbox_id": user_mailbox.id})
+        oversize = self._create_test_file(filename="big.bin", content=b"x" * (1024 + 1))
+        response = client.post(url, {"file": oversize}, format="multipart")
+
+        assert response.status_code == status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+        assert "too large" in response.data["error"].lower()
+        # The bucket must not have received the bytes — no Blob row created.
+        assert not models.Blob.objects.exists()
+
+    def test_upload_at_size_limit_succeeds(self, api_client, user_mailbox, settings):
+        """A file exactly at the limit is accepted (off-by-one guard)."""
+        client, _ = api_client
+        settings.MAX_OUTGOING_ATTACHMENT_SIZE = 1024
+
+        url = reverse("blob-upload", kwargs={"mailbox_id": user_mailbox.id})
+        at_limit = self._create_test_file(filename="exact.bin", content=b"x" * 1024)
+        response = client.post(url, {"file": at_limit}, format="multipart")
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["size"] == 1024

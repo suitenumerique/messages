@@ -118,6 +118,9 @@
                     "404": {
                         "description": "Mailbox not found"
                     },
+                    "413": {
+                        "description": "Payload too large - exceeds MAX_OUTGOING_ATTACHMENT_SIZE"
+                    },
                     "500": {
                         "description": "Internal server error"
                     }

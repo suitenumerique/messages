@@ -7,6 +7,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.utils import Error as DjangoDbError
 from django.utils import timezone
 
@@ -336,15 +337,6 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                 mime_id=parsed_email.get("in_reply_to"), thread=thread
             ).first()
 
-        # Outbound: no blob yet — prepare_outbound_message handles
-        # DKIM signing and blob creation later.
-        blob = None
-        if not is_outbound:
-            blob = mailbox.create_blob(
-                content=raw_data,
-                content_type="message/rfc822",
-            )
-
         # Truncate subject to 255 characters if it exceeds max_length
         subject = parsed_email.get("subject")
         if subject and len(subject) > 255:
@@ -352,24 +344,38 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
 
         is_sender = is_outbound or (is_import and is_import_sender)
 
-        message = models.Message.objects.create(
-            thread=thread,
-            sender=sender_contact,
-            subject=subject,
-            blob=blob,
-            mime_id=parsed_email.get("messageId", parsed_email.get("message_id"))
-            or None,
-            parent=parent_message,
-            sent_at=(
-                None if is_outbound else (parsed_email.get("date") or timezone.now())
-            ),
-            is_draft=is_outbound,  # Outbound: draft until prepare_outbound_message finalizes
-            is_sender=is_sender,
-            is_trashed=False,
-            is_spam=is_spam,
-            has_attachments=len(parsed_email.get("attachments", [])) > 0,
-            channel=channel,
-        )
+        # The Blob INSERT and the Message INSERT must commit together
+        # so the GC sweep never sees the Blob row without its
+        # referencing FK on ``Message.blob``. Outbound messages have
+        # no blob yet — ``prepare_outbound_message`` adds it later.
+        with transaction.atomic():
+            blob = None
+            if not is_outbound:
+                blob = models.Blob.objects.create_blob(
+                    content=raw_data,
+                    content_type="message/rfc822",
+                )
+
+            message = models.Message.objects.create(
+                thread=thread,
+                sender=sender_contact,
+                subject=subject,
+                blob=blob,
+                mime_id=parsed_email.get("messageId", parsed_email.get("message_id"))
+                or None,
+                parent=parent_message,
+                sent_at=(
+                    None
+                    if is_outbound
+                    else (parsed_email.get("date") or timezone.now())
+                ),
+                is_draft=is_outbound,  # Outbound: draft until prepare_outbound_message finalizes
+                is_sender=is_sender,
+                is_trashed=False,
+                is_spam=is_spam,
+                has_attachments=len(parsed_email.get("attachments", [])) > 0,
+                channel=channel,
+            )
         if is_import:
             # We need to set the created_at field to the date of the message
             # because the inbound message is not created at the same time as the message is received

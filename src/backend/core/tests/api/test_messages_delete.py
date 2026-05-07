@@ -159,8 +159,25 @@ class TestMessagesDelete:
             enums.MailboxRoleChoices.SENDER,
         ],
     )
-    def test_delete_message_success(self, mailbox_role):
-        """Test delete message."""
+    @pytest.mark.redis
+    def test_delete_message_success(
+        self,
+        mailbox_role,
+        redis_cache,  # pylint: disable=unused-argument
+        django_capture_on_commit_callbacks,
+    ):
+        """Test delete message.
+
+        Blob lifetime is now GC-driven: ``Message.post_delete`` schedules
+        the message's blob ids into the GC candidate set via
+        ``transaction.on_commit``; ``gc_orphan_blobs_task`` then deletes
+        the rows under per-sha advisory lock + select_for_update. We
+        wrap the API delete in ``django_capture_on_commit_callbacks``
+        so the SADD lands within the (rolled-back) test transaction,
+        then explicitly run the GC sweep before asserting blob count.
+        """
+        # pylint: disable-next=import-outside-toplevel
+        from core.services.blob_gc import gc_orphan_blobs_task
 
         assert models.Blob.objects.count() == 0
 
@@ -193,7 +210,10 @@ class TestMessagesDelete:
 
         client = APIClient()
         client.force_authenticate(user=authenticated_user)
-        response = client.delete(reverse("messages-detail", kwargs={"id": message.id}))
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.delete(
+                reverse("messages-detail", kwargs={"id": message.id})
+            )
 
         if mailbox_role == enums.MailboxRoleChoices.VIEWER:
             assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -208,10 +228,16 @@ class TestMessagesDelete:
             thread.refresh_from_db()
             assert thread.has_messages is True
 
+            # Drain the GC candidate set populated by post_delete →
+            # on_commit; only message1's blob is orphaned now.
+            gc_orphan_blobs_task(mode="fast")
             assert models.Blob.objects.count() == 1
 
         # Then delete the second message
-        response = client.delete(reverse("messages-detail", kwargs={"id": message2.id}))
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.delete(
+                reverse("messages-detail", kwargs={"id": message2.id})
+            )
         if mailbox_role == enums.MailboxRoleChoices.VIEWER:
             assert response.status_code == status.HTTP_403_FORBIDDEN
             assert models.Message.objects.filter(id=message2.id).exists()
@@ -221,6 +247,7 @@ class TestMessagesDelete:
             assert not models.Message.objects.filter(id=message2.id).exists()
             assert models.Thread.objects.count() == 0
 
+            gc_orphan_blobs_task(mode="fast")
             assert models.Blob.objects.count() == 0
 
             assert models.ThreadAccess.objects.count() == 0

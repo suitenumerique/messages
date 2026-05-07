@@ -333,6 +333,31 @@ class Base(Configuration):
                 ),
             },
         },
+        "message-blobs": {
+            "BACKEND": "storages.backends.s3.S3Storage",
+            "OPTIONS": {
+                "endpoint_url": values.Value(
+                    environ_name="STORAGE_MESSAGES_BLOBS_ENDPOINT_URL",
+                    environ_prefix=None,
+                ),
+                "bucket_name": values.Value(
+                    environ_name="STORAGE_MESSAGES_BLOBS_BUCKET_NAME",
+                    environ_prefix=None,
+                ),
+                "access_key": values.Value(
+                    environ_name="STORAGE_MESSAGES_BLOBS_ACCESS_KEY",
+                    environ_prefix=None,
+                ),
+                "secret_key": values.Value(
+                    environ_name="STORAGE_MESSAGES_BLOBS_SECRET_KEY",
+                    environ_prefix=None,
+                ),
+                "region_name": values.Value(
+                    environ_name="STORAGE_MESSAGES_BLOBS_REGION_NAME",
+                    environ_prefix=None,
+                ),
+            },
+        },
     }
     # MDA settings
     MDA_API_SECRET = values.Value(
@@ -448,9 +473,59 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
-    # Blob compression settings
-    MESSAGES_BLOB_ZSTD_LEVEL = values.PositiveIntegerValue(
-        default=3, environ_name="MESSAGES_BLOB_ZSTD_LEVEL", environ_prefix=None
+    # Default compression for new blobs.
+    # Format: "<algo>" or "<algo>:<level>". Examples: "none", "zstd", "zstd:7".
+    MESSAGES_BLOBS_COMPRESS = values.Value(
+        "zstd:7", environ_name="MESSAGES_BLOBS_COMPRESS", environ_prefix=None
+    )
+
+    # Blob encryption keys (dict mapping key_id -> entry). Each entry must
+    # be ``{"algo": "<name>", "secret": "<32+ chars>"}`` — no shorthand,
+    # so the operator's algo choice is always explicit. Add ``"active":
+    # true`` to exactly one entry to make it the key new blobs encrypt
+    # with; entries without ``active`` (or with ``active=false``) stay
+    # readable for legacy ciphertext but no longer encrypt. The secret is
+    # SHA-256'd into a 32-byte AEAD key; operators must supply
+    # high-entropy values (e.g. ``openssl rand -base64 32``).
+    # key_id=0 in DB means a row was never encrypted; key_id>=1 refers to
+    # a dict entry. Works for both PostgreSQL and object storage blobs.
+    # Examples:
+    #   {} — fully off (no keys, no decrypt either)
+    #   {"1": {"algo": "aes-gcm", "secret": "<...>"}} — read-only legacy
+    #     mode (decrypt key-1 blobs but encrypt new blobs as key_id=0)
+    #   {"1": {"algo": "aes-gcm", "secret": "<...>", "active": true}} —
+    #     encryption on, key 1 encrypts new blobs
+    MESSAGES_BLOBS_ENCRYPT_KEYS = JSONValue(
+        {}, environ_name="MESSAGES_BLOBS_ENCRYPT_KEYS", environ_prefix=None
+    )
+    # When True, ``Blob.get_content`` re-hashes the decompressed plaintext
+    # and raises ``ValueError`` if it doesn't match ``blob.sha256``. Costs
+    # one SHA-256 over the plaintext per read. Defense-in-depth against
+    # storage-tier corruption and content substitution; for encrypted
+    # blobs the AAD-bound auth tag already catches swap attacks, so this
+    # is most useful for ``key_id=0`` (plaintext-stored) blobs.
+    MESSAGES_BLOBS_VERIFY_HASH = values.BooleanValue(
+        default=False,
+        environ_name="MESSAGES_BLOBS_VERIFY_HASH",
+        environ_prefix=None,
+    )
+
+    # Tiered Storage offload settings
+    # Master switch - must be explicitly enabled
+    MESSAGES_BLOBS_OFFLOAD_ENABLED = values.BooleanValue(
+        default=False,
+        environ_name="MESSAGES_BLOBS_OFFLOAD_ENABLED",
+        environ_prefix=None,
+    )
+    # Offload blobs older than this many seconds (0 = immediately)
+    MESSAGES_BLOBS_OFFLOAD_DELAY = values.PositiveIntegerValue(
+        24 * 60 * 60,  # 1 day in seconds
+        environ_name="MESSAGES_BLOBS_OFFLOAD_DELAY",
+        environ_prefix=None,
+    )
+    # Minimum blob size in bytes to offload (0 = all)
+    MESSAGES_BLOBS_OFFLOAD_MIN_SIZE = values.PositiveIntegerValue(
+        default=0, environ_name="MESSAGES_BLOBS_OFFLOAD_MIN_SIZE", environ_prefix=None
     )
 
     # Django fernet encrypted fields settings
@@ -1301,6 +1376,16 @@ class Test(Base):
 
     SCHEMA_CUSTOM_ATTRIBUTES_USER = {}
     SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN = {}
+
+    MESSAGES_BLOBS_OFFLOAD_ENABLED = True
+
+    # ``core.E005`` requires CACHES['default'] to use django_redis when
+    # offload is enabled. Tests that exercise Redis-backed primitives
+    # opt in via the ``redis_cache`` fixture (see core/tests/conftest.py),
+    # which swaps CACHES per-test; the boot-time check would block
+    # ``manage.py spectacular`` (and any non-Redis test invocation) for
+    # no real reason in the test environment.
+    SILENCED_SYSTEM_CHECKS = ["core.E005"]
 
     ENABLE_PROMETHEUS = True
     PROMETHEUS_API_KEY = "test_api_key"

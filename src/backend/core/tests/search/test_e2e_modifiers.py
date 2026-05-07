@@ -454,9 +454,18 @@ def fixture_test_threads(test_mailboxes, wait_for_indexing):
     len(settings.OPENSEARCH_HOSTS) == 0,
     reason="OpenSearch is not configured",
 )
+@pytest.mark.redis
 @pytest.mark.django_db(transaction=True)
 class TestSearchModifiersE2E:
-    """End-to-end tests for Gmail-style search modifiers."""
+    """End-to-end tests for Gmail-style search modifiers.
+
+    Marked ``@pytest.mark.redis`` for the same reason as ``TestSearchE2E``:
+    ``wait_for_indexing`` drains the Redis-backed coalescer.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _redis_cache(self, redis_cache):
+        pass
 
     def test_search_e2e_modifiers_basic_searches(
         self, setup_search, api_client, test_url, test_threads

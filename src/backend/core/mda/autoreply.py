@@ -13,7 +13,7 @@ from core.enums import (
     MessageRecipientTypeChoices,
     MessageTemplateTypeChoices,
 )
-from core.mda.outbound import compose_and_store_mime
+from core.mda.outbound import compose_and_sign_mime
 from core.mda.rfc5322.composer import make_reply_subject
 from core.services.throttle import ThrottleLimitExceeded, ThrottleManager
 
@@ -219,7 +219,7 @@ def send_autoreply_for_message(
     reply_subject = make_reply_subject(inbound_message.subject or "")[:255]
 
     # 3-7: Create records and compose MIME atomically so a failure in
-    #       compose_and_store_mime does not leave orphan Message/Recipient rows.
+    #       compose_and_sign_mime does not leave orphan Message/Recipient rows.
     with transaction.atomic():
         # 3. Create Message record
         message = models.Message.objects.create(
@@ -234,7 +234,7 @@ def send_autoreply_for_message(
             is_spam=False,
         )
 
-        # 4. Create MessageRecipient (must exist before compose_and_store_mime)
+        # 4. Create MessageRecipient (must exist before compose_and_sign_mime)
         models.MessageRecipient.objects.create(
             message=message,
             contact=inbound_message.sender,
@@ -248,19 +248,22 @@ def send_autoreply_for_message(
         )
 
         # 6. Compose MIME, DKIM sign, and store as blob
-        #    (signature + reply quote embedding is handled by compose_and_store_mime)
+        #    (signature + reply quote embedding is handled by compose_and_sign_mime)
         auto_reply_headers = [
             ("Auto-Submitted", "auto-replied"),
             ("X-Auto-Response-Suppress", "All"),
             ("Precedence", "bulk"),
         ]
-        compose_and_store_mime(
+        signed_mime = compose_and_sign_mime(
             message,
             mailbox,
             template.text_body,
             template.html_body,
             prepend_headers=auto_reply_headers,
             signature=validated_signature,
+        )
+        message.blob = models.Blob.objects.create_blob(
+            content=signed_mime, content_type="message/rfc822"
         )
         message.save(update_fields=["mime_id", "blob", "has_attachments"])
 

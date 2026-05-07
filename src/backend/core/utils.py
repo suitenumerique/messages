@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 
 import jsonschema
 from configurations import values
@@ -216,10 +216,18 @@ class JSONValue(values.Value):
     """
 
     def to_python(self, value):
+        """Return the python representation of the JSON string.
+
+        On parse failure, the original input is suppressed (``raise
+        ... from None``) so its contents — which may be a secret, e.g.
+        ``MESSAGES_BLOBS_ENCRYPT_KEYS`` — never surface in
+        tracebacks, Sentry breadcrumbs, or pod logs.
         """
-        Return the python representation of the JSON string.
-        """
-        return json.loads(value)
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            name = getattr(self, "environ_name", None) or "<JSONValue>"
+            raise ImproperlyConfigured(f"{name} is not valid JSON") from None
 
 
 class ThrottleRateValue(values.Value):

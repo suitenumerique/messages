@@ -1,0 +1,44 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .object-tools button.downloadlink {
+        appearance: none;
+        background: var(--object-tools-bg);
+        border-radius: 15px;
+        border: none;
+        color: var(--object-tools-fg);
+        cursor: pointer;
+        display: block;
+        float: left;
+        font-size: 0.6875rem;
+        font-weight: 400;
+        letter-spacing: 0.5px;
+        line-height: inherit;
+        padding: 3px 12px;
+        text-transform: uppercase;
+        transition: color 0.15s, background 0.15s;
+    }
+
+    .object-tools button.downloadlink:focus,
+    .object-tools button.downloadlink:hover {
+        background-color: var(--object-tools-hover-bg);
+    }
+</style>
+{% endblock %}
+
+{% block object-tools-items %}
+{% if original %}
+<li>
+    <form method="post" action="{% url 'admin:core_blob_download' original.pk %}" style="display: inline;">
+        {% csrf_token %}
+        <button type="submit" class="downloadlink">
+            {% translate "Download" %}
+        </button>
+    </form>
+</li>
+{% endif %}
+{{ block.super }}
+{% endblock %}

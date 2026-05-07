@@ -1,5 +1,8 @@
 """Fixtures for tests in the messages core application"""
 
+# pylint: disable=import-outside-toplevel
+
+import os
 from unittest import mock
 
 from django.db.models import F
@@ -9,6 +12,86 @@ import pytest
 USER = "user"
 TEAM = "team"
 VIA = [USER, TEAM]
+
+
+@pytest.fixture
+def redis_cache(settings):
+    """Point ``CACHES['default']`` at the real Redis service for one test.
+
+    Tests that exercise the ``django_redis``-backed primitives in
+    ``coalescer`` and ``blob_gc`` need a running Redis: the LocMem
+    fallback path was deliberately dropped because it can't deliver
+    SADD/SPOP atomicity across workers. CI's ``backend-dev`` container
+    already declares ``redis`` as a ``depends_on``, so the service is
+    reachable at ``redis:6379`` (overridable via ``REDIS_URL``).
+
+    Coalescer / blob_gc call ``get_redis_connection("default").sadd(...)``
+    directly with hard-coded keys, so Django's ``KEY_PREFIX`` doesn't
+    isolate them. We isolate parallel xdist workers by routing each
+    worker to a distinct Redis DB (``gw0`` → DB 1, ``gw1`` → DB 2, …;
+    non-xdist runs land on DB 1). ``flushdb`` at setup and teardown
+    keeps the slot clean. Default Redis ships with 16 DBs, enough for
+    typical xdist sizes; if you push past that, add
+    ``@pytest.mark.xdist_group("redis")`` to serialize.
+
+    Pair with ``@pytest.mark.redis`` so the test can be excluded via
+    ``pytest -m "not redis"`` when Redis isn't available locally.
+    """
+    base_url = os.environ.get("REDIS_URL", "redis://redis:6379").rstrip("/")
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "")
+    db_index = int(worker[2:]) + 1 if worker.startswith("gw") else 1
+    location = f"{base_url}/{db_index}"
+
+    settings.CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": location,
+            "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+        },
+    }
+
+    from django_redis import get_redis_connection
+
+    client = get_redis_connection("default")
+    client.flushdb()
+
+    yield client
+
+    try:
+        client.flushdb()
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+
+
+@pytest.fixture(scope="session", autouse=True)
+def ensure_storage_buckets():
+    """Create any missing S3 buckets needed by tests (session-scoped, autouse).
+
+    ``head_bucket`` raises ``ClientError`` on 404 (boto3 doesn't expose a
+    ``NoSuchBucket`` class for HEAD); other status codes are real failures
+    and propagate so config problems aren't silently masked.
+    """
+    from django.core.files.storage import storages
+
+    from botocore.exceptions import ClientError
+
+    for storage_name in ("message-imports", "message-blobs"):
+        if storage_name not in storages.backends:
+            continue
+        storage = storages[storage_name]
+        if not hasattr(storage, "bucket"):
+            continue
+        client = storage.bucket.meta.client
+        bucket_name = storage.bucket.name
+        try:
+            client.head_bucket(Bucket=bucket_name)
+        except ClientError as e:
+            status = e.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            code = e.response.get("Error", {}).get("Code")
+            if status == 404 or code in {"404", "NoSuchBucket"}:
+                client.create_bucket(Bucket=bucket_name)
+            else:
+                raise
 
 
 @pytest.fixture

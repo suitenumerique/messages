@@ -109,8 +109,15 @@ class TestMailboxUsageMetrics:
     def test_orphan_blob_not_counted(
         self, api_client, url, correctly_configured_header
     ):
-        """A blob linked only via blob.mailbox (orphan upload) is not counted."""
+        """A blob with no Message/Attachment/MessageTemplate references
+        contributes zero to storage_used. With the FK removed, the
+        scenario that used to exist (blob owned by a mailbox but
+        referenced by nothing else) is now exactly an orphan blob
+        sitting in PG until the GC sweep collects it."""
         mailbox = MailboxFactory(local_part="alice", domain__name="example.com")
+        # An "orphan" blob — created via the factory but not linked to
+        # a Message/Attachment/Template. The metrics walk reference
+        # tables only, so this contributes 0.
         BlobFactory(mailbox=mailbox, content=b"orphan" * 100)
 
         response = api_client.get(url, **correctly_configured_header)
@@ -156,9 +163,7 @@ class TestMailboxUsageMetrics:
         msg2 = MessageFactory(thread=thread, sender=contact, raw_mime=b"mime2" * 200)
 
         # 1 attachment on msg1
-        att = AttachmentFactory(mailbox=mailbox, blob_size=500)
-        att.messages.add(msg1)
-
+        att = AttachmentFactory(mailbox=mailbox, blob_size=500, message=msg1)
         expected = (
             2 * overhead
             + msg1.blob.size_compressed
@@ -195,9 +200,7 @@ class TestMailboxUsageMetrics:
         ThreadAccessFactory(mailbox=mailbox_b, thread=thread_b)
         contact_b = ContactFactory(mailbox=mailbox_b)
         msg_b = MessageFactory(thread=thread_b, sender=contact_b, raw_mime=b"b1" * 50)
-        att_b = AttachmentFactory(mailbox=mailbox_b, blob_size=300)
-        att_b.messages.add(msg_b)
-
+        att_b = AttachmentFactory(mailbox=mailbox_b, blob_size=300, message=msg_b)
         expected_a = (
             2 * overhead + msg_a1.blob.size_compressed + msg_a2.blob.size_compressed
         )
@@ -302,10 +305,8 @@ class TestMailboxUsageMetrics:
         )
 
         # Two attachments on the draft
-        att1 = AttachmentFactory(mailbox=mailbox, blob_size=1000)
-        att2 = AttachmentFactory(mailbox=mailbox, blob_size=2000)
-        att1.messages.add(msg)
-        att2.messages.add(msg)
+        att1 = AttachmentFactory(mailbox=mailbox, message=msg, blob_size=1000)
+        att2 = AttachmentFactory(mailbox=mailbox, message=msg, blob_size=2000)
 
         expected = (
             1 * overhead
@@ -337,13 +338,21 @@ class TestMailboxUsageMetrics:
         msg1 = MessageFactory(thread=thread, sender=contact, raw_mime=same_content)
         msg2 = MessageFactory(thread=thread, sender=contact, raw_mime=same_content)
 
+        # DB-level dedup: identical content lands as ONE Blob row, with
+        # both Messages pointing at it. The storage attribution metric
+        # walks ``Message → Blob`` and sums per-message, so the same
+        # bytes are still counted twice toward this mailbox's quota
+        # (each Message contributes independently). That matches the
+        # operator's mental model of "two stored messages = two units
+        # of storage felt by this user", even when the bytes physically
+        # exist once.
         assert msg1.blob.size_compressed == msg2.blob.size_compressed
-        assert msg1.blob.pk != msg2.blob.pk
+        assert msg1.blob.pk == msg2.blob.pk  # one row, two FKs
 
         response = api_client.get(url, **correctly_configured_header)
         data = response.json()
 
-        expected = 2 * overhead + msg1.blob.size_compressed + msg2.blob.size_compressed
+        expected = 2 * overhead + 2 * msg1.blob.size_compressed
         assert data["results"][0]["metrics"]["storage_used"] == expected
 
     @pytest.mark.django_db
@@ -815,9 +824,7 @@ class TestMailboxUsageMetrics:
         contact_a = ContactFactory(mailbox=mb_a)
         msg_a1 = MessageFactory(thread=thread_a, sender=contact_a, raw_mime=b"a1" * 200)
         msg_a2 = MessageFactory(thread=thread_a, sender=contact_a, raw_mime=b"a2" * 300)
-        att_a = AttachmentFactory(mailbox=mb_a, blob_size=700)
-        att_a.messages.add(msg_a1)
-
+        att_a = AttachmentFactory(mailbox=mb_a, blob_size=700, message=msg_a1)
         # alice: 1 signature template
         sig_a = MessageTemplateFactory(
             mailbox=mb_a,
@@ -836,9 +843,7 @@ class TestMailboxUsageMetrics:
             is_draft=True,
             draft_blob=draft_blob,
         )
-        att_b = AttachmentFactory(mailbox=mb_b, blob_size=900)
-        att_b.messages.add(msg_b)
-
+        att_b = AttachmentFactory(mailbox=mb_b, blob_size=900, message=msg_b)
         expected_a = (
             2 * overhead
             + msg_a1.blob.size_compressed
@@ -882,9 +887,7 @@ class TestMailboxUsageMetrics:
         ThreadAccessFactory(mailbox=mb1, thread=thread1)
         contact1 = ContactFactory(mailbox=mb1)
         msg1 = MessageFactory(thread=thread1, sender=contact1, raw_mime=b"m1" * 200)
-        att1 = AttachmentFactory(mailbox=mb1, blob_size=500)
-        att1.messages.add(msg1)
-
+        att1 = AttachmentFactory(mailbox=mb1, blob_size=500, message=msg1)
         # bob: 2 messages with MIME
         thread2 = ThreadFactory()
         ThreadAccessFactory(mailbox=mb2, thread=thread2)

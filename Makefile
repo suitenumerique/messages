@@ -100,7 +100,7 @@ bootstrap: ## Prepare the project for local development
 update:  ## Update the project with latest changes
 	@$(MAKE) data/media
 	@$(MAKE) data/static
-	@$(MAKE) import-bucket
+	@$(MAKE) create-buckets
 	@$(MAKE) create-env-files
 	@$(MAKE) build
 	@$(MAKE) collectstatic
@@ -161,10 +161,11 @@ restart-minimal: \
 	start-minimal
 .PHONY: restart-minimal
 
-import-bucket: ## create the message imports bucket in objectstorage
+create-buckets: ## create the message imports & blobs buckets in objectstorage
 	@$(COMPOSE) up -d objectstorage --wait
 	@$(MANAGE_DB) create_bucket --storage message-imports --expire-days 1
-.PHONY: import-bucket
+	@$(MANAGE_DB) create_bucket --storage message-blobs
+.PHONY: create-buckets
 
 shell-objectstorage: ## open a shell in the objectstorage container
 	@$(COMPOSE) run --rm --build objectstorage bash
@@ -366,6 +367,7 @@ demo-e2e: ## Populate the e2e database with demo data
 start-e2e: ## Start e2e services (migrate, seed, etc.)
 	@echo "$(BLUE)\n\n| 🔧 Setting up E2E services... \n$(RESET)"
 	@$(COMPOSE_E2E) run --rm backend python manage.py create_bucket --storage message-imports --expire-days 1
+	@$(COMPOSE_E2E) run --rm backend python manage.py create_bucket --storage message-blobs --expire-days 1
 	@$(COMPOSE_E2E) run --rm backend python manage.py migrate --noinput
 	@$(COMPOSE_E2E) run --rm backend python manage.py search_index_create || true
 	@$(MAKE) demo-e2e

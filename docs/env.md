@@ -140,6 +140,34 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `STORAGE_MESSAGE_IMPORTS_REGION_NAME` | None | S3 region | Optional |
 | `STORAGE_MESSAGE_IMPORTS_EXPIRE_POLICY` | `3600` | Upload policy expiration (1h) | Optional |
 
+### Tiered Blob Storage
+
+Blobs (raw email bodies and attachments) live in PostgreSQL by default and
+can be offloaded to S3 after a configurable age. See [tiered storage
+docs](tiered-storage.md) for the runbook (rotation, verify, recovery).
+
+The bucket is treated as "configured" when at least one of
+`STORAGE_MESSAGES_BLOBS_ENDPOINT_URL` or `STORAGE_MESSAGES_BLOBS_ACCESS_KEY`
+is set — the periodic offload task and the read-from-S3 path both
+short-circuit otherwise. Bucket creds must additionally be valid for
+the periodic task to actually move data; until both
+`MESSAGES_BLOBS_OFFLOAD_ENABLED=True` and creds are in place, every
+blob stays in PG.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `STORAGE_MESSAGES_BLOBS_ENDPOINT_URL` | unset | S3 endpoint URL for blob bucket | Optional |
+| `STORAGE_MESSAGES_BLOBS_BUCKET_NAME` | unset | S3 bucket name (must be set together with `STORAGE_MESSAGES_BLOBS_ENDPOINT_URL` to enable offload) | Optional |
+| `STORAGE_MESSAGES_BLOBS_ACCESS_KEY` | unset | S3 access key | Optional |
+| `STORAGE_MESSAGES_BLOBS_SECRET_KEY` | unset | S3 secret key | Optional |
+| `STORAGE_MESSAGES_BLOBS_REGION_NAME` | unset | S3 region | Optional |
+| `MESSAGES_BLOBS_OFFLOAD_ENABLED` | `False` | Master switch for the periodic offload task. Hourly schedule with a 55-minute per-tick budget; processes blobs sequentially (no per-blob fan-out). The orphan-blob GC sweep (`gc_orphan_blobs_task`) runs on the same hourly cadence regardless of this flag — its job is reference-graph cleanup, not S3 offload. | Optional |
+| `MESSAGES_BLOBS_OFFLOAD_DELAY` | `86400` | Age threshold (seconds) for offload (`0` = immediate) | Optional |
+| `MESSAGES_BLOBS_OFFLOAD_MIN_SIZE` | `0` | Minimum blob size in bytes (0 = all) | Optional |
+| `MESSAGES_BLOBS_COMPRESS` | `zstd:7` | Default compression: `none`, `zstd`, or `zstd:<level>` | Optional |
+| `MESSAGES_BLOBS_ENCRYPT_KEYS` | `{}` | JSON dict mapping `key_id` → entry. Each entry must be `{"algo": "aes-gcm", "secret": "<32+ chars>", "active": <bool>}`. Add `"active": true` to exactly one entry to make it the key new blobs are encrypted with; entries without `active` (or with `active=false`) stay readable for legacy ciphertext. The secret is SHA-256'd to a 32-byte AEAD key, so its strength is whatever entropy the operator supplied — use `openssl rand -base64 32` (or equivalent). Startup emits a warning when a secret is shorter than 32 characters; that floor is a length check only, not an entropy measurement. | Optional |
+| `MESSAGES_BLOBS_VERIFY_HASH` | `False` | When True, `Blob.get_content()` re-hashes plaintext and rejects mismatches. One SHA-256 over the plaintext per read; main value is for `key_id=0` blobs (encrypted blobs are already AAD-bound). | Optional |
+
 ### Static Files
 
 | Variable | Default | Description | Required |

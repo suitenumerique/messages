@@ -37,7 +37,7 @@ def search_threads(  # pylint: disable=too-many-branches
         Dictionary with thread search results: {"threads": [...], "total": int, "from": int, "size": int}
     """
     # Check if OpenSearch is enabled
-    if not getattr(settings, "OPENSEARCH_INDEX_THREADS", True):
+    if not settings.OPENSEARCH_INDEX_THREADS:
         logger.debug("OpenSearch search is disabled, returning empty results")
         return {"threads": [], "total": 0, "from": from_offset, "size": size}
 

@@ -63,7 +63,6 @@ Message-ID: <test-{subject.replace(" ", "-")}@example.com>
     blob = Blob.objects.create_blob(
         content=eml_content,
         content_type="message/rfc822",
-        mailbox=mailbox_obj,
     )
 
     # Create thread and message
@@ -548,7 +547,6 @@ Body content here
     blob = Blob.objects.create_blob(
         content=eml_content,
         content_type="message/rfc822",
-        mailbox=mailbox_fixture,
     )
     thread = Thread.objects.create(subject="Message with Received headers")
     access = ThreadAccess.objects.create(thread=thread, mailbox=mailbox_fixture)

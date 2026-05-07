@@ -1,0 +1,1 @@
+"""Management command tests package."""

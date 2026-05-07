@@ -243,9 +243,9 @@ class MailboxUsageMetricsApiView(IsGlobalChannelMixin, APIView):
 
         # Draft body blobs linked via Message.draft_blob
         draft_blobs_subquery = Subquery(
-            Blob.objects.filter(draft__thread__accesses__mailbox=OuterRef("pk"))
+            Blob.objects.filter(drafts__thread__accesses__mailbox=OuterRef("pk"))
             .order_by()
-            .values("draft__thread__accesses__mailbox")
+            .values("drafts__thread__accesses__mailbox")
             .annotate(total=Sum("size_compressed"))
             .values("total")[:1]
         )

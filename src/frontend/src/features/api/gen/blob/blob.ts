@@ -239,6 +239,11 @@ export type blobUploadCreateResponse404 = {
   status: 404;
 };
 
+export type blobUploadCreateResponse413 = {
+  data: void;
+  status: 413;
+};
+
 export type blobUploadCreateResponse500 = {
   data: void;
   status: 500;
@@ -251,6 +256,7 @@ export type blobUploadCreateResponseError = (
   | blobUploadCreateResponse400
   | blobUploadCreateResponse403
   | blobUploadCreateResponse404
+  | blobUploadCreateResponse413
   | blobUploadCreateResponse500
 ) & {
   headers: Headers;
