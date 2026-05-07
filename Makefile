@@ -258,6 +258,12 @@ fuzz-back: ## run back-end fuzz tests
 	bin/pytest -m fuzz $${args:-${1}}
 .PHONY: fuzz-back
 
+fuzz-back-intensive: ## run back-end fuzz tests with 10x more examples (~20-30 min)
+	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
+	rm -rf src/backend/.hypothesis/examples && \
+	FUZZ_EXAMPLES=20000 bin/pytest -m fuzz $${args:-${1}}
+.PHONY: fuzz-back-intensive
+
 test-front: ## run the frontend tests
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	$(COMPOSE) run --rm frontend-tools npm run test -- $${args:-${1}}

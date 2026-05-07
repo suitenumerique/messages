@@ -17,10 +17,10 @@ WORKDIR /app
 # ---- uv + managed Python + build system deps ----
 FROM base AS uv
 
-# Pin uv by SHA256 digest for supply chain security
-# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.10.4
-# https://github.com/astral-sh/uv/pkgs/container/uv/691717444?tag=0.10.4
-COPY --from=ghcr.io/astral-sh/uv@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
+# Pin uv by SHA256 digest for supply chain security.
+# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.11.10
+# SLSA provenance: https://github.com/astral-sh/uv/attestations/26524427
+COPY --from=ghcr.io/astral-sh/uv@sha256:bca7f6959666f3524e0c42129f9d8bbcfb0c180d847f5187846b98ff06125ead /uv /uvx /bin/
 
 RUN <<EOR
 apt-get update
@@ -43,7 +43,7 @@ ENV UV_PROJECT_ENVIRONMENT=/venv
 
 # Install Python via uv — integrity verified against SHA256 checksums embedded in the uv binary.
 # Uses python-build-standalone: most C deps (ssl, ffi, sqlite, zlib, lzma, bz2) are statically linked.
-RUN uv python install 3.14.3
+RUN uv python install 3.14.4
 
 # ---- Production dependencies ----
 FROM uv AS base-with-deps
@@ -79,7 +79,7 @@ EOR
 FROM uv AS python-runtime
 RUN <<EOR
 set -e
-PYDIR=$(dirname $(dirname $(uv python find 3.14.3)))
+PYDIR=$(dirname $(dirname $(uv python find 3.14.4)))
 rm -rf \
     $PYDIR/bin/idle* $PYDIR/bin/pip* $PYDIR/bin/pydoc* $PYDIR/bin/*-config \
     $PYDIR/include $PYDIR/share \

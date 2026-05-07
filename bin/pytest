@@ -2,8 +2,16 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/_config.sh"
 
+# Forward selected fuzz-related env vars from the host into the container
+# so callers can override fuzz-test budgets without editing source.
+extra_env=()
+if [ -n "${FUZZ_EXAMPLES:-}" ]; then
+    extra_env+=(-e "FUZZ_EXAMPLES=${FUZZ_EXAMPLES}")
+fi
+
 _dc_run \
     -e DJANGO_CONFIGURATION=Test \
+    "${extra_env[@]}" \
     --build \
     backend-dev \
     pytest "$@"

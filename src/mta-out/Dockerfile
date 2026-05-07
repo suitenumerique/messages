@@ -1,5 +1,5 @@
 # https://hub.docker.com/_/python
-FROM python:3.14.3-slim-trixie AS base
+FROM python:3.14.4-slim-trixie AS base
 
 # Bump this to force an update of the apt repositories
 ENV MIN_UPDATE_DATE="2026-02-20"

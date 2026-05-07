@@ -17,13 +17,13 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 description = "A stateless MTA."
 keywords = ["Python", "MTA"]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.13,<4.0"
+requires-python = ">=3.14.4,<4.0"
 
 # Note: after changing this list you must re-run `make deps-lock-mta-in`
 dependencies = [
