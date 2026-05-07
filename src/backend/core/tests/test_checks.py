@@ -185,9 +185,9 @@ def test_check_compression_level_at_upper_boundary_passes():
 
 
 def test_check_compression_legacy_env_yields_W001(monkeypatch):
-    """The deprecated ``MESSAGES_BLOBS_ZSTD_LEVEL`` env triggers a warning
+    """The deprecated ``MESSAGES_BLOB_ZSTD_LEVEL`` env triggers a warning
     even if the new ``MESSAGES_BLOBS_COMPRESS`` is set correctly."""
-    monkeypatch.setenv("MESSAGES_BLOBS_ZSTD_LEVEL", "5")
+    monkeypatch.setenv("MESSAGES_BLOB_ZSTD_LEVEL", "5")
     issues = check_blob_compression_config(None)
     assert "core.W001" in _ids(issues)
 

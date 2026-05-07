@@ -62,10 +62,10 @@ def check_blob_compression_config(app_configs, **kwargs):
                 )
             )
 
-    if "MESSAGES_BLOBS_ZSTD_LEVEL" in os.environ:
+    if "MESSAGES_BLOB_ZSTD_LEVEL" in os.environ:
         issues.append(
             CheckWarning(
-                "MESSAGES_BLOBS_ZSTD_LEVEL is deprecated and ignored.",
+                "MESSAGES_BLOB_ZSTD_LEVEL is deprecated and ignored.",
                 hint='Set MESSAGES_BLOBS_COMPRESS="zstd:<level>" instead.',
                 id="core.W001",
             )
