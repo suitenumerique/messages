@@ -364,8 +364,15 @@ class TestInboundWidgetDeliver:
             "sender-auth": "none",
             "widget-referer": "https://example.com/contact",
         }
-        assert apimsg.json()["htmlBody"][0]["content"] == "Line 1<br/>Line 2<br/>Line 3"
-        assert apimsg.json()["textBody"][0]["content"] == "Line 1\r\nLine 2\r\nLine 3"
+        # Strip trailing CRLF added by stdlib's set_content body normalization.
+        assert (
+            apimsg.json()["htmlBody"][0]["content"].rstrip("\r\n")
+            == "Line 1<br/>Line 2<br/>Line 3"
+        )
+        assert (
+            apimsg.json()["textBody"][0]["content"].rstrip("\r\n")
+            == "Line 1\r\nLine 2\r\nLine 3"
+        )
 
     def test_inbound_widget_deliver_message_e2e_no_referer(self, api_client, channel):
         """Test that message is well delivered without referer."""

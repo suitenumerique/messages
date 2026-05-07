@@ -136,10 +136,13 @@ class TestSendMessageAPIView:
 
             message = models.Message.objects.get(id=draft_message.id)
             content = message.blob.get_content().decode()
-            assert "Hello world!" in content
+            # Drop quoted-printable soft line breaks before searching, since
+            # stdlib may fold long HTML lines with =\r\n.
+            unfolded = content.replace("=\r\n", "")
+            assert "Hello world!" in unfolded
             assert (
                 "Best regards,<br>John Doe<br>Software Engineer<br>Engineering"
-                in content
+                in unfolded
             )
 
     def test_api_send_message_without_signature_placeholder(
@@ -258,10 +261,13 @@ class TestSendMessageAPIView:
 
             message = models.Message.objects.get(id=draft_message.id)
             content = message.blob.get_content().decode()
-            assert "Hello world!" in content
+            # Drop quoted-printable soft line breaks before searching, since
+            # stdlib may fold long HTML lines with =\r\n.
+            unfolded = content.replace("=\r\n", "")
+            assert "Hello world!" in unfolded
             assert (
                 "Best regards,<br>John Doe<br>Software Engineer<br>Engineering"
-                in content
+                in unfolded
             )
 
     @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
