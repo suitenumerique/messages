@@ -3,6 +3,7 @@
 
 import json
 import logging
+import mimetypes
 
 from django import forms
 from django.contrib import admin, messages
@@ -10,7 +11,7 @@ from django.contrib.auth import admin as auth_admin
 from django.core.files.storage import storages
 from django.db import transaction
 from django.db.models import JSONField, Q
-from django.http import HttpResponseNotAllowed
+from django.http import HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.urls import path
@@ -31,6 +32,21 @@ from core.services.throttle import get_throttle_status
 from . import enums, models
 from .enums import MessageDeliveryStatusChoices
 from .forms import IMAPImportForm, MessageImportForm
+
+
+# Lock the entire Django admin to superusers. ``AdminSite.has_permission``
+# is the single gate every admin URL passes through (model views, custom
+# ``admin_view``-wrapped endpoints, the login redirect). The default
+# (``is_active and is_staff``) is too loose given that the admin can
+# download raw mail blobs, inject EML into arbitrary inboxes, and
+# capture third-party IMAP credentials.
+def _admin_superuser_only(self, request):  # pylint: disable=unused-argument
+    # ``self`` is required by Django's AdminSite.has_permission signature.
+    user = getattr(request, "user", None)
+    return bool(user and user.is_active and user.is_superuser)
+
+
+admin.AdminSite.has_permission = _admin_superuser_only
 
 
 class PrettyJSONWidget(forms.Textarea):
@@ -1047,17 +1063,19 @@ class MessageRecipientInline(admin.TabularInline):
 class AttachmentAdmin(admin.ModelAdmin):
     """Admin class for the Attachment model"""
 
-    list_display = ("id", "name", "mailbox", "created_at")
+    list_display = ("id", "name", "mailbox", "message", "created_at")
     search_fields = ("name", "mailbox__local_part", "mailbox__domain__name")
     autocomplete_fields = ("mailbox",)
-    raw_id_fields = ("blob", "messages")
+    raw_id_fields = ("blob", "message")
 
 
 class AttachmentInline(admin.TabularInline):
-    """Inline class for the Attachment model"""
+    """Inline class showing a Message's attachments via the FK."""
 
-    model = models.Attachment.messages.through
-    raw_id_fields = ("attachment",)
+    model = models.Attachment
+    fk_name = "message"
+    raw_id_fields = ("blob",)
+    extra = 0
 
 
 @admin.register(models.Message)
@@ -1338,29 +1356,72 @@ class LabelAdmin(admin.ModelAdmin):
 
 @admin.register(models.Blob)
 class BlobAdmin(admin.ModelAdmin):
-    """Admin class for the Blob model"""
+    """Admin class for the Blob model."""
 
     list_display = (
         "id",
-        "mailbox",
         "content_type",
         "size",
         "size_compressed",
         "compression",
+        "storage_location",
+        "encryption_key_id",
         "created_at",
     )
-    search_fields = ("mailbox__local_part", "mailbox__domain__name", "content_type")
-    list_filter = ("content_type", "compression", "created_at", "updated_at")
-    autocomplete_fields = ("mailbox",)
+    search_fields = ("id", "content_type")
+    list_filter = (
+        "content_type",
+        "compression",
+        "storage_location",
+        "encryption_key_id",
+        "created_at",
+        "updated_at",
+    )
+    change_form_template = "admin/core/blob/change_form.html"
 
     def get_queryset(self, request):
-        """Optimize queryset with select_related and exclude large binary content"""
-        return (
-            super()
-            .get_queryset(request)
-            .select_related("mailbox", "mailbox__domain")
-            .defer("raw_content")  # Exclude large binary content from list view
+        """Exclude large binary content from list view."""
+        return super().get_queryset(request).defer("raw_content")
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "<path:object_id>/download/",
+                self.admin_site.admin_view(self.download_view),
+                name="core_blob_download",
+            ),
+        ]
+        return custom_urls + urls
+
+    def download_view(self, request, object_id):
+        """Download the decompressed (and decrypted) blob content."""
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+
+        blob = self.get_object(request, object_id)
+        if blob is None:
+            messages.error(request, "Blob not found.")
+            return redirect("..")
+
+        try:
+            content = blob.get_content()
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logging.exception("Failed to fetch blob %s for admin download", blob.id)
+            capture_exception()
+            messages.error(request, f"Failed to download blob: {exc}")
+            # Bounce back to the change view; "." would re-target the
+            # POST-only download endpoint and 405.
+            return redirect("..")
+
+        extension = mimetypes.guess_extension(blob.content_type or "") or ""
+        filename = f"blob-{blob.id}{extension}"
+        response = HttpResponse(
+            content, content_type=blob.content_type or "application/octet-stream"
         )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Content-Length"] = str(len(content))
+        return response
 
 
 @admin.register(models.MailDomainAccess)

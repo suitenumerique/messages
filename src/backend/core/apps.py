@@ -31,6 +31,10 @@ class CoreConfig(AppConfig):
         # pylint: disable=unused-import, import-outside-toplevel
         import core.signals  # noqa
 
+        # Register system checks
+        # pylint: disable=unused-import, import-outside-toplevel
+        import core.checks  # noqa
+
         # Deprecation warning for legacy static API keys.
         for deprecated in ("METRICS_API_KEY", "PROVISIONING_API_KEY"):
             if getattr(settings, deprecated, None):

@@ -166,4 +166,5 @@ python_files = [
 ]
 markers = [
     "fuzz: marks tests as fuzz tests (run with: pytest -m fuzz)",
+    "redis: marks tests that need a real Redis service (skip with: pytest -m 'not redis')",
 ]

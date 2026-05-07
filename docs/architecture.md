@@ -30,7 +30,7 @@
 - **PostgreSQL**: Primary relational database for all structured data
 - **Redis**: Caching layer and Celery message broker
 - **OpenSearch**: Full-text search index for messages and threads
-- **S3-Compatible Storage**: File and attachment storage (In progress)
+- **S3-Compatible Storage**: PST/MBOX imports and tiered blob offload — see [tiered-storage.md](tiered-storage.md)
 
 ### Authentication & Authorization
 

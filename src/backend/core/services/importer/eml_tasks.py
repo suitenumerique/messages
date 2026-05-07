@@ -66,15 +66,24 @@ def process_eml_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             },
         )
 
-        # Get storage and read file
+        # Read at most MAX_INCOMING_EMAIL_SIZE+1 bytes from S3 via a Range
+        # request, so an oversized .eml upload (whether malicious or just
+        # mislabeled) can't OOM the worker before the size check fires.
+        # If the read returns more than the limit, the file is rejected.
         message_imports_storage = storages["message-imports"]
-        with message_imports_storage.open(file_key, "rb") as file:
-            file_content = file.read()
+        s3_client = message_imports_storage.connection.meta.client
+        limit = settings.MAX_INCOMING_EMAIL_SIZE
+        resp = s3_client.get_object(
+            Bucket=message_imports_storage.bucket_name,
+            Key=file_key,
+            Range=f"bytes=0-{limit}",  # one byte past the limit
+        )
+        file_content = resp["Body"].read()
 
         # Check message size limit
-        if len(file_content) > settings.MAX_INCOMING_EMAIL_SIZE:
-            error_msg = f"File too large: {len(file_content)} bytes"
-            logger.warning("Skipping oversized EML file: %d bytes", len(file_content))
+        if len(file_content) > limit:
+            error_msg = f"File too large: more than {limit} bytes"
+            logger.warning("Skipping oversized EML file (>%d bytes)", limit)
             result = {
                 "message_status": "Failed to process message",
                 "total_messages": 1,

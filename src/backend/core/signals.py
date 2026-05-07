@@ -9,6 +9,7 @@ from django.db.models.signals import post_delete, post_save, pre_delete
 from django.dispatch import receiver
 
 from core import enums, models
+from core.services.blob_gc import schedule_for_gc
 from core.services.identity.keycloak import (
     sync_mailbox_to_keycloak_user,
     sync_maildomain_to_keycloak_group,
@@ -139,20 +140,29 @@ def index_thread_post_save(sender, instance, created, **kwargs):
     _schedule_thread_reindex(instance.id)
 
 
-@receiver(pre_delete, sender=models.Message)
-def delete_message_blobs(sender, instance, **kwargs):
-    """Delete the blobs associated with a message."""
-    if instance.blob:
-        instance.blob.delete()
-    if instance.draft_blob:
-        instance.draft_blob.delete()
+# When a row that FKs a Blob is deleted, push the blob_id into the
+# GC candidate set; ``gc_orphan_blobs_task`` re-checks references
+# under the per-sha advisory lock and deletes the Blob row + cleans
+# up S3 inline if no references remain.
 
 
-# @receiver(post_delete, sender=models.Attachment)
-# def delete_attachments_blobs(sender, instance, **kwargs):
-#     """Delete the blob associated with an attachment."""
-#     if instance.blob:
-#         instance.blob.delete()
+@receiver(post_delete, sender=models.Message)
+def schedule_message_blobs_for_gc(sender, instance, **kwargs):
+    """Push ``Message.blob`` and ``Message.draft_blob`` ids into the GC set."""
+    schedule_for_gc(instance.blob_id)
+    schedule_for_gc(instance.draft_blob_id)
+
+
+@receiver(post_delete, sender=models.Attachment)
+def schedule_attachment_blob_for_gc(sender, instance, **kwargs):
+    """Push ``Attachment.blob`` id into the GC set."""
+    schedule_for_gc(instance.blob_id)
+
+
+@receiver(post_delete, sender=models.MessageTemplate)
+def schedule_template_blob_for_gc(sender, instance, **kwargs):
+    """Push ``MessageTemplate.blob`` id into the GC set."""
+    schedule_for_gc(instance.blob_id)
 
 
 @receiver(post_delete, sender=models.Message)
@@ -192,26 +202,6 @@ def delete_thread_from_index(sender, instance, **kwargs):
 
     thread_id = str(instance.id)
     transaction.on_commit(lambda tid=thread_id: enqueue_thread_delete(tid))
-
-
-@receiver(pre_delete, sender=models.Message)
-def delete_orphan_draft_attachments(sender, instance, **kwargs):
-    """Remove orphan attachments after a draft message is deleted."""
-
-    # Get all attachments that are not used by any other message
-    if instance.is_draft:
-        attachments = models.Attachment.objects.filter(messages=instance)
-
-        for attachment in attachments:
-            if attachment.messages.count() == 1:
-                attachment.blob.delete()  # this will cascade delete the attachment
-
-        if instance.draft_blob and instance.draft_blob.pk:
-            instance.draft_blob.delete()
-
-    if instance.blob and instance.blob.pk:
-        if instance.blob.messages.count() == 1:
-            instance.blob.delete()
 
 
 @receiver(post_save, sender=models.ThreadAccess)

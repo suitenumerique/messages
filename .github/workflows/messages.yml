@@ -39,8 +39,8 @@ jobs:
           chown -R 1001:1001 data
       - name: Collect static files
         run: make collectstatic
-      - name: Create msg-imports bucket
-        run: make import-bucket
+      - name: Create object storage buckets
+        run: make create-buckets
       - name: Run backend tests
         run: make test-back-parallel
 

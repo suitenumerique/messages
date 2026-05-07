@@ -48,6 +48,14 @@ STORAGE_MESSAGE_IMPORTS_ACCESS_KEY=st-messages
 STORAGE_MESSAGE_IMPORTS_SECRET_KEY=password
 STORAGE_MESSAGE_IMPORTS_EXPIRE_POLICY=600
 
+# Object storage for tiered blob storage — points at the local
+# objectstorage container; offload itself stays off by default
+# (MESSAGES_BLOBS_OFFLOAD_ENABLED defaults to False in settings.py).
+STORAGE_MESSAGES_BLOBS_ENDPOINT_URL=http://objectstorage:9000
+STORAGE_MESSAGES_BLOBS_BUCKET_NAME=msg-blobs
+STORAGE_MESSAGES_BLOBS_ACCESS_KEY=st-messages
+STORAGE_MESSAGES_BLOBS_SECRET_KEY=password
+
 # OIDC
 OIDC_OP_JWKS_ENDPOINT=http://keycloak:8802/realms/messages/protocol/openid-connect/certs
 OIDC_OP_AUTHORIZATION_ENDPOINT=http://localhost:8902/realms/messages/protocol/openid-connect/auth

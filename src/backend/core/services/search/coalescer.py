@@ -28,23 +28,17 @@ its own pair. The bulk delete tasks then issue ``bulk delete by _id``
 calls — much lighter than ``delete_by_query``, which holds a scroll
 context and refreshes per call.
 
-The buffer picks its storage based on ``CACHES['default']['BACKEND']``:
-
-* **Redis** (``django_redis``): uses native Redis sets via ``SADD`` and
-  drains with ``SPOP count=N`` (atomic since Redis 3.2). Dedup and drain
-  are race-free across workers and hosts. This is the production path.
-* **Fallback** (LocMem, FileBasedCache, …): stores a serialized Python
-  ``set`` under a single Django cache key. Read-modify-write is not
-  atomic, so concurrent writers may drop IDs. Reindex is idempotent and
-  fires on every save, so the index stays eventually consistent. This
-  path is meant for tests (LocMem) and single-process dev deployments —
-  multi-worker prod should use Redis.
+The buffer requires ``django_redis`` for ``CACHES['default']``: dedup
+and drain rely on native Redis sets (``SADD`` + ``SPOP count=N``,
+atomic since Redis 3.2) which Django's pluggable cache layer can't
+provide race-free across workers. Other backends (Dummy, LocMem,
+FileBased, …) skip with a warning — for OpenSearch the recovery path
+is to set ``OPENSEARCH_INDEX_THREADS=False`` or run with Redis.
 """
 
 import logging
 
 from django.conf import settings
-from django.core.cache import cache
 
 from redis.exceptions import RedisError
 
@@ -65,12 +59,6 @@ def _is_redis_backend() -> bool:
     return "django_redis" in backend
 
 
-def _is_dummy_backend() -> bool:
-    """Return True when the default cache is Django's DummyCache."""
-    backend = settings.CACHES.get("default", {}).get("BACKEND", "")
-    return "dummy" in backend.lower()
-
-
 def _redis_client():
     # pylint: disable-next=import-outside-toplevel
     from django_redis import get_redis_connection
@@ -82,21 +70,17 @@ def _enqueue(key: str, value) -> None:
     """Add ``value`` to the pending set at ``key``."""
     if value is None:
         return
-
+    if not _is_redis_backend():
+        logger.warning(
+            "OpenSearch reindex coalescer requires Redis: %s for %s "
+            "dropped. Configure django_redis or disable "
+            "OPENSEARCH_INDEX_THREADS.",
+            value,
+            key,
+        )
+        return
     try:
-        if _is_redis_backend():
-            _redis_client().sadd(key, str(value))
-        else:
-            if _is_dummy_backend():
-                logger.warning(
-                    "OpenSearch reindex coalescer is using DummyCache: "
-                    "enqueued IDs are dropped. Use Redis or LocMemCache, "
-                    "or disable OPENSEARCH_INDEX_THREADS."
-                )
-                return
-            ids = set(cache.get(key) or ())
-            ids.add(str(value))
-            cache.set(key, ids, timeout=None)
+        _redis_client().sadd(key, str(value))
     except RedisError as exc:
         logger.error(
             "Redis unavailable while enqueuing %s into %s (%s: %s); "
@@ -138,29 +122,18 @@ def enqueue_message_delete(thread_id, message_id) -> None:
     )
 
 
-def _drain_batch(key: str, is_redis_cache: bool, batch_size: int) -> list | None:
+def _drain_batch(key: str, batch_size: int) -> list | None:
     """Drain up to ``batch_size`` IDs from the pending set at ``key``.
 
     Returns the drained IDs as a list (possibly empty when the set is empty)
     or ``None`` if the drain itself failed — signalling the caller to stop.
     """
     try:
-        if is_redis_cache:
-            drained = _redis_client().spop(key, count=batch_size)
-            return [
-                tid.decode() if isinstance(tid, bytes) else str(tid)
-                for tid in (drained or [])
-            ]
-        ids = set(cache.get(key) or ())
-        if not ids:
-            return []
-        thread_ids = list(ids)[:batch_size]
-        remaining = ids - set(thread_ids)
-        if remaining:
-            cache.set(key, remaining, timeout=None)
-        else:
-            cache.delete(key)
-        return thread_ids
+        drained = _redis_client().spop(key, count=batch_size)
+        return [
+            tid.decode() if isinstance(tid, bytes) else str(tid)
+            for tid in (drained or [])
+        ]
     except RedisError as exc:
         logger.error(
             "Redis unavailable while draining pending set %s (%s: %s); "
@@ -176,15 +149,10 @@ def _drain_batch(key: str, is_redis_cache: bool, batch_size: int) -> list | None
         return None
 
 
-def _restore_batch(key: str, is_redis_cache: bool, thread_ids: list) -> None:
+def _restore_batch(key: str, thread_ids: list) -> None:
     """Push ``thread_ids`` back into the pending set at ``key``."""
     try:
-        if is_redis_cache:
-            _redis_client().sadd(key, *thread_ids)
-        else:
-            current = set(cache.get(key) or ())
-            current.update(thread_ids)
-            cache.set(key, current, timeout=None)
+        _redis_client().sadd(key, *thread_ids)
     except RedisError as exc:
         logger.error(
             "Redis unavailable while restoring %d drained IDs to %s (%s: %s); "
@@ -206,7 +174,6 @@ def _restore_batch(key: str, is_redis_cache: bool, thread_ids: list) -> None:
 
 def _drain_and_dispatch(
     key: str,
-    is_redis_cache: bool,
     batch_size: int,
     remaining_budget: int,
     task,
@@ -228,7 +195,7 @@ def _drain_and_dispatch(
     drained_ids: set[str] = set()
 
     while remaining_budget > 0:
-        ids = _drain_batch(key, is_redis_cache, batch_size)
+        ids = _drain_batch(key, batch_size)
         if ids is None or not ids:
             break
 
@@ -242,7 +209,7 @@ def _drain_and_dispatch(
                 task_label,
                 len(ids),
             )
-            _restore_batch(key, is_redis_cache, ids)
+            _restore_batch(key, ids)
             return handed_off, 0, drained_ids
 
         handed_off += len(ids)
@@ -300,7 +267,12 @@ def process_pending_reindex(
     if max_batches is None:
         max_batches = settings.SEARCH_FLUSH_MAX_BATCHES
 
-    is_redis_cache = _is_redis_backend()
+    if not _is_redis_backend():
+        logger.warning(
+            "OpenSearch reindex coalescer requires Redis; nothing to drain. "
+            "Configure django_redis or disable OPENSEARCH_INDEX_THREADS."
+        )
+        return {"deleted_threads": 0, "deleted_messages": 0, "reindexed": 0}
 
     # pylint: disable-next=import-outside-toplevel
     from core.services.search.tasks import (
@@ -313,7 +285,6 @@ def process_pending_reindex(
 
     deleted_threads, remaining_budget, drained_delete_thread_ids = _drain_and_dispatch(
         PENDING_DELETE_KEY,
-        is_redis_cache,
         batch_size,
         remaining_budget,
         bulk_delete_threads_task,
@@ -322,7 +293,6 @@ def process_pending_reindex(
 
     deleted_messages, remaining_budget, _ = _drain_and_dispatch(
         PENDING_DELETE_MESSAGES_KEY,
-        is_redis_cache,
         batch_size,
         remaining_budget,
         bulk_delete_messages_task,
@@ -331,7 +301,7 @@ def process_pending_reindex(
 
     reindexed_total = 0
     while remaining_budget > 0:
-        thread_ids = _drain_batch(PENDING_REINDEX_KEY, is_redis_cache, batch_size)
+        thread_ids = _drain_batch(PENDING_REINDEX_KEY, batch_size)
         if thread_ids is None or not thread_ids:
             break
 
@@ -358,7 +328,7 @@ def process_pending_reindex(
                 "returning IDs to the pending set for retry",
                 len(filtered),
             )
-            _restore_batch(PENDING_REINDEX_KEY, is_redis_cache, filtered)
+            _restore_batch(PENDING_REINDEX_KEY, filtered)
             return {
                 "deleted_threads": deleted_threads,
                 "deleted_messages": deleted_messages,

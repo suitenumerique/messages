@@ -81,7 +81,7 @@ def mock_task():
 
 
 def _upload_to_s3(content, file_key="test-mbox-key"):
-    """Upload content to the message-imports S3 bucket (real MinIO)."""
+    """Upload content to the message-imports S3 bucket (real object storage)."""
     storage = storages["message-imports"]
     s3_client = storage.connection.meta.client
     s3_client.put_object(

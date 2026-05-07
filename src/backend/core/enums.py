@@ -84,6 +84,35 @@ class CompressionTypeChoices(models.IntegerChoices):
     ZSTD = 1, "Zstd"
 
 
+def parse_compression_spec(spec: str) -> tuple["CompressionTypeChoices", int | None]:
+    """Parse a ``MESSAGES_BLOBS_COMPRESS`` spec like ``"zstd"`` or ``"zstd:3"``.
+
+    Returns ``(algorithm, level)`` where ``level`` is ``None`` when no level
+    is specified (or when the algorithm doesn't take one). Raises
+    ``ValueError`` on an unknown algorithm or a level on ``none``.
+    """
+    algo, sep, level = spec.partition(":")
+    try:
+        compression = CompressionTypeChoices[algo.upper()]
+    except KeyError as exc:
+        raise ValueError(f"unknown compression algorithm {algo!r} in {spec!r}") from exc
+    if not sep:
+        return compression, None
+    if compression == CompressionTypeChoices.NONE:
+        raise ValueError(f"'none' takes no level (got {spec!r})")
+    try:
+        return compression, int(level)
+    except ValueError as exc:
+        raise ValueError(f"compression level must be an integer in {spec!r}") from exc
+
+
+class BlobStorageLocationChoices(models.IntegerChoices):
+    """Defines where blob content is stored (tiered storage)."""
+
+    POSTGRES = 1, "PostgreSQL"
+    OBJECT_STORAGE = 2, "Object Storage"
+
+
 class DKIMAlgorithmChoices(models.IntegerChoices):
     """Defines the possible DKIM signing algorithms."""
 

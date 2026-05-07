@@ -551,7 +551,8 @@ class TestMTAInboundEmailThreading:
             mime_id=mime_id,
         )
         # Create a blob for the message
-        blob = self.mailbox.create_blob(
+        blob = factories.BlobFactory(
+            mailbox=self.mailbox,
             content=b"From: sender@example.com\r\nTo: testuser@threadtest.com\r\nSubject: "
             + subject.encode("utf-8")
             + b"\r\nMessage-ID: <"
@@ -802,7 +803,8 @@ class TestMTAInboundEmailThreading:
             mime_id=other_mime_id,
         )
         # Create a blob for the message
-        blob = other_mailbox.create_blob(
+        blob = factories.BlobFactory(
+            mailbox=other_mailbox,
             content=b"From: other@sender.com\r\nTo: otheruser@otherdomain.com"
             + b"\r\nSubject: Other Mailbox Subject\r\nMessage-ID: <"
             + other_mime_id.encode("utf-8")

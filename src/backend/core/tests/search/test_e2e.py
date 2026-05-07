@@ -154,9 +154,21 @@ def fixture_create_test_thread(test_mailbox, wait_for_indexing):
     len(settings.OPENSEARCH_HOSTS) == 0,
     reason="OpenSearch is not configured",
 )
+@pytest.mark.redis
 @pytest.mark.django_db(transaction=True)
 class TestSearchE2E:
-    """End-to-end tests for OpenSearch search functionality."""
+    """End-to-end tests for OpenSearch search functionality.
+
+    Marked ``@pytest.mark.redis``: ``wait_for_indexing`` invokes
+    ``process_pending_reindex``, which drains the Redis-backed
+    coalescing buffers populated by signal handlers during the test
+    body. Without ``redis_cache`` the enqueues silently warn-and-skip
+    and OpenSearch never sees the new threads.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _redis_cache(self, redis_cache):
+        pass
 
     def test_search_thread_by_subject(
         self, setup_search, api_client, test_url, create_test_thread

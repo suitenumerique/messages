@@ -783,13 +783,13 @@ class TestSendAutoreplyForMessage:
 
     @patch("core.mda.outbound_tasks.send_message_task", new_callable=MagicMock)
     @patch(
-        "core.mda.autoreply.compose_and_store_mime",
+        "core.mda.autoreply.compose_and_sign_mime",
         side_effect=RuntimeError("MIME composition failed"),
     )
     def test_compose_failure_rolls_back_message_and_recipient(
         self, mock_compose, mock_send_task, mailbox, autoreply_template, inbound_message
     ):
-        """When compose_and_store_mime fails, Message and MessageRecipient are rolled back."""
+        """When compose_and_sign_mime fails, Message and MessageRecipient are rolled back."""
         initial_msg_count = models.Message.objects.count()
         initial_rcpt_count = models.MessageRecipient.objects.count()
 

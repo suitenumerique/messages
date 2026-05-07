@@ -16,6 +16,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from core import enums, models
 from core.mda.rfc5322 import extract_base64_images_from_html
+from core.services.blob_gc import schedule_for_gc
 
 
 class CreateOnlyFieldsMixin:
@@ -2384,8 +2385,6 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
             blob = models.Blob.objects.create_blob(
                 content=content_bytes,
                 content_type="application/json",
-                maildomain=self.context.get("domain"),
-                mailbox=self.context.get("mailbox"),
             )
             validated_data["blob"] = blob
             return super().create(validated_data)
@@ -2403,14 +2402,17 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
                 validated_data.pop("text_body", None)
                 validated_data.pop("raw_body", None)
 
-                if instance.blob:
-                    instance.blob.delete()
+                # Drop the old blob's reference and let the GC sweep
+                # collect it if no other row links to it. Direct delete
+                # would race with concurrent dedup / offload paths.
+                old_blob_id = instance.blob_id
+                instance.blob = None
+                if old_blob_id:
+                    schedule_for_gc(old_blob_id)
 
                 blob = models.Blob.objects.create_blob(
                     content=content_bytes,
                     content_type="application/json",
-                    maildomain=instance.maildomain or None,
-                    mailbox=instance.mailbox or None,
                 )
                 validated_data["blob"] = blob
 

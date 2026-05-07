@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 from django.conf import settings
 from django.core.cache import cache
+from django.db import transaction
 from django.utils import timezone
 
 import rest_framework as drf
@@ -26,6 +27,7 @@ from core.mda.rfc5322 import (
 )
 from core.mda.signing import sign_message_dkim, verify_message_dkim
 from core.mda.smtp import send_smtp_mail
+from core.services.blob_gc import schedule_for_gc
 from core.services.dns.check import check_spf_status
 from core.services.throttle import check_and_increment_throttle
 from core.utils import ThreadStatsUpdateDeferrer
@@ -102,7 +104,7 @@ def validate_attachments_size(total_size: int, message_id: str) -> None:
         )
 
 
-def compose_and_store_mime(
+def compose_and_sign_mime(
     message: models.Message,
     mailbox: models.Mailbox,
     text_body: str,
@@ -111,16 +113,16 @@ def compose_and_store_mime(
     prepend_headers: list | None = None,
     signature: Optional[models.MessageTemplate] = None,
     user: Optional[models.User] = None,
-) -> None:
-    """Compose a complete outbound email: append signature, embed reply/forward
-    quote, generate MIME, DKIM sign, and store as blob on the message.
+) -> bytes:
+    """Compose and DKIM-sign an outbound email; return the raw MIME bytes.
 
-    The signature is inserted between the new content and the quoted original
-    so recipients see it in the expected position.
+    Pure-Python work — no DB writes, no Blob INSERT — so callers can run
+    this outside any surrounding ``transaction.atomic`` block. The
+    Message instance is mutated in memory (``mime_id``,
+    ``has_attachments``) but not saved here; the caller persists.
 
-    The Message must already have a sender and MessageRecipients in the DB.
-    Updates message.mime_id, message.blob and message.has_attachments
-    (caller is responsible for saving).
+    The signature is inserted between the new content and the quoted
+    original so recipients see it in the expected position.
     """
     # 1. Append signature (before quoting so it sits between reply and quote)
     text_body, html_body, inline_attachments = (
@@ -199,7 +201,7 @@ def compose_and_store_mime(
     if dkim_header:
         raw_mime = dkim_header + b"\r\n" + raw_mime
 
-    message.blob = mailbox.create_blob(content=raw_mime, content_type="message/rfc822")
+    return raw_mime
 
 
 def append_signature_and_extract_inline_images(
@@ -309,11 +311,19 @@ def prepare_outbound_message(
     )
 
     if raw_mime is not None:
-        # Raw MIME path: the caller already composed the MIME.
-        validate_mime_size(len(raw_mime), message.id)
+        # Raw MIME path: caller already has the body. Sign first
+        # (CPU work, outside any DB transaction), then take a tight
+        # atomic for just the Blob INSERT + FK-establishing save —
+        # this keeps the per-sha advisory lock taken inside
+        # ``create_blob`` held for ms, not for the duration of DKIM.
+        signed_mime = _sign_mime(mailbox_sender, raw_mime)
+        validate_mime_size(len(signed_mime), message.id)
         message.sender_user = user
-        message.blob = _sign_and_store_blob(mailbox_sender, raw_mime)
-        _finalize_sent_message(mailbox_sender, message)
+        with transaction.atomic():
+            message.blob = models.Blob.objects.create_blob(
+                content=signed_mime, content_type="message/rfc822"
+            )
+            _finalize_sent_message(mailbox_sender, message)
         return True
 
     # --- Web/API path: compose MIME from text/html body --- #
@@ -355,9 +365,13 @@ def prepare_outbound_message(
             )
             validate_attachments_size(total_attachment_size, message.id)
 
-    # Compose MIME, DKIM sign, and store as blob
+    # Compose + DKIM-sign outside any DB transaction so the per-sha
+    # advisory lock taken inside ``create_blob`` isn't held while we
+    # do CPU-bound MIME assembly + RSA signing. Validate size before
+    # the blob INSERT so an oversize message never creates an orphan
+    # row that the GC sweep would have to collect.
     try:
-        compose_and_store_mime(
+        signed_mime = compose_and_sign_mime(
             message,
             mailbox_sender,
             text_body,
@@ -366,56 +380,55 @@ def prepare_outbound_message(
             signature=message.signature,
             user=user,
         )
+        validate_mime_size(len(signed_mime), message.id)
+
+        draft_blob_id = message.draft_blob_id
+        message.sender_user = user
+        with transaction.atomic():
+            message.blob = models.Blob.objects.create_blob(
+                content=signed_mime, content_type="message/rfc822"
+            )
+            # ``has_attachments`` is set by ``compose_and_sign_mime``
+            # (includes inline signature images), so we do not
+            # overwrite it here.
+            _finalize_sent_message(
+                mailbox_sender,
+                message,
+                extra_update_fields=("mime_id", "has_attachments"),
+            )
+
+            # Drop draft body + attachment-row references now that
+            # the message has been finalized; the GC sweep will
+            # collect any orphan blobs.
+            if draft_blob_id:
+                message.draft_blob = None
+                message.save(update_fields=["draft_blob"])
+                schedule_for_gc(draft_blob_id)
+            # Each Attachment is owned 1:1 by this Message via FK;
+            # bulk-delete them. The post_delete signal fires for
+            # each row and schedules its blob_id for the GC sweep.
+            message.attachments.all().delete()
     except drf.exceptions.ValidationError:
         raise
-    except Exception as e:
-        logger.error("Failed to compose MIME for message %s: %s", message.id, e)
+    except Exception:
+        logger.exception("Failed to compose MIME for message %s", message.id)
         return False
-
-    # compose_and_store_mime already DKIM-signed and stored the blob.
-    # Validate the final size — clean up the blob if it's too large.
-    try:
-        validate_mime_size(message.blob.size, message.id)
-    except drf.exceptions.ValidationError:
-        message.blob.delete()
-        raise
-
-    draft_blob = message.draft_blob
-
-    message.sender_user = user
-    # has_attachments is already set by compose_and_store_mime (includes
-    # inline signature images), so we do not overwrite it here.
-    _finalize_sent_message(
-        mailbox_sender, message, extra_update_fields=("mime_id", "has_attachments")
-    )
-
-    # Clean up the draft blob and the attachment blobs
-    if draft_blob:
-        draft_blob.delete()
-    for attachment in message.attachments.all():
-        if attachment.blob:
-            attachment.blob.delete()
-        attachment.delete()
 
     return True
 
 
-def _sign_and_store_blob(
-    mailbox_sender: models.Mailbox, raw_mime: bytes
-) -> models.Blob:
-    """DKIM-sign raw MIME bytes and persist them as a blob on the mailbox."""
+def _sign_mime(mailbox_sender: models.Mailbox, raw_mime: bytes) -> bytes:
+    """DKIM-sign raw MIME bytes and return the signed bytes.
+
+    Pure-Python; no DB writes. Run outside ``transaction.atomic`` so
+    the RSA signing isn't done with the per-sha advisory lock held.
+    """
     dkim_signature_header: Optional[bytes] = sign_message_dkim(
         raw_mime_message=raw_mime, maildomain=mailbox_sender.domain
     )
-
-    raw_mime_signed = raw_mime
     if dkim_signature_header:
-        raw_mime_signed = dkim_signature_header + b"\r\n" + raw_mime
-
-    return mailbox_sender.create_blob(
-        content=raw_mime_signed,
-        content_type="message/rfc822",
-    )
+        return dkim_signature_header + b"\r\n" + raw_mime
+    return raw_mime
 
 
 def _finalize_sent_message(

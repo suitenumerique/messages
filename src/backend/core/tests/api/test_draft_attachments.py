@@ -19,9 +19,20 @@ from core import factories, models
 from core.enums import MailboxRoleChoices, ThreadAccessRoleChoices
 
 
+@pytest.mark.redis
 @pytest.mark.django_db
 class TestDraftWithAttachments:
-    """Tests for creating and updating drafts with attachments."""
+    """Tests for creating and updating drafts with attachments.
+
+    Marked ``@pytest.mark.redis``: the draft attach flow consults the
+    upload reservation registered by ``Mailbox.create_blob`` to verify
+    blob provenance. Without ``redis_cache`` the reservation never
+    lands and ``draft.attachments`` ends up empty.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _redis_cache(self, redis_cache):
+        pass
 
     @pytest.fixture
     def api_client(self):
@@ -47,20 +58,27 @@ class TestDraftWithAttachments:
     def blob(self, user_mailbox):
         """Create a test blob."""
         test_content = b"Test attachment content %i" % random.randint(0, 10000000)
-        return user_mailbox.create_blob(
+        return factories.BlobFactory(
+            mailbox=user_mailbox,
             content=test_content,
             content_type="text/plain",
         )
 
-    @pytest.fixture
-    def attachment(self, user_mailbox, blob):
-        """Create a test attachment linked to a blob."""
-        return models.Attachment.objects.create(
-            mailbox=user_mailbox, name="test_attachment.txt", blob=blob
-        )
+    def test_draft_create_with_blob(
+        self, api_client, user_mailbox, blob, django_capture_on_commit_callbacks
+    ):
+        """Test creating a draft message with a blob reference that becomes an attachment.
 
-    def test_draft_create_with_blob(self, api_client, user_mailbox, blob):
-        """Test creating a draft message with a blob reference that becomes an attachment."""
+        Blob lifetime is now GC-driven: the post_delete signals on
+        Message / Attachment push the blob_id into the candidate set
+        via ``transaction.on_commit``; the actual row delete happens
+        when ``gc_orphan_blobs_task`` runs. The capture-callbacks
+        context fires the on_commit hooks within the test's outer
+        rolled-back transaction so the SADDs land before the GC call.
+        """
+        # pylint: disable-next=import-outside-toplevel
+        from core.services.blob_gc import gc_orphan_blobs_task
+
         client, _ = api_client
 
         # Create a draft
@@ -102,8 +120,13 @@ class TestDraftWithAttachments:
         assert len(response.data["attachments"]) == 1
         assert response.data["attachments"][0]["blobId"] == str(blob.id)
 
-        # Check we can delete the draft
-        response = client.delete(reverse("messages-detail", kwargs={"id": draft_id}))
+        # Check we can delete the draft. The Message + Attachment
+        # post_delete handlers push their blob_ids into the GC
+        # candidate set on commit; we capture those callbacks here.
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.delete(
+                reverse("messages-detail", kwargs={"id": draft_id})
+            )
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
         # Check the draft is deleted
@@ -112,13 +135,25 @@ class TestDraftWithAttachments:
         # Check the attachment is deleted
         assert models.Attachment.objects.count() == 0
 
-        # Check the blob is deleted
+        # Run the GC sweep — drains the candidate set populated above.
+        gc_orphan_blobs_task(mode="fast")
+
+        # Now the orphan blobs are gone too.
         assert models.Blob.objects.count() == 0
 
     def test_draft_add_attachment_to_existing_draft_and_send(
-        self, api_client, user_mailbox, blob
+        self, api_client, user_mailbox, blob, django_capture_on_commit_callbacks
     ):
-        """Test adding a blob as attachment to an existing draft and sending it."""
+        """Test adding a blob as attachment to an existing draft and sending it.
+
+        After send, the attachment row is deleted (firing post_delete →
+        on_commit → GC candidate set) and the draft_blob FK is nulled
+        (also scheduling for GC). The actual Blob row deletes happen
+        when ``gc_orphan_blobs_task`` runs.
+        """
+        # pylint: disable-next=import-outside-toplevel
+        from core.services.blob_gc import gc_orphan_blobs_task
+
         client, _ = api_client
 
         # Create a draft without attachments
@@ -179,17 +214,21 @@ class TestDraftWithAttachments:
         assert attachment.blob == blob
         assert attachment.mailbox == user_mailbox
 
-        # Send the draft and check that the attachment is included in the raw mime
-        send_response = client.post(
-            reverse("send-message"),
-            {
-                "messageId": draft.id,
-                "textBody": text_body,
-                "htmlBody": f"<p>{text_body}</p>",
-                "senderId": user_mailbox.id,
-            },
-            format="json",
-        )
+        # Send the draft and check that the attachment is included in
+        # the raw mime. Capture on_commit callbacks so the
+        # post_delete signals from the attachment cleanup land in the
+        # GC candidate set.
+        with django_capture_on_commit_callbacks(execute=True):
+            send_response = client.post(
+                reverse("send-message"),
+                {
+                    "messageId": draft.id,
+                    "textBody": text_body,
+                    "htmlBody": f"<p>{text_body}</p>",
+                    "senderId": user_mailbox.id,
+                },
+                format="json",
+            )
 
         # Assert the send response is successful
         assert send_response.status_code == status.HTTP_200_OK
@@ -198,7 +237,12 @@ class TestDraftWithAttachments:
         assert draft.is_draft is False
         assert draft.attachments.count() == 0
 
-        # Original attachment blob should be deleted.
+        # Run the GC sweep — the orphan attachment blob's id is in
+        # the candidate set; the new RFC822 blob is referenced by
+        # ``draft.blob`` so it stays.
+        gc_orphan_blobs_task(mode="fast")
+
+        # Only the new MIME blob remains.
         assert models.Blob.objects.count() == 1
         assert models.Blob.objects.first().content_type == "message/rfc822"
 
@@ -232,7 +276,8 @@ class TestDraftWithAttachments:
         with override_settings(MAX_OUTGOING_ATTACHMENT_SIZE=1024):
             # Create a large blob (2 KB) that exceeds the limit
             large_content = b"x" * 2048
-            blob = user_mailbox.create_blob(
+            blob = factories.BlobFactory(
+                mailbox=user_mailbox,
                 content=large_content,
                 content_type="text/plain",
             )
@@ -269,7 +314,8 @@ class TestDraftWithAttachments:
         with override_settings(MAX_OUTGOING_ATTACHMENT_SIZE=2048):
             # Create first blob (1 KB)
             blob1_content = b"x" * 1024
-            blob1 = user_mailbox.create_blob(
+            blob1 = factories.BlobFactory(
+                mailbox=user_mailbox,
                 content=blob1_content,
                 content_type="text/plain",
             )
@@ -300,7 +346,8 @@ class TestDraftWithAttachments:
 
             # Create second blob (1.5 KB)
             blob2_content = b"y" * 1536
-            blob2 = user_mailbox.create_blob(
+            blob2 = factories.BlobFactory(
+                mailbox=user_mailbox,
                 content=blob2_content,
                 content_type="text/plain",
             )
@@ -339,13 +386,15 @@ class TestDraftWithAttachments:
         with override_settings(MAX_OUTGOING_ATTACHMENT_SIZE=10240):
             # Create two blobs totaling 8 KB (within limit)
             blob1_content = b"x" * 4096
-            blob1 = user_mailbox.create_blob(
+            blob1 = factories.BlobFactory(
+                mailbox=user_mailbox,
                 content=blob1_content,
                 content_type="text/plain",
             )
 
             blob2_content = b"y" * 4096
-            blob2 = user_mailbox.create_blob(
+            blob2 = factories.BlobFactory(
+                mailbox=user_mailbox,
                 content=blob2_content,
                 content_type="text/plain",
             )
@@ -380,9 +429,22 @@ class TestDraftWithAttachments:
             assert len(response.data["attachments"]) == 2
 
     def test_draft_remove_attachment_deletes_orphan_blob_and_attachment(
-        self, api_client, user_mailbox, blob
+        self, api_client, user_mailbox, blob, django_capture_on_commit_callbacks
     ):
-        """Test that removing an attachment from a draft deletes orphan blob and attachment."""
+        """Removing an attachment drops it synchronously and queues the
+        orphan blob for the GC sweep.
+
+        The blob is no longer deleted inline in
+        ``_update_message_attachments`` — that path raced concurrent
+        dedup uploads and missed ``MessageTemplate.blob`` references.
+        Instead, the Attachment ``post_delete`` signal pushes the
+        blob_id into the GC candidate set (via ``transaction.on_commit``),
+        and ``gc_orphan_blobs_task`` reaps it under the per-sha
+        advisory lock + select_for_update on the Blob row. The
+        capture-callbacks context manager fires the on_commit hook
+        within the test even though the outer test transaction is
+        rolled back; the GC task is then invoked explicitly.
+        """
         client, _ = api_client
 
         # Create a draft with an attachment
@@ -412,23 +474,36 @@ class TestDraftWithAttachments:
         assert models.Attachment.objects.count() == 1
         assert models.Blob.objects.count() == 2
 
-        # Update the draft to remove the attachment
+        # Update the draft to remove the attachment. Capture on_commit
+        # callbacks so ``schedule_for_gc`` actually pushes into the
+        # GC candidate set during the test.
         url = reverse("draft-message-detail", kwargs={"message_id": draft_id})
-        response = client.put(
-            url,
-            {
-                "senderId": str(user_mailbox.id),
-                "attachments": [],  # Remove all attachments
-            },
-            format="json",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.put(
+                url,
+                {
+                    "senderId": str(user_mailbox.id),
+                    "attachments": [],
+                },
+                format="json",
+            )
 
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data["attachments"]) == 0
 
-        # Verify the orphan attachment and its blob were deleted
-        # Only draft_blob should remain
+        # Attachment row deleted synchronously; blob row still alive
+        # (the GC sweep is the only authorised deleter).
         assert models.Attachment.objects.count() == 0
+        assert models.Blob.objects.count() == 2
+
+        # Run the GC sweep — it drains the candidate set populated by
+        # the post_delete on_commit hook.
+        # pylint: disable-next=import-outside-toplevel
+        from core.services.blob_gc import gc_orphan_blobs_task
+
+        gc_orphan_blobs_task(mode="fast")
+
+        # Only the draft_blob remains.
         assert models.Blob.objects.count() == 1
 
     def test_draft_replace_attachment_allows_new_within_limit(
@@ -441,7 +516,8 @@ class TestDraftWithAttachments:
         with override_settings(MAX_OUTGOING_ATTACHMENT_SIZE=2048):
             # Create first blob (1.5 KB)
             blob1_content = b"x" * 1536
-            blob1 = user_mailbox.create_blob(
+            blob1 = factories.BlobFactory(
+                mailbox=user_mailbox,
                 content=blob1_content,
                 content_type="text/plain",
             )
@@ -471,7 +547,8 @@ class TestDraftWithAttachments:
 
             # Create second blob (1.5 KB)
             blob2_content = b"y" * 1536
-            blob2 = user_mailbox.create_blob(
+            blob2 = factories.BlobFactory(
+                mailbox=user_mailbox,
                 content=blob2_content,
                 content_type="text/plain",
             )
@@ -508,17 +585,14 @@ class TestDraftWithAttachments:
         with override_settings(MAX_OUTGOING_ATTACHMENT_SIZE=1024):
             # Create a large blob (2 KB) that exceeds the limit
             large_content = b"x" * 2048
-            blob = user_mailbox.create_blob(
+            blob = factories.BlobFactory(
+                mailbox=user_mailbox,
                 content=large_content,
                 content_type="text/plain",
             )
 
-            # Create attachment
-            attachment = models.Attachment.objects.create(
-                mailbox=user_mailbox, name="large_file.txt", blob=blob
-            )
-
-            # Create a draft thread and message
+            # Create a draft thread and message first; the per-message
+            # FK on Attachment requires the owning Message to exist.
             thread = factories.ThreadFactory()
             factories.ThreadAccessFactory(
                 thread=thread,
@@ -535,8 +609,15 @@ class TestDraftWithAttachments:
                 thread=thread, sender=sender, is_draft=True, subject="Test draft"
             )
 
-            # Manually add the attachment (bypassing the validation in draft.py)
-            draft.attachments.add(attachment)
+            # Create the attachment directly on the draft (bypassing
+            # the validation in draft.py, which is what this test
+            # asserts about).
+            models.Attachment.objects.create(
+                mailbox=user_mailbox,
+                message=draft,
+                name="large_file.txt",
+                blob=blob,
+            )
 
             # Try to send the draft
             send_response = client.post(
@@ -566,7 +647,8 @@ class TestDraftWithAttachments:
         with override_settings(MAX_OUTGOING_ATTACHMENT_SIZE=1024):
             # Create a large blob (2 KB) that exceeds the limit
             large_content = b"0" * 2048
-            blob = user_mailbox.create_blob(
+            blob = factories.BlobFactory(
+                mailbox=user_mailbox,
                 content=large_content,
                 content_type="text/plain",
             )
@@ -619,7 +701,8 @@ class TestDraftWithAttachments:
         with override_settings(MAX_OUTGOING_ATTACHMENT_SIZE=2048):
             # Create first blob (1 KB)
             blob1_content = b"x" * 1024
-            blob1 = user_mailbox.create_blob(
+            blob1 = factories.BlobFactory(
+                mailbox=user_mailbox,
                 content=blob1_content,
                 content_type="text/plain",
             )
@@ -650,7 +733,8 @@ class TestDraftWithAttachments:
 
             # Create another blob (1.5 KB)
             blob2_content = b"y" * 1536
-            blob2 = user_mailbox.create_blob(
+            blob2 = factories.BlobFactory(
+                mailbox=user_mailbox,
                 content=blob2_content,
                 content_type="text/plain",
             )
@@ -808,7 +892,8 @@ Content-ID: <{cid}>
         )
 
         # Create message blob with the raw MIME content
-        blob = user_mailbox.create_blob(
+        blob = factories.BlobFactory(
+            mailbox=user_mailbox,
             content=multipart_email_with_attachment,
             content_type="message/rfc822",
         )
@@ -845,7 +930,8 @@ Content-ID: <{cid}>
         )
 
         # Create message blob with the raw MIME content
-        blob = user_mailbox.create_blob(
+        blob = factories.BlobFactory(
+            mailbox=user_mailbox,
             content=mime_content,
             content_type="message/rfc822",
         )
@@ -1110,7 +1196,8 @@ Content-Disposition: attachment; filename="large_file.txt"
         )
 
         # Create message blob with the raw MIME content
-        blob = user_mailbox.create_blob(
+        blob = factories.BlobFactory(
+            mailbox=user_mailbox,
             content=mime_content,
             content_type="message/rfc822",
         )
@@ -1211,7 +1298,8 @@ Content-Disposition: attachment; filename="second_file.txt"
             mailbox=user_mailbox, email="sender2@example.com", name="Sender2"
         )
 
-        blob2 = user_mailbox.create_blob(
+        blob2 = factories.BlobFactory(
+            mailbox=user_mailbox,
             content=mime_content,
             content_type="message/rfc822",
         )

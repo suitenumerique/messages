@@ -5,11 +5,14 @@ import uuid
 from typing import Optional
 
 from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
 
 import rest_framework as drf
 
 from core import enums, models
 from core.api.utils import get_attachment_from_blob_id
+from core.services.blob_gc import release_upload, schedule_for_gc
 
 logger = logging.getLogger(__name__)
 
@@ -68,14 +71,18 @@ def _get_or_create_attachment_from_message_blob(
     mailbox: models.Mailbox,
     attachment_data: dict,
     user: models.User,
+    message: models.Message,
 ) -> Optional[models.Attachment]:
     """
     Get or create an attachment from message raw data (msg_* format blobId).
+
+    The Attachment is owned by ``message`` (per-message FK).
 
     Args:
         mailbox: The mailbox to associate the attachment with
         attachment_data: Dictionary containing blobId, name, and optional cid
         user: The user making the request
+        message: The draft Message that will own the Attachment
 
     Returns:
         The created Attachment or None if processing failed
@@ -88,12 +95,6 @@ def _get_or_create_attachment_from_message_blob(
         # Extract attachment from original message MIME
         parsed_attachment = get_attachment_from_blob_id(blob_id, user)
 
-        # Create a real Blob from the extracted content
-        blob = mailbox.create_blob(
-            content=parsed_attachment["content"],
-            content_type=parsed_attachment["type"],
-        )
-
         # Use cid from parsed attachment if not provided
         if not cid:
             cid = parsed_attachment.get("cid")
@@ -102,9 +103,24 @@ def _get_or_create_attachment_from_message_blob(
         if name == "unnamed":
             name = parsed_attachment.get("name", "unnamed")
 
-        attachment, created = models.Attachment.objects.get_or_create(
-            blob=blob, mailbox=mailbox, defaults={"name": name, "cid": cid}
-        )
+        # Atomic: the Blob INSERT and the Attachment INSERT must be
+        # visible together so the GC sweep never sees the blob row
+        # without its referencing FK row. ``BlobManager.create_blob``
+        # opens its own atomic for the blob INSERT; nesting inside
+        # this outer atomic turns it into a savepoint that only
+        # commits with the outer block.
+        with transaction.atomic():
+            blob = models.Blob.objects.create_blob(
+                content=parsed_attachment["content"],
+                content_type=parsed_attachment["type"],
+            )
+
+            attachment, created = models.Attachment.objects.get_or_create(
+                blob=blob,
+                mailbox=mailbox,
+                message=message,
+                defaults={"name": name, "cid": cid},
+            )
 
         if created:
             logger.debug(
@@ -123,13 +139,20 @@ def _get_or_create_attachment_from_message_blob(
 def _get_or_create_attachment_from_blob(
     mailbox: models.Mailbox,
     attachment_data: dict,
+    message: models.Message,
 ) -> Optional[models.Attachment]:
     """
     Get or create an attachment from a blobId.
 
+    The Attachment is owned by ``message`` (per-message FK). If the
+    same blob is attached to two different drafts, each draft gets
+    its own ``Attachment`` row — sending or deleting one doesn't
+    affect the other.
+
     Args:
         mailbox: The mailbox to associate the attachment with
         attachment_data: Dictionary containing blobId, name, and optional cid
+        message: The draft Message that will own the Attachment
 
     Returns:
         The created/existing Attachment or None if processing failed
@@ -145,16 +168,46 @@ def _get_or_create_attachment_from_blob(
 
         # Try to get the blob
         blob = models.Blob.objects.get(id=blob_id)
-        if blob.mailbox != mailbox:
+
+        # Provenance check: the user attaching this blob must have
+        # either an active upload reservation tied to this mailbox
+        # (the JMAP upload-then-attach window) or an existing
+        # Attachment in this mailbox already referencing the blob
+        # (re-attaching a known file — the row may be on a different
+        # draft, but proves the mailbox already has authz to this
+        # blob).
+        #
+        # Deliberately NOT accepted as provenance: ``Message.blob`` /
+        # ``Message.draft_blob`` matches via shared thread access. A
+        # user with read access to a shared thread shouldn't be able
+        # to attach the raw RFC822 of any message in that thread
+        # (or another user's draft body) to their own outbound draft
+        # by quoting its blob_id directly — that's an exfil channel,
+        # not a legitimate user flow. Users with shared-thread
+        # access who want to forward a message attachment must go
+        # through the ``msg_*`` blob-id path
+        # (``_get_or_create_attachment_from_message_blob``), which
+        # re-parses the MIME and creates a fresh Blob owned by the
+        # forwarding mailbox.
+        has_reservation = models.MailboxBlob.objects.filter(
+            blob=blob, mailbox=mailbox, expires_at__gt=timezone.now()
+        ).exists()
+        has_existing_link = models.Attachment.objects.filter(
+            blob=blob, mailbox=mailbox
+        ).exists()
+        if not (has_reservation or has_existing_link):
             logger.warning(
-                "Blob %s is not associated with mailbox %s",
+                "Blob %s has no provenance for mailbox %s (no reservation, no existing link)",
                 blob_id,
                 mailbox.id,
             )
             return None
 
         attachment, created = models.Attachment.objects.get_or_create(
-            blob=blob, mailbox=mailbox, defaults={"name": name, "cid": cid}
+            blob=blob,
+            mailbox=mailbox,
+            message=message,
+            defaults={"name": name, "cid": cid},
         )
 
         if created:
@@ -163,6 +216,9 @@ def _get_or_create_attachment_from_blob(
                 attachment.id,
                 blob_id,
             )
+            # Once the Attachment exists, the reference graph covers
+            # authz; drop the upload reservation row.
+            release_upload(blob, mailbox)
 
         return attachment
 
@@ -180,6 +236,12 @@ def _update_message_attachments(
     """
     Update message attachments based on provided attachment data.
 
+    Per-message FK semantics: each ``Attachment`` row belongs to
+    exactly one ``Message`` via ``Attachment.message``. The
+    ``_get_or_create_attachment_from_blob`` helpers create rows
+    already linked to ``message``; this function only needs to
+    delete the ones that fell out of the new list.
+
     Args:
         message: The message to update attachments for
         mailbox: The mailbox making the update
@@ -189,12 +251,9 @@ def _update_message_attachments(
     if not message.pk:
         return
 
-    # Get the current attachment IDs
     current_attachment_ids = set(message.attachments.values_list("id", flat=True))
 
-    # Process the new attachments
     new_attachment_ids = []
-
     for attachment_data in attachments_data:
         if not attachment_data:  # Skip empty values
             continue
@@ -212,78 +271,46 @@ def _update_message_attachments(
                 )
                 continue
             attachment = _get_or_create_attachment_from_message_blob(
-                mailbox, attachment_data, user
+                mailbox, attachment_data, user, message
             )
         else:
-            attachment = _get_or_create_attachment_from_blob(mailbox, attachment_data)
+            attachment = _get_or_create_attachment_from_blob(
+                mailbox, attachment_data, message
+            )
 
         if attachment:
             new_attachment_ids.append(attachment.id)
 
-    # Combine all valid attachment IDs
     new_attachments = set(new_attachment_ids)
-
-    # Add new attachments and remove old ones
-    to_add = new_attachments - current_attachment_ids
     to_remove = current_attachment_ids - new_attachments
+    just_added = new_attachments - current_attachment_ids
 
-    # Validate total attachment size before adding
-    if to_add:
-        # Calculate current total (excluding attachments about to be removed)
-        current_attachments = message.attachments.exclude(id__in=to_remove)
-        current_total_size = sum(
-            att.blob.size for att in current_attachments.select_related("blob")
+    # Validate the post-change total size. ``to_remove`` rows are
+    # dropped; everything else (existing-and-kept + just-created)
+    # contributes to the limit.
+    if just_added:
+        kept = message.attachments.exclude(id__in=to_remove).exclude(id__in=just_added)
+        kept_size = sum(att.blob.size for att in kept.select_related("blob"))
+        added_size = sum(
+            att.blob.size
+            for att in models.Attachment.objects.filter(
+                id__in=just_added
+            ).select_related("blob")
         )
+        validate_attachment_size(kept_size, added_size)
 
-        # Calculate size of new attachments being added
-        new_attachments_objs = models.Attachment.objects.filter(
-            id__in=to_add
-        ).select_related("blob")
-        new_total_size = sum(att.blob.size for att in new_attachments_objs)
-
-        # Check if adding these would exceed the attachment limit
-        validate_attachment_size(current_total_size, new_total_size)
-
-    # Remove attachments no longer in the list
+    # Remove attachments no longer in the list. Filtering by
+    # ``message=message`` is belt-and-braces — the FK guarantees
+    # rows in ``current_attachment_ids`` belong to this message —
+    # but it makes the intent obvious and limits damage if a caller
+    # ever passes a stale id set. The Attachment post_delete
+    # signal schedules each blob_id for GC.
     if to_remove:
-        message.attachments.remove(*to_remove)
-
-        # Delete orphan attachments (not linked to any message)
-        orphan_attachments = models.Attachment.objects.filter(
-            id__in=to_remove,
-            messages__isnull=True,
-        )
-        blob_ids = list(orphan_attachments.values_list("blob_id", flat=True))
-        deleted_attachments, _ = orphan_attachments.delete()
-
-        # Delete blobs that are no longer referenced by anything
-        deleted_blobs = 0
-        if blob_ids:
-            deleted_blobs, _ = models.Blob.objects.filter(
-                id__in=blob_ids,
-                attachments__isnull=True,  # no more attachments
-                messages__isnull=True,  # not used by Message.blob
-                draft__isnull=True,  # not used by Message.draft_blob
-            ).delete()
-
-        if deleted_attachments or deleted_blobs:
-            logger.debug(
-                "Deleted %d orphan attachment(s) and %d blob(s)",
-                deleted_attachments,
-                deleted_blobs,
-            )
-
-    # Add new attachments
-    if to_add:
-        valid_attachments = models.Attachment.objects.filter(id__in=to_add)
-        message.attachments.add(*valid_attachments)
-
-        # Log if some attachments weren't found
-        if len(valid_attachments) != len(to_add):
-            logger.warning(
-                "Some attachments were not found: %s",
-                set(to_add) - {a.id for a in valid_attachments},
-            )
+        deleted_attachments, _ = models.Attachment.objects.filter(
+            id__in=to_remove, message=message
+        ).delete()
+        if deleted_attachments:
+            logger.debug("Deleted %d orphan attachment(s)", deleted_attachments)
 
 
 def create_draft(
@@ -363,30 +390,34 @@ def create_draft(
     # Validate and get signature if provided
     signature = mailbox.get_validated_signature(signature_id)
 
-    # Validate and prepare draft body
-    draft_blob = None
+    # The Blob INSERT and the Message INSERT must commit together
+    # so the GC sweep never sees the Blob row without its
+    # referencing FK on ``Message.draft_blob`` — atomic wraps both.
+    draft_body_bytes = None
     if draft_body:
         draft_body_bytes = draft_body.encode("utf-8")
-
         validate_body_size(draft_body_bytes)
 
-        draft_blob = mailbox.create_blob(
-            content=draft_body_bytes,
-            content_type="application/json",
-        )
+    with transaction.atomic():
+        draft_blob = None
+        if draft_body_bytes is not None:
+            draft_blob = models.Blob.objects.create_blob(
+                content=draft_body_bytes,
+                content_type="application/json",
+            )
 
-    # Create message instance
-    message = models.Message(
-        thread=thread,
-        sender=sender_contact,
-        parent=reply_to_message,
-        subject=subject,
-        is_draft=True,
-        is_sender=True,
-        draft_blob=draft_blob,
-        signature=signature,
-    )
-    message.save()
+        # Create message instance
+        message = models.Message(
+            thread=thread,
+            sender=sender_contact,
+            parent=reply_to_message,
+            subject=subject,
+            is_draft=True,
+            is_sender=True,
+            draft_blob=draft_blob,
+            signature=signature,
+        )
+        message.save()
 
     # Mark the thread as read for the draft creator (use message.created_at
     # to stay consistent with inbound_create sender flow)
@@ -500,44 +531,53 @@ def update_draft(
                         type=recipient_type_mapping[recipient_type],
                     )
 
-    # Update draft body if provided
-    if "draftBody" in update_data:
-        try:
-            if message.draft_blob:
-                message.draft_blob.delete()
+    # Pre-validate the new body (no DB writes yet) so we can keep
+    # the atomic block below tight around the blob+save pair.
+    new_draft_body_bytes = None
+    if "draftBody" in update_data and update_data["draftBody"]:
+        new_draft_body_bytes = update_data["draftBody"].encode("utf-8")
+        validate_body_size(new_draft_body_bytes)
+
+    # Atomic block: any new draft-body Blob INSERT must commit
+    # together with the Message.save that establishes the FK on
+    # ``Message.draft_blob``. Without this, the new blob row would
+    # be visible to other transactions before the FK row, and the
+    # GC sweep could reap it as an orphan.
+    with transaction.atomic():
+        # Update draft body if provided
+        if "draftBody" in update_data:
+            old_draft_blob_id = message.draft_blob_id
             message.draft_blob = None
-        except models.Blob.DoesNotExist:
-            pass
-        if update_data["draftBody"]:
-            draft_body_bytes = update_data["draftBody"].encode("utf-8")
+            if old_draft_blob_id:
+                # Old draft body may now be orphan; let the GC sweep
+                # collect it if no other row references the same content.
+                schedule_for_gc(old_draft_blob_id)
+            if new_draft_body_bytes is not None:
+                message.draft_blob = models.Blob.objects.create_blob(
+                    content=new_draft_body_bytes,
+                    content_type="application/json",
+                )
+            updated_fields.append("draft_blob")
 
-            validate_body_size(draft_body_bytes)
-
-            message.draft_blob = mailbox.create_blob(
-                content=draft_body_bytes,
-                content_type="application/json",
+        # Update attachments if provided
+        if "attachments" in update_data:
+            _update_message_attachments(
+                message=message,
+                mailbox=mailbox,
+                attachments_data=update_data.get("attachments", []),
+                user=user,
             )
-        updated_fields.append("draft_blob")
 
-    # Update attachments if provided
-    if "attachments" in update_data:
-        _update_message_attachments(
-            message=message,
-            mailbox=mailbox,
-            attachments_data=update_data.get("attachments", []),
-            user=user,
-        )
+        has_attachments = message.attachments.exists()
+        if has_attachments != message.has_attachments:
+            message.has_attachments = has_attachments
+            updated_fields.append("has_attachments")
 
-    has_attachments = message.attachments.exists()
-    if has_attachments != message.has_attachments:
-        message.has_attachments = has_attachments
-        updated_fields.append("has_attachments")
-
-    # Save message and thread if changes were made
-    if len(updated_fields) > 0 and message.pk:  # Only save if message exists
-        logger.debug("Saving message %s with fields %s", message.id, updated_fields)
-        message.save(update_fields=updated_fields + ["updated_at"])
-    if len(thread_updated_fields) > 0 and message.thread.pk:  # Check thread exists
-        message.thread.save(update_fields=thread_updated_fields + ["updated_at"])
+        # Save message and thread if changes were made
+        if len(updated_fields) > 0 and message.pk:  # Only save if message exists
+            logger.debug("Saving message %s with fields %s", message.id, updated_fields)
+            message.save(update_fields=updated_fields + ["updated_at"])
+        if len(thread_updated_fields) > 0 and message.thread.pk:  # Check thread exists
+            message.thread.save(update_fields=thread_updated_fields + ["updated_at"])
 
     return message

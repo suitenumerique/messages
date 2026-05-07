@@ -50,4 +50,20 @@ if not settings.DISABLE_CELERY_BEAT_SCHEDULE:
             "schedule": settings.SEARCH_REINDEX_TASKS_INTERVAL,
             "options": {"queue": "reindex"},
         },
+        "offload-blobs-to-object-storage": {
+            "task": "core.services.tiered_storage_tasks.offload_blobs_task",
+            "schedule": 3600.0,  # Every hour
+            "options": {"queue": "default"},
+        },
+        "gc-orphan-blobs": {
+            # Drains the Redis candidate set populated by reference-source
+            # post_delete signals. Hourly with a 55-min in-task budget;
+            # see ``core/services/blob_gc.py``. The "full" mode (which
+            # walks every Blob row as a safety net) is invoked manually
+            # via ``celery call core.services.blob_gc.gc_orphan_blobs_task --kwargs '{"mode": "full"}'``
+            # on whatever cadence the operator wants — typically weekly.
+            "task": "core.services.blob_gc.gc_orphan_blobs_task",
+            "schedule": 3600.0,
+            "options": {"queue": "default"},
+        },
     }
