@@ -1,5 +1,20 @@
-"""Blob tiered storage + lifecycle FK hardening + per-message Attachment FK
-+ ``Message.draft_blob`` OneToOneField → ForeignKey + ``MailboxBlob`` model.
+"""Blob tiered storage + lifecycle FK hardening + ``Message.draft_blob``
+OneToOneField → ForeignKey + nullable ``Attachment.message`` + ``MailboxBlob``
+model.
+
+Schema-only first half of a 3-part change. The remaining steps are split
+to avoid Postgres ``cannot ALTER TABLE because it has pending trigger
+events``: combining ``RunPython`` row modifications with later
+``ALTER TABLE`` on ``messages_attachment`` in the same transaction
+makes deferred FK trigger checks block the trailing schema ops on
+COMMIT.
+
+  - 0027 (this file): all schema additions, including
+    ``Attachment.message`` as nullable FK alongside the still-present
+    ``Attachment.messages`` M2M.
+  - 0028: data migration that backfills ``Attachment.message_id`` from
+    the M2M and splits multi-message rows.
+  - 0029: drops the M2M and tightens the FK to NOT NULL.
 
 Adds ``encryption_key_id`` and ``storage_location`` to Blob, makes
 ``raw_content`` nullable for object-storage offload, and adds the
@@ -30,23 +45,6 @@ than a silent CASCADE that destroys an Attachment row, or a
 SET_NULL that nulls out a MessageTemplate's body / a Message's
 MIME pointer and leaves the operator with bodyless ghosts.
 
-Replaces ``Attachment.messages`` (M2M) with ``Attachment.message``
-(FK, ``on_delete=CASCADE``). The original M2M had no documented
-rationale and combined badly with sha-based blob dedup:
-``_get_or_create_attachment_from_blob`` keyed on ``(blob, mailbox)``
-so two drafts in the same mailbox attaching the same content shared
-a single Attachment row, and sending one of those drafts deleted
-the row, silently removing the attachment from the other draft.
-After this migration each Attachment belongs to exactly one
-(draft) Message — see the ``Attachment`` model docstring.
-
-The data migration walks the M2M through table and splits each
-Attachment that's linked to N>1 messages into N rows (one per
-message), keeping the original row for the first message and
-cloning for the rest. Attachments with zero messages are dropped
-(those would have been collected by the now-deleted
-``delete_orphan_attachments`` management command).
-
 Demotes ``Message.draft_blob`` from ``OneToOneField`` to
 ``ForeignKey`` (drops the UNIQUE constraint on the
 ``draft_blob_id`` column). The OneToOne combined badly with
@@ -60,54 +58,23 @@ also encoded; the only consumer is the
 ``mailbox_usage_metrics`` storage subquery, updated to walk
 ``drafts__`` instead of ``draft__``.
 
-Dropping the FKs, flipping on_delete, and the M2M→FK / OneToOne→FK
-swaps are all metadata-only on Postgres ≥ 11 (Django enforces
-on_delete in Python; the DB-level FK clause stays at
-``ON DELETE NO ACTION`` regardless). The OneToOne→FK swap drops a
-UNIQUE constraint, also catalog-only. The Attachment data step is
-one-way; reverse migration is unsupported because recombining
-per-message rows into a shared M2M doesn't have a well-defined
-target (which row's name/cid wins?).
+The new ``Attachment.message`` FK is added with the temporary
+related_name ``attachments_new`` to avoid colliding with the M2M's
+``attachments`` reverse on Message; 0029 frees that name (by
+dropping the M2M) and renames the FK's reverse back to
+``attachments``.
+
+Dropping the FKs, flipping on_delete, and the OneToOne→FK swap are
+all metadata-only on Postgres ≥ 11 (Django enforces on_delete in
+Python; the DB-level FK clause stays at ``ON DELETE NO ACTION``
+regardless). The OneToOne→FK swap drops a UNIQUE constraint, also
+catalog-only.
 """
 
 import uuid
 
 import django.db.models.deletion
 from django.db import migrations, models
-
-
-def split_multi_message_attachments(apps, schema_editor):
-    """Backfill ``Attachment.message_id`` from the old M2M through table.
-
-    For each (attachment, message) pair: the first one updates the
-    existing Attachment row in place; subsequent ones clone the row
-    so each message ends up with its own. Orphan attachments (no
-    messages) are deleted at the end.
-    """
-    Attachment = apps.get_model("core", "Attachment")
-    Through = Attachment.messages.through
-
-    seen = set()
-    for through_row in Through.objects.all().iterator():
-        att_id = through_row.attachment_id
-        msg_id = through_row.message_id
-        if att_id not in seen:
-            seen.add(att_id)
-            Attachment.objects.filter(id=att_id).update(message_id=msg_id)
-        else:
-            original = Attachment.objects.get(id=att_id)
-            original.pk = None
-            original.id = None
-            original.message_id = msg_id
-            original.save()
-
-    Attachment.objects.filter(message_id__isnull=True).delete()
-
-
-def reverse_unsupported(apps, schema_editor):  # pylint: disable=unused-argument
-    raise NotImplementedError(
-        "Per-message Attachment FK → shared M2M reverse migration not supported."
-    )
 
 
 class Migration(migrations.Migration):
@@ -196,10 +163,9 @@ class Migration(migrations.Migration):
             ),
         ),
 
-        # --- Attachment.messages (M2M) → Attachment.message (FK) --- #
-        # 1. Add the FK as nullable, with a temporary related_name to
-        # avoid colliding with the M2M's "attachments" reverse on
-        # Message during the migration.
+        # Add Attachment.message as nullable FK with a temporary related_name
+        # to avoid colliding with the M2M's "attachments" reverse on Message.
+        # 0028 backfills the column; 0029 drops the M2M and tightens to NOT NULL.
         migrations.AddField(
             model_name='attachment',
             name='message',
@@ -207,27 +173,6 @@ class Migration(migrations.Migration):
                 null=True,
                 on_delete=django.db.models.deletion.CASCADE,
                 related_name='attachments_new',
-                to='core.message',
-                help_text='The draft Message this attachment belongs to',
-            ),
-        ),
-        # 2. Backfill: split multi-message rows, drop orphans.
-        migrations.RunPython(
-            split_multi_message_attachments, reverse_unsupported
-        ),
-        # 3. Drop the M2M and its through table; this frees the
-        # ``attachments`` related_name on Message.
-        migrations.RemoveField(
-            model_name='attachment',
-            name='messages',
-        ),
-        # 4. Tighten: NOT NULL, real related_name.
-        migrations.AlterField(
-            model_name='attachment',
-            name='message',
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.CASCADE,
-                related_name='attachments',
                 to='core.message',
                 help_text='The draft Message this attachment belongs to',
             ),
