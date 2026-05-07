@@ -1,10 +1,10 @@
 """
-RFC5322 email composer using Flanker library.
+RFC5322 email composer using the Python stdlib email package.
 
-This module provides functions for composing email messages in RFC5322 format
-from JMAP-style data structures. It uses the Flanker library to generate properly
-formatted emails, handling complex cases like quotations, multipart messages,
-encodings, and attachments.
+Composer is strict by design: it produces RFC 5322 / 5321 / 2047 / 2231
+compliant output from caller-controlled JMAP data. Lenient parsing of
+real-world inbound MIME lives in parser.py, which is intentionally separate.
+See README.md for the strict-compose / lenient-parse split.
 """
 
 import base64
@@ -12,8 +12,10 @@ import binascii
 import datetime
 import html
 import logging
-from email import message_from_string
+import re
+from email.errors import MessageError
 from email.generator import BytesGenerator
+from email.message import MIMEPart
 from email.policy import SMTP as email_policy_smtp
 from email.utils import format_datetime, parsedate_to_datetime
 from io import BytesIO
@@ -21,29 +23,32 @@ from typing import Any, Dict, List, Optional
 
 from django.utils import timezone
 
-# Import necessary functions/classes from flanker
-from flanker.mime import create
-from flanker.mime.message import errors as mime_errors
-from flanker.mime.message.part import MimePart
-
-# Setup logger
 logger = logging.getLogger(__name__)
+
+# Stdlib's SMTP policy folds headers at 78 octets (RFC 5322 §2.1.1 SHOULD)
+# and uses CRLF line separators. We override cte_type from the stdlib default
+# of '8bit' to '7bit' — outbound SMTP is 7-bit-clean by default per RFC 5321,
+# and 8BITMIME is an extension we cannot assume the next hop advertises.
+# Under cte_type='7bit', stdlib promotes any non-ASCII text/* body to QP or
+# base64 instead of emitting raw 8-bit octets that a non-8BITMIME relay would
+# either reject or silently mangle.
+_POLICY = email_policy_smtp.clone(cte_type="7bit")
 
 
 class EmailComposeError(Exception):
     """Exception raised for errors during email composition."""
 
 
+# Headers that set_basic_headers owns. Custom headers in jmap_data["headers"]
+# and entries in prepend_headers must not be allowed to shadow these — both to
+# preserve our envelope identity and to defeat header-injection-via-display.
+_RESERVED_HEADER_NAMES = frozenset(
+    {"from", "to", "cc", "bcc", "subject", "date", "message-id"}
+)
+
+
 def format_address(name: str, email: str) -> str:
-    """
-    Format a name and email address according to RFC5322.
-
-    Args:
-        name: The display name (can be empty)
-        email: The email address
-
-    Returns:
-        Properly formatted email address string
+    """Format a name and email address according to RFC5322.
 
     Examples:
         >>> format_address('', 'user@example.com')
@@ -53,37 +58,24 @@ def format_address(name: str, email: str) -> str:
     """
     if not email:
         return ""
-
     if not name:
         return email.strip()
 
-    # Check if the name needs quoting (contains special chars)
     needs_quoting = any(c in name for c in ',.;:@<>()[]"\\')
-
     if needs_quoting and not (name.startswith('"') and name.endswith('"')):
-        # Quote the name and escape any quotes inside it
         name = '"' + name.replace('"', '\\"') + '"'
 
     return f"{name} <{email.strip()}>"
 
 
 def format_address_list(addresses: List[Dict[str, str]]) -> str:
-    """
-    Format a list of address objects into a comma-separated string.
-
-    Args:
-        addresses: List of dicts with 'name' and 'email' keys
-
-    Returns:
-        Comma-separated string of formatted addresses
-    """
+    """Format a list of address dicts as a comma-separated RFC 5322 mailbox-list."""
     formatted = []
     for addr in addresses:
         name = addr.get("name", "")
         email = addr.get("email", "")
         if email:
             formatted.append(format_address(name, email))
-
     return ", ".join(formatted)
 
 
@@ -94,131 +86,275 @@ def make_reply_subject(subject: str) -> str:
     return f"Re: {subject}"
 
 
-def set_basic_headers(message_part, jmap_data, in_reply_to=None):
-    """
-    Set the basic email headers on a message part. (Renamed param for clarity)
+# Characters we strip from any user-controlled header value.
+#
+# Two classes of risk:
+#  - Line terminators that close the header section: CR, LF, NEL (U+0085),
+#    LINE/PARAGRAPH SEPARATOR (U+2028/U+2029) \u2014 a downstream Unicode
+#    normalization that maps these to LF would otherwise smuggle headers.
+#  - Other C0 controls (\x01-\x1F except TAB and the line terminators above)
+#    plus DEL (\x7F): not legal in any RFC 5322 phrase form (atom, dot-atom,
+#    quoted-string), have no display semantics, and have caused interop bugs
+#    in receivers that interpret e.g. \x01 (SOH) as a separator. Stripping
+#    them silently is consistent with our "compose strict, parse lenient"
+#    contract. TAB stays \u2014 it's legal FWS.
+_HEADER_INJECTION_CHARS = (
+    "".join(chr(c) for c in range(0x00, 0x20) if c != 0x09) + "\x7f\u0085\u2028\u2029"
+)
+_HEADER_INJECTION_TABLE = str.maketrans("", "", _HEADER_INJECTION_CHARS)
 
-    Args:
-        message_part: The Flanker MimePart object to set headers on
-        jmap_data: Dictionary containing email data in JMAP format
-        in_reply_to: Optional message ID being replied to
+
+def _sanitize_header_value(value: str) -> str:
+    """Strip control / line-terminator characters from a header value.
+
+    See _HEADER_INJECTION_CHARS. Callers are responsible for passing a str;
+    integer/bytes/None inputs indicate an upstream bug we don't want to mask.
     """
+    return value.translate(_HEADER_INJECTION_TABLE)
+
+
+# Conservative msg-id shape: <local@domain> with no internal whitespace,
+# no nested angle brackets, at least one '@'. Real RFC 5322 addr-spec is
+# baroque (quoted-string locals, domain-literals); we reject everything we
+# can't be sure stdlib won't silently mangle on serialize.
+_MSG_ID_RE = re.compile(r"^<[^\s<>@]+@[^\s<>@]+>$")
+
+
+def _validate_msg_id(value: str, *, field: str) -> str:
+    """Normalize and validate a Message-ID-like value.
+
+    Stdlib's `_MessageIDHeader` folds at internal whitespace, and on a value
+    like `<foo bar>` it silently *drops* everything after the space \u2014 the
+    serialized header becomes `<foo` and the rest of the supposed id is
+    lost. That is data loss, not just ugliness, so we reject upfront with an
+    EmailComposeError rather than letting malformed input through.
+
+    field: the header name, used in the error message.
+    """
+    cleaned = _ensure_angle_brackets(_sanitize_header_value(value))
+    if not _MSG_ID_RE.match(cleaned):
+        raise EmailComposeError(
+            f"Invalid {field} value: {value!r} is not a valid <local@domain>"
+        )
+    return cleaned
+
+
+def _ensure_angle_brackets(value: str) -> str:
+    """Ensure a Message-ID-like value is wrapped in angle brackets, per side.
+
+    The two sides are checked independently — a value missing only the
+    closing '>' must still get its '>' appended (and vice versa). The naive
+    "wrap only when both are missing" check leaves half-bracketed values
+    syntactically invalid.
+    """
+    if not value.startswith("<"):
+        value = "<" + value
+    if not value.endswith(">"):
+        value = value + ">"
+    return value
+
+
+def _normalize_date(date) -> datetime.datetime:
+    """Coerce a JMAP date (str | datetime | None | int | float) to a tz-aware datetime.
+
+    Falls back to current UTC time on unrecognized input, with a warning so
+    upstream bugs aren't silent.
+    """
+    if date is None:
+        return datetime.datetime.now(datetime.timezone.utc)
+
+    if isinstance(date, datetime.datetime):
+        if date.tzinfo is None or date.tzinfo.utcoffset(date) is None:
+            date = timezone.make_aware(date, datetime.timezone.utc)
+        return date
+
+    if isinstance(date, (int, float)) and not isinstance(date, bool):
+        # Treat as POSIX epoch seconds.
+        try:
+            return datetime.datetime.fromtimestamp(date, datetime.timezone.utc)
+        except (ValueError, OSError, OverflowError):
+            pass  # fall through to logged fallback
+
+    if isinstance(date, str):
+        try:
+            parsed = datetime.datetime.fromisoformat(date)
+            if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+                parsed = timezone.make_aware(parsed, datetime.timezone.utc)
+            return parsed
+        except (ValueError, TypeError):
+            pass
+        try:
+            parsed = parsedate_to_datetime(date)
+            if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+                parsed = timezone.make_aware(parsed, datetime.timezone.utc)
+            return parsed
+        except (ValueError, TypeError, IndexError):
+            pass
+
+    # Log the type only — the raw value can be a user-supplied string that
+    # might contain PII (e.g. an email address embedded in a malformed Date).
+    logger.warning(
+        "Could not parse date (type %s); falling back to current UTC",
+        type(date).__name__,
+    )
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+# RFC 5322 §3.6.8 ftext: printable ASCII except colon and whitespace.
+# Used to validate header *names* in custom headers and prepend_headers —
+# stdlib's __setitem__ accepts garbage like "X With Space" silently and
+# emits a malformed header that downstream parsers choke on.
+_FIELD_NAME_RE = re.compile(r"^[!-9;-~]+$")
+
+
+def _validate_field_name(name: str) -> str:
+    if not isinstance(name, str) or not _FIELD_NAME_RE.match(name):
+        raise EmailComposeError(
+            f"Invalid header field name: {name!r} (must be RFC 5322 ftext)"
+        )
+    return name
+
+
+def _filter_user_headers(items, *, source: str, also_skip: tuple = ()):
+    """Yield (name, sanitized_value) for caller-supplied headers that pass
+    safety checks.
+
+    Reserved names — From/To/Cc/Bcc/Subject/Date/Message-ID — are skipped
+    with a warning; they're owned by set_basic_headers, and silently
+    shadowing them would let a caller spoof identity. Names listed in
+    `also_skip` are dropped silently (used to elide In-Reply-To/References
+    when the caller passed in_reply_to= as a parameter — those are owned
+    by set_basic_headers in that mode). Invalid field names raise
+    EmailComposeError.
+    """
+    for k, v in items:
+        if not isinstance(k, str):
+            raise EmailComposeError(
+                f"{source} header name must be str, got {type(k).__name__}"
+            )
+        lower = k.lower()
+        if lower in _RESERVED_HEADER_NAMES:
+            logger.warning("%s tried to set a reserved header; ignored", source)
+            continue
+        if lower in also_skip:
+            continue
+        _validate_field_name(k)
+        yield k, _sanitize_header_value(str(v))
+
+
+def set_basic_headers(  # pylint: disable=too-many-branches
+    message_part: MIMEPart,
+    jmap_data: Dict[str, Any],
+    in_reply_to: Optional[str] = None,
+    keep_bcc: bool = False,
+) -> None:
+    """Set the basic email headers on a message part.
+
+    keep_bcc: if False (default), Bcc in jmap_data is dropped — the entire
+    point of Bcc is that recipients don't see each other. Only callers that
+    are reconstructing an archive (e.g. PST import, where the Bcc list was
+    already in the source file) should pass keep_bcc=True.
+    """
+    # MIME-Version is required on every top-level MIME message (RFC 2045 §4).
+    # MIMEPart — unlike EmailMessage — does NOT add it implicitly, so we set
+    # it ourselves. We always set it before any other header so it appears
+    # near the top of the serialized output.
+    message_part["MIME-Version"] = "1.0"
+
     subject = jmap_data.get("subject", "")
     if subject:
-        message_part.headers["Subject"] = subject
+        message_part["Subject"] = _sanitize_header_value(subject)
 
-    # From
     from_data = jmap_data.get("from", {})
-    # Handle if from_data is a list (normalize to the expected dictionary)
     if isinstance(from_data, list) and from_data:
         from_data = from_data[0]
-
     from_name = from_data.get("name", "") if isinstance(from_data, dict) else ""
     from_email = from_data.get("email", "") if isinstance(from_data, dict) else ""
     if from_email:
-        message_part.headers["From"] = format_address(from_name, from_email)
-
-    # To, CC, BCC recipients
-    if jmap_data.get("to"):
-        message_part.headers["To"] = format_address_list(
-            jmap_data["to"] if isinstance(jmap_data["to"], list) else [jmap_data["to"]]
+        message_part["From"] = _sanitize_header_value(
+            format_address(from_name, from_email)
         )
 
-    if jmap_data.get("cc"):
-        message_part.headers["Cc"] = format_address_list(
-            jmap_data["cc"] if isinstance(jmap_data["cc"], list) else [jmap_data["cc"]]
-        )
+    # For To/Cc/Bcc, only emit the header when the formatted result is non-empty.
+    # An input list may contain entries with no email (e.g. a draft contact still
+    # being typed); format_address_list drops those, and an empty list of valid
+    # addresses must NOT produce an empty To: header (most receivers reject).
+    recipient_fields = [("to", "To"), ("cc", "Cc")]
+    if keep_bcc:
+        recipient_fields.append(("bcc", "Bcc"))
+    for jmap_key, header_name in recipient_fields:
+        raw = jmap_data.get(jmap_key)
+        if not raw:
+            continue
+        addr_list = raw if isinstance(raw, list) else [raw]
+        formatted = format_address_list(addr_list)
+        if formatted:
+            message_part[header_name] = _sanitize_header_value(formatted)
 
-    if jmap_data.get("bcc"):
-        message_part.headers["Bcc"] = format_address_list(
-            jmap_data["bcc"]
-            if isinstance(jmap_data["bcc"], list)
-            else [jmap_data["bcc"]]
-        )
+    message_part["Date"] = format_datetime(_normalize_date(jmap_data.get("date")))
 
-    # Date (use current time if not provided)
-    date = jmap_data.get("date", datetime.datetime.now(datetime.timezone.utc))
-    if isinstance(date, str):
-        # Try to parse the date string
-        try:
-            date = datetime.datetime.fromisoformat(date.replace("Z", "+00:00"))
-            # Ensure date is timezone-aware
-            if date.tzinfo is None or date.tzinfo.utcoffset(date) is None:
-                date = timezone.make_aware(
-                    date, datetime.timezone.utc
-                )  # Use Django's timezone utils
-        except (ValueError, TypeError):
-            # fromisoformat failed — try RFC5322 format (e.g. from PST transport headers)
-            try:
-                date = parsedate_to_datetime(date)
-                # Ensure timezone-aware (date strings without a timezone yield a naive datetime)
-                if date.tzinfo is None or date.tzinfo.utcoffset(date) is None:
-                    date = timezone.make_aware(date, datetime.timezone.utc)
-            except (ValueError, TypeError, IndexError):
-                # Default to current time if all parsing fails
-                date = datetime.datetime.now(datetime.timezone.utc)
-    elif isinstance(date, datetime.datetime):
-        # Ensure provided datetime is timezone-aware
-        if date.tzinfo is None or date.tzinfo.utcoffset(date) is None:
-            date = timezone.make_aware(date, datetime.timezone.utc)
-
-    message_part.headers["Date"] = format_datetime(date)
-
-    # Set Message-ID if provided
     message_id = jmap_data.get("messageId", jmap_data.get("message_id"))
     if message_id:
-        if not message_id.startswith("<") and not message_id.endswith(">"):
-            message_id = f"<{message_id}>"
-        message_part.headers["Message-ID"] = message_id
+        message_part["Message-ID"] = _validate_msg_id(message_id, field="Message-ID")
 
-    # Set In-Reply-To and References headers for replies
     if in_reply_to:
-        if not in_reply_to.startswith("<") and not in_reply_to.endswith(">"):
-            in_reply_to = f"<{in_reply_to}>"
-        message_part.headers["In-Reply-To"] = in_reply_to
+        in_reply_to = _validate_msg_id(in_reply_to, field="In-Reply-To")
+        message_part["In-Reply-To"] = in_reply_to
 
-        # Handle References properly: append In-Reply-To to existing ones
-        existing_references = jmap_data.get("headers", {}).get(
-            "References", ""
-        )  # Get from JMAP if provided
+        existing_references = jmap_data.get("headers", {}).get("References", "")
         if not existing_references:
-            existing_references = jmap_data.get(
-                "references", ""
-            )  # Check alternative key
-
+            existing_references = jmap_data.get("references", "")
         if existing_references:
-            # Append the new reference, ensuring space separation
-            message_part.headers["References"] = (
+            message_part["References"] = _sanitize_header_value(
                 f"{existing_references.strip()} {in_reply_to}"
             )
         else:
-            message_part.headers["References"] = in_reply_to
+            message_part["References"] = _sanitize_header_value(in_reply_to)
 
-    # Add any custom headers provided in JMAP data
     custom_headers = jmap_data.get("headers", {})
-    for header_name, header_value in custom_headers.items():
-        # Avoid overwriting standard headers we've already set, unless explicitly intended
-        # Also skip References/In-Reply-To if we handled them via in_reply_to argument
-        lower_header_name = header_name.lower()
-        if lower_header_name not in [
-            "from",
-            "to",
-            "cc",
-            "bcc",
-            "subject",
-            "date",
-            "message-id",
-        ] and not (in_reply_to and lower_header_name in ["in-reply-to", "references"]):
-            message_part.headers[header_name] = header_value
+    # When in_reply_to is set as a parameter, set_basic_headers already
+    # emitted In-Reply-To and References just above; skip any same-named
+    # entries in jmap_data["headers"] so we don't double-emit.
+    skip = ("in-reply-to", "references") if in_reply_to else ()
+    for name, value in _filter_user_headers(
+        custom_headers.items(), source="jmap_data['headers']", also_skip=skip
+    ):
+        message_part[name] = value
 
 
-def create_attachment_part(attachment: Dict[str, Any]) -> Optional[MimePart]:
-    """
-    Create a MIME part for an attachment from JMAP data.
+def _content_or_str(part_data) -> str:
+    """Accept either a {'content': '...'} dict or a raw string body."""
+    if isinstance(part_data, dict):
+        return part_data.get("content", "")
+    return part_data or ""
+
+
+def _split_content_type(content_type: str) -> tuple[str, str]:
+    maintype, _, raw_subtype = (content_type or "").partition("/")
+    # Strip RFC 2045 parameters off the subtype (e.g. "jpeg; name=foo.jpg").
+    # set_content's subtype= must be a bare token; filename and other params
+    # are passed separately.
+    subtype = raw_subtype.partition(";")[0].strip()
+    maintype = maintype.strip()
+    if not maintype or not subtype:
+        return "application", "octet-stream"
+    return maintype, subtype
+
+
+def _normalize_cid(cid: str) -> str:
+    # Sanitize before wrapping in angle brackets — an attacker-controlled cid
+    # could otherwise carry CR/LF, U+2028 etc. into the Content-ID header.
+    return _ensure_angle_brackets(_sanitize_header_value(cid))
+
+
+def create_attachment_part(  # pylint: disable=too-many-return-statements
+    attachment: Dict[str, Any],
+) -> Optional[MIMEPart]:
+    """Create a MIME part for an attachment from JMAP data.
 
     Args:
         attachment: Dictionary containing attachment data with keys:
-            - content: Base64 encoded content
+            - content: Base64 encoded content (str) or raw bytes
             - type: MIME type (e.g., 'image/jpeg')
             - name: Filename
             - disposition: 'attachment' or 'inline'
@@ -231,341 +367,293 @@ def create_attachment_part(attachment: Dict[str, Any]) -> Optional[MimePart]:
         logger.warning("Invalid attachment data provided")
         return None
 
-    # Get attachment data
     content = attachment.get("content")
-    content_type = attachment.get("type", "application/octet-stream")
-    filename = attachment.get("name", "")
-    disposition = attachment.get("disposition", "attachment")
-    content_id = attachment.get("cid")
-
     if not content:
         logger.warning("No content provided for attachment")
         return None
 
+    if isinstance(content, str):
+        try:
+            decoded = base64.b64decode(content)
+        except binascii.Error as e:
+            logger.error("Failed to decode base64 content: %s", str(e))
+            return None
+    else:
+        decoded = content
+
+    content_type = attachment.get("type", "application/octet-stream")
+    # Sanitize filename — it ends up in Content-Type name= and Content-Disposition
+    # filename= parameters; CR/LF or U+2028/U+2029 must not leak into either.
+    filename = _sanitize_header_value(attachment.get("name", "") or "")
+    disposition = attachment.get("disposition", "attachment")
+    content_id = attachment.get("cid")
+    maintype, subtype = _split_content_type(content_type)
+
     try:
-        # Decode base64 content
-        if isinstance(content, str):
-            try:
-                decoded_content = base64.b64decode(content)
-            except binascii.Error as e:
-                logger.error("Failed to decode base64 content: %s", str(e))
-                return None
-        else:
-            # Assume it's already decoded binary data
-            decoded_content = content
-
-        # Create the attachment part
-        attachment_part = create.attachment(
-            content_type, decoded_content, filename=filename, disposition=disposition
-        )
-
-        # Set Content-ID header for inline images
+        part = MIMEPart(policy=_POLICY)
+        kwargs: Dict[str, Any] = {
+            "maintype": maintype,
+            "subtype": subtype,
+            "disposition": disposition,
+        }
+        if filename:
+            kwargs["filename"] = filename
         if disposition == "inline" and content_id:
-            # Ensure Content-ID is properly formatted with angle brackets
-            if not content_id.startswith("<") and not content_id.endswith(">"):
-                content_id = f"<{content_id}>"
-            elif not content_id.startswith("<"):
-                content_id = f"<{content_id}"
-            elif not content_id.endswith(">"):
-                content_id = f"{content_id}>"
-
-            attachment_part.headers["Content-ID"] = content_id
-
-        return attachment_part
-    except (TypeError, ValueError, mime_errors.MimeError) as e:
+            kwargs["cid"] = _normalize_cid(content_id)
+        part.set_content(decoded, **kwargs)
+        return part
+    except (TypeError, ValueError) as e:
         logger.error("Failed to create attachment part: %s", str(e))
         return None
 
 
-def create_multipart_message(  # pylint: disable=too-many-branches
-    jmap_data: Dict[str, Any], in_reply_to: Optional[str] = None
-) -> MimePart:
+def _first_body(jmap_data: Dict[str, Any], key: str) -> Optional[str]:
+    """Return the content of the first textBody/htmlBody entry, or None.
+
+    JMAP allows multiple body parts but our callers always produce a single
+    text + single html alternative; extras are dropped. Each entry can be a
+    raw string or {'content': '...'} dict.
     """
-    Create the top-level MIME part (message structure) from JMAP data.
+    parts = jmap_data.get(key) or []
+    if not parts:
+        return None
+    return _content_or_str(parts[0])
 
-    Args:
-        jmap_data: Dictionary with JMAP email data
-        in_reply_to: Optional message ID being replied to
 
-    Returns:
-        The top-level MimePart object representing the email.
+def _build_body(msg: MIMEPart, jmap_data: Dict[str, Any]) -> None:
+    """Populate `msg` with the body subtree.
+
+    Three shapes:
+      - text only      → text/plain
+      - html only      → text/html
+      - text + html    → multipart/alternative { text, html }, RFC 2046 §5.1.4
+                          (least-preferred first; html is preferred)
+      - neither        → empty text/plain (so the part is a valid container
+                          for a wrapping multipart/mixed when only attachments
+                          are supplied)
+
+    set_content + add_alternative is the canonical recipe in the official
+    docs (https://docs.python.org/3/library/email.examples.html). Stdlib's
+    add_alternative auto-converts the part to multipart/alternative,
+    migrating the existing text/plain content into the first child.
     """
-    # Determine content types and attachments
-    has_text = bool(jmap_data.get("textBody"))
-    has_html = bool(jmap_data.get("htmlBody"))
-    attachments = jmap_data.get("attachments", [])
+    text_body = _first_body(jmap_data, "textBody")
+    html_body = _first_body(jmap_data, "htmlBody")
+    if html_body is not None:
+        # Legacy rewrite: the application's HTML pipeline produces &rsquo;
+        # where a literal ' is wanted. Preserved here for compatibility;
+        # remove if/when the upstream pipeline stops emitting it.
+        html_body = html_body.replace("&rsquo;", "'")
 
-    inline_attachments = [
-        att
-        for att in attachments
-        if att.get("disposition") == "inline" and att.get("cid")
-    ]
-    regular_attachments = [att for att in attachments if att not in inline_attachments]
-
-    # 1. Determine the top-level structure/content type
-
-    top_level_part = None
-
-    if has_text and not has_html and not attachments:
-        # Simple text email
-        text_content_data = jmap_data["textBody"][0]
-        content = (
-            text_content_data.get("content", "")
-            if isinstance(text_content_data, dict)
-            else text_content_data
-        )
-        top_level_part = create.text("plain", content, "utf-8")
-
-    elif has_html and not has_text and not attachments:
-        # Simple HTML email
-        html_content_data = jmap_data["htmlBody"][0]
-        content = (
-            html_content_data.get("content", "")
-            if isinstance(html_content_data, dict)
-            else html_content_data
-        )
-        content = content.replace("&rsquo;", "'")  # Handle French apostrophe
-        top_level_part = create.text("html", content, "utf-8")
-
-    # Multipart email required
-    elif regular_attachments:
-        # If regular attachments exist, top level must be multipart/mixed
-        top_level_part = create.multipart("mixed")
-
-        # Build the main content part (alternative or related) to add to mixed
-        main_content_part = None
-        if has_html and inline_attachments:
-            # Related needed for HTML + inline images
-            related_part = create.multipart("related")
-            if has_text:
-                # Alternative needed inside related
-                alternative_part = create.multipart("alternative")
-                for part_data in jmap_data.get("textBody", []):
-                    content = (
-                        part_data.get("content", "")
-                        if isinstance(part_data, dict)
-                        else part_data
-                    )
-                    alternative_part.append(create.text("plain", content, "utf-8"))
-                for part_data in jmap_data.get("htmlBody", []):
-                    content = (
-                        part_data.get("content", "")
-                        if isinstance(part_data, dict)
-                        else part_data
-                    )
-                    alternative_part.append(
-                        create.text("html", content.replace("&rsquo;", "'"), "utf-8")
-                    )
-                related_part.append(alternative_part)
-            else:  # Only HTML + inline
-                for part_data in jmap_data.get("htmlBody", []):
-                    content = (
-                        part_data.get("content", "")
-                        if isinstance(part_data, dict)
-                        else part_data
-                    )
-                    related_part.append(
-                        create.text("html", content.replace("&rsquo;", "'"), "utf-8")
-                    )
-
-            # Add inline attachments to related part
-            for attachment in inline_attachments:
-                att_part = create_attachment_part(attachment)
-                if att_part:
-                    related_part.append(att_part)
-
-            main_content_part = related_part
-
-        elif has_text or has_html:
-            # Alternative needed for text/html (no inline)
-            alternative_part = create.multipart("alternative")
-            if has_text:
-                for part_data in jmap_data.get("textBody", []):
-                    content = (
-                        part_data.get("content", "")
-                        if isinstance(part_data, dict)
-                        else part_data
-                    )
-                    alternative_part.append(create.text("plain", content, "utf-8"))
-            if has_html:
-                for part_data in jmap_data.get("htmlBody", []):
-                    content = (
-                        part_data.get("content", "")
-                        if isinstance(part_data, dict)
-                        else part_data
-                    )
-                    alternative_part.append(
-                        create.text("html", content.replace("&rsquo;", "'"), "utf-8")
-                    )
-            main_content_part = alternative_part
-
-        # Add the main content (alternative/related) to the mixed part if it exists
-        if main_content_part:
-            top_level_part.append(main_content_part)
-        elif (
-            not regular_attachments
-        ):  # Should not happen if top_level_part is mixed, but safety check
-            top_level_part.append(create.text("plain", ""))  # Add empty part if needed
-
-        # Add regular attachments to mixed part
-        for attachment in regular_attachments:
-            att_part = create_attachment_part(attachment)
-            if att_part:
-                top_level_part.append(att_part)
-
-    elif has_html and inline_attachments:
-        # Top level is multipart/related (no regular attachments)
-        top_level_part = create.multipart("related")
-        if has_text:
-            # Alternative needed inside related
-            alternative_part = create.multipart("alternative")
-            for part_data in jmap_data.get("textBody", []):
-                content = (
-                    part_data.get("content", "")
-                    if isinstance(part_data, dict)
-                    else part_data
-                )
-                alternative_part.append(create.text("plain", content, "utf-8"))
-            for part_data in jmap_data.get("htmlBody", []):
-                content = (
-                    part_data.get("content", "")
-                    if isinstance(part_data, dict)
-                    else part_data
-                )
-                alternative_part.append(
-                    create.text("html", content.replace("&rsquo;", "'"), "utf-8")
-                )
-            top_level_part.append(alternative_part)
-        else:  # Only HTML + inline
-            for part_data in jmap_data.get("htmlBody", []):
-                content = (
-                    part_data.get("content", "")
-                    if isinstance(part_data, dict)
-                    else part_data
-                )
-                top_level_part.append(
-                    create.text("html", content.replace("&rsquo;", "'"), "utf-8")
-                )
-        # Add inline attachments
-        for attachment in inline_attachments:
-            att_part = create_attachment_part(attachment)
-            if att_part:
-                top_level_part.append(att_part)
-
-    elif has_text and has_html:
-        # Top level is multipart/alternative (no attachments)
-        top_level_part = create.multipart("alternative")
-        for part_data in jmap_data.get("textBody", []):
-            content = (
-                part_data.get("content", "")
-                if isinstance(part_data, dict)
-                else part_data
-            )
-            top_level_part.append(create.text("plain", content, "utf-8"))
-        for part_data in jmap_data.get("htmlBody", []):
-            content = (
-                part_data.get("content", "")
-                if isinstance(part_data, dict)
-                else part_data
-            )
-            top_level_part.append(
-                create.text("html", content.replace("&rsquo;", "'"), "utf-8")
-            )
-
+    if text_body is not None and html_body is not None:
+        msg.set_content(text_body, subtype="plain", charset="utf-8")
+        msg.add_alternative(html_body, subtype="html", charset="utf-8")
+    elif text_body is not None:
+        msg.set_content(text_body, subtype="plain", charset="utf-8")
+    elif html_body is not None:
+        msg.set_content(html_body, subtype="html", charset="utf-8")
     else:
-        # Should not be reachable if logic covers all cases (text only, html only handled above)
-        # Handle case of only attachments? create_attachment_part handles content.
-        # If only attachments, top level should be mixed. This is covered by the first 'if regular_attachments' block.
-        # If only headers provided?
-        # logger.warning("Unexpected message structure in create_multipart_message.")
-        # Create a minimal valid part
-        top_level_part = create.text("plain", "")
+        msg.set_content("", subtype="plain", charset="utf-8")
 
-    # Fallback if somehow top_level_part wasn't created
-    if top_level_part is None:
-        logger.error("Failed to determine top-level part in create_multipart_message.")
-        top_level_part = create.text("plain", "")  # Create minimal valid part
 
-    # 2. Set headers on the determined top-level part
-    set_basic_headers(top_level_part, jmap_data, in_reply_to)
+def _wrap_with_inline_images(
+    body_part: MIMEPart, inline_attachments: List[Dict[str, Any]]
+) -> MIMEPart:
+    """Wrap a body part with multipart/related to attach inline images by cid.
 
-    return top_level_part
+    Built manually rather than via msg.add_related() because stdlib's
+    make_related disallows conversion from multipart/alternative — see
+    MIMEPart._make_multipart's `disallowed_subtypes`. Wrapping a fresh
+    related part around the existing body bypasses that check.
+
+    If every inline attachment fails to build, the body is returned
+    unwrapped: a single-child multipart/related is wasteful and confuses
+    some receivers.
+    """
+    built = [p for p in (create_attachment_part(a) for a in inline_attachments) if p]
+    if not built:
+        return body_part
+    related = MIMEPart(policy=_POLICY)
+    related.make_related()
+    related.attach(body_part)
+    for att_part in built:
+        related.attach(att_part)
+    return related
+
+
+def _wrap_with_attachments(
+    body_part: MIMEPart, regular_attachments: List[Dict[str, Any]]
+) -> MIMEPart:
+    """Wrap a body part with multipart/mixed and append regular attachments.
+
+    Same fresh-wrapper pattern as _wrap_with_inline_images; if every
+    attachment fails to build, the body is returned unwrapped.
+    """
+    built = [p for p in (create_attachment_part(a) for a in regular_attachments) if p]
+    if not built:
+        return body_part
+    mixed = MIMEPart(policy=_POLICY)
+    mixed.make_mixed()
+    mixed.attach(body_part)
+    for att_part in built:
+        mixed.attach(att_part)
+    return mixed
+
+
+def create_multipart_message(
+    jmap_data: Dict[str, Any],
+    in_reply_to: Optional[str] = None,
+    keep_bcc: bool = False,
+) -> MIMEPart:
+    """Create the top-level MIMEPart from JMAP data.
+
+    The MIME structure depends on what's in jmap_data:
+
+        text only            → text/plain
+        html only            → text/html
+        text + html          → multipart/alternative
+        body + attachments   → multipart/mixed { body, attachment* }
+        html + inline imgs   → multipart/related { html, inline* }
+        all of the above     → multipart/mixed {
+                                   multipart/related {
+                                       multipart/alternative { text, html },
+                                       inline*
+                                   },
+                                   attachment*
+                               }
+
+    Note: returns MIMEPart, not EmailMessage. The only behavioral difference
+    is that EmailMessage.set_content auto-injects MIME-Version: 1.0 — and
+    only on whichever subpart you call set_content on, which means using
+    EmailMessage at the top would either miss MIME-Version (if you build the
+    tree manually as we do) or sprinkle it onto every subpart (if you use
+    add_alternative/add_related/add_attachment, since those preserve type).
+    Sticking with MIMEPart and setting MIME-Version once explicitly in
+    set_basic_headers gives the cleanest output.
+    """
+    inline_attachments: List[Dict[str, Any]] = []
+    regular_attachments: List[Dict[str, Any]] = []
+    for a in jmap_data.get("attachments", []) or []:
+        if a.get("disposition") == "inline" and a.get("cid"):
+            inline_attachments.append(a)
+        else:
+            regular_attachments.append(a)
+
+    msg = MIMEPart(policy=_POLICY)
+    _build_body(msg, jmap_data)
+    if inline_attachments:
+        msg = _wrap_with_inline_images(msg, inline_attachments)
+    if regular_attachments:
+        msg = _wrap_with_attachments(msg, regular_attachments)
+
+    set_basic_headers(msg, jmap_data, in_reply_to, keep_bcc=keep_bcc)
+    return msg
 
 
 def compose_email(
     jmap_data: Dict[str, Any],
     in_reply_to: Optional[str] = None,
     prepend_headers: Optional[List[tuple[str, str]]] = None,
+    keep_bcc: bool = False,
 ) -> bytes:
-    """
-    Convert a JMAP email object to RFC5322 format.
+    """Convert a JMAP email object to RFC 5322 bytes.
 
-    Args:
-        jmap_data: Dictionary with JMAP email data
-        in_reply_to: Optional message ID being replied to
+    keep_bcc: defaults to False — Bcc in jmap_data is silently dropped, since
+    the entire point of Bcc is that the header must NOT be transmitted to
+    recipients. Set True only for archive-reconstruction use cases (e.g. PST
+    import, where the Bcc list was already in the source file and the bytes
+    are stored, not retransmitted).
 
-    Returns:
-        RFC5322 formatted email as bytes
+    Note on dot-stuffing: this function produces RFC 5322 bytes; it does NOT
+    apply RFC 5321 §4.5.2 dot-stuffing. Callers that hand the bytes to
+    smtplib.SMTP.sendmail (our outbound path) get dot-stuffing for free.
+    Any non-smtplib SMTP client must dot-stuff itself.
 
     Raises:
-        EmailComposeError: If composition fails
+        EmailComposeError: If composition fails.
     """
     try:
-        # Validate minimum required fields
         if not jmap_data:
             raise EmailComposeError("Empty JMAP data provided")
 
-        # Validate and normalize 'from' field
-        from_data = jmap_data.get("from", {})
+        # Shallow-copy so normalisation (from-list flatten, body-list wrap) does
+        # not mutate the caller's dict; callers reusing the same payload would
+        # otherwise see different output between calls.
+        jmap_data = dict(jmap_data)
 
-        # Handle if from_data is a list
+        from_data = jmap_data.get("from", {})
         if isinstance(from_data, list):
             if not from_data:
                 raise EmailComposeError("Empty 'from' list in JMAP data")
             from_data = from_data[0]
             jmap_data["from"] = from_data
-
-        # Check we have an email address
         if not isinstance(from_data, dict) or not from_data.get("email"):
             raise EmailComposeError("Missing or invalid 'from' field in JMAP data")
 
-        # Ensure textBody and htmlBody are lists if present
         if "textBody" in jmap_data and not isinstance(jmap_data["textBody"], list):
             jmap_data["textBody"] = [jmap_data["textBody"]]
-
         if "htmlBody" in jmap_data and not isinstance(jmap_data["htmlBody"], list):
             jmap_data["htmlBody"] = [jmap_data["htmlBody"]]
 
-        # Create the top-level MIME part (message structure)
-        msg_part = create_multipart_message(jmap_data, in_reply_to)
+        msg = create_multipart_message(jmap_data, in_reply_to, keep_bcc=keep_bcc)
 
-        # Convert the top-level part to string
-        message_str = msg_part.to_string()
-
-        prepend_raw = ""
         if prepend_headers:
-            prepend_raw = (
-                "\r\n".join([f"{k}: {v}" for k, v in prepend_headers]) + "\r\n"
-            )
+            # Insert at the top of the header block so they appear before
+            # From/To/Subject in the serialized output. We splice directly
+            # into msg._headers (the same list __setitem__ appends to) using
+            # policy.header_store_parse to mirror exactly what __setitem__
+            # would have produced — but at index 0 instead of the end.
+            #
+            # Reserved-name guard: never let prepend_headers shadow the
+            # envelope/identity headers that set_basic_headers owns. Without
+            # this, an attacker who controlled prepend_headers (no caller
+            # does today, but defense-in-depth) could prepend a duplicate
+            # Subject / From / To / etc., and many MUAs render the FIRST
+            # occurrence — visually masquerading as a different sender.
+            store_parse = msg.policy.header_store_parse
+            new_entries = [
+                store_parse(name, value)
+                for name, value in _filter_user_headers(
+                    prepend_headers, source="prepend_headers"
+                )
+            ]
+            msg._headers[0:0] = new_entries  # noqa: SLF001  # pylint: disable=protected-access
 
-        # Flanker doesn't enforce line length limits or CRLF conversion
-        # so we have to re-encode the message here to stay RFC compliant
-        msg = message_from_string(prepend_raw + message_str)
         out = BytesIO()
-        gen = BytesGenerator(out, policy=email_policy_smtp.clone(max_line_length=76))
-        gen.flatten(msg)
-        message_bytes = out.getvalue()
+        BytesGenerator(out, policy=_POLICY).flatten(msg)
+        return out.getvalue()
 
-        return message_bytes
-
-    except mime_errors.MimeError as e:
-        # Catch flanker specific errors during composition/string conversion
-        logger.error(
-            "Flanker MIME composition/encoding error: %s", str(e), exc_info=True
-        )
-        raise EmailComposeError(f"MIME composition error: {str(e)}") from e
-    except Exception as e:
-        # Log other unexpected exceptions
+    except EmailComposeError:  # pylint: disable=try-except-raise
+        # Re-raise our own structured errors unchanged so the caller sees them
+        # as-is (the broad except below would otherwise re-wrap and lose info).
+        raise
+    except (
+        ValueError,
+        TypeError,
+        UnicodeError,
+        IndexError,
+        AttributeError,
+        MessageError,
+    ) as e:
+        # The set we accept from stdlib email + our own input handling. Each
+        # is grounded in fuzz-test evidence:
+        #   - ValueError: malformed header value, base64 decode failure.
+        #   - TypeError: wrong type to set_content / add_*.
+        #   - UnicodeError: encoding mismatch in a body or header.
+        #   - IndexError: stdlib's _header_value_parser raises bare IndexError
+        #     on certain malformed addresses; not catching this lets a JMAP
+        #     dict crash compose_email with an unwrapped traceback.
+        #   - AttributeError: stdlib's address parser produces a `Group`
+        #     object on RFC 5322 group-syntax inputs (e.g. From="not-an-email"
+        #     gets misparsed as a group), and downstream attribute access on
+        #     `.local_part` etc. fires AttributeError. Caller-controlled
+        #     input shouldn't escape with that traceback.
+        #   - email.errors.MessageError (covers HeaderWriteError): Python
+        #     3.13+ verify_generated_headers refuses to emit headers with
+        #     embedded newlines; that's a *defense*, but to the caller it's
+        #     a compose failure that should surface as EmailComposeError.
+        # We do NOT catch LookupError or OSError — those only fire on
+        # programmer errors in this module or genuinely unexpected I/O.
         logger.exception("Unexpected error during email composition: %s", str(e))
         raise EmailComposeError(f"Failed to compose email: {str(e)}") from e
 
@@ -577,37 +665,28 @@ def _embed_original_message(
     include_original: bool = True,
     is_forward: bool = False,
 ) -> tuple[str, str]:
-    """
-    Embed original message content into new text and HTML.
+    """Embed original message content into new text and HTML.
 
-    Args:
-        original_message: The JMAP structure of the original message
-        new_text: The new text content
-        new_html: Optional HTML version of the new content
-        include_original: Whether to include the original message content
-        is_forward: Whether this is a forward (affects header format)
-
-    Returns:
-        Tuple of (text_body, html_body)
+    Returns (text_body, html_body).
     """
     if new_text is None:
         new_text = ""
 
     if not include_original:
-        # Return simple versions without embedding
         html_body = new_html or f"<p>{html.escape(new_text)}</p>"
         if html_body:
             html_body = html_body.replace("&rsquo;", "'")
         return new_text, html_body
 
-    # Get information from the original message
-    orig_subject = original_message.get("subject", "")
+    # Coerce None → "" — inbound parsers may emit {"subject": None} when the
+    # source message has no Subject header, and downstream str.lower() etc.
+    # crash on None.
+    orig_subject = original_message.get("subject") or ""
     orig_from = original_message.get("from", {})
     orig_to = original_message.get("to", [])
     orig_cc = original_message.get("cc", [])
     orig_date = original_message.get("date", "")
 
-    # Format date as string for quoting
     date_str = ""
     if isinstance(orig_date, datetime.datetime):
         if orig_date.tzinfo is None or orig_date.tzinfo.utcoffset(orig_date) is None:
@@ -616,20 +695,23 @@ def _embed_original_message(
                 if hasattr(timezone, "make_aware")
                 else orig_date.replace(tzinfo=datetime.timezone.utc)
             )
-
-        # Format according to RFC 5322 preferred date format (e.g., "15 May 2023 14:30:00 +0000")
         date_str = format_datetime(orig_date)
     elif isinstance(orig_date, str) and orig_date:
-        # Try parsing the string date to reformat it consistently
-        parsed_dt = parsedate_to_datetime(orig_date)
+        # parsedate_to_datetime can raise ValueError/IndexError/TypeError on
+        # malformed RFC 2822 input from real-world inbound. Fall back to the
+        # raw string instead of bubbling the exception up through the
+        # forward/reply quote-block builder.
+        try:
+            parsed_dt = parsedate_to_datetime(orig_date)
+        except (ValueError, TypeError, IndexError):
+            parsed_dt = None
         if parsed_dt:
             date_str = format_datetime(parsed_dt)
         else:
-            date_str = orig_date  # Use original string if parsing fails
+            date_str = orig_date
     else:
-        date_str = "an unknown date"  # Fallback if date is missing or invalid type
+        date_str = "an unknown date"
 
-    # Prepare header for text
     header_text = ""
     if is_forward:
         from_display = format_address(
@@ -648,7 +730,6 @@ def _embed_original_message(
         header_text += f"Subject: {orig_subject}\r\n"
         header_text += f"Date: {date_str}\r\n\r\n"
     else:
-        # Reply format
         from_display = format_address(
             orig_from.get("name", ""), orig_from.get("email", "")
         )
@@ -657,41 +738,33 @@ def _embed_original_message(
         else:
             header_text = f"\r\n\r\nOn {date_str}, someone wrote:\r\n"
 
-    # Create the text body with original message
     text_body = f"{new_text}{header_text}"
 
-    # Add original text content
     if original_message.get("textBody"):
         text_body_list = original_message["textBody"]
         if not isinstance(text_body_list, list):
             text_body_list = [text_body_list]
-
         first_text = text_body_list[0] if text_body_list else None
         orig_text = ""
-
         if isinstance(first_text, str):
             orig_text = first_text
         elif isinstance(first_text, dict):
             orig_text = first_text.get("content", "")
-
         if orig_text:
             if is_forward:
                 text_body += orig_text
             else:
-                # For replies, quote each line
                 quoted_text = "\r\n".join(
                     [f"> {line}" for line in orig_text.splitlines()]
                 )
                 text_body += quoted_text
 
-    # Create HTML content
     html_content = new_html or f"<p>{html.escape(new_text)}</p>"
     if html_content:
         html_content = html_content.replace("&rsquo;", "'")
 
     html_body = html_content
     if new_html or original_message.get("htmlBody"):
-        # Forward HTML format
         from_display_html = html.escape(
             format_address(orig_from.get("name", ""), orig_from.get("email", ""))
         )
@@ -713,15 +786,12 @@ def _embed_original_message(
         header_html += f"<strong>Date:</strong> {html.escape(date_str)}<br/>"
         header_html += "</p>"
 
-        # Get original HTML content
         orig_html = ""
         if original_message.get("htmlBody"):
             html_body_list = original_message["htmlBody"]
             if not isinstance(html_body_list, list):
                 html_body_list = [html_body_list]
-
             first_html = html_body_list[0] if html_body_list else None
-
             if isinstance(first_html, str):
                 orig_html = first_html
             elif isinstance(first_html, dict):
@@ -744,20 +814,8 @@ def create_reply_message(
     reply_html: Optional[str] = None,
     include_quote: bool = True,
 ) -> Dict[str, Any]:
-    """
-    Create a JMAP reply message to an existing email.
-
-    Args:
-        original_message: The JMAP structure of the original message
-        reply_text: The reply text content
-        reply_html: Optional HTML version of the reply
-        include_quote: Whether to include a quote of the original message
-
-    Returns:
-        A JMAP-style message structure for the reply
-    """
-    # Get information from the original message
-    orig_subject = original_message.get("subject", "")
+    """Create a JMAP reply message to an existing email."""
+    orig_subject = original_message.get("subject") or ""
     orig_from = original_message.get("from", {})
     orig_message_id = original_message.get(
         "messageId", original_message.get("message_id", "")
@@ -769,61 +827,50 @@ def create_reply_message(
 
     reply_subject = make_reply_subject(orig_subject)
 
-    # Use the shared embedding logic
     text_body, html_body = _embed_original_message(
         original_message, reply_text, reply_html, include_quote, is_forward=False
     )
 
-    # Construct the reply JMAP structure
-    reply_headers = {}
-
-    # Set In-Reply-To and References headers for threading
+    # Skip threading headers entirely if the inbound Message-ID is malformed.
+    # Real-world inbound mail occasionally has unparseable msg-ids (whitespace
+    # inside the angle brackets, missing '@', etc.); silently propagating one
+    # produces wire bytes that stdlib's ReferencesHeader truncates on parse,
+    # which is silent thread corruption. Better to lose threading than emit
+    # a garbage header.
+    reply_headers: Dict[str, str] = {}
     if orig_message_id:
-        # Ensure Message-ID is enclosed in angle brackets
-        if not orig_message_id.startswith("<") and not orig_message_id.endswith(">"):
-            orig_message_id_formatted = f"<{orig_message_id}>"
-        else:
-            orig_message_id_formatted = orig_message_id
-
-        reply_headers["In-Reply-To"] = orig_message_id_formatted
-        # Append original Message-ID to existing references, or start new References
-        if orig_references:
-            # Ensure original references are also formatted correctly (list of IDs)
-            # This part might need more robust parsing of the References header
-            reply_headers["References"] = (
-                f"{orig_references} {orig_message_id_formatted}"
+        try:
+            orig_message_id_formatted = _validate_msg_id(
+                orig_message_id, field="In-Reply-To"
+            )
+        except EmailComposeError:
+            logger.warning(
+                "Dropping malformed inbound Message-ID %r from reply threading",
+                orig_message_id,
             )
         else:
-            reply_headers["References"] = orig_message_id_formatted
+            reply_headers["In-Reply-To"] = orig_message_id_formatted
+            if orig_references:
+                reply_headers["References"] = (
+                    f"{orig_references} {orig_message_id_formatted}"
+                )
+            else:
+                reply_headers["References"] = orig_message_id_formatted
 
-    reply = {
+    reply: Dict[str, Any] = {
         "subject": reply_subject,
         "textBody": [
-            {
-                "partId": "text-part",  # Consider generating unique part IDs if needed
-                "type": "text/plain",
-                "content": text_body,
-            }
+            {"partId": "text-part", "type": "text/plain", "content": text_body}
         ],
-        "from": {},  # To be filled by the caller
-        "to": [orig_from]
-        if orig_from and orig_from.get("email")
-        else [],  # Check orig_from exists
-        # Keep original CC recipients by default when replying
+        "from": {},
+        "to": [orig_from] if orig_from and orig_from.get("email") else [],
         "cc": original_message.get("cc", []),
-        # Don't typically include original BCC in a reply
-        # 'bcc': original_message.get('bcc', []),
-        "headers": reply_headers,  # Add the threading headers
+        "headers": reply_headers,
     }
 
-    # Add HTML part if it was generated
     if html_body != (reply_html or f"<p>{html.escape(reply_text)}</p>"):
         reply["htmlBody"] = [
-            {
-                "partId": "html-part",  # Consider unique ID
-                "type": "text/html",
-                "content": html_body,
-            }
+            {"partId": "html-part", "type": "text/html", "content": html_body}
         ]
 
     return reply
@@ -835,22 +882,8 @@ def create_forward_message(
     forward_html: Optional[str] = None,
     include_original: bool = True,
 ) -> Dict[str, Any]:
-    """
-    Create a JMAP forward message from an existing email.
-
-    Args:
-        original_message: The JMAP structure of the original message
-        forward_text: The forward text content
-        forward_html: Optional HTML version of the forward
-        include_original: Whether to include the original message content
-
-    Returns:
-        A JMAP-style message structure for the forward
-    """
-    # Get information from the original message
-    orig_subject = original_message.get("subject", "")
-
-    # Create forward subject (add Fwd: if needed)
+    """Create a JMAP forward message from an existing email."""
+    orig_subject = original_message.get("subject") or ""
     if orig_subject.lower().startswith("fwd:"):
         forward_subject = orig_subject
     else:
@@ -859,38 +892,24 @@ def create_forward_message(
     if forward_text is None:
         forward_text = ""
 
-    # Use the shared embedding logic
     text_body, html_body = _embed_original_message(
         original_message, forward_text, forward_html, include_original, is_forward=True
     )
 
-    # For forwards, we typically don't set In-Reply-To or References headers
-    # as forwards are not replies to the original message
-    forward_headers = {}
-
-    forward = {
+    forward: Dict[str, Any] = {
         "subject": forward_subject,
         "textBody": [
-            {
-                "partId": "text-part",
-                "type": "text/plain",
-                "content": text_body,
-            }
+            {"partId": "text-part", "type": "text/plain", "content": text_body}
         ],
-        "from": {},  # To be filled by the caller
-        "to": [],  # To be filled by the caller
+        "from": {},
+        "to": [],
         "cc": [],
-        "headers": forward_headers,
+        "headers": {},
     }
 
-    # Add HTML part if it was generated
     if html_body != (forward_html or f"<p>{html.escape(forward_text)}</p>"):
         forward["htmlBody"] = [
-            {
-                "partId": "html-part",
-                "type": "text/html",
-                "content": html_body,
-            }
+            {"partId": "html-part", "type": "text/html", "content": html_body}
         ]
 
     return forward

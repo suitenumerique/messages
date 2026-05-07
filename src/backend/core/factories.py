@@ -234,7 +234,7 @@ class MessageFactory(factory.django.DjangoModelFactory):
     subject = factory.Faker("sentence")
     sender = factory.SubFactory(ContactFactory)
     created_at = factory.LazyAttribute(lambda o: timezone.now())
-    mime_id = factory.Sequence(lambda n: f"message{n!s}")
+    mime_id = factory.Sequence(lambda n: f"message{n!s}@_lst.test.example.com")
 
     @factory.post_generation
     def raw_mime(self, create, extracted, **kwargs):

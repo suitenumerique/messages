@@ -639,9 +639,12 @@ class TestPrepareOutboundMessageSignature:
         message.refresh_from_db()
         content = message.blob.get_content().decode()
         assert "Hello world!" in content
+        # Drop quoted-printable soft line breaks before searching, since stdlib
+        # may fold long HTML lines with =\r\n.
+        unfolded = content.replace("=\r\n", "")
         assert (
             "Best regards,<br>John Doe<br>Software Engineer<br>Engineering</p>"
-            in content
+            in unfolded
         )
 
     @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
@@ -818,9 +821,12 @@ class TestPrepareOutboundMessageSignature:
         assert (
             "Best regards,\r\nJohn Doe\r\nSoftware Engineer\r\nEngineering" in content
         )
+        # Drop quoted-printable soft line breaks before searching, since stdlib
+        # may fold long HTML lines with =\r\n.
+        unfolded = content.replace("=\r\n", "")
         assert (
             "Best regards,<br>John Doe<br>Software Engineer<br>Engineering</p>"
-            in content
+            in unfolded
         )
 
         # Same with empty text and html bodies
@@ -834,9 +840,12 @@ class TestPrepareOutboundMessageSignature:
         assert (
             "Best regards,\r\nJohn Doe\r\nSoftware Engineer\r\nEngineering" in content
         )
+        # Drop quoted-printable soft line breaks before searching, since stdlib
+        # may fold long HTML lines with =\r\n.
+        unfolded = content.replace("=\r\n", "")
         assert (
             "Best regards,<br>John Doe<br>Software Engineer<br>Engineering</p>"
-            in content
+            in unfolded
         )
 
 

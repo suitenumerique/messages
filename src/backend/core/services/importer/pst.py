@@ -847,7 +847,10 @@ def reconstruct_eml(message, store_email: Optional[str] = None) -> bytes:  # pyl
     if extra_headers:
         jmap_data["headers"] = extra_headers
 
-    return compose_email(jmap_data)
+    # PST is an archive: the Bcc list was in the original source file and we
+    # are reconstructing the .eml for storage in the user's own mailbox, not
+    # retransmitting. Preserve it.
+    return compose_email(jmap_data, keep_bcc=True)
 
 
 def _find_ipm_subtree(pst_file):
