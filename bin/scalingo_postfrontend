@@ -20,4 +20,4 @@ chmod +x bin/caddy
 # Copy Caddyfile (uses {$ENV} vars natively, no ERB needed)
 cp src/frontend/caddy/Caddyfile ./Caddyfile
 
-echo "3.13" > .python-version
+echo "3.14" > .python-version
