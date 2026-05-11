@@ -47,88 +47,94 @@
             color: var(--c--components--forms-input--value-color--disabled);
         }
     }
-}
-.composer-field-input {
-    --min-height: 20rem;
-    --toolbar-height: 43px;
-    border-radius: var(--c--components--forms-input--border-radius);
-    border-width: var(--c--components--forms-input--border-width);
-    border-color: var(--c--components--forms-input--border-color);
-    border-style: var(--c--components--forms-input--border-style);
-    width: 100%;
-    display: flex;
-    flex-direction: column-reverse;
-    gap: var(--c--globals--spacings--2xs);
-    background-color: var(--bn-colors-editor-background);
-    position: relative;
-    min-height: var(--min-height);
-    transition:
-          border var(--c--globals--transitions--duration) var(--c--globals--transitions--ease-out),
-          border-radius var(--c--globals--transitions--duration) var(--c--globals--transitions--ease-out);
 
-    & .bn-toolbar.bn-formatting-toolbar {
-        background: none;
-        box-shadow: none;
-        border: none;
-        border-radius: 0;
-        border-top-left-radius: var(--c--components--forms-input--border-radius);
-        border-top-right-radius: var(--c--components--forms-input--border-radius);
+    // Nested under `.composer-field` so the rule does NOT apply to the
+    // detached portal `<div>` BlockNote >=0.48 appends to `document.body`
+    // (it carries the same `composer-field-input` class but has no parent
+    // `.composer-field`). Without this scope, the portal renders as an
+    // empty ~320px bordered block at the bottom of the page.
+    .composer-field-input {
+        --min-height: 20rem;
+        --toolbar-height: 43px;
+        border-radius: var(--c--components--forms-input--border-radius);
+        border-width: var(--c--components--forms-input--border-width);
+        border-color: var(--c--components--forms-input--border-color);
+        border-style: var(--c--components--forms-input--border-style);
         width: 100%;
-        border-bottom: 1px solid var(--c--components--forms-input--border-color);
-        padding-block: var(--c--globals--spacings--2xs);
-        flex-wrap: wrap;
-        flex-shrink: 0;
-        min-height: var(--toolbar-height);
+        display: flex;
+        flex-direction: column-reverse;
+        gap: var(--c--globals--spacings--2xs);
+        background-color: var(--bn-colors-editor-background);
+        position: relative;
+        min-height: var(--min-height);
+        transition:
+              border var(--c--globals--transitions--duration) var(--c--globals--transitions--ease-out),
+              border-radius var(--c--globals--transitions--duration) var(--c--globals--transitions--ease-out);
 
-        // Override the max-height set by the Floating UI `size` middleware
-        // on toolbar select dropdowns. Without portal rendering, the dropdown
-        // is constrained to the available space inside the toolbar container,
-        // which becomes too small when the toolbar wraps onto multiple lines.
-        .mantine-Menu-dropdown {
-            max-height: none !important;
-        }
+        & .bn-toolbar.bn-formatting-toolbar {
+            background: none;
+            box-shadow: none;
+            border: none;
+            border-radius: 0;
+            border-top-left-radius: var(--c--components--forms-input--border-radius);
+            border-top-right-radius: var(--c--components--forms-input--border-radius);
+            width: 100%;
+            border-bottom: 1px solid var(--c--components--forms-input--border-color);
+            padding-block: var(--c--globals--spacings--2xs);
+            flex-wrap: wrap;
+            flex-shrink: 0;
+            min-height: var(--toolbar-height);
 
-        .bn-toolbar-separator {
-            width: 1px;
-            align-self: stretch;
-            margin-block: var(--c--globals--spacings--3xs);
-            background-color: var(--c--components--forms-input--border-color);
+            // Override the max-height set by the Floating UI `size` middleware
+            // on toolbar select dropdowns. Without portal rendering, the dropdown
+            // is constrained to the available space inside the toolbar container,
+            // which becomes too small when the toolbar wraps onto multiple lines.
+            .mantine-Menu-dropdown {
+                max-height: none !important;
+            }
 
-            // Hide separators without a visible neighbor:
-            // - at the start of the toolbar (no element before)
-            // - at the end of the toolbar (no element after)
-            // - consecutive (all elements between them are absent from the DOM)
-            &:first-child,
-            &:last-child,
-            & + .bn-toolbar-separator {
-                display: none;
+            .bn-toolbar-separator {
+                width: 1px;
+                align-self: stretch;
+                margin-block: var(--c--globals--spacings--3xs);
+                background-color: var(--c--components--forms-input--border-color);
+
+                // Hide separators without a visible neighbor:
+                // - at the start of the toolbar (no element before)
+                // - at the end of the toolbar (no element after)
+                // - consecutive (all elements between them are absent from the DOM)
+                &:first-child,
+                &:last-child,
+                & + .bn-toolbar-separator {
+                    display: none;
+                }
             }
         }
-    }
 
-    & .bn-editor {
-        --max-block-width: 85ch;
-        // Even in dark mode, the editor stays light so we used global tokens color
-        color: var(--c--globals--colors--gray-850);
-        font-size: var(--c--globals--font--sizes--sm);
-        font-family: var(--c--globals--font--families--base);
-        border-radius: var(--c--components--forms-input--border-radius);
-        min-height: calc(100% - var(--toolbar-height));
-        padding-inline: var(--c--globals--spacings--base);
-        // Extra left padding to make room for the side menu drag handle
-        padding-left: calc(var(--c--globals--spacings--base) + 8px);
-        flex: 1;
-        overflow: visible;
+        & .bn-editor {
+            --max-block-width: 85ch;
+            // Even in dark mode, the editor stays light so we used global tokens color
+            color: var(--c--globals--colors--gray-850);
+            font-size: var(--c--globals--font--sizes--sm);
+            font-family: var(--c--globals--font--families--base);
+            border-radius: var(--c--components--forms-input--border-radius);
+            min-height: calc(100% - var(--toolbar-height));
+            padding-inline: var(--c--globals--spacings--base);
+            // Extra left padding to make room for the side menu drag handle
+            padding-left: calc(var(--c--globals--spacings--base) + 8px);
+            flex: 1;
+            overflow: visible;
 
-        // Overide blocknote default styles to fix some contrast issues
-        blockquote {
-            color: var(--c--globals--colors--gray-550);
-            border-color: var(--c--globals--colors--gray-550);
+            // Overide blocknote default styles to fix some contrast issues
+            blockquote {
+                color: var(--c--globals--colors--gray-550);
+                border-color: var(--c--globals--colors--gray-550);
+            }
         }
-    }
 
-    .tiptap > .bn-block-group {
-        min-height: calc(var(--min-height) - var(--toolbar-height));
-        max-width: var(--max-block-width);
+        .tiptap > .bn-block-group {
+            min-height: calc(var(--min-height) - var(--toolbar-height));
+            max-width: var(--max-block-width);
+        }
     }
 }
