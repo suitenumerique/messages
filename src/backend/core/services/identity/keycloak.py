@@ -12,6 +12,37 @@ from core.models import Mailbox, MailDomain
 
 logger = logging.getLogger(__name__)
 
+# Realm-role membership is cached as a Redis SET so toggles can SADD/SREM one
+# username instead of refetching. TTL bounds drift if the role is mutated
+# outside this codepath. Caching is skipped entirely when Redis isn't wired
+# up — we never fall back to a per-process LocMem cache that would lie to
+# other workers.
+REALM_ROLE_MEMBERS_CACHE_TTL = 24 * 60 * 60  # 1 day
+_REALM_ROLE_MEMBERS_KEY_FMT = "keycloak:realm_role_members:{role_id}"
+# Member added on populate so the SET key remains observable via EXISTS even
+# when the role has zero real members. Filtered out on read.
+_CACHE_SENTINEL = b"__populated__"
+
+
+def _realm_role_members_cache_key(role_id):
+    return _REALM_ROLE_MEMBERS_KEY_FMT.format(role_id=role_id)
+
+
+def _redis_client():
+    """Return the django-redis connection, or ``None`` when unavailable.
+
+    ``get_redis_connection`` raises ``NotImplementedError`` when the configured
+    Django cache backend isn't django-redis. Any other failure (broken import,
+    bad config) also collapses to None.
+    """
+    try:
+        # pylint: disable=import-outside-toplevel
+        from django_redis import get_redis_connection
+
+        return get_redis_connection("default")
+    except Exception:  # pylint: disable=broad-exception-caught
+        return None
+
 
 def get_keycloak_admin_client():
     """
@@ -252,6 +283,10 @@ def list_keycloak_users(limit=100):
 def reset_keycloak_user_password(username, new_password=None):
     """
     Reset a user's password in Keycloak with a one-time new password.
+
+    Also re-enables the account if it was disabled and clears any brute-force
+    lockout, so admins can recover users who got locked out after too many
+    failed login attempts in one operation.
     """
     if not new_password:
         new_password = generate_password()
@@ -267,6 +302,23 @@ def reset_keycloak_user_password(username, new_password=None):
         user = users[0]
         user_id = user["id"]
 
+        # If the account was disabled (e.g. by an admin), re-enable it before
+        # the new password becomes useful.
+        if not user.get("enabled", True):
+            keycloak_admin.update_user(user_id=user_id, payload={"enabled": True})
+            logger.info("Re-enabled Keycloak user: %s", username)
+
+        # Clear any brute-force lockout. This is a no-op when there are no
+        # recorded failures, and ensures a fresh password is immediately usable.
+        try:
+            keycloak_admin.clear_bruteforce_attempts_for_user(user_id=user_id)
+        except KeycloakError as e:
+            # Don't fail the whole password reset if the brute-force clear
+            # endpoint hiccups (e.g. policy disabled in some realms).
+            logger.warning(
+                "Could not clear brute-force attempts for %s: %s", username, e
+            )
+
         # Set new temporary password
         keycloak_admin.set_user_password(
             user_id=user_id, password=new_password, temporary=True
@@ -275,8 +327,8 @@ def reset_keycloak_user_password(username, new_password=None):
         logger.info("Reset password for Keycloak user: %s", username)
         return new_password
 
-    except KeycloakError as e:
-        logger.error("Keycloak error resetting password for %s: %s", username, e)
+    except KeycloakError:
+        logger.exception("Keycloak error resetting password for %s", username)
         raise
 
 
@@ -334,3 +386,166 @@ def generate_password(length=12):
     # Shuffle to avoid predictable positions
     secrets.SystemRandom().shuffle(password_chars)
     return "".join(password_chars)
+
+
+def _get_keycloak_user_id(username):
+    """Look up a Keycloak user id by username, raising ValueError if absent."""
+    keycloak_admin = get_keycloak_admin_client()
+    users = keycloak_admin.get_users({"username": username})
+    if not users:
+        raise ValueError(f'User with username "{username}" not found.')
+    return keycloak_admin, users[0]["id"]
+
+
+def has_realm_role(username, role_id):
+    """Return True if the Keycloak user has the realm role with this id assigned."""
+    keycloak_admin, user_id = _get_keycloak_user_id(username)
+    user_roles = keycloak_admin.get_realm_roles_of_user(user_id=user_id)
+    return any(role.get("id") == role_id for role in user_roles)
+
+
+def is_mandatory_totp_enabled():
+    """All three settings required for the mandatory TOTP feature are present."""
+    return bool(
+        settings.FEATURE_MAILDOMAIN_MANAGE_TOTP
+        and settings.KEYCLOAK_TOTP_ROLE_ID
+        and settings.IDENTITY_PROVIDER == "keycloak"
+    )
+
+
+def _fetch_realm_role_members(role_id):
+    """Direct Keycloak fetch for a realm role's member usernames (no cache).
+
+    Usernames are lowercased; Keycloak treats usernames case-insensitively,
+    but Redis SET ops are byte-exact, so we normalize at the boundary.
+    """
+    keycloak_admin = get_keycloak_admin_client()
+    role = keycloak_admin.get_realm_role_by_id(role_id=role_id)
+    if not role:
+        return set()
+    members = keycloak_admin.get_realm_role_members(role_name=role["name"]) or []
+    return {m["username"].lower() for m in members if m.get("username")}
+
+
+def batch_realm_role_membership(usernames, role_id):
+    """Return ``{username: bool}`` for a whole page in one Redis round-trip.
+
+    Pipelines N ``SISMEMBER`` calls (Redis 5-compatible; ``SMISMEMBER`` is
+    6.2+). Cold cache → one Keycloak populate, then the pipelined checks.
+
+    Without Redis we fall back to two Keycloak calls per username — quadratic
+    in page size. This deployment requires Redis (compose pins it; other
+    features rely on it too), so the fallback is a correctness safety net,
+    not a supported production path. If you hit this branch in prod, fix
+    the cache wiring rather than living with the latency.
+    """
+    if not usernames:
+        return {}
+
+    client = _redis_client()
+    if client is None:
+        return {u: has_realm_role(u, role_id) for u in usernames}
+
+    key = _realm_role_members_cache_key(role_id)
+    if not client.exists(key):
+        members = _fetch_realm_role_members(role_id)
+        pipe = client.pipeline()
+        pipe.delete(key)
+        pipe.sadd(key, _CACHE_SENTINEL, *members)
+        pipe.expire(key, REALM_ROLE_MEMBERS_CACHE_TTL)
+        pipe.execute()
+
+    pipe = client.pipeline()
+    for username in usernames:
+        pipe.sismember(key, username.lower())
+    return dict(zip(usernames, (bool(f) for f in pipe.execute()), strict=True))
+
+
+def update_cached_realm_role_member(role_id, username, *, present):
+    """Reflect a single membership change with an atomic SADD/SREM.
+
+    No-op when the cache hasn't been populated yet (the next read fetches
+    fresh from Keycloak), when Redis isn't available, or when the Redis
+    call fails (cache will self-heal on the next TTL).
+
+    Call AFTER the Keycloak write has succeeded so the cache never says yes
+    while Keycloak says no. Swallows its own errors so a cache hiccup can't
+    fail a request whose source-of-truth write already landed.
+    """
+    try:
+        client = _redis_client()
+        if client is None:
+            return
+        key = _realm_role_members_cache_key(role_id)
+        if not client.exists(key):
+            return
+        if present:
+            client.sadd(key, username.lower())
+        else:
+            client.srem(key, username.lower())
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.warning(
+            "Could not update cached role membership for %s; cache will "
+            "self-heal at next TTL expiry.",
+            username,
+            exc_info=True,
+        )
+
+
+def set_realm_role(username, role_id, *, assigned):
+    """Assign or remove a realm role (looked up by id) for the Keycloak user.
+
+    Idempotent: if the role is already in the desired state, this is a no-op.
+    """
+    keycloak_admin, user_id = _get_keycloak_user_id(username)
+    role = keycloak_admin.get_realm_role_by_id(role_id=role_id)
+    if not role:
+        raise ValueError(f'Realm role with id "{role_id}" not found.')
+
+    user_roles = keycloak_admin.get_realm_roles_of_user(user_id=user_id)
+    currently_assigned = any(r.get("id") == role_id for r in user_roles)
+
+    if assigned and not currently_assigned:
+        keycloak_admin.assign_realm_roles(user_id=user_id, roles=[role])
+        logger.info(
+            "Assigned realm role %s to Keycloak user %s", role.get("name"), username
+        )
+    elif not assigned and currently_assigned:
+        keycloak_admin.delete_realm_roles_of_user(user_id=user_id, roles=[role])
+        logger.info(
+            "Removed realm role %s from Keycloak user %s", role.get("name"), username
+        )
+
+
+def reset_keycloak_user_totp(username):
+    """Reset a user's TOTP enrollment.
+
+    Deletes any OTP credentials they have on file and registers
+    ``CONFIGURE_TOTP`` as a required action so they re-enroll on next login.
+    """
+    keycloak_admin, user_id = _get_keycloak_user_id(username)
+
+    credentials = keycloak_admin.get_credentials(user_id=user_id) or []
+    deleted = 0
+    for credential in credentials:
+        # Keycloak labels OTP creds with type "otp"; covers TOTP & HOTP.
+        if (credential.get("type") or "").lower() == "otp":
+            keycloak_admin.delete_credential(
+                user_id=user_id, credential_id=credential["id"]
+            )
+            deleted += 1
+
+    user = keycloak_admin.get_user(user_id=user_id) or {}
+    required_actions = list(user.get("requiredActions") or [])
+    if "CONFIGURE_TOTP" not in required_actions:
+        required_actions.append("CONFIGURE_TOTP")
+        keycloak_admin.update_user(
+            user_id=user_id, payload={"requiredActions": required_actions}
+        )
+
+    logger.info(
+        "Reset TOTP for Keycloak user %s (removed %d OTP credentials)",
+        username,
+        deleted,
+    )
+    return {"removed_credentials": deleted}

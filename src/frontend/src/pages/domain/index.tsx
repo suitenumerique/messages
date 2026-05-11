@@ -13,6 +13,7 @@ import { CreateDomainAction } from "@/features/layouts/components/admin/domains-
 import { useQueryClient } from "@tanstack/react-query";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ModalMaildomainManageAccesses } from "@/features/layouts/components/admin/modal-maildomain-manage-accesses";
+import { AdminSearchInput } from "@/features/forms/components/admin-search-input";
 
 type AdminDataGridProps = {
   pagination: ReturnType<typeof usePagination>;
@@ -96,12 +97,14 @@ function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
 const AdminPageContent = () => {
   const router = useRouter();
   const { t } = useTranslation();
-  const { mailDomains, isLoading, error, pagination } = useAdminMailDomain();
+  const { mailDomains, isLoading, error, pagination, searchQuery, setSearchQuery } = useAdminMailDomain();
   const canCreateMaildomain = useAbility(Abilities.CAN_CREATE_MAILDOMAINS);
   const hasManageAbility = useAbility(Abilities.CAN_MANAGE_SOME_MAILDOMAIN_ACCESSES);
   const isManageAccessesEnabled = useFeatureFlag(FEATURE_KEYS.MAILDOMAIN_MANAGE_ACCESSES);
   const canManageMaildomainAccesses = hasManageAbility && isManageAccessesEnabled;
-  const shouldRedirect = !canCreateMaildomain && !canManageMaildomainAccesses && !isLoading && mailDomains.length === 1;
+  // Only auto-redirect when the user has a single domain in total — i.e.
+  // not when the apparent single domain is the result of an active search.
+  const shouldRedirect = !canCreateMaildomain && !canManageMaildomainAccesses && !isLoading && !searchQuery && mailDomains.length === 1;
 
   /**
    * Auto-navigate to first domain if there's only one and the
@@ -113,7 +116,7 @@ const AdminPageContent = () => {
     }
   }, [router, shouldRedirect]);
 
-  if (isLoading || shouldRedirect) {
+  if (shouldRedirect || (isLoading && !searchQuery)) {
     return (
       <div className="admin-page__loading">
         <Spinner />
@@ -133,6 +136,14 @@ const AdminPageContent = () => {
     <>
       <div className="admin-page__bar">
         <h1>{t("Maildomains management")}</h1>
+      </div>
+      <div className="admin-page__search">
+        <AdminSearchInput
+          label={t("Search a domain")}
+          placeholder={t("Search by domain name…")}
+          initialValue={searchQuery}
+          onChange={setSearchQuery}
+        />
       </div>
       <AdminDataGrid domains={mailDomains} pagination={pagination} />
     </>

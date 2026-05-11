@@ -47,6 +47,7 @@
 @use "./../features/forms/components/message-form";
 @use "./../features/forms/components/search-input";
 @use "./../features/forms/components/search-filters-form";
+@use "./../features/forms/components/admin-search-input";
 @use "./../features/controlled-modals/message-importer";
 @use "./../features/layouts/components/mailbox-settings/modal-compose-integration";
 @use "./../features/layouts/components/admin/mailbox-credentials";

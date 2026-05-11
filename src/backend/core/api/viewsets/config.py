@@ -123,6 +123,10 @@ class ConfigView(drf.views.APIView):
                             "type": "boolean",
                             "readOnly": True,
                         },
+                        "FEATURE_MAILDOMAIN_MANAGE_TOTP": {
+                            "type": "boolean",
+                            "readOnly": True,
+                        },
                         "MESSAGES_MANUAL_RETRY_MAX_AGE": {
                             "type": "integer",
                             "description": (
@@ -156,6 +160,7 @@ class ConfigView(drf.views.APIView):
                         "FEATURE_MAILDOMAIN_CREATE",
                         "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
                         "FEATURE_THREAD_SPLIT",
+                        "FEATURE_MAILDOMAIN_MANAGE_TOTP",
                         "MESSAGES_MANUAL_RETRY_MAX_AGE",
                         "FRONTEND_SILENT_LOGIN_ENABLED",
                     ],
@@ -182,6 +187,7 @@ class ConfigView(drf.views.APIView):
             "FEATURE_MAILDOMAIN_CREATE",
             "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
             "FEATURE_THREAD_SPLIT",
+            "FEATURE_MAILDOMAIN_MANAGE_TOTP",
             "MAX_OUTGOING_ATTACHMENT_SIZE",
             "MAX_OUTGOING_BODY_SIZE",
             "MAX_INCOMING_EMAIL_SIZE",

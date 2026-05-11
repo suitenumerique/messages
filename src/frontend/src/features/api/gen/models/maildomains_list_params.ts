@@ -11,4 +11,8 @@ export type MaildomainsListParams = {
    * A page number within the paginated result set.
    */
   page?: number;
+  /**
+   * Filter domains whose name contains this value (case-insensitive).
+   */
+  q?: string;
 };

@@ -257,6 +257,10 @@
                                             "type": "boolean",
                                             "readOnly": true
                                         },
+                                        "FEATURE_MAILDOMAIN_MANAGE_TOTP": {
+                                            "type": "boolean",
+                                            "readOnly": true
+                                        },
                                         "MESSAGES_MANUAL_RETRY_MAX_AGE": {
                                             "type": "integer",
                                             "description": "Maximum age in seconds for a message to be eligible for manual retry of failed deliveries",
@@ -287,6 +291,7 @@
                                         "FEATURE_MAILDOMAIN_CREATE",
                                         "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
                                         "FEATURE_THREAD_SPLIT",
+                                        "FEATURE_MAILDOMAIN_MANAGE_TOTP",
                                         "MESSAGES_MANUAL_RETRY_MAX_AGE",
                                         "FRONTEND_SILENT_LOGIN_ENABLED"
                                     ]
@@ -3388,7 +3393,7 @@
         "/api/v1.0/maildomains/": {
             "get": {
                 "operationId": "maildomains_list",
-                "description": "ViewSet for listing MailDomains the user administers.\nProvides a top-level entry for mail domain administration.\nEndpoint: /maildomains/<maildomain_pk>/",
+                "description": "List mail domains, optionally filtered by name with the `q` parameter.",
                 "parameters": [
                     {
                         "name": "page",
@@ -3398,6 +3403,14 @@
                         "schema": {
                             "type": "integer"
                         }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Filter domains whose name contains this value (case-insensitive)."
                     }
                 ],
                 "tags": [
@@ -3711,7 +3724,7 @@
         "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/": {
             "get": {
                 "operationId": "maildomains_mailboxes_list",
-                "description": "ViewSet for managing Mailboxes within a specific MailDomain.\nNested under /maildomains/{maildomain_pk}/mailboxes/\nPermissions are checked by IsMailDomainAdmin for the maildomain_pk.\n\nThis viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).\nThat other one is for listing the mailboxes a user has access to in regular app use.\nThis one is for managing mailboxes within a specific maildomain in the admin interface.",
+                "description": "List mailboxes, optionally filtered by local part / contact name.",
                 "parameters": [
                     {
                         "in": "path",
@@ -3730,6 +3743,14 @@
                         "schema": {
                             "type": "integer"
                         }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Filter mailboxes whose local part or contact name contains this value (case-insensitive)."
                     }
                 ],
                 "tags": [
@@ -3948,6 +3969,67 @@
                 }
             }
         },
+        "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/{id}/mandatory-totp/": {
+            "patch": {
+                "operationId": "maildomains_mailboxes_set_mandatory_totp",
+                "description": "Toggle the Keycloak realm role indicated by KEYCLOAK_TOTP_ROLE_ID on the user backing this mailbox.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Patched_MandatoryTotpPayloadRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Patched_MandatoryTotpPayloadRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAdminMandatoryTotpResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/{id}/reset-password/": {
             "patch": {
                 "operationId": "maildomains_mailboxes_reset_password",
@@ -4017,6 +4099,53 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ResetPasswordInternalServerError"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/{id}/reset-totp/": {
+            "patch": {
+                "operationId": "maildomains_mailboxes_reset_totp",
+                "description": "Remove existing OTP credentials and require the user to re-enroll in TOTP on next login.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "maildomains"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MailboxAdminResetTotpResponse"
                                 }
                             }
                         },
@@ -7510,6 +7639,19 @@
                             }
                         ],
                         "readOnly": true
+                    },
+                    "last_accessed_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true,
+                        "readOnly": true,
+                        "description": "Most recent ``accessed_at`` across all mailbox accesses."
+                    },
+                    "has_mandatory_totp": {
+                        "type": "boolean",
+                        "nullable": true,
+                        "readOnly": true,
+                        "description": "Whether the Keycloak user backing this mailbox carries the KEYCLOAK_TOTP_ROLE_ID realm role. ``null`` when the feature is disabled or the role id isn't configured."
                     }
                 },
                 "required": [
@@ -7518,8 +7660,10 @@
                     "contact",
                     "created_at",
                     "domain_name",
+                    "has_mandatory_totp",
                     "id",
                     "is_identity",
+                    "last_accessed_at",
                     "local_part",
                     "updated_at"
                 ]
@@ -7586,6 +7730,19 @@
                         ],
                         "readOnly": true
                     },
+                    "last_accessed_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true,
+                        "readOnly": true,
+                        "description": "Most recent ``accessed_at`` across all mailbox accesses."
+                    },
+                    "has_mandatory_totp": {
+                        "type": "boolean",
+                        "nullable": true,
+                        "readOnly": true,
+                        "description": "Whether the Keycloak user backing this mailbox carries the KEYCLOAK_TOTP_ROLE_ID realm role. ``null`` when the feature is disabled or the role id isn't configured."
+                    },
                     "one_time_password": {
                         "type": "string",
                         "nullable": true,
@@ -7599,8 +7756,10 @@
                     "contact",
                     "created_at",
                     "domain_name",
+                    "has_mandatory_totp",
                     "id",
                     "is_identity",
+                    "last_accessed_at",
                     "local_part",
                     "one_time_password",
                     "updated_at"
@@ -7654,6 +7813,28 @@
                 "required": [
                     "local_part",
                     "metadata"
+                ]
+            },
+            "MailboxAdminMandatoryTotpResponse": {
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "enabled"
+                ]
+            },
+            "MailboxAdminResetTotpResponse": {
+                "type": "object",
+                "properties": {
+                    "removed_credentials": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "removed_credentials"
                 ]
             },
             "MailboxAdminUpdateMetadataRequest": {
@@ -8651,6 +8832,15 @@
                                 "additionalProperties": false
                             }
                         ]
+                    }
+                }
+            },
+            "Patched_MandatoryTotpPayloadRequest": {
+                "type": "object",
+                "description": "Strict validation for the ``set_mandatory_totp`` request body.",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean"
                     }
                 }
             },

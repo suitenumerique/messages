@@ -1,15 +1,21 @@
-import { DEFAULT_PAGE_SIZE } from "@/features/config/constants";
+import { useRouter } from "next/router";
 import { AdminLayout } from "@/features/layouts/components/admin/admin-layout";
 import { CreateMailboxAction } from "@/features/layouts/components/admin/mailboxes-view/create-mailbox-action";
 import { AdminDomainPageContent } from "@/features/layouts/components/admin/mailboxes-view/page-content";
-import { usePagination } from "@gouvfr-lasuite/cunningham-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useSearchablePagination } from "@/hooks/use-searchable-pagination";
 
 /**
  * Admin page which list all mailboxes for a given domain and allow to manage them.
  */
 export default function AdminDomainMailboxesPage() {
-  const pagination = usePagination({ pageSize: DEFAULT_PAGE_SIZE });
+  const router = useRouter();
+  // Next.js Pages Router keeps this component mounted across `/domain/[id]`
+  // navigations — pass the param as a reset key so each domain starts with
+  // an empty search and page=1.
+  const { pagination, searchQuery, setSearchQuery } = useSearchablePagination({
+    resetKey: router.query.maildomainId,
+  });
   const queryClient = useQueryClient();
 
   const handleCreateMailbox = async () => {
@@ -33,7 +39,11 @@ export default function AdminDomainMailboxesPage() {
       currentTab="addresses"
       actions={<CreateMailboxAction onCreate={handleCreateMailbox} />}
     >
-      <AdminDomainPageContent pagination={pagination} />
+      <AdminDomainPageContent
+        pagination={pagination}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+      />
     </AdminLayout>
   );
 }

@@ -7,6 +7,7 @@ export enum FEATURE_KEYS {
     MAILBOX_ADMIN_CHANNELS = 'mailbox_admin_channels',
     MAILDOMAIN_CREATE = 'maildomain_create',
     MAILDOMAIN_MANAGE_ACCESSES = 'maildomain_manage_accesses',
+    MAILDOMAIN_MANAGE_TOTP = 'maildomain_manage_totp',
     THREAD_SPLIT = 'thread_split',
 }
 
@@ -33,6 +34,8 @@ export const useFeatureFlag = (featureKey: FEATURE_KEYS) => {
             return config.FEATURE_MAILDOMAIN_CREATE === true;
         case FEATURE_KEYS.MAILDOMAIN_MANAGE_ACCESSES:
             return config.FEATURE_MAILDOMAIN_MANAGE_ACCESSES === true;
+        case FEATURE_KEYS.MAILDOMAIN_MANAGE_TOTP:
+            return config.FEATURE_MAILDOMAIN_MANAGE_TOTP === true;
         case FEATURE_KEYS.THREAD_SPLIT:
             return config.FEATURE_THREAD_SPLIT === true;
         default:

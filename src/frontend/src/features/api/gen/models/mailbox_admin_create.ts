@@ -32,6 +32,16 @@ export interface MailboxAdminCreate {
   readonly can_reset_password: boolean;
   readonly contact: Contact;
   /**
+   * Most recent ``accessed_at`` across all mailbox accesses.
+   * @nullable
+   */
+  readonly last_accessed_at: string | null;
+  /**
+   * Whether the Keycloak user backing this mailbox carries the KEYCLOAK_TOTP_ROLE_ID realm role. ``null`` when the feature is disabled or the role id isn't configured.
+   * @nullable
+   */
+  readonly has_mandatory_totp: boolean | null;
+  /**
    * Fake method just to make the OpenAPI schema valid.
    * @nullable
    */

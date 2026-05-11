@@ -11,4 +11,8 @@ export type MaildomainsMailboxesListParams = {
    * A page number within the paginated result set.
    */
   page?: number;
+  /**
+   * Filter mailboxes whose local part or contact name contains this value (case-insensitive).
+   */
+  q?: string;
 };

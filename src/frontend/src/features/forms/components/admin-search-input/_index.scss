@@ -1,0 +1,48 @@
+.admin-search-input {
+  display: flex;
+  align-items: center;
+  gap: var(--c--globals--spacings--xs);
+  width: 100%;
+  padding-inline: var(--c--globals--spacings--sm);
+  height: 32px;
+  border: 1px solid var(--c--contextuals--border--surface--primary);
+  border-radius: 8px;
+  background-color: var(--c--contextuals--background--surface--primary);
+  transition: border-color var(--c--globals--transitions--duration) var(--c--globals--transitions--ease-out);
+
+  &:hover {
+    border-color: var(--c--contextuals--border--semantic--neutral--secondary);
+  }
+
+  &:focus-within {
+    border-color: var(--c--contextuals--border--semantic--brand--primary);
+  }
+
+  &__icon {
+    flex-shrink: 0;
+    font-size: 1.125rem;
+    color: var(--c--contextuals--content--semantic--neutral--tertiary);
+  }
+
+  &__input {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    color: var(--c--contextuals--content--semantic--neutral--primary);
+    padding: 0;
+    min-width: 0;
+
+    &::placeholder {
+      color: var(--c--contextuals--content--semantic--neutral--tertiary);
+    }
+
+    // Hide the native search "X" clear button to keep the layout clean.
+    &::-webkit-search-cancel-button {
+      -webkit-appearance: none;
+      appearance: none;
+    }
+  }
+}
