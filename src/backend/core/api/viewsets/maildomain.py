@@ -483,22 +483,16 @@ class AdminMailDomainMailboxViewSet(
         except ValueError as e:
             # set_realm_role raises ValueError when the Keycloak user or role
             # can't be found — that's a 404 (resource doesn't exist),
-            # not a server fault.
-            logger.warning(
-                "Mandatory TOTP target missing for mailbox %s: %s", mailbox.id, e
-            )
-            raise NotFound(str(e)) from e
+            # not a server fault. Don't surface the raw Keycloak text — it can
+            # carry the username (PII) or the configured role id.
+            logger.warning("Mandatory TOTP target missing for mailbox %s", mailbox.id)
+            raise NotFound("Keycloak resource not found for mailbox.") from e
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception("Error setting mandatory TOTP for mailbox %s", mailbox.id)
             return Response(
                 {"error": "Could not update mandatory TOTP."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-
-        # Keep the cached membership set consistent with Keycloak.
-        keycloak_service.update_cached_realm_role_member(
-            settings.KEYCLOAK_TOTP_ROLE_ID, str(mailbox), present=enabled
-        )
 
         return Response({"enabled": enabled}, status=status.HTTP_200_OK)
 
@@ -528,10 +522,8 @@ class AdminMailDomainMailboxViewSet(
         try:
             result = keycloak_service.reset_keycloak_user_totp(str(mailbox))
         except ValueError as e:
-            logger.warning(
-                "Reset TOTP target missing for mailbox %s: %s", mailbox.id, e
-            )
-            raise NotFound(str(e)) from e
+            logger.warning("Reset TOTP target missing for mailbox %s", mailbox.id)
+            raise NotFound("Keycloak resource not found for mailbox.") from e
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception("Error resetting TOTP for mailbox %s", mailbox.id)
             return Response(

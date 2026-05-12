@@ -518,11 +518,13 @@ def set_realm_role(username, role_id, *, assigned):
         logger.info(
             "Assigned realm role %s to Keycloak user %s", role.get("name"), username
         )
+        update_cached_realm_role_member(role_id, username, present=True)
     elif not assigned and currently_assigned:
         keycloak_admin.delete_realm_roles_of_user(user_id=user_id, roles=[role])
         logger.info(
             "Removed realm role %s from Keycloak user %s", role.get("name"), username
         )
+        update_cached_realm_role_member(role_id, username, present=False)
 
 
 def reset_keycloak_user_totp(username):

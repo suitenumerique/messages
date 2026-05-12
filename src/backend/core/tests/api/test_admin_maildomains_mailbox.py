@@ -1376,21 +1376,17 @@ class TestAdminMailDomainMailboxViewSet:
 
     # --- Mandatory TOTP tests ------------------------------------------------
 
-    @patch(
-        "core.api.viewsets.maildomain.keycloak_service.update_cached_realm_role_member"
-    )
     @patch("core.services.identity.keycloak.set_realm_role")
     def test_admin_maildomains_mailbox_mandatory_totp_assigns_role(
         self,
         mock_set_role,
-        mock_update_cache,
         api_client,
         domain_admin_user,
         domain_admin_access1,
         mail_domain1,
         mailbox1_domain1,
     ):
-        """Setting `enabled=true` calls set_realm_role and updates the cache."""
+        """Setting `enabled=true` calls set_realm_role with assigned=True."""
         api_client.force_authenticate(user=domain_admin_user)
         url = self.mandatory_totp_url(mail_domain1.pk, mailbox1_domain1.pk)
 
@@ -1405,16 +1401,11 @@ class TestAdminMailDomainMailboxViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert response.data == {"enabled": True}
         mock_set_role.assert_called_once_with(username, "role-id-123", assigned=True)
-        mock_update_cache.assert_called_once_with("role-id-123", username, present=True)
 
-    @patch(
-        "core.api.viewsets.maildomain.keycloak_service.update_cached_realm_role_member"
-    )
     @patch("core.services.identity.keycloak.set_realm_role")
     def test_admin_maildomains_mailbox_mandatory_totp_removes_role(
         self,
         mock_set_role,
-        mock_update_cache,
         api_client,
         domain_admin_user,
         domain_admin_access1,
@@ -1436,9 +1427,6 @@ class TestAdminMailDomainMailboxViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert response.data == {"enabled": False}
         mock_set_role.assert_called_once_with(username, "role-id-123", assigned=False)
-        mock_update_cache.assert_called_once_with(
-            "role-id-123", username, present=False
-        )
 
     @patch("core.services.identity.keycloak.set_realm_role")
     def test_admin_maildomains_mailbox_mandatory_totp_rejects_invalid_payload(

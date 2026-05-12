@@ -120,6 +120,37 @@ def test_set_realm_role_removes_when_present(keycloak_admin_mock):
     )
 
 
+def test_set_realm_role_updates_cache_on_change(keycloak_admin_mock):
+    """Each successful Keycloak write also refreshes the Redis membership cache."""
+    role = {"id": "role-id", "name": "mandatory-totp"}
+    keycloak_admin_mock.get_users.return_value = [{"id": "kc-user-id"}]
+    keycloak_admin_mock.get_realm_role_by_id.return_value = role
+
+    # Assign branch: cache call mirrors the Keycloak write.
+    keycloak_admin_mock.get_realm_roles_of_user.return_value = []
+    with patch.object(keycloak_service, "update_cached_realm_role_member") as upd:
+        keycloak_service.set_realm_role("user@example.local", "role-id", assigned=True)
+        upd.assert_called_once_with("role-id", "user@example.local", present=True)
+
+    # Remove branch: same invariant.
+    keycloak_admin_mock.get_realm_roles_of_user.return_value = [role]
+    with patch.object(keycloak_service, "update_cached_realm_role_member") as upd:
+        keycloak_service.set_realm_role("user@example.local", "role-id", assigned=False)
+        upd.assert_called_once_with("role-id", "user@example.local", present=False)
+
+
+def test_set_realm_role_skips_cache_when_idempotent(keycloak_admin_mock):
+    """No Keycloak write, no cache write — the helper is a strict no-op."""
+    role = {"id": "role-id", "name": "mandatory-totp"}
+    keycloak_admin_mock.get_users.return_value = [{"id": "kc-user-id"}]
+    keycloak_admin_mock.get_realm_role_by_id.return_value = role
+    keycloak_admin_mock.get_realm_roles_of_user.return_value = [role]
+
+    with patch.object(keycloak_service, "update_cached_realm_role_member") as upd:
+        keycloak_service.set_realm_role("user@example.local", "role-id", assigned=True)
+        upd.assert_not_called()
+
+
 def test_is_mandatory_totp_enabled():
     """All three settings must be present and the IDP must be Keycloak."""
     with override_settings(
