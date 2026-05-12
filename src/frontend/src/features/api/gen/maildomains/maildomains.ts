@@ -29,6 +29,7 @@ import type {
   MailboxAdmin,
   MailboxAdminCreate,
   MailboxAdminCreatePayloadRequest,
+  MailboxAdminMandatoryTotpPayloadRequest,
   MailboxAdminMandatoryTotpResponse,
   MailboxAdminResetTotpResponse,
   MaildomainsListParams,
@@ -40,7 +41,6 @@ import type {
   PaginatedMailDomainAdminList,
   PaginatedMailboxAdminList,
   PatchedMailboxAdminPartialUpdatePayloadRequest,
-  PatchedMandatoryTotpPayloadRequest,
   PatchedMessageTemplateRequest,
   ReadMessageTemplate,
   ResetPasswordError,
@@ -1428,16 +1428,16 @@ export const getMaildomainsMailboxesSetMandatoryTotpUrl = (
 export const maildomainsMailboxesSetMandatoryTotp = async (
   maildomainPk: string,
   id: string,
-  patchedMandatoryTotpPayloadRequest: PatchedMandatoryTotpPayloadRequest,
+  mailboxAdminMandatoryTotpPayloadRequest: MailboxAdminMandatoryTotpPayloadRequest,
   options?: RequestInit,
 ): Promise<maildomainsMailboxesSetMandatoryTotpResponse> => {
   return fetchAPI<maildomainsMailboxesSetMandatoryTotpResponse>(
     getMaildomainsMailboxesSetMandatoryTotpUrl(maildomainPk, id),
     {
       ...options,
-      method: "PATCH",
+      method: "POST",
       headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(patchedMandatoryTotpPayloadRequest),
+      body: JSON.stringify(mailboxAdminMandatoryTotpPayloadRequest),
     },
   );
 };
@@ -1452,7 +1452,7 @@ export const getMaildomainsMailboxesSetMandatoryTotpMutationOptions = <
     {
       maildomainPk: string;
       id: string;
-      data: PatchedMandatoryTotpPayloadRequest;
+      data: MailboxAdminMandatoryTotpPayloadRequest;
     },
     TContext
   >;
@@ -1463,7 +1463,7 @@ export const getMaildomainsMailboxesSetMandatoryTotpMutationOptions = <
   {
     maildomainPk: string;
     id: string;
-    data: PatchedMandatoryTotpPayloadRequest;
+    data: MailboxAdminMandatoryTotpPayloadRequest;
   },
   TContext
 > => {
@@ -1481,7 +1481,7 @@ export const getMaildomainsMailboxesSetMandatoryTotpMutationOptions = <
     {
       maildomainPk: string;
       id: string;
-      data: PatchedMandatoryTotpPayloadRequest;
+      data: MailboxAdminMandatoryTotpPayloadRequest;
     }
   > = (props) => {
     const { maildomainPk, id, data } = props ?? {};
@@ -1501,7 +1501,7 @@ export type MaildomainsMailboxesSetMandatoryTotpMutationResult = NonNullable<
   Awaited<ReturnType<typeof maildomainsMailboxesSetMandatoryTotp>>
 >;
 export type MaildomainsMailboxesSetMandatoryTotpMutationBody =
-  PatchedMandatoryTotpPayloadRequest;
+  MailboxAdminMandatoryTotpPayloadRequest;
 export type MaildomainsMailboxesSetMandatoryTotpMutationError =
   ErrorType<unknown>;
 
@@ -1516,7 +1516,7 @@ export const useMaildomainsMailboxesSetMandatoryTotp = <
       {
         maildomainPk: string;
         id: string;
-        data: PatchedMandatoryTotpPayloadRequest;
+        data: MailboxAdminMandatoryTotpPayloadRequest;
       },
       TContext
     >;
@@ -1529,7 +1529,7 @@ export const useMaildomainsMailboxesSetMandatoryTotp = <
   {
     maildomainPk: string;
     id: string;
-    data: PatchedMandatoryTotpPayloadRequest;
+    data: MailboxAdminMandatoryTotpPayloadRequest;
   },
   TContext
 > => {

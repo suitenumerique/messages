@@ -3970,7 +3970,7 @@
             }
         },
         "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/{id}/mandatory-totp/": {
-            "patch": {
+            "post": {
                 "operationId": "maildomains_mailboxes_set_mandatory_totp",
                 "description": "Toggle the Keycloak realm role indicated by KEYCLOAK_TOTP_ROLE_ID on the user backing this mailbox.",
                 "parameters": [
@@ -4001,15 +4001,16 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/Patched_MandatoryTotpPayloadRequest"
+                                "$ref": "#/components/schemas/MailboxAdminMandatoryTotpPayloadRequest"
                             }
                         },
                         "multipart/form-data": {
                             "schema": {
-                                "$ref": "#/components/schemas/Patched_MandatoryTotpPayloadRequest"
+                                "$ref": "#/components/schemas/MailboxAdminMandatoryTotpPayloadRequest"
                             }
                         }
-                    }
+                    },
+                    "required": true
                 },
                 "security": [
                     {
@@ -7815,6 +7816,17 @@
                     "metadata"
                 ]
             },
+            "MailboxAdminMandatoryTotpPayloadRequest": {
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "enabled"
+                ]
+            },
             "MailboxAdminMandatoryTotpResponse": {
                 "type": "object",
                 "properties": {
@@ -8832,15 +8844,6 @@
                                 "additionalProperties": false
                             }
                         ]
-                    }
-                }
-            },
-            "Patched_MandatoryTotpPayloadRequest": {
-                "type": "object",
-                "description": "Strict validation for the ``set_mandatory_totp`` request body.",
-                "properties": {
-                    "enabled": {
-                        "type": "boolean"
                     }
                 }
             },

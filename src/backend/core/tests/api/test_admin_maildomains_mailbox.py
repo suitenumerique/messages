@@ -1399,7 +1399,7 @@ class TestAdminMailDomainMailboxViewSet:
             FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
             KEYCLOAK_TOTP_ROLE_ID="role-id-123",
         ):
-            response = api_client.patch(url, data={"enabled": True}, format="json")
+            response = api_client.post(url, data={"enabled": True}, format="json")
 
         username = f"{mailbox1_domain1.local_part}@{mail_domain1.name}"
         assert response.status_code == status.HTTP_200_OK
@@ -1430,7 +1430,7 @@ class TestAdminMailDomainMailboxViewSet:
             FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
             KEYCLOAK_TOTP_ROLE_ID="role-id-123",
         ):
-            response = api_client.patch(url, data={"enabled": False}, format="json")
+            response = api_client.post(url, data={"enabled": False}, format="json")
 
         username = f"{mailbox1_domain1.local_part}@{mail_domain1.name}"
         assert response.status_code == status.HTTP_200_OK
@@ -1464,12 +1464,12 @@ class TestAdminMailDomainMailboxViewSet:
             KEYCLOAK_TOTP_ROLE_ID="role-id-123",
         ):
             # Missing required field
-            response = api_client.patch(url, data={}, format="json")
+            response = api_client.post(url, data={}, format="json")
             assert response.status_code == status.HTTP_400_BAD_REQUEST
 
             # Garbage string accepted by DRF (it parses "true"/"false")
             # so we instead test something that's actually invalid:
-            response = api_client.patch(
+            response = api_client.post(
                 url, data={"enabled": "not-a-bool"}, format="json"
             )
             assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -1499,7 +1499,7 @@ class TestAdminMailDomainMailboxViewSet:
                 KEYCLOAK_TOTP_ROLE_ID="role-id-123",
             ),
         ):
-            response = api_client.patch(url, data={"enabled": True}, format="json")
+            response = api_client.post(url, data={"enabled": True}, format="json")
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         assert "Sensitive internal trace" not in response.data["error"]
@@ -1527,7 +1527,7 @@ class TestAdminMailDomainMailboxViewSet:
             FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
             KEYCLOAK_TOTP_ROLE_ID="role-id-123",
         ):
-            response = api_client.patch(url, data={"enabled": True}, format="json")
+            response = api_client.post(url, data={"enabled": True}, format="json")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -1556,7 +1556,7 @@ class TestAdminMailDomainMailboxViewSet:
             FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
             KEYCLOAK_TOTP_ROLE_ID="role-id-123",
         ):
-            response = api_client.patch(url, data={}, format="json")
+            response = api_client.post(url, data={}, format="json")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         # The error must be about the missing field, not eligibility.
@@ -1583,7 +1583,7 @@ class TestAdminMailDomainMailboxViewSet:
             FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
             KEYCLOAK_TOTP_ROLE_ID="role-id-123",
         ):
-            response = api_client.patch(url, data={"enabled": True}, format="json")
+            response = api_client.post(url, data={"enabled": True}, format="json")
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
@@ -1604,7 +1604,7 @@ class TestAdminMailDomainMailboxViewSet:
             FEATURE_MAILDOMAIN_MANAGE_TOTP=False,
             KEYCLOAK_TOTP_ROLE_ID="role-id-123",
         ):
-            response = api_client.patch(url, data={"enabled": True}, format="json")
+            response = api_client.post(url, data={"enabled": True}, format="json")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -1629,7 +1629,7 @@ class TestAdminMailDomainMailboxViewSet:
             FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
             KEYCLOAK_TOTP_ROLE_ID=None,
         ):
-            response = api_client.patch(url, data={"enabled": True}, format="json")
+            response = api_client.post(url, data={"enabled": True}, format="json")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 

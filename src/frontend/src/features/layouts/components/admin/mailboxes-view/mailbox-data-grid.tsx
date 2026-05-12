@@ -35,9 +35,10 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
     const mailboxes = mailboxesData?.data.results || [];
     const [editedMailbox, setEditedMailbox] = useState<MailboxAdmin | null>(null);
     const [editAction, setEditAction] = useState<MailboxEditAction | null>(null);
-    // Tracks which mailbox row is mid-toggle so we only disable that one switch
-    // (a single global `isPending` would lock every row when any toggle is in flight).
-    const [pendingTotpMailboxId, setPendingTotpMailboxId] = useState<string | null>(null);
+    // Tracks which mailbox rows are mid-toggle so we only disable those switches
+    // (a single global `isPending` would lock every row when any toggle is in flight,
+    // and a scalar would lose the first id when a second toggle starts).
+    const [pendingTotpMailboxIds, setPendingTotpMailboxIds] = useState<Set<string>>(new Set());
     const canManageMailboxes = useAbility(Abilities.CAN_MANAGE_MAILDOMAIN_MAILBOXES, domain);
     const deleteMailboxMutation = useMaildomainsMailboxesDestroy();
     const setMandatoryTotpMutation = useMaildomainsMailboxesSetMandatoryTotp();
@@ -69,7 +70,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
     }
 
     const handleToggleMandatoryTotp = (mailbox: MailboxAdmin, enabled: boolean) => {
-        setPendingTotpMailboxId(mailbox.id);
+        setPendingTotpMailboxIds((prev) => new Set(prev).add(mailbox.id));
         setMandatoryTotpMutation.mutate(
             { maildomainPk: domain.id, id: mailbox.id, data: { enabled } },
             {
@@ -86,14 +87,11 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
                         </ToasterItem>
                     );
                 },
-                onError: () => {
-                    addToast(
-                        <ToasterItem type="error">
-                            <span>{t('Failed to update Mandatory 2FA. Please try again.')}</span>
-                        </ToasterItem>
-                    );
-                },
-                onSettled: () => setPendingTotpMailboxId(null),
+                onSettled: () => setPendingTotpMailboxIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(mailbox.id);
+                    return next;
+                }),
             }
         );
     }
@@ -114,13 +112,6 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
                         <ToasterItem>
                             <Icon name="security" size={IconSize.SMALL} />
                             <span>{t('2FA has been reset for {{mailbox}}.', { mailbox: email })}</span>
-                        </ToasterItem>
-                    );
-                },
-                onError: () => {
-                    addToast(
-                        <ToasterItem type="error">
-                            <span>{t('Failed to reset 2FA. Please try again.')}</span>
                         </ToasterItem>
                     );
                 },
@@ -202,7 +193,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
                 return (
                     <Switch
                         checked={Boolean(row.has_mandatory_totp)}
-                        disabled={!canManageMailboxes || pendingTotpMailboxId === row.id}
+                        disabled={!canManageMailboxes || pendingTotpMailboxIds.has(row.id)}
                         onChange={(event) => handleToggleMandatoryTotp(row, event.target.checked)}
                         aria-label={t('Mandatory 2FA')}
                     />

@@ -6,9 +6,6 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
-/**
- * Strict validation for the ``set_mandatory_totp`` request body.
- */
-export interface PatchedMandatoryTotpPayloadRequest {
-  enabled?: boolean;
+export interface MailboxAdminMandatoryTotpPayloadRequest {
+  enabled: boolean;
 }

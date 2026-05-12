@@ -327,8 +327,16 @@ def reset_keycloak_user_password(username, new_password=None):
         logger.info("Reset password for Keycloak user: %s", username)
         return new_password
 
-    except KeycloakError:
-        logger.exception("Keycloak error resetting password for %s", username)
+    except KeycloakError as e:
+        response_code = getattr(e, "response_code", None)
+        response_body = getattr(e, "response_body", None)
+        logger.exception(
+            "Keycloak error resetting password for %s: %s (status=%s body=%s)",
+            username,
+            e,
+            response_code,
+            response_body,
+        )
         raise
 
 

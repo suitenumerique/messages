@@ -1,5 +1,5 @@
 import { Icon, IconType } from "@gouvfr-lasuite/ui-kit";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useDebounceCallback } from "@/hooks/use-debounce-callback";
 
 type AdminSearchInputProps = {
@@ -25,6 +25,13 @@ export const AdminSearchInput = ({
 }: AdminSearchInputProps) => {
     const [value, setValue] = useState<string>(initialValue);
     const debounced = useDebounceCallback(onChange, DEBOUNCE_MS);
+
+    // Re-sync when the parent resets the query externally (e.g. switching
+    // resources). The typical debounce loop is a no-op here because the
+    // incoming `initialValue` matches `value` once the parent catches up.
+    useEffect(() => {
+        setValue(initialValue);
+    }, [initialValue]);
 
     return (
         <div className="admin-search-input">

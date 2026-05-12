@@ -198,6 +198,7 @@ class AdminMailDomainMailboxViewSet(
         maildomain_pk = self.kwargs.get("maildomain_pk")
         queryset = (
             models.Mailbox.objects.filter(domain_id=maildomain_pk)
+            .select_related("domain")
             .annotate(last_accessed_at=Max("accesses__accessed_at"))
             .order_by("local_part")
         )
@@ -452,7 +453,10 @@ class AdminMailDomainMailboxViewSet(
             "Toggle the Keycloak realm role indicated by KEYCLOAK_TOTP_ROLE_ID "
             "on the user backing this mailbox."
         ),
-        request=_MandatoryTotpPayloadSerializer,
+        request=inline_serializer(
+            name="MailboxAdminMandatoryTotpPayload",
+            fields={"enabled": drf_serializers.BooleanField()},
+        ),
         responses={
             200: inline_serializer(
                 name="MailboxAdminMandatoryTotpResponse",
@@ -460,7 +464,7 @@ class AdminMailDomainMailboxViewSet(
             ),
         },
     )
-    @action(detail=True, methods=["patch"], url_path="mandatory-totp")
+    @action(detail=True, methods=["post"], url_path="mandatory-totp")
     def set_mandatory_totp(self, request, *args, **kwargs):
         """Assign or remove the configured TOTP realm role on the mailbox user."""
         # Validate the payload before doing any per-mailbox work — a malformed
@@ -480,10 +484,12 @@ class AdminMailDomainMailboxViewSet(
             # set_realm_role raises ValueError when the Keycloak user or role
             # can't be found — that's a 404 (resource doesn't exist),
             # not a server fault.
-            logger.warning("Mandatory TOTP target missing for %s: %s", mailbox, e)
+            logger.warning(
+                "Mandatory TOTP target missing for mailbox %s: %s", mailbox.id, e
+            )
             raise NotFound(str(e)) from e
         except Exception:  # pylint: disable=broad-exception-caught
-            logger.exception("Error setting mandatory TOTP for %s", mailbox)
+            logger.exception("Error setting mandatory TOTP for mailbox %s", mailbox.id)
             return Response(
                 {"error": "Could not update mandatory TOTP."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -522,10 +528,12 @@ class AdminMailDomainMailboxViewSet(
         try:
             result = keycloak_service.reset_keycloak_user_totp(str(mailbox))
         except ValueError as e:
-            logger.warning("Reset TOTP target missing for %s: %s", mailbox, e)
+            logger.warning(
+                "Reset TOTP target missing for mailbox %s: %s", mailbox.id, e
+            )
             raise NotFound(str(e)) from e
         except Exception:  # pylint: disable=broad-exception-caught
-            logger.exception("Error resetting TOTP for %s", mailbox)
+            logger.exception("Error resetting TOTP for mailbox %s", mailbox.id)
             return Response(
                 {"error": "Could not reset TOTP."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
