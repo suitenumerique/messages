@@ -1,217 +1,32 @@
 import { vi } from 'vitest';
-import type { Block, InlineContent, StyledText } from '@blocknote/core';
 import { EmailExporter } from './index';
+import {
+  AnyBlock,
+  AnyInlineContent,
+  block,
+  bulletListItem,
+  checkListItem,
+  codeBlock,
+  column,
+  columnList,
+  divider,
+  heading,
+  image,
+  link,
+  numberedListItem,
+  paragraph,
+  quote,
+  styledText,
+  table,
+  tableCell,
+  templateVariable,
+} from '../__tests__/block-factories';
 
 vi.mock('@/features/utils/mail-helper', () => ({
   default: {
     replaceBlobUrlsWithCid: (url: string) => url,
   },
 }));
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyBlock = Block<any, any, any>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyStyledText = StyledText<any>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyInlineContent = InlineContent<any, any>;
-
-// ---------------------------------------------------------------------------
-// Block factories
-// ---------------------------------------------------------------------------
-
-function styledText(
-  text: string,
-  styles: Record<string, unknown> = {},
-): AnyStyledText {
-  return { type: 'text', text, styles } as AnyStyledText;
-}
-
-function link(href: string, text: string): AnyInlineContent {
-  return {
-    type: 'link',
-    href,
-    content: [styledText(text)],
-  } as unknown as AnyInlineContent;
-}
-
-function paragraph(
-  content: AnyInlineContent[] | string,
-  props: Record<string, unknown> = {},
-  children: AnyBlock[] = [],
-): AnyBlock {
-  const inlineContent =
-    typeof content === 'string' ? [styledText(content)] : content;
-  return {
-    id: crypto.randomUUID(),
-    type: 'paragraph',
-    props: { textAlignment: 'left', textColor: 'default', backgroundColor: 'default', ...props },
-    content: inlineContent,
-    children,
-  } as AnyBlock;
-}
-
-function heading(
-  content: AnyInlineContent[] | string,
-  level: number,
-  props: Record<string, unknown> = {},
-  children: AnyBlock[] = [],
-): AnyBlock {
-  const inlineContent =
-    typeof content === 'string' ? [styledText(content)] : content;
-  return {
-    id: crypto.randomUUID(),
-    type: 'heading',
-    props: { level, textAlignment: 'left', textColor: 'default', backgroundColor: 'default', ...props },
-    content: inlineContent,
-    children,
-  } as AnyBlock;
-}
-
-function image(
-  url: string,
-  props: Record<string, unknown> = {},
-): AnyBlock {
-  return {
-    id: crypto.randomUUID(),
-    type: 'image',
-    props: { url, caption: '', name: '', textAlignment: 'left', ...props },
-    content: undefined,
-    children: [],
-  } as unknown as AnyBlock;
-}
-
-function bulletListItem(
-  content: AnyInlineContent[] | string,
-  props: Record<string, unknown> = {},
-  children: AnyBlock[] = [],
-): AnyBlock {
-  const inlineContent =
-    typeof content === 'string' ? [styledText(content)] : content;
-  return {
-    id: crypto.randomUUID(),
-    type: 'bulletListItem',
-    props: { textAlignment: 'left', textColor: 'default', backgroundColor: 'default', ...props },
-    content: inlineContent,
-    children,
-  } as AnyBlock;
-}
-
-function numberedListItem(
-  content: AnyInlineContent[] | string,
-  props: Record<string, unknown> = {},
-  children: AnyBlock[] = [],
-): AnyBlock {
-  const inlineContent =
-    typeof content === 'string' ? [styledText(content)] : content;
-  return {
-    id: crypto.randomUUID(),
-    type: 'numberedListItem',
-    props: { textAlignment: 'left', textColor: 'default', backgroundColor: 'default', ...props },
-    content: inlineContent,
-    children,
-  } as AnyBlock;
-}
-
-function checkListItem(
-  content: AnyInlineContent[] | string,
-  checked: boolean,
-  props: Record<string, unknown> = {},
-  children: AnyBlock[] = [],
-): AnyBlock {
-  const inlineContent =
-    typeof content === 'string' ? [styledText(content)] : content;
-  return {
-    id: crypto.randomUUID(),
-    type: 'checkListItem',
-    props: { checked, textAlignment: 'left', textColor: 'default', backgroundColor: 'default', ...props },
-    content: inlineContent,
-    children,
-  } as AnyBlock;
-}
-
-function codeBlock(
-  content: AnyInlineContent[] | string,
-): AnyBlock {
-  const inlineContent =
-    typeof content === 'string' ? [styledText(content)] : content;
-  return {
-    id: crypto.randomUUID(),
-    type: 'codeBlock',
-    props: {},
-    content: inlineContent,
-    children: [],
-  } as AnyBlock;
-}
-
-function quote(
-  content: AnyInlineContent[] | string,
-  props: Record<string, unknown> = {},
-): AnyBlock {
-  const inlineContent =
-    typeof content === 'string' ? [styledText(content)] : content;
-  return {
-    id: crypto.randomUUID(),
-    type: 'quote',
-    props: { textAlignment: 'left', textColor: 'default', backgroundColor: 'default', ...props },
-    content: inlineContent,
-    children: [],
-  } as AnyBlock;
-}
-
-function divider(): AnyBlock {
-  return {
-    id: crypto.randomUUID(),
-    type: 'divider',
-    props: {},
-    content: undefined,
-    children: [],
-  } as unknown as AnyBlock;
-}
-
-function block(
-  type: string,
-  content?: AnyInlineContent[] | string,
-  props: Record<string, unknown> = {},
-): AnyBlock {
-  const inlineContent =
-    content === undefined
-      ? undefined
-      : typeof content === 'string'
-        ? [styledText(content)]
-        : content;
-  return {
-    id: crypto.randomUUID(),
-    type,
-    props,
-    content: inlineContent,
-    children: [],
-  } as unknown as AnyBlock;
-}
-
-function column(
-  children: AnyBlock[],
-  width: number = 1,
-): AnyBlock {
-  return {
-    id: crypto.randomUUID(),
-    type: 'column',
-    props: { width },
-    content: undefined,
-    children,
-  } as unknown as AnyBlock;
-}
-
-function columnList(
-  columns: AnyBlock[],
-): AnyBlock {
-  return {
-    id: crypto.randomUUID(),
-    type: 'columnList',
-    props: {},
-    content: undefined,
-    children: columns,
-  } as unknown as AnyBlock;
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -578,21 +393,44 @@ describe('EmailExporter', () => {
   // 11. Special blocks
   // -----------------------------------------------------------------------
   describe('special blocks', () => {
-    it('does not render table block', () => {
-      const html = exportBlocks([
-        block('table'),
-      ]);
-      expect(html).not.toContain('<table>');
-    });
-
+    // EmailExporter short-circuits signature/quoted-message regardless of their
+    // `toExternalHTML`: the backend MDA composer embeds the real content.
     it('renders signature as empty <span>', () => {
       const html = exportBlocks([block('signature')]);
       expect(html).toContain('<span');
     });
 
+    it('omits signature props even when populated', () => {
+      const html = exportBlocks([
+        block('signature', undefined, {
+          templateId: 'tpl-uuid',
+          mailboxId: 'mbx-uuid',
+          messageId: 'msg-uuid',
+        }),
+      ]);
+      expect(html).not.toContain('tpl-uuid');
+      expect(html).not.toContain('mbx-uuid');
+      expect(html).not.toContain('msg-uuid');
+    });
+
     it('renders quoted-message as empty <span>', () => {
       const html = exportBlocks([block('quoted-message')]);
       expect(html).toContain('<span');
+    });
+
+    it('omits quoted-message props even when populated', () => {
+      const html = exportBlocks([
+        block('quoted-message', undefined, {
+          subject: 'Confidential subject',
+          sender: 'alice@example.com',
+          recipients: 'bob@example.com',
+          received_at: '2025-01-15T10:00:00Z',
+          textBody: 'Original message body',
+        }),
+      ]);
+      expect(html).not.toContain('Confidential subject');
+      expect(html).not.toContain('alice@example.com');
+      expect(html).not.toContain('Original message body');
     });
 
     it('renders unknown block with content as <div>', () => {
@@ -608,6 +446,38 @@ describe('EmailExporter', () => {
       // Should not produce any visible element
       expect(html).not.toContain('<div>');
       expect(html).not.toContain('empty-block');
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Inline template-variable — InlineTemplateVariable has no toExternalHTML;
+  // EmailExporter handles it explicitly at index.tsx:156-158. These tests
+  // pin the current behavior (literal `{var}` output).
+  // -----------------------------------------------------------------------
+  describe('inline template-variable', () => {
+    it('renders a standalone template-variable as a placeholder span', () => {
+      const html = exportBlocks([
+        paragraph([templateVariable('first_name')]),
+      ]);
+      expect(html).toContain('data-inline-content-type="template-variable"');
+      expect(html).toContain('{first_name}');
+    });
+
+    it('preserves order and styles around an inline template-variable', () => {
+      const html = exportBlocks([
+        paragraph([
+          styledText('Hi '),
+          templateVariable('first_name'),
+          styledText(', welcome!', { bold: true }),
+        ]),
+      ]);
+      const hiIdx = html.indexOf('Hi ');
+      const varIdx = html.indexOf('{first_name}');
+      const welcomeIdx = html.indexOf('welcome!');
+      expect(hiIdx).toBeGreaterThan(-1);
+      expect(varIdx).toBeGreaterThan(hiIdx);
+      expect(welcomeIdx).toBeGreaterThan(varIdx);
+      expect(html).toContain('font-weight:bold');
     });
   });
 
@@ -708,6 +578,293 @@ describe('EmailExporter', () => {
         column([paragraph('Orphan')]),
       ]);
       expect(html).not.toContain('Orphan');
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // 13. Table (paste-only support — see HIDDEN_BLOCK_TYPES)
+  // -----------------------------------------------------------------------
+  describe('table', () => {
+    it('renders a simple 2x2 table with <tbody>, <tr> and <td>', () => {
+      const html = exportBlocks([
+        table([
+          [tableCell('A1'), tableCell('A2')],
+          [tableCell('B1'), tableCell('B2')],
+        ]),
+      ]);
+      expect(html).toContain('<table');
+      expect(html).toContain('<tbody>');
+      expect(html).toContain('<tr>');
+      expect(html).toContain('<td');
+      expect(html).toContain('A1');
+      expect(html).toContain('B2');
+    });
+
+    it('applies border-collapse and word-break on the table', () => {
+      const html = exportBlocks([
+        table([[tableCell('cell')]]),
+      ]);
+      expect(html).toContain('border-collapse:collapse');
+      expect(html).toContain('word-break:break-word');
+    });
+
+    it('applies cell borders and padding', () => {
+      const html = exportBlocks([
+        table([[tableCell('cell')]]),
+      ]);
+      expect(html).toContain('border:1px solid #ddd');
+      expect(html).toContain('padding:5px 10px');
+    });
+
+    it('returns null when content has no rows', () => {
+      const emptyTable = {
+        id: crypto.randomUUID(),
+        type: 'table',
+        props: { textColor: 'default' },
+        content: { type: 'tableContent', columnWidths: [], rows: [] },
+        children: [],
+      } as unknown as AnyBlock;
+      const html = exportBlocks([emptyTable]);
+      expect(html).not.toContain('<table');
+    });
+
+    it('renders header rows as <th> with bold weight', () => {
+      const html = exportBlocks([
+        table(
+          [
+            [tableCell('Header A'), tableCell('Header B')],
+            [tableCell('Body A'), tableCell('Body B')],
+          ],
+          { headerRows: 1 },
+        ),
+      ]);
+      expect(html).toContain('<th');
+      expect(html).toContain('Header A');
+      // Body row should still use <td>
+      expect(html).toContain('<td');
+      // <th> cells should be bold
+      expect(html).toMatch(/<th[^>]*font-weight:bold/);
+    });
+
+    it('renders header columns as <th>', () => {
+      const html = exportBlocks([
+        table(
+          [
+            [tableCell('Row 1 label'), tableCell('Row 1 value')],
+            [tableCell('Row 2 label'), tableCell('Row 2 value')],
+          ],
+          { headerCols: 1 },
+        ),
+      ]);
+      const ths = html.match(/<th[^>]*>/g) || [];
+      expect(ths).toHaveLength(2);
+    });
+
+    it('emits <colgroup> when columnWidths contains explicit pixel widths', () => {
+      const html = exportBlocks([
+        table(
+          [
+            [tableCell('A'), tableCell('B')],
+          ],
+          { columnWidths: [120, 240] },
+        ),
+      ]);
+      expect(html).toContain('<colgroup>');
+      expect(html).toContain('width:120px');
+      expect(html).toContain('width:240px');
+    });
+
+    it('does not emit <colgroup> when every width is undefined', () => {
+      const html = exportBlocks([
+        table(
+          [[tableCell('A'), tableCell('B')]],
+          { columnWidths: [undefined, undefined] },
+        ),
+      ]);
+      expect(html).not.toContain('<colgroup>');
+    });
+
+    it('applies cell-level textColor, backgroundColor and textAlignment', () => {
+      const html = exportBlocks([
+        table([[
+          tableCell('Styled', {
+            textColor: 'red',
+            backgroundColor: 'yellow',
+            textAlignment: 'center',
+          }),
+        ]]),
+      ]);
+      expect(html).toContain('color:#e03e3e');
+      expect(html).toContain('background-color:#fbf3db');
+      expect(html).toContain('text-align:center');
+    });
+
+    it('emits colSpan and rowSpan when greater than 1', () => {
+      const html = exportBlocks([
+        table([
+          [tableCell('Spanning', { colspan: 2, rowspan: 2 })],
+        ]),
+      ]);
+      // HTML attributes are case-insensitive; React 19 preserves camelCase
+      expect(html).toMatch(/colSpan="2"/i);
+      expect(html).toMatch(/rowSpan="2"/i);
+    });
+
+    it('ignores colspan/rowspan of 1', () => {
+      const html = exportBlocks([
+        table([[tableCell('Normal', { colspan: 1, rowspan: 1 })]]),
+      ]);
+      expect(html).not.toMatch(/colSpan=/i);
+      expect(html).not.toMatch(/rowSpan=/i);
+    });
+
+    it('handles legacy cell shape (bare InlineContent[])', () => {
+      const html = exportBlocks([
+        table([
+          [[styledText('Legacy A')], [styledText('Legacy B')]],
+        ]),
+      ]);
+      expect(html).toContain('Legacy A');
+      expect(html).toContain('Legacy B');
+      expect(html).toContain('<td');
+    });
+
+    it('applies table-level textColor', () => {
+      const html = exportBlocks([
+        table(
+          [[tableCell('Blue table')]],
+          { props: { textColor: 'blue' } },
+        ),
+      ]);
+      // textColor on the <table> should produce inline style
+      expect(html).toMatch(/<table[^>]*color:#0b6e99/);
+    });
+
+    it('does not throw on malformed rows and cells', () => {
+      const malformed = {
+        id: crypto.randomUUID(),
+        type: 'table',
+        props: { textColor: 'default' },
+        content: {
+          type: 'tableContent',
+          rows: [
+            { cells: [null, { type: 'tableCell', content: 'invalid' }] },
+            {} as unknown as { cells: unknown[] },
+            null as unknown as { cells: unknown[] },
+            { cells: [tableCell('Survivor')] },
+          ],
+        },
+        children: [],
+      } as unknown as AnyBlock;
+
+      let html = '';
+      expect(() => {
+        html = exportBlocks([malformed]);
+      }).not.toThrow();
+      expect(html).toContain('<table');
+      expect(html).toContain('Survivor');
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // 14. Nested combinations — mixed structures that exercise block recursion
+  // -----------------------------------------------------------------------
+  describe('nested combinations', () => {
+    it('renders a bullet list inside a column', () => {
+      const html = exportBlocks([
+        columnList([
+          column([bulletListItem('Item A'), bulletListItem('Item B')], 1),
+          column([paragraph('Right')], 1),
+        ]),
+      ]);
+      // Both items must appear inside a single <ul> within the first <td>.
+      expect(html).toMatch(/<td[^>]*>[\s\S]*<ul>[\s\S]*Item A[\s\S]*Item B[\s\S]*<\/ul>[\s\S]*<\/td>/);
+      expect(html).toContain('Right');
+    });
+
+    it('renders styled text inside a table cell', () => {
+      const html = exportBlocks([
+        table([
+          [
+            tableCell([
+              styledText('Bold-italic', { bold: true, italic: true }),
+            ]),
+          ],
+        ]),
+      ]);
+      expect(html).toContain('font-weight:bold');
+      expect(html).toContain('font-style:italic');
+      expect(html).toContain('Bold-italic');
+    });
+
+    it('renders a quote containing styled inline content', () => {
+      const html = exportBlocks([
+        quote([
+          styledText('Hello ', { bold: true }),
+          styledText('world', { italic: true }),
+        ]),
+      ]);
+      expect(html).toMatch(/<blockquote[^>]*>[\s\S]*font-weight:bold[\s\S]*font-style:italic[\s\S]*<\/blockquote>/);
+    });
+
+    it('renders nested bullet list inside a numbered list item', () => {
+      const html = exportBlocks([
+        numberedListItem('Parent', {}, [
+          bulletListItem('Nested A'),
+          bulletListItem('Nested B'),
+        ]),
+      ]);
+      // Outer <ol> wrapping a <li> that itself contains an inner <ul>.
+      expect(html).toMatch(/<ol>[\s\S]*<li[\s\S]*Parent[\s\S]*<ul>[\s\S]*Nested A[\s\S]*Nested B[\s\S]*<\/ul>[\s\S]*<\/li>[\s\S]*<\/ol>/);
+    });
+
+    it('renders hard breaks inside list items as <br>', () => {
+      const html = exportBlocks([
+        bulletListItem([styledText('Line one\nLine two')]),
+      ]);
+      expect(html).toMatch(/<li[^>]*>[\s\S]*Line one[\s\S]*<br\/?>[\s\S]*Line two[\s\S]*<\/li>/);
+    });
+
+    it('renders hard breaks inside a quote', () => {
+      const html = exportBlocks([
+        quote([styledText('Quote line 1\nQuote line 2')]),
+      ]);
+      expect(html).toMatch(/<blockquote[^>]*>[\s\S]*Quote line 1[\s\S]*<br\/?>[\s\S]*Quote line 2[\s\S]*<\/blockquote>/);
+    });
+
+    it('flushes a quote child as a sibling after the blockquote', () => {
+      // transformBlocks pushes non-column children AFTER the parent block,
+      // so an image declared as a quote child appears OUTSIDE the <blockquote>.
+      // This pins the current behavior so a future change to recurse inside
+      // the blockquote shape is caught.
+      const html = exportBlocks([
+        quote('Wisdom', {}, [
+          image('https://example.com/quote.jpg', { name: 'photo' }),
+        ]),
+      ]);
+      const blockquoteEnd = html.indexOf('</blockquote>');
+      const imgIdx = html.indexOf('<img');
+      expect(blockquoteEnd).toBeGreaterThan(-1);
+      expect(imgIdx).toBeGreaterThan(blockquoteEnd);
+    });
+
+    it('renders heading + bullet list + paragraph inside a single column', () => {
+      const html = exportBlocks([
+        columnList([
+          column([
+            heading('Section', 2),
+            bulletListItem('First'),
+            bulletListItem('Second'),
+            paragraph('Closing paragraph.'),
+          ], 1),
+          column([paragraph('Sidebar')], 1),
+        ]),
+      ]);
+      expect(html).toContain('<h2');
+      expect(html).toContain('Section');
+      expect(html).toMatch(/<ul>[\s\S]*First[\s\S]*Second[\s\S]*<\/ul>/);
+      expect(html).toContain('Closing paragraph.');
+      expect(html).toContain('Sidebar');
     });
   });
 

@@ -25,7 +25,7 @@ import { DriveFile } from '../message-form/drive-attachment-picker';
 // Re-export for consumers that import from message-composer
 export { ALLOWED_IMAGE_MIME_TYPES } from '@/features/blocknote/image-block';
 
-const BLOCKNOTE_SCHEMA = BlockNoteSchema.create({
+export const BLOCKNOTE_SCHEMA = BlockNoteSchema.create({
     blockSpecs: {
         ...defaultBlockSpecs,
         'image': imageBlockSpec,
