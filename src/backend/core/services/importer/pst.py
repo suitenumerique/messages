@@ -78,6 +78,35 @@ FOLDER_TYPE_DRAFTS = "drafts"
 _CHARSET_RE = re.compile(rb'<meta[^>]+charset=["\']?([^"\';>\s]+)', re.IGNORECASE)
 
 
+class PSTFileUnreadableError(RuntimeError):
+    """The PST file cannot be parsed.
+
+    Raised when the archive is corrupt or its MAPI tree is missing the
+    structures we need (root folder or message store). The wider importer
+    pipeline catches this to surface a user-facing message distinct from
+    the generic processing-error fallback.
+    """
+
+
+def assert_pst_readable(pst_file) -> None:
+    """Probe the PST for the structures the walk relies on.
+
+    Some corrupt archives open without raising, then later fail deep in
+    the traversal with an AttributeError on a NoneType. Touching the root
+    folder and message store up-front turns those late, opaque failures
+    into a single explicit error at task boot.
+    """
+    try:
+        root = pst_file.get_root_folder()
+        _ = root.number_of_sub_folders
+        store = pst_file.get_message_store()
+        _ = store.number_of_record_sets
+    except Exception as exc:
+        raise PSTFileUnreadableError(
+            "PST archive is unreadable: missing root folder or message store."
+        ) from exc
+
+
 def get_mapi_property(item, property_tag):
     """Get a MAPI property entry from an item's record sets by tag."""
     for record_set_idx in range(item.number_of_record_sets):

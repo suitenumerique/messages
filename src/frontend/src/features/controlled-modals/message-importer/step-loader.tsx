@@ -1,13 +1,13 @@
 import { StatusEnum } from "@/features/api/gen";
 import ProgressBar from "@/features/ui/components/progress-bar";
-import { useImportTaskStatus } from "@/hooks/use-import-task";
+import { ImportTaskRecap, useImportTaskStatus } from "@/hooks/use-import-task";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 type StepLoaderProps = {
     taskId: string;
-    onComplete: () => void;
+    onComplete: (recap: ImportTaskRecap) => void;
     onError: (error: string) => void;
 }
 
@@ -46,17 +46,24 @@ export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => 
 
     useEffect(() => {
         if (importStatus?.state === StatusEnum.SUCCESS) {
-            onCompleteRef.current();
+            onCompleteRef.current({
+                successCount: importStatus.successCount,
+                failureCount: importStatus.failureCount,
+                totalMessages: importStatus.totalMessages,
+            });
         } else if (importStatus?.state === StatusEnum.FAILURE) {
             const error = importStatus?.error || '';
             const isAuthError =
                 error.includes("AUTHENTICATIONFAILED") ||
                 error.includes("IMAP authentication failed");
+            const isPstUnreadable = error.includes("PST_UNREADABLE");
 
             const parts: string[] = [];
 
             if (isAuthError) {
                 parts.push(t('Authentication failed. Please check your credentials and ensure you have enabled IMAP connections in your account.'));
+            } else if (isPstUnreadable) {
+                parts.push(t('The PST archive is unreadable: the file is corrupt or its internal structure is incomplete. Retrying will not help — please try to re-generate the archive.'));
             } else {
                 parts.push(t('An error occurred while importing messages.'));
                 if (importStatus.successCount > 0) {

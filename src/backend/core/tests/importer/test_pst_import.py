@@ -39,6 +39,8 @@ from core.services.importer.pst import (
     _decode_html_bytes,
     _extract_recipients_from_mapi,
     _extract_sender_from_mapi,
+    PSTFileUnreadableError,
+    assert_pst_readable,
     count_pst_messages,
     get_mapi_property,
     reconstruct_eml,
@@ -719,6 +721,40 @@ class TestMAPIProperties:
         item.number_of_record_sets = 0
         entry = get_mapi_property(item, 0x3613)
         assert entry is None
+
+
+class TestAssertPSTReadable:
+    """Tests for the early sanity probe on PST archives."""
+
+    def test_passes_on_healthy_archive(self):
+        """A PST with usable root and store passes silently."""
+        pst = Mock()
+        pst.get_root_folder.return_value = Mock(number_of_sub_folders=3)
+        pst.get_message_store.return_value = Mock(number_of_record_sets=1)
+        assert_pst_readable(pst)  # must not raise
+
+    def test_raises_when_root_folder_attribute_is_missing(self):
+        """A None root folder (corrupt header) surfaces as PSTFileUnreadableError."""
+        pst = Mock()
+        pst.get_root_folder.return_value = None
+        pst.get_message_store.return_value = Mock(number_of_record_sets=1)
+        with pytest.raises(PSTFileUnreadableError):
+            assert_pst_readable(pst)
+
+    def test_raises_when_message_store_is_unusable(self):
+        """A None message store also surfaces as PSTFileUnreadableError."""
+        pst = Mock()
+        pst.get_root_folder.return_value = Mock(number_of_sub_folders=3)
+        pst.get_message_store.return_value = None
+        with pytest.raises(PSTFileUnreadableError):
+            assert_pst_readable(pst)
+
+    def test_wraps_underlying_pypff_exception(self):
+        """Exceptions raised by pypff during the probe are wrapped, not leaked."""
+        pst = Mock()
+        pst.get_root_folder.side_effect = OSError("corrupt header")
+        with pytest.raises(PSTFileUnreadableError):
+            assert_pst_readable(pst)
 
 
 # --- Folder identification tests ---

@@ -71,5 +71,14 @@ export function useImportTaskStatus(
     hasKnownTotal,
     currentMessage,
     successCount: taskMetadata?.success_count ?? 0,
+    failureCount: taskMetadata?.failure_count ?? 0,
+    totalMessages: taskMetadata?.total_messages ?? 0,
   };
 }
+
+export type ImportTaskStatus = NonNullable<ReturnType<typeof useImportTaskStatus>>;
+
+export type ImportTaskRecap = Pick<
+  ImportTaskStatus,
+  'successCount' | 'failureCount' | 'totalMessages'
+>;

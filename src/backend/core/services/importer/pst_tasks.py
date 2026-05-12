@@ -27,6 +27,8 @@ from .pst import (
     FOLDER_TYPE_SENT,
     MSGFLAG_READ,
     MSGFLAG_UNSENT,
+    PSTFileUnreadableError,
+    assert_pst_readable,
     build_special_folder_map,
     count_pst_messages,
     get_store_owner_email,
@@ -108,6 +110,10 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             pst.open_file_object(reader)
 
             try:
+                # Fail fast on archives whose MAPI tree is broken — otherwise
+                # the traversal crashes later with an opaque AttributeError.
+                assert_pst_readable(pst)
+
                 # Build special folder map and get store owner email
                 special_folder_map = build_special_folder_map(pst)
                 store_email = get_store_owner_email(pst)
@@ -242,6 +248,24 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
             "status": "SUCCESS",
             "result": result,
             "error": None,
+        }
+
+    except PSTFileUnreadableError as e:
+        logger.warning(
+            "PST file unreadable for recipient %s: %s", recipient_id, e
+        )
+        result = {
+            "message_status": "Failed to process messages",
+            "total_messages": total_messages,
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "type": "pst",
+            "current_message": current_message,
+        }
+        return {
+            "status": "FAILURE",
+            "result": result,
+            "error": f"PST_UNREADABLE: {e}",
         }
 
     except Exception as e:

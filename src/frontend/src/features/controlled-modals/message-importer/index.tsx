@@ -8,6 +8,7 @@ import { StepCompleted } from "./step-completed";
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { TaskImportCacheHelper } from "@/features/utils/task-import-cache";
+import { ImportTaskRecap } from "@/hooks/use-import-task";
 
 
 export const MODAL_MESSAGE_IMPORTER_ID = "modal-message-importer";
@@ -30,6 +31,7 @@ export const ModalMessageImporter = () => {
     const [taskId, setTaskId] = useState<string | null>(taskImportCacheHelper.get());
     const [step, setStep] = useState<IMPORT_STEP>(taskId ? 'importing' : 'idle');
     const [error, setError] = useState<string | null>(null);
+    const [recap, setRecap] = useState<ImportTaskRecap | null>(null);
     const { closeModal } = useModalStore();
 
     // Track Alt key for force-reset on alt+close
@@ -59,9 +61,10 @@ export const ModalMessageImporter = () => {
         closeModal(MODAL_MESSAGE_IMPORTER_ID);
     }
 
-    const handleImportingStepComplete = async () => {
+    const handleImportingStepComplete = async (taskRecap: ImportTaskRecap) => {
         taskImportCacheHelper.remove();
         setTaskId(null);
+        setRecap(taskRecap);
         setStep('completed');
         await Promise.all([
             refetchMailboxes(),
@@ -147,7 +150,7 @@ export const ModalMessageImporter = () => {
                     />
                 )}
                 {step === 'completed' && (
-                    <StepCompleted onClose={handleCompletedStepClose} />
+                    <StepCompleted onClose={handleCompletedStepClose} recap={recap} />
                 )}
             </div>
         </ControlledModal>
