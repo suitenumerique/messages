@@ -409,12 +409,148 @@ function renderBlock(
         case 'quoted-message':
             return <span key={key} />;
 
+        case 'table':
+            return renderTable(block, key);
+
         default:
-            if (content && content.length > 0) {
+            if (Array.isArray(content) && content.length > 0) {
                 return <div key={key}>{renderInlineContent(content)}</div>;
             }
             return null;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Table rendering
+// ---------------------------------------------------------------------------
+
+type TableCellLike = {
+    content: AnyInlineContent[];
+    props?: Record<string, unknown>;
+};
+
+/**
+ * Normalises a BlockNote table cell: cells can be either raw inline content
+ * arrays (legacy) or { type: 'tableCell', content, props } objects.
+ */
+function normalizeTableCell(cell: unknown): TableCellLike {
+    if (Array.isArray(cell)) {
+        return { content: cell as AnyInlineContent[] };
+    }
+    if (!cell || typeof cell !== 'object') {
+        return { content: [] };
+    }
+    const cellObj = cell as { content?: unknown; props?: Record<string, unknown> };
+    return {
+        content: Array.isArray(cellObj.content) ? (cellObj.content as AnyInlineContent[]) : [],
+        props: cellObj.props,
+    };
+}
+
+function tableCellStyle(props: Record<string, unknown> | undefined): CSSProperties {
+    const style: CSSProperties = {
+        border: '1px solid #ddd',
+        padding: '5px 10px',
+        verticalAlign: 'top',
+    };
+    if (!props) return style;
+
+    const alignment = props.textAlignment as string | undefined;
+    if (alignment && alignment !== 'left') {
+        style.textAlign = alignment as CSSProperties['textAlign'];
+    }
+    const textColor = props.textColor as string | undefined;
+    if (textColor && textColor !== 'default') {
+        style.color = COLORS[textColor]?.text || textColor;
+    }
+    const bgColor = props.backgroundColor as string | undefined;
+    if (bgColor && bgColor !== 'default') {
+        style.backgroundColor = COLORS[bgColor]?.background || bgColor;
+    }
+    return style;
+}
+
+/**
+ * Renders a BlockNote table block as an HTML <table>.
+ *
+ * BlockNote tables can use `headerRows` / `headerCols` to mark the leading
+ * rows or columns as headers (rendered as <th>).  Column widths from
+ * `columnWidths` are emitted via a <colgroup> so email clients allocate
+ * space deterministically.
+ */
+function renderTable(block: AnyBlock, key: number): React.ReactNode {
+    const tableContent = block.content as unknown as {
+        type: 'tableContent';
+        columnWidths?: (number | undefined)[];
+        headerRows?: number;
+        headerCols?: number;
+        rows: { cells: unknown[] }[];
+    } | undefined;
+
+    if (!tableContent || !Array.isArray(tableContent.rows) || tableContent.rows.length === 0) {
+        return null;
+    }
+
+    const headerRows = tableContent.headerRows ?? 0;
+    const headerCols = tableContent.headerCols ?? 0;
+    const columnWidths = tableContent.columnWidths || [];
+    const blockProps = block.props as Record<string, unknown>;
+    const blockTextColor = blockProps.textColor as string | undefined;
+
+    const tableStyle: CSSProperties = {
+        borderCollapse: 'collapse',
+        wordBreak: 'break-word',
+    };
+    if (blockTextColor && blockTextColor !== 'default') {
+        tableStyle.color = COLORS[blockTextColor]?.text || blockTextColor;
+    }
+
+    const colgroup = columnWidths.some((w) => typeof w === 'number') ? (
+        <colgroup>
+            {columnWidths.map((w, i) => (
+                <col key={i} style={typeof w === 'number' ? { width: `${w}px` } : undefined} />
+            ))}
+        </colgroup>
+    ) : null;
+
+    return (
+        <table key={key} style={tableStyle}>
+            {colgroup}
+            <tbody>
+                {tableContent.rows.map((row, rowIdx) => {
+                    const cells = Array.isArray(row?.cells) ? row.cells : [];
+                    return (
+                        <tr key={rowIdx}>
+                            {cells.map((rawCell, colIdx) => {
+                                const cell = normalizeTableCell(rawCell);
+                                const isHeader = rowIdx < headerRows || colIdx < headerCols;
+                                const Tag = isHeader ? 'th' : 'td';
+                                const style = tableCellStyle(cell.props);
+                                if (isHeader) {
+                                    style.fontWeight = 'bold';
+                                    if (!style.textAlign) {
+                                        style.textAlign = 'left';
+                                    }
+                                }
+                                const colspan = cell.props?.colspan as number | undefined;
+                                const rowspan = cell.props?.rowspan as number | undefined;
+                                return (
+                                    <Tag
+                                        key={colIdx}
+                                        style={style}
+                                        colSpan={colspan && colspan > 1 ? colspan : undefined}
+                                        rowSpan={rowspan && rowspan > 1 ? rowspan : undefined}
+                                    >
+                                        {renderInlineContent(cell.content)}
+                                    </Tag>
+                                );
+                            })}
+                        </tr>
+                    );
+                })}
+            </tbody>
+        </table>
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Attachment, DraftMessageRequestRequest, draftCreateResponse200, Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate } from "@/features/api/gen";
+import { Attachment, DraftMessageRequestRequest, draftCreateResponse200, Message, sendCreateResponse200, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate, ThreadAccessRoleChoices } from "@/features/api/gen";
 import { MessageComposer, MessageComposerHandle, QuoteType } from "@/features/forms/components/message-composer";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import MailHelper from "@/features/utils/mail-helper";
@@ -86,7 +86,16 @@ export const MessageForm = ({
     const config = useConfig();
     const modals = useModals();
     const composerRef = useRef<MessageComposerHandle>(null);
-    const [draft, setDraft] = useState<Message | undefined>(draftMessage);
+    const [draft, setDraftState] = useState<Message | undefined>(draftMessage);
+    // Synchronous mirror of `draft`. `saveDraftInner` may be re-entered (via
+    // composer onChange firing right after `ensureDraft` resolves) before
+    // React commits the previous setDraft, so the closure-captured `draft`
+    // would be stale and we'd POST a second time instead of PATCH.
+    const draftRef = useRef<Message | undefined>(draftMessage);
+    const setDraft = (next: Message | undefined) => {
+        draftRef.current = next;
+        setDraftState(next);
+    };
     const [preferredSendMode, setPreferredSendMode] = useState<PreferSendMode>(() => {
         if (mode === 'new') return PreferSendMode.SEND;
         return localStorage.getItem(PREFER_SEND_MODE_KEY) as PreferSendMode ?? PreferSendMode.SEND;
@@ -99,16 +108,29 @@ export const MessageForm = ({
     const quoteType: QuoteType | undefined = mode !== "new" ? (mode === "forward" ? "forward" : "reply") : undefined;
     const { selectedMailbox, selectedThread, mailboxes, removeMessages, invalidateMailbox, invalidateThreadsStats, unselectThread, unpinThreads, pinThreads } = useMailboxContext();
     const hideSubjectField = Boolean(draftMessage?.parent_id ?? parentMessage);
-    const defaultSenderId = mailboxes?.find((mailbox) => {
+    // For replies/forwards, only allow sending from a mailbox that has access to the thread.
+    const availableMailboxes = useMemo(() => {
+        if (!mailboxes) return [];
+        if (mode === "new" || !selectedThread) return mailboxes;
+        const allowedMailboxIds = new Set(selectedThread.accesses.filter(access => access.role === ThreadAccessRoleChoices.editor).map((access) => access.mailbox.id));
+        return mailboxes.filter((mailbox) => allowedMailboxIds.has(mailbox.id));
+    }, [mailboxes, mode, selectedThread]);
+    const defaultSenderId = availableMailboxes.find((mailbox) => {
         if (draft?.sender) return draft.sender.email === mailbox.email;
         return selectedMailbox?.id === mailbox.id;
-    })?.id ?? mailboxes?.[0]?.id;
-    const hideFromField = defaultSenderId && (mailboxes?.length ?? 0) === 1;
+    })?.id ?? availableMailboxes[0]?.id;
+    // Effective sender used by reply prefills: defaultSenderId can diverge from
+    // selectedMailbox after the availableMailboxes filter, so recipient filters
+    // and the "reply to self" branch must align on the chosen sender.
+    const replySenderEmail =
+        draft?.sender?.email ??
+        availableMailboxes.find((mailbox) => mailbox.id === defaultSenderId)?.email ??
+        selectedMailbox?.email;
+    const hideFromField = defaultSenderId && availableMailboxes.length === 1;
     const { addQueuedMessage } = useSentBox();
 
     const getMailboxOptions = () => {
-        if (!mailboxes) return [];
-        return mailboxes.map((mailbox) => ({
+        return availableMailboxes.map((mailbox) => ({
             label: mailbox.email,
             value: mailbox.id
         }));
@@ -123,13 +145,13 @@ export const MessageForm = ({
                 { contact: { email: parentMessage.sender.email } },
                 ...parentMessage.to
             ]
-                .filter(({ contact }) => contact.email !== selectedMailbox!.email)
+                .filter(({ contact }) => contact.email !== replySenderEmail)
                 .map(({ contact }) => contact.email)
             )]
         }
         // If the sender is replying to himself, we can consider that it prefers
         // to reply to the message recipient.
-        if (parentMessage.sender.email === selectedMailbox?.email) {
+        if (parentMessage.sender.email === replySenderEmail) {
             if (parentMessage.to.length > 0) {
                 return parentMessage.to.map(({ contact }) => contact.email);
             }
@@ -141,17 +163,17 @@ export const MessageForm = ({
             }
         }
         return [parentMessage.sender.email];
-    }, [parentMessage, mode, selectedMailbox]);
+    }, [parentMessage, mode, replySenderEmail]);
 
     const ccRecipients = useMemo(() => {
         if (draft) return draft.cc.map(({ contact }) => contact.email);
         if (mode === "reply_all" && parentMessage) {
             return parentMessage.cc
-                .filter(({ contact }) => contact.email !== selectedMailbox!.email)
+                .filter(({ contact }) => contact.email !== replySenderEmail)
                 .map(({ contact }) => contact.email);
         }
         return [];
-    }, [parentMessage, mode, draft, selectedMailbox]);
+    }, [parentMessage, mode, draft, replySenderEmail]);
 
     const [showCCField, setShowCCField] = useState(ccRecipients.length > 0);
     const [showBCCField, setShowBCCField] = useState((draftMessage?.bcc?.length ?? 0) > 0);
@@ -186,7 +208,7 @@ export const MessageForm = ({
             driveAttachments: draftDriveAttachments,
             signatureId: draft?.signature?.id,
         }
-    }, [draft, selectedMailbox])
+    }, [draft, defaultSenderId, toRecipients, ccRecipients, parentMessage, mode])
 
     const form = useForm({
         resolver: zodResolver(messageFormSchema),
@@ -443,7 +465,7 @@ export const MessageForm = ({
             bcc: data.bcc ?? [],
             subject: data.subject,
             senderId: data.from,
-            parentId: parentMessage?.id,
+            parentId: parentMessage?.id ?? draft?.parent_id,
             draftBody: MailHelper.attachDriveAttachmentsToDraft(data.messageDraftBody, data.driveAttachments),
             attachments: data.attachments,
             signatureId: data.signatureId ?? null,
@@ -455,16 +477,20 @@ export const MessageForm = ({
                 stopAutoSave();
                 const isDirtyFrom = !!form.formState.dirtyFields.from;
                 form.reset(form.getValues(), { keepSubmitCount: true, keepDirty: false, keepValues: true, keepDefaultValues: false });
-                if (!draft) {
+                // Read the latest draft from the ref rather than the state:
+                // a previous saveDraftInner call may have just created the
+                // draft without React having committed setDraft yet.
+                const currentDraft = draftRef.current;
+                if (!currentDraft) {
                     response = await draftCreateMutation.mutateAsync({
                         data: payload,
                     });
                 } else if (isDirtyFrom) {
                     await handleChangeSender(payload);
-                    return draft?.id;
+                    return currentDraft.id;
                 } else {
                     response = await draftUpdateMutation.mutateAsync({
-                        messageId: draft.id,
+                        messageId: currentDraft.id,
                         data: payload,
                     });
                 }
@@ -474,7 +500,7 @@ export const MessageForm = ({
                 return newDraft.id;
             } catch (error) {
                 console.warn("Error in saveDraft:", error);
-                return draft?.id;
+                return draftRef.current?.id;
             } finally {
                 saveDraftPromiseRef.current = null;
                 startAutoSave();
