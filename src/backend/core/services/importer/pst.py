@@ -32,12 +32,37 @@ PR_SENDER_EMAIL_ADDRESS = 0x0C1F
 PR_SENDER_SMTP_ADDRESS = 0x5D01
 PR_SENDER_ADDRTYPE = 0x0C1E
 
+# MAPI property tags — sent-representing (delegation / shared mailboxes).
+# For internal Exchange messages, PR_SENDER_* may hold the X.500 DN while
+# PR_SENT_REPRESENTING_SMTP_ADDRESS carries the resolvable SMTP.
+PR_SENT_REPRESENTING_NAME = 0x0042
+PR_SENT_REPRESENTING_ADDRTYPE = 0x0064
+PR_SENT_REPRESENTING_EMAIL_ADDRESS = 0x0065
+PR_SENT_REPRESENTING_SMTP_ADDRESS = 0x5D02
+
+# MAPI property tags — creator / last modifier.
+# Last-resort SMTP fallback for messages where every PR_SENDER_* and
+# PR_SENT_REPRESENTING_* slot only holds an X.500 DN. For sent items
+# composed by a delegate of a shared mailbox, these typically carry the
+# delegate's real SMTP — semantically imperfect (the human-facing sender
+# is the shared mailbox) but at least a resolvable contact.
+PR_CREATOR_SMTP_ADDRESS = 0x5D0A
+PR_LAST_MODIFIER_SMTP_ADDRESS = 0x5D0B
+
 # MAPI property tags — recipients
 PR_DISPLAY_NAME = 0x3001
 PR_ADDRTYPE = 0x3002
 PR_EMAIL_ADDRESS = 0x3003
 PR_RECIPIENT_TYPE = 0x0C15
 PR_SMTP_ADDRESS = 0x39FE
+
+# MAPI property tags — pre-formatted "display" recipient strings.
+# Outlook keeps a header-style copy of the To/Cc/Bcc fields as
+# semicolon-separated strings, used as a fallback when pypff exposes an
+# empty recipient table.
+PR_DISPLAY_BCC = 0x0E02
+PR_DISPLAY_CC = 0x0E03
+PR_DISPLAY_TO = 0x0E04
 
 # MAPI property tags — attachments
 PR_ATTACH_LONG_FILENAME = 0x3707
@@ -549,46 +574,89 @@ def _safe_sender_name(message) -> str:
 
 
 def _extract_sender_from_mapi(
-    message, store_email: Optional[str] = None
+    message,
+    store_email: Optional[str] = None,
+    preferred_name: Optional[str] = None,
 ) -> Optional[dict]:
     """Extract sender address from MAPI properties on the message itself.
 
-    Falls back to store_email (the mailbox owner's address from the message store)
-    when no SMTP address can be resolved — common for Exchange (EX) sent items.
+    Order of attempts (first hit wins):
+        1. PR_SENDER_SMTP_ADDRESS (direct, Exchange-resolved)
+        2. PR_SENDER_EMAIL_ADDRESS if it looks like SMTP
+        3. PR_SENT_REPRESENTING_SMTP_ADDRESS (shared mailboxes / delegation)
+        4. PR_SENT_REPRESENTING_EMAIL_ADDRESS if SMTP
+        5. PR_CREATOR_SMTP_ADDRESS / PR_LAST_MODIFIER_SMTP_ADDRESS — usually
+           the actual delegate's SMTP for shared-mailbox sent items
+        6. Parse sender_name as an email address
+        7. store_email (common for EX sent items where only the store owner
+           identifies the sender)
+
+    ``preferred_name`` overrides any name resolved here — used when an upstream
+    header (e.g. transport_headers' From) carried a valid display name but an
+    X.500 DN as the address, so the human-readable name is preserved while the
+    SMTP comes from MAPI.
     """
-    # Try sender SMTP address first
-    addr_type = get_mapi_property_string(message, PR_SENDER_ADDRTYPE)
-    if addr_type and addr_type.upper() == "EX":
-        smtp = get_mapi_property_string(message, PR_SENDER_SMTP_ADDRESS)
-        if smtp and "@" in smtp:
+
+    def _build(
+        fallback_name: Optional[str],
+        smtp: str,
+        *,
+        sender_name_fallback: bool = True,
+    ) -> dict:
+        # ``sender_name`` is only a valid display-name fallback when the SMTP
+        # came from a *different* source (PR_SENDER_*, store_email…). When the
+        # SMTP was itself extracted from ``sender_name``, reusing it as a name
+        # produces a redundant ``"addr" <addr>``.
+        name = preferred_name or fallback_name
+        if not name and sender_name_fallback:
             name = _safe_sender_name(message)
-            return _addr_tuple_to_dict(name, smtp)
+        return _addr_tuple_to_dict(name or "", smtp)
 
-    # Try PR_SENDER_EMAIL_ADDRESS
-    email_addr = get_mapi_property_string(message, PR_SENDER_EMAIL_ADDRESS)
-    if email_addr and "@" in email_addr:
-        name = _safe_sender_name(message)
-        return _addr_tuple_to_dict(name, email_addr)
-
-    # Try PR_SENDER_SMTP_ADDRESS as final fallback
+    # 1. Direct sender SMTP (most reliable when present)
     smtp = get_mapi_property_string(message, PR_SENDER_SMTP_ADDRESS)
     if smtp and "@" in smtp:
-        name = _safe_sender_name(message)
-        return _addr_tuple_to_dict(name, smtp)
+        return _build(None, smtp)
 
-    # Try to parse sender_name as an email address
+    # 2. Direct sender email — only trusted if it looks like SMTP (excludes
+    # Exchange X.500 DNs that lack '@')
+    email_addr = get_mapi_property_string(message, PR_SENDER_EMAIL_ADDRESS)
+    if email_addr and "@" in email_addr:
+        return _build(None, email_addr)
+
+    # 3. Sent-representing SMTP — shared mailboxes ("au nom de") often carry
+    # the resolvable SMTP only here while PR_SENDER_* holds the X.500 DN
+    sr_smtp = get_mapi_property_string(message, PR_SENT_REPRESENTING_SMTP_ADDRESS)
+    if sr_smtp and "@" in sr_smtp:
+        sr_name = get_mapi_property_string(message, PR_SENT_REPRESENTING_NAME)
+        return _build(sr_name, sr_smtp)
+
+    # 4. Sent-representing email as SMTP
+    sr_email = get_mapi_property_string(message, PR_SENT_REPRESENTING_EMAIL_ADDRESS)
+    if sr_email and "@" in sr_email:
+        sr_name = get_mapi_property_string(message, PR_SENT_REPRESENTING_NAME)
+        return _build(sr_name, sr_email)
+
+    # 5. Creator / last-modifier SMTP — last resort before heuristics. For
+    # delegate sends from shared mailboxes this is typically the only
+    # resolvable SMTP available (the shared mailbox's own SMTP lives only
+    # in the GAL, which a PST does not export).
+    for tag in (PR_CREATOR_SMTP_ADDRESS, PR_LAST_MODIFIER_SMTP_ADDRESS):
+        creator_smtp = get_mapi_property_string(message, tag)
+        if creator_smtp and "@" in creator_smtp:
+            return _build(None, creator_smtp)
+
+    # 6. Try to parse sender_name as an email address.
     try:
         if message.sender_name:
-            name, addr = parse_email_address(message.sender_name)
+            parsed_name, addr = parse_email_address(message.sender_name)
             if addr and "@" in addr:
-                return _addr_tuple_to_dict(name, addr)
+                return _build(parsed_name, addr, sender_name_fallback=False)
     except Exception:
         logger.debug("Failed to parse sender_name as email address")
 
-    # Fall back to message store owner email (common for EX sent items)
+    # 7. Fall back to message store owner email (common for EX sent items)
     if store_email:
-        name = _safe_sender_name(message)
-        return _addr_tuple_to_dict(name, store_email)
+        return _build(None, store_email)
 
     return None
 
@@ -649,6 +717,59 @@ def _extract_recipients_from_mapi(message) -> dict:
     return result
 
 
+def _parse_display_recipients(display_string: Optional[str]) -> list:
+    """Parse Outlook's semicolon-separated To/Cc/Bcc display string.
+
+    Returns a list of JMAP address dicts for entries containing an email
+    address. Name-only entries (no '@') are dropped on purpose — a Contact
+    without an email cannot be created downstream, and silently inventing
+    one would corrupt the address book.
+    """
+    if not display_string:
+        return []
+
+    addresses = []
+    for raw in display_string.split(";"):
+        token = raw.strip()
+        if not token:
+            continue
+        try:
+            name, addr = parse_email_address(token)
+        except Exception:
+            logger.debug("Failed to parse display recipient token")
+            continue
+        if addr and "@" in addr:
+            addresses.append(_addr_tuple_to_dict(name or "", addr))
+        elif "@" in token:
+            # parse_email_address sometimes hands back the address as the
+            # name field when the token is a bare email — recover it.
+            addresses.append(_addr_tuple_to_dict("", token))
+        else:
+            logger.debug("Dropping display recipient with no email")
+    return addresses
+
+
+def _extract_display_recipients_from_mapi(message) -> dict:
+    """Fall back to PR_DISPLAY_TO/CC/BCC when the recipient table is empty.
+
+    Some PSTs exported from Exchange Online expose ``number_of_recipients=0``
+    even for messages that clearly went to recipients. The header-style
+    strings still carry whichever addresses Exchange formatted at compose
+    time, so they're our last source of truth before giving up.
+    """
+    return {
+        "to": _parse_display_recipients(
+            get_mapi_property_string(message, PR_DISPLAY_TO)
+        ),
+        "cc": _parse_display_recipients(
+            get_mapi_property_string(message, PR_DISPLAY_CC)
+        ),
+        "bcc": _parse_display_recipients(
+            get_mapi_property_string(message, PR_DISPLAY_BCC)
+        ),
+    }
+
+
 def sanitize_folder_name(name: str, max_length: int = 255) -> str:
     """Sanitize a PST folder name for use as an IMAP label."""
     name = name.strip()
@@ -687,13 +808,48 @@ def _decode_html_bytes(raw_html: bytes) -> str:
     return raw_html.decode("utf-8", errors="replace")
 
 
-def reconstruct_eml(message, store_email: Optional[str] = None) -> bytes:  # pylint: disable=too-many-branches
+def _apply_recipient_fallback_chain(message, jmap_data: dict) -> None:
+    """Fill missing To/Cc/Bcc via MAPI recipient table, then PR_DISPLAY_TO/CC/BCC.
+
+    The recipient table is authoritative. Exchange Online exports often leave
+    it empty even on real messages — PR_DISPLAY_* carries the addresses that
+    Exchange formatted at compose time and is the last source of truth before
+    giving up. Common to both transport-headers and MAPI-only branches.
+    """
+    if all(jmap_data.get(key) for key in ("to", "cc", "bcc")):
+        return
+
+    recipients = _extract_recipients_from_mapi(message)
+    display_recipients = None
+
+    for key in ("to", "cc", "bcc"):
+        if jmap_data.get(key):
+            continue
+        if recipients[key]:
+            jmap_data[key] = recipients[key]
+            continue
+        if display_recipients is None:
+            display_recipients = _extract_display_recipients_from_mapi(message)
+        if display_recipients[key]:
+            jmap_data[key] = display_recipients[key]
+
+
+def reconstruct_eml(
+    message,
+    store_email: Optional[str] = None,
+    recipient_email: Optional[str] = None,
+) -> bytes:  # pylint: disable=too-many-branches
     """Convert a pypff message to RFC5322 bytes.
 
     If transport_headers is available, uses those for threading headers.
     Otherwise, constructs headers from MAPI properties.
     Uses the core/mda/rfc5322 compose_email API for MIME construction.
+
+    ``recipient_email`` is the import target mailbox; its domain is used to
+    synthesize ``unknown-sender@<domain>`` when no sender can be extracted,
+    so the message still composes (``compose_email`` rejects empty ``from``).
     """
+    # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     jmap_data = {}
     extra_headers = {}
 
@@ -707,27 +863,41 @@ def reconstruct_eml(message, store_email: Optional[str] = None) -> bytes:  # pyl
     if transport_headers:
         parsed_headers = message_from_string(transport_headers)
 
-        # From
+        # From — Exchange rewrites internal/shared-mailbox senders as X.500
+        # DNs ("/O=EXCHANGELABS/.../CN=..."). Trust the header only if it
+        # parses to a real SMTP address; otherwise fall back to MAPI below,
+        # preserving the human-readable name from the header.
         from_str = parsed_headers.get("From", "")
+        from_name_hint: Optional[str] = None
         if from_str:
             name, addr = parse_email_address(from_str)
-            jmap_data["from"] = _addr_tuple_to_dict(name, addr)
+            if addr and "@" in addr:
+                jmap_data["from"] = _addr_tuple_to_dict(name, addr)
+            else:
+                from_name_hint = name or None
 
-        # To
+        if "from" not in jmap_data:
+            sender_dict = _extract_sender_from_mapi(
+                message,
+                store_email=store_email,
+                preferred_name=from_name_hint,
+            )
+            if sender_dict:
+                jmap_data["from"] = sender_dict
+
+        # To / Cc / Bcc — header values are authoritative when present.
         to_str = parsed_headers.get("To", "")
         if to_str:
             jmap_data["to"] = [
                 _addr_tuple_to_dict(n, a) for n, a in parse_email_addresses(to_str)
             ]
 
-        # Cc
         cc_str = parsed_headers.get("Cc", "")
         if cc_str:
             jmap_data["cc"] = [
                 _addr_tuple_to_dict(n, a) for n, a in parse_email_addresses(cc_str)
             ]
 
-        # Bcc
         bcc_str = parsed_headers.get("Bcc", "")
         if bcc_str:
             jmap_data["bcc"] = [
@@ -766,15 +936,6 @@ def reconstruct_eml(message, store_email: Optional[str] = None) -> bytes:  # pyl
         if sender_dict:
             jmap_data["from"] = sender_dict
 
-        # Build from MAPI properties — recipients
-        recipients = _extract_recipients_from_mapi(message)
-        if recipients["to"]:
-            jmap_data["to"] = recipients["to"]
-        if recipients["cc"]:
-            jmap_data["cc"] = recipients["cc"]
-        if recipients["bcc"]:
-            jmap_data["bcc"] = recipients["bcc"]
-
         # Date
         try:
             if message.delivery_time:
@@ -784,6 +945,12 @@ def reconstruct_eml(message, store_email: Optional[str] = None) -> bytes:  # pyl
         except Exception:
             logger.debug("Failed to read message date")
 
+    # Recipients fallback chain (MAPI recipient table → PR_DISPLAY_*).
+    # Exchange Online sometimes emits transport headers without To/Cc/Bcc
+    # lines, and PST exports often leave the recipient table empty even on
+    # real messages — this guarantees we capture every available source.
+    _apply_recipient_fallback_chain(message, jmap_data)
+
     # Subject — ensure set even if transport_headers didn't include it
     if "subject" not in jmap_data:
         try:
@@ -792,10 +959,22 @@ def reconstruct_eml(message, store_email: Optional[str] = None) -> bytes:  # pyl
         except Exception:
             logger.debug("Failed to read message subject")
 
-    # Ensure from has a fallback — use empty email so downstream
-    # inbound_create.py applies its domain-aware fallback.
+    # No sender resolvable: synthesize one using the recipient's domain so
+    # compose_email accepts the message. inbound_create.py keeps this value
+    # as-is (it only substitutes when the email is empty).
     if "from" not in jmap_data:
-        jmap_data["from"] = {"name": "", "email": ""}
+        fallback_domain = None
+        if recipient_email and "@" in recipient_email:
+            fallback_domain = recipient_email.rsplit("@", 1)[1]
+        fallback_email = (
+            f"unknown-sender@{fallback_domain}"
+            if fallback_domain
+            else "unknown-sender@localhost"
+        )
+        logger.warning(
+            "PST message has no resolvable sender; using synthesized sender address"
+        )
+        jmap_data["from"] = {"name": "Unknown Sender", "email": fallback_email}
 
     # Body parts
     try:
@@ -941,8 +1120,11 @@ def count_pst_messages(pst_file, special_folder_map: Optional[dict] = None) -> i
 
 
 def walk_pst_messages(
-    pst_file, special_folder_map: dict, store_email: Optional[str] = None
-) -> Generator[Tuple[str, str, int, int, bytes], None, None]:
+    pst_file,
+    special_folder_map: dict,
+    store_email: Optional[str] = None,
+    recipient_email: Optional[str] = None,
+) -> Generator[Tuple[str, str, int, Optional[int], Optional[bytes]], None, None]:
     """Walk all email messages in a PST file, yielding them in chronological order.
 
     First pass: collect lightweight metadata (folder ref + message index).
@@ -953,10 +1135,14 @@ def walk_pst_messages(
         pst_file: An opened pypff file object.
         special_folder_map: Mapping from folder identifiers to folder types.
         store_email: Mailbox owner's email for sender fallback.
+        recipient_email: Import target mailbox email, used as ultimate sender
+            fallback domain when no sender can be extracted.
 
     Yields:
         (folder_type, folder_path, message_flags, flag_status, eml_bytes) tuples
-        sorted chronologically.
+        sorted chronologically. ``eml_bytes`` is ``None`` when the message
+        could not be read from libpff or when EML reconstruction raised; the
+        caller is expected to count those as failures rather than skip them.
     """
     start_folder = _find_ipm_subtree(pst_file)
 
@@ -1066,9 +1252,25 @@ def walk_pst_messages(
     ) in collected:
         try:
             message = folder_ref.get_sub_message(msg_idx)
-            eml_bytes = reconstruct_eml(message, store_email=store_email)
-            yield folder_type, folder_path, flags, flag_status, eml_bytes
         except Exception:
-            logger.debug(
-                "Failed to reconstruct message %d in folder %s", msg_idx, folder_path
+            # Cannot even read the message back from libpff — non-recoverable.
+            logger.warning(
+                "Failed to read message %d in folder %s", msg_idx, folder_path
             )
+            yield folder_type, folder_path, flags, flag_status, None
+            continue
+        try:
+            eml_bytes = reconstruct_eml(
+                message, store_email=store_email, recipient_email=recipient_email
+            )
+        except Exception:
+            # Yield None so pst_tasks.py counts this as a failure instead of
+            # silently dropping it (was hidden at debug level previously).
+            logger.exception(
+                "Failed to reconstruct EML for message %d in folder %s",
+                msg_idx,
+                folder_path,
+            )
+            yield folder_type, folder_path, flags, flag_status, None
+            continue
+        yield folder_type, folder_path, flags, flag_status, eml_bytes

@@ -27,19 +27,30 @@ from core.services.importer.pst import (
     PR_ATTACH_METHOD,
     PR_ATTACH_MIME_TAG,
     PR_CONTAINER_CLASS,
+    PR_CREATOR_SMTP_ADDRESS,
+    PR_DISPLAY_BCC,
+    PR_DISPLAY_CC,
     PR_DISPLAY_NAME,
+    PR_DISPLAY_TO,
     PR_EMAIL_ADDRESS,
     PR_FLAG_STATUS,
+    PR_LAST_MODIFIER_SMTP_ADDRESS,
     PR_MESSAGE_FLAGS,
     PR_RECIPIENT_TYPE,
     PR_SENDER_ADDRTYPE,
     PR_SENDER_EMAIL_ADDRESS,
     PR_SENDER_SMTP_ADDRESS,
+    PR_SENT_REPRESENTING_ADDRTYPE,
+    PR_SENT_REPRESENTING_EMAIL_ADDRESS,
+    PR_SENT_REPRESENTING_NAME,
+    PR_SENT_REPRESENTING_SMTP_ADDRESS,
     PR_SMTP_ADDRESS,
+    PSTFileUnreadableError,
     _decode_html_bytes,
+    _extract_display_recipients_from_mapi,
     _extract_recipients_from_mapi,
     _extract_sender_from_mapi,
-    PSTFileUnreadableError,
+    _parse_display_recipients,
     assert_pst_readable,
     count_pst_messages,
     get_mapi_property,
@@ -532,6 +543,80 @@ class TestReconstructEml:
         assert isinstance(eml_bytes, bytes)
         assert len(eml_bytes) > 0
 
+    def test_reconstruct_no_sender_uses_recipient_domain_fallback(self):
+        """Without any extractable sender, fall back to recipient's domain.
+
+        Regression: previously an empty 'from' was set, which made
+        compose_email raise and the importer silently dropped messages.
+        """
+        msg = _make_message(
+            subject="Orphan",
+            sender_name=None,
+            transport_headers=None,
+            plain_text_body="No sender here",
+        )
+        eml_bytes = reconstruct_eml(msg, recipient_email="target@example.org")
+        parsed = email.message_from_bytes(eml_bytes)
+
+        assert "unknown-sender@example.org" in parsed["From"]
+        assert "Unknown Sender" in parsed["From"]
+
+    def test_reconstruct_shared_mailbox_delegate_uses_creator_smtp(
+        self, shared_mailbox_delegate_send_message
+    ):
+        """Reproduces the real-world PST dump: an Contact shared mailbox
+        Sent Item where every SENDER/SENT_REPRESENTING address is an X.500
+        DN. The only resolvable SMTP is PR_CREATOR_SMTP_ADDRESS — that's
+        what must end up in the EML From, keeping 'Contact' as the name."""
+        eml_bytes = reconstruct_eml(
+            shared_mailbox_delegate_send_message,
+            recipient_email="target@example.org",
+        )
+        parsed = email.message_from_bytes(eml_bytes)
+
+        assert "john@acme.org" in parsed["From"]
+        assert "Contact" in parsed["From"]
+        # The X.500 garbage must NOT bleed through
+        assert "EXCHANGELABS" not in parsed["From"]
+        # And we must not have hit the unknown-sender fallback
+        assert "unknown-sender" not in parsed["From"]
+        # PR_DISPLAY_TO must surface as the To: header since the recipient
+        # table is empty in this Exchange Online export.
+        assert "recipient@hotmail.fr" in parsed["To"]
+
+    def test_reconstruct_transport_x500_from_resolves_via_sent_representing(self):
+        """Exchange shared-mailbox case: transport_headers has the X.500 DN
+        but PR_SENT_REPRESENTING_SMTP_ADDRESS holds the real SMTP.
+
+        Regression: previously the X.500 DN flowed straight into the EML
+        From header, producing an invalid contact downstream.
+        """
+        transport = (
+            "From: Contact </O=EXCHANGELABS/OU=GRP/CN=RECIPIENTS/CN=ABC123>\r\n"
+            "To: user@example.org\r\n"
+            "Subject: Internal\r\n"
+        )
+        sender_entries = [
+            _make_mapi_entry(
+                PR_SENT_REPRESENTING_SMTP_ADDRESS,
+                data_as_string="Contact@example.com",
+            ),
+            _make_mapi_entry(
+                PR_SENT_REPRESENTING_NAME, data_as_string="Contact (MAPI)"
+            ),
+        ]
+        msg = _make_message(
+            transport_headers=transport,
+            sender_mapi_entries=sender_entries,
+        )
+        eml_bytes = reconstruct_eml(msg, recipient_email="user@example.org")
+        parsed = email.message_from_bytes(eml_bytes)
+
+        assert "Contact@example.com" in parsed["From"]
+        # Name from transport header wins over MAPI name
+        assert "Contact" in parsed["From"]
+        assert "EXCHANGELABS" not in parsed["From"]
+
 
 # --- HTML encoding tests ---
 
@@ -636,6 +721,72 @@ class TestSenderExtraction:
         result = _extract_sender_from_mapi(msg)
         assert result is None
 
+    def test_sent_representing_smtp_used_when_sender_is_x500(self):
+        """Shared-mailbox sender: PR_SENDER_* is X.500, SMTP only on
+        PR_SENT_REPRESENTING_*. The representing SMTP must win."""
+        entries = [
+            _make_mapi_entry(PR_SENDER_ADDRTYPE, data_as_string="EX"),
+            _make_mapi_entry(
+                PR_SENDER_EMAIL_ADDRESS,
+                data_as_string="/O=EXCHANGELABS/OU=GRP/CN=RECIPIENTS/CN=ABC123",
+            ),
+            _make_mapi_entry(
+                PR_SENT_REPRESENTING_SMTP_ADDRESS,
+                data_as_string="Contact@example.com",
+            ),
+            _make_mapi_entry(PR_SENT_REPRESENTING_NAME, data_as_string="Contact"),
+        ]
+        rs = _make_record_set(entries)
+        msg = Mock()
+        msg.sender_name = "Some User"
+        msg.number_of_record_sets = 1
+        msg.get_record_set = lambda idx: rs
+
+        result = _extract_sender_from_mapi(msg)
+        assert result is not None
+        assert result["email"] == "Contact@example.com"
+        assert result["name"] == "Contact"
+
+    def test_sent_representing_email_used_when_smtp_missing(self):
+        """Fallback to PR_SENT_REPRESENTING_EMAIL_ADDRESS if it looks SMTP."""
+        entries = [
+            _make_mapi_entry(PR_SENDER_EMAIL_ADDRESS, data_as_string="/O=ORG/CN=user"),
+            _make_mapi_entry(
+                PR_SENT_REPRESENTING_EMAIL_ADDRESS,
+                data_as_string="rep@example.com",
+            ),
+        ]
+        rs = _make_record_set(entries)
+        msg = Mock()
+        msg.sender_name = ""
+        msg.number_of_record_sets = 1
+        msg.get_record_set = lambda idx: rs
+
+        result = _extract_sender_from_mapi(msg)
+        assert result is not None
+        assert result["email"] == "rep@example.com"
+
+    def test_preferred_name_overrides_mapi_name(self):
+        """A transport-header display name takes precedence over MAPI names
+        (used when transport_headers' From had a valid name but X.500 email)."""
+        entries = [
+            _make_mapi_entry(
+                PR_SENT_REPRESENTING_SMTP_ADDRESS,
+                data_as_string="Contact@example.com",
+            ),
+            _make_mapi_entry(PR_SENT_REPRESENTING_NAME, data_as_string="Wrong Name"),
+        ]
+        rs = _make_record_set(entries)
+        msg = Mock()
+        msg.sender_name = ""
+        msg.number_of_record_sets = 1
+        msg.get_record_set = lambda idx: rs
+
+        result = _extract_sender_from_mapi(msg, preferred_name="Contact RH")
+        assert result is not None
+        assert result["email"] == "Contact@example.com"
+        assert result["name"] == "Contact RH"
+
 
 # --- Recipient extraction tests ---
 
@@ -694,6 +845,182 @@ class TestRecipientExtraction:
         result = _extract_recipients_from_mapi(msg)
         assert len(result["to"]) == 1
         assert result["to"][0]["email"] == "jane@corp.com"
+
+
+# --- Display recipient (PR_DISPLAY_TO/CC/BCC) tests ---
+
+
+class TestDisplayRecipients:
+    """Tests for the PR_DISPLAY_TO/CC/BCC fallback parser."""
+
+    def test_parse_single_email(self):
+        """A bare email address yields a single recipient."""
+        result = _parse_display_recipients("user@example.com")
+        assert result == [{"name": "", "email": "user@example.com"}]
+
+    def test_parse_semicolon_separated(self):
+        """Outlook uses ';' between recipients (not ',')."""
+        result = _parse_display_recipients("alice@example.com; bob@example.com")
+        emails = [r["email"] for r in result]
+        assert emails == ["alice@example.com", "bob@example.com"]
+
+    def test_parse_name_with_email(self):
+        """RFC-style `Name <email>` is honoured."""
+        result = _parse_display_recipients("Alice <alice@example.com>")
+        assert result == [{"name": "Alice", "email": "alice@example.com"}]
+
+    def test_parse_drops_name_only_entries(self):
+        """Name-only tokens (no '@') are intentionally dropped — creating a
+        Contact without an email would fail downstream validation."""
+        result = _parse_display_recipients("John Doe; jane@example.com")
+        assert len(result) == 1
+        assert result[0]["email"] == "jane@example.com"
+
+    def test_parse_empty_or_none(self):
+        """Empty / None input returns an empty list, not an exception."""
+        assert not _parse_display_recipients(None)
+        assert not _parse_display_recipients("")
+        assert not _parse_display_recipients("   ")
+
+    def test_parse_recovers_bare_email_when_parser_returns_empty_addr(self):
+        """If parse_email_address returns no usable address but the original
+        token contains '@', the token itself is salvaged as the email — guards
+        against flanker quirks where the address ends up in the name slot."""
+        with patch(
+            "core.services.importer.pst.parse_email_address",
+            return_value=("", ""),
+        ):
+            result = _parse_display_recipients("salvage@example.com")
+        assert result == [{"name": "", "email": "salvage@example.com"}]
+
+    def test_extract_display_recipients_all_buckets(self):
+        """PR_DISPLAY_TO/CC/BCC each populate their bucket."""
+        entries = [
+            _make_mapi_entry(PR_DISPLAY_TO, data_as_string="to@example.com"),
+            _make_mapi_entry(PR_DISPLAY_CC, data_as_string="cc@example.com"),
+            _make_mapi_entry(PR_DISPLAY_BCC, data_as_string="bcc@example.com"),
+        ]
+        rs = _make_record_set(entries)
+        msg = Mock()
+        msg.number_of_record_sets = 1
+        msg.get_record_set = lambda idx: rs
+
+        result = _extract_display_recipients_from_mapi(msg)
+        assert result["to"][0]["email"] == "to@example.com"
+        assert result["cc"][0]["email"] == "cc@example.com"
+        assert result["bcc"][0]["email"] == "bcc@example.com"
+
+    def test_extract_display_recipients_when_absent(self):
+        """Missing display strings yield empty buckets (no exception)."""
+        msg = Mock()
+        msg.number_of_record_sets = 0
+        result = _extract_display_recipients_from_mapi(msg)
+        assert result == {"to": [], "cc": [], "bcc": []}
+
+    def test_reconstruct_falls_back_to_display_to_when_table_empty(self):
+        """End-to-end: empty MAPI recipient table + PR_DISPLAY_TO → To set."""
+        sender_entries = [
+            _make_mapi_entry(
+                PR_SENDER_EMAIL_ADDRESS, data_as_string="sender@example.com"
+            ),
+            _make_mapi_entry(PR_SENDER_ADDRTYPE, data_as_string="SMTP"),
+            _make_mapi_entry(PR_DISPLAY_TO, data_as_string="target@example.org"),
+        ]
+        msg = _make_message(
+            sender_name="Sender",
+            transport_headers=None,
+            plain_text_body="hi",
+            sender_mapi_entries=sender_entries,
+        )
+        eml_bytes = reconstruct_eml(msg, recipient_email="me@example.org")
+        parsed = email.message_from_bytes(eml_bytes)
+        assert "target@example.org" in parsed["To"]
+
+    def test_reconstruct_recipient_table_wins_over_display(self):
+        """When the MAPI recipient table is populated, PR_DISPLAY_TO is
+        ignored (the table is the authoritative source)."""
+        sender_entries = [
+            _make_mapi_entry(
+                PR_SENDER_EMAIL_ADDRESS, data_as_string="sender@example.com"
+            ),
+            _make_mapi_entry(PR_SENDER_ADDRTYPE, data_as_string="SMTP"),
+            _make_mapi_entry(PR_DISPLAY_TO, data_as_string="display@example.org"),
+        ]
+        recipient = _make_recipient("Real", "real@example.org", recip_type=1)
+        msg = _make_message(
+            sender_name="Sender",
+            transport_headers=None,
+            plain_text_body="hi",
+            recipients=[recipient],
+            sender_mapi_entries=sender_entries,
+        )
+        eml_bytes = reconstruct_eml(msg, recipient_email="me@example.org")
+        parsed = email.message_from_bytes(eml_bytes)
+        assert "real@example.org" in parsed["To"]
+        assert "display@example.org" not in parsed["To"]
+
+    def test_reconstruct_transport_headers_fall_back_to_display_when_empty(self):
+        """transport_headers exist but carry no To/Cc/Bcc — fall back to the
+        PR_DISPLAY_TO/CC/BCC strings (same chain as the no-headers branch)."""
+        transport = "From: sender@example.com\r\nSubject: Headers w/o recipients\r\n"
+        sender_entries = [
+            _make_mapi_entry(PR_DISPLAY_TO, data_as_string="target@example.org"),
+            _make_mapi_entry(PR_DISPLAY_CC, data_as_string="copy@example.org"),
+        ]
+        msg = _make_message(
+            transport_headers=transport,
+            plain_text_body="hi",
+            sender_mapi_entries=sender_entries,
+        )
+        eml_bytes = reconstruct_eml(msg, recipient_email="me@example.org")
+        parsed = email.message_from_bytes(eml_bytes)
+        assert "target@example.org" in parsed["To"]
+        assert "copy@example.org" in parsed["Cc"]
+
+    def test_reconstruct_transport_recipients_win_over_display_fallback(self):
+        """When transport_headers carry recipients, PR_DISPLAY_* is ignored —
+        the header is authoritative, the display strings are only a fallback."""
+        transport = (
+            "From: sender@example.com\r\n"
+            "To: header@example.org\r\n"
+            "Subject: Headers with recipients\r\n"
+        )
+        sender_entries = [
+            _make_mapi_entry(PR_DISPLAY_TO, data_as_string="display@example.org"),
+        ]
+        msg = _make_message(
+            transport_headers=transport,
+            plain_text_body="hi",
+            sender_mapi_entries=sender_entries,
+        )
+        eml_bytes = reconstruct_eml(msg, recipient_email="me@example.org")
+        parsed = email.message_from_bytes(eml_bytes)
+        assert "header@example.org" in parsed["To"]
+        assert "display@example.org" not in parsed["To"]
+
+    def test_reconstruct_fills_missing_cc_bcc_when_to_present_in_headers(self):
+        """Header gives To only — Cc must come from MAPI table, Bcc from
+        PR_DISPLAY_BCC. Each field is filled independently."""
+        transport = (
+            "From: sender@example.com\r\n"
+            "To: header@example.org\r\n"
+            "Subject: Partial headers\r\n"
+        )
+        sender_entries = [
+            _make_mapi_entry(PR_DISPLAY_BCC, data_as_string="bcc@example.org"),
+        ]
+        cc_recipient = _make_recipient("CC", "cc@example.org", recip_type=2)
+        msg = _make_message(
+            transport_headers=transport,
+            plain_text_body="hi",
+            recipients=[cc_recipient],
+            sender_mapi_entries=sender_entries,
+        )
+        eml_bytes = reconstruct_eml(msg, recipient_email="me@example.org")
+        parsed = email.message_from_bytes(eml_bytes)
+        assert "header@example.org" in parsed["To"]
+        assert "cc@example.org" in parsed["Cc"]
+        assert "bcc@example.org" in parsed["Bcc"]
 
 
 # --- MAPI property tests ---
@@ -1293,6 +1620,50 @@ class TestProcessPstFileTask:
             except Exception:
                 pass
 
+    def test_process_pst_unreadable_surfaces_dedicated_error(self, mailbox):
+        """When the readability probe rejects the archive, the task must:
+            - return FAILURE,
+            - prefix the error with ``PST_UNREADABLE:`` so the frontend can
+              show its dedicated message (instead of the generic fallback),
+            - leave success/failure counters at 0 (we never started walking).
+
+        We feed a real, valid PST so the upstream ``pypff.open_file_object``
+        call succeeds and we exercise the new ``except PSTFileUnreadableError``
+        branch specifically, not the generic ``except Exception`` path.
+        """
+        file_key, storage, s3_client = _upload_pst_to_s3("sample.pst")
+
+        try:
+            mock_task = MagicMock()
+            with (
+                patch(
+                    "core.services.importer.pst_tasks.assert_pst_readable",
+                    side_effect=PSTFileUnreadableError(
+                        "PST archive is unreadable: missing root folder or message store."
+                    ),
+                ),
+                patch.object(
+                    process_pst_file_task, "update_state", mock_task.update_state
+                ),
+            ):
+                result = process_pst_file_task(
+                    file_key=file_key,
+                    recipient_id=str(mailbox.id),
+                )
+
+            assert result["status"] == "FAILURE"
+            assert result["result"]["type"] == "pst"
+            assert result["error"].startswith("PST_UNREADABLE:")
+            # No traversal happened, so the counters must be untouched.
+            assert result["result"]["success_count"] == 0
+            assert result["result"]["failure_count"] == 0
+            assert Message.objects.count() == 0
+        finally:
+            try:
+                s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
+            except Exception:
+                pass
+
     def test_process_malformed_pst(self, mailbox):
         """Test that random bytes as PST file returns FAILURE gracefully."""
         storage = storages["message-imports"]
@@ -1389,3 +1760,39 @@ class TestRecursionDepthLimit:
         count = count_pst_messages(pst, {})
         # The message is beyond MAX_FOLDER_DEPTH, so it should be excluded
         assert count == 0
+
+
+@pytest.fixture
+def shared_mailbox_delegate_send_message():
+    """Replays the real-world PST dump shared by the user.
+
+    A Sent Item from a shared mailbox ("Contact") composed by a delegate
+    (john@acme.org). Every PR_SENDER_* and PR_SENT_REPRESENTING_* slot is
+    an Exchange X.500 DN; only PR_CREATOR_SMTP_ADDRESS (0x5D0A) and
+    PR_LAST_MODIFIER_SMTP_ADDRESS (0x5D0B) carry a resolvable SMTP — the
+    delegate's. ``transport_headers`` is absent (typical for items kept
+    purely in Exchange's MAPI store), and the recipient table is empty.
+    """
+    x500_dn = (
+        "/O=EXCHANGELABS/OU=EXCHANGE ADMINISTRATIVE GROUP "
+        "(FDSW829FE)/CN=RECIPIENTS/CN=B5FE3C24D9C646DC84FFFF1AB4ACC2A7"
+    )
+    sender_entries = [
+        _make_mapi_entry(PR_SENDER_ADDRTYPE, data_as_string="EX"),
+        _make_mapi_entry(PR_SENDER_EMAIL_ADDRESS, data_as_string=x500_dn),
+        _make_mapi_entry(PR_SENT_REPRESENTING_NAME, data_as_string="Contact"),
+        _make_mapi_entry(PR_SENT_REPRESENTING_ADDRTYPE, data_as_string="EX"),
+        _make_mapi_entry(PR_SENT_REPRESENTING_EMAIL_ADDRESS, data_as_string=x500_dn),
+        _make_mapi_entry(PR_CREATOR_SMTP_ADDRESS, data_as_string="john@acme.org"),
+        _make_mapi_entry(PR_LAST_MODIFIER_SMTP_ADDRESS, data_as_string="john@acme.org"),
+        # Recipient table is empty in the real dump; PR_DISPLAY_TO carries
+        # the addressee as a header-style string.
+        _make_mapi_entry(PR_DISPLAY_TO, data_as_string="recipient@hotmail.fr"),
+    ]
+    return _make_message(
+        subject="Devis repassage",
+        sender_name="Contact",
+        transport_headers=None,
+        plain_text_body="Bonjour, veuillez trouver ci-joint le devis signé.",
+        sender_mapi_entries=sender_entries,
+    )

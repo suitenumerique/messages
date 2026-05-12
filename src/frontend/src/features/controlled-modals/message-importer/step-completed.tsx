@@ -35,15 +35,6 @@ export const StepCompleted = ({ onClose, recap }: StepCompletedProps) => {
                 {hasRecap && (
                     <p className="importer-completed__percent">
                         {t('{{progress}}% imported', { progress: successPercent })}
-                        {showFailureWarning && (
-                            <span
-                                className="material-icons importer-completed__percent-warning"
-                                aria-label={t('High failure rate')}
-                                title={t('High failure rate')}
-                            >
-                                report_problem
-                            </span>
-                        )}
                     </p>
                 )}
             </div>
@@ -64,6 +55,15 @@ export const StepCompleted = ({ onClose, recap }: StepCompletedProps) => {
                             <span>
                                 {t('Failed: {{count}} messages', { count: failure })}
                             </span>
+                            {showFailureWarning && (
+                                <span
+                                    className="material-icons importer-completed__percent-warning"
+                                    aria-label={t('High failure rate')}
+                                    title={t('High failure rate')}
+                                >
+                                    report_problem
+                                </span>
+                            )}
                         </li>
                     )}
                 </ul>

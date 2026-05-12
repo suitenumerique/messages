@@ -137,10 +137,37 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
                         flag_status,
                         eml_bytes,
                     ) in walk_pst_messages(
-                        pst, special_folder_map, store_email=store_email
+                        pst,
+                        special_folder_map,
+                        store_email=store_email,
+                        recipient_email=str(recipient),
                     ):
                         current_message += 1
+                        result = {
+                            "message_status": (
+                                f"Processing message {current_message}"
+                                f" of {total_messages}"
+                            ),
+                            "total_messages": total_messages,
+                            "success_count": success_count,
+                            "failure_count": failure_count,
+                            "type": "pst",
+                            "current_message": current_message,
+                        }
+                        self.update_state(
+                            state="PROGRESS",
+                            meta={
+                                "result": result,
+                                "error": None,
+                            },
+                        )
                         try:
+                            # Reconstruction failed upstream — already logged
+                            # by walk_pst_messages; count it as a failure here
+                            # so the task reports it instead of swallowing it.
+                            if eml_bytes is None:
+                                failure_count += 1
+                                continue
                             # Check message size limit
                             if len(eml_bytes) > settings.MAX_INCOMING_EMAIL_SIZE:
                                 logger.warning(
@@ -149,25 +176,6 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
                                 )
                                 failure_count += 1
                                 continue
-
-                            result = {
-                                "message_status": (
-                                    f"Processing message {current_message}"
-                                    f" of {total_messages}"
-                                ),
-                                "total_messages": total_messages,
-                                "success_count": success_count,
-                                "failure_count": failure_count,
-                                "type": "pst",
-                                "current_message": current_message,
-                            }
-                            self.update_state(
-                                state="PROGRESS",
-                                meta={
-                                    "result": result,
-                                    "error": None,
-                                },
-                            )
 
                             parsed_email = parse_email_message(eml_bytes)
 
@@ -251,9 +259,7 @@ def process_pst_file_task(self, file_key: str, recipient_id: str) -> Dict[str, A
         }
 
     except PSTFileUnreadableError as e:
-        logger.warning(
-            "PST file unreadable for recipient %s: %s", recipient_id, e
-        )
+        logger.warning("PST file unreadable for recipient %s: %s", recipient_id, e)
         result = {
             "message_status": "Failed to process messages",
             "total_messages": total_messages,

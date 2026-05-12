@@ -84,9 +84,14 @@ test.describe("Import Message", () => {
       return false;
     });
 
+    // New completion UI: badge + heading + per-archive stats.
+    await expect(page.getByText("Import complete")).toBeVisible();
+    await expect(page.getByText("100% imported")).toBeVisible();
     await expect(
-      page.getByText("Your messages have been imported successfully!")
+      page.getByText("Imported: 1 of 1 messages")
     ).toBeVisible();
+    // A single-message archive must not trip the failure warning.
+    await expect(page.getByLabel("High failure rate")).toHaveCount(0);
 
     const closeButton = page.getByRole("button", {
       name: "Close",
