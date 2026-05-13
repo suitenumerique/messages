@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import secrets
 import uuid
 
 from django.conf import settings
@@ -16,6 +17,14 @@ from rest_framework.exceptions import PermissionDenied
 
 from core import enums, models
 from core.mda.rfc5322 import extract_base64_images_from_html
+
+# Base58 alphabet — no ambiguous characters (0, O, I, l)
+BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def generate_base58_password(length=16):
+    """Generate a password using base58 alphabet. 16 chars ≈ 94 bits of entropy."""
+    return "".join(secrets.choice(BASE58_ALPHABET) for _ in range(length))
 
 
 class CreateOnlyFieldsMixin:
@@ -1667,6 +1676,93 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             instance._generated_api_key = generated_api_key  # noqa: SLF001
         return instance
 
+    # Keys in settings that should be moved to encrypted_settings, per channel type.
+    # Note: client-bridge is NOT listed here — its passwords are always
+    # server-generated (on create or via rotate-password), never user-supplied.
+    ENCRYPTED_SETTINGS_KEYS = {}
+
+    def _move_sensitive_settings(self, validated_data):
+        """Move sensitive keys from settings to encrypted_settings."""
+        channel_type = validated_data.get("type") or (
+            self.instance.type if self.instance else None
+        )
+        keys_to_encrypt = self.ENCRYPTED_SETTINGS_KEYS.get(channel_type, [])
+        if not keys_to_encrypt:
+            return validated_data
+
+        settings_data = validated_data.get("settings")
+        if not settings_data:
+            return validated_data
+
+        extracted = {
+            key: settings_data[key] for key in keys_to_encrypt if key in settings_data
+        }
+        if extracted:
+            # Remove extracted keys from settings without mutating during iteration
+            for key in extracted:
+                del settings_data[key]
+            existing = (self.instance.encrypted_settings or {}) if self.instance else {}
+            validated_data["encrypted_settings"] = {**existing, **extracted}
+
+        return validated_data
+
+    @staticmethod
+    def _resolve_client_bridge_scopes(settings_data):
+        """Convert a client-bridge ``role`` shorthand into canonical scopes.
+
+        Accepts either ``settings.role`` (convenience) or ``settings.scopes``
+        (explicit).  When both are given, ``scopes`` wins.  The ``role`` key
+        is always removed — scopes are the single source of truth at rest.
+        """
+        role = settings_data.pop("role", None)
+        if "scopes" not in settings_data:
+            role = role or "sender"
+            if role not in enums.CLIENT_BRIDGE_ROLE_SCOPES:
+                raise serializers.ValidationError(
+                    {
+                        "settings": {
+                            "role": (
+                                f"Invalid role. Must be one of: "
+                                f"{', '.join(enums.CLIENT_BRIDGE_ROLE_SCOPES)}"
+                            )
+                        }
+                    }
+                )
+            settings_data["scopes"] = list(enums.CLIENT_BRIDGE_ROLE_SCOPES[role])
+
+    def create(self, validated_data):
+        if validated_data.get("type") == enums.ChannelTypes.CLIENT_BRIDGE:
+            # Server-generated password — never accept user-supplied ones
+            password = generate_base58_password()
+            settings_data = validated_data.get("settings") or {}
+            settings_data.pop("password", None)
+            validated_data["settings"] = settings_data
+            validated_data["encrypted_settings"] = {"password": password}
+            self._resolve_client_bridge_scopes(settings_data)
+            instance = super().create(validated_data)
+            # Stash password so the view can return it once
+            instance._generated_password = password  # noqa: SLF001  # pylint: disable=protected-access
+            return instance
+        validated_data = self._move_sensitive_settings(validated_data)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        channel_type = validated_data.get("type") or (
+            instance.type if instance else None
+        )
+        if channel_type == enums.ChannelTypes.CLIENT_BRIDGE:
+            # Strip any user-supplied password — passwords can only be
+            # changed via the dedicated rotate-password endpoint.
+            settings_data = validated_data.get("settings") or {}
+            settings_data.pop("password", None)
+            if "role" in settings_data or "scopes" in settings_data:
+                self._resolve_client_bridge_scopes(settings_data)
+            # Prevent encrypted_settings from being overwritten
+            validated_data.pop("encrypted_settings", None)
+        else:
+            validated_data = self._move_sensitive_settings(validated_data)
+        return super().update(instance, validated_data)
+
     def validate_settings(self, value):
         """Validate settings, including tags if present."""
         if not value:
@@ -1786,7 +1882,7 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         which is the only way to airtight-block a mailbox admin from
         granting themselves a global-only scope via a settings-only PATCH.
 
-        - Every value must be a member of ``ChannelApiKeyScope``.
+        - Every value must be a member of ``ChannelScope``.
         - Global-only scopes (e.g. ``maildomains:create``) can only be
           requested when the channel itself has ``scope_level=global``.
           Since DRF clients cannot set scope_level, this always rejects
@@ -1812,7 +1908,7 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
                 {"settings": "settings.scopes must be a list of strings."}
             )
 
-        valid_values = {choice.value for choice in enums.ChannelApiKeyScope}
+        valid_values = {choice.value for choice in enums.ChannelScope}
         unknown = [s for s in raw_scopes if s not in valid_values]
         if unknown:
             raise serializers.ValidationError(
@@ -1824,7 +1920,7 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         # USER. Global-only scopes are therefore never grantable via DRF.
         # If that ever changes, the viewset must still pass scope_level
         # explicitly on save.
-        global_only = enums.CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY
+        global_only = enums.CHANNEL_SCOPES_GLOBAL_ONLY
         if any(s in global_only for s in raw_scopes):
             raise serializers.ValidationError(
                 {"settings": "One or more requested scopes are not permitted."}
@@ -1904,6 +2000,13 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
                             "type": f"Channel type '{channel_type}' is not authorized. "
                             f"Allowed types: {', '.join(allowed_types)}"
                         }
+                    )
+                if (
+                    channel_type == enums.ChannelTypes.CLIENT_BRIDGE
+                    and not settings.FEATURE_CLIENTBRIDGE
+                ):
+                    raise serializers.ValidationError(
+                        {"type": "Client bridge feature is not enabled."}
                     )
             self._reject_caller_supplied_encrypted_keys(attrs)
             self._validate_api_key_scopes(attrs)

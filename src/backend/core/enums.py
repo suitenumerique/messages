@@ -23,6 +23,18 @@ class MailboxRoleChoices(models.IntegerChoices):
     ADMIN = 4, "admin"
 
 
+# Legacy client-bridge role names. Only used for backwards-compatible
+# serializer input (``settings.role``) and the auth-endpoint JWT ``role``
+# claim.  Internally every channel — api_key *and* client-bridge — now
+# stores ``settings["scopes"]`` and all permission checks use scopes.
+CLIENT_BRIDGE_ROLE_SCOPES = {
+    "reader": ("messages:read",),
+    "editor": ("messages:read", "messages:edit"),
+    "sender": ("messages:read", "messages:edit", "messages:send"),
+    "sender_only": ("messages:send",),
+}
+
+
 # Mailbox role groups for permission checks
 MAILBOX_ROLES_CAN_EDIT = [
     MailboxRoleChoices.EDITOR,
@@ -174,6 +186,7 @@ class ChannelTypes(StrEnum):
     WIDGET = "widget"
     API_KEY = "api_key"
     WEBHOOK = "webhook"
+    CLIENT_BRIDGE = "client-bridge"
 
 
 class WebhookEvents(StrEnum):
@@ -187,22 +200,22 @@ class WebhookEvents(StrEnum):
     MESSAGE_SENT = "message.sent"
 
 
-class ChannelApiKeyScope(models.TextChoices):
-    """Capability scopes granted to an api_key Channel.
+class ChannelScope(models.TextChoices):
+    """Capability scopes granted to a Channel (api_key or client-bridge).
 
     Stored as a list of string values in Channel.settings["scopes"] and
     enforced by the serializer + HasChannelScope permission at the API layer.
     Adding a new scope is a Python-only change (no DB choices, no migration).
 
     A credential's blast radius for any scope is automatically bounded by its
-    channel's scope_level + target FK: a scope_level=mailbox api_key can only
+    channel's scope_level + target FK: a scope_level=mailbox channel can only
     act on that mailbox, regardless of which scopes it holds.
 
     WRITE vs CREATE distinction: ``*_WRITE`` scopes modify an object the
     channel already has resource-scope access to (e.g. archiving a thread in
     a mailbox-scope channel's mailbox). ``*_CREATE`` scopes mint a brand-new
     top-level resource, which is an escalation — these are global-only and
-    listed in ``CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY``. Most resources only
+    listed in ``CHANNEL_SCOPES_GLOBAL_ONLY``. Most resources only
     need WRITE because their "create" never escalates; only mailboxes and
     maildomains have a meaningful _CREATE counterpart.
 
@@ -215,6 +228,8 @@ class ChannelApiKeyScope(models.TextChoices):
 
     METRICS_READ = "metrics:read", "Read usage metrics"
     MAILBOXES_READ = "mailboxes:read", "Read mailboxes (and their users/roles)"
+    MESSAGES_READ = "messages:read", "Read messages and threads"
+    MESSAGES_EDIT = "messages:edit", "Edit messages (flags, labels, drafts)"
     MESSAGES_SEND = "messages:send", "Send outbound messages"
     MAILDOMAINS_CREATE = "maildomains:create", "Create new maildomains"
 
@@ -228,7 +243,6 @@ class ChannelApiKeyScope(models.TextChoices):
     #   LABELS_READ        = "labels:read",            "Read labels"
     #   CONTACTS_READ      = "contacts:read",          "Read contacts"
     #   THREADS_READ       = "threads:read",           "Read thread metadata"
-    #   MESSAGES_READ      = "messages:read",          "Read message metadata"
     #   MESSAGES_READ_BODY = "messages:read.body",     "Read message bodies"
     #   ATTACHMENTS_READ   = "attachments:read",       "Read attachments"
     #   BLOBS_READ         = "blobs:read",             "Read raw MIME blobs"
@@ -245,15 +259,16 @@ class ChannelApiKeyScope(models.TextChoices):
     #   MAILBOXES_CREATE   = "mailboxes:create",       "Create new mailboxes"
 
 
+
 # Scopes that can only be granted to / used by a scope_level=global Channel.
 # Two enforcement points use this set:
 #  - the serializer (write time) rejects non-global channels asking for these
 #  - HasChannelScope (request time) rejects requests where the calling
 #    channel is not global but a global-only scope is required
-CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY = frozenset(
+CHANNEL_SCOPES_GLOBAL_ONLY = frozenset(
     {
-        ChannelApiKeyScope.METRICS_READ.value,
-        ChannelApiKeyScope.MAILDOMAINS_CREATE.value,
+        ChannelScope.METRICS_READ.value,
+        ChannelScope.MAILDOMAINS_CREATE.value,
     }
 )
 

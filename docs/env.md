@@ -314,6 +314,30 @@ without redeploying the frontend (the flag is pulled from
 | `FEATURE_AI_SUMMARY` | `False` | Default enabled mode for summary AI features | Required |
 | `FEATURE_AI_AUTOLABELS` | `False` | Default enabled mode for label AI features | Required |
 
+### Client Bridge
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `CLIENTBRIDGE_API_SECRET` | `""` | Shared secret for service-to-service auth between the client bridge and the backend. Must match the `CLIENTBRIDGE_API_SECRET` on the client-bridge service. | Required (if client bridge is enabled) |
+| `CLIENTBRIDGE_SESSION_TIMEOUT` | `3600` | JWT session lifetime in seconds. IMAP/SMTP clients must re-authenticate when the token expires. | Optional |
+| `CLIENTBRIDGE_PUBLIC_CONFIG` | `{}` | JSON object with IMAP/SMTP connection settings exposed to the frontend via `/api/v1.0/config/`. When set, the frontend displays these values in the integration setup form instead of inferring them from the browser's hostname. See [Client Bridge README](../src/client-bridge/README.md) for details. | Optional |
+
+`CLIENTBRIDGE_PUBLIC_CONFIG` accepts the following keys:
+
+| Key | Type | Description | Example |
+|-----|------|-------------|---------|
+| `imap_host` | string | Hostname for IMAP connections | `"imap.example.com"` |
+| `imap_port` | integer | Port for IMAP connections | `993` |
+| `imap_security` | string | Security mode for IMAP | `"SSL/TLS"` |
+| `smtp_host` | string | Hostname for SMTP connections | `"smtp.example.com"` |
+| `smtp_port` | integer | Port for SMTP connections | `587` |
+| `smtp_security` | string | Security mode for SMTP | `"STARTTLS"` |
+
+Example:
+```bash
+CLIENTBRIDGE_PUBLIC_CONFIG='{"imap_host":"imap.example.com","imap_port":993,"imap_security":"SSL/TLS","smtp_host":"smtp.example.com","smtp_port":587,"smtp_security":"STARTTLS"}'
+```
+
 ### Throttling
 
 Outbound message throttling limits the number of **external recipients** (recipients whose domain is not managed by this instance) that can be sent from a mailbox or maildomain within a time period, using simple fixed time windows.

@@ -136,6 +136,37 @@ class ConfigView(drf.views.APIView):
                             "description": "Whether silent OIDC login is enabled",
                             "readOnly": True,
                         },
+                        "CLIENTBRIDGE_PUBLIC_CONFIG": {
+                            "type": "object",
+                            "description": "Client-bridge IMAP/SMTP connection settings for email clients.",
+                            "properties": {
+                                "imap_host": {
+                                    "type": "string",
+                                    "readOnly": True,
+                                },
+                                "imap_port": {
+                                    "type": "integer",
+                                    "readOnly": True,
+                                },
+                                "imap_security": {
+                                    "type": "string",
+                                    "readOnly": True,
+                                },
+                                "smtp_host": {
+                                    "type": "string",
+                                    "readOnly": True,
+                                },
+                                "smtp_port": {
+                                    "type": "integer",
+                                    "readOnly": True,
+                                },
+                                "smtp_security": {
+                                    "type": "string",
+                                    "readOnly": True,
+                                },
+                            },
+                            "readOnly": True,
+                        },
                     },
                     "required": [
                         "ENVIRONMENT",
@@ -191,7 +222,7 @@ class ConfigView(drf.views.APIView):
         dict_settings = {}
         for setting in array_settings:
             if hasattr(settings, setting):
-                dict_settings[setting] = getattr(settings, setting)
+                dict_settings[setting] = getattr(settings, setting)  # pylint: disable=getattr-on-settings
 
         # AI Features
         dict_settings["AI_ENABLED"] = is_ai_enabled()
@@ -209,6 +240,12 @@ class ConfigView(drf.views.APIView):
                         "app_name": settings.DRIVE_CONFIG.get("app_name"),
                     }
                 }
+            )
+
+        # Client-bridge connection settings
+        if settings.FEATURE_CLIENTBRIDGE and settings.CLIENTBRIDGE_PUBLIC_CONFIG:
+            dict_settings["CLIENTBRIDGE_PUBLIC_CONFIG"] = (
+                settings.CLIENTBRIDGE_PUBLIC_CONFIG
             )
 
         return drf.response.Response(dict_settings)

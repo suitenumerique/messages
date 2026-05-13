@@ -98,6 +98,11 @@ AI_MODEL=
 FEATURE_AI_SUMMARY=False
 FEATURE_AI_AUTOLABELS=False
 
+# Client bridge (IMAP/SMTP email client access)
+FEATURE_CLIENTBRIDGE=True
+FEATURE_MAILBOX_ADMIN_CHANNELS=widget,client-bridge
+CLIENTBRIDGE_PUBLIC_CONFIG={"imap_host":"localhost","imap_port":8919,"imap_security":"PLAIN","smtp_host":"localhost","smtp_port":8920,"smtp_security":"PLAIN"}
+
 # Third-party services
 # Drive - https://github.com/suitenumerique/drive
 DRIVE_BASE_URL=

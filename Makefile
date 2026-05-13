@@ -61,6 +61,7 @@ create-env-files: \
 	env.d/development/frontend.local \
 	env.d/development/mta-in.local \
 	env.d/development/mta-out.local \
+	env.d/development/client-bridge.local \
 	env.d/development/socks-proxy.local
 .PHONY: create-env-files
 
@@ -134,7 +135,7 @@ logs: ## display all services logs (follow mode)
 .PHONY: logs
 
 start: ## start all development services
-	@$(COMPOSE) up --force-recreate --build -d frontend-dev backend-dev worker-dev mta-in --wait
+	@$(COMPOSE) up --force-recreate --build -d frontend-dev backend-dev worker-dev mta-in client-bridge --wait
 .PHONY: start
 
 start-minimal: ## start minimal services (backend, frontend, keycloak and DB)
@@ -176,16 +177,18 @@ lint: ## run all linters
 lint: \
   lint-back \
   lint-front \
-  typecheck-front \
   lint-mta-in \
-  lint-mta-out
+  lint-mta-out \
+  lint-client-bridge
 .PHONY: lint
 
 lint-check:  ## run all linters in check mode (no auto-fix)
 lint-check: \
   lint-check-back \
-  typecheck-front \
-  lint-front
+  lint-check-front \
+  lint-check-mta-in \
+  lint-check-mta-out \
+  lint-check-client-bridge
 .PHONY: lint-check
 
 lint-back: ## run back-end linters (with auto-fix)
@@ -217,19 +220,41 @@ typecheck-front: ## run the frontend type checker
 	@$(COMPOSE) run --rm frontend-tools npm run ts:check
 .PHONY: typecheck-front
 
-lint-front: ## run the frontend linter
+lint-front: ## run the frontend linter (typecheck + eslint)
+lint-front: \
+  typecheck-front
 	@$(COMPOSE) run --rm frontend-tools npm run lint
 .PHONY: lint-front
 
-lint-mta-in: ## lint mta-in python sources
+lint-check-front: ## run the frontend linter in check mode (no auto-fix)
+lint-check-front: lint-front
+.PHONY: lint-check-front
+
+lint-mta-in: ## lint mta-in python sources (with auto-fix)
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff format .
 	#$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff check . --fix
 	#$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test pylint .
 .PHONY: lint-mta-in
 
-lint-mta-out: ## lint mta-out python sources
+lint-check-mta-in: ## lint mta-in python sources in check mode (no auto-fix)
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff format --check .
+.PHONY: lint-check-mta-in
+
+lint-mta-out: ## lint mta-out python sources (with auto-fix)
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-out-test ruff format .
 .PHONY: lint-mta-out
+
+lint-check-mta-out: ## lint mta-out python sources in check mode (no auto-fix)
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-out-test ruff format --check .
+.PHONY: lint-check-mta-out
+
+lint-client-bridge: ## lint client-bridge python sources (with auto-fix)
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true client-bridge-test ruff format .
+.PHONY: lint-client-bridge
+
+lint-check-client-bridge: ## lint client-bridge python sources in check mode (no auto-fix)
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true client-bridge-test ruff format --check .
+.PHONY: lint-check-client-bridge
 
 # -- Tests
 
@@ -239,6 +264,7 @@ test: \
   test-front \
   test-mta-in \
   test-mta-out \
+  test-client-bridge \
   test-mpa \
   test-socks-proxy
 .PHONY: test
@@ -279,6 +305,10 @@ test-mta-in: ## run the mta-in tests
 test-mta-out: ## run the mta-out tests
 	@$(COMPOSE) run --build --rm mta-out-test
 .PHONY: test-mta-out
+
+test-client-bridge: ## run the client-bridge tests
+	@$(COMPOSE) run --build --rm client-bridge-test
+.PHONY: test-client-bridge
 
 test-mpa: ## run the mpa tests
 	@$(COMPOSE) run --build --rm mpa-test
@@ -331,21 +361,21 @@ logs-e2e: ## Show logs from e2e services
 
 test-e2e-bare: ## Run e2e tests in headless mode
 	@echo "$(BLUE)\n\n| 🎭 Running E2E tests... \n$(RESET)"
-	$(COMPOSE_E2E) run --rm --service-ports runner npm run test -- $(args)
+	$(COMPOSE_E2E) run --rm --service-ports e2e-runner npm run test -- $(args)
 	@echo "$(GREEN)> 🎭 E2E tests completed!$(RESET)\n"
 .PHONY: test-e2e-bare
 
 test-e2e-ui-bare: ## Run e2e tests in UI mode
 	@echo "$(BLUE)\n\n| 🎭 Running E2E tests in UI mode... \n$(RESET)"
 	# Note: || true allows graceful exit when user closes the UI
-	@$(COMPOSE_E2E) run --rm --service-ports runner npm run test:ui || true
+	@$(COMPOSE_E2E) run --rm --service-ports e2e-runner npm run test:ui || true
 	@echo "$(GREEN)> 🎭 You killed the UI!$(RESET)\n"
 .PHONY: test-e2e-ui-bare
 
 test-e2e-dev-bare: ## Run e2e tests in UI mode with dev frontend
 	@echo "$(BLUE)\n\n| 🎭 Running E2E tests in dev mode... \n$(RESET)"
 	# Note: || true allows graceful exit when user closes the UI
-	E2E_PROFILE=dev $(COMPOSE_E2E) --profile dev run --rm --service-ports runner npm run test:ui || true
+	E2E_PROFILE=dev $(COMPOSE_E2E) --profile dev run --rm --service-ports e2e-runner npm run test:ui || true
 	@echo "$(GREEN)> 🎭 You killed the UI!$(RESET)\n"
 .PHONY: test-e2e-dev-bare
 
@@ -355,6 +385,7 @@ down-e2e: stop-e2e ## alias for stop-e2e
 demo-e2e: ## Populate the e2e database with demo data
 	@echo "$(BLUE)\n\n| 📝 Bootstrapping E2E demo data... \n$(RESET)"
 	@$(COMPOSE_E2E) run --rm backend python manage.py e2e_demo
+	@$(COMPOSE_E2E) run --rm backend python manage.py e2e_clientbridge
 .PHONY: demo-e2e
 
 start-e2e: ## Start e2e services (migrate, seed, etc.)
@@ -579,3 +610,7 @@ deps-lock-mta-in: ## lock the dependencies
 deps-lock-mta-out: ## lock the dependencies
 	@$(COMPOSE) run --rm --build mta-out-uv uv lock
 .PHONY: deps-lock-mta-out
+
+deps-lock-client-bridge: ## lock the dependencies
+	@$(COMPOSE) run --rm --build client-bridge-uv uv lock
+.PHONY: deps-lock-client-bridge

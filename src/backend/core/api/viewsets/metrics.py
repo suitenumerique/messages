@@ -15,7 +15,7 @@ from rest_framework.views import APIView
 
 from core.api.authentication import ChannelApiKeyAuthentication
 from core.api.permissions import IsGlobalChannelMixin, channel_scope
-from core.enums import ChannelApiKeyScope
+from core.enums import ChannelScope
 from core.models import (
     Attachment,
     Blob,
@@ -39,14 +39,14 @@ class MailDomainUsersMetricsApiView(IsGlobalChannelMixin, APIView):
     """
     API view to expose MailDomain Users custom metrics. Global-only.
 
-    ``METRICS_READ`` is in CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY (so the
+    ``METRICS_READ`` is in CHANNEL_SCOPES_GLOBAL_ONLY (so the
     permission layer rejects non-global api_key channels), and
     ``IsGlobalChannelMixin`` re-asserts the same invariant in the view as
     a second defense-in-depth layer.
     """
 
     authentication_classes = [ChannelApiKeyAuthentication]
-    permission_classes = [channel_scope(ChannelApiKeyScope.METRICS_READ)]
+    permission_classes = [channel_scope(ChannelScope.METRICS_READ)]
 
     @extend_schema(exclude=True)
     def get(self, request):
@@ -208,7 +208,7 @@ class MailboxUsageMetricsApiView(IsGlobalChannelMixin, APIView):
     """
 
     authentication_classes = [ChannelApiKeyAuthentication]
-    permission_classes = [channel_scope(ChannelApiKeyScope.METRICS_READ)]
+    permission_classes = [channel_scope(ChannelScope.METRICS_READ)]
 
     @extend_schema(exclude=True)
     def get(self, request):

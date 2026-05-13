@@ -1,70 +1,40 @@
 """MTA channel implementation for handling email delivery."""
 
-import hashlib
 import logging
-import secrets
 
 from django.conf import settings
 
-import jwt
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
-from rest_framework.authentication import BaseAuthentication
 from rest_framework.decorators import action
-from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core import models
+from core.api.authentication import ServiceJWTAuthentication
 from core.mda.inbound import check_local_recipients, deliver_inbound_message
 from core.mda.rfc5322 import EmailParseError, parse_email_message
 
 logger = logging.getLogger(__name__)
 
 
-class MTAJWTAuthentication(BaseAuthentication):
+class MTAJWTAuthentication(ServiceJWTAuthentication):
+    """MTA-specific JWT authentication.
+
+    Inherits body-hash validation and JWT verification from
+    ``ServiceJWTAuthentication``. The JWT is signed with
+    ``settings.MDA_API_SECRET`` and the payload is returned as
+    ``request.auth`` (a dict containing ``original_recipients`` etc.).
     """
-    Custom authentication for MTA endpoints using JWT tokens with email hash validation.
-    Returns None or (user, auth)
-    """
 
-    def authenticate(self, request):
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            return None
+    def get_secret(self, request):
+        return settings.MDA_API_SECRET
 
-        try:
-            jwt_token = auth_header.split(" ")[1]
-            payload = jwt.decode(
-                jwt_token,
-                settings.MDA_API_SECRET,
-                algorithms=["HS256"],
-                options={
-                    "require": ["exp"],
-                    "verify_exp": True,
-                    "verify_signature": True,
-                },
-            )
-
-            if not payload.get("exp"):
-                raise jwt.InvalidTokenError("Missing expiration time")
-
-            # Validate email hash if there's a body
-            if request.body:
-                body_hash = hashlib.sha256(request.body).hexdigest()
-                if not secrets.compare_digest(body_hash, payload["body_hash"]):
-                    raise jwt.InvalidTokenError("Invalid email hash")
-
-            service_account = models.User()
-            return (service_account, payload)
-
-        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError) as e:
-            raise AuthenticationFailed("Invalid token") from e
-        except (IndexError, KeyError) as e:
-            raise AuthenticationFailed("Invalid token header or payload") from e
+    def handle_payload(self, request, payload):
+        service_account = models.User()
+        return (service_account, payload)
 
     def authenticate_header(self, request):
-        """Return the header to be used in the WWW-Authenticate response header."""
         return 'Bearer realm="MTA"'
 
 

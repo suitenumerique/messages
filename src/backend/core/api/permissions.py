@@ -458,7 +458,7 @@ class HasChannelScope(permissions.BasePermission):
     ``Channel`` set by an authentication class like ``ChannelApiKeyAuthentication``)
     and checks that ``required_scope`` is listed in the channel's
     ``settings["scopes"]``. Additionally, if the required scope is in
-    ``CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY``, the calling channel must itself
+    ``CHANNEL_SCOPES_GLOBAL_ONLY``, the calling channel must itself
     be ``scope_level=global`` — this is the second of two enforcement points
     for global-only scopes (the first is the serializer at write time).
 
@@ -485,7 +485,7 @@ class HasChannelScope(permissions.BasePermission):
         if self.required_scope not in scopes:
             return False
         if (
-            self.required_scope in enums.CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY
+            self.required_scope in enums.CHANNEL_SCOPES_GLOBAL_ONLY
             and channel.scope_level != enums.ChannelScopeLevel.GLOBAL
         ):
             return False
@@ -498,7 +498,7 @@ def channel_scope(required_scope: str) -> type:
     DRF's ``permission_classes`` expects a list of classes, not instances, so
     we synthesize a tiny subclass per scope. Usage:
 
-        permission_classes = [channel_scope(ChannelApiKeyScope.MESSAGES_SEND)]
+        permission_classes = [channel_scope(ChannelScope.MESSAGES_SEND)]
     """
     return type(
         f"HasChannelScope_{required_scope}",
@@ -513,7 +513,7 @@ class IsGlobalChannelMixin:
     ``ChannelApiKeyAuthentication`` + ``channel_scope(...)``.
 
     Two-layer defense in depth: even when the required scope is in
-    ``CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY`` (and ``HasChannelScope`` already
+    ``CHANNEL_SCOPES_GLOBAL_ONLY`` (and ``HasChannelScope`` already
     rejects non-global callers), the view itself re-asserts the requirement
     so a future scope-set typo can't accidentally weaken the endpoint. The
     mixin's ``initial()`` runs after authentication+permission, so by the

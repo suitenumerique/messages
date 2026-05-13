@@ -9,7 +9,7 @@ from django.utils import timezone
 import pytest
 
 from core.enums import (
-    ChannelApiKeyScope,
+    ChannelScope,
     MessageTemplateTypeChoices,
 )
 from core.factories import (
@@ -32,7 +32,7 @@ from core.models import MailboxAccess, MailDomain
 def _make_metrics_api_key():
     """Create a global-scope api_key channel with metrics:read."""
     return make_api_key_channel(
-        scopes=(ChannelApiKeyScope.METRICS_READ.value,),
+        scopes=(ChannelScope.METRICS_READ.value,),
         name="metrics-test",
     )
 

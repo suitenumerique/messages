@@ -33,6 +33,7 @@ const DEFAULT_CONFIG: AppConfig = {
     DRIVE: DEFAULT_DRIVE_CONFIG,
     MESSAGES_MANUAL_RETRY_MAX_AGE: 0,
     FRONTEND_SILENT_LOGIN_ENABLED: false,
+    CLIENTBRIDGE_PUBLIC_CONFIG: undefined,
 }
 
 const ConfigContext = createContext<AppConfig>(DEFAULT_CONFIG)

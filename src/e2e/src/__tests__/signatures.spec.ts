@@ -31,7 +31,7 @@ test.describe("Mailbox Signatures", () => {
     const header = page.locator(".c__header");
     const settingsButton = header.getByRole("button", { name: "More options" });
     await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
+    await page.getByRole("menuitem", { name: "My signatures" }).click();
     await page.waitForURL("**/mailbox/*/signatures");
 
     // Wait for the data grid to load
@@ -95,7 +95,7 @@ test.describe("Mailbox Signatures", () => {
     const header = page.locator(".c__header");
     const settingsButton = header.getByRole("button", { name: "More options" });
     await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
+    await page.getByRole("menuitem", { name: "My signatures" }).click();
     await page.waitForURL("**/mailbox/*/signatures");
 
     // First create a signature to edit
@@ -140,7 +140,7 @@ test.describe("Mailbox Signatures", () => {
     const header = page.locator(".c__header");
     const settingsButton = header.getByRole("button", { name: "More options" });
     await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
+    await page.getByRole("menuitem", { name: "My signatures" }).click();
     await page.waitForURL("**/mailbox/*/signatures");
 
     // First create a signature to delete
@@ -179,7 +179,7 @@ test.describe("Mailbox Signatures", () => {
     const header = page.locator(".c__header");
     const settingsButton = header.getByRole("button", { name: "More options" });
     await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
+    await page.getByRole("menuitem", { name: "My signatures" }).click();
     await page.waitForURL("**/mailbox/*/signatures");
 
     // Create a signature
@@ -214,7 +214,7 @@ test.describe("Mailbox Signatures", () => {
     const header = page.locator(".c__header");
     const settingsButton = header.getByRole("button", { name: "More options" });
     await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
+    await page.getByRole("menuitem", { name: "My signatures" }).click();
     await page.waitForURL("**/mailbox/*/signatures");
 
     // Create a signature with default checkbox checked
@@ -244,7 +244,7 @@ test.describe("Mailbox Signatures", () => {
     const header = page.locator(".c__header");
     const settingsButton = header.getByRole("button", { name: "More options" });
     await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
+    await page.getByRole("menuitem", { name: "My signatures" }).click();
     await page.waitForURL("**/mailbox/*/signatures");
 
     // Create a default signature
@@ -280,7 +280,7 @@ test.describe("Mailbox Signatures", () => {
     const header = page.locator(".c__header");
     const settingsButton = header.getByRole("button", { name: "More options" });
     await settingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
+    await page.getByRole("menuitem", { name: "My signatures" }).click();
     await page.waitForURL("**/mailbox/*/signatures");
 
     // Create first signature and set as default
@@ -328,7 +328,7 @@ test.describe("Mailbox Signatures", () => {
     const header = page.locator(".c__header");
     const userSettingsButton = header.getByRole("button", { name: "More options" });
     await userSettingsButton.click();
-    await page.getByRole("menuitem", { name: "Signatures" }).click();
+    await page.getByRole("menuitem", { name: "My signatures" }).click();
     await page.waitForURL("**/mailbox/*/signatures");
 
     // Create a mailbox signature WITH is_default

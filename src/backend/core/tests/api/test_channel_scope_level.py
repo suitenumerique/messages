@@ -319,7 +319,7 @@ class TestChannelViewSetIsolation:  # pylint: disable=too-many-public-methods
         assert response.status_code == 400, response.content
 
     def test_mailbox_admin_cannot_request_metrics_read_scope(self, api_client):
-        """metrics:read is in CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY too."""
+        """metrics:read is in CHANNEL_SCOPES_GLOBAL_ONLY too."""
         import uuid
 
         from core.enums import MailboxRoleChoices
@@ -472,7 +472,7 @@ class TestChannelViewSetIsolation:  # pylint: disable=too-many-public-methods
         assert channel.settings["scopes"] == ["messages:send"]
 
     def test_patch_cannot_inject_unknown_scope(self, api_client):
-        """PATCH must also reject scope strings outside ChannelApiKeyScope."""
+        """PATCH must also reject scope strings outside ChannelScope."""
         mailbox = MailboxFactory()
         channel = self._create_with_send_scope(api_client, mailbox)
 
@@ -517,7 +517,7 @@ class TestChannelViewSetIsolation:  # pylint: disable=too-many-public-methods
             },
             format="json",
         )
-        # mailboxes:read isn't in CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY, so
+        # mailboxes:read isn't in CHANNEL_SCOPES_GLOBAL_ONLY, so
         # it's grantable on a mailbox-scope channel.
         assert response.status_code == 200, response.content
         channel.refresh_from_db()

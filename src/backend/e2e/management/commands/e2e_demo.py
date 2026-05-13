@@ -3,15 +3,19 @@ Django management command to bootstrap E2E demo data.
 
 This command creates demo users, mailboxes, shared mailboxes, and outbox test data
 for E2E testing across different browsers (chromium, firefox, webkit).
+
+Client-bridge specific data (channels, IMAP test messages) is handled by the
+separate e2e_clientbridge command to avoid recreating it on every db:reset.
 """
 
-from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
 from core import models
 from core.enums import (
+    CLIENT_BRIDGE_ROLE_SCOPES,
+    ChannelTypes,
     MailboxRoleChoices,
     MailDomainAccessRoleChoices,
     MessageDeliveryStatusChoices,
@@ -24,6 +28,7 @@ BROWSERS = ["chromium", "firefox", "webkit"]
 DOMAIN_NAME = "example.local"
 SHARED_MAILBOX_LOCAL_PART = "shared.e2e"
 IMPORT_MAILBOX_LOCAL_PART = "import.e2e"
+CLIENTBRIDGE_APP_PASSWORD = "e2e-client-bridge-password"  # noqa: S105
 
 
 class Command(BaseCommand):
@@ -138,13 +143,25 @@ class Command(BaseCommand):
             self._create_outbox_test_data(domain, browser)
 
         # Step 7: Create inbox test data for each browser
-        self.stdout.write("\n-- 6/7 📥 Creating inbox test data")
+        self.stdout.write("\n-- 6/8 📥 Creating inbox test data")
         for browser in BROWSERS:
             self._create_inbox_test_data(domain, browser)
 
         # Step 8: Create shared mailbox thread data for IM testing
-        self.stdout.write("\n-- 7/7 💬 Creating shared mailbox thread for IM testing")
+        self.stdout.write("\n-- 7/8 💬 Creating shared mailbox thread for IM testing")
         self._create_shared_mailbox_thread_data(shared_mailbox, regular_users)
+
+        # Step 9: Create client-bridge channels and IMAP test data
+        if settings.FEATURE_CLIENTBRIDGE:
+            self.stdout.write(
+                "\n-- 8/8 📧 Creating client-bridge channels and IMAP test data"
+            )
+            for _user, mailbox in regular_users:
+                self._create_clientbridge_channel(mailbox)
+            self._create_clientbridge_channel(shared_mailbox)
+            # Create IMAP test messages on the first regular user's mailbox
+            _first_user, first_mailbox = regular_users[0]
+            self._create_imap_test_messages(first_mailbox, domain)
 
     def _create_user_with_mailbox(
         self, email, domain, is_domain_admin=False, is_superuser=False
@@ -553,4 +570,124 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(f"  ✓ Shared mailbox IM thread created: {subject}")
+        )
+
+    def _create_clientbridge_channel(self, mailbox):
+        """Create a client-bridge channel with a known password for e2e testing."""
+        # Use the first user with admin access to this mailbox
+        access = models.MailboxAccess.objects.filter(
+            mailbox=mailbox, role=MailboxRoleChoices.ADMIN
+        ).first()
+        if not access:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  No admin user found for {mailbox}, skipping channel"
+                )
+            )
+            return
+
+        _channel, created = models.Channel.objects.get_or_create(
+            mailbox=mailbox,
+            type=ChannelTypes.CLIENT_BRIDGE,
+            defaults={
+                "name": f"E2E client-bridge ({mailbox})",
+                "user": access.user,
+                "settings": {"scopes": list(CLIENT_BRIDGE_ROLE_SCOPES["sender"])},
+                "encrypted_settings": {"password": CLIENTBRIDGE_APP_PASSWORD},
+            },
+        )
+        if created:
+            self.stdout.write(
+                self.style.SUCCESS(f"  Created client-bridge channel for {mailbox}")
+            )
+        else:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"  Client-bridge channel already exists for {mailbox}"
+                )
+            )
+
+    @staticmethod
+    def _make_eml(subject, sender_email, recipient_email, body, sent_at):
+        """Build a minimal RFC 5322 message and return raw bytes."""
+        msg = MIMEText(body, "plain")
+        msg["Subject"] = subject
+        msg["From"] = sender_email
+        msg["To"] = recipient_email
+        msg["Date"] = format_datetime(sent_at)
+        return msg.as_bytes()
+
+    def _create_imap_test_messages(self, mailbox, domain):
+        """Create messages for IMAP read/unread e2e testing.
+
+        Creates two threads with proper EML blobs so the client-bridge
+        can serve envelope data (subject, from, date) over IMAP.
+        """
+        sender_email = f"imap-sender@{domain.name}"
+        recipient_email = str(mailbox)
+        sender_contact, _ = models.Contact.objects.get_or_create(
+            email=sender_email,
+            mailbox=mailbox,
+            defaults={"name": "IMAP Test Sender"},
+        )
+
+        # Thread 1: an unread message
+        now = timezone.now()
+        thread1 = models.Thread.objects.create(subject="IMAP unread test")
+        models.ThreadAccess.objects.create(
+            thread=thread1,
+            mailbox=mailbox,
+            role=ThreadAccessRoleChoices.EDITOR,
+            read_at=None,  # No read_at → all messages unread
+        )
+        eml1 = self._make_eml(
+            "IMAP unread test",
+            sender_email,
+            recipient_email,
+            "This message should appear as unread in IMAP.",
+            now,
+        )
+        blob1 = mailbox.create_blob(content=eml1, content_type="message/rfc822")
+        models.Message.objects.create(
+            thread=thread1,
+            sender=sender_contact,
+            subject="IMAP unread test",
+            is_sender=False,
+            is_draft=False,
+            sent_at=now,
+            blob=blob1,
+        )
+        thread1.update_stats()
+
+        # Thread 2: a read message
+        sent_at2 = now - timezone.timedelta(minutes=5)
+        thread2 = models.Thread.objects.create(subject="IMAP read test")
+        models.ThreadAccess.objects.create(
+            thread=thread2,
+            mailbox=mailbox,
+            role=ThreadAccessRoleChoices.EDITOR,
+            read_at=now
+            + timezone.timedelta(minutes=1),  # read_at after message created_at → read
+        )
+        eml2 = self._make_eml(
+            "IMAP read test",
+            sender_email,
+            recipient_email,
+            "This message should appear as read in IMAP.",
+            sent_at2,
+        )
+        blob2 = mailbox.create_blob(content=eml2, content_type="message/rfc822")
+        models.Message.objects.create(
+            thread=thread2,
+            sender=sender_contact,
+            subject="IMAP read test",
+            is_sender=False,
+            is_draft=False,
+            sent_at=sent_at2,
+            blob=blob2,
+        )
+        thread2.update_stats()
+
+        self.stdout.write(
+            self.style.SUCCESS(f"  Created IMAP test messages for {mailbox}")
         )

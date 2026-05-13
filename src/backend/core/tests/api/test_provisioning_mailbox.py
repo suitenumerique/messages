@@ -9,7 +9,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from core.enums import (
-    ChannelApiKeyScope,
+    ChannelScope,
     ChannelScopeLevel,
     MailboxRoleChoices,
 )
@@ -24,7 +24,7 @@ from core.factories import (
 MAILBOX_URL = reverse("provisioning-mailboxes")
 
 
-def _make_api_key_channel(scopes=(ChannelApiKeyScope.MAILBOXES_READ.value,), **kwargs):
+def _make_api_key_channel(scopes=(ChannelScope.MAILBOXES_READ.value,), **kwargs):
     """Wrapper around the shared factory pre-loaded with the
     provisioning-endpoint default scope (mailboxes:read). Callers can
     still override ``scopes`` and any other kwarg."""
@@ -58,7 +58,7 @@ def mailbox(domain):
 
 @pytest.mark.django_db
 class TestServiceAuthSecurity:
-    """Verify that the provisioning endpoint requires ChannelApiKeyScope.MAILBOXES_READ."""
+    """Verify that the provisioning endpoint requires ChannelScope.MAILBOXES_READ."""
 
     def test_user_email_no_auth_returns_401(self, client):
         response = client.get(MAILBOX_URL, {"user_email": "a@b.com"})
@@ -98,7 +98,7 @@ class TestServiceAuthSecurity:
 
     def test_user_email_wrong_scope_returns_403(self, client):
         channel, plaintext = _make_api_key_channel(
-            scopes=(ChannelApiKeyScope.METRICS_READ.value,),
+            scopes=(ChannelScope.METRICS_READ.value,),
         )
         response = client.get(
             MAILBOX_URL,

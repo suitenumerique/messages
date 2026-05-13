@@ -18,7 +18,7 @@ from core.api.serializers import (
     MailboxLightSerializer,
     ProvisioningMailDomainSerializer,
 )
-from core.enums import ChannelApiKeyScope, MailboxRoleChoices
+from core.enums import ChannelScope, MailboxRoleChoices
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class ProvisioningMailDomainView(IsGlobalChannelMixin, APIView):
     """Provision mail domains from DeployCenter webhooks. Global-only."""
 
     authentication_classes = [ChannelApiKeyAuthentication]
-    permission_classes = [channel_scope(ChannelApiKeyScope.MAILDOMAINS_CREATE)]
+    permission_classes = [channel_scope(ChannelScope.MAILDOMAINS_CREATE)]
 
     @extend_schema(exclude=True)
     def post(self, request):
@@ -134,7 +134,7 @@ class ProvisioningMailboxView(IsGlobalChannelMixin, APIView):
     """
 
     authentication_classes = [ChannelApiKeyAuthentication]
-    permission_classes = [channel_scope(ChannelApiKeyScope.MAILBOXES_READ)]
+    permission_classes = [channel_scope(ChannelScope.MAILBOXES_READ)]
 
     @extend_schema(exclude=True)
     def get(self, request):

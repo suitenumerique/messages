@@ -18,6 +18,7 @@ from core import models
 from core.enums import ChannelScopeLevel, ChannelTypes
 
 from .. import permissions, serializers
+from ..serializers import generate_base58_password
 
 
 @extend_schema(
@@ -103,7 +104,10 @@ class ChannelViewSet(
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save(**self.get_save_kwargs())
+        save_kwargs = self.get_save_kwargs()
+        if serializer.validated_data.get("type") == "client-bridge":
+            save_kwargs["user"] = request.user
+        instance = serializer.save(**save_kwargs)
         data = serializer.data
 
         # Surface plaintext secrets exactly once on creation. Each generator

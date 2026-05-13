@@ -1,7 +1,7 @@
 #!/bin/bash
 # Helper script to run Django management commands in the backend container.
 # Through the docker sock proxy service, it is possible to run commands in the
-# backend container from within the runner container.
+# backend container from within the e2e-runner container.
 #
 # Usage: ./backend-manage.sh <command> [args...]
 # Examples:

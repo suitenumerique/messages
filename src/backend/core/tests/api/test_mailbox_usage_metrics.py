@@ -6,7 +6,7 @@ from django.urls import reverse
 import pytest
 
 from core.enums import (
-    ChannelApiKeyScope,
+    ChannelScope,
     MessageTemplateTypeChoices,
 )
 from core.factories import (
@@ -33,7 +33,7 @@ def url():
 def correctly_configured_header(db):
     """Returns the authentication headers via a global api_key Channel."""
     channel, plaintext = make_api_key_channel(
-        scopes=(ChannelApiKeyScope.METRICS_READ.value,),
+        scopes=(ChannelScope.METRICS_READ.value,),
         name="metrics-test",
     )
     return {

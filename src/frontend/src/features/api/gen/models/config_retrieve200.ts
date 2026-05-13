@@ -8,6 +8,7 @@
 import type { ConfigRetrieve200DRIVE } from "./config_retrieve200_driv_e";
 import type { ConfigRetrieve200SCHEMACUSTOMATTRIBUTESUSER } from "./config_retrieve200_schemacustomattributesuse_r";
 import type { ConfigRetrieve200SCHEMACUSTOMATTRIBUTESMAILDOMAIN } from "./config_retrieve200_schemacustomattributesmaildomai_n";
+import type { ConfigRetrieve200CLIENTBRIDGEPUBLICCONFIG } from "./config_retrieve200_clientbridgepublicconfi_g";
 
 export type ConfigRetrieve200 = {
   readonly ENVIRONMENT: string;
@@ -40,4 +41,6 @@ export type ConfigRetrieve200 = {
   readonly MESSAGES_MANUAL_RETRY_MAX_AGE: number;
   /** Whether silent OIDC login is enabled */
   readonly FRONTEND_SILENT_LOGIN_ENABLED: boolean;
+  /** Client-bridge IMAP/SMTP connection settings for email clients. */
+  readonly CLIENTBRIDGE_PUBLIC_CONFIG?: ConfigRetrieve200CLIENTBRIDGEPUBLICCONFIG;
 };

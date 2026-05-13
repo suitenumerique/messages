@@ -7,13 +7,13 @@ from django.urls import reverse
 
 import pytest
 
-from core.enums import ChannelApiKeyScope, ChannelScopeLevel
+from core.enums import ChannelScope, ChannelScopeLevel
 from core.factories import MailDomainFactory, make_api_key_channel
 from core.models import MailDomain
 
 
 def _make_api_key_channel(
-    scopes=(ChannelApiKeyScope.MAILDOMAINS_CREATE.value,), **kwargs
+    scopes=(ChannelScope.MAILDOMAINS_CREATE.value,), **kwargs
 ):
     """Wrapper around the shared factory pre-loaded with the
     maildomains-write scope used by every test in this module."""
@@ -29,7 +29,7 @@ def url():
 
 @pytest.fixture
 def auth_header():
-    """Global-scope api_key with ChannelApiKeyScope.MAILDOMAINS_CREATE."""
+    """Global-scope api_key with ChannelScope.MAILDOMAINS_CREATE."""
     channel, plaintext = _make_api_key_channel()
     return {
         "HTTP_X_CHANNEL_ID": str(channel.id),

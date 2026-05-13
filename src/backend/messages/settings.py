@@ -14,6 +14,7 @@ https://docs.djangoproject.com/en/3.1/ref/settings/
 import logging
 import os
 import tomllib
+import warnings
 from socket import gethostbyname, gethostname
 
 import dj_database_url
@@ -276,6 +277,27 @@ class Base(Configuration):
             },
         },
     }
+    # Client-bridge service authentication
+    CLIENTBRIDGE_API_SECRET = values.Value(
+        "",
+        environ_name="CLIENTBRIDGE_API_SECRET",
+        environ_prefix=None,
+    )
+    # Session JWT lifetime in seconds (default: 1 hour).
+    # IMAP/SMTP clients must re-authenticate when the token expires.
+    CLIENTBRIDGE_SESSION_TIMEOUT = values.PositiveIntegerValue(
+        3600,
+        environ_name="CLIENTBRIDGE_SESSION_TIMEOUT",
+        environ_prefix=None,
+    )
+    # Client-bridge connection settings exposed to the frontend via /api/v1.0/config/.
+    # Set as a JSON string, e.g.:
+    # CLIENTBRIDGE_PUBLIC_CONFIG='{"imap_host":"imap.example.com",
+    #   "imap_port":993,"smtp_host":"smtp.example.com","smtp_port":587}'
+    CLIENTBRIDGE_PUBLIC_CONFIG = values.DictValue(
+        {}, environ_name="CLIENTBRIDGE_PUBLIC_CONFIG", environ_prefix=None
+    )
+
     # MDA settings
     MDA_API_SECRET = values.Value(
         "my-shared-secret-mda", environ_name="MDA_API_SECRET", environ_prefix=None
@@ -593,6 +615,11 @@ class Base(Configuration):
                 environ_name="API_USERS_LIST_THROTTLE_RATE_BURST",
                 environ_prefix=None,
             ),
+            "client_bridge_auth": values.Value(
+                default="5/minute",
+                environ_name="API_CLIENT_BRIDGE_AUTH_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
         },
     }
 
@@ -873,6 +900,9 @@ class Base(Configuration):
         environ_name="FEATURE_MAILBOX_ADMIN_CHANNELS",
         environ_prefix=None,
     )
+    FEATURE_CLIENTBRIDGE = values.BooleanValue(
+        default=False, environ_name="FEATURE_CLIENTBRIDGE", environ_prefix=None
+    )
     FEATURE_MAILDOMAIN_CREATE = values.BooleanValue(
         default=True, environ_name="FEATURE_MAILDOMAIN_CREATE", environ_prefix=None
     )
@@ -1098,6 +1128,13 @@ class Base(Configuration):
             raise ValueError(
                 "OIDC_STORE_REFRESH_TOKEN_KEY must be set when "
                 "OIDC_STORE_REFRESH_TOKEN is enabled."
+            )
+
+        if cls.FEATURE_CLIENTBRIDGE and not cls.CLIENTBRIDGE_API_SECRET:
+            warnings.warn(
+                "CLIENTBRIDGE_API_SECRET must be set when "
+                "FEATURE_CLIENTBRIDGE is enabled",
+                stacklevel=1,
             )
 
 

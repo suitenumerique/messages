@@ -15,13 +15,13 @@ from django.utils import timezone
 import pytest
 
 from core import models
-from core.enums import ChannelApiKeyScope, ChannelScopeLevel
+from core.enums import ChannelScope, ChannelScopeLevel
 from core.factories import MailboxFactory, make_api_key_channel
 
 SUBMIT_URL = "/api/v1.0/submit/"
 
 
-def _make_channel(scopes=(ChannelApiKeyScope.MESSAGES_SEND.value,), **kwargs):
+def _make_channel(scopes=(ChannelScope.MESSAGES_SEND.value,), **kwargs):
     """Wrapper around the shared factory pre-loaded with the auth-class
     test default scope (messages:send). Callers can still override
     ``scopes`` and any other kwarg."""
@@ -75,7 +75,7 @@ class TestChannelApiKeyAuth:
             type="widget",
             scope_level=ChannelScopeLevel.GLOBAL,
             encrypted_settings={"api_key_hashes": [digest]},
-            settings={"scopes": [ChannelApiKeyScope.MESSAGES_SEND.value]},
+            settings={"scopes": [ChannelScope.MESSAGES_SEND.value]},
         )
         channel.save()
         response = client.post(
@@ -119,19 +119,19 @@ class TestHasChannelScope:
     """Direct tests for HasChannelScope.has_permission."""
 
     def test_scope_present(self, rf):
-        channel, _ = _make_channel(scopes=(ChannelApiKeyScope.MESSAGES_SEND.value,))
+        channel, _ = _make_channel(scopes=(ChannelScope.MESSAGES_SEND.value,))
         from core.api.permissions import channel_scope
 
-        perm_class = channel_scope(ChannelApiKeyScope.MESSAGES_SEND)
+        perm_class = channel_scope(ChannelScope.MESSAGES_SEND)
         request = rf.post("/")
         request.auth = channel
         assert perm_class().has_permission(request, None) is True
 
     def test_scope_absent(self, rf):
-        channel, _ = _make_channel(scopes=(ChannelApiKeyScope.METRICS_READ.value,))
+        channel, _ = _make_channel(scopes=(ChannelScope.METRICS_READ.value,))
         from core.api.permissions import channel_scope
 
-        perm_class = channel_scope(ChannelApiKeyScope.MESSAGES_SEND)
+        perm_class = channel_scope(ChannelScope.MESSAGES_SEND)
         request = rf.post("/")
         request.auth = channel
         assert perm_class().has_permission(request, None) is False
@@ -139,7 +139,7 @@ class TestHasChannelScope:
     def test_auth_not_a_channel(self, rf):
         from core.api.permissions import channel_scope
 
-        perm_class = channel_scope(ChannelApiKeyScope.MESSAGES_SEND)
+        perm_class = channel_scope(ChannelScope.MESSAGES_SEND)
         request = rf.post("/")
         request.auth = None
         assert perm_class().has_permission(request, None) is False

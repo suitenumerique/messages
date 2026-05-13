@@ -30,5 +30,9 @@ AWS_S3_DOMAIN_REPLACE=
 # Email configuration (use mailcatcher from main services or disable)
 EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
 
+# Client bridge (IMAP/SMTP email client access)
+FEATURE_CLIENTBRIDGE=True
+CLIENTBRIDGE_API_SECRET=e2e-shared-secret-clientbridge-at-least-32-bytes
+
 # Debug
 DJANGO_DEBUG=True

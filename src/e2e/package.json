@@ -18,11 +18,15 @@
     "django": "./bin/backend-manage.sh",
     "db:flush": "npm run django flush -- --no-input",
     "db:bootstrap": "npm run django e2e_demo",
+    "db:bootstrap-clientbridge": "npm run django e2e_clientbridge",
     "db:reset": "npm run db:flush && npm run db:bootstrap"
   },
   "keywords": ["e2e", "playwright", "testing"],
   "author": "",
   "license": "MIT",
+  "dependencies": {
+    "imapflow": "1.0.175"
+  },
   "devDependencies": {
     "@playwright/test": "1.57.0",
     "@types/node": "22.19.3"

@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 
 from core import models
 from core.api.viewsets.task import register_task_owner
+from core.enums import ChannelScope
 from core.mda.outbound import prepare_outbound_message
 from core.mda.outbound_tasks import send_message_task
 
@@ -77,6 +78,15 @@ class SendMessageView(APIView):
 
     def post(self, request):
         """Send a draft message identified by messageId."""
+        # If authenticated via a channel (client-bridge or api_key), enforce
+        # the messages:send scope.  Defense-in-depth for the /send/ endpoint.
+        if isinstance(request.auth, models.Channel):
+            scopes = (request.auth.settings or {}).get("scopes") or []
+            if ChannelScope.MESSAGES_SEND not in scopes:
+                raise drf_exceptions.PermissionDenied(
+                    "This channel does not have send access."
+                )
+
         serializer = serializers.SendMessageSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         message_id = serializer.validated_data.get("messageId")

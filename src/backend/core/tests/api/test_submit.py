@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from dkim import verify as dkim_verify
 
-from core.enums import ChannelApiKeyScope, ChannelScopeLevel
+from core.enums import ChannelScope, ChannelScopeLevel
 from core.factories import MailboxFactory, MailDomainFactory, make_api_key_channel
 from core.mda.signing import generate_dkim_key
 
@@ -33,7 +33,7 @@ TASK_MOCK = "core.api.viewsets.submit.send_message_task"
 def _make_api_key_channel(**kwargs):
     """Thin wrapper around the shared factory pre-loaded with the
     submit-endpoint default scope (messages:send)."""
-    kwargs.setdefault("scopes", (ChannelApiKeyScope.MESSAGES_SEND.value,))
+    kwargs.setdefault("scopes", (ChannelScope.MESSAGES_SEND.value,))
     kwargs.setdefault("name", "test-key")
     return make_api_key_channel(**kwargs)
 
@@ -106,7 +106,7 @@ class TestSubmitAuth:
 
     def test_missing_scope_returns_403(self, client, mailbox):
         channel, plaintext = _make_api_key_channel(
-            scopes=(ChannelApiKeyScope.MAILBOXES_READ.value,),
+            scopes=(ChannelScope.MAILBOXES_READ.value,),
         )
         response = client.post(
             SUBMIT_URL,
