@@ -29,6 +29,9 @@ import type {
   MailboxAdmin,
   MailboxAdminCreate,
   MailboxAdminCreatePayloadRequest,
+  MailboxAdminMandatoryTotpPayloadRequest,
+  MailboxAdminMandatoryTotpResponse,
+  MailboxAdminResetTotpResponse,
   MaildomainsListParams,
   MaildomainsMailboxesListParams,
   MaildomainsMessageTemplatesListParams,
@@ -52,9 +55,7 @@ import type { ErrorType } from "../../fetch-api";
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
- * ViewSet for listing MailDomains the user administers.
-Provides a top-level entry for mail domain administration.
-Endpoint: /maildomains/<maildomain_pk>/
+ * List mail domains, optionally filtered by name with the `q` parameter.
  */
 export type maildomainsListResponse200 = {
   data: PaginatedMailDomainAdminList;
@@ -625,13 +626,7 @@ export const useMaildomainsCheckDnsCreate = <
   return useMutation(mutationOptions, queryClient);
 };
 /**
- * ViewSet for managing Mailboxes within a specific MailDomain.
-Nested under /maildomains/{maildomain_pk}/mailboxes/
-Permissions are checked by IsMailDomainAdmin for the maildomain_pk.
-
-This viewset serves a different purpose than the one in mailbox.py (/api/v1.0/mailboxes/).
-That other one is for listing the mailboxes a user has access to in regular app use.
-This one is for managing mailboxes within a specific maildomain in the admin interface.
+ * List mailboxes, optionally filtered by local part / contact name.
  */
 export type maildomainsMailboxesListResponse200 = {
   data: PaginatedMailboxAdminList;
@@ -1409,6 +1404,141 @@ export const useMaildomainsMailboxesDestroy = <
   return useMutation(mutationOptions, queryClient);
 };
 /**
+ * Toggle the Keycloak realm role indicated by KEYCLOAK_TOTP_ROLE_ID on the user backing this mailbox.
+ */
+export type maildomainsMailboxesSetMandatoryTotpResponse200 = {
+  data: MailboxAdminMandatoryTotpResponse;
+  status: 200;
+};
+
+export type maildomainsMailboxesSetMandatoryTotpResponseSuccess =
+  maildomainsMailboxesSetMandatoryTotpResponse200 & {
+    headers: Headers;
+  };
+export type maildomainsMailboxesSetMandatoryTotpResponse =
+  maildomainsMailboxesSetMandatoryTotpResponseSuccess;
+
+export const getMaildomainsMailboxesSetMandatoryTotpUrl = (
+  maildomainPk: string,
+  id: string,
+) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/mailboxes/${id}/mandatory-totp/`;
+};
+
+export const maildomainsMailboxesSetMandatoryTotp = async (
+  maildomainPk: string,
+  id: string,
+  mailboxAdminMandatoryTotpPayloadRequest: MailboxAdminMandatoryTotpPayloadRequest,
+  options?: RequestInit,
+): Promise<maildomainsMailboxesSetMandatoryTotpResponse> => {
+  return fetchAPI<maildomainsMailboxesSetMandatoryTotpResponse>(
+    getMaildomainsMailboxesSetMandatoryTotpUrl(maildomainPk, id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(mailboxAdminMandatoryTotpPayloadRequest),
+    },
+  );
+};
+
+export const getMaildomainsMailboxesSetMandatoryTotpMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsMailboxesSetMandatoryTotp>>,
+    TError,
+    {
+      maildomainPk: string;
+      id: string;
+      data: MailboxAdminMandatoryTotpPayloadRequest;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsMailboxesSetMandatoryTotp>>,
+  TError,
+  {
+    maildomainPk: string;
+    id: string;
+    data: MailboxAdminMandatoryTotpPayloadRequest;
+  },
+  TContext
+> => {
+  const mutationKey = ["maildomainsMailboxesSetMandatoryTotp"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsMailboxesSetMandatoryTotp>>,
+    {
+      maildomainPk: string;
+      id: string;
+      data: MailboxAdminMandatoryTotpPayloadRequest;
+    }
+  > = (props) => {
+    const { maildomainPk, id, data } = props ?? {};
+
+    return maildomainsMailboxesSetMandatoryTotp(
+      maildomainPk,
+      id,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MaildomainsMailboxesSetMandatoryTotpMutationResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsMailboxesSetMandatoryTotp>>
+>;
+export type MaildomainsMailboxesSetMandatoryTotpMutationBody =
+  MailboxAdminMandatoryTotpPayloadRequest;
+export type MaildomainsMailboxesSetMandatoryTotpMutationError =
+  ErrorType<unknown>;
+
+export const useMaildomainsMailboxesSetMandatoryTotp = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof maildomainsMailboxesSetMandatoryTotp>>,
+      TError,
+      {
+        maildomainPk: string;
+        id: string;
+        data: MailboxAdminMandatoryTotpPayloadRequest;
+      },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsMailboxesSetMandatoryTotp>>,
+  TError,
+  {
+    maildomainPk: string;
+    id: string;
+    data: MailboxAdminMandatoryTotpPayloadRequest;
+  },
+  TContext
+> => {
+  const mutationOptions =
+    getMaildomainsMailboxesSetMandatoryTotpMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
  * Reset the Keycloak password for a specific mailbox.
  */
 export type maildomainsMailboxesResetPasswordResponse200 = {
@@ -1544,6 +1674,111 @@ export const useMaildomainsMailboxesResetPassword = <
 > => {
   const mutationOptions =
     getMaildomainsMailboxesResetPasswordMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Remove existing OTP credentials and require the user to re-enroll in TOTP on next login.
+ */
+export type maildomainsMailboxesResetTotpResponse200 = {
+  data: MailboxAdminResetTotpResponse;
+  status: 200;
+};
+
+export type maildomainsMailboxesResetTotpResponseSuccess =
+  maildomainsMailboxesResetTotpResponse200 & {
+    headers: Headers;
+  };
+export type maildomainsMailboxesResetTotpResponse =
+  maildomainsMailboxesResetTotpResponseSuccess;
+
+export const getMaildomainsMailboxesResetTotpUrl = (
+  maildomainPk: string,
+  id: string,
+) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/mailboxes/${id}/reset-totp/`;
+};
+
+export const maildomainsMailboxesResetTotp = async (
+  maildomainPk: string,
+  id: string,
+  options?: RequestInit,
+): Promise<maildomainsMailboxesResetTotpResponse> => {
+  return fetchAPI<maildomainsMailboxesResetTotpResponse>(
+    getMaildomainsMailboxesResetTotpUrl(maildomainPk, id),
+    {
+      ...options,
+      method: "PATCH",
+    },
+  );
+};
+
+export const getMaildomainsMailboxesResetTotpMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof maildomainsMailboxesResetTotp>>,
+    TError,
+    { maildomainPk: string; id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof maildomainsMailboxesResetTotp>>,
+  TError,
+  { maildomainPk: string; id: string },
+  TContext
+> => {
+  const mutationKey = ["maildomainsMailboxesResetTotp"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof maildomainsMailboxesResetTotp>>,
+    { maildomainPk: string; id: string }
+  > = (props) => {
+    const { maildomainPk, id } = props ?? {};
+
+    return maildomainsMailboxesResetTotp(maildomainPk, id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MaildomainsMailboxesResetTotpMutationResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsMailboxesResetTotp>>
+>;
+
+export type MaildomainsMailboxesResetTotpMutationError = ErrorType<unknown>;
+
+export const useMaildomainsMailboxesResetTotp = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof maildomainsMailboxesResetTotp>>,
+      TError,
+      { maildomainPk: string; id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof maildomainsMailboxesResetTotp>>,
+  TError,
+  { maildomainPk: string; id: string },
+  TContext
+> => {
+  const mutationOptions =
+    getMaildomainsMailboxesResetTotpMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };

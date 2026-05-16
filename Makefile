@@ -580,6 +580,28 @@ search-index: ## Create and/or reindex opensearch data
 	@$(MANAGE) search_reindex --all --recreate-index
 .PHONY: search-index
 
+build-keycloak: ## Build the custom Keycloak provider JARs (writes JAR alongside pom.xml so it can be committed)
+	@docker volume create st-messages-keycloak-mvn-cache >/dev/null
+	@docker run --rm \
+		-v "$(PWD)/src/keycloak/bulk-role-membership":/build \
+		-v st-messages-keycloak-mvn-cache:/root/.m2 \
+		-w /build \
+		maven:3.9-eclipse-temurin-21 \
+		mvn -B -q -o package -DskipTests 2>/dev/null \
+		|| docker run --rm \
+			-v "$(PWD)/src/keycloak/bulk-role-membership":/build \
+			-v st-messages-keycloak-mvn-cache:/root/.m2 \
+			-w /build \
+			maven:3.9-eclipse-temurin-21 \
+			mvn -B -q package -DskipTests
+	@cp src/keycloak/bulk-role-membership/target/bulk-role-membership.jar \
+		src/keycloak/bulk-role-membership/bulk-role-membership.jar
+.PHONY: build-keycloak
+
+test-keycloak: ## run all Keycloak provider tests (builds JARs, brings up Keycloak)
+	@bin/test-keycloak
+.PHONY: test-keycloak
+
 deps-lock-mta-in: ## lock the dependencies
 	@$(COMPOSE) run --rm --build mta-in-uv uv lock
 .PHONY: deps-lock-mta-in

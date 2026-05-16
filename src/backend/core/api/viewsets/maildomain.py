@@ -4,7 +4,7 @@ from logging import getLogger
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Max, Q
 from django.shortcuts import get_object_or_404
 
 from drf_spectacular.utils import (
@@ -23,6 +23,7 @@ from rest_framework import (
     serializers as drf_serializers,
 )
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from core import models
@@ -30,10 +31,17 @@ from core.api import permissions as core_permissions
 from core.api import serializers as core_serializers
 from core.api.viewsets.message_template import BODIES_PARAMETER
 from core.api.viewsets.mixins import MessageTemplateResponseMixin
-from core.enums import MessageTemplateTypeChoices
+from core.enums import MailDomainAbilities, MessageTemplateTypeChoices
 from core.services.dns.check import check_dns_records, invalidate_spf_check_cache
+from core.services.identity import keycloak as keycloak_service
 
 logger = getLogger(__name__)
+
+
+class _MandatoryTotpPayloadSerializer(drf_serializers.Serializer):  # pylint: disable=abstract-method
+    """Strict validation for the ``set_mandatory_totp`` request body."""
+
+    enabled = drf_serializers.BooleanField()
 
 
 class AdminMailDomainViewSet(
@@ -74,19 +82,39 @@ class AdminMailDomainViewSet(
 
         if user.is_superuser:
             # For superusers, preload accesses to avoid N+1 queries in get_abilities
-            return models.MailDomain.objects.prefetch_related("accesses").order_by(
+            queryset = models.MailDomain.objects.prefetch_related("accesses").order_by(
                 "name"
             )
-        # Optimization : one query with JOIN and annotation
-        return (
-            models.MailDomain.objects.filter(
-                accesses__user=user,
-                accesses__role=models.MailDomainAccessRoleChoices.ADMIN,
+        else:
+            # Optimization : one query with JOIN and annotation
+            queryset = (
+                models.MailDomain.objects.filter(
+                    accesses__user=user,
+                    accesses__role=models.MailDomainAccessRoleChoices.ADMIN,
+                )
+                .annotate(user_role=F("accesses__role"))
+                .distinct()
+                .order_by("name")
             )
-            .annotate(user_role=F("accesses__role"))
-            .distinct()
-            .order_by("name")
-        )
+
+        search = (self.request.query_params.get("q") or "").strip()
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+        return queryset
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="q",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Filter domains whose name contains this value (case-insensitive).",
+            ),
+        ],
+    )
+    def list(self, request, *args, **kwargs):
+        """List mail domains, optionally filtered by name with the `q` parameter."""
+        return super().list(request, *args, **kwargs)
 
     @extend_schema(
         description="Check DNS records for a specific mail domain.",
@@ -168,7 +196,64 @@ class AdminMailDomainMailboxViewSet(
 
     def get_queryset(self):
         maildomain_pk = self.kwargs.get("maildomain_pk")
-        return models.Mailbox.objects.filter(domain_id=maildomain_pk)
+        queryset = (
+            models.Mailbox.objects.filter(domain_id=maildomain_pk)
+            .select_related("domain")
+            .annotate(last_accessed_at=Max("accesses__accessed_at"))
+            .order_by("local_part")
+        )
+        search = (self.request.query_params.get("q") or "").strip()
+        if search:
+            queryset = queryset.filter(
+                Q(local_part__icontains=search) | Q(contact__name__icontains=search)
+            ).distinct()
+        return queryset
+
+    def get_serializer(self, *args, **kwargs):
+        """Inject the per-page mandatory TOTP membership dict when listing.
+
+        Letting the standard ``ListModelMixin.list()`` paginate first means we
+        hook in once with the page's rows already in ``args[0]`` and resolve
+        membership in a single round-trip to the custom Keycloak provider.
+        """
+        if (
+            kwargs.get("many")
+            and self.action == "list"
+            and args
+            and keycloak_service.is_mandatory_totp_enabled()
+        ):
+            rows = args[0]
+            usernames = [
+                str(m) for m in rows if m.is_identity and m.domain.identity_sync
+            ]
+            try:
+                membership = keycloak_service.batch_realm_role_membership(
+                    usernames, settings.KEYCLOAK_TOTP_ROLE_ID
+                )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                # Don't block the page; serializer renders `null` for these rows.
+                logger.warning("Could not batch mandatory TOTP membership: %s", e)
+                membership = None
+            context = kwargs.setdefault("context", self.get_serializer_context())
+            context["mandatory_totp_membership"] = membership
+        return super().get_serializer(*args, **kwargs)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="q",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description=(
+                    "Filter mailboxes whose local part or contact name contains this "
+                    "value (case-insensitive)."
+                ),
+            ),
+        ],
+    )
+    def list(self, request, *args, **kwargs):
+        """List mailboxes, optionally filtered by local part / contact name."""
+        return super().list(request, *args, **kwargs)
 
     @extend_schema(
         description="Create new mailbox in a specific maildomain.",
@@ -338,6 +423,115 @@ class AdminMailDomainMailboxViewSet(
         return Response(
             {"one_time_password": mailbox_password}, status=status.HTTP_200_OK
         )
+
+    def _assert_mandatory_totp_available(self, mailbox):
+        """Raise the appropriate DRF exception if the action can't proceed.
+
+        - feature off / misconfigured → ``NotFound``
+        - mailbox not eligible → ``ValidationError``
+        - caller lacks the manage-mailboxes ability → ``PermissionDenied``
+
+        ``IsMailDomainAdmin`` (the viewset permission) and the
+        ``manage_mailboxes`` ability are equivalent today, but the explicit
+        check pins the contract: this action requires the same ability the
+        frontend gates the UI on.
+        """
+        if not keycloak_service.is_mandatory_totp_enabled():
+            raise NotFound("Mandatory TOTP feature is not enabled.")
+        if not mailbox.is_identity or not mailbox.domain.identity_sync:
+            raise ValidationError(
+                "Mandatory TOTP can only be set on personal mailboxes "
+                "in identity-synced domains."
+            )
+        abilities = mailbox.domain.get_abilities(self.request.user)
+        if not abilities.get(MailDomainAbilities.CAN_MANAGE_MAILBOXES):
+            raise PermissionDenied("You cannot manage mailboxes in this domain.")
+
+    @extend_schema(
+        operation_id="maildomains_mailboxes_set_mandatory_totp",
+        description=(
+            "Toggle the Keycloak realm role indicated by KEYCLOAK_TOTP_ROLE_ID "
+            "on the user backing this mailbox."
+        ),
+        request=inline_serializer(
+            name="MailboxAdminMandatoryTotpPayload",
+            fields={"enabled": drf_serializers.BooleanField()},
+        ),
+        responses={
+            200: inline_serializer(
+                name="MailboxAdminMandatoryTotpResponse",
+                fields={"enabled": drf_serializers.BooleanField()},
+            ),
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="mandatory-totp")
+    def set_mandatory_totp(self, request, *args, **kwargs):
+        """Assign or remove the configured TOTP realm role on the mailbox user."""
+        # Validate the payload before doing any per-mailbox work — a malformed
+        # body should always surface as 400 regardless of mailbox eligibility.
+        payload = _MandatoryTotpPayloadSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        enabled = payload.validated_data["enabled"]
+
+        mailbox = self.get_object()
+        self._assert_mandatory_totp_available(mailbox)
+
+        try:
+            keycloak_service.set_realm_role(
+                str(mailbox), settings.KEYCLOAK_TOTP_ROLE_ID, assigned=enabled
+            )
+        except ValueError as e:
+            # set_realm_role raises ValueError when the Keycloak user or role
+            # can't be found — that's a 404 (resource doesn't exist),
+            # not a server fault. Don't surface the raw Keycloak text — it can
+            # carry the username (PII) or the configured role id.
+            logger.warning("Mandatory TOTP target missing for mailbox %s", mailbox.id)
+            raise NotFound("Keycloak resource not found for mailbox.") from e
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Error setting mandatory TOTP for mailbox %s", mailbox.id)
+            return Response(
+                {"error": "Could not update mandatory TOTP."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response({"enabled": enabled}, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        operation_id="maildomains_mailboxes_reset_totp",
+        description=(
+            "Remove existing OTP credentials and require the user to re-enroll "
+            "in TOTP on next login."
+        ),
+        request=inline_serializer(
+            name="MailboxAdminResetTotpPayload",
+            fields={},
+        ),
+        responses={
+            200: inline_serializer(
+                name="MailboxAdminResetTotpResponse",
+                fields={"removed_credentials": drf_serializers.IntegerField()},
+            ),
+        },
+    )
+    @action(detail=True, methods=["patch"], url_path="reset-totp")
+    def reset_totp(self, request, *args, **kwargs):
+        """Force-reset the TOTP enrollment for the mailbox user."""
+        mailbox = self.get_object()
+        self._assert_mandatory_totp_available(mailbox)
+
+        try:
+            result = keycloak_service.reset_keycloak_user_totp(str(mailbox))
+        except ValueError as e:
+            logger.warning("Reset TOTP target missing for mailbox %s", mailbox.id)
+            raise NotFound("Keycloak resource not found for mailbox.") from e
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Error resetting TOTP for mailbox %s", mailbox.id)
+            return Response(
+                {"error": "Could not reset TOTP."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response(result, status=status.HTTP_200_OK)
 
 
 # pylint: disable=too-many-ancestors

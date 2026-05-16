@@ -1,23 +1,51 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
 /**
- * useDebounceCallback hook
- * Ensure the callback is called only after the delay has passed
+ * Debounced callback. Returns the debounced function with a `cancel`
+ * method attached so callers can drop any pending invocation — useful
+ * when the input that fed the callback has been reset externally and
+ * the queued call would carry stale state.
  */
-export function useDebounceCallback<Fn extends (...args: Parameters<Fn>) => void>(callback: Fn, delay: number): (...args: Parameters<Fn>) => void {
+export type DebouncedCallback<P extends readonly unknown[]> =
+    ((...args: P) => void) & { cancel: () => void };
+
+export function useDebounceCallback<P extends readonly unknown[]>(
+    callback: (...args: P) => void,
+    delay: number,
+): DebouncedCallback<P> {
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const debouncedCallback = useCallback((...args: Parameters<Fn>) => {
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-        }
-        timeoutRef.current = setTimeout(() => callback(...args), delay);
-    }, [callback, delay]);
+    // Latest-callback ref so the memoized debounced function always
+    // invokes the current callback without losing its own identity
+    // when the parent re-renders with a fresh arrow function.
+    const callbackRef = useRef(callback);
+    callbackRef.current = callback;
 
-    useEffect(() => () => {
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-        }
-    }, []);
+    // Clean up any pending timer on unmount so a queued callback can't
+    // fire after the host component is gone.
+    useEffect(
+        () => () => {
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+            }
+        },
+        [],
+    );
 
-  return debouncedCallback;
-} 
+    return useMemo<DebouncedCallback<P>>(() => {
+        const cancel = () => {
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
+            }
+        };
+        const fn = ((...args: P) => {
+            cancel();
+            timeoutRef.current = setTimeout(
+                () => callbackRef.current(...args),
+                delay,
+            );
+        }) as DebouncedCallback<P>;
+        fn.cancel = cancel;
+        return fn;
+    }, [delay]);
+}

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+#
+# Run every Keycloak test script in src/keycloak/tests/, self-contained.
+#
+# - Builds custom provider JARs first (so compose mounts a fresh one).
+# - Brings Keycloak up implicitly via the backend-dev compose dependency.
+# - Each test_*.py runs inside the backend-dev container so it has
+#   python-keycloak and the right KEYCLOAK_URL env already.
+#
+# Add a new test by dropping `src/keycloak/tests/test_<name>.py` —
+# this runner will pick it up automatically on the next invocation.
+
+set -eo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/_config.sh"
+
+# Only rebuild when a build input is newer than the committed JAR. The
+# JAR is tracked in git, so a clean checkout already has a working copy
+# and the test runner doesn't pay the Maven cold-start cost on every run.
+# Inputs that affect the built artifact: .java sources, resource files
+# (the SPI service descriptor lives under src/main/resources), and pom.xml.
+jar="$REPO_DIR/src/keycloak/bulk-role-membership/bulk-role-membership.jar"
+src_dir="$REPO_DIR/src/keycloak/bulk-role-membership/src"
+pom="$REPO_DIR/src/keycloak/bulk-role-membership/pom.xml"
+if [ ! -f "$jar" ] \
+    || [ "$pom" -nt "$jar" ] \
+    || [ -n "$(find "$src_dir" -type f -newer "$jar" -print -quit 2>/dev/null)" ]; then
+    echo "📦 (re)building JAR — build input changed or JAR missing"
+    make -C "$REPO_DIR" --no-print-directory build-keycloak
+    docker compose restart keycloak
+fi
+
+# Always block until Keycloak is serving the realm — covers a fresh
+# `compose up`, an in-flight restart from this run, or any restart still
+# settling from a previous invocation. Bounded so a stuck Keycloak fails
+# the run fast instead of hanging indefinitely.
+port="${KEYCLOAK_HOST_PORT:-8902}"
+timeout="${KEYCLOAK_WAIT_TIMEOUT:-120}"
+echo "⏳ waiting up to ${timeout}s for Keycloak on localhost:$port"
+for ((waited = 0; waited < timeout; waited++)); do
+    if curl -fsS -o /dev/null "http://localhost:$port/realms/messages/.well-known/openid-configuration" 2>/dev/null; then
+        break
+    fi
+    sleep 1
+done
+if [ "$waited" -ge "$timeout" ]; then
+    echo "❌ Keycloak did not become ready within ${timeout}s on localhost:$port" >&2
+    exit 1
+fi
+
+shopt -s nullglob
+tests=("$REPO_DIR"/src/keycloak/tests/test_*.py)
+shopt -u nullglob
+
+if [ ${#tests[@]} -eq 0 ]; then
+    echo "no Keycloak test scripts found in src/keycloak/tests/"
+    exit 1
+fi
+
+for test in "${tests[@]}"; do
+    name="$(basename "$test")"
+    echo "🧪 $name"
+    _dc_run \
+        -v "$REPO_DIR/src/keycloak/tests:/keycloak-tests:ro" \
+        backend-dev \
+        python "/keycloak-tests/$name"
+done

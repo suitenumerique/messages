@@ -3,7 +3,8 @@ import { MailDomainAdmin } from "../api/gen/models/mail_domain_admin";
 import { useMaildomainsList, useMaildomainsRetrieve } from "../api/gen";
 import { useRouter } from "next/router";
 import { usePagination } from "@gouvfr-lasuite/cunningham-react";
-import { DEFAULT_PAGE_SIZE } from "../config/constants";
+import { keepPreviousData } from "@tanstack/react-query";
+import { useSearchablePagination } from "@/hooks/use-searchable-pagination";
 
 type AdminMailDomainContextType = {
     selectedMailDomain: MailDomainAdmin | null;
@@ -11,6 +12,8 @@ type AdminMailDomainContextType = {
     isLoading: boolean;
     error: unknown | null;
     pagination: ReturnType<typeof usePagination>;
+    searchQuery: string;
+    setSearchQuery: (query: string) => void;
 }
 
 const AdminMailDomainContext = createContext<AdminMailDomainContextType | undefined>(undefined)
@@ -21,21 +24,32 @@ const AdminMailDomainContext = createContext<AdminMailDomainContextType | undefi
  */
 export const AdminMailDomainProvider = ({ children }: PropsWithChildren) => {
     const router = useRouter();
-    const pagination = usePagination({ pageSize: DEFAULT_PAGE_SIZE });
-    const { data: maildomainsData, isLoading: isLoadingList, error: listError } = useMaildomainsList({ page: pagination.page });
+    const { pagination, searchQuery, setSearchQuery } = useSearchablePagination();
+    const trimmedQuery = searchQuery.trim();
+    const { data: maildomainsData, isLoading: isLoadingList, error: listError } = useMaildomainsList({
+        page: pagination.page,
+        ...(trimmedQuery ? { q: trimmedQuery } : {}),
+    }, {
+        query: { placeholderData: keepPreviousData },
+    });
     const { data: selectedMaildomainData, isLoading: isLoadingItem, error: itemError } = useMaildomainsRetrieve(
         router.query.maildomainId as string, { query: { enabled: !!router.query.maildomainId } });
+
     const context = useMemo(() => ({
         selectedMailDomain: selectedMaildomainData?.data || null,
         mailDomains: maildomainsData?.data.results || [],
         isLoading: isLoadingList || isLoadingItem,
         error: listError || itemError,
-        pagination
-    }), [selectedMaildomainData, maildomainsData, isLoadingList, isLoadingItem, listError, itemError, pagination]);
+        pagination,
+        searchQuery,
+        setSearchQuery,
+    }), [selectedMaildomainData, maildomainsData, isLoadingList, isLoadingItem, listError, itemError, pagination, searchQuery, setSearchQuery]);
 
     useEffect(() => {
-        if (maildomainsData?.data.count) {
-            pagination.setPagesCount(Math.ceil(maildomainsData.data.count / pagination.pageSize));
+        if (maildomainsData?.data.count !== undefined) {
+            pagination.setPagesCount(
+                Math.max(1, Math.ceil(maildomainsData.data.count / pagination.pageSize))
+            );
         }
     }, [maildomainsData?.data.count, pagination.pageSize, pagination.setPagesCount]);
 

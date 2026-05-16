@@ -18,6 +18,23 @@ logger = logging.getLogger(__name__)
 SNIPPET_MAX_LENGTH = 140
 
 
+def get_redis_client():
+    """Return the django-redis client bound to the ``default`` cache.
+
+    The single accessor for ``get_redis_connection("default")`` across the
+    project — every module that wants raw Redis primitives (SADD/SPOP/…)
+    routes through here so we have one place to swap the backend or wrap
+    instrumentation. Raises if django_redis isn't configured for the
+    default cache (e.g. ``NotImplementedError`` on a LocMem backend);
+    callers are expected to gate with ``settings.CACHES`` checks or to
+    catch broadly in their own error path.
+    """
+    # pylint: disable-next=import-outside-toplevel
+    from django_redis import get_redis_connection
+
+    return get_redis_connection("default")
+
+
 def extract_snippet(parsed_data: dict[str, Any], fallback: str = "") -> str:
     """Extract a text snippet from parsed email/message data.
 

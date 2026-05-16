@@ -1030,6 +1030,20 @@ class Base(Configuration):
         default=True, environ_name="FEATURE_THREAD_SPLIT", environ_prefix=None
     )
 
+    # Mandatory TOTP admin column. When True, the mailbox admin DataGrid shows
+    # a "Mandatory 2FA" column with a per-mailbox switch and a "Reset 2FA"
+    # row action. Both rely on KEYCLOAK_TOTP_ROLE_ID.
+    FEATURE_MAILDOMAIN_MANAGE_TOTP = values.BooleanValue(
+        default=False,
+        environ_name="FEATURE_MAILDOMAIN_MANAGE_TOTP",
+        environ_prefix=None,
+    )
+    # ID of the realm role assigned in Keycloak when "Mandatory 2FA" is
+    # toggled on for a mailbox.
+    KEYCLOAK_TOTP_ROLE_ID = values.Value(
+        default=None, environ_name="KEYCLOAK_TOTP_ROLE_ID", environ_prefix=None
+    )
+
     # Logging
     # We want to make it easy to log to console but by default we log production
     # to Sentry and don't want to log to console.

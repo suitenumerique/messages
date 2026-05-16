@@ -42,6 +42,8 @@ from django.conf import settings
 
 from redis.exceptions import RedisError
 
+from core.utils import get_redis_client
+
 logger = logging.getLogger(__name__)
 
 PENDING_REINDEX_KEY = "search:pending_reindex_threads"
@@ -59,13 +61,6 @@ def _is_redis_backend() -> bool:
     return "django_redis" in backend
 
 
-def _redis_client():
-    # pylint: disable-next=import-outside-toplevel
-    from django_redis import get_redis_connection
-
-    return get_redis_connection("default")
-
-
 def _enqueue(key: str, value) -> None:
     """Add ``value`` to the pending set at ``key``."""
     if value is None:
@@ -80,7 +75,7 @@ def _enqueue(key: str, value) -> None:
         )
         return
     try:
-        _redis_client().sadd(key, str(value))
+        get_redis_client().sadd(key, str(value))
     except RedisError as exc:
         logger.error(
             "Redis unavailable while enqueuing %s into %s (%s: %s); "
@@ -129,7 +124,7 @@ def _drain_batch(key: str, batch_size: int) -> list | None:
     or ``None`` if the drain itself failed — signalling the caller to stop.
     """
     try:
-        drained = _redis_client().spop(key, count=batch_size)
+        drained = get_redis_client().spop(key, count=batch_size)
         return [
             tid.decode() if isinstance(tid, bytes) else str(tid)
             for tid in (drained or [])
@@ -152,7 +147,7 @@ def _drain_batch(key: str, batch_size: int) -> list | None:
 def _restore_batch(key: str, thread_ids: list) -> None:
     """Push ``thread_ids`` back into the pending set at ``key``."""
     try:
-        _redis_client().sadd(key, *thread_ids)
+        get_redis_client().sadd(key, *thread_ids)
     except RedisError as exc:
         logger.error(
             "Redis unavailable while restoring %d drained IDs to %s (%s: %s); "

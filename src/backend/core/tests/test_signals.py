@@ -562,7 +562,7 @@ class TestCoalescerRedisBackend:
         spop_side_effect.calls = 0
 
         with (
-            patch("core.services.search.coalescer._redis_client") as mock_client,
+            patch("core.services.search.coalescer.get_redis_client") as mock_client,
             patch(
                 "core.services.search.tasks.bulk_reindex_threads_task.delay"
             ) as mock_bulk,
@@ -596,7 +596,7 @@ class TestCoalescerRedisBackend:
         spop_side_effect.calls = 0
 
         with (
-            patch("core.services.search.coalescer._redis_client") as mock_client,
+            patch("core.services.search.coalescer.get_redis_client") as mock_client,
             patch(
                 "core.services.search.tasks.bulk_delete_threads_task.delay"
             ) as mock_delete,
@@ -649,7 +649,7 @@ class TestCoalescerRedisBackend:
             return []
 
         with (
-            patch("core.services.search.coalescer._redis_client") as mock_client,
+            patch("core.services.search.coalescer.get_redis_client") as mock_client,
             patch(
                 "core.services.search.tasks.bulk_reindex_threads_task.delay"
             ) as mock_reindex,
@@ -671,7 +671,7 @@ class TestCoalescerRedisBackend:
         from core.services.search.coalescer import process_pending_reindex
 
         with (
-            patch("core.services.search.coalescer._redis_client") as mock_client,
+            patch("core.services.search.coalescer.get_redis_client") as mock_client,
             patch(
                 "core.services.search.tasks.bulk_reindex_threads_task.delay"
             ) as mock_reindex,
@@ -692,7 +692,7 @@ class TestCoalescerRedisBackend:
         # pylint: disable-next=import-outside-toplevel
         from core.services.search.coalescer import enqueue_thread_reindex
 
-        with patch("core.services.search.coalescer._redis_client") as mock_client:
+        with patch("core.services.search.coalescer.get_redis_client") as mock_client:
             enqueue_thread_reindex(None)
             mock_client.assert_not_called()
 
@@ -701,7 +701,7 @@ class TestCoalescerRedisBackend:
         # pylint: disable-next=import-outside-toplevel
         from core.services.search.coalescer import enqueue_thread_delete
 
-        with patch("core.services.search.coalescer._redis_client") as mock_client:
+        with patch("core.services.search.coalescer.get_redis_client") as mock_client:
             enqueue_thread_delete(None)
             mock_client.assert_not_called()
 
@@ -713,7 +713,7 @@ class TestCoalescerRedisBackend:
             enqueue_message_delete,
         )
 
-        with patch("core.services.search.coalescer._redis_client") as mock_client:
+        with patch("core.services.search.coalescer.get_redis_client") as mock_client:
             enqueue_message_delete("thread-a", "msg-1")
 
         mock_client.return_value.sadd.assert_called_once_with(
@@ -725,7 +725,7 @@ class TestCoalescerRedisBackend:
         # pylint: disable-next=import-outside-toplevel
         from core.services.search.coalescer import enqueue_message_delete
 
-        with patch("core.services.search.coalescer._redis_client") as mock_client:
+        with patch("core.services.search.coalescer.get_redis_client") as mock_client:
             enqueue_message_delete(None, "msg-1")
             enqueue_message_delete("thread-a", None)
             enqueue_message_delete(None, None)
@@ -751,7 +751,7 @@ class TestCoalescerRedisBackend:
         spop_side_effect.calls = 0
 
         with (
-            patch("core.services.search.coalescer._redis_client") as mock_client,
+            patch("core.services.search.coalescer.get_redis_client") as mock_client,
             patch(
                 "core.services.search.tasks.bulk_delete_messages_task.delay"
             ) as mock_delete_messages,
@@ -787,7 +787,7 @@ class TestCoalescerRedisBackend:
             return []
 
         with (
-            patch("core.services.search.coalescer._redis_client") as mock_client,
+            patch("core.services.search.coalescer.get_redis_client") as mock_client,
             patch(
                 "core.services.search.tasks.bulk_delete_messages_task.delay",
                 side_effect=Exception("broker down"),
@@ -817,7 +817,7 @@ class TestCoalescerRedisBackend:
         )
 
         with patch(
-            "core.services.search.coalescer._redis_client",
+            "core.services.search.coalescer.get_redis_client",
             side_effect=Exception("redis down"),
         ):
             # Must not raise.
@@ -840,7 +840,7 @@ class TestCoalescerRedisBackend:
             enqueue_thread_reindex,
         )
 
-        with patch("core.services.search.coalescer._redis_client") as mock_client:
+        with patch("core.services.search.coalescer.get_redis_client") as mock_client:
             mock_client.return_value.sadd.side_effect = RedisConnectionError(
                 "connection refused"
             )
@@ -865,7 +865,7 @@ class TestCoalescerRedisBackend:
         )
 
         with (
-            patch("core.services.search.coalescer._redis_client") as mock_client,
+            patch("core.services.search.coalescer.get_redis_client") as mock_client,
             patch(
                 "core.services.search.tasks.bulk_delete_threads_task.delay"
             ) as mock_delete,
@@ -907,7 +907,7 @@ class TestCoalescerRedisBackend:
             return []
 
         with (
-            patch("core.services.search.coalescer._redis_client") as mock_client,
+            patch("core.services.search.coalescer.get_redis_client") as mock_client,
             patch(
                 "core.services.search.tasks.bulk_reindex_threads_task.delay",
                 side_effect=Exception("broker down"),
@@ -955,7 +955,7 @@ class TestCoalescerRedisBackend:
             return []
 
         with (
-            patch("core.services.search.coalescer._redis_client") as mock_client,
+            patch("core.services.search.coalescer.get_redis_client") as mock_client,
             patch(
                 "core.services.search.tasks.bulk_reindex_threads_task.delay",
                 side_effect=Exception("broker down"),
@@ -988,7 +988,7 @@ class TestCoalescerRedisBackend:
             return []
 
         with (
-            patch("core.services.search.coalescer._redis_client") as mock_client,
+            patch("core.services.search.coalescer.get_redis_client") as mock_client,
             patch(
                 "core.services.search.tasks.bulk_delete_threads_task.delay",
                 side_effect=Exception("broker down"),
@@ -1021,7 +1021,7 @@ class TestCoalescerRedisBackend:
             return []
 
         with (
-            patch("core.services.search.coalescer._redis_client") as mock_client,
+            patch("core.services.search.coalescer.get_redis_client") as mock_client,
             patch(
                 "core.services.search.tasks.bulk_reindex_threads_task.delay",
                 side_effect=Exception("broker down"),
@@ -1488,14 +1488,14 @@ class TestCoalescerNonRedisGuard:
         ],
     )
     def test_enqueue_warns_and_skips_redis_call(self, settings, backend):
-        """``_enqueue`` logs a warning and never reaches ``_redis_client``."""
+        """``_enqueue`` logs a warning and never reaches ``get_redis_client``."""
         settings.CACHES = {"default": {"BACKEND": backend}}
         # pylint: disable-next=import-outside-toplevel
         from core.services.search.coalescer import enqueue_thread_reindex
 
         with (
             patch("core.services.search.coalescer.logger") as mock_logger,
-            patch("core.services.search.coalescer._redis_client") as mock_client,
+            patch("core.services.search.coalescer.get_redis_client") as mock_client,
         ):
             enqueue_thread_reindex("thread-a")
 

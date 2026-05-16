@@ -1,7 +1,9 @@
 """Keycloak identity management integration."""
 
+import json
 import logging
 import secrets
+import time
 
 from django.conf import settings
 
@@ -12,11 +14,28 @@ from core.models import Mailbox, MailDomain
 
 logger = logging.getLogger(__name__)
 
+# Reuse a single admin client across calls so each one doesn't pay a fresh
+# OIDC client_credentials round trip. The grant has no refresh token, so we
+# cache against the access token's own ``expires_in`` and refresh slightly
+# before actual expiry to give any in-flight operation headroom. A handful
+# of concurrent misses re-fetch — acceptable, the only cost is a duplicate
+# token issuance.
+_TOKEN_EXPIRY_SAFETY_MARGIN = 30  # seconds shaved off advertised expires_in
+_TOKEN_MIN_TTL = 10  # floor so a near-zero expires_in still caches briefly
+_admin_client_cache: dict = {"client": None, "expires_at": 0.0}
+
 
 def get_keycloak_admin_client():
+    """Return a KeycloakAdmin client backed by the rest-api service account.
+
+    Cached at module level until the access token is close to expiry. The
+    cache is process-local; under thread contention a few concurrent misses
+    may each fetch a token, which is harmless.
     """
-    Get a KeycloakAdmin client using the rest-api service account.
-    """
+    now = time.monotonic()
+    cached = _admin_client_cache["client"]
+    if cached is not None and _admin_client_cache["expires_at"] > now:
+        return cached
 
     keycloak_openid = KeycloakOpenID(
         server_url=settings.KEYCLOAK_URL,
@@ -24,7 +43,6 @@ def get_keycloak_admin_client():
         client_id=settings.KEYCLOAK_CLIENT_ID,
         client_secret_key=settings.KEYCLOAK_CLIENT_SECRET,
     )
-
     token = keycloak_openid.token(grant_type="client_credentials")
 
     keycloak_admin = KeycloakAdmin(
@@ -34,6 +52,10 @@ def get_keycloak_admin_client():
         token=token,
     )
 
+    expires_in = int(token.get("expires_in", 60))
+    ttl = max(expires_in - _TOKEN_EXPIRY_SAFETY_MARGIN, _TOKEN_MIN_TTL)
+    _admin_client_cache["client"] = keycloak_admin
+    _admin_client_cache["expires_at"] = now + ttl
     return keycloak_admin
 
 
@@ -252,6 +274,10 @@ def list_keycloak_users(limit=100):
 def reset_keycloak_user_password(username, new_password=None):
     """
     Reset a user's password in Keycloak with a one-time new password.
+
+    Also re-enables the account if it was disabled and clears any brute-force
+    lockout, so admins can recover users who got locked out after too many
+    failed login attempts in one operation.
     """
     if not new_password:
         new_password = generate_password()
@@ -267,6 +293,23 @@ def reset_keycloak_user_password(username, new_password=None):
         user = users[0]
         user_id = user["id"]
 
+        # If the account was disabled (e.g. by an admin), re-enable it before
+        # the new password becomes useful.
+        if not user.get("enabled", True):
+            keycloak_admin.update_user(user_id=user_id, payload={"enabled": True})
+            logger.info("Re-enabled Keycloak user: %s", username)
+
+        # Clear any brute-force lockout. This is a no-op when there are no
+        # recorded failures, and ensures a fresh password is immediately usable.
+        try:
+            keycloak_admin.clear_bruteforce_attempts_for_user(user_id=user_id)
+        except KeycloakError as e:
+            # Don't fail the whole password reset if the brute-force clear
+            # endpoint hiccups (e.g. policy disabled in some realms).
+            logger.warning(
+                "Could not clear brute-force attempts for %s: %s", username, e
+            )
+
         # Set new temporary password
         keycloak_admin.set_user_password(
             user_id=user_id, password=new_password, temporary=True
@@ -276,7 +319,17 @@ def reset_keycloak_user_password(username, new_password=None):
         return new_password
 
     except KeycloakError as e:
-        logger.error("Keycloak error resetting password for %s: %s", username, e)
+        # Deliberately do not log the exception's body/message: while Keycloak
+        # itself does not echo the request password back in error responses,
+        # ``KeycloakError.__str__`` and ``response_body`` include the raw HTTP
+        # response, which we keep out of logs as defense-in-depth on a path
+        # that handles a brand-new password.
+        response_code = getattr(e, "response_code", None)
+        logger.error(
+            "Keycloak error resetting password for %s (status=%s)",
+            username,
+            response_code,
+        )
         raise
 
 
@@ -334,3 +387,126 @@ def generate_password(length=12):
     # Shuffle to avoid predictable positions
     secrets.SystemRandom().shuffle(password_chars)
     return "".join(password_chars)
+
+
+def _get_keycloak_user_id(username):
+    """Look up a Keycloak user id by username, raising ValueError if absent
+    or ambiguous.
+
+    ``exact=True`` keeps Keycloak from substring-matching the username — by
+    default ``/users?username=foo`` returns anything containing ``foo``,
+    which at scale can surface the wrong user. We additionally require
+    exactly one result so an unexpected collision raises instead of
+    silently picking ``users[0]``.
+    """
+    keycloak_admin = get_keycloak_admin_client()
+    users = keycloak_admin.get_users({"username": username, "exact": True})
+    if not users:
+        raise ValueError(f'User with username "{username}" not found.')
+    if len(users) > 1:
+        raise ValueError(
+            f'Ambiguous username "{username}": {len(users)} Keycloak users matched.'
+        )
+    return keycloak_admin, users[0]["id"]
+
+
+def has_realm_role(username, role_id):
+    """Return True if the Keycloak user has the realm role with this id assigned."""
+    keycloak_admin, user_id = _get_keycloak_user_id(username)
+    user_roles = keycloak_admin.get_realm_roles_of_user(user_id=user_id)
+    return any(role.get("id") == role_id for role in user_roles)
+
+
+def is_mandatory_totp_enabled():
+    """All three settings required for the mandatory TOTP feature are present."""
+    return bool(
+        settings.FEATURE_MAILDOMAIN_MANAGE_TOTP
+        and settings.KEYCLOAK_TOTP_ROLE_ID
+        and settings.IDENTITY_PROVIDER == "keycloak"
+    )
+
+
+def batch_realm_role_membership(usernames, role_id):
+    """Return ``{username: bool}`` indicating which of ``usernames`` hold
+    the realm role with id ``role_id``.
+
+    Routed through the ``bulk-role-membership`` custom Keycloak provider
+    (see ``src/keycloak/bulk-role-membership``) which answers the whole
+    page in one indexed DB query inside Keycloak. Keycloak's stock admin
+    API has no equivalent: every alternative is either O(N) round trips
+    or fetches the full role membership list.
+
+    Usernames in the response are compared case-insensitively (Keycloak's
+    canonical form is lowercased), so the returned dict is keyed back by
+    the input strings exactly as provided.
+    """
+    if not usernames:
+        return {}
+
+    keycloak_admin = get_keycloak_admin_client()
+    response = keycloak_admin.connection.raw_post(
+        f"/realms/{settings.KEYCLOAK_REALM}/bulk-role-membership/check",
+        data=json.dumps({"role_id": role_id, "usernames": list(usernames)}),
+    )
+    response.raise_for_status()
+    matched = {m.lower() for m in response.json().get("members", [])}
+    return {u: u.lower() in matched for u in usernames}
+
+
+def set_realm_role(username, role_id, *, assigned):
+    """Assign or remove a realm role (looked up by id) for the Keycloak user.
+
+    Idempotent: if the role is already in the desired state, this is a no-op.
+    """
+    keycloak_admin, user_id = _get_keycloak_user_id(username)
+    role = keycloak_admin.get_realm_role_by_id(role_id=role_id)
+    if not role:
+        raise ValueError(f'Realm role with id "{role_id}" not found.')
+
+    user_roles = keycloak_admin.get_realm_roles_of_user(user_id=user_id)
+    currently_assigned = any(r.get("id") == role_id for r in user_roles)
+
+    if assigned and not currently_assigned:
+        keycloak_admin.assign_realm_roles(user_id=user_id, roles=[role])
+        logger.info(
+            "Assigned realm role %s to Keycloak user %s", role.get("name"), username
+        )
+    elif not assigned and currently_assigned:
+        keycloak_admin.delete_realm_roles_of_user(user_id=user_id, roles=[role])
+        logger.info(
+            "Removed realm role %s from Keycloak user %s", role.get("name"), username
+        )
+
+
+def reset_keycloak_user_totp(username):
+    """Reset a user's TOTP enrollment.
+
+    Deletes any OTP credentials they have on file and registers
+    ``CONFIGURE_TOTP`` as a required action so they re-enroll on next login.
+    """
+    keycloak_admin, user_id = _get_keycloak_user_id(username)
+
+    credentials = keycloak_admin.get_credentials(user_id=user_id) or []
+    deleted = 0
+    for credential in credentials:
+        # Keycloak labels OTP creds with type "otp"; covers TOTP & HOTP.
+        if (credential.get("type") or "").lower() == "otp":
+            keycloak_admin.delete_credential(
+                user_id=user_id, credential_id=credential["id"]
+            )
+            deleted += 1
+
+    user = keycloak_admin.get_user(user_id=user_id) or {}
+    required_actions = list(user.get("requiredActions") or [])
+    if "CONFIGURE_TOTP" not in required_actions:
+        required_actions.append("CONFIGURE_TOTP")
+        keycloak_admin.update_user(
+            user_id=user_id, payload={"requiredActions": required_actions}
+        )
+
+    logger.info(
+        "Reset TOTP for Keycloak user %s (removed %d OTP credentials)",
+        username,
+        deleted,
+    )
+    return {"removed_credentials": deleted}

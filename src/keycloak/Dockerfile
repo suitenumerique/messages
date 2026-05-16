@@ -18,6 +18,9 @@ FROM quay.io/keycloak/keycloak:26.6.1 AS builder
 WORKDIR /opt/keycloak
 COPY --chown=keycloak:keycloak --chmod=644 themes/dsfr-2.2.1.jar /opt/keycloak/providers/dsfr.jar
 COPY --from=scripts --chown=keycloak:keycloak --chmod=644 /custom-scripts.jar /opt/keycloak/providers/custom-scripts.jar
+# Committed JAR. Rebuild via `make build-keycloak` if you edit the Java
+# source under bulk-role-membership/.
+COPY --chown=keycloak:keycloak --chmod=644 bulk-role-membership/bulk-role-membership.jar /opt/keycloak/providers/bulk-role-membership.jar
 
 ARG KC_METRICS_ENABLED=true
 ARG KC_HEALTH_ENABLED=true

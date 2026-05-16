@@ -273,6 +273,59 @@ class TestAdminMailDomainViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["count"] == 10
 
+    def test_admin_maildomains_list_search_by_name(
+        self,
+        api_client,
+        domain_admin_user,
+    ):
+        """`?q=` filters domains by case-insensitive name substring."""
+        for name in ("alpha.example.com", "beta.example.com", "alphabeta.org"):
+            domain = factories.MailDomainFactory(name=name)
+            factories.MailDomainAccessFactory(
+                user=domain_admin_user,
+                maildomain=domain,
+                role=MailDomainAccessRoleChoices.ADMIN,
+            )
+
+        api_client.force_authenticate(user=domain_admin_user)
+
+        response = api_client.get(f"{self.LIST_DOMAINS_URL}?q=alpha")
+        assert response.status_code == status.HTTP_200_OK
+        names = {item["name"] for item in response.data["results"]}
+        assert names == {"alpha.example.com", "alphabeta.org"}
+
+        # Case-insensitive
+        response = api_client.get(f"{self.LIST_DOMAINS_URL}?q=BETA")
+        assert response.status_code == status.HTTP_200_OK
+        names = {item["name"] for item in response.data["results"]}
+        assert names == {"beta.example.com", "alphabeta.org"}
+
+        # Empty / whitespace-only query returns all administered domains
+        response = api_client.get(f"{self.LIST_DOMAINS_URL}?q=   ")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 3
+
+        # No match
+        response = api_client.get(f"{self.LIST_DOMAINS_URL}?q=zzz")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 0
+
+    def test_admin_maildomains_list_search_superuser(
+        self,
+        api_client,
+        mail_domain1,
+        mail_domain2,
+        unmanaged_domain,
+    ):
+        """Superusers can also filter the full domain list with `?q=`."""
+        superuser = factories.UserFactory(is_superuser=True)
+        api_client.force_authenticate(user=superuser)
+
+        response = api_client.get(f"{self.LIST_DOMAINS_URL}?q=admin-domain1")
+        assert response.status_code == status.HTTP_200_OK
+        names = {item["name"] for item in response.data["results"]}
+        assert names == {mail_domain1.name}
+
     def test_maildomain_expected_dns_records_in_response(
         self,
         api_client,

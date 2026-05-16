@@ -338,6 +338,7 @@ services:
     volumes:
       - ./src/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
       - ./src/keycloak/themes/dsfr-2.2.1.jar:/opt/keycloak/providers/keycloak-theme.jar:ro
+      - ./src/keycloak/bulk-role-membership/bulk-role-membership.jar:/opt/keycloak/providers/bulk-role-membership.jar:ro
     environment:
       - HOST=http://localhost:8902
       - ADMIN_HOST=http://localhost:8902
