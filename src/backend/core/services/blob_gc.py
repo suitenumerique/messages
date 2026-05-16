@@ -44,6 +44,7 @@ from redis.exceptions import RedisError
 from core.enums import BlobStorageLocationChoices
 from core.models import UPLOAD_RESERVATION_TTL, Blob, MailboxBlob
 from core.services.tiered_storage import TieredStorageService, sha256_advisory_lock
+from core.utils import get_redis_client
 
 from messages.celery_app import app as celery_app
 
@@ -70,16 +71,6 @@ _GC_MAX_RUN_SECONDS = 55 * 60
 def _is_redis_backend() -> bool:
     backend = settings.CACHES.get("default", {}).get("BACKEND", "")
     return "django_redis" in backend
-
-
-def _redis_client():
-    # Lazy import: django_redis is an optional dependency for environments
-    # that don't use Redis. The system check refuses to boot when blob
-    # lifecycle features are enabled without it.
-    # pylint: disable-next=import-outside-toplevel
-    from django_redis import get_redis_connection
-
-    return get_redis_connection("default")
 
 
 # --------------------------------------------------------------------
@@ -127,7 +118,7 @@ def schedule_for_gc(blob_id) -> None:
 
     def _push():
         try:
-            _redis_client().sadd(_GC_CANDIDATES_KEY, value)
+            get_redis_client().sadd(_GC_CANDIDATES_KEY, value)
         except RedisError as exc:
             logger.error(
                 "Redis unavailable while enqueuing blob %s for GC (%s: %s); "
@@ -147,7 +138,7 @@ def _drain_candidates(batch_size: int) -> list[str]:
     if not _is_redis_backend():
         return []
     try:
-        popped = _redis_client().spop(_GC_CANDIDATES_KEY, count=batch_size)
+        popped = get_redis_client().spop(_GC_CANDIDATES_KEY, count=batch_size)
         return [
             bid.decode() if isinstance(bid, bytes) else str(bid)
             for bid in (popped or [])

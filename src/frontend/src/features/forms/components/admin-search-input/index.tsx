@@ -28,11 +28,13 @@ export const AdminSearchInput = ({
     const debounced = useDebounceCallback(onChange, DEBOUNCE_MS);
 
     // Re-sync when the parent resets the query externally (e.g. switching
-    // resources). The typical debounce loop is a no-op here because the
-    // incoming `initialValue` matches `value` once the parent catches up.
+    // resources). Cancel any pending debounced call so a still-buffered
+    // keystroke from the previous resource doesn't fire onChange with
+    // stale input after the reset.
     useEffect(() => {
+        debounced.cancel();
         setValue(initialValue);
-    }, [initialValue]);
+    }, [initialValue, debounced]);
 
     return (
         <Input

@@ -19,19 +19,20 @@ SNIPPET_MAX_LENGTH = 140
 
 
 def get_redis_client():
-    """Return the django-redis connection, or ``None`` when unavailable.
+    """Return the django-redis client bound to the ``default`` cache.
 
-    ``get_redis_connection`` raises ``NotImplementedError`` when the configured
-    Django cache backend isn't django-redis. Any other failure (broken import,
-    bad config) also collapses to None so callers can gracefully skip caching.
+    The single accessor for ``get_redis_connection("default")`` across the
+    project — every module that wants raw Redis primitives (SADD/SPOP/…)
+    routes through here so we have one place to swap the backend or wrap
+    instrumentation. Raises if django_redis isn't configured for the
+    default cache (e.g. ``NotImplementedError`` on a LocMem backend);
+    callers are expected to gate with ``settings.CACHES`` checks or to
+    catch broadly in their own error path.
     """
-    try:
-        # pylint: disable=import-outside-toplevel
-        from django_redis import get_redis_connection
+    # pylint: disable-next=import-outside-toplevel
+    from django_redis import get_redis_connection
 
-        return get_redis_connection("default")
-    except Exception:  # pylint: disable=broad-exception-caught
-        return None
+    return get_redis_connection("default")
 
 
 def extract_snippet(parsed_data: dict[str, Any], fallback: str = "") -> str:

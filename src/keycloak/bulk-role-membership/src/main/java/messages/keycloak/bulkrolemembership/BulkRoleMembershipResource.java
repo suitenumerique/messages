@@ -1,6 +1,7 @@
 package messages.keycloak.bulkrolemembership;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -69,9 +70,11 @@ public class BulkRoleMembershipResource {
         // lowercase on both sides defends against any case-mismatch at the
         // call site without depending on a specific Keycloak normalization.
         // ``filter(nonNull)`` keeps a stray null from blowing up the stream.
+        // ``Locale.ROOT`` keeps the casing rule locale-independent (avoids the
+        // Turkish-locale ``I → ı`` surprise on non-ASCII usernames).
         List<String> lowered = req.usernames.stream()
                 .filter(Objects::nonNull)
-                .map(String::toLowerCase)
+                .map(s -> s.toLowerCase(Locale.ROOT))
                 .toList();
 
         if (lowered.isEmpty()) {

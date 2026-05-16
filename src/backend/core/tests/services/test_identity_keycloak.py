@@ -221,6 +221,25 @@ def test_has_realm_role(keycloak_admin_mock):
     assert keycloak_service.has_realm_role("user@example.local", "role-id") is False
 
 
+def test_get_keycloak_user_id_uses_exact_match(keycloak_admin_mock):
+    """The lookup must pass ``exact=True`` so substring matches don't slip in."""
+    keycloak_admin_mock.get_users.return_value = [{"id": "kc-user-id"}]
+    keycloak_service._get_keycloak_user_id("user@example.local")  # pylint: disable=protected-access
+    keycloak_admin_mock.get_users.assert_called_once_with(
+        {"username": "user@example.local", "exact": True}
+    )
+
+
+def test_get_keycloak_user_id_raises_on_ambiguous(keycloak_admin_mock):
+    """Two matches means upstream search returned junk — raise, don't guess."""
+    keycloak_admin_mock.get_users.return_value = [
+        {"id": "id-a"},
+        {"id": "id-b"},
+    ]
+    with pytest.raises(ValueError, match="Ambiguous"):
+        keycloak_service._get_keycloak_user_id("user@example.local")  # pylint: disable=protected-access
+
+
 def test_reset_totp_deletes_otp_credentials_and_adds_required_action(
     keycloak_admin_mock,
 ):

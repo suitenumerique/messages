@@ -390,11 +390,23 @@ def generate_password(length=12):
 
 
 def _get_keycloak_user_id(username):
-    """Look up a Keycloak user id by username, raising ValueError if absent."""
+    """Look up a Keycloak user id by username, raising ValueError if absent
+    or ambiguous.
+
+    ``exact=True`` keeps Keycloak from substring-matching the username — by
+    default ``/users?username=foo`` returns anything containing ``foo``,
+    which at scale can surface the wrong user. We additionally require
+    exactly one result so an unexpected collision raises instead of
+    silently picking ``users[0]``.
+    """
     keycloak_admin = get_keycloak_admin_client()
-    users = keycloak_admin.get_users({"username": username})
+    users = keycloak_admin.get_users({"username": username, "exact": True})
     if not users:
         raise ValueError(f'User with username "{username}" not found.')
+    if len(users) > 1:
+        raise ValueError(
+            f'Ambiguous username "{username}": {len(users)} Keycloak users matched.'
+        )
     return keycloak_admin, users[0]["id"]
 
 

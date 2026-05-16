@@ -95,3 +95,20 @@ def test_api_config_with_external_services():
         "file_url": "http://localhost:8902/explorer/items/files",
         "app_name": "Drive App",
     }
+
+
+@override_settings(
+    FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
+    KEYCLOAK_TOTP_ROLE_ID=None,
+    IDENTITY_PROVIDER="keycloak",
+)
+def test_api_config_totp_flag_is_effective_not_raw():
+    """Frontend must not see TOTP enabled when the backend can't enforce it.
+
+    The raw ``FEATURE_MAILDOMAIN_MANAGE_TOTP`` flag is True here, but a
+    missing role id means the backend cannot actually carry out toggles —
+    so the config endpoint must report False.
+    """
+    response = APIClient().get("/api/v1.0/config/")
+    assert response.status_code == HTTP_200_OK
+    assert response.json()["FEATURE_MAILDOMAIN_MANAGE_TOTP"] is False

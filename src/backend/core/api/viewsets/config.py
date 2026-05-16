@@ -7,6 +7,7 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.permissions import AllowAny
 
 from core.ai.utils import is_ai_enabled, is_ai_summary_enabled, is_auto_labels_enabled
+from core.services.identity.keycloak import is_mandatory_totp_enabled
 
 
 class ConfigView(drf.views.APIView):
@@ -187,7 +188,6 @@ class ConfigView(drf.views.APIView):
             "FEATURE_MAILDOMAIN_CREATE",
             "FEATURE_MAILDOMAIN_MANAGE_ACCESSES",
             "FEATURE_THREAD_SPLIT",
-            "FEATURE_MAILDOMAIN_MANAGE_TOTP",
             "MAX_OUTGOING_ATTACHMENT_SIZE",
             "MAX_OUTGOING_BODY_SIZE",
             "MAX_INCOMING_EMAIL_SIZE",
@@ -198,6 +198,12 @@ class ConfigView(drf.views.APIView):
         for setting in array_settings:
             if hasattr(settings, setting):
                 dict_settings[setting] = getattr(settings, setting)
+
+        # Expose the *effective* mandatory-TOTP capability rather than the raw
+        # flag: the feature also requires IDENTITY_PROVIDER == "keycloak" and a
+        # populated KEYCLOAK_TOTP_ROLE_ID. Surfacing the raw flag would let the
+        # frontend render TOTP affordances that the backend silently refuses.
+        dict_settings["FEATURE_MAILDOMAIN_MANAGE_TOTP"] = is_mandatory_totp_enabled()
 
         # AI Features
         dict_settings["AI_ENABLED"] = is_ai_enabled()

@@ -14,12 +14,18 @@ set -eo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/_config.sh"
 
-# Only rebuild when a .java source is newer than the committed JAR. The
+# Only rebuild when a build input is newer than the committed JAR. The
 # JAR is tracked in git, so a clean checkout already has a working copy
 # and the test runner doesn't pay the Maven cold-start cost on every run.
+# Inputs that affect the built artifact: .java sources, resource files
+# (the SPI service descriptor lives under src/main/resources), and pom.xml.
 jar="$REPO_DIR/src/keycloak/bulk-role-membership/bulk-role-membership.jar"
-if [ ! -f "$jar" ] || [ -n "$(find "$REPO_DIR/src/keycloak/bulk-role-membership/src" -name '*.java' -newer "$jar" -print -quit 2>/dev/null)" ]; then
-    echo "📦 (re)building JAR — Java source changed or JAR missing"
+src_dir="$REPO_DIR/src/keycloak/bulk-role-membership/src"
+pom="$REPO_DIR/src/keycloak/bulk-role-membership/pom.xml"
+if [ ! -f "$jar" ] \
+    || [ "$pom" -nt "$jar" ] \
+    || [ -n "$(find "$src_dir" -type f -newer "$jar" -print -quit 2>/dev/null)" ]; then
+    echo "📦 (re)building JAR — build input changed or JAR missing"
     make -C "$REPO_DIR" --no-print-directory build-keycloak
     docker compose restart keycloak
 fi

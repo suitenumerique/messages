@@ -25,9 +25,9 @@ def redis_cache(settings):
     already declares ``redis`` as a ``depends_on``, so the service is
     reachable at ``redis:6379`` (overridable via ``REDIS_URL``).
 
-    Coalescer / blob_gc call ``get_redis_connection("default").sadd(...)``
-    directly with hard-coded keys, so Django's ``KEY_PREFIX`` doesn't
-    isolate them. We isolate parallel xdist workers by routing each
+    Coalescer / blob_gc call ``get_redis_client().sadd(...)`` directly
+    with hard-coded keys, so Django's ``KEY_PREFIX`` doesn't isolate
+    them. We isolate parallel xdist workers by routing each
     worker to a distinct Redis DB (``gw0`` → DB 1, ``gw1`` → DB 2, …;
     non-xdist runs land on DB 1). ``flushdb`` at setup and teardown
     keeps the slot clean. Default Redis ships with 16 DBs, enough for
@@ -50,9 +50,9 @@ def redis_cache(settings):
         },
     }
 
-    from django_redis import get_redis_connection
+    from core.utils import get_redis_client
 
-    client = get_redis_connection("default")
+    client = get_redis_client()
     client.flushdb()
 
     yield client

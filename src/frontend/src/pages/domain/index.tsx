@@ -102,9 +102,12 @@ const AdminPageContent = () => {
   const hasManageAbility = useAbility(Abilities.CAN_MANAGE_SOME_MAILDOMAIN_ACCESSES);
   const isManageAccessesEnabled = useFeatureFlag(FEATURE_KEYS.MAILDOMAIN_MANAGE_ACCESSES);
   const canManageMaildomainAccesses = hasManageAbility && isManageAccessesEnabled;
+  // Treat a whitespace-only query as "no search" — matches the API,
+  // which strips whitespace before applying ``?q=``.
+  const normalizedSearchQuery = (searchQuery || '').trim();
   // Only auto-redirect when the user has a single domain in total — i.e.
   // not when the apparent single domain is the result of an active search.
-  const shouldRedirect = !canCreateMaildomain && !canManageMaildomainAccesses && !isLoading && !searchQuery && mailDomains.length === 1;
+  const shouldRedirect = !canCreateMaildomain && !canManageMaildomainAccesses && !isLoading && !normalizedSearchQuery && mailDomains.length === 1;
 
   /**
    * Auto-navigate to first domain if there's only one and the
@@ -116,7 +119,7 @@ const AdminPageContent = () => {
     }
   }, [router, shouldRedirect]);
 
-  if (shouldRedirect || (isLoading && !searchQuery)) {
+  if (shouldRedirect || (isLoading && !normalizedSearchQuery)) {
     return (
       <div className="admin-page__loading">
         <Spinner />
