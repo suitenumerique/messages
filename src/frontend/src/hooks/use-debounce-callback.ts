@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
 /**
  * Debounced callback. Returns the debounced function with a `cancel`
@@ -6,29 +6,46 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
  * when the input that fed the callback has been reset externally and
  * the queued call would carry stale state.
  */
-export type DebouncedCallback<Fn extends (...args: any[]) => void> =
-    ((...args: Parameters<Fn>) => void) & { cancel: () => void };
+export type DebouncedCallback<P extends readonly unknown[]> =
+    ((...args: P) => void) & { cancel: () => void };
 
-export function useDebounceCallback<Fn extends (...args: Parameters<Fn>) => void>(callback: Fn, delay: number): DebouncedCallback<Fn> {
+export function useDebounceCallback<P extends readonly unknown[]>(
+    callback: (...args: P) => void,
+    delay: number,
+): DebouncedCallback<P> {
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+    // Latest-callback ref so the memoized debounced function always
+    // invokes the current callback without losing its own identity
+    // when the parent re-renders with a fresh arrow function.
+    const callbackRef = useRef(callback);
+    callbackRef.current = callback;
 
-    const cancel = useCallback(() => {
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-        }
-    }, []);
+    // Clean up any pending timer on unmount so a queued callback can't
+    // fire after the host component is gone.
+    useEffect(
+        () => () => {
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+            }
+        },
+        [],
+    );
 
-    const debouncedCallback = useCallback((...args: Parameters<Fn>) => {
-        cancel();
-        timeoutRef.current = setTimeout(() => callback(...args), delay);
-    }, [callback, delay, cancel]);
-
-    useEffect(() => cancel, [cancel]);
-
-    return useMemo(() => {
-        const fn = debouncedCallback as DebouncedCallback<Fn>;
+    return useMemo<DebouncedCallback<P>>(() => {
+        const cancel = () => {
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
+            }
+        };
+        const fn = ((...args: P) => {
+            cancel();
+            timeoutRef.current = setTimeout(
+                () => callbackRef.current(...args),
+                delay,
+            );
+        }) as DebouncedCallback<P>;
         fn.cancel = cancel;
         return fn;
-    }, [debouncedCallback, cancel]);
+    }, [delay]);
 }
