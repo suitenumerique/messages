@@ -83,6 +83,10 @@
     z-index: 100;
     margin-bottom: var(--c--globals--spacings--sm);
   }
+
+  &__search {
+    margin-bottom: var(--c--globals--spacings--base);
+  }
 }
 
 @media (max-width: 768px) {

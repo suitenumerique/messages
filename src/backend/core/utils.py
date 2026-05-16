@@ -18,6 +18,22 @@ logger = logging.getLogger(__name__)
 SNIPPET_MAX_LENGTH = 140
 
 
+def get_redis_client():
+    """Return the django-redis connection, or ``None`` when unavailable.
+
+    ``get_redis_connection`` raises ``NotImplementedError`` when the configured
+    Django cache backend isn't django-redis. Any other failure (broken import,
+    bad config) also collapses to None so callers can gracefully skip caching.
+    """
+    try:
+        # pylint: disable=import-outside-toplevel
+        from django_redis import get_redis_connection
+
+        return get_redis_connection("default")
+    except Exception:  # pylint: disable=broad-exception-caught
+        return None
+
+
 def extract_snippet(parsed_data: dict[str, Any], fallback: str = "") -> str:
     """Extract a text snippet from parsed email/message data.
 

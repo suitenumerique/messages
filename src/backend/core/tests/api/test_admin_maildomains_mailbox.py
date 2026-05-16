@@ -2,6 +2,7 @@
 # pylint: disable=unused-argument, too-many-lines
 
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from django.test import override_settings
@@ -158,6 +159,20 @@ class TestAdminMailDomainMailboxViewSet:
             kwargs={"maildomain_pk": maildomain_pk, "pk": mailbox_pk},
         )
 
+    def mandatory_totp_url(self, maildomain_pk, mailbox_pk):
+        """Generate URL for set-mandatory-totp action on a mailbox in a specific domain."""
+        return reverse(
+            "admin-maildomains-mailbox-set-mandatory-totp",
+            kwargs={"maildomain_pk": maildomain_pk, "pk": mailbox_pk},
+        )
+
+    def reset_totp_url(self, maildomain_pk, mailbox_pk):
+        """Generate URL for reset-totp action on a mailbox in a specific domain."""
+        return reverse(
+            "admin-maildomains-mailbox-reset-totp",
+            kwargs={"maildomain_pk": maildomain_pk, "pk": mailbox_pk},
+        )
+
     # pylint: disable=too-many-arguments
     def test_admin_maildomains_mailbox_list_for_domain_success(
         self,
@@ -238,6 +253,154 @@ class TestAdminMailDomainMailboxViewSet:
         url = self.mailboxes_url(mail_domain1.pk)
         response = api_client.get(url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_admin_maildomains_mailbox_list_default_alphabetical_order(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Mailboxes are returned ordered alphabetically by local_part."""
+        for local_part in ("zeta", "alpha", "mango", "beta"):
+            factories.MailboxFactory(domain=mail_domain1, local_part=local_part)
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+        response = api_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        local_parts = [item["local_part"] for item in response.data["results"]]
+        assert local_parts == sorted(local_parts)
+        assert local_parts == ["alpha", "beta", "mango", "zeta"]
+
+    def test_admin_maildomains_mailbox_list_search_by_local_part(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mail_domain2,
+        domain_admin_access2,
+    ):
+        """`?q=` filters mailboxes by case-insensitive local_part substring,
+        scoped to the requested domain."""
+        factories.MailboxFactory(domain=mail_domain1, local_part="john.doe")
+        factories.MailboxFactory(domain=mail_domain1, local_part="jane.doe")
+        factories.MailboxFactory(domain=mail_domain1, local_part="bob")
+        # Different domain: should never appear when querying mail_domain1
+        factories.MailboxFactory(domain=mail_domain2, local_part="john.smith")
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+
+        response = api_client.get(f"{url}?q=doe")
+        assert response.status_code == status.HTTP_200_OK
+        local_parts = sorted(item["local_part"] for item in response.data["results"])
+        assert local_parts == ["jane.doe", "john.doe"]
+
+        # Case-insensitive
+        response = api_client.get(f"{url}?q=JOHN")
+        assert response.status_code == status.HTTP_200_OK
+        local_parts = [item["local_part"] for item in response.data["results"]]
+        assert local_parts == ["john.doe"]
+
+        # Whitespace-only query is treated as no filter
+        response = api_client.get(f"{url}?q=   ")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 3
+
+        # No match
+        response = api_client.get(f"{url}?q=nope")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 0
+
+    def test_admin_maildomains_mailbox_list_search_by_contact_name(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """`?q=` also matches against the linked contact's name."""
+        mb_alice = factories.MailboxFactory(
+            domain=mail_domain1,
+            local_part="aaa",
+            contact=factories.ContactFactory(
+                email=f"aaa@{mail_domain1.name}", name="Alice Wonderland"
+            ),
+        )
+        mb_bob = factories.MailboxFactory(
+            domain=mail_domain1,
+            local_part="bbb",
+            contact=factories.ContactFactory(
+                email=f"bbb@{mail_domain1.name}", name="Bob Builder"
+            ),
+        )
+        factories.MailboxFactory(
+            domain=mail_domain1,
+            local_part="ccc",
+            contact=factories.ContactFactory(
+                email=f"ccc@{mail_domain1.name}", name="Charlie Chaplin"
+            ),
+        )
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+
+        # Match by contact name (case-insensitive)
+        response = api_client.get(f"{url}?q=wonderland")
+        assert response.status_code == status.HTTP_200_OK
+        ids = {item["id"] for item in response.data["results"]}
+        assert ids == {str(mb_alice.id)}
+
+        # Match local_part OR contact name, deduped
+        response = api_client.get(
+            f"{url}?q=b"
+        )  # 'b' in bbb local_part AND in "Builder"/"Bob"
+        assert response.status_code == status.HTTP_200_OK
+        ids = [item["id"] for item in response.data["results"]]
+        assert sorted(ids) == sorted({str(mb_bob.id)})
+
+    def test_admin_maildomains_mailbox_list_includes_last_accessed_at(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        user_for_access1,
+        user_for_access2,
+    ):
+        """Each mailbox payload exposes `last_accessed_at` (max accessed_at
+        across its accesses), null when no access has ever been recorded."""
+        mb = factories.MailboxFactory(domain=mail_domain1, local_part="mb1")
+        never_accessed = factories.MailboxFactory(domain=mail_domain1, local_part="mb0")
+
+        older = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        newer = datetime(2026, 5, 1, 12, 0, tzinfo=timezone.utc)
+        factories.MailboxAccessFactory(
+            mailbox=mb,
+            user=user_for_access1,
+            role=MailboxRoleChoices.EDITOR,
+            accessed_at=older,
+        )
+        factories.MailboxAccessFactory(
+            mailbox=mb,
+            user=user_for_access2,
+            role=MailboxRoleChoices.VIEWER,
+            accessed_at=newer,
+        )
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+        response = api_client.get(url)
+        assert response.status_code == status.HTTP_200_OK
+
+        by_id = {item["id"]: item for item in response.data["results"]}
+        assert "last_accessed_at" in by_id[str(mb.id)]
+        # The annotation returns the most recent access timestamp.
+        assert by_id[str(mb.id)]["last_accessed_at"] == newer
+        assert by_id[str(never_accessed.id)]["last_accessed_at"] is None
 
     # --- EXCLUDE ABILITIES Tests ---
     def test_admin_maildomains_mailbox_list_excludes_abilities_from_nested_users(
@@ -1210,3 +1373,353 @@ class TestAdminMailDomainMailboxViewSet:
             response = api_client.patch(url)
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    # --- Mandatory TOTP tests ------------------------------------------------
+
+    @patch("core.services.identity.keycloak.set_realm_role")
+    def test_admin_maildomains_mailbox_mandatory_totp_assigns_role(
+        self,
+        mock_set_role,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """Setting `enabled=true` calls set_realm_role with assigned=True."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mandatory_totp_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        with override_settings(
+            IDENTITY_PROVIDER="keycloak",
+            FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
+            KEYCLOAK_TOTP_ROLE_ID="role-id-123",
+        ):
+            response = api_client.post(url, data={"enabled": True}, format="json")
+
+        username = f"{mailbox1_domain1.local_part}@{mail_domain1.name}"
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == {"enabled": True}
+        mock_set_role.assert_called_once_with(username, "role-id-123", assigned=True)
+
+    @patch("core.services.identity.keycloak.set_realm_role")
+    def test_admin_maildomains_mailbox_mandatory_totp_removes_role(
+        self,
+        mock_set_role,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """Disabling mandatory TOTP removes the Keycloak role from the user."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mandatory_totp_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        with override_settings(
+            IDENTITY_PROVIDER="keycloak",
+            FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
+            KEYCLOAK_TOTP_ROLE_ID="role-id-123",
+        ):
+            response = api_client.post(url, data={"enabled": False}, format="json")
+
+        username = f"{mailbox1_domain1.local_part}@{mail_domain1.name}"
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == {"enabled": False}
+        mock_set_role.assert_called_once_with(username, "role-id-123", assigned=False)
+
+    @patch("core.services.identity.keycloak.set_realm_role")
+    def test_admin_maildomains_mailbox_mandatory_totp_rejects_invalid_payload(
+        self,
+        mock_set_role,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """Garbage payloads (string ``"false"``, missing key) are rejected.
+
+        Without strict validation the previous ``bool(request.data.get(...))``
+        would have treated the truthy string ``"false"`` as enable-TOTP.
+        """
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mandatory_totp_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        with override_settings(
+            IDENTITY_PROVIDER="keycloak",
+            FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
+            KEYCLOAK_TOTP_ROLE_ID="role-id-123",
+        ):
+            # Missing required field
+            response = api_client.post(url, data={}, format="json")
+            assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+            # Garbage string accepted by DRF (it parses "true"/"false")
+            # so we instead test something that's actually invalid:
+            response = api_client.post(
+                url, data={"enabled": "not-a-bool"}, format="json"
+            )
+            assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        mock_set_role.assert_not_called()
+
+    def test_admin_maildomains_mailbox_mandatory_totp_500_does_not_leak_exception(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """On a Keycloak failure the response carries a generic error string."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mandatory_totp_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        with (
+            patch(
+                "core.services.identity.keycloak.set_realm_role",
+                side_effect=Exception("Sensitive internal trace at /app/foo.py:42"),
+            ),
+            override_settings(
+                IDENTITY_PROVIDER="keycloak",
+                FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
+                KEYCLOAK_TOTP_ROLE_ID="role-id-123",
+            ),
+        ):
+            response = api_client.post(url, data={"enabled": True}, format="json")
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "Sensitive internal trace" not in response.data["error"]
+        assert response.data["error"] == "Could not update mandatory TOTP."
+
+    @patch(
+        "core.services.identity.keycloak.set_realm_role",
+        side_effect=ValueError('User with username "x@y" not found.'),
+    )
+    def test_admin_maildomains_mailbox_mandatory_totp_404_when_keycloak_user_missing(
+        self,
+        _mock_set_role,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """Missing Keycloak user/role surfaces as 404, not a generic 500."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mandatory_totp_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        with override_settings(
+            IDENTITY_PROVIDER="keycloak",
+            FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
+            KEYCLOAK_TOTP_ROLE_ID="role-id-123",
+        ):
+            response = api_client.post(url, data={"enabled": True}, format="json")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_admin_maildomains_mailbox_mandatory_totp_validates_payload_before_eligibility(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Malformed body returns 400 even when the mailbox is ineligible.
+
+        Without "validate first", an ineligible mailbox could mask a missing
+        ``enabled`` field. The contract: bad input always 400.
+        """
+        # Build an ineligible mailbox (shared, not personal).
+        ineligible = factories.MailboxFactory(
+            domain=mail_domain1, local_part="shared", is_identity=False
+        )
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mandatory_totp_url(mail_domain1.pk, ineligible.pk)
+
+        with override_settings(
+            IDENTITY_PROVIDER="keycloak",
+            FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
+            KEYCLOAK_TOTP_ROLE_ID="role-id-123",
+        ):
+            response = api_client.post(url, data={}, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        # The error must be about the missing field, not eligibility.
+        assert "enabled" in str(response.data).lower()
+
+    def test_admin_maildomains_mailbox_mandatory_totp_requires_manage_mailboxes_ability(
+        self,
+        api_client,
+        other_user,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """Non-admin domain members can't toggle TOTP.
+
+        Pins the backend contract that the action requires the same
+        ``manage_mailboxes`` ability the frontend gates the UI on.
+        """
+        # Give `other_user` non-admin domain access (would fail IsMailDomainAdmin).
+        api_client.force_authenticate(user=other_user)
+        url = self.mandatory_totp_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        with override_settings(
+            IDENTITY_PROVIDER="keycloak",
+            FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
+            KEYCLOAK_TOTP_ROLE_ID="role-id-123",
+        ):
+            response = api_client.post(url, data={"enabled": True}, format="json")
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_admin_maildomains_mailbox_mandatory_totp_404_when_feature_disabled(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """The endpoint returns 404 when the mandatory TOTP feature flag is disabled."""
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mandatory_totp_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        with override_settings(
+            IDENTITY_PROVIDER="keycloak",
+            FEATURE_MAILDOMAIN_MANAGE_TOTP=False,
+            KEYCLOAK_TOTP_ROLE_ID="role-id-123",
+        ):
+            response = api_client.post(url, data={"enabled": True}, format="json")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_admin_maildomains_mailbox_mandatory_totp_404_when_role_id_missing(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """Missing role id is treated as feature-not-enabled (404).
+
+        The frontend gates the UI on the feature flag, so distinguishing
+        misconfiguration from disablement isn't worth a separate status code.
+        """
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mandatory_totp_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        with override_settings(
+            IDENTITY_PROVIDER="keycloak",
+            FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
+            KEYCLOAK_TOTP_ROLE_ID=None,
+        ):
+            response = api_client.post(url, data={"enabled": True}, format="json")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @patch("core.api.viewsets.maildomain.keycloak_service.batch_realm_role_membership")
+    def test_admin_maildomains_mailbox_list_batches_totp_lookup(
+        self,
+        mock_batch,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """Single batched call to the bulk-role-membership endpoint per page."""
+        mailboxes = [
+            factories.MailboxFactory(
+                domain=mail_domain1, local_part=f"mb{i}", is_identity=True
+            )
+            for i in range(5)
+        ]
+        usernames = [f"{m.local_part}@{mail_domain1.name}" for m in mailboxes]
+        # First two carry the TOTP role.
+        mock_batch.return_value = {
+            usernames[0]: True,
+            usernames[1]: True,
+            usernames[2]: False,
+            usernames[3]: False,
+            usernames[4]: False,
+        }
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+
+        with override_settings(
+            IDENTITY_PROVIDER="keycloak",
+            FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
+            KEYCLOAK_TOTP_ROLE_ID="role-id-123",
+        ):
+            response = api_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        # Exactly one batched call, scoped to the page's usernames.
+        mock_batch.assert_called_once()
+        call_usernames, call_role_id = mock_batch.call_args[0]
+        assert sorted(call_usernames) == sorted(usernames)
+        assert call_role_id == "role-id-123"
+
+        by_local = {row["local_part"]: row for row in response.data["results"]}
+        assert by_local["mb0"]["has_mandatory_totp"] is True
+        assert by_local["mb1"]["has_mandatory_totp"] is True
+        assert by_local["mb2"]["has_mandatory_totp"] is False
+
+    @patch("core.api.viewsets.maildomain.keycloak_service.batch_realm_role_membership")
+    def test_admin_maildomains_mailbox_list_keycloak_failure_returns_null(
+        self,
+        mock_get_members,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """If the batched Keycloak fetch fails, rows still render with `null`."""
+        mock_get_members.side_effect = Exception("keycloak down")
+
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.mailboxes_url(mail_domain1.pk)
+
+        with override_settings(
+            IDENTITY_PROVIDER="keycloak",
+            FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
+            KEYCLOAK_TOTP_ROLE_ID="role-id-123",
+        ):
+            response = api_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        for row in response.data["results"]:
+            assert row["has_mandatory_totp"] is None
+
+    @patch("core.services.identity.keycloak.reset_keycloak_user_totp")
+    def test_admin_maildomains_mailbox_reset_totp_success(
+        self,
+        mock_reset_totp,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+    ):
+        """Reset-TOTP endpoint forwards the call to Keycloak and returns the removal count."""
+        mock_reset_totp.return_value = {"removed_credentials": 1}
+        api_client.force_authenticate(user=domain_admin_user)
+        url = self.reset_totp_url(mail_domain1.pk, mailbox1_domain1.pk)
+
+        with override_settings(
+            IDENTITY_PROVIDER="keycloak",
+            FEATURE_MAILDOMAIN_MANAGE_TOTP=True,
+            KEYCLOAK_TOTP_ROLE_ID="role-id-123",
+        ):
+            response = api_client.patch(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == {"removed_credentials": 1}
+        mock_reset_totp.assert_called_once_with(
+            f"{mailbox1_domain1.local_part}@{mail_domain1.name}"
+        )

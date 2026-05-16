@@ -36,6 +36,7 @@ export type ConfigRetrieve200 = {
   readonly FEATURE_MAILDOMAIN_CREATE: boolean;
   readonly FEATURE_MAILDOMAIN_MANAGE_ACCESSES: boolean;
   readonly FEATURE_THREAD_SPLIT: boolean;
+  readonly FEATURE_MAILDOMAIN_MANAGE_TOTP: boolean;
   /** Maximum age in seconds for a message to be eligible for manual retry of failed deliveries */
   readonly MESSAGES_MANUAL_RETRY_MAX_AGE: number;
   /** Whether silent OIDC login is enabled */
