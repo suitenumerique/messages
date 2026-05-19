@@ -4,7 +4,7 @@ from logging import getLogger
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import F, Max, Q
+from django.db.models import Count, F, Max, Q
 from django.shortcuts import get_object_or_404
 
 from drf_spectacular.utils import (
@@ -82,8 +82,10 @@ class AdminMailDomainViewSet(
 
         if user.is_superuser:
             # For superusers, preload accesses to avoid N+1 queries in get_abilities
-            queryset = models.MailDomain.objects.prefetch_related("accesses").order_by(
-                "name"
+            queryset = (
+                models.MailDomain.objects.prefetch_related("accesses")
+                .annotate(mailbox_count=Count("mailbox"))
+                .order_by("name")
             )
         else:
             # Optimization : one query with JOIN and annotation
@@ -92,7 +94,10 @@ class AdminMailDomainViewSet(
                     accesses__user=user,
                     accesses__role=models.MailDomainAccessRoleChoices.ADMIN,
                 )
-                .annotate(user_role=F("accesses__role"))
+                .annotate(
+                    user_role=F("accesses__role"),
+                    mailbox_count=Count("mailbox"),
+                )
                 .distinct()
                 .order_by("name")
             )

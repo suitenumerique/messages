@@ -87,6 +87,11 @@
   &__search {
     margin-bottom: var(--c--globals--spacings--base);
   }
+
+  .admin-data-grid__resource-count {
+    font-size: var(--c--globals--font--sizes--sm);
+    color: var(--c--contextuals--content--semantic--neutral--tertiary);
+  }
 }
 
 @media (max-width: 768px) {

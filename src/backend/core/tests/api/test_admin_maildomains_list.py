@@ -326,6 +326,105 @@ class TestAdminMailDomainViewSet:
         names = {item["name"] for item in response.data["results"]}
         assert names == {mail_domain1.name}
 
+    def test_maildomain_mailbox_count_in_list(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        domain_admin_access2,
+        mail_domain1,
+        mail_domain2,
+        mailbox1_domain1,
+        mailbox2_domain1,
+        mailbox1_domain2,
+    ):
+        """`mailbox_count` reflects the number of mailboxes per domain in list view."""
+        api_client.force_authenticate(user=domain_admin_user)
+        response = api_client.get(self.LIST_DOMAINS_URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        counts_by_id = {
+            item["id"]: item["mailbox_count"] for item in response.data["results"]
+        }
+        assert counts_by_id[str(mail_domain1.id)] == 2
+        assert counts_by_id[str(mail_domain2.id)] == 1
+
+    def test_maildomain_mailbox_count_in_detail(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mailbox1_domain1,
+        mailbox2_domain1,
+    ):
+        """`mailbox_count` is exposed on the detail endpoint with the right count."""
+        api_client.force_authenticate(user=domain_admin_user)
+        response = api_client.get(f"{self.LIST_DOMAINS_URL}{mail_domain1.id}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["mailbox_count"] == 2
+
+    def test_maildomain_mailbox_count_zero_when_no_mailbox(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+    ):
+        """`mailbox_count` is 0 for a domain that has no mailbox."""
+        api_client.force_authenticate(user=domain_admin_user)
+        response = api_client.get(f"{self.LIST_DOMAINS_URL}{mail_domain1.id}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["mailbox_count"] == 0
+
+    def test_maildomain_mailbox_count_no_n_plus_one(
+        self,
+        api_client,
+        domain_admin_user,
+        django_assert_num_queries,
+    ):
+        """Adding mailboxes must not increase the query count of the list endpoint."""
+        for i in range(3):
+            maildomain = factories.MailDomainFactory(name=f"count-domain{i}.com")
+            models.MailDomainAccess.objects.create(
+                maildomain=maildomain,
+                user=domain_admin_user,
+                role=models.MailDomainAccessRoleChoices.ADMIN,
+            )
+            for j in range(4):
+                factories.MailboxFactory(domain=maildomain, local_part=f"box{j}")
+
+        api_client.force_authenticate(user=domain_admin_user)
+
+        with django_assert_num_queries(
+            3
+        ):  # 1 for permission + 1 for list + 1 for pagination
+            response = api_client.get(self.LIST_DOMAINS_URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["count"] == 3
+        for item in response.data["results"]:
+            assert item["mailbox_count"] == 4
+
+    def test_maildomain_mailbox_count_scoped_to_domain(
+        self,
+        api_client,
+        domain_admin_user,
+        domain_admin_access1,
+        mail_domain1,
+        mail_domain2,
+        mailbox1_domain1,
+        mailbox1_domain2,
+    ):
+        """Mailboxes from other domains must not leak into `mailbox_count`."""
+        api_client.force_authenticate(user=domain_admin_user)
+        response = api_client.get(f"{self.LIST_DOMAINS_URL}{mail_domain1.id}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["mailbox_count"] == 1
+
     def test_maildomain_expected_dns_records_in_response(
         self,
         api_client,

@@ -7,7 +7,7 @@ import { AdminMailDomainProvider, useAdminMailDomain } from "@/features/provider
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import ErrorPage from "next/error";
 import { Toaster } from "@/features/ui/components/toaster";
-import { Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
+import { Badge, Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
 import { useTheme } from "@/features/providers/theme";
 import { LayoutProvider } from "@/features/layouts/components/layout-context";
 
@@ -73,7 +73,12 @@ function AdminLayoutContent({
 
   // Build tabs if we're in a domain
   const tabs = selectedMailDomain ? [
-    { id: "addresses", label: t("Addresses"), href: `/domain/${selectedMailDomain.id}`, icon: "inbox" },
+      {
+          id: "addresses",
+          label: <div>{t("Addresses")} <Badge type="neutral">{selectedMailDomain.mailbox_count}</Badge></div>,
+          href: `/domain/${selectedMailDomain.id}`,
+          icon: "inbox"
+      },
     { id: "dns", label: t("DNS"), href: `/domain/${selectedMailDomain.id}/dns`, icon: "dns" },
     { id: "signatures", label: t("Signatures"), href: `/domain/${selectedMailDomain.id}/signatures`, icon: "drive_file_rename_outline" },
   ] : [];

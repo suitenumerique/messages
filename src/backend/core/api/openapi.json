@@ -7210,6 +7210,10 @@
                         "type": "string",
                         "readOnly": true
                     },
+                    "mailbox_count": {
+                        "type": "string",
+                        "readOnly": true
+                    },
                     "identity_sync": {
                         "type": "boolean",
                         "readOnly": true,
@@ -7266,6 +7270,7 @@
                     "expected_dns_records",
                     "id",
                     "identity_sync",
+                    "mailbox_count",
                     "name",
                     "updated_at"
                 ]

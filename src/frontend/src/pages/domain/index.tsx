@@ -57,6 +57,12 @@ function AdminDataGrid({ domains, pagination }: AdminDataGridProps) {
       headerName: t("Updated at"),
       renderCell: ({ row }: { row: MailDomainAdmin }) => new Date(row.updated_at).toLocaleDateString(i18n.resolvedLanguage),
     },
+    {
+      id: "mailbox_count",
+      size: 160,
+      headerName: t("Mailbox count"),
+      renderCell: ({ row }: { row: MailDomainAdmin }) => row.mailbox_count,
+    },
     ...(canManageMaildomainAccesses ? [{
       id: "actions",
       size: 200,

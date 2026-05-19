@@ -1371,16 +1371,7 @@ class MailDomainAdminSerializer(AbilitiesModelSerializer):
     """Serialize mail domains for admin view."""
 
     expected_dns_records = serializers.SerializerMethodField(read_only=True)
-
-    def get_expected_dns_records(self, instance):
-        """Return the expected DNS records for the mail domain, only in detail views."""
-
-        # Only include DNS records in detail views, not in list views
-        view = self.context.get("view")
-        if view and hasattr(view, "action") and view.action == "retrieve":
-            return instance.get_expected_dns_records()
-
-        return None
+    mailbox_count = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = models.MailDomain
@@ -1390,6 +1381,7 @@ class MailDomainAdminSerializer(AbilitiesModelSerializer):
             "created_at",
             "updated_at",
             "expected_dns_records",
+            "mailbox_count",
             "identity_sync",
         ]
         read_only_fields = fields
@@ -1411,6 +1403,27 @@ class MailDomainAdminSerializer(AbilitiesModelSerializer):
     def get_abilities(self, instance):
         """Return the abilities for the mail domain."""
         return super().get_abilities(instance)
+
+    def get_expected_dns_records(self, instance):
+        """Return the expected DNS records for the mail domain, only in detail views."""
+
+        # Only include DNS records in detail views, not in list views
+        view = self.context.get("view")
+        if view and hasattr(view, "action") and view.action == "retrieve":
+            return instance.get_expected_dns_records()
+
+        return None
+
+    def get_mailbox_count(self, instance):
+        """Return the number of mailboxes for the mail domain.
+
+        Relies on the `mailbox_count` annotation provided by the viewset queryset
+        to avoid an N+1 COUNT query per domain when listing.
+        """
+        annotated = getattr(instance, "mailbox_count", None)
+        if annotated is not None:
+            return annotated
+        return instance.mailbox_set.count()
 
 
 class MaildomainAccessReadSerializer(serializers.ModelSerializer):
