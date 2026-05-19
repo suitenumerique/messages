@@ -57,9 +57,26 @@ export const ThreadPanel = () => {
         return () => observer.disconnect();
     }, [handleObserver]);
 
+    // Auto-close the thread view only when a thread that was previously
+    // visible in the list disappears (bulk archive/trash). A thread reached
+    // via a deep-link is allowed to stay open even when it is not part of
+    // the current filtered list (e.g. archived thread opened from a shared
+    // URL while viewing the inbox). The ref stores the id of the last
+    // selected thread we've seen in the list — keyed by id so that
+    // switching from an in-list thread to an out-of-list deep-link does
+    // not trigger an erroneous auto-close on the new selection.
+    const lastInListThreadIdRef = useRef<string | null>(null);
     useEffect(() => {
-        if (selectedThread && !threads?.results.find((thread) => thread.id === selectedThread.id)) {
+        if (!selectedThread) {
+            lastInListThreadIdRef.current = null;
+            return;
+        }
+        const isInList = threads?.results.some((thread) => thread.id === selectedThread.id) ?? false;
+        if (isInList) {
+            lastInListThreadIdRef.current = selectedThread.id;
+        } else if (lastInListThreadIdRef.current === selectedThread.id) {
             unselectThread();
+            lastInListThreadIdRef.current = null;
         }
     }, [threads?.results, selectedThread, unselectThread]);
 

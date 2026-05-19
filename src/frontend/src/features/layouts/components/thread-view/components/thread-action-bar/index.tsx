@@ -15,6 +15,7 @@ import useStarred from "@/features/message/use-starred";
 import useDeleteThreadAccess from "@/features/message/use-delete-thread-access";
 import { MailboxRoleChoices, ThreadAccessRoleChoices } from "@/features/api/gen";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
+import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 
 type ThreadActionBarProps = {
     canUndelete: boolean;
@@ -45,6 +46,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
     const mailboxAccess = selectedThread?.accesses.find((a) => a.mailbox.id === selectedMailbox?.id);
     const hasOnlyOneEditor = selectedThread?.accesses.filter((a) => a.role === ThreadAccessRoleChoices.editor).length === 1;
     const canLeaveThread = selectedMailbox?.role !== MailboxRoleChoices.viewer && mailboxAccess && selectedThread && (!hasOnlyOneEditor || mailboxAccess.role !== ThreadAccessRoleChoices.editor);
+    const copyDeepLink = useCopyDeepLink();
 
     const handleLeaveThread = async () => {
         if (!mailboxAccess || !selectedThread) return;
@@ -66,153 +68,157 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
         });
     };
 
-  return (
-    <div className="thread-action-bar__container">
-      <div className="thread-action-bar">
-        <AssigneesWidget onClick={() => accessesWidgetRef.current?.open()} />
-      </div>
-        <div className="thread-action-bar">
-            <Tooltip content={t('Close this thread')} placement="bottom">
-                <Button
-                    onClick={unselectThread}
-                    variant="tertiary"
-                    aria-label={t('Close this thread')}
-                    size="nano"
-                    icon={<Icon name="close" />}
-                />
-            </Tooltip>
-            <VerticalSeparator />
-            {canShowArchiveCTA && (
-                canUnarchive ? (
-                    (
-                        <Tooltip content={t('Unarchive')}>
+    return (
+        <div className="thread-action-bar__container">
+            <div className="thread-action-bar">
+                <AssigneesWidget onClick={() => accessesWidgetRef.current?.open()} />
+            </div>
+            <div className="thread-action-bar">
+                <Tooltip content={t('Close this thread')} placement="bottom">
+                    <Button
+                        onClick={unselectThread}
+                        variant="tertiary"
+                        aria-label={t('Close this thread')}
+                        size="nano"
+                        icon={<Icon name="close" />}
+                    />
+                </Tooltip>
+                <VerticalSeparator />
+                {canShowArchiveCTA && (
+                    canUnarchive ? (
+                        (
+                            <Tooltip content={t('Unarchive')}>
+                                <Button
+                                    variant="tertiary"
+                                    aria-label={t('Unarchive')}
+                                    size="nano"
+                                    icon={<Icon name="unarchive" type={IconType.OUTLINED} />}
+                                    onClick={() => markAsUnarchived({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                                />
+                            </Tooltip>
+                        )
+                    ) : (
+                        <Tooltip content={t('Archive')}>
                             <Button
                                 variant="tertiary"
-                                aria-label={t('Unarchive')}
+                                aria-label={t('Archive')}
                                 size="nano"
-                                icon={<Icon name="unarchive" type={IconType.OUTLINED} />}
-                                onClick={() => markAsUnarchived({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                                icon={<Icon name="archive" type={IconType.OUTLINED} />}
+                                onClick={() => markAsArchived({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
                             />
                         </Tooltip>
                     )
-                ) : (
-                    <Tooltip content={t('Archive')}>
-                        <Button
-                            variant="tertiary"
-                            aria-label={t('Archive')}
-                            size="nano"
-                            icon={<Icon name="archive" type={IconType.OUTLINED} />}
-                            onClick={() => markAsArchived({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
-                        />
-                    </Tooltip>
-                )
-            )}
-            {canEditThread && (
-                !selectedThread?.is_spam ? (
-                    <Tooltip content={t('Report as spam')}>
-                        <Button
-                            variant="tertiary"
-                            aria-label={t('Report as spam')}
-                            size="nano"
-                            icon={<Icon name="report" type={IconType.OUTLINED} />}
-                            onClick={() => markAsSpam({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
-                        />
-                    </Tooltip>
-                ) : (
-                    <Tooltip content={t('Remove spam report')}>
-                        <Button
-                            variant="tertiary"
-                            aria-label={t('Remove spam report')}
-                            size="nano"
-                            icon={<Icon name="report_off" type={IconType.OUTLINED} />}
-                            onClick={() => markAsNotSpam({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
-                        />
-                    </Tooltip>
-                )
-            )}
-            {canEditThread && (
-                canUndelete ? (
-                    (
-                        <Tooltip content={t('Undelete')}>
+                )}
+                {canEditThread && (
+                    !selectedThread?.is_spam ? (
+                        <Tooltip content={t('Report as spam')}>
                             <Button
                                 variant="tertiary"
-                                aria-label={t('Undelete')}
+                                aria-label={t('Report as spam')}
                                 size="nano"
-                                icon={<Icon name="restore_from_trash" type={IconType.OUTLINED} />}
-                                onClick={() => markAsUntrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                                icon={<Icon name="report" type={IconType.OUTLINED} />}
+                                onClick={() => markAsSpam({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                            />
+                        </Tooltip>
+                    ) : (
+                        <Tooltip content={t('Remove spam report')}>
+                            <Button
+                                variant="tertiary"
+                                aria-label={t('Remove spam report')}
+                                size="nano"
+                                icon={<Icon name="report_off" type={IconType.OUTLINED} />}
+                                onClick={() => markAsNotSpam({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
                             />
                         </Tooltip>
                     )
-                ) : (
-                    <Tooltip content={t('Delete')}>
+                )}
+                {canEditThread && (
+                    canUndelete ? (
+                        (
+                            <Tooltip content={t('Undelete')}>
+                                <Button
+                                    variant="tertiary"
+                                    aria-label={t('Undelete')}
+                                    size="nano"
+                                    icon={<Icon name="restore_from_trash" type={IconType.OUTLINED} />}
+                                    onClick={() => markAsUntrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                                />
+                            </Tooltip>
+                        )
+                    ) : (
+                        <Tooltip content={t('Delete')}>
+                            <Button
+                                variant="tertiary"
+                                aria-label={t('Delete')}
+                                size="nano"
+                                icon={<Icon name="delete" type={IconType.OUTLINED} />}
+                                onClick={() => markAsTrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                            />
+                        </Tooltip>
+                    )
+                )}
+                {canEditThread && <VerticalSeparator />}
+                {hasUnread ? (
+                    <Tooltip content={t('Mark as read')}>
                         <Button
                             variant="tertiary"
-                            aria-label={t('Delete')}
+                            aria-label={t('Mark as read')}
                             size="nano"
-                            icon={<Icon name="delete" type={IconType.OUTLINED} />}
-                            onClick={() => markAsTrashed({ threadIds: [selectedThread!.id], onSuccess: unselectThread })}
+                            icon={<Icon name="drafts" type={IconType.OUTLINED} />}
+                            onClick={() => markAsReadAt({ threadIds: [selectedThread!.id], readAt: new Date().toISOString() })}
                         />
                     </Tooltip>
-                )
-            )}
-            {canEditThread && <VerticalSeparator />}
-            {hasUnread ? (
-                <Tooltip content={t('Mark as read')}>
-                    <Button
-                        variant="tertiary"
-                        aria-label={t('Mark as read')}
-                        size="nano"
-                        icon={<Icon name="drafts" type={IconType.OUTLINED} />}
-                        onClick={() => markAsReadAt({ threadIds: [selectedThread!.id], readAt: new Date().toISOString() })}
-                    />
-                </Tooltip>
-            ) : (
-                <Tooltip content={t('Mark as unread')}>
-                    <Button
-                        variant="tertiary"
-                        aria-label={t('Mark as unread')}
-                        size="nano"
-                        icon={<Icon name="mark_email_unread" type={IconType.OUTLINED} />}
-                        onClick={() => {
-                            unselectThread();
-                            markAsReadAt({ threadIds: [selectedThread!.id], readAt: null });
-                        }}
-                    />
-                </Tooltip>
-            )}
-            {isStarred ? (
-                <Tooltip content={t('Unstar this thread')}>
-                    <Button
-                        variant="tertiary"
-                        aria-label={t('Unstar this thread')}
-                        size="nano"
-                        icon={<Icon name="star" />}
-                        onClick={() => markAsUnstarred({ threadIds: [selectedThread!.id] })}
-                    />
-                </Tooltip>
-            ) : (
-                <Tooltip content={t('Star this thread')}>
-                    <Button
-                        variant="tertiary"
-                        aria-label={t('Star this thread')}
-                        size="nano"
-                        icon={<Icon name="star_border" />}
-                        onClick={() => markAsStarred({ threadIds: [selectedThread!.id] })}
-                    />
-                </Tooltip>
-            )}
-            <LabelsWidget threadIds={[selectedThread!.id]} initialLabels={selectedThread!.labels} />
-            <ThreadAccessesWidget ref={accessesWidgetRef} accesses={selectedThread!.accesses} />
-            {canLeaveThread && (
+                ) : (
+                    <Tooltip content={t('Mark as unread')}>
+                        <Button
+                            variant="tertiary"
+                            aria-label={t('Mark as unread')}
+                            size="nano"
+                            icon={<Icon name="mark_email_unread" type={IconType.OUTLINED} />}
+                            onClick={() => {
+                                unselectThread();
+                                markAsReadAt({ threadIds: [selectedThread!.id], readAt: null });
+                            }}
+                        />
+                    </Tooltip>
+                )}
+                {isStarred ? (
+                    <Tooltip content={t('Unstar this thread')}>
+                        <Button
+                            variant="tertiary"
+                            aria-label={t('Unstar this thread')}
+                            size="nano"
+                            icon={<Icon name="star" />}
+                            onClick={() => markAsUnstarred({ threadIds: [selectedThread!.id] })}
+                        />
+                    </Tooltip>
+                ) : (
+                    <Tooltip content={t('Star this thread')}>
+                        <Button
+                            variant="tertiary"
+                            aria-label={t('Star this thread')}
+                            size="nano"
+                            icon={<Icon name="star_border" />}
+                            onClick={() => markAsStarred({ threadIds: [selectedThread!.id] })}
+                        />
+                    </Tooltip>
+                )}
+                <LabelsWidget threadIds={[selectedThread!.id]} initialLabels={selectedThread!.labels} />
+                <ThreadAccessesWidget ref={accessesWidgetRef} accesses={selectedThread!.accesses} />
                 <DropdownMenu
                     isOpen={isDropdownOpen}
                     onOpenChange={setIsDropdownOpen}
                     options={[
                         {
+                            label: t('Copy link to thread'),
+                            icon: <Icon name="link" type={IconType.OUTLINED} />,
+                            callback: () => copyDeepLink(),
+                        },
+                        ...(canLeaveThread ? [{
                             label: t('Leave this thread'),
                             icon: <Icon name="exit_to_app" type={IconType.OUTLINED} />,
                             callback: handleLeaveThread,
-                        },
+                        }] : []),
                     ]}
                 >
                     <Tooltip content={t('More options')}>
@@ -225,8 +231,7 @@ export const ThreadActionBar = ({ canUndelete, canUnarchive }: ThreadActionBarPr
                         />
                     </Tooltip>
                 </DropdownMenu>
-            )}
-          </div>
+            </div>
         </div>
     )
 }

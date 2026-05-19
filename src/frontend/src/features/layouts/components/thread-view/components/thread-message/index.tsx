@@ -109,6 +109,18 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
         // Component state
         const [isThreadMessageBodyLoaded, setIsThreadMessageBodyLoaded] = useState(isMessageReady);
         const [isFolded, setIsFolded] = useState(!isLatest && !message.is_unread && !draftMessage?.is_draft);
+
+        // Deep-link target: unfold this message when the URL hash points to
+        // it so the user lands on its expanded content instead of the folded
+        // preview. Runs once on mount because the hash is read at navigation
+        // time and the user can still re-fold manually afterwards.
+        useEffect(() => {
+            if (typeof window === 'undefined') return;
+            if (window.location.hash === `#thread-message-${message.id}`) {
+                setIsFolded(false);
+            }
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, []);
         const [replyFormMode, setReplyFormMode] = useState<MessageFormMode | null>(() => {
             if (draftMessage?.is_draft) return 'reply';
             if (!message.is_draft || message.is_trashed) return null;

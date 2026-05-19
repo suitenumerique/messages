@@ -326,6 +326,56 @@ def test_refresh_summary_viewer_forbidden(api_client):
     assert thread.summary == "initial"  # untouched
 
 
+@pytest.mark.parametrize(
+    "field",
+    ["is_trashed", "is_spam"],
+)
+def test_retrieve_thread_ignores_trashed_and_spam_filters(api_client, field):
+    """Deep-link sharing must work regardless of a thread's spam/trashed state.
+
+    The list endpoint excludes trashed and spam threads by default, but the
+    retrieve endpoint deliberately bypasses these filters: the user already
+    holds permission via ThreadAccess, and a shared URL must keep working
+    even after the thread has been marked spam or moved to trash.
+    """
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory(users_read=[user])
+    thread = ThreadFactory()
+    ThreadAccessFactory(
+        mailbox=mailbox,
+        thread=thread,
+        role=enums.ThreadAccessRoleChoices.VIEWER,
+    )
+    MessageFactory(thread=thread, **{field: True})
+    thread.update_stats()
+    assert getattr(thread, field) is True
+
+    url = reverse("threads-detail", kwargs={"pk": str(thread.id)})
+    response = api_client.get(url)
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["id"] == str(thread.id)
+
+
+def test_retrieve_thread_without_access_returns_404(api_client):
+    """A user without ThreadAccess must get 404, even via the retrieve bypass.
+
+    The deep-link retrieve endpoint intentionally ignores the spam/trashed
+    filters, so we double-check here that this relaxation does not leak
+    threads to unauthorized users: the ThreadAccess permission check is
+    the only thing standing between a shared URL and a stranger.
+    """
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    MailboxFactory(users_read=[user])  # user has a mailbox, but no access to the thread
+    other_thread = ThreadFactory()
+    MessageFactory(thread=other_thread)
+
+    url = reverse("threads-detail", kwargs={"pk": str(other_thread.id)})
+    response = api_client.get(url)
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
 def test_list_threads_success(api_client):
     """Test listing threads successfully."""
     user = UserFactory()

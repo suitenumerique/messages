@@ -16,6 +16,8 @@ from drf_spectacular.utils import (
 )
 from rest_framework import mixins, status, viewsets
 from rest_framework import serializers as drf_serializers
+from rest_framework.generics import get_object_or_404
+from rest_framework.response import Response
 
 from core import enums, models
 from core.ai.thread_summarizer import summarize_thread
@@ -53,6 +55,22 @@ class ThreadViewSet(
         context = super().get_serializer_context()
         context["mailbox_id"] = self.request.GET.get("mailbox_id")
         return context
+
+    def retrieve(self, request, *args, **kwargs):
+        """Retrieve a single thread, ignoring spam/trashed filters.
+
+        Deep-link sharing relies on a stable URL that survives state
+        changes: a shared link must keep working after the thread is
+        archived, marked as spam, or moved to trash. The ThreadAccess
+        permission check still applies, so unauthorized users get 404.
+        """
+        queryset = self.filter_queryset(
+            self.get_queryset(exclude_spam=False, exclude_trashed=False)
+        )
+        instance = get_object_or_404(queryset, pk=kwargs["pk"])
+        self.check_object_permissions(request, instance)
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 
     def get_queryset(self, exclude_spam: bool = True, exclude_trashed: bool = True):
         """Restrict results to threads accessible by the current user."""
