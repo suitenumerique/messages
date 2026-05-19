@@ -709,6 +709,48 @@ class TestThreadAccessDelete:
         response = api_client.delete(url)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
+    @pytest.mark.parametrize(
+        "mailbox_access_role",
+        [
+            enums.MailboxRoleChoices.ADMIN,
+            enums.MailboxRoleChoices.EDITOR,
+            enums.MailboxRoleChoices.SENDER,
+        ],
+    )
+    def test_delete_other_mailbox_thread_access_allowed_when_manager(
+        self, api_client, mailbox_access_role
+    ):
+        """A user with full edit rights on the thread can revoke another
+        mailbox's ThreadAccess — symmetric with the create permission."""
+        user = factories.UserFactory()
+        api_client.force_authenticate(user=user)
+
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=mailbox_access_role,
+        )
+        thread = factories.ThreadFactory()
+        # User's own EDITOR access — grants management rights on the thread
+        factories.ThreadAccessFactory(
+            mailbox=mailbox,
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+        # Another mailbox's access on the same thread that the user wants to revoke
+        other_thread_access = factories.ThreadAccessFactory(
+            thread=thread,
+            role=enums.ThreadAccessRoleChoices.EDITOR,
+        )
+
+        url = get_thread_access_url(thread.id, other_thread_access.id)
+        response = api_client.delete(url)
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not models.ThreadAccess.objects.filter(
+            id=other_thread_access.id
+        ).exists()
+
     def test_delete_thread_access_not_found(self, api_client, mailbox_with_access):
         """Test deleting a non-existent thread access."""
         user, _ = mailbox_with_access

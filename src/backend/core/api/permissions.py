@@ -277,6 +277,21 @@ class IsAllowedToCreateMessage(IsAuthenticated):
         return True
 
 
+def _user_can_manage_thread_access(user, thread_id):
+    """True if ``user`` has full edit rights on the thread.
+
+    Full edit rights on a thread are the prerequisite for managing its
+    ``ThreadAccess`` rows (list, create, update, destroy peers' access).
+    They require an EDITOR ``ThreadAccess`` on the thread via a mailbox
+    where the user holds ``MAILBOX_ROLES_CAN_EDIT``.
+    """
+    return (
+        models.ThreadAccess.objects.editable_by(user)
+        .filter(thread_id=thread_id)
+        .exists()
+    )
+
+
 class IsAllowedToManageThreadAccess(IsAuthenticated):
     """Permission class for access to create, update, delete and list thread accesses."""
 
@@ -286,33 +301,8 @@ class IsAllowedToManageThreadAccess(IsAuthenticated):
         if not thread_id:
             return False
 
-        # if create action, check if user has admin/editor access to the mailbox and the thread access role is editor
-        if view.action == "create":
-            # authenticated user wants to create a thread access for a specific thread
-            # check if user has admin/editor access to the mailbox and the
-            # thread access role is editor already exists for them
-            return (
-                models.ThreadAccess.objects.select_related("mailbox")
-                .filter(
-                    thread_id=thread_id,
-                    mailbox__accesses__user=request.user,
-                    mailbox__accesses__role__in=enums.MAILBOX_ROLES_CAN_EDIT,
-                    role=enums.ThreadAccessRoleChoices.EDITOR,
-                )
-                .exists()
-            )
-        if view.action == "list":
-            # list is only allowed for a user with access to the thread
-            return (
-                models.ThreadAccess.objects.select_related("mailbox")
-                .filter(
-                    thread_id=thread_id,
-                    mailbox__accesses__user=request.user,
-                    mailbox__accesses__role__in=enums.MAILBOX_ROLES_CAN_EDIT,
-                    role=enums.ThreadAccessRoleChoices.EDITOR,
-                )
-                .exists()
-            )
+        if view.action in ("create", "list"):
+            return _user_can_manage_thread_access(request.user, thread_id)
 
         return True  # to proceed to object-level checks
 
@@ -324,27 +314,21 @@ class IsAllowedToManageThreadAccess(IsAuthenticated):
         if obj.thread.id != view.kwargs.get("thread_id"):
             return False
 
-        # Destroying a ThreadAccess removes the thread for every member of
-        # `obj.mailbox` (the row is unique per (thread, mailbox)). Require
-        # editor-level rights on that mailbox so a viewer cannot revoke
-        # access on behalf of the whole team. Thread role is irrelevant:
-        # a viewer on the thread but editor on the mailbox can still leave.
-        if view.action == "destroy":
+        can_manage_thread_access = _user_can_manage_thread_access(
+            request.user, obj.thread_id
+        )
+
+        # Destroy is symmetric with create: any user who can manage the
+        # thread's accesses (full edit rights on the thread) can revoke a
+        # peer's ThreadAccess. Additionally users who only have edit-rights
+        # on the mailbox being removed can leave the thread.
+        if view.action == "destroy" and not can_manage_thread_access:
             return obj.mailbox.accesses.filter(
                 user=request.user,
                 role__in=enums.MAILBOX_ROLES_CAN_EDIT,
             ).exists()
 
-        return (
-            models.ThreadAccess.objects.select_related("mailbox")
-            .filter(
-                thread=obj.thread,
-                mailbox__accesses__user=request.user,
-                mailbox__accesses__role__in=enums.MAILBOX_ROLES_CAN_EDIT,
-                role=enums.ThreadAccessRoleChoices.EDITOR,
-            )
-            .exists()
-        )
+        return can_manage_thread_access
 
 
 class IsMailDomainAdmin(permissions.BasePermission):
