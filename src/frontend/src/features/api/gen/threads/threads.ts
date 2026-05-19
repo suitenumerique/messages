@@ -395,7 +395,12 @@ export function useThreadsList<
 }
 
 /**
- * ViewSet for Thread model.
+ * Retrieve a single thread, ignoring spam/trashed filters.
+
+Deep-link sharing relies on a stable URL that survives state
+changes: a shared link must keep working after the thread is
+archived, marked as spam, or moved to trash. The ThreadAccess
+permission check still applies, so unauthorized users get 404.
  */
 export type threadsRetrieveResponse200 = {
   data: Thread;

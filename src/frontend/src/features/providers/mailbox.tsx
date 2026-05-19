@@ -1,5 +1,5 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useRef } from "react";
-import { Mailbox, MailboxRoleChoices, Message, PaginatedThreadList, Thread, ThreadEvent, ThreadsListParams, useLabelsList, useMailboxesList, useMessagesList, useThreadsEventsList, useThreadsListInfinite, getThreadsEventsListQueryKey } from "../api/gen";
+import { Mailbox, MailboxRoleChoices, Message, PaginatedThreadList, Thread, ThreadEvent, ThreadsListParams, useLabelsList, useMailboxesList, useMessagesList, useThreadsEventsList, useThreadsListInfinite, useThreadsRetrieve, getThreadsEventsListQueryKey, getThreadsRetrieveQueryKey } from "../api/gen";
 import { FetchStatus, InfiniteData, QueryStatus, RefetchOptions, useQueryClient } from "@tanstack/react-query";
 import type { threadsListResponse } from "../api/gen/threads/threads";
 import { useRouter } from "next/router";
@@ -359,10 +359,56 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             }, {results: [], count: 0, next: null, previous: null} as PaginatedThreadList);
     }, [threadsQuery.data?.pages]);
 
+    const threadIdFromRoute = typeof router.query.threadId === 'string' ? router.query.threadId : undefined;
+    const threadInList = useMemo(() => {
+        if (!threadIdFromRoute) return null;
+        return flattenThreads?.results.find((thread) => thread.id === threadIdFromRoute) ?? null;
+    }, [threadIdFromRoute, flattenThreads]);
+
+    // Deep-link fallback: when the route targets a thread that is not in the
+    // current filtered list (e.g. archived thread opened from a shared link
+    // while viewing the inbox), fetch it directly so the view can still render.
+    // `mailbox_id` must be forwarded so the backend computes mailbox-scoped
+    // fields (user_role, labels, abilities, _has_unread, _has_starred) against
+    // the right scope — without it the serializer returns null/empty values.
+    const fallbackThreadQuery = useThreadsRetrieve(threadIdFromRoute ?? '', {
+        query: {
+            enabled: !!threadIdFromRoute && !!selectedMailbox && !!flattenThreads && !threadInList,
+        },
+        request: {
+            params: {
+                mailbox_id: selectedMailbox?.id ?? '',
+            },
+        },
+    });
+
     const selectedThread = useMemo(() => {
-        const threadId = router.query.threadId;
-        return flattenThreads?.results.find((thread) => thread.id === threadId) ?? null;
-    }, [router.query.threadId, flattenThreads])
+        return threadInList ?? fallbackThreadQuery.data?.data ?? null;
+    }, [threadInList, fallbackThreadQuery.data?.data])
+
+    // When the deep-link target thread cannot be retrieved (404/403, e.g.
+    // unknown id or revoked access), redirect to the mailbox's default
+    // folder (Inbox) so the user lands on something useful rather than an
+    // empty thread panel. We force the default filter rather than
+    // preserving the current query string because the typical entry
+    // point for this error is an externally-shared link, where there is
+    // no meaningful query string to keep. `router.replace` is used to
+    // avoid polluting history with the broken URL. The redirect runs
+    // only once per error per mount thanks to the `redirectedOnErrorRef`
+    // guard.
+    const redirectedOnErrorRef = useRef(false);
+    useEffect(() => {
+        if (!fallbackThreadQuery.isError) {
+            redirectedOnErrorRef.current = false;
+            return;
+        }
+        if (redirectedOnErrorRef.current) return;
+        if (!selectedMailbox || !threadIdFromRoute) return;
+        redirectedOnErrorRef.current = true;
+        const defaultFilter = new URLSearchParams(MAILBOX_FOLDERS()[0].filter).toString();
+        router.replace(`/mailbox/${selectedMailbox.id}?${defaultFilter}`);
+    }, [fallbackThreadQuery.isError, selectedMailbox, threadIdFromRoute]);
+
     const previousSelectedThreadMessagesCount = usePrevious(selectedThread?.messages.length);
     const previousSelectedThreadEventsCount = usePrevious(selectedThread?.events_count);
 
@@ -456,7 +502,16 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     };
 
     const invalidateMailbox = async () => {
-        await Promise.all([invalidateThreadList(), invalidateThreadMessages()]);
+        // Also invalidate the single-thread retrieve cache so deep-link
+        // fallbacks pick up state changes (archive/trash/spam) made on a
+        // thread that is not present in the current filtered list.
+        const tasks: Promise<unknown>[] = [invalidateThreadList(), invalidateThreadMessages()];
+        if (threadIdFromRoute) {
+            tasks.push(queryClient.invalidateQueries({
+                queryKey: getThreadsRetrieveQueryKey(threadIdFromRoute),
+            }));
+        }
+        await Promise.all(tasks);
     };
 
     const invalidateThreadEvents = async () => {
@@ -564,7 +619,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
                 const defaultFolder = MAILBOX_FOLDERS()[0];
                 const hash = window.location.hash;
                 if (router.query.threadId) {
-                    router.replace(`/mailbox/${selectedMailbox.id}/thread/${router.query.threadId}?${router.query.search}${hash}`);
+                    router.replace(`/mailbox/${selectedMailbox.id}/thread/${router.query.threadId}?${searchParams.toString()}${hash}`);
                 } else {
                     router.replace(`/mailbox/${selectedMailbox.id}?${new URLSearchParams(defaultFolder.filter).toString()}${hash}`);
                 }

@@ -11,6 +11,7 @@ import useSplitThread from "@/features/message/use-split-thread";
 import useTrash from "@/features/message/use-trash";
 import { FEATURE_KEYS, useFeatureFlag } from "@/hooks/use-feature";
 import useAbility, { Abilities } from "@/hooks/use-ability";
+import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import { ThreadMessageActionsProps } from "./types";
 
 const ThreadMessageActions = ({
@@ -27,6 +28,7 @@ const ThreadMessageActions = ({
 
     // Hooks and state specific to actions
     const { unselectThread, selectedThread } = useMailboxContext();
+    const copyDeepLink = useCopyDeepLink();
     const { markAsReadAt } = useRead();
     const { markAsTrashed } = useTrash();
     const { splitThread } = useSplitThread();
@@ -119,9 +121,14 @@ const ThreadMessageActions = ({
         ...(canSplitThread ? [{
             label: t('Split thread from here'),
             icon: <Icon type={IconType.FILLED} name="call_split" />,
-            showSeparator: true,
             callback: handleSplitThread,
         }] : []),
+        {
+            label: t('Copy link to message'),
+            icon: <Icon type={IconType.FILLED} name="link" />,
+            callback: () => copyDeepLink({ messageId: message.id }),
+            showSeparator: true,
+        },
         {
             label: t('Print'),
             icon: <Icon type={IconType.FILLED} name="print" />,

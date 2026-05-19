@@ -9,6 +9,7 @@ import { useMailboxContext, TimelineItem } from "@/features/providers/mailbox";
 import { Badge } from "@/features/ui/components/badge";
 import { AVATAR_COLORS, Icon, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit";
 import { Button, useModals } from "@gouvfr-lasuite/cunningham-react";
+import useCopyDeepLink from "@/features/message/use-copy-deep-link";
 import clsx from "clsx";
 import { buildAssignmentMessage } from "./assignment-message";
 
@@ -149,6 +150,7 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
     const { user } = useAuth();
     const modals = useModals();
     const { invalidateThreadEvents } = useMailboxContext();
+    const copyDeepLink = useCopyDeepLink();
     const isAuthor = event.author?.id === user?.id;
     const isEdited = Math.abs(new Date(event.updated_at).getTime() - new Date(event.created_at).getTime()) > 1000;
     // Edit/delete actions are only available to the author while the
@@ -193,6 +195,11 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
             document.removeEventListener("touchstart", handleClickOutside);
         };
     }, [showActions]);
+
+    const handleCopyLink = async () => {
+        const copied = await copyDeepLink({ eventId: event.id });
+        if (copied) setShowActions(false);
+    };
 
     const handleDelete = async () => {
         const decision = await modals.deleteConfirmationModal({
@@ -296,34 +303,45 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
                             <span className="thread-event__edited-badge">({t("edited")})</span>
                         )}
                     </div>
-                    {canModify && (
-                        <div className="thread-event__actions">
-                            <Button
-                                size="nano"
-                                variant="tertiary"
-                                color="brand"
-                                icon={<Icon type={IconType.OUTLINED} name="edit" aria-hidden="true" />}
-                                aria-label={t("Edit")}
-                                title={t("Edit")}
-                                onClick={() => {
-                                    setShowActions(false);
-                                    onEdit?.(event);
-                                }}
-                            />
-                            <Button
-                                size="nano"
-                                variant="tertiary"
-                                color="brand"
-                                icon={<Icon type={IconType.OUTLINED} name="delete" aria-hidden="true" />}
-                                aria-label={t("Delete")}
-                                title={t("Delete")}
-                                onClick={() => {
-                                    setShowActions(false);
-                                    handleDelete();
-                                }}
-                            />
-                        </div>
-                    )}
+                    <div className="thread-event__actions">
+                        <Button
+                            size="nano"
+                            variant="tertiary"
+                            color="brand"
+                            icon={<Icon type={IconType.OUTLINED} name="link" aria-hidden="true" />}
+                            aria-label={t("Copy link to comment")}
+                            title={t("Copy link to comment")}
+                            onClick={handleCopyLink}
+                        />
+                        {canModify && (
+                            <>
+                                <Button
+                                    size="nano"
+                                    variant="tertiary"
+                                    color="brand"
+                                    icon={<Icon type={IconType.OUTLINED} name="edit" aria-hidden="true" />}
+                                    aria-label={t("Edit")}
+                                    title={t("Edit")}
+                                    onClick={() => {
+                                        setShowActions(false);
+                                        onEdit?.(event);
+                                    }}
+                                />
+                                <Button
+                                    size="nano"
+                                    variant="tertiary"
+                                    color="brand"
+                                    icon={<Icon type={IconType.OUTLINED} name="delete" aria-hidden="true" />}
+                                    aria-label={t("Delete")}
+                                    title={t("Delete")}
+                                    onClick={() => {
+                                        setShowActions(false);
+                                        handleDelete();
+                                    }}
+                                />
+                            </>
+                        )}
+                    </div>
                 </div>
             </div>
         );

@@ -197,14 +197,23 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
 
     useEffect(() => {
         if (isReady && !hasBeenInitialized) {
+            // Deep-link hash takes precedence over draft/unread heuristics:
+            // a user arriving via a shared "#thread-message-{id}" or
+            // "#thread-event-{id}" URL expects to land on that exact element,
+            // scrolled smoothly into view with a brief highlight.
+            const hash = typeof window !== 'undefined' ? window.location.hash : '';
+            const hashMatch = hash.match(/^#thread-(message|event)-([\w-]+)$/);
             let selector = `#thread-message-${latestMessage?.id}`;
-            if (draftMessageIds.length > 0) {
-                // Drafts take precedence: jump straight to the reply form.
+            let scrollBehavior: ScrollBehavior = 'instant';
+            let highlightTargetId: string | null = null;
+
+            if (hashMatch) {
+                selector = hash;
+                scrollBehavior = 'smooth';
+                highlightTargetId = hash.slice(1);
+            } else if (draftMessageIds.length > 0) {
                 selector = `#thread-message-${draftMessageIds[0]} > .thread-message__reply-form`;
             } else {
-                // Otherwise, scroll to the earliest unread item in chronological
-                // order — either an unread message or a ThreadEvent (IM) carrying
-                // an unread mention of the current user.
                 const firstUnreadItem = threadItems.find((item) => {
                     if (item.type === 'message') {
                         return (item.data as MessageWithDraftChild).is_unread;
@@ -220,7 +229,71 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
 
             const el = document.querySelector<HTMLElement>(selector);
             if (el) {
-                rootRef.current?.scrollTo({ top: el.offsetTop - 225, behavior: 'instant' });
+                const performScroll = (): boolean => {
+                    const refreshed = document.querySelector<HTMLElement>(selector);
+                    const target = refreshed ?? el;
+                    const root = rootRef.current;
+                    if (!root) return false;
+                    const targetTop = Math.max(target.offsetTop - 225, 0);
+                    const willScroll = Math.abs(targetTop - root.scrollTop) > 1;
+                    if (willScroll) {
+                        root.scrollTo({ top: targetTop, behavior: scrollBehavior });
+                    }
+                    return willScroll;
+                };
+
+                const startHighlight = () => {
+                    if (!highlightTargetId) return;
+                    const highlightTarget = document.getElementById(highlightTargetId);
+                    if (!highlightTarget) return;
+                    const messagesList = rootRef.current?.querySelector('.thread-view__messages-list');
+                    highlightTarget.classList.add('thread-view__highlight');
+                    messagesList?.classList.add('thread-view__messages-list--focusing');
+
+                    // Sync cleanup to the CSS animation. The timeout
+                    // guards prefers-reduced-motion, where no animation fires.
+                    let cleaned = false;
+                    const cleanup = () => {
+                        if (cleaned) return;
+                        cleaned = true;
+                        highlightTarget.classList.remove('thread-view__highlight');
+                        messagesList?.classList.remove('thread-view__messages-list--focusing');
+                        highlightTarget.removeEventListener('animationend', cleanup);
+                    };
+                    highlightTarget.addEventListener('animationend', cleanup);
+                    setTimeout(cleanup, 2200);
+                };
+
+                // Defer the highlight until the smooth scroll has actually
+                // landed. `scrollend` doesn't emit when no scroll happens
+                // nor on older browsers, so the 700ms safety acts as a fallback.
+                const scheduleHighlight = (willScroll: boolean) => {
+                    const root = rootRef.current;
+                    if (!root || scrollBehavior !== 'smooth' || !willScroll) {
+                        startHighlight();
+                        return;
+                    }
+                    let fired = false;
+                    const fire = () => {
+                        if (fired) return;
+                        fired = true;
+                        root.removeEventListener('scrollend', fire);
+                        clearTimeout(safety);
+                        startHighlight();
+                    };
+                    root.addEventListener('scrollend', fire);
+                    const safety = setTimeout(fire, 700);
+                };
+
+                if (hashMatch) {
+                    requestAnimationFrame(() => requestAnimationFrame(() => {
+                        const willScroll = performScroll();
+                        scheduleHighlight(willScroll);
+                    }));
+                } else {
+                    const willScroll = performScroll();
+                    scheduleHighlight(willScroll);
+                }
                 setHasBeenInitialized(true);
             }
         }
@@ -407,6 +480,19 @@ export const ThreadView = () => {
     const messageIds = filteredThreadItems
         .filter((item): item is Extract<TimelineItem, { type: 'message' }> => item.type === 'message')
         .map(item => item.data.id);
+
+    // A deep-link "#thread-message-{id}" pointing at a trashed message
+    // should be treated as a request to show the trash view
+    useEffect(() => {
+        if (!messages || isTrashView || showTrashedMessages) return;
+        const hash = typeof window !== 'undefined' ? window.location.hash : '';
+        const match = hash.match(/^#thread-message-([\w-]+)$/);
+        if (!match) return;
+        const target = messages.find((m) => m.id === match[1]);
+        if (target?.is_trashed) {
+            setShowTrashedMessages(true);
+        }
+    }, [messages, isTrashView, showTrashedMessages]);
 
     useEffect(() => () => {
         setShowTrashedMessages(isTrashView);

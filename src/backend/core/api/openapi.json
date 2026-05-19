@@ -5130,7 +5130,7 @@
         "/api/v1.0/threads/{id}/": {
             "get": {
                 "operationId": "threads_retrieve",
-                "description": "ViewSet for Thread model.",
+                "description": "Retrieve a single thread, ignoring spam/trashed filters.\n\nDeep-link sharing relies on a stable URL that survives state\nchanges: a shared link must keep working after the thread is\narchived, marked as spam, or moved to trash. The ThreadAccess\npermission check still applies, so unauthorized users get 404.",
                 "parameters": [
                     {
                         "in": "path",

@@ -76,7 +76,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
         const folderParams = new URLSearchParams(searchParams.toString());
         THREAD_PANEL_FILTER_PARAMS.forEach((param) => folderParams.delete(param));
         const activeFolder = findRootFolder((folder) => new URLSearchParams(folder.filter).toString() === folderParams.toString());
-        return activeFolder?.name;
+        return activeFolder?.name ?? t('Messages');
     }, [searchParams, labelsQuery.data?.data, t, findLabelBySlug])
 
     const handleSelectAllToggle = () => {

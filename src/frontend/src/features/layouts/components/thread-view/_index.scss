@@ -150,3 +150,81 @@
     top: 0;
     z-index: 2;
 }
+
+// Magnetic-focus highlight applied after deep-link navigation lands on a
+// specific message or comment.
+.thread-view__highlight {
+    --thread-highlight-color: var(--c--contextuals--content--semantic--info--primary);
+}
+
+.thread-message.thread-view__highlight {
+    animation: thread-view-highlight-focus 1700ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: relative;
+    z-index: 3;
+}
+
+// On a thread-event, the visible "bubble" is `__content` (the rounded
+// background block that holds the text).
+.thread-event.thread-view__highlight .thread-event__content {
+    animation: thread-view-highlight-focus 1700ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform-origin: left center;
+    position: relative;
+    z-index: 3;
+}
+
+@keyframes thread-view-highlight-focus {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 transparent;
+    }
+    18% {
+        transform: scale(1.014);
+        box-shadow:
+            0 22px 56px -14px color-mix(in srgb, var(--thread-highlight-color) 28%, transparent),
+            0 0 0 2px var(--thread-highlight-color);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 transparent;
+    }
+}
+
+.thread-view__messages-list--focusing > :not(.thread-view__highlight) {
+    animation: thread-view-dim-cycle 1700ms both;
+}
+
+@keyframes thread-view-dim-cycle {
+    0% {
+        opacity: 1;
+        filter: saturate(1);
+        animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    18% {
+        opacity: 0.42;
+        filter: saturate(0.88);
+        animation-timing-function: linear;
+    }
+    40% {
+        opacity: 0.42;
+        filter: saturate(0.88);
+        animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    100% {
+        opacity: 1;
+        filter: saturate(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .thread-message.thread-view__highlight,
+    .thread-event.thread-view__highlight .thread-event__content {
+        animation: none;
+        box-shadow: 0 0 0 2px var(--thread-highlight-color);
+        transition: box-shadow 1.2s ease-out;
+    }
+    .thread-view__messages-list--focusing > :not(.thread-view__highlight) {
+        animation: none;
+        opacity: 1;
+        filter: none;
+    }
+}
