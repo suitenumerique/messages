@@ -8,6 +8,7 @@ Each field extraction must be individually guarded to maximise data recovery.
 # pylint: disable=broad-exception-caught,too-many-lines
 
 import base64
+import hashlib
 import logging
 import re
 import struct
@@ -73,6 +74,12 @@ PR_ATTACH_METHOD = 0x3705
 
 # MAPI property tags — flags
 PR_FLAG_STATUS = 0x1090
+
+# MAPI property tag — Internet Message-ID stored natively on the PST message,
+# independent of transport_headers. Outlook populates it for received items
+# and often for drafts; reading it lets us dedupe messages whose
+# transport_headers were lost or never existed.
+PR_INTERNET_MESSAGE_ID = 0x1035
 
 # Attachment method values
 ATTACH_BY_VALUE = 1
@@ -834,6 +841,113 @@ def _apply_recipient_fallback_chain(message, jmap_data: dict) -> None:
             jmap_data[key] = display_recipients[key]
 
 
+# Strict shape mirror of compose_email's _MSG_ID_RE, applied to the
+# bracket-stripped value. PST archives routinely carry Message-IDs that
+# would crash strict composition (empty, missing '@', embedded whitespace,
+# nested brackets) — pre-validating here lets us fall back to MAPI/synth
+# instead of failing the entire message reconstruction.
+_VALID_MSG_ID_INNER_RE = re.compile(r"^[^\s<>@]+@[^\s<>@]+$")
+
+
+def _sanitize_message_id(raw: Optional[str]) -> Optional[str]:
+    """Return ``raw`` stripped of brackets/whitespace if it's a valid msg-id.
+
+    Returns None for anything compose_email would reject (empty, no '@',
+    multiple '@', whitespace, nested brackets…). Keeps the importer
+    "lenient parse, strict compose" contract from collapsing on malformed
+    archives.
+    """
+    if not raw:
+        return None
+    candidate = raw.strip()
+    if candidate.startswith("<") and candidate.endswith(">"):
+        candidate = candidate[1:-1].strip()
+    if not candidate or not _VALID_MSG_ID_INNER_RE.match(candidate):
+        return None
+    return candidate
+
+
+def _extract_message_id_from_mapi(message) -> Optional[str]:
+    """Read the native Internet Message-ID stored on the PST message.
+
+    Returns the value of PR_INTERNET_MESSAGE_ID stripped of surrounding
+    angle brackets when it parses to a shape compose_email accepts, or
+    None when the property is absent, empty, or malformed.
+    """
+    return _sanitize_message_id(
+        get_mapi_property_string(message, PR_INTERNET_MESSAGE_ID)
+    )
+
+
+def _synthesize_message_id(message, recipient_email: Optional[str]) -> str:
+    """Build a deterministic Message-ID from stable MAPI properties.
+
+    Used as last resort when no native Message-ID is available (typical of
+    drafts and locally-composed items). Two re-imports of the same PST will
+    produce the same value, allowing the inbound dedup check to skip them.
+
+    The hash inputs are picked for stability across libpff reads: delivery
+    and submit timestamps, sender, subject, body prefix, and attachment
+    fingerprint. The recipient mailbox's domain is used as the host part so
+    the synthesized ID stays scoped to this import.
+    """
+    parts: list[str] = []
+
+    for attr in ("delivery_time", "client_submit_time"):
+        try:
+            value = getattr(message, attr, None)
+            parts.append(value.isoformat() if value else "")
+        except Exception:
+            parts.append("")
+
+    try:
+        parts.append(message.subject or "")
+    except Exception:
+        parts.append("")
+
+    try:
+        parts.append(message.sender_name or "")
+    except Exception:
+        parts.append("")
+
+    parts.append(get_mapi_property_string(message, PR_SENDER_SMTP_ADDRESS) or "")
+    parts.append(get_mapi_property_string(message, PR_SENDER_EMAIL_ADDRESS) or "")
+
+    # Body prefix — 1 KB is enough to disambiguate without making the hash
+    # sensitive to small late-message edits (signature insertion, etc.).
+    try:
+        raw_text = message.plain_text_body
+        if raw_text:
+            if isinstance(raw_text, bytes):
+                raw_text = raw_text.decode("utf-8", errors="replace")
+            parts.append(raw_text[:1024])
+    except Exception:
+        logger.debug("Failed to read plain_text_body for Message-ID synthesis")
+
+    # Attachment fingerprint — count + total declared size; reading the full
+    # buffers would defeat the point of an O(1) Message-ID synthesis.
+    try:
+        num_attachments = int(message.number_of_attachments)
+        total_size = 0
+        for i in range(num_attachments):
+            try:
+                total_size += int(message.get_attachment(i).get_size())
+            except Exception:
+                logger.debug(
+                    "Failed to read attachment %d size for Message-ID synthesis", i
+                )
+        parts.append(f"{num_attachments}:{total_size}")
+    except Exception:
+        parts.append("")
+
+    digest = hashlib.sha256("\x00".join(parts).encode("utf-8")).hexdigest()[:32]
+
+    domain = "localhost"
+    if recipient_email and "@" in recipient_email:
+        domain = recipient_email.rsplit("@", 1)[1]
+    return f"pst-synth-{digest}@{domain}"
+
+
 def reconstruct_eml(
     message,
     store_email: Optional[str] = None,
@@ -914,8 +1028,12 @@ def reconstruct_eml(
         if date_str:
             jmap_data["date"] = date_str
 
-        # Message-ID
-        message_id = parsed_headers.get("Message-ID")
+        # Message-ID — header is preferred, but Exchange/O365 exports
+        # sometimes strip it or carry a malformed value (empty, missing
+        # '@', embedded whitespace) that compose_email's strict validator
+        # would reject; fall back to MAPI and synthesis below in those
+        # cases.
+        message_id = _sanitize_message_id(parsed_headers.get("Message-ID"))
         if message_id:
             jmap_data["messageId"] = message_id
 
@@ -958,6 +1076,17 @@ def reconstruct_eml(
                 jmap_data["subject"] = message.subject
         except Exception:
             logger.debug("Failed to read message subject")
+
+    # Message-ID fallback chain — drafts and locally-composed items have no
+    # transport_headers, and Exchange exports sometimes drop the header even
+    # for received items. Without a Message-ID the inbound dedup check is
+    # skipped and the same message gets imported again on every re-run.
+    if "messageId" not in jmap_data:
+        native_id = _extract_message_id_from_mapi(message)
+        if native_id:
+            jmap_data["messageId"] = native_id
+        else:
+            jmap_data["messageId"] = _synthesize_message_id(message, recipient_email)
 
     # No sender resolvable: synthesize one using the recipient's domain so
     # compose_email accepts the message. inbound_create.py keeps this value

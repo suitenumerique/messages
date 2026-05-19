@@ -34,6 +34,7 @@ from core.services.importer.pst import (
     PR_DISPLAY_TO,
     PR_EMAIL_ADDRESS,
     PR_FLAG_STATUS,
+    PR_INTERNET_MESSAGE_ID,
     PR_LAST_MODIFIER_SMTP_ADDRESS,
     PR_MESSAGE_FLAGS,
     PR_RECIPIENT_TYPE,
@@ -322,6 +323,63 @@ class TestReconstructEml:
         assert parsed["From"] == "draft-author@example.com"
         body_parts = [p for p in parsed.walk() if p.get_content_type() == "text/plain"]
         assert "Draft body" in body_parts[0].get_payload(decode=True).decode()
+
+    def test_reconstruct_uses_pr_internet_message_id_when_header_missing(self):
+        """PR_INTERNET_MESSAGE_ID is the fallback when no header carries it."""
+        msg = _make_message(
+            transport_headers=None,
+            plain_text_body="body",
+            sender_mapi_entries=[
+                _make_mapi_entry(
+                    PR_INTERNET_MESSAGE_ID, data_as_string="<native@example.com>"
+                ),
+            ],
+        )
+        eml_bytes = reconstruct_eml(msg, recipient_email="dest@example.com")
+        parsed = email.message_from_bytes(eml_bytes)
+        assert parsed["Message-ID"] == "<native@example.com>"
+
+    def test_reconstruct_synthesizes_message_id_for_drafts(self):
+        """Drafts without transport_headers nor native ID get a deterministic ID.
+
+        Two reconstructions of the same message must produce the same value
+        so the inbound dedup check skips re-imports.
+        """
+        kwargs = {
+            "subject": "Draft",
+            "sender_name": "author@example.com",
+            "transport_headers": None,
+            "plain_text_body": "Hello",
+            "delivery_time": datetime(2025, 5, 26, 10, 0, 0, tzinfo=timezone.utc),
+        }
+        eml_a = reconstruct_eml(
+            _make_message(**kwargs), recipient_email="dest@example.com"
+        )
+        eml_b = reconstruct_eml(
+            _make_message(**kwargs), recipient_email="dest@example.com"
+        )
+        id_a = email.message_from_bytes(eml_a)["Message-ID"]
+        id_b = email.message_from_bytes(eml_b)["Message-ID"]
+
+        assert id_a == id_b
+        assert id_a.startswith("<pst-synth-")
+        assert id_a.endswith("@example.com>")
+
+    def test_reconstruct_synthesized_ids_differ_for_distinct_messages(self):
+        """Two different drafts must not collide on the synthesized Message-ID."""
+        msg_a = _make_message(
+            subject="A", transport_headers=None, plain_text_body="content A"
+        )
+        msg_b = _make_message(
+            subject="B", transport_headers=None, plain_text_body="content B"
+        )
+        id_a = email.message_from_bytes(
+            reconstruct_eml(msg_a, recipient_email="dest@example.com")
+        )["Message-ID"]
+        id_b = email.message_from_bytes(
+            reconstruct_eml(msg_b, recipient_email="dest@example.com")
+        )["Message-ID"]
+        assert id_a != id_b
 
     def test_reconstruct_with_mapi_sender_email(self):
         """Test sender extraction from MAPI properties instead of sender_name."""
