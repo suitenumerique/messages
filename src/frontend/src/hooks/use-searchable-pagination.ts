@@ -1,6 +1,7 @@
 import { usePagination } from "@gouvfr-lasuite/cunningham-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DEFAULT_PAGE_SIZE } from "@/features/config/constants";
+import usePrevious from "./use-previous";
 
 type UseSearchablePaginationOptions = {
     pageSize?: number;
@@ -25,6 +26,7 @@ export const useSearchablePagination = (
     const { pageSize = DEFAULT_PAGE_SIZE, resetKey } = options;
     const pagination = usePagination({ pageSize });
     const [searchQuery, setSearchQueryState] = useState<string>("");
+    const previousResetKey = usePrevious(resetKey);
 
     const setSearchQuery = (query: string) => {
         setSearchQueryState(query);
@@ -33,6 +35,7 @@ export const useSearchablePagination = (
     };
 
     useEffect(() => {
+        if (previousResetKey === resetKey) return;
         if (resetKey === undefined) return;
         setSearchQueryState("");
         pagination.setPage(1);
