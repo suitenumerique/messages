@@ -147,7 +147,7 @@ can be offloaded to S3 after a configurable age. See [tiered storage
 docs](tiered-storage.md) for the runbook (rotation, verify, recovery).
 
 The bucket is treated as "configured" when at least one of
-`STORAGE_MESSAGES_BLOBS_ENDPOINT_URL` or `STORAGE_MESSAGES_BLOBS_ACCESS_KEY`
+`STORAGE_MESSAGE_BLOBS_ENDPOINT_URL` or `STORAGE_MESSAGE_BLOBS_ACCESS_KEY`
 is set — the periodic offload task and the read-from-S3 path both
 short-circuit otherwise. Bucket creds must additionally be valid for
 the periodic task to actually move data; until both
@@ -156,11 +156,11 @@ blob stays in PG.
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `STORAGE_MESSAGES_BLOBS_ENDPOINT_URL` | unset | S3 endpoint URL for blob bucket | Optional |
-| `STORAGE_MESSAGES_BLOBS_BUCKET_NAME` | unset | S3 bucket name (must be set together with `STORAGE_MESSAGES_BLOBS_ENDPOINT_URL` to enable offload) | Optional |
-| `STORAGE_MESSAGES_BLOBS_ACCESS_KEY` | unset | S3 access key | Optional |
-| `STORAGE_MESSAGES_BLOBS_SECRET_KEY` | unset | S3 secret key | Optional |
-| `STORAGE_MESSAGES_BLOBS_REGION_NAME` | unset | S3 region | Optional |
+| `STORAGE_MESSAGE_BLOBS_ENDPOINT_URL` | unset | S3 endpoint URL for blob bucket | Optional |
+| `STORAGE_MESSAGE_BLOBS_BUCKET_NAME` | unset | S3 bucket name (must be set together with `STORAGE_MESSAGE_BLOBS_ENDPOINT_URL` to enable offload) | Optional |
+| `STORAGE_MESSAGE_BLOBS_ACCESS_KEY` | unset | S3 access key | Optional |
+| `STORAGE_MESSAGE_BLOBS_SECRET_KEY` | unset | S3 secret key | Optional |
+| `STORAGE_MESSAGE_BLOBS_REGION_NAME` | unset | S3 region | Optional |
 | `MESSAGES_BLOBS_OFFLOAD_ENABLED` | `False` | Master switch for the periodic offload task. Hourly schedule with a 55-minute per-tick budget; processes blobs sequentially (no per-blob fan-out). The orphan-blob GC sweep (`gc_orphan_blobs_task`) runs on the same hourly cadence regardless of this flag — its job is reference-graph cleanup, not S3 offload. | Optional |
 | `MESSAGES_BLOBS_OFFLOAD_DELAY` | `86400` | Age threshold (seconds) for offload (`0` = immediate) | Optional |
 | `MESSAGES_BLOBS_OFFLOAD_MIN_SIZE` | `0` | Minimum blob size in bytes (0 = all) | Optional |

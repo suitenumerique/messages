@@ -337,23 +337,23 @@ class Base(Configuration):
             "BACKEND": "storages.backends.s3.S3Storage",
             "OPTIONS": {
                 "endpoint_url": values.Value(
-                    environ_name="STORAGE_MESSAGES_BLOBS_ENDPOINT_URL",
+                    environ_name="STORAGE_MESSAGE_BLOBS_ENDPOINT_URL",
                     environ_prefix=None,
                 ),
                 "bucket_name": values.Value(
-                    environ_name="STORAGE_MESSAGES_BLOBS_BUCKET_NAME",
+                    environ_name="STORAGE_MESSAGE_BLOBS_BUCKET_NAME",
                     environ_prefix=None,
                 ),
                 "access_key": values.Value(
-                    environ_name="STORAGE_MESSAGES_BLOBS_ACCESS_KEY",
+                    environ_name="STORAGE_MESSAGE_BLOBS_ACCESS_KEY",
                     environ_prefix=None,
                 ),
                 "secret_key": values.Value(
-                    environ_name="STORAGE_MESSAGES_BLOBS_SECRET_KEY",
+                    environ_name="STORAGE_MESSAGE_BLOBS_SECRET_KEY",
                     environ_prefix=None,
                 ),
                 "region_name": values.Value(
-                    environ_name="STORAGE_MESSAGES_BLOBS_REGION_NAME",
+                    environ_name="STORAGE_MESSAGE_BLOBS_REGION_NAME",
                     environ_prefix=None,
                 ),
             },

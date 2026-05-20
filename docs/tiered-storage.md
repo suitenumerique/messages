@@ -89,7 +89,7 @@ By default everything runs in PostgreSQL with `raw_content` populated.
 To start moving cold blobs to S3:
 
 1. Provision a bucket and credentials.
-2. Set the `STORAGE_MESSAGES_BLOBS_*` env vars (see [env.md](env.md)).
+2. Set the `STORAGE_MESSAGE_BLOBS_*` env vars (see [env.md](env.md)).
 3. `make create-buckets` (or the production equivalent).
 4. Set `MESSAGES_BLOBS_OFFLOAD_ENABLED=True`.
 
@@ -241,7 +241,7 @@ To bring every offloaded blob back into PostgreSQL:
    ```sh
    SELECT count(*) FROM messages_blob WHERE storage_location=2;
    ```
-   returns 0, you can safely unset `STORAGE_MESSAGES_BLOBS_*` —
+   returns 0, you can safely unset `STORAGE_MESSAGE_BLOBS_*` —
    no read path will need them.
 
 ## Operator commands

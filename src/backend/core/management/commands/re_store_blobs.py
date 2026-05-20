@@ -113,7 +113,7 @@ class Command(BaseCommand):
                 self.stderr.write(
                     self.style.ERROR(
                         "Object storage is not configured but OBJECT_STORAGE "
-                        "rows exist. Configure STORAGE_MESSAGES_BLOBS_* to "
+                        "rows exist. Configure STORAGE_MESSAGE_BLOBS_* to "
                         "let restore download them, or accept that those "
                         "blobs cannot be reached."
                     )
