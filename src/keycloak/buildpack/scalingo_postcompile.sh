@@ -26,4 +26,4 @@ fi
 cd scripts && zip -r ../keycloak/providers/custom-scripts.jar META-INF *.js && cd ..
 
 echo "-----> Building Keycloak"
-PATH=$HOME/.scalingo/with_jstack/bin:$PATH ./keycloak/bin/kc.sh build
+PATH=$HOME/.jdk/bin:$PATH ./keycloak/bin/kc.sh build
