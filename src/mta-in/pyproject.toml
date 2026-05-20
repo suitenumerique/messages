@@ -7,7 +7,7 @@ build-backend = "uv_build"
 
 [project]
 name = "st-messages-mta-in"
-version = "0.5.0"
+version = "0.6.0"
 authors = [{ "name" = "ANCT", "email" = "suiteterritoriale@anct.gouv.fr" }]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

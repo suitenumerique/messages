@@ -8,6 +8,70 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-20
+
+### Added
+
+- Add thread assignation feature #645
+- Add mention notifications via UserEvent #621
+- Allow sending internal messages through ThreadEvent #566
+- Add thread deep linking #664
+- Add label assignment with archive and bulk label widget
+- Enable inviting users that haven't logged in yet #644
+- Add configurable inbound auth backends #636
+- Add encryption, custom scopes, levels and auditing on channels #599
+- Add recursive SPF check and optional send-time validation #625
+- Add tiered storage and refactor blobs/attachments
+- Add mandatory TOTP field and search field in admin #667
+- Add silent login support
+- Make panel sections resizable
+- Add read/unread action on thread action bar #659
+- Add lprobe healthchecks and checksum verification for lprobe + Caddy #600
+
+### Changed
+
+- Improve message composer
+- Switch back to Python's stdlib for email composition
+- Put split thread feature behind a feature flag #624
+- Show tooltip to confirm mailbox refresh
+- Disable application menu when no option is available
+- Focus `to` field on forward
+- Align send button on the left
+- Upgrade Cunningham and ui-kit
+- Localize attachment separator
+- Force default language on frontend #647
+- Add DNS propagation delay info #654
+- Allow specifying a channel id for the home feedback widget #655
+- Support legacy and new widget attribute #650
+- Update widget logic to latest version #649
+- Refactor thread query cache management #642
+- Allow reindexing from a given date
+- Defer indexation tasks for better throughput
+- Improve `search_reindex` bulk payload
+- Move imports and reindex worker queues to dedicated containers #643
+- Bump Keycloak to 26.6.1 #637
+
+### Fixed
+
+- Improve PST import logic
+- Allow thread editor to destroy thread accesses #668
+- Enforce full edit rights on thread mutations
+- Fix race condition in last-editor deletion guard
+- Fix thread panel header with nested label #658
+- Fix label popup stacking with create-label modal #635
+- Fix email parsing edge cases with UTF-8 in flanker #656
+- Fix threads ordering #617
+- Fix double request and flickering on search #596
+- Handle non-serializable Celery task errors and stop infinite polling #633
+- Quote error field and log SOCKS proxy in outbound delivery #626
+- Do not mark thread as read when sending autoreply #594
+
+### Security
+
+- Stop flagging inbound `From=To` mails as `is_sender` #652
+- Force including special characters in generated passwords #640
+- Factorize SSRF code and allow redirects in image proxy #631
+
 ## [0.5.0] - 2026-03-16
 
 ### Added
@@ -165,7 +229,8 @@ and this project adheres to
 - Exclude `is_trashed` and `is_spam` threads from search results by default
 - `to` search modifier now looks for messages where recipient fields (to, cc, bcc) contain the given email address.
 
-[unreleased]: https://github.com/suitenumerique/messages/compare/v0.5.0...main
+[unreleased]: https://github.com/suitenumerique/messages/compare/v0.6.0...main
+[0.6.0]: https://github.com/suitenumerique/messages/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/suitenumerique/messages/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/suitenumerique/messages/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/suitenumerique/messages/compare/v0.2.0...v0.3.0
