@@ -1112,6 +1112,8 @@ class AttachmentInline(admin.TabularInline):
     model = models.Attachment
     fk_name = "message"
     raw_id_fields = ("blob",)
+    autocomplete_fields = ("mailbox",)
+    exclude = ("_deprecated_messages",)
     extra = 0
 
 

@@ -4,7 +4,7 @@
 
 import math
 
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from celery.utils.log import get_task_logger
@@ -133,31 +133,33 @@ def retry_messages_task(self, message_ids=None, force_mta_out=False, batch_size=
     Returns:
         dict: A dictionary with task status and results
     """
-    # Get messages to process
-    # Bulk mode - find all messages with retryable recipients that are ready
-    # for retry. is_spam=False is a defence-in-depth filter: should any code
-    # path mint an is_sender=True spam record, it must never re-enter the
+    # Find all messages with at least one recipient ready for retry.
+    # ``is_spam=False`` is a defence-in-depth filter: should any code path
+    # mint an is_sender=True spam record, it must never re-enter the
     # outbound pipeline.
-    message_filter_q = (
-        Q(
-            is_draft=False,
-            is_sender=True,
-            is_spam=False,
-        )
-        & (
-            Q(recipients__delivery_status=MessageDeliveryStatusChoices.RETRY)
-            | Q(recipients__delivery_status__isnull=True)
-        )
-        & (
-            Q(recipients__retry_at__isnull=True)
-            | Q(recipients__retry_at__lte=timezone.now())
-        )
+    #
+    # ``Exists`` keeps the outer query linear at multi-million recipient
+    # scale — PG short-circuits on the first matching recipient per
+    # message instead of materialising a join.
+    now = timezone.now()
+    ready_recipients = models.MessageRecipient.objects.filter(
+        message_id=OuterRef("pk"),
+    ).filter(
+        Q(delivery_status=MessageDeliveryStatusChoices.RETRY)
+        | Q(delivery_status__isnull=True),
+        Q(retry_at__isnull=True) | Q(retry_at__lte=now),
     )
+
+    message_filter_q = Q(
+        is_draft=False,
+        is_sender=True,
+        is_spam=False,
+    ) & Exists(ready_recipients)
 
     if message_ids is not None:
         message_filter_q &= Q(id__in=message_ids)
 
-    messages_to_process = models.Message.objects.filter(message_filter_q).distinct()
+    messages_to_process = models.Message.objects.filter(message_filter_q)
     total_messages = messages_to_process.count()
 
     if total_messages == 0:
@@ -195,24 +197,15 @@ def retry_messages_task(self, message_ids=None, force_mta_out=False, batch_size=
                 },
             )
 
+        # The outer ``Exists`` filter is the gate: any message reaching
+        # this loop has at least one ready recipient. ``send_message``
+        # re-checks recipient state itself, so a recipient turning
+        # terminal between the outer scan and this call is handled
+        # there.
         try:
-            # Get recipients with retry status that are ready for retry
-            retry_filter_q = (
-                Q(delivery_status=MessageDeliveryStatusChoices.RETRY)
-                | Q(delivery_status__isnull=True)
-            ) & (Q(retry_at__isnull=True) | Q(retry_at__lte=timezone.now()))
-            retry_recipients = message.recipients.filter(retry_filter_q)
-
-            if retry_recipients.exists():
-                # Process this message
-                send_message(message, force_mta_out=force_mta_out)
-                success_count += 1
-                logger.info(
-                    "Successfully retried message %s (%d recipients)",
-                    message.id,
-                    retry_recipients.count(),
-                )
-
+            send_message(message, force_mta_out=force_mta_out)
+            success_count += 1
+            logger.info("Successfully retried message %s", message.id)
             processed_count += 1
 
         except Exception as e:
