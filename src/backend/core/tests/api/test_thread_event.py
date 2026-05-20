@@ -509,7 +509,7 @@ class TestThreadEventDelete:
 
 
 class TestThreadEventEditDelay:
-    """Test the MAX_THREAD_EVENT_EDIT_DELAY window on update and delete."""
+    """Test the MAX_THREAD_EVENT_EDIT_DELAY window on update."""
 
     @override_settings(MAX_THREAD_EVENT_EDIT_DELAY=24 * 60 * 60)
     def test_update_within_delay_allowed(self, api_client):
@@ -546,8 +546,8 @@ class TestThreadEventEditDelay:
         assert event.data.get("content") != "Too late"
 
     @override_settings(MAX_THREAD_EVENT_EDIT_DELAY=24 * 60 * 60)
-    def test_delete_after_delay_forbidden(self, api_client):
-        """An event older than the edit delay cannot be deleted."""
+    def test_delete_after_delay_allowed(self, api_client):
+        """Deletion is not bound by the edit delay — authors can always retract."""
         user, _mailbox, thread = setup_user_with_thread_access()
         api_client.force_authenticate(user=user)
 
@@ -555,8 +555,8 @@ class TestThreadEventEditDelay:
         _force_created_at(event, timezone.now() - timedelta(hours=25))
 
         response = api_client.delete(get_thread_event_url(thread.id, event.id))
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert models.ThreadEvent.objects.filter(pk=event.pk).exists()
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not models.ThreadEvent.objects.filter(pk=event.pk).exists()
 
     @override_settings(MAX_THREAD_EVENT_EDIT_DELAY=0)
     def test_update_when_delay_disabled(self, api_client):
@@ -573,18 +573,6 @@ class TestThreadEventEditDelay:
             format="json",
         )
         assert response.status_code == status.HTTP_200_OK
-
-    @override_settings(MAX_THREAD_EVENT_EDIT_DELAY=0)
-    def test_delete_when_delay_disabled(self, api_client):
-        """A zero delay allows deletion regardless of age."""
-        user, _mailbox, thread = setup_user_with_thread_access()
-        api_client.force_authenticate(user=user)
-
-        event = factories.ThreadEventFactory(thread=thread, author=user)
-        _force_created_at(event, timezone.now() - timedelta(days=365))
-
-        response = api_client.delete(get_thread_event_url(thread.id, event.id))
-        assert response.status_code == status.HTTP_204_NO_CONTENT
 
     @override_settings(MAX_THREAD_EVENT_EDIT_DELAY=24 * 60 * 60)
     def test_is_editable_field_in_response(self, api_client):

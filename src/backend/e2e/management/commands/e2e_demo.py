@@ -521,10 +521,11 @@ class Command(BaseCommand):
         #
         # The "edit delay elapsed" test needs a ThreadEvent whose
         # `created_at` is older than `MAX_THREAD_EVENT_EDIT_DELAY`, so that
-        # `is_editable` returns false and the UI hides Edit/Delete actions.
+        # `is_editable` returns false and the UI hides the Edit action
+        # (Delete remains available — it is not gated by the delay).
         #
         # Each browser gets its own aged event authored by its own user so
-        # the `canModify = isAuthor && is_editable` check in the frontend
+        # the `canEdit = isAuthor && is_editable` check in the frontend
         # exercises the `is_editable: false` branch (not the `isAuthor: false`
         # one).
         past = timezone.now() - timezone.timedelta(

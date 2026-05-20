@@ -1709,7 +1709,7 @@ class ThreadEvent(BaseModel):
         super().clean()
 
     def is_editable(self):
-        """Return whether the event can still be edited or deleted.
+        """Return whether the event can still be edited.
 
         The time window is controlled by `settings.MAX_THREAD_EVENT_EDIT_DELAY`
         (in seconds). A value of 0 disables the restriction.

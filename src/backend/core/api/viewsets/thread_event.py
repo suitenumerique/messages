@@ -88,18 +88,6 @@ class ThreadEventViewSet(
         # that changes the mentions list adds/removes notifications.
         thread_events_service.sync_im_mentions(thread_event=thread_event)
 
-    def perform_destroy(self, instance):
-        """Reject deletions made after the configured edit delay elapsed.
-
-        Deletion is gated alongside edits so users cannot circumvent the
-        window by deleting and recreating an event.
-        """
-        if not instance.is_editable():
-            raise PermissionDenied(
-                "This event can no longer be deleted (edit delay expired)."
-            )
-        instance.delete()
-
     @extend_schema(
         request=None,
         responses={

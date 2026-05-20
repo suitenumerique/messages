@@ -517,7 +517,7 @@ test.describe("Thread Events (Internal Messages)", () => {
     expect(deleteResponse.ok()).toBeTruthy();
   });
 
-  test("should hide edit and delete actions once the edit delay has elapsed", async ({
+  test("should hide edit but keep delete once the edit delay has elapsed", async ({
     page,
     browserName,
   }) => {
@@ -526,28 +526,26 @@ test.describe("Thread Events (Internal Messages)", () => {
     // The e2e_demo management command seeds one pre-aged ThreadEvent per
     // browser user with a browser-scoped content string. That event's
     // `created_at` is pushed 2h into the past, so the backend's
-    // `is_editable` returns false and the frontend's `canModify` guard
-    // hides Edit/Delete. We locate the bubble by its unique content
-    // instead of sending a fresh message and ageing it at runtime.
+    // `is_editable` returns false and the frontend's `canEdit` guard
+    // hides the Edit button — but Delete must stay available since the
+    // author should always be able to retract their comment.
     const agedContent = `[e2e-aged-${browserName}] Message past edit delay`;
     const agedBubble = page
       .locator(".thread-event--im")
       .filter({ hasText: agedContent });
     await expect(agedBubble).toBeVisible();
 
-    // Hover to try and reveal actions — they must remain hidden because
-    // `canModify` in the component is false.
+    // Hover to reveal actions: Edit must stay hidden, Delete must appear.
     await agedBubble.locator(".thread-event__bubble").hover();
     await expect(
       agedBubble.getByRole("button", { name: "Edit" }),
     ).toHaveCount(0);
     await expect(
       agedBubble.getByRole("button", { name: "Delete" }),
-    ).toHaveCount(0);
+    ).toBeVisible();
 
-    // And the server must reject the write even if the button were forced:
-    // this guards against the UI hiding actions while the backend still
-    // allows edits (or vice versa).
+    // Guard against UI/backend drift: PATCH must still be rejected, but
+    // DELETE must succeed and actually remove the event.
     const eventDomId = await agedBubble.getAttribute("id");
     const eventId = eventDomId?.replace(/^thread-event-/, "");
     expect(eventId, "event id should be present on aged bubble").toBeTruthy();
@@ -567,6 +565,12 @@ test.describe("Thread Events (Internal Messages)", () => {
       },
     );
     expect(updateResponse.status()).toBe(403);
+
+    const deleteResponse = await page.request.delete(
+      `${API_URL}/api/v1.0/threads/${threadId}/events/${eventId}/`,
+      { headers: { "X-CSRFToken": csrfToken } },
+    );
+    expect(deleteResponse.status()).toBe(204);
   });
 });
 

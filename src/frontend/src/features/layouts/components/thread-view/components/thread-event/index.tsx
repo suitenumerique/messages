@@ -153,9 +153,10 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
     const copyDeepLink = useCopyDeepLink();
     const isAuthor = event.author?.id === user?.id;
     const isEdited = Math.abs(new Date(event.updated_at).getTime() - new Date(event.created_at).getTime()) > 1000;
-    // Edit/delete actions are only available to the author while the
-    // server-side edit delay has not elapsed (MAX_THREAD_EVENT_EDIT_DELAY).
-    const canModify = isAuthor && event.is_editable;
+    // Authors can always delete their own comment; editing is additionally
+    // gated by the server-side delay (MAX_THREAD_EVENT_EDIT_DELAY).
+    const canDelete = isAuthor;
+    const canEdit = isAuthor && event.is_editable;
 
     const deleteEvent = useThreadsEventsDestroy();
     const [showActions, setShowActions] = useState(false);
@@ -287,10 +288,10 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
                     )}
                     <div
                         className={`thread-event__content${pressing ? " thread-event__content--pressing" : ""}`}
-                        onTouchStart={canModify ? handleTouchStart : undefined}
-                        onTouchEnd={canModify ? cancelLongPress : undefined}
-                        onTouchMove={canModify ? cancelLongPress : undefined}
-                        onTouchCancel={canModify ? cancelLongPress : undefined}
+                        onTouchStart={canDelete ? handleTouchStart : undefined}
+                        onTouchEnd={canDelete ? cancelLongPress : undefined}
+                        onTouchMove={canDelete ? cancelLongPress : undefined}
+                        onTouchCancel={canDelete ? cancelLongPress : undefined}
                     >
                         {TextHelper.renderLinks(
                           TextHelper.renderMentions(
@@ -313,33 +314,33 @@ export const ThreadEvent = ({ event, isCondensed = false, onEdit, onDelete, ment
                             title={t("Copy link to comment")}
                             onClick={handleCopyLink}
                         />
-                        {canModify && (
-                            <>
-                                <Button
-                                    size="nano"
-                                    variant="tertiary"
-                                    color="brand"
-                                    icon={<Icon type={IconType.OUTLINED} name="edit" aria-hidden="true" />}
-                                    aria-label={t("Edit")}
-                                    title={t("Edit")}
-                                    onClick={() => {
-                                        setShowActions(false);
-                                        onEdit?.(event);
-                                    }}
-                                />
-                                <Button
-                                    size="nano"
-                                    variant="tertiary"
-                                    color="brand"
-                                    icon={<Icon type={IconType.OUTLINED} name="delete" aria-hidden="true" />}
-                                    aria-label={t("Delete")}
-                                    title={t("Delete")}
-                                    onClick={() => {
-                                        setShowActions(false);
-                                        handleDelete();
-                                    }}
-                                />
-                            </>
+                        {canEdit && (
+                            <Button
+                                size="nano"
+                                variant="tertiary"
+                                color="brand"
+                                icon={<Icon type={IconType.OUTLINED} name="edit" aria-hidden="true" />}
+                                aria-label={t("Edit")}
+                                title={t("Edit")}
+                                onClick={() => {
+                                    setShowActions(false);
+                                    onEdit?.(event);
+                                }}
+                            />
+                        )}
+                        {canDelete && (
+                            <Button
+                                size="nano"
+                                variant="tertiary"
+                                color="brand"
+                                icon={<Icon type={IconType.OUTLINED} name="delete" aria-hidden="true" />}
+                                aria-label={t("Delete")}
+                                title={t("Delete")}
+                                onClick={() => {
+                                    setShowActions(false);
+                                    handleDelete();
+                                }}
+                            />
                         )}
                     </div>
                 </div>
