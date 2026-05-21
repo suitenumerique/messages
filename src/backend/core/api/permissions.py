@@ -691,3 +691,22 @@ class HasAccessToMailbox(IsAuthenticated):
         return models.MailboxAccess.objects.filter(
             user=request.user, mailbox=view.kwargs.get("mailbox_id")
         ).exists()
+
+
+class HasWriteAccessToMailbox(IsAuthenticated):
+    """Allows access only to users with an editor-or-above role on the mailbox.
+
+    Use for state-changing endpoints whose effect is observable beyond the
+    mailbox itself (e.g. writing to the mailbox's CalDAV calendar, which a
+    VIEWER access shouldn't be able to do).
+    """
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+
+        return models.MailboxAccess.objects.filter(
+            user=request.user,
+            mailbox=view.kwargs.get("mailbox_id"),
+            role__in=enums.MAILBOX_ROLES_CAN_EDIT,
+        ).exists()

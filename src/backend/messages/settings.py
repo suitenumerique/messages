@@ -364,6 +364,44 @@ class Base(Configuration):
         "my-shared-secret-mda", environ_name="MDA_API_SECRET", environ_prefix=None
     )
 
+    # Default CalDAV server settings (optional). Enables calendar features
+    # for every mailbox that has not configured its own per-mailbox CalDAV
+    # Channel — users can override the integration by pointing a Channel at
+    # a CalDAV server of their choice. These ``DEFAULT`` values are the
+    # fallback applied when no such Channel exists.
+    #
+    # Trust model — IMPORTANT
+    # -----------------------
+    # ``CALDAV_DEFAULT_URL`` is the CalDAV server root.
+    # ``CALDAV_DEFAULT_PASSWORD`` is a single secret sent as the HTTP Basic
+    # Auth *password* on every outbound request. The Basic Auth *username*
+    # is the acting mailbox's email, computed per request from the URL.
+    #
+    # That means the same secret authenticates messages-as-a-service for
+    # all mailboxes — the CalDAV server is then responsible for whatever
+    # per-user authorization it wants to layer on top. Concretely: any user
+    # who can choose what email lands on a Mailbox row can cause messages
+    # to authenticate to the CalDAV server *as* that email. The load-bearing
+    # safety property is therefore that mailbox creation does not let one
+    # user mint a Mailbox whose email matches another user on the CalDAV
+    # side. Operators wiring up this integration must verify that property
+    # against their domain/identity ownership rules.
+    CALDAV_DEFAULT_URL = values.Value(
+        None, environ_name="CALDAV_DEFAULT_URL", environ_prefix=None
+    )
+    CALDAV_DEFAULT_PASSWORD = values.Value(
+        None, environ_name="CALDAV_DEFAULT_PASSWORD", environ_prefix=None
+    )
+    # Public URL of the default calendar web UI (e.g. a hosted Calendars
+    # instance). Used by the mail UI to deep-link into the calendar app so
+    # the user can see the event after accepting, or create a calendar when
+    # they have none. Like the credentials above, this is the deployment-
+    # wide default — a per-mailbox Channel pointing at a different CalDAV
+    # provider is not expected to surface a web URL here.
+    CALDAV_DEFAULT_WEB_URL = values.Value(
+        None, environ_name="CALDAV_DEFAULT_WEB_URL", environ_prefix=None
+    )
+
     # Spam filtering settings
 
     # Default spam configuration for all mail domains, overrideable per mail
@@ -733,6 +771,15 @@ class Base(Configuration):
             "user_list_burst": values.Value(
                 default="30/minute",
                 environ_name="API_USERS_LIST_THROTTLE_RATE_BURST",
+                environ_prefix=None,
+            ),
+            # /calendar/conflicts/ PROPFINDs the home set and REPORTs every
+            # calendar in it; legitimate UI use is one call per opened
+            # invite. 30/min/user is generous for users with many invites
+            # in a thread but caps the cost of a runaway script.
+            "caldav_conflicts": values.Value(
+                default="30/minute",
+                environ_name="API_CALDAV_CONFLICTS_THROTTLE_RATE",
                 environ_prefix=None,
             ),
         },
@@ -1363,8 +1410,11 @@ class DevelopmentMinimal(Development):
 
     CELERY_TASK_ALWAYS_EAGER = True
     OPENSEARCH_INDEX_THREADS = False
+    # LocMemCache (not DummyCache) for the default cache so that features
+    # that depend on real caching — notably task-owner tracking used by
+    # async-task polling — work in this no-Redis profile.
     CACHES = {
-        "default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"},
+        "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
         "session": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
     }
 

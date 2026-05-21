@@ -22,7 +22,8 @@ export function durationToMs(d: IcsDuration): number {
 /**
  * Compute the end Date from an event that may use end or duration
  */
-export function getEventEnd(event: IcsEvent): Date | undefined {
+export function getEventEnd(event: IcsEvent | undefined): Date | undefined {
+    if (!event) return undefined;
     if (event.end) return event.end.date;
     if (event.duration && event.start) {
         return new Date(event.start.date.getTime() + durationToMs(event.duration));

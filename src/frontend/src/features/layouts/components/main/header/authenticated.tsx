@@ -11,7 +11,7 @@ import { LanguagePicker } from "@/features/layouts/components/main/language-pick
 import { LagaufreButton } from "@/features/ui/components/lagaufre";
 import { SurveyButton } from "@/features/ui/components/feedback-button";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { useImportTaskStatus } from "@/hooks/use-import-task";
+import { useTaskStatus } from "@/hooks/use-task-status";
 import { MessageTemplateTypeChoices, StatusEnum, useMailboxesMessageTemplatesList } from "@/features/api/gen";
 import { CircularProgress } from "@/features/ui/components/circular-progress";
 import { TaskImportCacheHelper } from "@/features/utils/task-import-cache";
@@ -151,7 +151,7 @@ const ApplicationMenu = () => {
     return taskImportCacheHelper.get();
   }, [isDropdownOpen, selectedMailbox?.id]);
 
-  const taskStatus = useImportTaskStatus(taskId, { enabled: canImportMessages && isDropdownOpen });
+  const taskStatus = useTaskStatus(taskId, { enabled: canImportMessages && isDropdownOpen });
   const hasOptions = canAccessDomainAdmin || canImportMessages || canManageMessageTemplates || canManageIntegrations;
   const importMessageOption = useMemo(() => {
     let label = t("Import messages");

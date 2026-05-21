@@ -22,7 +22,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture(autouse=True)
 def _mock_ssrf_dns():
-    """Short-circuit SSRF DNS validation for IMAP import tests.
+    """Short-circuit SSRF hostname validation for IMAP import tests.
 
     The IMAP endpoint validates the server hostname via
     ``core.services.ssrf.validate_hostname``; tests use unresolvable fixtures

@@ -42,6 +42,7 @@ export type ThreadMessageBodyProps = {
 
 export type ThreadMessageFooterProps = {
     message: Message;
+    regularAttachments: Attachment[];
     driveAttachments: ReturnType<typeof import("@/features/utils/mail-helper").default.extractDriveAttachmentsFromHtmlBody>[1];
     showReplyButton: boolean;
     hasSeveralRecipients: boolean;

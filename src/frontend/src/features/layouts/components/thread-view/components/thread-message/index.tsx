@@ -16,9 +16,20 @@ import ThreadMessageBody from "./thread-message-body";
 import MessageReplyForm from "../message-reply-form";
 import ThreadMessageHeader from "./thread-message-header";
 import ThreadMessageFooter from "./thread-message-footer";
+import { CalendarInvite } from "../calendar-invite";
 import { ThreadMessageProps } from "./types";
 import { BodyPart } from "./renderers";
 import { DriveFile } from "@/features/forms/components/message-form/drive-attachment-picker";
+
+const CALENDAR_MIME_TYPES = ["text/calendar", "application/ics"];
+
+// Real emails often send Content-Type with parameters
+// (e.g. "text/calendar; method=REQUEST; charset=UTF-8"), so match on the
+// media type prefix rather than the full string.
+const isCalendarMime = (type: string) => {
+    const base = (type || "").split(";")[0].trim().toLowerCase();
+    return CALENDAR_MIME_TYPES.includes(base);
+};
 
 export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
     ({ message, isLatest, draftMessage, ...props }, ref) => {
@@ -105,6 +116,26 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
 
         // Determine which body parts to render (prefer HTML if available)
         const bodyPartsToRender = processedHtmlBody.length > 0 ? processedHtmlBody : processedTextBody;
+
+        // Separate calendar attachments (rendered as a widget above the body)
+        // from regular attachments (rendered in the footer). Google Calendar
+        // sends the same ICS as both inline and attachment, so dedupe by SHA256.
+        const { calendarAttachments, regularAttachments } = useMemo(() => {
+            const calendar = message.attachments.filter((att) => isCalendarMime(att.type));
+            const regular = message.attachments.filter((att) => !isCalendarMime(att.type));
+            // Dedupe by sha256 when available; fall back to a name+size key
+            // so distinct files with missing/empty hashes don't collapse.
+            const seenKeys = new Set<string>();
+            const uniqueCalendar = calendar.filter((att) => {
+                const key = att.sha256 || `${att.name}:${att.size}`;
+                if (seenKeys.has(key)) return false;
+                seenKeys.add(key);
+                return true;
+            });
+            return { calendarAttachments: uniqueCalendar, regularAttachments: regular };
+        }, [message.attachments]);
+
+        const hasCalendarInvites = !message.is_draft && calendarAttachments.length > 0;
 
         // Component state
         const [isThreadMessageBodyLoaded, setIsThreadMessageBodyLoaded] = useState(isMessageReady);
@@ -315,6 +346,20 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
                     onUpdateRecipientStatus={canUpdateDeliveryStatus ? handleUpdateRecipientStatus : undefined}
                 />
 
+                {hasCalendarInvites && !isFolded && isMessageReady && (
+                    <div className="thread-message__calendar-invites">
+                        {calendarAttachments.map((attachment) => (
+                            <CalendarInvite
+                                key={attachment.blobId}
+                                attachment={attachment}
+                                canDownload={!selectedThread?.is_spam}
+                                mailboxId={selectedMailbox?.id}
+                                mailboxEmail={selectedMailbox?.email}
+                            />
+                        ))}
+                    </div>
+                )}
+
                 <ThreadMessageBody
                     bodyParts={bodyPartsToRender}
                     attachments={message.attachments}
@@ -325,6 +370,7 @@ export const ThreadMessage = forwardRef<HTMLSpanElement, ThreadMessageProps>(
 
                 <ThreadMessageFooter
                     message={message}
+                    regularAttachments={regularAttachments}
                     driveAttachments={driveAttachments}
                     showReplyButton={showReplyButton}
                     hasSeveralRecipients={hasSeveralRecipients}

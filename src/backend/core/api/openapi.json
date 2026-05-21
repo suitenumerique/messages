@@ -2527,6 +2527,304 @@
                 }
             }
         },
+        "/api/v1.0/mailboxes/{mailbox_id}/calendar/add/": {
+            "post": {
+                "operationId": "mailboxes_calendar_add_create",
+                "description": "Add an event to the mailbox's CalDAV calendar via a background task.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "calendar"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarAddEventRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarAddEventRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CalendarAddEventResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Missing ics_data."
+                    },
+                    "503": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Task broker unavailable; the add-event could not be enqueued."
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/calendar/calendars/": {
+            "get": {
+                "operationId": "mailboxes_calendar_calendars_retrieve",
+                "description": "Return the list of calendars available for the mailbox.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "calendar"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CalendarListResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "CalDAV server error while listing calendars."
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/calendar/conflicts/": {
+            "post": {
+                "operationId": "mailboxes_calendar_conflicts_create",
+                "description": "Return a list of events overlapping the requested time range.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "calendar"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarConflictsRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarConflictsRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CalendarConflictsResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Missing or invalid start/end."
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "CalDAV server error while checking conflicts."
+                    }
+                }
+            }
+        },
+        "/api/v1.0/mailboxes/{mailbox_id}/calendar/rsvp/": {
+            "post": {
+                "operationId": "mailboxes_calendar_rsvp_create",
+                "description": "Submit an RSVP response via a background CalDAV task.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "calendar"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarRsvpRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarRsvpRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CalendarRsvpResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Missing or invalid ics_data / response."
+                    },
+                    "503": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Task broker unavailable; the RSVP could not be enqueued."
+                    }
+                }
+            }
+        },
         "/api/v1.0/mailboxes/{mailbox_id}/channels/": {
             "get": {
                 "operationId": "mailboxes_channels_list",
@@ -6639,6 +6937,141 @@
                     "type"
                 ]
             },
+            "CalendarAddEventRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "ics_data": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Raw ICS content of the event"
+                    },
+                    "calendar_id": {
+                        "type": "string",
+                        "nullable": true,
+                        "minLength": 1,
+                        "description": "Optional specific calendar URL"
+                    }
+                },
+                "required": [
+                    "ics_data"
+                ]
+            },
+            "CalendarAddEventResponse": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "task_id"
+                ]
+            },
+            "CalendarConflictsRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "start": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Start of the time range (ISO 8601)"
+                    },
+                    "end": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "End of the time range (ISO 8601)"
+                    },
+                    "exclude_uid": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Optional UID of an event to exclude from conflicts (avoids flagging prior imports of the same invite)."
+                    }
+                },
+                "required": [
+                    "end",
+                    "start"
+                ]
+            },
+            "CalendarConflictsResponse": {
+                "type": "object",
+                "properties": {
+                    "conflicts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": {}
+                        }
+                    },
+                    "existing_partstat": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "PARTSTAT of the requesting mailbox on the prior copy of ``exclude_uid``, if such a copy exists. Lets the UI pre-select the user's prior RSVP."
+                    }
+                },
+                "required": [
+                    "conflicts",
+                    "existing_partstat"
+                ]
+            },
+            "CalendarListResponse": {
+                "type": "object",
+                "properties": {
+                    "calendars": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": {}
+                        }
+                    },
+                    "web_url": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Public URL of the calendar web UI, if configured."
+                    }
+                },
+                "required": [
+                    "calendars",
+                    "web_url"
+                ]
+            },
+            "CalendarRsvpRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "ics_data": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Raw ICS content of the event"
+                    },
+                    "response": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/ResponseEnum"
+                            }
+                        ],
+                        "description": "RSVP response\n\n* `ACCEPTED` - ACCEPTED\n* `DECLINED` - DECLINED\n* `TENTATIVE` - TENTATIVE"
+                    },
+                    "calendar_id": {
+                        "type": "string",
+                        "nullable": true,
+                        "minLength": 1,
+                        "description": "Optional specific calendar URL"
+                    }
+                },
+                "required": [
+                    "ics_data",
+                    "response"
+                ]
+            },
+            "CalendarRsvpResponse": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "task_id"
+                ]
+            },
             "ChangeFlagRequestRequest": {
                 "type": "object",
                 "properties": {
@@ -8985,6 +9418,15 @@
                 "required": [
                     "one_time_password"
                 ]
+            },
+            "ResponseEnum": {
+                "enum": [
+                    "ACCEPTED",
+                    "DECLINED",
+                    "TENTATIVE"
+                ],
+                "type": "string",
+                "description": "* `ACCEPTED` - ACCEPTED\n* `DECLINED` - DECLINED\n* `TENTATIVE` - TENTATIVE"
             },
             "ScopeLevelEnum": {
                 "enum": [

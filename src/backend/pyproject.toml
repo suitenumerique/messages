@@ -50,6 +50,7 @@ dependencies = [
     "factory_boy==3.3.3",
     "flanker@git+https://github.com/sylvinus/flanker@a4248826794d446b07fb26719479c1c355411f5a",
     "gunicorn==25.1.0",
+    "icalendar==7.0.3",
     "jsonschema==4.26.0",
     "nested-multipart-parser==1.6.0",
     "openai==2.21.0",
@@ -90,6 +91,7 @@ dev = [
     "pytest-icdiff==0.9",
     "pytest-repeat==0.9.4",
     "pytest-xdist==3.8.0",
+    "radicale==3.6.1",
     "responses==0.26.0",
     "ruff==0.15.2"
 ]
@@ -167,4 +169,5 @@ python_files = [
 markers = [
     "fuzz: marks tests as fuzz tests (run with: pytest -m fuzz)",
     "redis: marks tests that need a real Redis service (skip with: pytest -m 'not redis')",
+    "caldav_ssrf_real: opt out of the test-suite-wide SSRF bypass and exercise the real per-channel guard",
 ]

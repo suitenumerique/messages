@@ -57,12 +57,14 @@ export const ContactChip = ({ contact, status, displayEmail = false, isUser = fa
                     <Icon name="cancel" type={IconType.FILLED} size={IconSize.SMALL} className="contact-chip__icon contact-chip__icon--muted" />
                 )}
                 {displayEmail ? (
-                    <>
-                        <strong className="contact-chip__identity-name">{isUser ? t('You') : contact.name || contact.email.toLowerCase()}</strong>{' '}
-                        {(contact.name || isUser) && (
+                    (contact.name || isUser) ? (
+                        <>
+                            <strong className="contact-chip__identity-name">{isUser ? t('You') : contact.name}</strong>{' '}
                             <span className="contact-chip__identity-email">&lt;{contact.email.toLowerCase()}&gt;</span>
-                        )}
-                    </>
+                        </>
+                    ) : (
+                        <span className="contact-chip__identity-email">{contact.email.toLowerCase()}</span>
+                    )
                 ) : (
                     <span className="contact-chip__identity-email">{contact.email.toLowerCase()}</span>
                 )}

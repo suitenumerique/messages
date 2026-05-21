@@ -1,21 +1,51 @@
 import { StatusEnum, useTasksRetrieve } from "@/features/api/gen";
-import { TaskMetadata } from "@/features/controlled-modals/message-importer/step-loader";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 const MAX_POLL_ERRORS = 10;
 
-export function useImportTaskStatus(
+export type TaskMetadata = {
+  current_message: number;
+  total_messages: number | null;
+  failure_count: number;
+  success_count: number;
+  message_status: string;
+  type: string;
+}
+
+export function useTaskStatus(
   taskId: string | null,
   {
     refetchInterval = 1000,
     enabled = true,
-  }: { refetchInterval?: number; enabled?: boolean } = {}
+    exhaustedError,
+  }: {
+    refetchInterval?: number;
+    enabled?: boolean;
+    // Message shown when polling exhausts its retry budget. Defaults to a
+    // generic connection error; callers can override when a task-specific
+    // wording is more helpful (e.g. the message importer).
+    exhaustedError?: string;
+  } = {}
 ) {
   const { t } = useTranslation();
   const [queryEnabled, setQueryEnabled] = useState(enabled);
   const [hasExhaustedRetries, setHasExhaustedRetries] = useState(false);
   const errorCountRef = useRef(0);
+
+  // Reset per-task polling state when the taskId changes so retries with a
+  // new task don't inherit the previous task's exhausted/error state.
+  // `enabled` is deliberately omitted from the dependency list: live
+  // toggles of `enabled` are handled by the effect below; including
+  // it here would cause spurious resets every time the caller flips
+  // it. The closure value of `enabled` at the moment a new taskId
+  // arrives is exactly the right initial state.
+  useEffect(() => {
+    errorCountRef.current = 0;
+    setHasExhaustedRetries(false);
+    setQueryEnabled(enabled);
+  }, [taskId]);
+
   const taskQuery = useTasksRetrieve(taskId || "", {
     query: {
       enabled: Boolean(taskId) && queryEnabled === true,
@@ -66,7 +96,7 @@ export function useImportTaskStatus(
     state: hasExhaustedRetries ? StatusEnum.FAILURE : taskQuery.data?.data.status,
     loading: taskQuery.isPending || progress === null,
     error: hasExhaustedRetries
-      ? t('An error occurred while importing messages.')
+      ? (exhaustedError ?? t('Unable to check task status.'))
       : taskQuery.data?.data.error,
     hasKnownTotal,
     currentMessage,
@@ -76,7 +106,7 @@ export function useImportTaskStatus(
   };
 }
 
-export type ImportTaskStatus = NonNullable<ReturnType<typeof useImportTaskStatus>>;
+export type ImportTaskStatus = NonNullable<ReturnType<typeof useTaskStatus>>;
 
 export type ImportTaskRecap = Pick<
   ImportTaskStatus,

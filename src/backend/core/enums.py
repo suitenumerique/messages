@@ -218,6 +218,7 @@ class ChannelTypes(StrEnum):
     WIDGET = "widget"
     API_KEY = "api_key"
     WEBHOOK = "webhook"
+    CALDAV = "caldav"
 
 
 class WebhookEvents(StrEnum):

@@ -8,7 +8,7 @@ import { StepCompleted } from "./step-completed";
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { TaskImportCacheHelper } from "@/features/utils/task-import-cache";
-import { ImportTaskRecap } from "@/hooks/use-import-task";
+import { ImportTaskRecap } from "@/hooks/use-task-status";
 
 
 export const MODAL_MESSAGE_IMPORTER_ID = "modal-message-importer";

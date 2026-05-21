@@ -1,6 +1,6 @@
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { useTranslation } from "react-i18next";
-import { ImportTaskRecap } from "@/hooks/use-import-task";
+import { ImportTaskRecap } from "@/hooks/use-task-status";
 import clsx from "clsx";
 
 type StepCompletedProps = {

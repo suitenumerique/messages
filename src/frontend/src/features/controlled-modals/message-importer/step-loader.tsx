@@ -1,6 +1,6 @@
 import { StatusEnum } from "@/features/api/gen";
 import ProgressBar from "@/features/ui/components/progress-bar";
-import { ImportTaskRecap, useImportTaskStatus } from "@/hooks/use-import-task";
+import { ImportTaskRecap, useTaskStatus } from "@/hooks/use-task-status";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,19 +11,9 @@ type StepLoaderProps = {
     onError: (error: string) => void;
 }
 
-export type TaskMetadata = {
-    current_message: number;
-    total_messages: number | null;
-    failure_count: number;
-    success_count: number;
-    message_status: string;
-    type: string;
-
-}
-
 const renderProgressText = (
     t: ReturnType<typeof useTranslation>['t'],
-    importStatus: NonNullable<ReturnType<typeof useImportTaskStatus>>
+    importStatus: NonNullable<ReturnType<typeof useTaskStatus>>
 ) => {
     if (importStatus.progress !== null && importStatus.progress > 0) {
         return <p>{t('{{progress}}% imported', { progress: importStatus.progress })}</p>;
@@ -36,7 +26,9 @@ const renderProgressText = (
 
 export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => {
     const { t } = useTranslation();
-    const importStatus = useImportTaskStatus(taskId)!;
+    const importStatus = useTaskStatus(taskId, {
+        exhaustedError: t('An error occurred while importing messages.'),
+    });
 
     // Use refs to avoid stale closures without requiring stable callback props
     const onCompleteRef = useRef(onComplete);
@@ -45,14 +37,15 @@ export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => 
     onErrorRef.current = onError;
 
     useEffect(() => {
-        if (importStatus?.state === StatusEnum.SUCCESS) {
+        if (!importStatus) return;
+        if (importStatus.state === StatusEnum.SUCCESS) {
             onCompleteRef.current({
                 successCount: importStatus.successCount,
                 failureCount: importStatus.failureCount,
                 totalMessages: importStatus.totalMessages,
             });
-        } else if (importStatus?.state === StatusEnum.FAILURE) {
-            const error = importStatus?.error || '';
+        } else if (importStatus.state === StatusEnum.FAILURE) {
+            const error = importStatus.error || '';
             const isAuthError =
                 error.includes("AUTHENTICATIONFAILED") ||
                 error.includes("IMAP authentication failed");
@@ -75,6 +68,17 @@ export const StepLoader = ({ taskId, onComplete, onError }: StepLoaderProps) => 
             onErrorRef.current(parts.join(' '));
         }
     }, [importStatus?.state, t]);
+
+    if (!importStatus) {
+        return (
+            <div className="task-loader">
+                <Spinner size="lg" />
+                <div className="task-loader__progress_resume">
+                    <p>{t('Importing...')}</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="task-loader">

@@ -1965,6 +1965,10 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
     # generators write directly to ``encrypted_settings`` instead.
     RESERVED_SETTINGS_KEYS = {
         enums.ChannelTypes.API_KEY: ["api_key_hashes"],
+        # CalDAV credentials must live in ``encrypted_settings``, never in
+        # the plaintext ``settings`` JSONField — a DB read would otherwise
+        # surface every user's CalDAV password.
+        enums.ChannelTypes.CALDAV: ["username", "password"],
     }
 
     def create(self, validated_data):

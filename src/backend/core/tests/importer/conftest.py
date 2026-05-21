@@ -7,7 +7,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _mock_ssrf_dns():
-    """Short-circuit SSRF DNS validation for IMAP tests.
+    """Short-circuit SSRF hostname validation for IMAP tests.
 
     The IMAP import path validates the server hostname via
     ``core.services.ssrf.validate_hostname``. Test fixtures use unresolvable
