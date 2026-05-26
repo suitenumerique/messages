@@ -177,14 +177,38 @@ const CalendarChooser = ({
     calendars,
     selectedCalendarId,
     onSelect,
+    calendarsWebUrl,
 }: {
     calendars: CalendarInfo[];
     selectedCalendarId: string | null;
     onSelect: (id: string | null) => void;
+    calendarsWebUrl: string | null;
 }) => {
     const { t } = useTranslation();
     const selected =
         calendars.find((c) => c.id === selectedCalendarId) ?? calendars[0];
+
+    const icon = (
+        <Icon
+            name="calendar_today"
+            type={IconType.OUTLINED}
+            className="calendar-invite__detail-icon"
+        />
+    );
+    const iconSlot = calendarsWebUrl ? (
+        <a
+            className="calendar-invite__open-calendar"
+            href={calendarsWebUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={t("Open calendar")}
+            aria-label={t("Open calendar")}
+        >
+            {icon}
+        </a>
+    ) : (
+        icon
+    );
 
     if (calendars.length <= 1) {
         if (!selected) return null;
@@ -194,6 +218,7 @@ const CalendarChooser = ({
                 className="calendar-invite__calendar-pill"
                 title={t("Target calendar")}
             >
+                {iconSlot}
                 <span
                     className="calendar-invite__calendar-swatch"
                     style={{ backgroundColor: swatchColor }}
@@ -208,11 +233,7 @@ const CalendarChooser = ({
 
     return (
         <div className="calendar-invite__calendar-chooser">
-            <Icon
-                name="calendar_today"
-                type={IconType.OUTLINED}
-                className="calendar-invite__detail-icon"
-            />
+            {iconSlot}
             <CalendarSelect
                 className="calendar-invite__calendar-select"
                 calendars={calendars}
@@ -600,7 +621,11 @@ const fetchIcsContent = async (url: string): Promise<string> => {
 };
 
 type CalendarsApiResponse = {
-    data: { calendars: CalendarInfo[]; web_url?: string | null };
+    data: {
+        calendars: CalendarInfo[];
+        web_url?: string | null;
+        configured?: boolean;
+    };
     status: number;
 };
 
@@ -662,10 +687,15 @@ export const CalendarInvite = ({
 
     const calendars = isCalendarsError ? [] : (calendarsResponse?.data?.calendars ?? []);
     const calendarsWebUrl = calendarsResponse?.data?.web_url || null;
+    // When the backend reports the CalDAV integration is not configured at all
+    // for this deployment/mailbox we hide the footer entirely instead of
+    // nudging the user toward a service that doesn't exist. Treat the flag
+    // as optional for backwards compatibility (older backends omit it).
+    const isCalDAVConfigured = calendarsResponse?.data?.configured !== false;
     const hasCalDAV = calendars.length > 0;
     // True when the server reached CalDAV successfully but the user has no
     // calendars yet — distinct from the service being unreachable/unavailable.
-    const isCalDAVEmpty = !isCalendarsError && calendars.length === 0 && !!mailboxId && !isCalendarsLoading;
+    const isCalDAVEmpty = !isCalendarsError && isCalDAVConfigured && calendars.length === 0 && !!mailboxId && !isCalendarsLoading;
     // While calendars are loading we want the footer to reserve space (no
     // layout shift) but not show the final controls yet.
     const isCalendarsPending = !!mailboxId && isCalendarsLoading;
@@ -923,6 +953,11 @@ export const CalendarInvite = ({
             // nothing actionable.
             return null;
         }
+        if (!isCalDAVConfigured) {
+            // CalDAV integration disabled for this deployment/mailbox — no
+            // actionable affordance fits, so hide the footer entirely.
+            return null;
+        }
         if (isCalendarsPending) {
             return (
                 <div className="calendar-invite__connection calendar-invite__connection--loading" role="status">
@@ -951,15 +986,16 @@ export const CalendarInvite = ({
                     <Icon name="event_note" type={IconType.OUTLINED} />
                     <span>{t("You don't have a calendar yet.")}</span>
                     {calendarsWebUrl && (
-                        <a
-                            className="calendar-invite__calendar-link"
+                        <Button
+                            size="small"
+                            variant="tertiary"
+                            icon={<Icon name="open_in_new" type={IconType.OUTLINED} />}
                             href={calendarsWebUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                         >
                             {t("Create one")}
-                            <Icon name="open_in_new" type={IconType.OUTLINED} />
-                        </a>
+                        </Button>
                     )}
                 </div>
             );
@@ -981,6 +1017,7 @@ export const CalendarInvite = ({
                     calendars={calendars}
                     selectedCalendarId={effectiveCalendarId}
                     onSelect={setSelectedCalendarId}
+                    calendarsWebUrl={calendarsWebUrl}
                 />
                 <div className="calendar-invite__connection-actions">
                     {isMailboxAttendee && (
@@ -1006,18 +1043,6 @@ export const CalendarInvite = ({
                     >
                         {t("Add to calendar")}
                     </Button>
-                    {calendarsWebUrl && (
-                        <Button
-                            size="small"
-                            variant="tertiary"
-                            icon={<Icon name="open_in_new" type={IconType.OUTLINED} />}
-                            href={calendarsWebUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                        >
-                            {t("Open calendar")}
-                        </Button>
-                    )}
                 </div>
             </div>
         );
@@ -1045,7 +1070,12 @@ export const CalendarInvite = ({
                 />
             ))}
 
-            <footer className="calendar-invite__actions">{renderFooter()}</footer>
+            {(() => {
+                const footer = renderFooter();
+                return footer ? (
+                    <footer className="calendar-invite__actions">{footer}</footer>
+                ) : null;
+            })()}
         </article>
     );
 };

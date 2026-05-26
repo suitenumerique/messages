@@ -42,7 +42,6 @@
     & + & {
         margin-top: var(--c--globals--spacings--sm);
         padding-top: var(--c--globals--spacings--sm);
-        border-top: 1px solid var(--c--contextuals--border--surface--primary);
     }
 }
 
@@ -247,8 +246,6 @@
 
 .calendar-invite__actions {
     margin-top: var(--c--globals--spacings--xs);
-    padding-top: var(--c--globals--spacings--xs);
-    border-top: 1px solid var(--c--contextuals--border--surface--primary);
     min-height: 40px;
     display: flex;
     align-items: center;
@@ -411,6 +408,18 @@
     border-radius: 2px;
     flex-shrink: 0;
     border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.calendar-invite__open-calendar {
+    display: inline-flex;
+    align-items: center;
+    color: inherit;
+    text-decoration: none;
+
+    &:hover,
+    &:focus-visible {
+        color: var(--c--contextuals--content--semantic--info--primary);
+    }
 }
 
 .calendar-invite__calendar-select {

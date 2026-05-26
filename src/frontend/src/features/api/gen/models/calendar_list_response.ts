@@ -14,4 +14,6 @@ export interface CalendarListResponse {
    * @nullable
    */
   web_url: string | null;
+  /** True when a CalDAV service is configured for this mailbox (per-mailbox channel or deployment default). False means the integration is disabled. */
+  configured: boolean;
 }

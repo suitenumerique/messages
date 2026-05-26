@@ -45,12 +45,19 @@ export function CalendarSelect({
         () =>
             calendars.map((cal) => {
                 const color = cal.color || "#3788d8";
+                const optionJsx = (
+                    <CalendarOptionItem name={cal.name} color={color} />
+                );
                 return {
                     value: cal.id,
-                    label: cal.name,
-                    render: () => (
-                        <CalendarOptionItem name={cal.name} color={color} />
-                    ),
+                    // Cunningham's Select renders ``label`` in the closed
+                    // state and falls back to it in the open list when no
+                    // ``render`` is provided. Passing JSX makes the swatch
+                    // appear next to the calendar name everywhere; the
+                    // type only declares ``string``, hence the cast.
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    label: optionJsx as any,
+                    render: () => optionJsx,
                 };
             }),
         [calendars],
@@ -65,6 +72,7 @@ export function CalendarSelect({
             onChange={(e) => onChange(String(e.target.value))}
             options={options}
             clearable={false}
+            variant="classic"
             fullWidth
         />
     );

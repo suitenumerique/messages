@@ -161,7 +161,16 @@ def _format_utc(dt):
 
 
 class CalDAVError(Exception):
-    """CalDAV protocol or server error."""
+    """CalDAV protocol or server error.
+
+    ``status_code`` is the upstream HTTP status when the failure was an
+    HTTP response (4xx/5xx); None for network-level errors, validation
+    failures, or anything that didn't yield an HTTP status.
+    """
+
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class CalDAVService:  # pylint: disable=too-many-instance-attributes
@@ -266,7 +275,10 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             # protocol errors instead of leaking ``requests`` exceptions.
             raise CalDAVError(f"{method} {url} failed: {exc}") from exc
         if resp.status_code >= 400:
-            raise CalDAVError(f"{method} {url} failed: HTTP {resp.status_code}")
+            raise CalDAVError(
+                f"{method} {url} failed: HTTP {resp.status_code}",
+                status_code=resp.status_code,
+            )
         return resp
 
     def _propfind(self, url, body, depth="0"):

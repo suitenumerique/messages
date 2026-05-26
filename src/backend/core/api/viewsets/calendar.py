@@ -380,6 +380,13 @@ class CalendarListView(CalDAVChannelMixin, APIView):
                         allow_null=True,
                         help_text=("Public URL of the calendar web UI, if configured."),
                     ),
+                    "configured": drf_serializers.BooleanField(
+                        help_text=(
+                            "True when a CalDAV service is configured for this "
+                            "mailbox (per-mailbox channel or deployment default). "
+                            "False means the integration is disabled."
+                        ),
+                    ),
                 },
             ),
             502: OpenApiResponse(
@@ -394,7 +401,7 @@ class CalendarListView(CalDAVChannelMixin, APIView):
         service = self.get_caldav_service()
         if not service:
             return Response(
-                {"calendars": [], "web_url": web_url},
+                {"calendars": [], "web_url": web_url, "configured": False},
                 status=status.HTTP_200_OK,
             )
 
@@ -404,6 +411,21 @@ class CalendarListView(CalDAVChannelMixin, APIView):
             # calendars would fail at PUT time.
             calendars = service.list_calendars(writable_only=True)
         except CalDAVError as e:
+            # 403 from the CalDAV proxy means "we authenticated the
+            # service credential but the mailbox email is not a known
+            # user upstream" — effectively this mailbox has no calendar
+            # account. Surface it like an unconfigured integration so
+            # the UI hides the footer rather than showing a misleading
+            # "service unavailable" message.
+            if e.status_code == 403:
+                logger.info(
+                    "CalDAV reports mailbox %s has no calendar account (HTTP 403).",
+                    mailbox_id,
+                )
+                return Response(
+                    {"calendars": [], "web_url": web_url, "configured": False},
+                    status=status.HTTP_200_OK,
+                )
             logger.warning("CalDAV upstream failed during list_calendars: %s", e)
             return Response(
                 {"detail": "CalDAV server returned an error while listing calendars."},
@@ -412,6 +434,6 @@ class CalendarListView(CalDAVChannelMixin, APIView):
         # Anything else is unexpected — let Django return 500.
 
         return Response(
-            {"calendars": calendars, "web_url": web_url},
+            {"calendars": calendars, "web_url": web_url, "configured": True},
             status=status.HTTP_200_OK,
         )

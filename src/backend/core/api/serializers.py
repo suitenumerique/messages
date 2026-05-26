@@ -1120,6 +1120,7 @@ class MessageSerializer(serializers.ModelSerializer):
                         "size": attachment["size"],
                         "type": attachment["type"],
                         "cid": attachment.get("cid"),
+                        "sha256": attachment.get("sha256"),
                     }
                 )
             return stripped_attachments
