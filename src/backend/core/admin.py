@@ -1103,7 +1103,6 @@ class AttachmentAdmin(admin.ModelAdmin):
     search_fields = ("name", "mailbox__local_part", "mailbox__domain__name")
     autocomplete_fields = ("mailbox",)
     raw_id_fields = ("blob", "message")
-    exclude = ("_deprecated_messages",)
 
 
 class AttachmentInline(admin.TabularInline):
@@ -1113,7 +1112,6 @@ class AttachmentInline(admin.TabularInline):
     fk_name = "message"
     raw_id_fields = ("blob",)
     autocomplete_fields = ("mailbox",)
-    exclude = ("_deprecated_messages",)
     extra = 0
 
 
@@ -1418,7 +1416,6 @@ class BlobAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
-    exclude = ("_deprecated_mailbox", "_deprecated_maildomain")
     change_form_template = "admin/core/blob/change_form.html"
 
     def get_queryset(self, request):

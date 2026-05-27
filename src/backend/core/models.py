@@ -2123,20 +2123,6 @@ class InboundMessage(BaseModel):
 class BlobManager(models.Manager):
     """Custom Manager for Blob model."""
 
-    def get_queryset(self):
-        """Defer the rollback-safety ``_deprecated_*`` FKs.
-
-        The columns have already been dropped in some deployed databases
-        but the model fields are intentionally retained for rollback
-        (see ``_deprecated_mailbox`` / ``_deprecated_maildomain``). A
-        default SELECT must not reference the missing columns.
-        """
-        return (
-            super()
-            .get_queryset()
-            .defer("_deprecated_mailbox", "_deprecated_maildomain")
-        )
-
     def create_blob(
         self,
         content: bytes,
@@ -2383,32 +2369,6 @@ class Blob(BaseModel):
         ),
     )
 
-    # DEPRECATED — kept for rollback safety. Blob lifetime is now governed
-    # by the reference graph + GC sweep (see core/services/blob_gc.py);
-    # these columns are no longer read or written by the application.
-    _deprecated_mailbox = models.ForeignKey(
-        "Mailbox",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="_deprecated_blobs",
-        help_text=(
-            "DEPRECATED: legacy owner pre-tiered-storage. Kept for rollback; "
-            "do not read or write. To be dropped in a future migration."
-        ),
-    )
-    _deprecated_maildomain = models.ForeignKey(
-        "MailDomain",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="_deprecated_blobs",
-        help_text=(
-            "DEPRECATED: legacy owner pre-tiered-storage. Kept for rollback; "
-            "do not read or write. To be dropped in a future migration."
-        ),
-    )
-
     objects = BlobManager()
 
     class Meta:
@@ -2577,20 +2537,6 @@ class Attachment(BaseModel):
         blank=True,
         null=True,
         help_text="Content-ID for inline images",
-    )
-
-    # DEPRECATED — replaced by ``message`` (FK) above. Through table
-    # ``messages_attachment__deprecated_messages`` is a frozen snapshot
-    # of pre-migration links, kept for rollback safety and audit trail.
-    # Not read or written by the application.
-    _deprecated_messages = models.ManyToManyField(
-        "Message",
-        blank=True,
-        related_name="_deprecated_attachments",
-        help_text=(
-            "DEPRECATED: legacy multi-message linking. Kept for rollback; "
-            "do not read or write. To be dropped in a future migration."
-        ),
     )
 
     class Meta:
