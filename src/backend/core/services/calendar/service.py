@@ -948,19 +948,24 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         can point a Channel at any CalDAV provider; see
         ``from_channel_or_instance``).
 
-        Authenticates with HTTP Basic Auth: ``username`` is the acting
-        mailbox email, passed per-request, so the CalDAV server can
-        resolve the user's calendars via principal discovery. The password
-        is the single ``CALDAV_DEFAULT_PASSWORD`` value — at the protocol
-        level it is just an HTTP Basic password, but the same value is
-        sent for every mailbox, so it effectively authenticates
+        Authenticates with HTTP Basic Auth: ``username`` is the requesting
+        user's *OIDC identity email* (``User.email``) — NOT the mailbox
+        address. The companion CalDAV provider (suitenumerique/calendars)
+        keys principals on the OIDC email claim, and provisions a
+        principal on first request, so the right addressing identity is
+        the human's OIDC email even when they are acting on a mailbox
+        whose ``local_part@domain.name`` differs.
+
+        The password is the single ``CALDAV_DEFAULT_PASSWORD`` value — at
+        the protocol level it is just an HTTP Basic password, but the same
+        value is sent for every user, so it effectively authenticates
         messages-as-a-service rather than any individual user.
 
         Trust model: see the comment block on ``CALDAV_DEFAULT_PASSWORD``
         in ``messages/settings.py``. In short: the CalDAV server trusts
         whichever email messages claims to act as, so the load-bearing
-        safety property is that mailbox creation cannot mint a Mailbox
-        whose email belongs to another user on the CalDAV side.
+        safety property is that the OIDC identity provider does not let
+        one human assert another human's email claim.
         """
         url = django_settings.CALDAV_DEFAULT_URL
         password = django_settings.CALDAV_DEFAULT_PASSWORD
@@ -981,8 +986,10 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         deployment-wide fallback — see ``from_instance_config`` for its
         trust model.
 
-        ``username`` is the acting mailbox email; it is only used by the
-        default path (per-channel credentials are self-contained).
+        ``username`` is the requesting user's OIDC identity email; it is
+        only used by the default path (per-channel credentials are
+        self-contained). See ``from_instance_config`` for why it must
+        be the OIDC email rather than the mailbox address.
         Returns None if neither is available.
         """
         # TODO(caldav-per-channel): no DRF write path exists for CalDAV

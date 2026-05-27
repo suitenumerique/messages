@@ -375,17 +375,20 @@ class Base(Configuration):
     # ``CALDAV_DEFAULT_URL`` is the CalDAV server root.
     # ``CALDAV_DEFAULT_PASSWORD`` is a single secret sent as the HTTP Basic
     # Auth *password* on every outbound request. The Basic Auth *username*
-    # is the acting mailbox's email, computed per request from the URL.
+    # is the requesting user's OIDC identity email (``User.email``), which
+    # is what providers like suitenumerique/calendars key principals on —
+    # NOT the mailbox's ``local_part@domain.name`` (which can diverge from
+    # the user's OIDC email).
     #
     # That means the same secret authenticates messages-as-a-service for
-    # all mailboxes — the CalDAV server is then responsible for whatever
-    # per-user authorization it wants to layer on top. Concretely: any user
-    # who can choose what email lands on a Mailbox row can cause messages
-    # to authenticate to the CalDAV server *as* that email. The load-bearing
-    # safety property is therefore that mailbox creation does not let one
-    # user mint a Mailbox whose email matches another user on the CalDAV
-    # side. Operators wiring up this integration must verify that property
-    # against their domain/identity ownership rules.
+    # all users — the CalDAV server is then responsible for whatever
+    # per-user authorization it wants to layer on top. Concretely: any
+    # user authenticated via OIDC can cause messages to authenticate to
+    # the CalDAV server as their OIDC email. The load-bearing safety
+    # property is therefore that the OIDC identity provider does not let
+    # one human assert another human's ``email`` claim. Operators wiring
+    # up this integration must verify that property holds for their IdP
+    # configuration (e.g. that ``email`` is a verified claim).
     CALDAV_DEFAULT_URL = values.Value(
         None, environ_name="CALDAV_DEFAULT_URL", environ_prefix=None
     )

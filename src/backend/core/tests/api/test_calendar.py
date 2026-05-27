@@ -1957,19 +1957,22 @@ class TestListCalendarsWritableFilter:
 
 
 # ---------------------------------------------------------------------------
-# Credential contract: Basic Auth user = mailbox email, password = setting
+# Credential contract: Basic Auth user = OIDC identity email, password = setting
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db()
-def test_instance_config_sends_mailbox_email_as_basic_auth_user(settings, mailbox):
-    """Instance-level auth: Basic Auth user must be the mailbox email and
-    the password must be CALDAV_DEFAULT_PASSWORD verbatim."""
+def test_instance_config_sends_oidc_email_as_basic_auth_user(settings):
+    """Instance-level auth: Basic Auth user must be the requesting user's
+    OIDC identity email (NOT the mailbox address — the CalDAV provider
+    keys principals on the OIDC ``email`` claim) and the password must be
+    CALDAV_DEFAULT_PASSWORD verbatim."""
     settings.CALDAV_DEFAULT_URL = "https://caldav.example.com/"
     settings.CALDAV_DEFAULT_PASSWORD = "shared-secret-xyz"
 
-    service = CalDAVService.from_instance_config(str(mailbox))
+    oidc_email = "alice@identity.example"
+    service = CalDAVService.from_instance_config(oidc_email)
 
-    assert service.username == str(mailbox)
+    assert service.username == oidc_email
     assert service.password == "shared-secret-xyz"
-    assert service.session.auth == (str(mailbox), "shared-secret-xyz")
+    assert service.session.auth == (oidc_email, "shared-secret-xyz")
