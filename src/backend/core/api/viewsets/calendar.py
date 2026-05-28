@@ -449,16 +449,26 @@ class CalendarListView(CalDAVChannelMixin, APIView):
                     status=status.HTTP_200_OK,
                 )
             if e.status_code == 403:
+                # Log only the channel id + status — the CalDAVError message
+                # embeds the (user-supplied) upstream URL, which must not
+                # reach the logs.
                 logger.warning(
-                    "CalDAV channel %s denied access (HTTP 403) during list_calendars: %s",
+                    "CalDAV channel %s denied access (HTTP 403) during list_calendars.",
                     self.caldav_channel.id,
-                    e,
                 )
                 return Response(
                     {"detail": "CalDAV server denied access while listing calendars."},
                     status=status.HTTP_403_FORBIDDEN,
                 )
-            logger.warning("CalDAV upstream failed during list_calendars: %s", e)
+            # Same redaction: never log ``e`` — its message embeds the
+            # upstream URL (and, for network errors, the raw requests
+            # exception). Channel id + HTTP status are enough to triage.
+            logger.warning(
+                "CalDAV upstream failed during list_calendars "
+                "(channel=%s, HTTP status=%s).",
+                self.caldav_channel.id if self.caldav_channel else None,
+                e.status_code,
+            )
             return Response(
                 {"detail": "CalDAV server returned an error while listing calendars."},
                 status=status.HTTP_502_BAD_GATEWAY,
