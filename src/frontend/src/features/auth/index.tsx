@@ -41,12 +41,31 @@ export const logout = () => {
   window.location.replace(getRequestUrl("/api/v1.0/logout/"));
 };
 
-export const login = () => {
+/**
+ * Restricts the post-login redirect to the current site origin to prevent
+ * open redirects. Accepts a relative path or absolute URL; returns an
+ * absolute URL on the current origin, or undefined if the input is malformed
+ * or off-origin.
+ */
+const sanitizeNextUrl = (raw?: string): string | undefined => {
+  if (!raw) return undefined;
+  try {
+    const absolute = new URL(raw, window.location.origin);
+    if (absolute.origin !== window.location.origin) return undefined;
+    return absolute.href;
+  } catch {
+    return undefined;
+  }
+};
+
+export const login = (nextUrl?: string) => {
   if (isNativePlatform()) {
     void nativeLogin();
     return;
   }
-  window.location.replace(getRequestUrl("/api/v1.0/authenticate/"));
+  const safeNext = sanitizeNextUrl(nextUrl);
+  const params = safeNext ? { next: safeNext } : undefined;
+  window.location.replace(getRequestUrl("/api/v1.0/authenticate/", params));
 };
 
 interface AuthContextInterface {
