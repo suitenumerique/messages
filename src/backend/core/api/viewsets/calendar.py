@@ -395,6 +395,14 @@ class CalendarListView(CalDAVChannelMixin, APIView):
                     ),
                 },
             ),
+            403: OpenApiResponse(
+                response=_ERROR_SCHEMA,
+                description=(
+                    "Per-mailbox CalDAV channel denied access (upstream 403). "
+                    "Not returned for the deployment-default config, where a "
+                    "403 is treated as an empty calendar list."
+                ),
+            ),
             502: OpenApiResponse(
                 response=_ERROR_SCHEMA,
                 description="CalDAV server error while listing calendars.",
@@ -417,25 +425,38 @@ class CalendarListView(CalDAVChannelMixin, APIView):
             # calendars would fail at PUT time.
             calendars = service.list_calendars(writable_only=True)
         except CalDAVError as e:
-            # 403 from the CalDAV proxy means "we authenticated the
+            # 403 on the *instance-level* path means "we authenticated the
             # service credential but this OIDC identity is not yet a
             # principal upstream" — calendars (and similar providers)
             # provision a principal on first login, so this is the
             # "user has no calendars *yet*" state, not "integration
             # disabled". Surface it as configured=True with an empty
-            # list so the UI shows the create-a-calendar CTA. Only
-            # the genuinely-unconfigured case (no per-mailbox channel
-            # and no CALDAV_DEFAULT_* env vars — caught by the
-            # ``service is None`` branch above) returns configured=False.
-            if e.status_code == 403:
+            # list so the UI shows the create-a-calendar CTA.
+            #
+            # This rationale only holds for the deployment-default config:
+            # a per-mailbox Channel uses the user's own credentials against
+            # a CalDAV provider of their choice, so a 403 there is a genuine
+            # ACL/auth failure that must surface — not be hidden behind a
+            # spurious empty list.
+            if e.status_code == 403 and self.caldav_channel is None:
                 logger.info(
                     "CalDAV reports user %s has no calendar account yet (HTTP 403); "
                     "treating as empty calendar list.",
-                    request.user.email,
+                    request.user.id,
                 )
                 return Response(
                     {"calendars": [], "web_url": web_url, "configured": True},
                     status=status.HTTP_200_OK,
+                )
+            if e.status_code == 403:
+                logger.warning(
+                    "CalDAV channel %s denied access (HTTP 403) during list_calendars: %s",
+                    self.caldav_channel.id,
+                    e,
+                )
+                return Response(
+                    {"detail": "CalDAV server denied access while listing calendars."},
+                    status=status.HTTP_403_FORBIDDEN,
                 )
             logger.warning("CalDAV upstream failed during list_calendars: %s", e)
             return Response(
