@@ -17,6 +17,7 @@ from icalendar import Calendar as ICalendar
 
 from core import factories
 from core.enums import ChannelTypes, MailboxRoleChoices
+from core.services.calendar.ics_rebuild import rebuild_for_storage
 from core.services.calendar.service import CalDAVError, CalDAVService
 
 
@@ -1313,7 +1314,7 @@ class TestRebuildForStorage:
         )
 
     def _rebuild(self, ics):
-        return CalDAVService._rebuild_for_storage(ICalendar.from_ical(ics))
+        return rebuild_for_storage(ICalendar.from_ical(ics))
 
     def test_drops_method(self):
         out = self._rebuild(self._hostile_ics())
@@ -1461,7 +1462,7 @@ class TestRebuildForStorage:
         ics = self._hostile_ics()
         cal = ICalendar.from_ical(ics)
         before = cal.to_ical()
-        _ = CalDAVService._rebuild_for_storage(cal)
+        _ = rebuild_for_storage(cal)
         # Input must be byte-identical after rebuild.
         assert cal.to_ical() == before
 
