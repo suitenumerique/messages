@@ -31,6 +31,7 @@ import type {
   CalendarRsvpResponse,
   MailboxesCalendarAddCreate400,
   MailboxesCalendarAddCreate503,
+  MailboxesCalendarCalendarsRetrieve403,
   MailboxesCalendarCalendarsRetrieve502,
   MailboxesCalendarConflictsCreate400,
   MailboxesCalendarConflictsCreate502,
@@ -179,6 +180,11 @@ export type mailboxesCalendarCalendarsRetrieveResponse200 = {
   status: 200;
 };
 
+export type mailboxesCalendarCalendarsRetrieveResponse403 = {
+  data: MailboxesCalendarCalendarsRetrieve403;
+  status: 403;
+};
+
 export type mailboxesCalendarCalendarsRetrieveResponse502 = {
   data: MailboxesCalendarCalendarsRetrieve502;
   status: 502;
@@ -188,10 +194,12 @@ export type mailboxesCalendarCalendarsRetrieveResponseSuccess =
   mailboxesCalendarCalendarsRetrieveResponse200 & {
     headers: Headers;
   };
-export type mailboxesCalendarCalendarsRetrieveResponseError =
-  mailboxesCalendarCalendarsRetrieveResponse502 & {
-    headers: Headers;
-  };
+export type mailboxesCalendarCalendarsRetrieveResponseError = (
+  | mailboxesCalendarCalendarsRetrieveResponse403
+  | mailboxesCalendarCalendarsRetrieveResponse502
+) & {
+  headers: Headers;
+};
 
 export type mailboxesCalendarCalendarsRetrieveResponse =
   | mailboxesCalendarCalendarsRetrieveResponseSuccess
@@ -222,7 +230,10 @@ export const getMailboxesCalendarCalendarsRetrieveQueryKey = (
 
 export const getMailboxesCalendarCalendarsRetrieveQueryOptions = <
   TData = Awaited<ReturnType<typeof mailboxesCalendarCalendarsRetrieve>>,
-  TError = ErrorType<MailboxesCalendarCalendarsRetrieve502>,
+  TError = ErrorType<
+    | MailboxesCalendarCalendarsRetrieve403
+    | MailboxesCalendarCalendarsRetrieve502
+  >,
 >(
   mailboxId: string,
   options?: {
@@ -265,12 +276,16 @@ export const getMailboxesCalendarCalendarsRetrieveQueryOptions = <
 export type MailboxesCalendarCalendarsRetrieveQueryResult = NonNullable<
   Awaited<ReturnType<typeof mailboxesCalendarCalendarsRetrieve>>
 >;
-export type MailboxesCalendarCalendarsRetrieveQueryError =
-  ErrorType<MailboxesCalendarCalendarsRetrieve502>;
+export type MailboxesCalendarCalendarsRetrieveQueryError = ErrorType<
+  MailboxesCalendarCalendarsRetrieve403 | MailboxesCalendarCalendarsRetrieve502
+>;
 
 export function useMailboxesCalendarCalendarsRetrieve<
   TData = Awaited<ReturnType<typeof mailboxesCalendarCalendarsRetrieve>>,
-  TError = ErrorType<MailboxesCalendarCalendarsRetrieve502>,
+  TError = ErrorType<
+    | MailboxesCalendarCalendarsRetrieve403
+    | MailboxesCalendarCalendarsRetrieve502
+  >,
 >(
   mailboxId: string,
   options: {
@@ -297,7 +312,10 @@ export function useMailboxesCalendarCalendarsRetrieve<
 };
 export function useMailboxesCalendarCalendarsRetrieve<
   TData = Awaited<ReturnType<typeof mailboxesCalendarCalendarsRetrieve>>,
-  TError = ErrorType<MailboxesCalendarCalendarsRetrieve502>,
+  TError = ErrorType<
+    | MailboxesCalendarCalendarsRetrieve403
+    | MailboxesCalendarCalendarsRetrieve502
+  >,
 >(
   mailboxId: string,
   options?: {
@@ -324,7 +342,10 @@ export function useMailboxesCalendarCalendarsRetrieve<
 };
 export function useMailboxesCalendarCalendarsRetrieve<
   TData = Awaited<ReturnType<typeof mailboxesCalendarCalendarsRetrieve>>,
-  TError = ErrorType<MailboxesCalendarCalendarsRetrieve502>,
+  TError = ErrorType<
+    | MailboxesCalendarCalendarsRetrieve403
+    | MailboxesCalendarCalendarsRetrieve502
+  >,
 >(
   mailboxId: string,
   options?: {
@@ -344,7 +365,10 @@ export function useMailboxesCalendarCalendarsRetrieve<
 
 export function useMailboxesCalendarCalendarsRetrieve<
   TData = Awaited<ReturnType<typeof mailboxesCalendarCalendarsRetrieve>>,
-  TError = ErrorType<MailboxesCalendarCalendarsRetrieve502>,
+  TError = ErrorType<
+    | MailboxesCalendarCalendarsRetrieve403
+    | MailboxesCalendarCalendarsRetrieve502
+  >,
 >(
   mailboxId: string,
   options?: {

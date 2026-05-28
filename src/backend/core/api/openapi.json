@@ -2643,6 +2643,21 @@
                         },
                         "description": ""
                     },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Per-mailbox CalDAV channel denied access (upstream 403). Not returned for the deployment-default config, where a 403 is treated as an empty calendar list."
+                    },
                     "502": {
                         "content": {
                             "application/json": {
