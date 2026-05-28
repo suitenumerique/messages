@@ -1,4 +1,4 @@
-"""Mobile-aware OIDC views handing the Django session over to the Capacitor apps.
+"""Custom OIDC views: mobile session handoff and IdP-terminating logout.
 
 The mobile apps run the OIDC flow in the system browser (ASWebAuthenticationSession
 on iOS, Chrome Custom Tabs on Android) so the identity provider session cookie is
@@ -6,6 +6,9 @@ shared across apps and provides cross-app SSO. The backend remains the confident
 OIDC client: once the callback has created the Django session, it redirects the
 system browser to the app deep link with a one-time token that the app exchanges
 for the session cookie (see `core.api.viewsets.mobile_auth`).
+
+The logout view terminates the IdP session even when the Django session is
+anonymous — see `OIDCLogoutView`.
 """
 
 import logging
@@ -14,6 +17,7 @@ import time
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.contrib import auth
 from django.core.cache import cache
 from django.core.exceptions import SuspiciousOperation
 from django.core.handlers.wsgi import WSGIRequest
@@ -25,6 +29,7 @@ from lasuite.oidc_login.views import (
 from lasuite.oidc_login.views import (
     OIDCAuthenticationRequestView as LaSuiteOIDCAuthenticationRequestView,
 )
+from lasuite.oidc_login.views import OIDCLogoutView as LaSuiteOIDCLogoutView
 
 logger = logging.getLogger(__name__)
 
@@ -113,3 +118,39 @@ class OIDCAuthenticationCallbackView(LaSuiteOIDCAuthenticationCallbackView):
         if mobile_auth is None:
             return response
         return AppSchemeRedirect(f"{mobile_auth['scheme']}://auth?error=login_failed")
+
+
+class OIDCLogoutView(LaSuiteOIDCLogoutView):
+    """Logout view triggering the IdP logout whatever the Django session state.
+
+    The parent view only initiates the RP-initiated logout for authenticated
+    users, but a sign-in that matched no Messages account leaves the Django
+    session *unauthenticated* while the IdP session is still alive (the
+    id_token is stored before user matching) — and that IdP session is exactly
+    what keeps signing the same identity back in: ProConnect ignores
+    ``prompt=login``, so terminating its session is the only way to let the
+    user restart an authentication cycle with another identity.
+
+    The trigger is therefore relaxed to "the session holds an id_token"; the
+    rest of the parent flow is untouched (post_logout_redirect_uri is the
+    /logout-callback/ route — it must be registered at the IdP — and the
+    session is kept alive until the callback validates the returned state).
+    """
+
+    def post(self, request: WSGIRequest) -> HttpResponse:
+        """Log the user out of the IdP session, then out of Django."""
+        logout_url = self.redirect_url
+
+        if request.user.is_authenticated or request.session.get("oidc_id_token"):
+            logout_url = self.construct_oidc_logout_url(request)
+
+        if logout_url == self.redirect_url:
+            # No IdP round-trip possible: end the local session right away.
+            auth.logout(request)
+        else:
+            # Persist the state generated in construct_oidc_logout_url()
+            # before the browser leaves for the IdP.
+            request.session.modified = True
+            request.session.save()
+
+        return HttpResponseRedirect(logout_url)

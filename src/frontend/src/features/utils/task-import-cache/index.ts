@@ -23,7 +23,7 @@ export class TaskImportCacheHelper {
     }
 
     get() {
-        if (typeof window === "undefined" || !this.mailboxId) return null;
+        if (!this.mailboxId) return null;
         const value = localStorage.getItem(this.#key);
         if (!value) return null
 
@@ -35,12 +35,12 @@ export class TaskImportCacheHelper {
     }
 
     set(taskId: string) {
-        if (typeof window === "undefined" || !this.mailboxId) return;
+        if (!this.mailboxId) return;
         localStorage.setItem(this.#key, this.#serialize(taskId));
     }
 
     remove() {
-        if (typeof window === "undefined" || !this.mailboxId) return;
+        if (!this.mailboxId) return;
         localStorage.removeItem(this.#key);
     }
 }
