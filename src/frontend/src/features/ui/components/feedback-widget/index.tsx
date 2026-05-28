@@ -28,7 +28,6 @@ export function FeedbackWidget({
 
   useEffect(() => {
     if (!channel || !apiUrl || !widgetPath) return;
-    if (typeof window === "undefined") return;
 
     WidgetHelper.pushCommand([
       "loader",

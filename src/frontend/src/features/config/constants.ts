@@ -21,6 +21,8 @@ export const MESSAGE_IMPORT_TASK_KEY = APP_STORAGE_PREFIX + "message-import-task
 export const EXTERNAL_IMAGES_CONSENT_KEY = APP_STORAGE_PREFIX + "external-images-consent";
 export const THREAD_SELECTED_FILTERS_KEY = APP_STORAGE_PREFIX + "thread-selected-filters";
 export const SILENT_LOGIN_RETRY_KEY = APP_STORAGE_PREFIX + "silent-login-retry";
+export const OIDC_LOGIN_ATTEMPT_KEY = APP_STORAGE_PREFIX + "oidc-login-attempt";
+export const OIDC_LOGIN_FAILED_KEY = APP_STORAGE_PREFIX + "oidc-login-failed";
 export const EXPANDED_FOLDERS_KEY = APP_STORAGE_PREFIX + "expanded-folders";
 
 

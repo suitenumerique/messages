@@ -38,8 +38,6 @@ export const SurveyButton = ({ iconOnly = false, ...props }: SurveyButtonProps) 
   const closeLabel: string = t("Close the feedback widget");
 
   const showWidget = () => {
-    if (typeof window === "undefined" || !widgetPath) return;
-
     WidgetHelper.pushCommand([
       "feedback",
       "init",

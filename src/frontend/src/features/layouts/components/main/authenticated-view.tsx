@@ -12,7 +12,7 @@ const AuthenticatedView = ({ children }: { children: React.ReactNode }) => {
     useEffect(() => {
         if (user === null) {
             const next = window.location.pathname + window.location.search + window.location.hash;
-            navigate({ to: "/", search: { next }, replace: true });
+            navigate({ to: "/", search: next === "/" ? undefined : { next }, replace: true });
         }
     }, [user, navigate]);
 

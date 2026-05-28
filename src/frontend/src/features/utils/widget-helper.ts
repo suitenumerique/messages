@@ -13,7 +13,6 @@ export class WidgetHelper {
   static #QUEUE_KEYS = ["_lasuite_widget", "_stmsg_widget"] as const;
 
   static pushCommand(command: unknown[]) {
-    if (typeof window === "undefined") return;
     for (const key of WidgetHelper.#QUEUE_KEYS) {
       const queue = window[key] ?? [];
       queue.push(command);
@@ -22,7 +21,6 @@ export class WidgetHelper {
   }
 
   static loadScript(scriptUrl: string) {
-    if (typeof window === "undefined") return;
     if (document.querySelector(`script[src="${scriptUrl}"]`)) return;
 
     const script = document.createElement("script");
