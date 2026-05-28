@@ -71,7 +71,7 @@ LOGIN_REDIRECT_URL=http://localhost:8900
 LOGIN_REDIRECT_URL_FAILURE=http://localhost:8900
 LOGOUT_REDIRECT_URL=http://localhost:8900
 
-OIDC_REDIRECT_ALLOWED_HOSTS=["http://localhost:8902", "http://localhost:8900"]
+OIDC_REDIRECT_ALLOWED_HOSTS=localhost:8902,localhost:8900
 OIDC_AUTH_REQUEST_EXTRA_PARAMS={"acr_values": "eidas1"}
 
 # Mobile apps (Capacitor) session handoff

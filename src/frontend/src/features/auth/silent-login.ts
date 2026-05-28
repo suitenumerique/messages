@@ -5,13 +5,13 @@ import { SILENT_LOGIN_RETRY_INTERVAL, SILENT_LOGIN_RETRY_KEY } from "../config/c
  * Replace the current window location with the silent login URL
  *
  * The silent login URL is the same as the login URL, but with the silent
- * parameter set to true and the returnTo parameter set
- * to the current window location
+ * parameter set to true and the `next` parameter set to the current window
+ * location so the OIDC callback redirects the user back to where they were.
  */
 const silentLogin = () => {
   window.location.replace(getRequestUrl("/api/v1.0/authenticate/", {
     silent: "true",
-    returnTo: window.location.href,
+    next: window.location.href,
   }));
 };
 
