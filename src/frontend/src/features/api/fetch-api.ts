@@ -1,7 +1,7 @@
 // Inspired by https://github.com/orval-labs/orval/blob/master/samples/next-app-with-fetch/custom-fetch.ts
 
 import { logout } from "../auth";
-import { SESSION_EXPIRED_KEY } from "../config/constants";
+import { markSessionExpired } from "../auth/login-state";
 import { APIError } from "./api-error";
 import { getHeaders, getRequestUrl, isJson } from "./utils";
 
@@ -27,7 +27,7 @@ export const fetchAPI= async <T>(
   });
 
   if (response.status === 401 && logoutOn401) {
-    sessionStorage.setItem(SESSION_EXPIRED_KEY, 'true');
+    markSessionExpired();
     logout();
   }
 

@@ -7,13 +7,22 @@ import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { UserWithAbilities } from "../api/gen/models/user_with_abilities";
 import { addToast, ToasterItem } from "../ui/components/toaster";
 import { useTranslation } from "react-i18next";
-import { SESSION_EXPIRED_KEY } from "../config/constants";
 import { nativeLogin, nativeLogout } from "../native/auth";
 import { isNativePlatform } from "../native/platform";
 import {
   clearDeliveredNativeNotifications,
   refreshNativePushRegistration,
 } from "../native/push";
+import {
+  clearLoginFailed,
+  consumeLoginAttempt,
+  consumeSessionExpired,
+  hasLoginFailed,
+  hasPendingLoginAttempt,
+  isSessionExpired,
+  markLoginAttempt,
+  markLoginFailed,
+} from "./login-state";
 import { useConfig } from "../providers/config";
 import {
   listenForPushSubscriptionChange,
@@ -64,7 +73,11 @@ export const login = (nextUrl?: string) => {
     return;
   }
   const safeNext = sanitizeNextUrl(nextUrl);
-  const params = safeNext ? { next: safeNext } : undefined;
+  const params: Record<string, string> = {};
+  if (safeNext) params.next = safeNext;
+  // Marker read back after the OIDC callback to detect a failed sign-in
+  // (e.g. no Messages user exists for the authenticated identity).
+  markLoginAttempt();
   window.location.replace(getRequestUrl("/api/v1.0/authenticate/", params));
 };
 
@@ -100,16 +113,20 @@ export const Auth = ({
     if (query.isError && query.error?.code === 401) return null;
     return undefined;
   }, [query.isError, query.error?.code, query.data]);
-  const shouldAttemptSilentLogin = useMemo(
-    // On native platforms the WebView must never navigate itself to the
-    // IdP: silent login is replaced by the system-browser flow.
-    () =>
-      !isNativePlatform() &&
-      config.FRONTEND_SILENT_LOGIN_ENABLED &&
-      user === null &&
-      canAttemptSilentLogin(),
-    [config.FRONTEND_SILENT_LOGIN_ENABLED, user]
-  );
+
+  const shouldAttemptSilentLogin = useMemo(() => {
+    if (isNativePlatform()) return false;
+    if (!config.FRONTEND_SILENT_LOGIN_ENABLED) return false;
+    if (user !== null) return false;
+    if (!canAttemptSilentLogin()) return false;
+    // Skip silent login while a one-shot toast still needs to be shown,
+    // otherwise the redirect unmounts the page before the Toaster renders
+    // (e.g. failed explicit sign-in, or session expired notification).
+    if (hasPendingLoginAttempt()) return false;
+    if (isSessionExpired()) return false;
+    if (hasLoginFailed()) return false;
+    return true;
+  }, [config.FRONTEND_SILENT_LOGIN_ENABLED, user]);
   const isAuthenticated = !!user;
   const userId = user?.id;
 
@@ -182,18 +199,49 @@ export const Auth = ({
     }
   }, [user]);
 
-  // When the session is expired, display a toast to
-  // inform the user that they have been disconnected for that reason
+  // When the session is expired, display a toast to inform the user that
+  // they have been disconnected for that reason. Deferred until `user` is
+  // resolved so the Toaster has been mounted by the rendered children.
   useEffect(() => {
-    if (sessionStorage.getItem(SESSION_EXPIRED_KEY)) {
-      sessionStorage.removeItem(SESSION_EXPIRED_KEY);
-      addToast(
-        <ToasterItem type="info">
-          {t('Your session has expired. Please log in again.')}
-        </ToasterItem>
-      )
+    if (user === undefined) return;
+    if (!consumeSessionExpired()) return;
+    addToast(
+      <ToasterItem type="info">
+        {t('Your session has expired. Please log in again.')}
+      </ToasterItem>
+    );
+  }, [user, t]);
+
+  // After an explicit OIDC sign-in attempt, warn the user when no Messages
+  // account is associated with the authenticated identity (the backend
+  // redirects to the homepage unauthenticated in that case).
+  useEffect(() => {
+    if (user === undefined) return;
+    if (user) {
+      clearLoginFailed();
     }
-  }, []);
+    if (!consumeLoginAttempt()) return;
+    if (user === null) {
+      markLoginFailed();
+      // Signing out terminates the IdP session (ProConnect ignores
+      // prompt=login, so this is the only way to let the user restart an
+      // authentication cycle with another identity from the homepage).
+      // The toast must stay until the user acts on it: it is the only
+      // affordance to break out of the SSO loop.
+      addToast(
+        <ToasterItem type="warning" actions={[
+          {
+            label: t('Sign out'),
+            showLabel: true,
+            onClick: () => logout(),
+          },
+        ]}>
+          {t('No Messages account is associated with this identity. Please contact your administrator.')}
+        </ToasterItem>,
+        { autoClose: false },
+      );
+    }
+  }, [user, t]);
 
   if (query.isLoading || shouldAttemptSilentLogin) {
     return (
