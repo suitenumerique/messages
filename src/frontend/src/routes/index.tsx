@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Hero, HomeGutter, Footer, ProConnectButton } from "@gouvfr-lasuite/ui-kit";
 
@@ -16,12 +16,18 @@ const HomePage = () => {
   const { t } = useTranslation();
   const { theme, variant, themeConfig } = useTheme();
   const { user } = useAuth();
+  const searchParams = useSearch({ strict: false }) as { next?: string };
 
   useDocumentTitle();
 
   if (user) {
     return <MainLayout />;
   }
+
+  const handleLogin = () => {
+    const nextParam = searchParams.next;
+    login(typeof nextParam === "string" ? nextParam : undefined);
+  };
 
   return (
     <AppLayout
@@ -37,7 +43,7 @@ const HomePage = () => {
             title={t("Simple and intuitive messaging")}
             banner={`/images/banner-${variant}.webp`}
             subtitle={t("Send and receive your messages in an instant.")}
-            mainButton={<ProConnectButton onClick={login} />}
+            mainButton={<ProConnectButton onClick={handleLogin} />}
           />
         </HomeGutter>
         {themeConfig.footer && (
