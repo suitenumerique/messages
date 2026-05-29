@@ -25,6 +25,7 @@ import {
     formatRecurrenceRule,
     getAttendeeStatusInfo,
     createContactFromAttendee,
+    collapseRecurringEvents,
 } from "./calendar-helper";
 import { cleanEventForDisplay } from "./event-display";
 import { CalendarSelect } from "./calendar-select";
@@ -703,7 +704,13 @@ export const CalendarInvite = ({
     // Set default calendar when calendars load
     const effectiveCalendarId = selectedCalendarId ?? (calendars.length > 0 ? calendars[0].id : null);
 
-    const events = calendar?.events ?? [];
+    // A recurring invite arrives as a master VEVENT plus one VEVENT per
+    // modified occurrence, all sharing a UID. Collapse them so the series
+    // renders as a single card instead of one card per occurrence.
+    const events = useMemo(
+        () => collapseRecurringEvents(calendar?.events ?? []),
+        [calendar],
+    );
     const isCancellation = calendar?.method === "CANCEL";
 
     // Conflict detection for the first event

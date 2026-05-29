@@ -15,6 +15,7 @@ import {
     formatRecurrenceRule,
     getAttendeeStatusInfo,
     createContactFromAttendee,
+    collapseRecurringEvents,
 } from "./calendar-helper";
 
 // Simple pass-through translation mock
@@ -355,6 +356,94 @@ describe("createContactFromAttendee", () => {
             name: "",
         });
         expect(contact.name).toBeNull();
+    });
+});
+
+// ─── collapseRecurringEvents ─────────────────────────────────────────────────
+
+describe("collapseRecurringEvents", () => {
+    it("should collapse a recurring series (master + overrides sharing a UID) into one event", () => {
+        // Mirrors a real "modified recurring meeting" REQUEST: one master with
+        // an RRULE plus three RECURRENCE-ID overrides, all sharing the UID.
+        const uid = "series-001";
+        const master = makeEvent({
+            summary: "Standup",
+            uid,
+            start: { date: new Date("2026-04-23T10:00:00Z") },
+            recurrenceRule: { frequency: "WEEKLY", interval: 2 },
+        });
+        const overrides = [
+            "2026-04-23T10:00:00Z",
+            "2026-05-07T10:00:00Z",
+            "2026-05-21T10:00:00Z",
+        ].map((iso) =>
+            makeEvent({
+                summary: "Standup",
+                uid,
+                start: { date: new Date(iso) },
+                recurrenceId: { value: { date: new Date(iso) } },
+            }),
+        );
+
+        const result = collapseRecurringEvents([master, ...overrides]);
+
+        expect(result).toHaveLength(1);
+        // The master is kept (it carries the RRULE describing the whole series).
+        expect(result[0].recurrenceRule?.frequency).toBe("WEEKLY");
+        expect(result[0].recurrenceId).toBeUndefined();
+    });
+
+    it("should keep events with different UIDs as separate cards", () => {
+        const events = [
+            makeEvent({ summary: "Meeting A", uid: "a-001" }),
+            makeEvent({ summary: "Meeting B", uid: "b-001" }),
+        ];
+        const result = collapseRecurringEvents(events);
+        expect(result).toHaveLength(2);
+        expect(result.map((e) => e.summary)).toEqual(["Meeting A", "Meeting B"]);
+    });
+
+    it("should preserve first-seen order", () => {
+        const events = [
+            makeEvent({ summary: "First", uid: "1" }),
+            makeEvent({ summary: "Second", uid: "2" }),
+            makeEvent({ summary: "First again", uid: "1" }),
+        ];
+        const result = collapseRecurringEvents(events);
+        expect(result.map((e) => e.uid)).toEqual(["1", "2"]);
+    });
+
+    it("should not group UID-less events together", () => {
+        const events = [
+            makeEvent({ summary: "No UID A", uid: "" }),
+            makeEvent({ summary: "No UID B", uid: "" }),
+        ];
+        const result = collapseRecurringEvents(events);
+        expect(result).toHaveLength(2);
+    });
+
+    it("should pick the earliest occurrence when no master is present", () => {
+        const uid = "no-master-001";
+        const later = makeEvent({
+            summary: "Later",
+            uid,
+            start: { date: new Date("2026-05-21T10:00:00Z") },
+            recurrenceId: { value: { date: new Date("2026-05-21T10:00:00Z") } },
+        });
+        const earlier = makeEvent({
+            summary: "Earlier",
+            uid,
+            start: { date: new Date("2026-04-23T10:00:00Z") },
+            recurrenceId: { value: { date: new Date("2026-04-23T10:00:00Z") } },
+        });
+
+        const result = collapseRecurringEvents([later, earlier]);
+        expect(result).toHaveLength(1);
+        expect(result[0].summary).toBe("Earlier");
+    });
+
+    it("should return an empty array for no events", () => {
+        expect(collapseRecurringEvents([])).toEqual([]);
     });
 });
 

@@ -31,6 +31,41 @@ export function getEventEnd(event: IcsEvent | undefined): Date | undefined {
     return undefined;
 }
 
+/**
+ * Of two VEVENTs sharing a UID, return the one that best represents the
+ * series: prefer the master (no RECURRENCE-ID — it carries the RRULE), and
+ * otherwise the earlier start.
+ */
+function pickSeriesRepresentative(a: IcsEvent, b: IcsEvent): IcsEvent {
+    const aIsMaster = !a.recurrenceId;
+    const bIsMaster = !b.recurrenceId;
+    if (aIsMaster !== bIsMaster) return aIsMaster ? a : b;
+    const aStart = a.start?.date?.getTime() ?? Infinity;
+    const bStart = b.start?.date?.getTime() ?? Infinity;
+    return aStart <= bStart ? a : b;
+}
+
+/**
+ * Collapse a calendar's VEVENTs into one entry per recurrence set.
+ *
+ * A recurring invite is transmitted as several VEVENTs sharing a single UID:
+ * a master event carrying the RRULE plus one VEVENT per modified occurrence,
+ * each tagged with RECURRENCE-ID. Rendering them verbatim shows the same
+ * meeting several times over. Keep one representative per UID — the master
+ * when present (it describes the whole series), otherwise the earliest
+ * occurrence. First-seen order is preserved, and UID-less events (which can't
+ * be grouped) are each kept as-is.
+ */
+export function collapseRecurringEvents(events: IcsEvent[]): IcsEvent[] {
+    const byKey = new Map<string, IcsEvent>();
+    events.forEach((event, index) => {
+        const key = event.uid || `__no-uid-${index}`;
+        const existing = byKey.get(key);
+        byKey.set(key, existing ? pickSeriesRepresentative(existing, event) : event);
+    });
+    return [...byKey.values()];
+}
+
 export { TextHelper } from "@/features/utils/text-helper";
 
 /**
