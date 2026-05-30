@@ -206,6 +206,7 @@ class TestSendOutboundMessage:
             message_content=draft_message.blob.get_content(),
             smtp_username="smtp_user",
             smtp_password="smtp_pass",
+            smtp_tls_security_level="may",
         )
 
         # Check message object updated
@@ -431,6 +432,8 @@ class TestSendOutboundMessage:
             envelope_from=draft_message.sender.email,
             recipient_emails={"bcc@example2.com"},
             message_content=draft_message.blob.get_content(),
+            smtp_tls_security_level="may",
+            proxy=None,
         )
 
         # Check message object updated

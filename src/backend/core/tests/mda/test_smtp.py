@@ -451,6 +451,30 @@ class TestSMTPClient:
         finally:
             smtp_handler.stop()
 
+    def test_secure_fails_on_starttls_handshake_failure(self):
+        """At smtp_tls_security_level=secure, a STARTTLS handshake failure must
+        defer delivery rather than fall through to cleartext."""
+        smtp_handler = MixedResponseSMTPHandler()
+        smtp_handler.advertise_starttls = True
+        smtp_handler.starttls_break_handshake = True
+        smtp_handler.start()
+
+        try:
+            time.sleep(0.1)
+            result = send_smtp_mail(
+                smtp_host="127.0.0.1",
+                smtp_port=smtp_handler.port,
+                envelope_from="sender@example.com",
+                recipient_emails={"user1@example.com"},
+                message_content=b"Subject: Test\n\nHello",
+                timeout=5,
+                smtp_tls_security_level="secure",
+            )
+
+            assert result["user1@example.com"]["delivered"] is False
+        finally:
+            smtp_handler.stop()
+
     def test_data_failure(self):
         """Test DATA command failure handling."""
         # Create and start the custom SMTP server
