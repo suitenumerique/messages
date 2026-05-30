@@ -472,6 +472,7 @@ class TestSMTPClient:
             )
 
             assert result["user1@example.com"]["delivered"] is False
+            assert result["user1@example.com"]["retry"] is True
         finally:
             smtp_handler.stop()
 
