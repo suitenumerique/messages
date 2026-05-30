@@ -3,9 +3,22 @@
 import logging
 import smtplib
 import ssl
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import socks
+
+
+@dataclass(frozen=True)
+class SmtpProxy:
+    """SOCKS5 proxy + EHLO identity to use when sending."""
+
+    host: str
+    port: int
+    username: Optional[str] = None
+    password: Optional[str] = None
+    sender_hostname: Optional[str] = None
+
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +91,58 @@ class ProxySMTP(smtplib.SMTP):
         )
 
 
+def _build_tls_context(level: str) -> ssl.SSLContext:
+    """Build an SSL context matching Postfix's smtp_tls_security_level semantics.
+
+    "secure" performs full PKI verification (CA chain + hostname). "may" creates
+    an unverified context: many public MXes serve mismatched or self-signed
+    certs, and rejecting them would just push delivery to cleartext anyway.
+    """
+    ctx = ssl.create_default_context()
+    if level != "secure":
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
+def _starttls_upgrade(
+    client: "ProxySMTP", level: str, sender_hostname: Optional[str]
+) -> Optional[str]:
+    """Run the STARTTLS dance, with policy-aware fallback.
+
+    Returns None on success (or when policy allows continuing in cleartext),
+    the sentinel ``"fallback"`` to ask the caller to retry the whole session
+    without TLS (``may`` only), or an error string to defer delivery.
+    """
+    if level == "none":
+        return None
+    if not client.has_extn("starttls"):
+        if level == "secure":
+            return (
+                "STARTTLS not advertised by server "
+                "(required by smtp_tls_security_level=secure)"
+            )
+        return None
+    try:
+        code, msg = client.starttls(context=_build_tls_context(level))
+        logger.debug("SMTP: STARTTLS response: %s %s", code, msg)
+        if not 200 <= code <= 299:
+            raise RuntimeError(f"STARTTLS rejected: {code} {msg}")
+        code, msg = client.ehlo(sender_hostname)
+        logger.debug("SMTP: EHLO2 response: %s %s", code, msg)
+        if not 200 <= code <= 299:
+            raise RuntimeError(f"EHLO after STARTTLS failed: {code} {msg}")
+        return None
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        if level == "may":
+            logger.warning(
+                "SMTP: STARTTLS failed: %s, falling back to unencrypted socket", e
+            )
+            return "fallback"
+        logger.error("SMTP: Failed to send email with TLS: %s", e, exc_info=True)
+        return "Failed to send email with TLS"
+
+
 # pylint: disable=too-many-arguments
 def send_smtp_mail(
     smtp_host: str,
@@ -88,11 +153,7 @@ def send_smtp_mail(
     smtp_username: Optional[str] = None,
     smtp_password: Optional[str] = None,
     timeout: int = 60,
-    proxy_host: Optional[str] = None,
-    proxy_port: Optional[int] = None,
-    proxy_username: Optional[str] = None,
-    proxy_password: Optional[str] = None,
-    sender_hostname: Optional[str] = None,
+    proxy: Optional[SmtpProxy] = None,
     smtp_ip: Optional[str] = None,
     smtp_tls_security_level: Optional[str] = "may",
 ) -> Dict[str, Any]:
@@ -109,12 +170,8 @@ def send_smtp_mail(
         smtp_username: SMTP username (optional)
         smtp_password: SMTP password (optional)
         timeout: Connection timeout in seconds
-        proxy_host: SOCKS5 proxy hostname
-        proxy_port: SOCKS5 proxy port
-        proxy_username: SOCKS5 proxy username
-        proxy_password: SOCKS5 proxy password
-        sender_hostname: Local hostname to use for SMTP EHLO/HELO
-        smtp_tls_security_level: SMTP TLS security level ("none", "may")
+        proxy: Optional SOCKS5 proxy and local hostname to present in EHLO/HELO
+        smtp_tls_security_level: SMTP TLS security level ("none", "may", "secure")
 
     Returns:
         Dict mapping recipient emails to delivery status with retry flag:
@@ -127,6 +184,8 @@ def send_smtp_mail(
         }
     """
     statuses = {}
+    sender_hostname = proxy.sender_hostname if proxy else None
+    proxy_host = proxy.host if proxy else None
 
     def error_for_all_recipients(error: str, retry: bool) -> Dict[str, Any]:
         return {
@@ -145,9 +204,9 @@ def send_smtp_mail(
         port=None,
         timeout=timeout,
         proxy_host=proxy_host,
-        proxy_port=proxy_port,
-        proxy_username=proxy_username,
-        proxy_password=proxy_password,
+        proxy_port=proxy.port if proxy else None,
+        proxy_username=proxy.username if proxy else None,
+        proxy_password=proxy.password if proxy else None,
         local_hostname=sender_hostname,
     )
 
@@ -180,61 +239,25 @@ def send_smtp_mail(
                 _quit()
                 return error_for_all_recipients(f"HELO failed: {code} {msg}", True)
 
-        if client.has_extn("starttls") and smtp_tls_security_level != "none":
-            try:
-                # smtplib.SMTP.starttls() doesn't validate certificates by default!
-                # https://github.com/python/cpython/issues/91826
-                ssl_context = ssl.create_default_context()
-                ssl_context.check_hostname = True
-                ssl_context.verify_mode = ssl.CERT_REQUIRED
-                (code, msg) = client.starttls(context=ssl_context)
-                logger.debug("SMTP: STARTTLS response: %s %s", code, msg)
-                if not 200 <= code <= 299:
-                    _quit()
-                    if smtp_tls_security_level == "may":
-                        raise Exception(f"STARTTLS failed : {code} {msg}")  # pylint: disable=broad-exception-raised
-                    return error_for_all_recipients(
-                        f"STARTTLS failed: {code} {msg}", True
-                    )
-
-                # Restart the SMTP session now that we're in TLS mode
-                (code, msg) = client.ehlo(sender_hostname)
-                logger.debug("SMTP: EHLO2 response: %s %s", code, msg)
-                if not 200 <= code <= 299:
-                    _quit()
-                    if smtp_tls_security_level == "may":
-                        raise Exception(f"STARTTLS failed : {code} {msg}")  # pylint: disable=broad-exception-raised
-                    return error_for_all_recipients(
-                        f"EHLO after STARTTLS failed: {code} {msg}", True
-                    )
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                if smtp_tls_security_level == "may":
-                    logger.warning(
-                        "SMTP: STARTTLS failed: %s, falling back to unencrypted socket",
-                        e,
-                    )
-                    return send_smtp_mail(
-                        smtp_host=smtp_host,
-                        smtp_ip=smtp_ip,
-                        smtp_port=smtp_port,
-                        envelope_from=envelope_from,
-                        recipient_emails=recipient_emails,
-                        message_content=message_content,
-                        smtp_username=smtp_username,
-                        smtp_password=smtp_password,
-                        timeout=timeout,
-                        proxy_host=proxy_host,
-                        proxy_port=proxy_port,
-                        proxy_username=proxy_username,
-                        proxy_password=proxy_password,
-                        sender_hostname=sender_hostname,
-                        smtp_tls_security_level="none",
-                    )
-                logger.error(
-                    "SMTP: Failed to send email with TLS: %s", e, exc_info=True
-                )
-                _quit()
-                return error_for_all_recipients("Failed to send email with TLS", True)
+        tls_result = _starttls_upgrade(client, smtp_tls_security_level, sender_hostname)
+        if tls_result == "fallback":
+            _quit()
+            return send_smtp_mail(
+                smtp_host=smtp_host,
+                smtp_ip=smtp_ip,
+                smtp_port=smtp_port,
+                envelope_from=envelope_from,
+                recipient_emails=recipient_emails,
+                message_content=message_content,
+                smtp_username=smtp_username,
+                smtp_password=smtp_password,
+                timeout=timeout,
+                proxy=proxy,
+                smtp_tls_security_level="none",
+            )
+        if tls_result is not None:
+            _quit()
+            return error_for_all_recipients(tls_result, True)
 
         if smtp_username and smtp_password:
             try:

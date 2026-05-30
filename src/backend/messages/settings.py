@@ -445,8 +445,16 @@ class Base(Configuration):
         None, environ_name="MTA_OUT_RELAY_PASSWORD", environ_prefix=None
     )
 
-    # SMTP settings for both modes
-    # We support a subset of https://www.postfix.org/postconf.5.html#smtp_tls_security_level
+    # SMTP TLS policy for both direct (MX) and relay paths. Subset of
+    # https://www.postfix.org/postconf.5.html#smtp_tls_security_level :
+    #   - "none"  : never attempt STARTTLS.
+    #   - "may"   : opportunistic TLS, no cert verification (Postfix-aligned).
+    #               Suitable default for direct MX delivery, where many public
+    #               MXes serve mismatched or self-signed certs.
+    #   - "secure": mandatory TLS + CA chain + hostname check; defers on
+    #               failure. Use this when running against a controlled relay
+    #               with a valid cert (SMTP AUTH credentials are sent inside
+    #               the TLS tunnel, so an unverified peer is a MITM risk).
     MTA_OUT_SMTP_TLS_SECURITY_LEVEL = values.Value(
         "may", environ_name="MTA_OUT_SMTP_TLS_SECURITY_LEVEL", environ_prefix=None
     )
@@ -1219,7 +1227,7 @@ class Base(Configuration):
             self.MTA_OUT_RELAY_USERNAME = os.environ.get("MTA_OUT_SMTP_USERNAME")
             self.MTA_OUT_RELAY_PASSWORD = os.environ.get("MTA_OUT_SMTP_PASSWORD")
 
-        if self.MTA_OUT_SMTP_TLS_SECURITY_LEVEL not in {"none", "may", "encrypt"}:
+        if self.MTA_OUT_SMTP_TLS_SECURITY_LEVEL not in {"none", "may", "secure"}:
             raise ValueError(
                 f"Invalid MTA_OUT_SMTP_TLS_SECURITY_LEVEL: {self.MTA_OUT_SMTP_TLS_SECURITY_LEVEL}"
             )

@@ -93,7 +93,7 @@ The application uses a new environment file structure with `.defaults` and `.loc
 | `MTA_OUT_RELAY_PASSWORD` | `pass` | Outbound SMTP password for relay mode | Optional |
 | `MTA_OUT_DIRECT_PROXIES` | `[]` | List of SOCKS proxy URLs (randomly chosen when non-empty; used in direct mode) | Optional |
 | `MTA_OUT_DIRECT_PORT` | `25` | TCP port for direct mode on remote MX servers | Optional |
-| `MTA_OUT_SMTP_TLS_SECURITY_LEVEL` | `may` | SMTP TLS security level ("none", "may") | Optional |
+| `MTA_OUT_SMTP_TLS_SECURITY_LEVEL` | `may` | SMTP TLS security level: `none`, `may` (opportunistic, no cert check, matches Postfix), or `secure` (mandatory TLS + CA chain + hostname check). Applied to both direct and relay modes — set to `secure` when running against a controlled relay with a valid cert. | Optional |
 | `MDA_API_SECRET` | `my-shared-secret-mda` | Shared secret for MDA API | Required |
 | `MDA_API_BASE_URL` | `http://backend-dev:8000/api/v1.0/` | Base URL for MDA API | Dev |
 

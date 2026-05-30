@@ -14,7 +14,7 @@ from django.conf import settings
 
 import dns.resolver
 
-from core.mda.smtp import send_smtp_mail
+from core.mda.smtp import SmtpProxy, send_smtp_mail
 
 logger = logging.getLogger(__name__)
 
@@ -85,21 +85,19 @@ def group_recipients_by_mx(recipients: List[str]) -> Dict[str, Dict[str, Any]]:
     return domain_map
 
 
-def select_smtp_proxy() -> Dict[str, Any]:
-    """
-    Select an SMTP proxy to use for sending messages.
-    """
+def select_smtp_proxy() -> Optional[SmtpProxy]:
+    """Pick a SOCKS5 proxy at random from MTA_OUT_DIRECT_PROXIES, if any."""
     if len(settings.MTA_OUT_DIRECT_PROXIES) > 0:
-        proxy = random.choice(settings.MTA_OUT_DIRECT_PROXIES)  # noqa: S311
-        parsed = urlparse(proxy)
-        return {
-            "proxy_host": parsed.hostname,
-            "proxy_port": parsed.port,
-            "proxy_username": parsed.username,
-            "proxy_password": parsed.password,
-            "sender_hostname": parsed.hostname,
-        }
-    return {}
+        url = random.choice(settings.MTA_OUT_DIRECT_PROXIES)  # noqa: S311
+        parsed = urlparse(url)
+        return SmtpProxy(
+            host=parsed.hostname,
+            port=parsed.port,
+            username=parsed.username,
+            password=parsed.password,
+            sender_hostname=parsed.hostname,
+        )
+    return None
 
 
 def send_message_via_mx(envelope_from, recipient_emails, mime_data) -> Dict[str, Any]:
@@ -151,8 +149,6 @@ def send_message_via_mx(envelope_from, recipient_emails, mime_data) -> Dict[str,
                 remaining_recipients,
             )
 
-            proxy_settings = select_smtp_proxy()
-
             # Use direct SMTP, no auth
             smtp_statuses = send_smtp_mail(
                 smtp_host=mx_hostname,
@@ -161,7 +157,8 @@ def send_message_via_mx(envelope_from, recipient_emails, mime_data) -> Dict[str,
                 envelope_from=envelope_from,
                 recipient_emails=remaining_recipients.copy(),
                 message_content=mime_data,
-                **proxy_settings,
+                smtp_tls_security_level=settings.MTA_OUT_SMTP_TLS_SECURITY_LEVEL,
+                proxy=select_smtp_proxy(),
             )
 
             # Process results and update remaining recipients

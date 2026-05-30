@@ -754,6 +754,7 @@ def send_outbound_email(
             message_content=mime_data,
             smtp_username=mta_out_smtp_username,
             smtp_password=mta_out_smtp_password,
+            smtp_tls_security_level=settings.MTA_OUT_SMTP_TLS_SECURITY_LEVEL,
         )
         return statuses
 

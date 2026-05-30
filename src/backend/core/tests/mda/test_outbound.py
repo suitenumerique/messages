@@ -16,6 +16,7 @@ import rest_framework as drf
 from core import enums, factories, models
 from core.mda import outbound
 from core.mda.signing import generate_dkim_key, sign_message_dkim
+from core.mda.smtp import SmtpProxy
 
 SCHEMA_CUSTOM_ATTRIBUTES = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -347,6 +348,14 @@ class TestSendOutboundMessage:
 
         sorted_calls = sorted(mock_smtp_send.mock_calls, key=lambda x: x[2]["smtp_ip"])
 
+        expected_proxy = SmtpProxy(
+            host="smtp.proxy",
+            port=1080,
+            username="proxyuser",
+            password="proxyuser",
+            sender_hostname="smtp.proxy",
+        )
+
         # Check first call - to@example.com, cc@example.com, cc2@example.com to mx1.example.com
         assert sorted_calls[0] == call(
             smtp_host="mx1.example.com",
@@ -355,11 +364,8 @@ class TestSendOutboundMessage:
             envelope_from=draft_message.sender.email,
             recipient_emails={"to@example.com", "cc@example.com", "cc2@example.com"},
             message_content=draft_message.blob.get_content(),
-            proxy_host="smtp.proxy",
-            proxy_port=1080,
-            proxy_username="proxyuser",
-            proxy_password="proxyuser",
-            sender_hostname="smtp.proxy",
+            smtp_tls_security_level="may",
+            proxy=expected_proxy,
         )
 
         # Check second call - cc@example.com, to@example.com retry to mx2.example.com
@@ -370,11 +376,8 @@ class TestSendOutboundMessage:
             envelope_from=draft_message.sender.email,
             recipient_emails={"cc@example.com", "to@example.com"},
             message_content=draft_message.blob.get_content(),
-            proxy_host="smtp.proxy",
-            proxy_port=1080,
-            proxy_username="proxyuser",
-            proxy_password="proxyuser",
-            sender_hostname="smtp.proxy",
+            smtp_tls_security_level="may",
+            proxy=expected_proxy,
         )
 
         # Check third call - bcc@example2.com to mx1.example2.com
@@ -385,11 +388,8 @@ class TestSendOutboundMessage:
             envelope_from=draft_message.sender.email,
             recipient_emails={"bcc@example2.com"},
             message_content=draft_message.blob.get_content(),
-            proxy_host="smtp.proxy",
-            proxy_port=1080,
-            proxy_username="proxyuser",
-            proxy_password="proxyuser",
-            sender_hostname="smtp.proxy",
+            smtp_tls_security_level="may",
+            proxy=expected_proxy,
         )
 
     @patch("core.mda.outbound_direct.dns.resolver.resolve")
