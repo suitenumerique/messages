@@ -9,9 +9,17 @@ import { SILENT_LOGIN_RETRY_INTERVAL, SILENT_LOGIN_RETRY_KEY } from "../config/c
  * to the current window location
  */
 const silentLogin = () => {
+    const FORWARDABLE_OIDC_PARAMS = ['idp_hint', 'login_hint']
+    const searchParams = new URLSearchParams(window.location.search);
   window.location.replace(getRequestUrl("/api/v1.0/authenticate/", {
     silent: "true",
-    returnTo: window.location.href,
+    next: window.location.href,
+    ...FORWARDABLE_OIDC_PARAMS.reduce((params, key) => {
+        if (searchParams.get(key)) {
+            return { ...params, [key]: searchParams.get(key)}
+        }
+        return params;
+    }, {})
   }));
 };
 

@@ -14,8 +14,37 @@ export const logout = () => {
   window.location.replace(getRequestUrl("/api/v1.0/logout/"));
 };
 
-export const login = () => {
-  window.location.replace(getRequestUrl("/api/v1.0/authenticate/"));
+/**
+ * Restricts the post-login redirect to the current site origin to prevent
+ * open redirects. Accepts a relative path or absolute URL; returns an
+ * absolute URL on the current origin, or undefined if the input is malformed
+ * or off-origin.
+ */
+const sanitizeNextUrl = (raw?: string): string | undefined => {
+  if (!raw) return undefined;
+  try {
+    const absolute = new URL(raw, window.location.origin);
+    if (absolute.origin !== window.location.origin) return undefined;
+    return absolute.href;
+  } catch {
+    return undefined;
+  }
+};
+
+export const login = (nextUrl?: string) => {
+    const safeNext = sanitizeNextUrl(nextUrl);
+    const FORWARDABLE_OIDC_PARAMS = ['idp_hint', 'login_hint'];
+    const searchParams = new URLSearchParams(window.location.search);
+    const params = safeNext ? { next: safeNext } : undefined;
+    window.location.replace(getRequestUrl("/api/v1.0/authenticate/", {
+        ...params,
+        ...FORWARDABLE_OIDC_PARAMS.reduce((params, key) => {
+            if (searchParams.get(key)) {
+                return { ...params, [key]: searchParams.get(key)}
+            }
+          return params;
+        }, {})
+  }));
 };
 
 interface AuthContextInterface {
