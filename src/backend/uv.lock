@@ -594,7 +594,7 @@ wheels = [
 
 [[package]]
 name = "django-lasuite"
-version = "0.0.24"
+version = "0.0.26"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
@@ -605,9 +605,9 @@ dependencies = [
     { name = "requests" },
     { name = "requests-toolbelt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/53/dc/4002ba20b964237a609628d53b950c5aecf6387119058831e0ee33176f59/django_lasuite-0.0.24.tar.gz", hash = "sha256:3231b0178a2187405c8faae447225c5dd069263a9a09e73e2a36427be4bf2388", size = 34293, upload-time = "2026-02-11T12:25:42.558Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5a/d7/6c022ff6b2e5c6f7226005c5f62920763ddb9ae2d4948b6af6d206314036/django_lasuite-0.0.26.tar.gz", hash = "sha256:b4ffb15d3e56e366d71b527195d26198e2d26e28cc1ab1c11aefdc581db9c02b", size = 34952, upload-time = "2026-04-03T14:02:33.957Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5d/90/9170b8f443ab5d34b32d7cd386ce3b38ca35baae966da4a1d77b4f4ab3d2/django_lasuite-0.0.24-py3-none-any.whl", hash = "sha256:c37e0b3606a23fd4094ca435fa4edf7a64d325be64b0310fa6577f75d515d856", size = 52620, upload-time = "2026-02-11T12:25:40.626Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/ab/18a1505061b536616ea4b9f75154042116ca4f1a9f64467f5a3549c686d2/django_lasuite-0.0.26-py3-none-any.whl", hash = "sha256:ba812e643eae3f55a50a69bf09eaa3b8ffa4fe9dd3296b8e27b4f7bbc25e3400", size = 54158, upload-time = "2026-04-03T14:02:32.691Z" },
 ]
 
 [package.optional-dependencies]
@@ -1204,7 +1204,7 @@ requires-dist = [
     { name = "django-extensions", marker = "extra == 'dev'", specifier = "==4.1" },
     { name = "django-fernet-encrypted-fields", specifier = "==0.3.1" },
     { name = "django-filter", specifier = "==25.2" },
-    { name = "django-lasuite", extras = ["all"], specifier = "==0.0.24" },
+    { name = "django-lasuite", extras = ["all"], specifier = "==0.0.26" },
     { name = "django-prometheus", specifier = "==2.4.1" },
     { name = "django-redis", specifier = "==6.0.0" },
     { name = "django-storages", specifier = "==1.14.6" },
