@@ -36,7 +36,7 @@ Switching production from one to the other only requires re-pointing the inbound
 
 ## Running
 
-```
+```bash
 # Default Postfix-based service
 make test-mta-in
 make lint-mta-in

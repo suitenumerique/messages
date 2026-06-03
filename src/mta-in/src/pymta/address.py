@@ -141,6 +141,12 @@ def validate_envelope_address(
     # Allow IDN/UTF-8 in the domain; reject empty labels, leading dot, label
     # > 63 octets, and bare IP literals (the inbound path expects FQDNs from
     # legitimate senders).
+    if domain.startswith("[") and domain.endswith("]"):
+        raise AddressError(
+            reason="bad_address",
+            smtp_code=501,
+            smtp_text="5.1.3 Malformed domain",
+        )
     if domain.startswith(".") or domain.endswith(".") or ".." in domain:
         raise AddressError(
             reason="bad_address",

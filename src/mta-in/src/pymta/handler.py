@@ -174,7 +174,7 @@ class InboundHandler:
         # this single TCP session.
         if getattr(session, _SOFT_ERRORS_ATTR, 0) >= settings.PYMTA_HARD_ERROR_LIMIT:
             metrics.SECURITY_REJECTIONS.labels(reason="hard_error_limit").inc()
-            metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
+            metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
             return "421 4.7.0 Too many errors, goodbye"
 
         # Per-envelope recipient cap.
@@ -223,7 +223,7 @@ class InboundHandler:
         envelopes = _bump_envelopes(session)
         if envelopes > settings.PYMTA_MAX_ENVELOPES_PER_CONNECTION:
             metrics.SECURITY_REJECTIONS.labels(reason="max_envelopes").inc()
-            metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
+            metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
             return "451 4.7.0 Too many messages this session"
 
         content: bytes = envelope.content or b""

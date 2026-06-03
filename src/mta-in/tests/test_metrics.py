@@ -32,7 +32,9 @@ def _metric_value(scrape_text: str, prefix: str) -> float:
             continue
         # Format: `name{labels} value [timestamp]`  or  `name value`
         if line.startswith(prefix):
-            value = line.rsplit(" ", 1)[1]
+            parts = line.split()
+            # 2 tokens → name value; 3+ tokens → name value timestamp.
+            value = parts[-2] if len(parts) >= 3 else parts[-1]
             try:
                 total += float(value)
             except ValueError:

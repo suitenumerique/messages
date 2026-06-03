@@ -311,6 +311,7 @@ def test_unknown_command_flood_does_not_hang(mta_impl):
             except OSError:
                 # Server closed the connection — that is the expected defense.
                 return
+        pytest.fail("server accepted 200 unknown commands without disconnecting")
     finally:
         s.close()
 

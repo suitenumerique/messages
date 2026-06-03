@@ -50,7 +50,7 @@ def build_smtp_kwargs(*, tls_context: ssl.SSLContext | None) -> dict:
         # Plaintext AUTH on port 25 is unsafe; AUTH stays off entirely.
         "auth_require_tls": True,
         "auth_required": False,
-        "auth_exclude_mechanism": ("LOGIN", "PLAIN"),
+        "auth_exclude_mechanism": ("LOGIN", "PLAIN"),  # ggignore
     }
 
 
