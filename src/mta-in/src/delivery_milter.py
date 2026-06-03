@@ -6,6 +6,7 @@ This milter processes messages before they are queued and performs
 delivery immediately. If delivery fails, the SMTP session is rejected.
 """
 
+import grp
 import json
 import os
 import sys
@@ -166,6 +167,14 @@ def main():
 
     # Create directory if it doesn't exist
     os.makedirs("/var/spool/postfix/milter", exist_ok=True)
+
+    # Ensure the socket is born group=postfix mode 0660 — libmilter may unlink
+    # and rebind during startup, racing any chown/chmod done from the outside.
+    try:
+        os.setgid(grp.getgrnam("postfix").gr_gid)
+    except (KeyError, OSError) as e:
+        print(f"Warning: could not set gid to postfix: {e}", file=sys.stderr)
+    os.umask(0o117)
 
     # Register our milter class
     Milter.factory = DeliveryMilter

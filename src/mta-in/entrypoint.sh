@@ -47,26 +47,19 @@ postfix check -v || exit 1
 
 echo "Starting delivery milter in background..."
 
-# Create milter socket directory with proper permissions
-mkdir -p /var/spool/postfix/milter
-chown postfix:postfix /var/spool/postfix/milter
-chmod 755 /var/spool/postfix/milter
-
 /venv/bin/python3 /app/src/delivery_milter.py &
 MILTER_PID=$!
 
-# Wait until the milter is ready, with a maximum of 10 seconds
+# Wait up to 10s for the milter to bind its socket before starting postfix.
+# Socket ownership/mode are set by the milter process itself (setgid + umask).
 for i in {1..10}; do
     if [ -S /var/spool/postfix/milter/delivery.sock ]; then
-        chown postfix:postfix /var/spool/postfix/milter/delivery.sock
-        chmod 660 /var/spool/postfix/milter/delivery.sock
         echo "Milter socket ready"
         break
     fi
     sleep 1
 done
 
-# If socket still doesn't exist, exit
 if [ ! -S /var/spool/postfix/milter/delivery.sock ]; then
     echo "ERROR: Milter socket not found"
     exit 1
