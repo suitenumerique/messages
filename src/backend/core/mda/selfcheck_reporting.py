@@ -47,15 +47,33 @@ def log_selfcheck_result(result: SelfCheckResult):
         )
 
 
+def _sentry_crons_enabled() -> bool:
+    """Whether Sentry cron reporting is enabled and usable.
+
+    Warns once per call when a slug is configured without ``SENTRY_DSN``
+    — without the DSN, ``capture_checkin`` silently no-ops, so the
+    operator would otherwise see "missed" alerts in Sentry with no
+    hint as to why.
+    """
+    if not settings.MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG:
+        return False
+    if not settings.SENTRY_DSN:
+        logger.warning(
+            "MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG is set but SENTRY_DSN is "
+            "not — selfcheck Sentry cron check-in skipped."
+        )
+        return False
+    return True
+
+
 def start_sentry_checkin() -> Optional[str]:
     """Open a Sentry cron check-in if configured. Returns the check_in_id."""
-    slug = settings.MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG
-    if not slug:
+    if not _sentry_crons_enabled():
         return None
 
     try:
         return capture_checkin(
-            monitor_slug=slug,
+            monitor_slug=settings.MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG,
             status=MonitorStatus.IN_PROGRESS,
         )
     except Exception:  # pylint: disable=broad-exception-caught
@@ -70,8 +88,9 @@ def finish_sentry_checkin(check_in_id: Optional[str], result: SelfCheckResult):
     known — Sentry would otherwise infer it from the check-in timestamp
     delta, which also includes the post-run cleanup sleep.
     """
-    slug = settings.MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG
-    if not slug or not check_in_id:
+    # Short-circuit on check_in_id first so the misconfig warning from
+    # _sentry_crons_enabled() fires at most once per run (from start).
+    if not check_in_id or not _sentry_crons_enabled():
         return
 
     status = MonitorStatus.OK if result["success"] else MonitorStatus.ERROR
@@ -84,7 +103,7 @@ def finish_sentry_checkin(check_in_id: Optional[str], result: SelfCheckResult):
     )
     try:
         capture_checkin(
-            monitor_slug=slug,
+            monitor_slug=settings.MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG,
             check_in_id=check_in_id,
             status=status,
             duration=duration,

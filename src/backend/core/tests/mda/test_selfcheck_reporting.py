@@ -121,6 +121,7 @@ class TestSendSelfcheckWebhook(TestCase):
 
 
 SENTRY_SLUG = "messages-selfcheck"
+SENTRY_DSN = "https://public@sentry.example.com/1"
 
 
 class TestStartSentryCheckin(TestCase):
@@ -133,7 +134,27 @@ class TestStartSentryCheckin(TestCase):
         self.assertIsNone(start_sentry_checkin())
         mock_capture.assert_not_called()
 
-    @override_settings(MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG)
+    @override_settings(
+        MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG, SENTRY_DSN=None
+    )
+    @patch("core.mda.selfcheck_reporting.capture_checkin")
+    def test_warns_and_skips_when_dsn_missing(self, mock_capture):
+        """Slug set without SENTRY_DSN: warn loudly and skip the call."""
+        with self.assertLogs("core.mda.selfcheck_reporting", level="WARNING") as cm:
+            self.assertIsNone(start_sentry_checkin())
+
+        mock_capture.assert_not_called()
+        self.assertTrue(
+            any(
+                "MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG is set but SENTRY_DSN is not"
+                in line
+                for line in cm.output
+            )
+        )
+
+    @override_settings(
+        MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG, SENTRY_DSN=SENTRY_DSN
+    )
     @patch("core.mda.selfcheck_reporting.capture_checkin")
     def test_opens_in_progress_checkin(self, mock_capture):
         """Sends IN_PROGRESS check-in and returns the check_in_id."""
@@ -147,7 +168,9 @@ class TestStartSentryCheckin(TestCase):
             status="in_progress",
         )
 
-    @override_settings(MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG)
+    @override_settings(
+        MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG, SENTRY_DSN=SENTRY_DSN
+    )
     @patch("core.mda.selfcheck_reporting.capture_checkin")
     def test_error_swallowed(self, mock_capture):
         """Failure in capture_checkin logs a warning and returns None."""
@@ -173,14 +196,32 @@ class TestFinishSentryCheckin(TestCase):
         finish_sentry_checkin("abc123", SUCCESS_RESULT)
         mock_capture.assert_not_called()
 
-    @override_settings(MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG)
+    @override_settings(
+        MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG, SENTRY_DSN=SENTRY_DSN
+    )
     @patch("core.mda.selfcheck_reporting.capture_checkin")
     def test_noop_when_check_in_id_missing(self, mock_capture):
         """No Sentry call when start_sentry_checkin returned None."""
         finish_sentry_checkin(None, SUCCESS_RESULT)
         mock_capture.assert_not_called()
 
-    @override_settings(MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG)
+    @override_settings(
+        MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG, SENTRY_DSN=None
+    )
+    @patch("core.mda.selfcheck_reporting.capture_checkin")
+    def test_skips_when_dsn_missing(self, mock_capture):
+        """Slug set without SENTRY_DSN: skip the call.
+
+        (No warning expected here — start_sentry_checkin already warned and
+        returned None, so finish_sentry_checkin short-circuits on
+        check_in_id before the misconfig check.)
+        """
+        finish_sentry_checkin("abc123", SUCCESS_RESULT)
+        mock_capture.assert_not_called()
+
+    @override_settings(
+        MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG, SENTRY_DSN=SENTRY_DSN
+    )
     @patch("core.mda.selfcheck_reporting.capture_checkin")
     def test_ok_with_duration_on_success(self, mock_capture):
         """OK status with send+reception duration on success."""
@@ -193,7 +234,9 @@ class TestFinishSentryCheckin(TestCase):
             duration=0.150 + 2.340,
         )
 
-    @override_settings(MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG)
+    @override_settings(
+        MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG, SENTRY_DSN=SENTRY_DSN
+    )
     @patch("core.mda.selfcheck_reporting.capture_checkin")
     def test_error_without_duration_on_failure(self, mock_capture):
         """ERROR status and no duration when timing data is missing."""
@@ -206,7 +249,9 @@ class TestFinishSentryCheckin(TestCase):
             duration=None,
         )
 
-    @override_settings(MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG)
+    @override_settings(
+        MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG=SENTRY_SLUG, SENTRY_DSN=SENTRY_DSN
+    )
     @patch("core.mda.selfcheck_reporting.capture_checkin")
     def test_error_swallowed(self, mock_capture):
         """Failure in capture_checkin logs a warning, no raise."""
