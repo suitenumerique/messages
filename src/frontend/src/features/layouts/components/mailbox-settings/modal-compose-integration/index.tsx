@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useState, useEffect } from "react";
 import { Channel, Mailbox } from "@/features/api/gen";
 import { WidgetIntegrationForm } from "./widget-integration-form";
+import { WebhookIntegrationForm } from "./webhook-integration-form";
 import { useConfig } from "@/features/providers/config";
 import i18n from "@/features/i18n/initI18n";
 
@@ -16,7 +17,7 @@ type ModalComposeIntegrationProps = {
     onSuccess?: () => void;
 };
 
-type ChannelType = "widget" | "api_key";
+type ChannelType = "widget" | "api_key" | "webhook";
 type ViewState = "select_type" | "form";
 
 type ChannelTypeCardProps = {
@@ -48,6 +49,12 @@ const CHANNEL_TYPE_METADATA: Record<ChannelType, ChannelTypeMetadata> = {
         description: i18n.t("Generate an API key to send messages programmatically from your applications."),
         icon: "key",
         disabled: true
+    },
+    webhook: {
+        type: "webhook",
+        title: i18n.t("Outbound Webhook"),
+        description: i18n.t("Forward every incoming message to a URL of your choice as a JSON POST."),
+        icon: "webhook",
     },
 };
 
@@ -150,6 +157,9 @@ export const ModalComposeIntegration = ({
         else if (selectedType === "widget") {
             label = isEditing ? t("Edit Widget") : t("Create a Widget");
         }
+        else if (selectedType === "webhook") {
+            label = isEditing ? t("Edit Webhook") : t("Create a Webhook");
+        }
         else {
             label = t("Integrations");
         }
@@ -195,6 +205,14 @@ export const ModalComposeIntegration = ({
                 )}
                 {viewState === "form" && selectedType === "widget" && (
                     <WidgetIntegrationForm
+                        mailbox={mailbox}
+                        channel={currentChannel}
+                        onSuccess={handleSuccess}
+                        onClose={onClose}
+                    />
+                )}
+                {viewState === "form" && selectedType === "webhook" && (
+                    <WebhookIntegrationForm
                         mailbox={mailbox}
                         channel={currentChannel}
                         onSuccess={handleSuccess}

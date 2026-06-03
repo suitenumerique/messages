@@ -26,6 +26,8 @@ const getChannelTypeLabel = (type: string | undefined, t: (key: string) => strin
             return t("Widget");
         case "api_key":
             return t("API Key");
+        case "webhook":
+            return t("Webhook");
         default:
             return type;
     }
@@ -37,6 +39,8 @@ const getChannelTypeIcon = (type: string | undefined) => {
             return "widgets";
         case "api_key":
             return "key";
+        case "webhook":
+            return "webhook";
         default:
             return "integration_instructions";
     }

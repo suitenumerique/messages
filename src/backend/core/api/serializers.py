@@ -4,6 +4,7 @@
 import hashlib
 import json
 import uuid
+from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -15,6 +16,11 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from core import enums, models
+from core.mda.dispatch_webhooks import (
+    PHASE_AFTER_SPAM,
+    VALID_FORMATS,
+    VALID_PHASES,
+)
 from core.mda.inline_images import extract_inline_images_html
 from core.services.blob_gc import schedule_for_gc
 from core.services.identity import keycloak as keycloak_service
@@ -1995,25 +2001,40 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         # the plaintext ``settings`` JSONField — a DB read would otherwise
         # surface every user's CalDAV password.
         enums.ChannelTypes.CALDAV: ["username", "password"],
+        # The outgoing webhook secret is generated server-side and
+        # written straight to ``encrypted_settings["secret"]``; callers
+        # must never smuggle their own value in via ``settings``. The
+        # same bytes back both auth methods (JWT/HMAC and API key) —
+        # see ``Channel.rotate_secret``.
+        enums.ChannelTypes.WEBHOOK: ["secret"],
     }
 
+    # Channel types that mint a plaintext secret on create. The
+    # viewset surfaces the minted value via the right response key
+    # (api_key for api_key channels, webhook_secret / webhook_api_key
+    # for webhook channels per ``settings.auth_method``).
+    _ROTATABLE_TYPES = frozenset(
+        {enums.ChannelTypes.API_KEY, enums.ChannelTypes.WEBHOOK}
+    )
+
     def create(self, validated_data):
-        # For api_key channels, mint the secret on a transient instance so
-        # the resulting ``encrypted_settings`` rides through the normal
-        # ``super().create()`` save path. The plaintext is stashed on the
-        # saved row for ChannelViewSet.create() to surface exactly once,
-        # mirroring the ``_generated_password`` pattern at channel.py:68-74.
-        generated_api_key = None
-        if validated_data.get("type") == enums.ChannelTypes.API_KEY:
+        # Mint the per-type secret on a transient instance so the
+        # resulting ``encrypted_settings`` rides through the normal
+        # ``super().create()`` save path. The plaintext (when one
+        # exists at rest — only api_key channels store it indirectly
+        # via a hash) is stashed on the saved row for
+        # ``ChannelViewSet.create()`` to surface exactly once.
+        plaintext = None
+        if validated_data.get("type") in self._ROTATABLE_TYPES:
             transient = models.Channel(**validated_data)
-            generated_api_key = transient.rotate_api_key(save=False)
+            plaintext = transient.rotate_secret(save=False)
             validated_data["encrypted_settings"] = transient.encrypted_settings
 
         instance = super().create(validated_data)
 
         # pylint: disable=protected-access
-        if generated_api_key is not None:
-            instance._generated_api_key = generated_api_key  # noqa: SLF001
+        if plaintext is not None and instance.type == enums.ChannelTypes.API_KEY:
+            instance._generated_api_key = plaintext  # noqa: SLF001
         return instance
 
     def validate_settings(self, value):
@@ -2204,6 +2225,22 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"settings": "webhook settings.url must be http:// or https://"}
             )
+        # Each POST carries the HMAC/JWT signing material in its headers,
+        # so plaintext http would leak credentials in transit. Require
+        # https except for a local-dev escape hatch: a loopback host, or
+        # DEBUG (where operators routinely point at a local receiver).
+        parsed_url = urlparse(url)
+        host = (parsed_url.hostname or "").lower()
+        is_loopback = host in ("localhost", "127.0.0.1", "::1")
+        if parsed_url.scheme != "https" and not (settings.DEBUG or is_loopback):
+            raise serializers.ValidationError(
+                {
+                    "settings": (
+                        "webhook settings.url must use https:// "
+                        "(http:// is only allowed for localhost)."
+                    )
+                }
+            )
 
         events = settings_data.get("events")
         if not events or not isinstance(events, list):
@@ -2216,6 +2253,45 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         if unknown:
             raise serializers.ValidationError(
                 {"settings": f"Unknown webhook events: {unknown}"}
+            )
+
+        # Optional dispatcher knobs. Validated here so a malformed PATCH
+        # to ``settings`` can't strand a webhook channel in a state the
+        # dispatcher silently treats as defaults.
+        phase = settings_data.get("phase", PHASE_AFTER_SPAM)
+        if phase not in VALID_PHASES:
+            raise serializers.ValidationError(
+                {
+                    "settings": (
+                        f"webhook settings.phase must be one of: "
+                        f"{', '.join(sorted(VALID_PHASES))}."
+                    )
+                }
+            )
+        body_format = settings_data.get("format", "eml")
+        if body_format not in VALID_FORMATS:
+            raise serializers.ValidationError(
+                {
+                    "settings": (
+                        f"webhook settings.format must be one of: "
+                        f"{', '.join(sorted(VALID_FORMATS))}."
+                    )
+                }
+            )
+        if "blocking" in settings_data and not isinstance(
+            settings_data["blocking"], bool
+        ):
+            raise serializers.ValidationError(
+                {"settings": "webhook settings.blocking must be a boolean."}
+            )
+        if settings_data.get("auth_method") not in ("jwt", "api_key"):
+            raise serializers.ValidationError(
+                {
+                    "settings": (
+                        "webhook settings.auth_method is required and must "
+                        "be 'jwt' or 'api_key'."
+                    )
+                }
             )
 
     def validate(self, attrs):
@@ -2277,6 +2353,47 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         self._validate_api_key_scopes(attrs)
         self._validate_webhook_settings(attrs)
         return attrs
+
+
+class ChannelCreateResponseSerializer(ChannelSerializer):
+    """Schema-only view of the channel-create 201 response.
+
+    ``ChannelViewSet.create`` returns the full ``ChannelSerializer``
+    payload plus the freshly-minted plaintext credentials — surfaced
+    exactly once on creation and never retrievable again. They are
+    declared here as read-only fields so generated API clients see them
+    in the OpenAPI schema. This serializer is never used to serialize a
+    response directly; the view assembles the body by hand.
+    """
+
+    api_key = serializers.CharField(
+        read_only=True,
+        required=False,
+        help_text="api_key channels only — the plaintext API key.",
+    )
+    password = serializers.CharField(
+        read_only=True,
+        required=False,
+        help_text="Plaintext password, when the channel type mints one.",
+    )
+    webhook_secret = serializers.CharField(
+        read_only=True,
+        required=False,
+        help_text="webhook channels with auth_method=jwt — the HMAC/JWT signing secret.",
+    )
+    webhook_api_key = serializers.CharField(
+        read_only=True,
+        required=False,
+        help_text="webhook channels with auth_method=api_key — the derived API key.",
+    )
+
+    class Meta(ChannelSerializer.Meta):
+        fields = ChannelSerializer.Meta.fields + [
+            "api_key",
+            "password",
+            "webhook_secret",
+            "webhook_api_key",
+        ]
 
 
 class MessageTemplateSerializer(serializers.ModelSerializer):

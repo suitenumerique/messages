@@ -223,6 +223,20 @@ class SSRFSafeSession:
 
         return valid_ips[0], parsed.hostname, parsed.scheme, port
 
+    def _pinned_session(self, url: str) -> tuple[requests.Session, str]:
+        """Return an SSRF-pinned Session bound to ``url``'s validated IP."""
+        validated_ip, hostname, scheme, port = self._validate_and_unpack(url)
+        session = requests.Session()
+        adapter = SSRFProtectedAdapter(
+            dest_ip=validated_ip,
+            dest_port=port,
+            original_hostname=hostname,
+            original_scheme=scheme,
+        )
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        return session, hostname
+
     def get(self, url: str, timeout: int, **kwargs) -> requests.Response:
         """Perform a safe HTTP GET with per-hop SSRF validation on redirects.
 
@@ -237,19 +251,7 @@ class SSRFSafeSession:
 
         current_url = url
         for _ in range(MAX_REDIRECTS + 1):
-            validated_ip, hostname, scheme, port = self._validate_and_unpack(
-                current_url
-            )
-
-            session = requests.Session()
-            adapter = SSRFProtectedAdapter(
-                dest_ip=validated_ip,
-                dest_port=port,
-                original_hostname=hostname,
-                original_scheme=scheme,
-            )
-            session.mount("http://", adapter)
-            session.mount("https://", adapter)
+            session, _ = self._pinned_session(current_url)
 
             response = session.get(
                 current_url, timeout=timeout, allow_redirects=False, **kwargs
@@ -268,3 +270,15 @@ class SSRFSafeSession:
             current_url = next_url
 
         raise SSRFValidationError(f"Too many redirects (max {MAX_REDIRECTS})")
+
+    def post(self, url: str, timeout: int, **kwargs) -> requests.Response:
+        """Perform a safe HTTP POST.
+
+        Redirects are NOT followed: webhook providers conventionally don't
+        chase 3xx on POST, and silently turning a 30x into a follow-up GET
+        (which is what most clients do for 301/302/303) would surprise the
+        caller. A 3xx is returned to the caller as-is.
+        """
+        kwargs.pop("allow_redirects", None)
+        session, _ = self._pinned_session(url)
+        return session.post(url, timeout=timeout, allow_redirects=False, **kwargs)

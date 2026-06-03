@@ -566,3 +566,135 @@ class TestChannelReservedSettingsKeys:
         # we still assert the encrypted_settings shape).
         assert "api_key_hashes" in channel.encrypted_settings
         assert "api_key_hashes" not in channel.settings
+
+
+@pytest.mark.django_db
+class TestWebhookChannelSettings:
+    """Validation of the outbound-webhook-specific settings fields."""
+
+    URL_KEY = "url"
+
+    def _post(self, api_client, mailbox, settings):
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        return api_client.post(
+            url,
+            data={
+                "name": "wh",
+                "type": "webhook",
+                "settings": settings,
+            },
+            format="json",
+        )
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    def test_create_minimal_webhook(self, api_client, mailbox):
+        response = self._post(
+            api_client,
+            mailbox,
+            {
+                "url": "https://hook.example.com/in",
+                "events": ["message.received"], "auth_method": "jwt",
+            },
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.content
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    def test_create_with_all_dispatcher_options(self, api_client, mailbox):
+        response = self._post(
+            api_client,
+            mailbox,
+            {
+                "url": "https://hook.example.com/in",
+                "events": ["message.received"], "auth_method": "jwt",
+                "phase": "before_spam",
+                "blocking": True,
+                "format": "jmap",
+            },
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.content
+        channel = models.Channel.objects.get(id=response.data["id"])
+        assert channel.settings["phase"] == "before_spam"
+        assert channel.settings["blocking"] is True
+        assert channel.settings["format"] == "jmap"
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    def test_rejects_invalid_format(self, api_client, mailbox):
+        response = self._post(
+            api_client,
+            mailbox,
+            {
+                "url": "https://hook.example.com/in",
+                "events": ["message.received"], "auth_method": "jwt",
+                "format": "yaml",
+            },
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    def test_accepts_jmap_without_body_format(self, api_client, mailbox):
+        response = self._post(
+            api_client,
+            mailbox,
+            {
+                "url": "https://hook.example.com/in",
+                "events": ["message.received"], "auth_method": "jwt",
+                "format": "jmap_without_body",
+            },
+        )
+        assert response.status_code == status.HTTP_201_CREATED, response.content
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    def test_rejects_invalid_phase(self, api_client, mailbox):
+        response = self._post(
+            api_client,
+            mailbox,
+            {
+                "url": "https://hook.example.com/in",
+                "events": ["message.received"], "auth_method": "jwt",
+                "phase": "whenever",
+            },
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    def test_rejects_non_bool_blocking(self, api_client, mailbox):
+        response = self._post(
+            api_client,
+            mailbox,
+            {
+                "url": "https://hook.example.com/in",
+                "events": ["message.received"], "auth_method": "jwt",
+                "blocking": "yes",
+            },
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["webhook"])
+    def test_rejects_patch_with_invalid_phase(self, api_client, mailbox):
+        """A PATCH that touches only ``settings`` must still re-run the
+        webhook validator (same airtight rule as api_key scopes)."""
+        create = self._post(
+            api_client,
+            mailbox,
+            {
+                "url": "https://hook.example.com/in",
+                "events": ["message.received"], "auth_method": "jwt",
+            },
+        )
+        assert create.status_code == status.HTTP_201_CREATED, create.content
+        url = reverse(
+            "mailbox-channels-detail",
+            kwargs={"mailbox_id": mailbox.id, "pk": create.data["id"]},
+        )
+        response = api_client.patch(
+            url,
+            data={
+                "settings": {
+                    "url": "https://hook.example.com/in",
+                    "events": ["message.received"], "auth_method": "jwt",
+                    "phase": "bogus",
+                }
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST

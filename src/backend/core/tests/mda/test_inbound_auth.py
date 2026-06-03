@@ -603,7 +603,7 @@ class TestProcessInboundMessageAuthIntegration:
     """End-to-end: a verdict prepends X-StMsg-Sender-Auth with its value."""
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "native"})
-    @patch("core.mda.inbound_tasks.check_inbound_authentication")
+    @patch("core.mda.inbound_pipeline.check_inbound_authentication")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_unverified_verdict_injects_none_header(
         self, mock_create_message, mock_auth_check
@@ -630,7 +630,7 @@ class TestProcessInboundMessageAuthIntegration:
         ] == ["none"]
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "rspamd"})
-    @patch("core.mda.inbound_tasks.check_inbound_authentication")
+    @patch("core.mda.inbound_pipeline.check_inbound_authentication")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_forged_verdict_injects_fail_header(
         self, mock_create_message, mock_auth_check
@@ -656,7 +656,7 @@ class TestProcessInboundMessageAuthIntegration:
         ] == ["fail"]
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "native"})
-    @patch("core.mda.inbound_tasks.check_inbound_authentication")
+    @patch("core.mda.inbound_pipeline.check_inbound_authentication")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_verified_does_not_inject_header(
         self, mock_create_message, mock_auth_check
@@ -681,7 +681,7 @@ class TestProcessInboundMessageAuthIntegration:
             "inbound_auth": "rspamd",
         }
     )
-    @patch("core.mda.inbound_tasks.requests.post")
+    @patch("core.mda.inbound_pipeline.requests.post")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_rspamd_response_reused_by_auth_check(self, mock_create_message, mock_post):
         """Single rspamd call feeds both spam and auth."""
@@ -714,7 +714,7 @@ class TestProcessInboundMessageAuthIntegration:
             "inbound_auth": "rspamd",
         }
     )
-    @patch("core.mda.inbound_tasks.requests.post")
+    @patch("core.mda.inbound_pipeline.requests.post")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_dmarc_fail_injects_fail_header_end_to_end(
         self, mock_create_message, mock_post
@@ -751,7 +751,7 @@ class TestProcessInboundMessageAuthIntegration:
             "rules": [{"header_match": "X-Spam:yes", "action": "ham"}],
         }
     )
-    @patch("core.mda.inbound_tasks.requests.post")
+    @patch("core.mda.inbound_pipeline.requests.post")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_rspamd_fetched_on_demand_when_spam_skipped_rspamd(
         self, mock_create_message, mock_post
@@ -803,11 +803,16 @@ class TestProcessInboundMessageAuthIntegration:
         assert values == ["fail"]
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "native"})
+    @patch("core.mda.inbound_pipeline.parse_email")
     @patch("core.mda.inbound_tasks.parse_email")
-    @patch("core.mda.inbound_tasks.check_inbound_authentication")
+    @patch("core.mda.inbound_pipeline.check_inbound_authentication")
     @patch("core.mda.inbound_tasks._create_message_from_inbound")
     def test_reparse_failure_after_prepend_keeps_views_in_sync(
-        self, mock_create_message, mock_auth_check, mock_parse
+        self,
+        mock_create_message,
+        mock_auth_check,
+        mock_parse_tasks,
+        mock_parse_pipeline,
     ):
         """If re-parsing the prepended bytes blows up, the prepend is dropped.
 
@@ -815,13 +820,17 @@ class TestProcessInboundMessageAuthIntegration:
         diverge, and `Message.get_parsed_data()` later returns {} for the
         whole message because the same bytes fail to parse at display time.
         """
-        # First call: initial parse succeeds. Second: re-parse after prepend fails.
+        # Initial parse (inbound_tasks) succeeds; re-parse in the
+        # inbound_auth_step (inbound_pipeline) raises.
         original_parsed = {
             "headers": [{"name": "from", "value": "a@b"}],
-            "ext": {"headersBlocks": [{}]},
             "from": [{"email": "a@b"}],
         }
-        mock_parse.side_effect = [original_parsed, None]
+        # Initial parse (inbound_tasks) succeeds; the inbound_auth_step
+        # re-parse (inbound_pipeline) returns None — parse_email signals
+        # failure with None rather than raising.
+        mock_parse_tasks.return_value = original_parsed
+        mock_parse_pipeline.return_value = None
         mock_auth_check.return_value = VERDICT_UNVERIFIED
         mock_create_message.return_value = True
 

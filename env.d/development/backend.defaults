@@ -106,6 +106,9 @@ AI_MODEL=
 FEATURE_AI_SUMMARY=False
 FEATURE_AI_AUTOLABELS=False
 
+# Integrations enabled in the integrations modal (mailbox admins)
+FEATURE_MAILBOX_ADMIN_CHANNELS=api_key,widget,webhook
+
 # Third-party services
 # Drive - https://github.com/suitenumerique/drive
 DRIVE_BASE_URL=

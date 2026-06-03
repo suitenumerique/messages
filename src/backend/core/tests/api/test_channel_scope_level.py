@@ -1025,7 +1025,7 @@ class TestUserChannelViewSet:
                 "type": "webhook",
                 "settings": {
                     "url": "https://hook.example.com/me",
-                    "events": ["message.received"],
+                    "events": ["message.received"], "auth_method": "jwt",
                 },
             },
             format="json",
@@ -1081,7 +1081,7 @@ class TestUserDeleteCascade:
 
 @pytest.mark.django_db
 class TestRegenerateApiKey:
-    """The regenerate-api-key action: single-active replace, never append.
+    """The regenerate-secret action: single-active replace, never append.
 
     DRF's only rotation flow. Smooth (dual-active) rotation would happen
     in the Django admin or a future CLI command.
@@ -1099,7 +1099,7 @@ class TestRegenerateApiKey:
 
     def _mailbox_url(self, mailbox, channel):
         return reverse(
-            "mailbox-channels-regenerate-api-key",
+            "mailbox-channels-regenerate-secret",
             kwargs={"mailbox_id": mailbox.id, "pk": channel.id},
         )
 
@@ -1263,7 +1263,7 @@ class TestRegenerateApiKey:
     # ---- /users/me/channels/ -------------------------------------------- #
 
     def _user_url(self, channel):
-        return reverse("user-channels-regenerate-api-key", kwargs={"pk": channel.id})
+        return reverse("user-channels-regenerate-secret", kwargs={"pk": channel.id})
 
     def test_regenerate_personal_api_key(self, api_client):
         user = UserFactory()
