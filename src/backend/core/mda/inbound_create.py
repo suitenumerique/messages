@@ -211,6 +211,8 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
     imap_flags: list[str] | None = None,
     channel: models.Channel | None = None,
     is_spam: bool = False,
+    is_trashed: bool = False,
+    is_archived: bool = False,
     is_outbound: bool = False,
 ) -> models.Message | None:
     """Create a message and thread from parsed email data.
@@ -432,7 +434,8 @@ def _create_message_from_inbound(  # pylint: disable=too-many-arguments
                     sent_at=(None if is_outbound else (sent_at or timezone.now())),
                     is_draft=is_outbound,  # Outbound: draft until prepare_outbound_message finalizes
                     is_sender=is_sender,
-                    is_trashed=False,
+                    is_trashed=is_trashed,
+                    is_archived=is_archived,
                     is_spam=is_spam,
                     has_attachments=len(parsed_email.get("attachments", [])) > 0,
                     channel=channel,

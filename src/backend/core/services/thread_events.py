@@ -314,7 +314,7 @@ def _absorb_unassign_in_undo_window(*, thread, author, assignee_ids, assignees_d
 
 
 @transaction.atomic
-def assign_users(*, thread, author, assignees_data):
+def assign_users(*, thread, author, assignees_data, channel=None):
     """Assign users to ``thread`` by creating ASSIGN events.
 
     - Idempotent: users already holding a ``UserEvent ASSIGN`` on the
@@ -326,6 +326,9 @@ def assign_users(*, thread, author, assignees_data):
     - Persists a single ThreadEvent ASSIGN containing the new assignees
       and creates the matching ``UserEvent`` rows in the same atomic
       transaction.
+    - ``channel`` is attached to the resulting ``ThreadEvent`` for
+      audit attribution. The user-driven paths leave it ``None``;
+      webhook-driven assigns pass the firing webhook ``Channel``.
 
     Returns the persisted ThreadEvent, or ``None`` when nothing was new.
     """
@@ -358,6 +361,7 @@ def assign_users(*, thread, author, assignees_data):
     thread_event = models.ThreadEvent.objects.create(
         thread=thread,
         author=author,
+        channel=channel,
         type=enums.ThreadEventTypeChoices.ASSIGN,
         data={"assignees": new_assignees},
     )

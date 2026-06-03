@@ -1,239 +1,144 @@
-"""Message delivery and processing tasks."""
+"""Message delivery and processing tasks.
 
-# pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught, too-many-lines
+Per-message processing is a pipeline of ``Step``s — see
+``inbound_pipeline.py``. This module is the Celery task wrapper:
+acquire a Redis lock, parse the bytes, build the context + pipeline,
+iterate, and turn the final ``Decision`` into a task return value.
+"""
 
-import re
-from typing import Any
+# pylint: disable=unused-argument, broad-exception-raised, broad-exception-caught
+
+from typing import Any, Dict, Optional
 
 from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
-import requests
 from celery.utils.log import get_task_logger
-from jmap_email import (
-    JmapEmail,
-    first_address_email,
-    has_header,
-    parse_email,
-)
+from jmap_email import JmapEmail, first_address_email, parse_email
 
 from core import models
-from core.mda.inbound_auth import (
-    check_inbound_authentication,
-    get_inbound_auth_mode,
-)
 from core.mda.inbound_create import _create_message_from_inbound
-from core.mda.utils import headers_blocks
+from core.mda.inbound_pipeline import (
+    RETRY_MAX_AGE,
+    Decision,
+    InboundContext,
+    apply_labels_to_thread,
+    apply_pending_assigns,
+    apply_pending_drafts,
+    apply_pending_events,
+    apply_thread_access_flags,
+    build_inbound_pipeline,
+    run_inbound_pipeline,
+)
 
 from messages.celery_app import app as celery_app
 
 logger = get_task_logger(__name__)
 
 
-def _is_selfcheck_message(parsed_email: JmapEmail, recipient_email: str) -> bool:
-    """Return True when this message is the self-check probe.
+def _is_selfcheck(parsed_email: JmapEmail, recipient_email: str) -> bool:
+    """Strict envelope match for the configured self-probe.
 
-    Match is strict on both envelope ends: the From address must equal
-    MESSAGES_SELFCHECK_FROM and the recipient must equal MESSAGES_SELFCHECK_TO.
+    The self-probe is an internal liveness check sent from
+    ``MESSAGES_SELFCHECK_FROM`` to ``MESSAGES_SELFCHECK_TO``. We short-
+    circuit spam checking for it so the probe is never junked, but it
+    still flows through the rest of the pipeline (inbound auth, after-
+    spam webhooks, message creation).
     """
     selfcheck_from = (settings.MESSAGES_SELFCHECK_FROM or "").strip().lower()
     selfcheck_to = (settings.MESSAGES_SELFCHECK_TO or "").strip().lower()
-
     if not selfcheck_from or not selfcheck_to:
         return False
 
     from_email = first_address_email(parsed_email.get("from")).strip().lower()
     if from_email != selfcheck_from:
         return False
-
     return (recipient_email or "").strip().lower() == selfcheck_to
 
 
-def _check_spam_with_hardcoded_rules(
-    parsed_email: JmapEmail, spam_config: dict[str, Any]
-) -> bool | None:
-    """Check if a message is spam using hardcoded rules.
+def _safe_finalize(label, inbound_message_id, gate, fn):
+    """Run one finalize step under an isolated try/except.
 
-    Args:
-        parsed_email: Parsed email message
-        spam_config: Spam configuration
-
-    Returns:
-        is_spam: True if the message is spam, False otherwise. None if no rules matched.
-    """
-    rules = spam_config.get("rules", [])
-
-    for rule in rules:
-        if rule.get("header_match") or rule.get("header_match_regex"):
-            # Split on first colon only, in case value contains colons
-            header_match = rule.get("header_match") or rule.get("header_match_regex")
-            if ":" not in header_match:
-                logger.warning(
-                    "Invalid header_match format (missing colon): %s", header_match
-                )
-                continue
-
-            key, value = header_match.split(":", 1)
-            key = key.lower().strip()
-            value = value.lower().strip()
-
-            # Existence check first — the actual value is read from
-            # ``headersBlocks`` below to apply the trusted-relays cut.
-            if not has_header(parsed_email, key):
-                continue
-
-            # Use ``ext.headersBlocks`` to identify which headers to
-            # trust based on the trusted_relays config. Each block ends
-            # with a Received header, marking everything above it as
-            # trusted.
-            #   Block 0: headers before first Received (ours from MTA),
-            #            ending with first Received.
-            #   Block 1: headers between first and second Received,
-            #            ending with second Received (relay 1).
-            #   Block 2+: headers after second Received, ending with
-            #             third Received (relay 2+).
-            blocks = headers_blocks(parsed_email)
-
-            # Default trusted_relays = 0: trust only block 0 (the Received our
-            # own MTA prepends, plus the headers above it). A sender can prepend
-            # their own Received lines, which land in block 1+ — trusting those
-            # by default would let them slip a forged header (e.g. an
-            # action="ham" allowlist match) into the trusted slice. Operators
-            # with real upstream relays opt in by setting trusted_relays to the
-            # number of hops they actually control.
-            trusted_relays = spam_config.get("trusted_relays", 0)
-            # block 0 (our Received) + trusted_relays upstream blocks.
-            blocks_to_check = trusted_relays + 1
-
-            # Check only the trusted blocks (slicing beyond list length
-            # just returns all blocks). Blocks are ordered most recent
-            # to oldest, so we want the first match (most recent).
-            found_value = None
-            for block in blocks[:blocks_to_check]:
-                if key in block:
-                    block_value = block[key]
-                    # Values inside a block are always lists; first entry
-                    # is the most recent occurrence within that block.
-                    if block_value:
-                        found_value = block_value[0]
-                    break
-
-            if found_value is None:
-                continue
-            header_value = found_value
-
-            # Normalize header value for comparison
-            if isinstance(header_value, str):
-                header_value = header_value.lower().strip()
-            else:
-                header_value = str(header_value).lower().strip()
-
-            if rule.get("header_match"):
-                is_match = header_value == value
-            elif rule.get("header_match_regex"):
-                is_match = re.fullmatch(value, header_value) is not None
-            else:
-                raise ValueError("Invalid header match type")
-
-            # Check if header matches
-            if is_match:
-                action = rule.get("action") or "spam"
-                if action in ["spam", "reject"]:
-                    return True
-                if action in ["ham", "no action"]:
-                    return False
-
-    return None
-
-
-def _check_spam_with_rspamd(
-    raw_data: bytes, spam_config: dict[str, Any]
-) -> tuple[bool, str | None, dict[str, Any] | None]:
-    """Check if a message is spam using rspamd.
-
-    Args:
-        raw_data: Raw email message bytes
-        spam_config: Spam configuration
-
-    Returns:
-        Tuple of (is_spam, error_message, rspamd_result). error_message is None on
-        success. rspamd_result is the full parsed JSON response when available, so
-        other inspectors (e.g. inbound auth) can reuse symbols without re-querying.
-    """
-
-    spam_url = spam_config.get("rspamd_url")
-    if not spam_url:
-        # If rspamd is not configured, treat all messages as not spam
-        logger.debug("SPAM_CONFIG.rspamd_url not configured, skipping spam check")
-        return False, None, None
-
+    ``gate`` short-circuits the call when the input collection is
+    empty/false — same semantics as the inline ``if ctx.labels:``
+    guards, just lifted out. Exceptions are logged but never
+    propagated: the message has already landed; failing the whole
+    task here would only confuse operators."""
+    if not gate:
+        return
     try:
-        headers = {"Content-Type": "message/rfc822"}
-        spam_auth = spam_config.get("rspamd_auth")
-        if spam_auth:
-            headers["Authorization"] = spam_auth
-
-        response = requests.post(
-            f"{spam_url}/checkv2",
-            data=raw_data,
-            headers=headers,
-            timeout=10,
-        )
-        response.raise_for_status()
-
-        result = response.json()
-        # rspamd returns action: "reject", "add header", "greylist", or "no action"
-        # We consider it spam if action is "reject"
-        action = result.get("action", "")
-        score = result.get("score", 0.0)
-        required_score = result.get("required_score", 15.0)
-
-        is_spam = action == "reject"
-
-        logger.info(
-            "Rspamd check result: action=%s, score=%.2f, required=%.2f, is_spam=%s",
-            action,
-            score,
-            required_score,
-            is_spam,
+        fn()
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.exception(
+            "Finalize step %r failed on inbound message %s: %s",
+            label,
+            inbound_message_id,
+            exc,
         )
 
-        return is_spam, None, result
 
-    except requests.exceptions.RequestException as e:
-        logger.exception("Error checking spam with rspamd: %s", e)
-        # On error, treat as not spam to avoid blocking legitimate messages
-        return False, str(e), None
-    except Exception as e:
-        logger.exception("Unexpected error checking spam with rspamd: %s", e)
-        return False, str(e), None
+def _handle_retry(
+    inbound_message: models.InboundMessage, step_name: Optional[str]
+) -> Dict[str, Any]:
+    """Translate a RETRY decision into the task return value.
+
+    The InboundMessage row is kept in place unless it's older than
+    ``RETRY_MAX_AGE`` — the 5-min sweep
+    (``process_inbound_messages_queue_task``) re-fires the task on the
+    next cycle. Past the budget we drop and log loudly so a
+    permanently-broken receiver can't pin a row forever.
+    """
+    age = timezone.now() - inbound_message.created_at
+    if age > RETRY_MAX_AGE:
+        logger.error(
+            "Inbound message %s exceeded retry budget (%s old) — dropping at step=%s",
+            inbound_message.id,
+            age,
+            step_name,
+        )
+        inbound_message.delete()
+        return {
+            "success": False,
+            "inbound_message_id": str(inbound_message.id),
+            "error": "retry_exhausted",
+            "step": step_name,
+        }
+    logger.info(
+        "Inbound message %s held for retry at step=%s (age=%s)",
+        inbound_message.id,
+        step_name,
+        age,
+    )
+    return {
+        "success": False,
+        "inbound_message_id": str(inbound_message.id),
+        "error": "retry",
+        "step": step_name,
+    }
 
 
 @celery_app.task(bind=True)
 def process_inbound_message_task(self, inbound_message_id: str):
-    """Process an inbound message from the queue: check spam and create message.
+    """Process an inbound message: run the pipeline, persist the result.
 
-    Args:
-        inbound_message_id: The ID of the InboundMessage to process
-
-    Returns:
-        dict: A dictionary with success status and info
+    Returns ``{"success": ...}`` so the 5-min retry sweep can tell which
+    messages still need work. On DROP, the ``InboundMessage`` row is
+    deleted (we're done with it) and the task reports success.
     """
-    # Create a unique lock key for this inbound message to prevent double processing
+    # Redis lock keyed on the message id prevents two workers from
+    # racing on the same row. Auto-expires after 5 min so a hung worker
+    # doesn't block the next sweep.
     lock_key = f"process_inbound_message_lock:{inbound_message_id}"
-    lock_timeout = 300  # 5 minutes timeout for the lock
-
-    # Try to acquire the lock
-    if not cache.add(lock_key, "locked", lock_timeout):
+    if not cache.add(lock_key, "locked", 300):
         logger.warning(
-            "InboundMessage %s is already being processed by another worker, skipping duplicate processing",
+            "InboundMessage %s is already being processed — skipping",
             inbound_message_id,
         )
         return {"success": False, "error": "Message already being processed"}
 
+    inbound_message: Optional[models.InboundMessage] = None
     try:
-        inbound_message = None
         try:
             inbound_message = models.InboundMessage.objects.get(id=inbound_message_id)
         except models.InboundMessage.DoesNotExist:
@@ -241,11 +146,6 @@ def process_inbound_message_task(self, inbound_message_id: str):
             logger.error(error_msg)
             return {"success": False, "error": error_msg}
 
-        # Redis lock prevents concurrent processing, no need to mark as PROCESSING
-        mailbox = inbound_message.mailbox
-        recipient_email = str(mailbox)  # Use mailbox email as recipient_email
-
-        # Parse the email from raw_data
         raw_data_bytes = bytes(inbound_message.raw_data)
         parsed_email = parse_email(raw_data_bytes)
         if parsed_email is None:
@@ -253,93 +153,130 @@ def process_inbound_message_task(self, inbound_message_id: str):
             logger.error(error_msg)
             inbound_message.error_message = error_msg
             inbound_message.save(update_fields=["error_message"])
-            # Keep the message for retry
             return {"success": False, "error": error_msg}
 
-        # Get spam config from maildomain (includes global settings + domain-specific overrides)
-        spam_config = mailbox.domain.get_spam_config()
-
-        rspamd_result: dict[str, Any] | None = None
-        if _is_selfcheck_message(parsed_email, recipient_email):
-            logger.debug(
-                "Bypassing spam checks for selfcheck message %s", inbound_message_id
-            )
-            is_spam = False
-        else:
-            # If we have hardcoded rules, check them sequentially
-            is_spam = _check_spam_with_hardcoded_rules(parsed_email, spam_config)
-
-            # If no rules matched, check with rspamd
-            if is_spam is None:
-                is_spam, spam_check_error, rspamd_result = _check_spam_with_rspamd(
-                    raw_data_bytes, spam_config
-                )
-                if spam_check_error:
-                    logger.warning(
-                        "Spam check error for inbound message %s: %s (treating as not spam)",
-                        inbound_message_id,
-                        spam_check_error,
-                    )
-
-        # Run inbound authentication checks (DKIM / DMARC). The verdict, if
-        # any, is stamped as X-StMsg-Sender-Auth so the frontend can render
-        # "unverified" (none) or "likely forged" (fail) warnings.
-        if rspamd_result is None and get_inbound_auth_mode(spam_config) == "rspamd":
-            _, _, rspamd_result = _check_spam_with_rspamd(raw_data_bytes, spam_config)
-        auth_verdict = check_inbound_authentication(
-            raw_data_bytes, parsed_email, spam_config, rspamd_result
-        )
-        if auth_verdict:
-            prepended = (
-                f"X-StMsg-Sender-Auth: {auth_verdict}\r\n".encode("ascii")
-                + raw_data_bytes
-            )
-            reparsed = parse_email(prepended)
-            if reparsed is not None:
-                parsed_email = reparsed
-                raw_data_bytes = prepended
-            else:
-                # Keep raw_data_bytes / parsed_email in lockstep: if the
-                # re-parse breaks, store the original bytes so the blob stays
-                # parseable for display (subject/body/recipients). The
-                # sender-auth banner is sacrificed in this rare case.
-                logger.warning(
-                    "Failed to re-parse email after prepending auth header, "
-                    "dropping the prepend"
-                )
-
-        # Create the message using the extracted function
-        inbound_msg = _create_message_from_inbound(
+        mailbox = inbound_message.mailbox
+        recipient_email = str(mailbox)
+        ctx = InboundContext(
+            mailbox=mailbox,
+            inbound_message=inbound_message,
             recipient_email=recipient_email,
-            parsed_email=parsed_email,
             raw_data=raw_data_bytes,
+            parsed_email=parsed_email,
+            spam_config=mailbox.domain.get_spam_config(),
+        )
+        if _is_selfcheck(parsed_email, recipient_email):
+            # System self-probe: short-circuit the spam check before
+            # the pipeline runs. The hardcoded-rules + rspamd steps
+            # both no-op when ctx.is_spam is already set.
+            ctx.is_spam = False
+            logger.debug(
+                "Selfcheck probe — pre-setting is_spam=False for %s",
+                inbound_message_id,
+            )
+
+        decision, aborted_by = run_inbound_pipeline(build_inbound_pipeline(ctx), ctx)
+
+        if decision == Decision.DROP:
+            logger.info(
+                "Inbound message %s dropped by step=%s",
+                inbound_message_id,
+                aborted_by,
+            )
+            inbound_message.delete()
+            return {
+                "success": True,
+                "inbound_message_id": str(inbound_message_id),
+                "dropped_by": aborted_by,
+            }
+        if decision == Decision.RETRY:
+            return _handle_retry(inbound_message, aborted_by)
+
+        inbound_msg = _create_message_from_inbound(
+            recipient_email=ctx.recipient_email,
+            parsed_email=ctx.parsed_email,
+            raw_data=ctx.raw_data,
             mailbox=mailbox,
             channel=inbound_message.channel,
-            is_spam=is_spam,
+            is_spam=bool(ctx.is_spam),
+            is_trashed=ctx.mark_trashed,
+            is_archived=ctx.mark_archived,
         )
 
         if inbound_msg:
-            # Delete the message after successful processing
             inbound_message.delete()
 
-            # Send autoreply if appropriate (only for real Message objects)
             if isinstance(inbound_msg, models.Message):
+                # Each finalize step is isolated — a failure in one
+                # (DB hiccup, race with admin deletion) must not skip
+                # the others. The message has landed; best effort.
+                _safe_finalize(
+                    "labels",
+                    inbound_message_id,
+                    ctx.labels,
+                    lambda: apply_labels_to_thread(
+                        inbound_msg.thread, mailbox, ctx.labels
+                    ),
+                )
+                _safe_finalize(
+                    "assigns",
+                    inbound_message_id,
+                    ctx.pending_assigns,
+                    lambda: apply_pending_assigns(
+                        inbound_msg.thread, ctx.pending_assigns
+                    ),
+                )
+                _safe_finalize(
+                    "events",
+                    inbound_message_id,
+                    ctx.pending_events,
+                    lambda: apply_pending_events(
+                        inbound_msg.thread, ctx.pending_events
+                    ),
+                )
+                _safe_finalize(
+                    "drafts",
+                    inbound_message_id,
+                    ctx.pending_drafts,
+                    lambda: apply_pending_drafts(
+                        inbound_msg, mailbox, ctx.pending_drafts
+                    ),
+                )
+                _safe_finalize(
+                    "flags",
+                    inbound_message_id,
+                    ctx.mark_starred or ctx.mark_read,
+                    lambda: apply_thread_access_flags(
+                        inbound_msg.thread,
+                        mailbox,
+                        mark_starred=ctx.mark_starred,
+                        mark_read=ctx.mark_read,
+                    ),
+                )
+
+            if isinstance(inbound_msg, models.Message) and not ctx.skip_autoreply:
                 from core.mda.autoreply import (  # pylint: disable=import-outside-toplevel
                     try_send_autoreply,
                 )
 
-                try_send_autoreply(mailbox, parsed_email, inbound_msg, is_spam=is_spam)
+                # ``try_send_autoreply`` already suppresses for spam.
+                # The ``skip_autoreply`` flag wraps the same gate from
+                # the outside so a non-spam message can also opt out
+                # (e.g. when the webhook itself replies).
+                try_send_autoreply(
+                    mailbox, ctx.parsed_email, inbound_msg, is_spam=bool(ctx.is_spam)
+                )
 
             logger.info(
                 "Successfully processed inbound message %s (is_spam=%s)",
                 inbound_message_id,
-                is_spam,
+                ctx.is_spam,
             )
 
             return {
                 "success": True,
                 "inbound_message_id": str(inbound_message_id),
-                "is_spam": is_spam,
+                "is_spam": ctx.is_spam,
             }
 
         error_msg = "Failed to create message from inbound message"

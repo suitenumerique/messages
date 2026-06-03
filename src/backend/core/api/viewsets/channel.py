@@ -20,6 +20,41 @@ from core.enums import ChannelScopeLevel, ChannelTypes
 from .. import permissions, serializers
 
 
+def _attach_credential(data: dict, channel: models.Channel) -> None:
+    """Add the channel's freshly-minted credential to ``data``.
+
+    Type-specific response key — lets the frontend branch on presence
+    instead of sniffing prefixes:
+
+      - ``api_key`` channels → ``api_key``
+      - ``webhook`` channels (``auth_method='jwt'``) → ``webhook_secret``
+        (the raw root from ``encrypted_settings["secret"]``)
+      - ``webhook`` channels (``auth_method='api_key'``) →
+        ``webhook_api_key`` (HMAC-derived from the root)
+
+    For api_key channels the plaintext is one-shot (we only store the
+    hash), so callers must stash it on ``instance._generated_api_key``
+    via the serializer's create flow. For webhook channels the raw root
+    sits in ``encrypted_settings["secret"]`` and ``get_webhook_api_key``
+    derives lazily — both readable straight off ``channel``.
+    """
+    if channel.type == ChannelTypes.API_KEY:
+        plaintext = getattr(channel, "_generated_api_key", None)
+        if plaintext:
+            data["api_key"] = plaintext
+        return
+    if channel.type == ChannelTypes.WEBHOOK:
+        auth_method = (channel.settings or {}).get("auth_method")
+        if auth_method == "jwt":
+            root = (channel.encrypted_settings or {}).get("secret")
+            if root:
+                data["webhook_secret"] = root
+        elif auth_method == "api_key":
+            derived = channel.get_webhook_api_key()
+            if derived:
+                data["webhook_api_key"] = derived
+
+
 @extend_schema(
     tags=["channels"], description="Manage integration channels for a mailbox"
 )
@@ -62,17 +97,6 @@ class ChannelViewSet(
         context["mailbox"] = self.mailbox
         return context
 
-    @extend_schema(
-        request=serializers.ChannelSerializer,
-        responses={
-            201: OpenApiResponse(
-                response=serializers.ChannelSerializer,
-                description="Channel created successfully",
-            ),
-            400: OpenApiResponse(description="Invalid input data"),
-            403: OpenApiResponse(description="Permission denied"),
-        },
-    )
     def get_save_kwargs(self):
         """Hook for subclasses to inject the scope-level + target FKs.
 
@@ -89,6 +113,21 @@ class ChannelViewSet(
             "user": self.request.user,
         }
 
+    @extend_schema(
+        request=serializers.ChannelSerializer,
+        responses={
+            201: OpenApiResponse(
+                response=serializers.ChannelCreateResponseSerializer,
+                description=(
+                    "Channel created successfully. The response carries the "
+                    "one-time plaintext credentials (api_key / webhook_secret / "
+                    "webhook_api_key / password) which are never returned again."
+                ),
+            ),
+            400: OpenApiResponse(description="Invalid input data"),
+            403: OpenApiResponse(description="Permission denied"),
+        },
+    )
     def create(self, request, *args, **kwargs):
         """Create a new channel.
 
@@ -106,16 +145,11 @@ class ChannelViewSet(
         instance = serializer.save(**self.get_save_kwargs())
         data = serializer.data
 
-        # Surface plaintext secrets exactly once on creation. Each generator
-        # lives on the instance under `_generated_*` (see ChannelSerializer).
-        # Subsequent GETs never return any of these.
-        for attr, response_key in (
-            ("_generated_password", "password"),
-            ("_generated_api_key", "api_key"),
-        ):
-            value = getattr(instance, attr, None)
-            if value:
-                data[response_key] = value
+        # Surface plaintext credentials exactly once on creation —
+        # subsequent GETs never return them.
+        if password := getattr(instance, "_generated_password", None):
+            data["password"] = password
+        _attach_credential(data, instance)
         return Response(data, status=status.HTTP_201_CREATED)
 
     @extend_schema(
@@ -157,55 +191,83 @@ class ChannelViewSet(
         responses={
             200: OpenApiResponse(
                 response=inline_serializer(
-                    name="RegeneratedApiKeyResponse",
+                    name="RegeneratedSecretResponse",
                     fields={
-                        "id": drf_serializers.CharField(
-                            help_text="Channel id (also the X-Channel-Id header value).",
-                        ),
+                        "id": drf_serializers.CharField(help_text="Channel id."),
                         "api_key": drf_serializers.CharField(
+                            required=False,
                             help_text=(
-                                "Freshly generated plaintext api_key. Returned "
-                                "ONCE on regeneration and cannot be retrieved later."
+                                "Present for ``api_key`` channels — the "
+                                "plaintext used in subsequent X-API-Key "
+                                "calls. Returned ONCE."
+                            ),
+                        ),
+                        "webhook_secret": drf_serializers.CharField(
+                            required=False,
+                            help_text=(
+                                "Present for webhook channels with "
+                                "``auth_method='jwt'`` — the freshly "
+                                "minted root receivers use to verify the "
+                                "HMAC sig and JWT."
+                            ),
+                        ),
+                        "webhook_api_key": drf_serializers.CharField(
+                            required=False,
+                            help_text=(
+                                "Present for webhook channels with "
+                                "``auth_method='api_key'`` — the "
+                                "HMAC-derived value sent as "
+                                "X-StMsg-Api-Key. Changes whenever the "
+                                "root rotates."
                             ),
                         ),
                     },
                 ),
                 description=(
-                    "Returns the freshly generated plaintext api_key. The "
-                    "previous secret is invalidated immediately. The plaintext "
-                    "is shown ONCE and cannot be retrieved later."
+                    "Rotates the channel's secret. Single-active: the "
+                    "previous credential is invalidated immediately. "
+                    "The response carries exactly one of ``api_key`` / "
+                    "``webhook_secret`` / ``webhook_api_key`` matching "
+                    "the channel's type (and, for webhooks, its current "
+                    "``auth_method``)."
                 ),
             ),
-            400: OpenApiResponse(description="Channel is not an api_key channel"),
+            400: OpenApiResponse(description="Channel type has no rotatable secret"),
             403: OpenApiResponse(description="Permission denied"),
             404: OpenApiResponse(description="Channel not found"),
         },
     )
-    @action(detail=True, methods=["post"], url_path="regenerate-api-key")
-    def regenerate_api_key(self, request, *args, **kwargs):
-        """Regenerate the api_key on this channel.
+    @action(detail=True, methods=["post"], url_path="regenerate-secret")
+    def regenerate_secret(self, request, *args, **kwargs):
+        """Rotate this channel's secret.
 
-        Single-active rotation: the new secret REPLACES the old one
-        immediately, so any client still using the old secret will
-        start failing on the next call. This is the only rotation
-        flow exposed via DRF.
+        Type-agnostic entry point: ``Channel.rotate_secret`` dispatches
+        on ``self.type`` and persists the new credential in the
+        appropriate storage shape (hash for ``api_key``, plaintext for
+        ``webhook``). Channel types without a rotatable secret raise
+        and surface as HTTP 400.
 
-        Smooth (dual-active) rotation — appending a new hash without
-        removing the old one so clients can migrate over a window — is
-        intentionally a superadmin-only feature available via Django admin.
+        Single-active rotation. Smooth (dual-active) rotation —
+        appending a new hash without removing the old one so clients
+        can migrate over a window — is intentionally a superadmin-only
+        feature available via Django admin.
         """
         instance = self.get_object()
-        if instance.type != ChannelTypes.API_KEY:
-            raise ValidationError(
-                {"type": "Only api_key channels can have their secret regenerated."}
-            )
+        try:
+            plaintext = instance.rotate_secret()
+        except ValueError as exc:
+            raise ValidationError({"type": str(exc)}) from exc
 
-        plaintext = instance.rotate_api_key()
+        # api_key channels store only the hash; stash the just-minted
+        # plaintext on the instance so ``_attach_credential`` can find
+        # it (the field is read-once and never persisted).
+        if instance.type == ChannelTypes.API_KEY:
+            # pylint: disable-next=protected-access
+            instance._generated_api_key = plaintext  # noqa: SLF001
 
-        return Response(
-            {"id": str(instance.id), "api_key": plaintext},
-            status=status.HTTP_200_OK,
-        )
+        payload: dict = {"id": str(instance.id)}
+        _attach_credential(payload, instance)
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 @extend_schema(

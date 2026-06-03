@@ -52,7 +52,7 @@ def victim_mailbox():
 class TestInboundSpoofedSender:
     """Inbound delivery with ``From == To`` must not flag ``is_sender=True``."""
 
-    @patch("core.mda.inbound_tasks._check_spam_with_rspamd")
+    @patch("core.mda.inbound_pipeline._call_rspamd")
     def test_inbound_spoofed_sender_not_marked_as_sender(
         self, mock_rspamd, victim_mailbox
     ):
@@ -92,7 +92,7 @@ class TestInboundSpoofedSender:
             "as is_sender=True; otherwise retry_messages_task re-emits them."
         )
 
-    @patch("core.mda.inbound_tasks._check_spam_with_rspamd")
+    @patch("core.mda.inbound_pipeline._call_rspamd")
     @patch("core.mda.outbound_tasks.send_message")
     def test_inbound_spoofed_sender_not_picked_up_by_retry(
         self, mock_send_message, mock_rspamd, victim_mailbox

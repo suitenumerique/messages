@@ -5,6 +5,7 @@ Declare and configure the models for the messages core application
 
 import base64
 import hashlib
+import hmac
 import json
 import re
 import secrets
@@ -572,31 +573,94 @@ class Channel(BaseModel):
     # that Q() in Python and raises ValidationError before the row is sent
     # to the DB. No custom clean() override is needed.
 
-    # --- api_key helpers --- #
+    # --- secret rotation --- #
 
-    API_KEY_PREFIX = "msgk_"
+    # Secret storage shapes per channel type — deliberately divergent.
+    # ``api_key`` channels store only a SHA-256 hash so a DB read can't
+    # yield a working credential (server hashes incoming ``X-API-Key``
+    # and compares). ``webhook`` channels store plaintext under the
+    # generic ``encrypted_settings["secret"]`` key because the
+    # dispatcher needs the raw bytes every fire to sign / send;
+    # future channel types that need a plaintext root reuse the same
+    # storage key. Forcing one storage shape would either break
+    # dispatch (hashing webhooks) or weaken api_key (plaintext at
+    # rest), so the divergence is load-bearing.
+    #
+    # ``settings.auth_method`` ("jwt" or "api_key") on webhook
+    # channels picks how the dispatcher presents that one stored
+    # secret on each POST. The root never travels on the wire —
+    # JWT mode keys an HMAC sig + HS256 JWT, API-key mode sends a
+    # *derived* value (see ``get_webhook_api_key``).
 
-    def rotate_api_key(self, *, save: bool = True) -> str:
-        """Mint a fresh api_key plaintext, replace ``api_key_hashes`` with
-        the new SHA-256 digest, and return the plaintext exactly once.
+    # Context label for the webhook API-key derivation. Versioned so
+    # we can roll the KDF without changing the root secret.
+    WEBHOOK_API_KEY_KDF_LABEL = b"messages.webhook.api_key.v1"
 
-        Single-active rotation: any prior secret is invalidated immediately.
-        Dual-active "smooth" rotation (appending without removing) is not
-        exposed here — callers that need it must mutate ``encrypted_settings``
-        directly via the Django admin.
+    def rotate_secret(self, *, save: bool = True) -> str:
+        """Mint a fresh plaintext secret appropriate for this channel
+        type, persist it according to the type's storage shape, and
+        return the plaintext exactly once.
 
-        Set ``save=False`` for the DRF create path, where the row is being
-        built and ``super().create()`` will persist it shortly after.
+        Single-active rotation: any prior secret is invalidated
+        immediately. Dual-active "smooth" rotation is intentionally
+        not exposed here — callers that need it must mutate
+        ``encrypted_settings`` directly via the Django admin.
+
+        Raises ``ValueError`` for channel types without a rotatable
+        secret (``widget``, ``mta``, ``caldav`` — these authenticate
+        differently).
+
+        Set ``save=False`` for the DRF create path, where the row is
+        being built and ``super().create()`` will persist it shortly
+        after.
         """
-        plaintext = self.API_KEY_PREFIX + secrets.token_urlsafe(32)
-        digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
-        self.encrypted_settings = {
-            **(self.encrypted_settings or {}),
-            "api_key_hashes": [digest],
-        }
+        from core.enums import ChannelTypes  # pylint: disable=import-outside-toplevel
+
+        if self.type == ChannelTypes.API_KEY:
+            plaintext = "msgk_" + secrets.token_urlsafe(32)
+            digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+            self.encrypted_settings = {
+                **(self.encrypted_settings or {}),
+                "api_key_hashes": [digest],
+            }
+        elif self.type == ChannelTypes.WEBHOOK:
+            plaintext = "whsec_" + secrets.token_urlsafe(32)
+            self.encrypted_settings = {
+                **(self.encrypted_settings or {}),
+                "secret": plaintext,
+            }
+        else:
+            raise ValueError(
+                f"Channel type {self.type!r} has no rotatable secret"
+            )
+
         if save:
             self.save(update_fields=["encrypted_settings", "updated_at"])
         return plaintext
+
+    def get_webhook_api_key(self) -> Optional[str]:
+        """Derive the API-key presentation of the root secret.
+
+        ``api_key = "whk_" + HMAC-SHA256(root_secret, label).hex()``. The
+        HMAC step is one-way: a receiver-side leak of the API key
+        reveals nothing about the root secret, so JWT/HMAC verification
+        remains unforgeable. Deterministic — switching ``auth_method``
+        between ``jwt`` and ``api_key`` on the same channel doesn't
+        require rotating, because both presentations are tied to the
+        same root.
+
+        Returns ``None`` if the channel has no root secret yet (a
+        misconfigured row that the dispatcher will fail closed on).
+        """
+        root = (self.encrypted_settings or {}).get("secret")
+        if not root:
+            return None
+        derived = hmac.new(
+            root.encode("utf-8"),
+            self.WEBHOOK_API_KEY_KDF_LABEL,
+            hashlib.sha256,
+        ).hexdigest()
+        return "whk_" + derived
 
     def api_key_covers(
         self, *, mailbox=None, maildomain=None, mailbox_roles=None

@@ -1101,13 +1101,8 @@ class Base(Configuration):
     FEATURE_IMPORT_MESSAGES = values.BooleanValue(
         default=True, environ_name="FEATURE_IMPORT_MESSAGES", environ_prefix=None
     )
-    # NOTE: "webhook" is intentionally NOT in the default list — the
-    # outbound webhook delivery pipeline is not wired yet. Keeping the
-    # type creatable would let users mint dead-letter channels that look
-    # functional. Add "webhook" here once core/mda/webhook_tasks.py and
-    # the post_save signal land.
     FEATURE_MAILBOX_ADMIN_CHANNELS = values.ListValue(
-        default=["api_key"],
+        default=["api_key", "webhook"],
         environ_name="FEATURE_MAILBOX_ADMIN_CHANNELS",
         environ_prefix=None,
     )
@@ -1481,7 +1476,7 @@ class Test(Base):
     # Add a test encryption key for django-fernet-encrypted-fields
     SALT_KEY = ["test-salt-for-development-only"]
 
-    FEATURE_MAILBOX_ADMIN_CHANNELS = ["api_key", "widget"]
+    FEATURE_MAILBOX_ADMIN_CHANNELS = ["api_key", "widget", "webhook"]
 
     SCHEMA_CUSTOM_ATTRIBUTES_USER = {}
     SCHEMA_CUSTOM_ATTRIBUTES_MAILDOMAIN = {}

@@ -573,7 +573,7 @@ class ChannelAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom_urls = [
             path(
-                "<path:object_id>/regenerate-api-key/",
+                "<path:object_id>/regenerate-secret/",
                 self.admin_site.admin_view(self.regenerate_api_key_view),
                 name="core_channel_regenerate_api_key",
             ),
@@ -581,13 +581,16 @@ class ChannelAdmin(admin.ModelAdmin):
         return custom_urls + urls
 
     def regenerate_api_key_view(self, request, object_id):
-        """Regenerate the api_key secret on an api_key channel.
+        """Regenerate the secret on an api_key or webhook channel.
 
-        Delegates the actual rotation to ``Channel.rotate_api_key`` (single
-        source of truth, shared with the DRF create + regenerate flows). The
-        plaintext is rendered ONCE in the response body and never stored in
-        cookies, session, or the messages framework — closing the window
-        where a credential could leak through signed-cookie message storage.
+        Both channel types authenticate with a single root secret
+        (``Channel.rotate_secret`` is the single source of truth, shared
+        with the DRF create + regenerate flows): for api_key channels it
+        is the API key itself, for webhook channels it is the HMAC/JWT
+        signing secret. The plaintext is rendered ONCE in the response
+        body and never stored in cookies, session, or the messages
+        framework — closing the window where a credential could leak
+        through signed-cookie message storage.
         """
         # pylint: disable=import-outside-toplevel
         from core.enums import ChannelTypes
@@ -599,20 +602,21 @@ class ChannelAdmin(admin.ModelAdmin):
         if channel is None:
             messages.error(request, "Channel not found.")
             return redirect("..")
-        if channel.type != ChannelTypes.API_KEY:
+        if channel.type not in (ChannelTypes.API_KEY, ChannelTypes.WEBHOOK):
             messages.error(
-                request, "Only api_key channels can have their secret regenerated."
+                request,
+                "Only api_key and webhook channels can have their secret regenerated.",
             )
             return redirect("..")
 
-        plaintext = channel.rotate_api_key()
+        plaintext = channel.rotate_secret()
 
         context = {
             **self.admin_site.each_context(request),
             "opts": self.model._meta,  # noqa: SLF001
             "original": channel,
-            "title": "New api_key generated",
-            "api_key": plaintext,
+            "title": "New secret generated",
+            "secret": plaintext,
         }
         return TemplateResponse(
             request, "admin/core/channel/regenerated_api_key.html", context
