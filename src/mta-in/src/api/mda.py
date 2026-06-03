@@ -24,7 +24,11 @@ def mda_api_call(path, content_type, body, metadata):
 
     jwt_token = jwt.encode(
         {
-            "exp": datetime.datetime.now() + datetime.timedelta(seconds=60),
+            # Always anchor `exp` in UTC. A naive datetime here would be
+            # interpreted as local time by PyJWT, so a container whose TZ
+            # drifts from UTC could mint tokens that look pre-expired or
+            # 12 hours in the future to the MDA.
+            "exp": datetime.datetime.now(tz=datetime.UTC) + datetime.timedelta(seconds=60),
             "body_hash": hashlib.sha256(body).hexdigest(),
             **metadata,
         },

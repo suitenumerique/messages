@@ -1,3 +1,9 @@
+# Pure-Python inbound MTA image (aiosmtpd) — counterpart to ./Dockerfile
+# (Postfix + milter). Both images share src/mta-in/pyproject.toml and live in
+# parallel so the two implementations can be tested side-by-side. The Postfix
+# image is the production default for now; this image will gradually replace
+# it once parity is proven.
+#
 # https://hub.docker.com/_/python
 FROM python:3.14.4-slim-trixie AS base
 
@@ -6,19 +12,18 @@ ENV MIN_UPDATE_DATE="2026-02-20"
 
 WORKDIR /app
 
+# Pure-Python image: no postfix, no libmilter. Just the runtime essentials
+# plus netcat for the entrypoint readiness probe.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ca-certificates \
-    postfix \
-    postfix-pcre \
     curl \
+    netcat-openbsd \
     procps \
-    net-tools \
-    mailutils \
-    libmilter-dev \
-    build-essential \
-    iproute2 \
-    iputils-ping \
     && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONPATH="/app/src"
+ENV PYTHONIOENCODING=utf-8
+ENV PYTHONUNBUFFERED=1
 
 # ---- uv package manager ----
 FROM base AS uv
@@ -37,25 +42,22 @@ COPY pyproject.toml uv.lock ./
 
 ENV PATH="/venv/bin:$PATH"
 
-# Install dependencies. The postfix extra pulls in pymilter (C extension needing
-# libmilter-dev at install time); it lives behind an extra so the pure-Python
-# pymta image can build without libmilter-dev.
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-install-project --no-dev --extra postfix
+# No extras: the `postfix` extra (pymilter) needs libmilter-dev which is not
+# present here, and we don't want it anyway.
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-install-project --no-dev
 
 # ---- Base image with dependencies installed for development ----
 FROM base-with-deps AS base-with-deps-dev
 
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-install-project --all-extras
-
-ENV PYTHONPATH="/app"
-ENV PYTHONIOENCODING=utf-8
-ENV PYTHONUNBUFFERED=1
+# Dev deps only — explicitly skip the `postfix` extra (pymilter requires
+# libmilter-dev which is not installed in this image).
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-install-project --extra dev
 
 
 # ---- Base runtime image ----
 FROM base AS runtime-base
 
-COPY ./entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY ./entrypoint.pymta.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENV PATH="/venv/bin:$PATH"
@@ -64,17 +66,16 @@ ENV VIRTUAL_ENV_PROMPT=venv
 
 ENTRYPOINT [ "/usr/local/bin/entrypoint.sh" ]
 
-# ---- Base runtime image for development ----
+# ---- Runtime image for development ----
 FROM runtime-base AS runtime-dev
 
 COPY --from=base-with-deps-dev /venv /venv
 
 # /app will be mounted as a volume in the development container
 
-# ---- Base runtime image for production ----
+# ---- Runtime image for production ----
 FROM runtime-base AS runtime-prod
 
 COPY --from=base-with-deps /venv /venv
 
 COPY ./src /app/src
-COPY ./etc /app/etc

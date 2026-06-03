@@ -255,6 +255,8 @@ services:
       - EXEC_CMD=true
       - MDA_API_BASE_URL=http://localhost:8000/api/mail/
       - MTA_HOST=localhost
+      - MTA_PORT=25
+      - MTA_IMPL=postfix
     command: pytest -vvs tests/
     volumes:
       - ./src/mta-in:/app
@@ -268,6 +270,51 @@ services:
       context: src/mta-in
       target: uv
     pull_policy: build
+
+  # ---- Pure-Python (aiosmtpd) inbound MTA --------------------------------
+  # Runs side-by-side with the Postfix-based `mta-in` service on a different
+  # host port (8920 vs 8910). Both implementations share the same MDA
+  # contract, env vars, and test suite. Toggle which one is the public-facing
+  # MTA at the edge by switching the upstream pool.
+
+  mta-in-py:
+    build:
+      context: src/mta-in
+      dockerfile: Dockerfile.pymta
+      target: runtime-prod
+    env_file:
+      - env.d/development/mta-in.defaults
+      - env.d/development/mta-in.local
+      - env.d/development/mta-in-py.defaults
+      - env.d/development/mta-in-py.local
+    ports:
+      - "8920:25"
+      - "9120:9100"  # Prometheus metrics
+    depends_on:
+      - backend-dev
+
+  mta-in-py-test:
+    profiles:
+      - tools
+    build:
+      context: src/mta-in
+      dockerfile: Dockerfile.pymta
+      target: runtime-dev
+    env_file:
+      - env.d/development/mta-in.defaults
+      - env.d/development/mta-in.local
+      - env.d/development/mta-in-py.defaults
+      - env.d/development/mta-in-py.local
+    environment:
+      - EXEC_CMD=true
+      - MDA_API_BASE_URL=http://localhost:8000/api/mail/
+      - MTA_HOST=localhost
+      - MTA_PORT=25
+      - MTA_IMPL=pymta
+      - MTA_METRICS_URL=http://localhost:9100/metrics
+    command: pytest -vvs tests/
+    volumes:
+      - ./src/mta-in:/app
 
   mta-out:
     build:

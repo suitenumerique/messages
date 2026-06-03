@@ -19,6 +19,17 @@ logger = logging.getLogger(__name__)
 
 MDA_API_SECRET = os.getenv("MDA_API_SECRET")
 MTA_HOST = os.getenv("MTA_HOST")
+MTA_PORT = int(os.getenv("MTA_PORT", "25"))
+
+# When MTA_METRICS_URL is set (only by the pymta test runner) the metrics
+# tests in tests/test_metrics.py become exercisable. The Postfix-based
+# implementation has no Prometheus endpoint, so those tests skip on it.
+MTA_METRICS_URL = os.getenv("MTA_METRICS_URL")
+
+# Tag tests with the implementation under test, exposed through the
+# `mta_impl` fixture below. Useful for skipping the few tests that assert
+# implementation-specific behaviour (e.g. metrics-shape).
+MTA_IMPL = os.getenv("MTA_IMPL", "postfix")
 
 
 class MockAPIServer:
@@ -153,31 +164,46 @@ def mock_api_server():
     server.stop()
 
 
-@pytest.fixture
-def smtp_client():
-    # Wait for Postfix to be ready
-    max_retries = 100
-    for attempt in range(max_retries):
+def _wait_for_mta(host: str, port: int, retries: int = 100) -> None:
+    for attempt in range(retries):
         try:
-            # First check if port is open
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((MTA_HOST, 25))
-
-            # Then try SMTP connection
-            client = smtplib.SMTP(MTA_HOST, 25)
-            logger.info("SMTP connection established")
-            break
-        except (ConnectionRefusedError, smtplib.SMTPConnectError, socket.error) as e:
-            if attempt == max_retries - 1:
+                s.settimeout(1)
+                s.connect((host, port))
+            return
+        except (ConnectionRefusedError, OSError) as e:
+            if attempt == retries - 1:
                 raise
             if attempt % 20 == 0:
-                logger.warning(
-                    f"SMTP connection attempt {attempt + 1} failed ({str(e)}), retrying in 1s..."
-                )
+                logger.warning("SMTP port %s:%s not ready (%s); retrying...", host, port, e)
             time.sleep(0.1)
 
+
+@pytest.fixture
+def smtp_client():
+    _wait_for_mta(MTA_HOST, MTA_PORT)
+    client = smtplib.SMTP(MTA_HOST, MTA_PORT)
+    logger.info("SMTP connection established to %s:%s", MTA_HOST, MTA_PORT)
     yield client
     try:
         client.quit()
     except smtplib.SMTPServerDisconnected:
         pass
+
+
+@pytest.fixture
+def mta_impl() -> str:
+    """Identifier for the implementation under test: ``postfix`` or ``pymta``."""
+    return MTA_IMPL
+
+
+@pytest.fixture
+def mta_address() -> tuple[str, int]:
+    """(host, port) of the inbound MTA under test."""
+    return (MTA_HOST, MTA_PORT)
+
+
+@pytest.fixture
+def mta_metrics_url() -> str | None:
+    """URL to scrape for Prometheus metrics; None if unavailable."""
+    return MTA_METRICS_URL

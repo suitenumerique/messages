@@ -60,6 +60,7 @@ create-env-files: \
 	env.d/development/backend.local \
 	env.d/development/frontend.local \
 	env.d/development/mta-in.local \
+	env.d/development/mta-in-py.local \
 	env.d/development/mta-out.local \
 	env.d/development/socks-proxy.local
 .PHONY: create-env-files
@@ -179,6 +180,7 @@ lint: \
   lint-front \
   typecheck-front \
   lint-mta-in \
+  lint-mta-in-py \
   lint-mta-out
 .PHONY: lint
 
@@ -222,11 +224,16 @@ lint-front: ## run the frontend linter
 	@$(COMPOSE) run --rm frontend-tools npm run lint
 .PHONY: lint-front
 
-lint-mta-in: ## lint mta-in python sources
+lint-mta-in: ## lint mta-in python sources (Postfix milter implementation)
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff format .
 	#$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test ruff check . --fix
 	#$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-test pylint .
 .PHONY: lint-mta-in
+
+lint-mta-in-py: ## lint mta-in python sources (pure-Python pymta implementation)
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-py-test ruff format .
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-py-test ruff check . --fix
+.PHONY: lint-mta-in-py
 
 lint-mta-out: ## lint mta-out python sources
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-out-test ruff format .
@@ -239,6 +246,7 @@ test: \
   test-back \
   test-front \
   test-mta-in \
+  test-mta-in-py \
   test-mta-out \
   test-mpa \
   test-socks-proxy
@@ -279,9 +287,13 @@ test-front-amd64: ## run the frontend tests in amd64
 	$(COMPOSE) run --rm frontend-tools-amd64 npm run test -- $${args:-${1}}
 .PHONY: test-front-amd64
 
-test-mta-in: ## run the mta-in tests
+test-mta-in: ## run the mta-in tests against the Postfix milter implementation
 	@$(COMPOSE) run --build --rm mta-in-test
 .PHONY: test-mta-in
+
+test-mta-in-py: ## run the mta-in tests against the pure-Python (aiosmtpd) implementation
+	@$(COMPOSE) run --build --rm mta-in-py-test
+.PHONY: test-mta-in-py
 
 test-mta-out: ## run the mta-out tests
 	@$(COMPOSE) run --build --rm mta-out-test
@@ -602,7 +614,7 @@ test-keycloak: ## run all Keycloak provider tests (builds JARs, brings up Keyclo
 	@bin/test-keycloak
 .PHONY: test-keycloak
 
-deps-lock-mta-in: ## lock the dependencies
+deps-lock-mta-in: ## lock the dependencies for mta-in (shared between both implementations)
 	@$(COMPOSE) run --rm --build mta-in-uv uv lock
 .PHONY: deps-lock-mta-in
 
