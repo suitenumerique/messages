@@ -247,6 +247,20 @@ _Those settings are deprecated and will be removed in the future._
 | `NEXT_PUBLIC_SENTRY_DSN` | None | Sentry DSN for error tracking | Optional |
 | `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | None | Sentry environment for error tracking | Optional ('production', 'development', 'staging') |
 
+### Selfcheck
+
+End-to-end mail delivery probe — see [selfcheck.md](selfcheck.md) for details.
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `MESSAGES_SELFCHECK_FROM` | None | Email address the selfcheck sends from. Leave unset to disable the selfcheck. | Optional |
+| `MESSAGES_SELFCHECK_TO` | None | Email address the selfcheck sends to. Leave unset to disable the selfcheck. | Optional |
+| `MESSAGES_SELFCHECK_SECRET` | `self-check-secret-for-dev` | Secret string embedded in the test message body | Optional |
+| `MESSAGES_SELFCHECK_INTERVAL` | `600` | Interval between selfcheck runs, in seconds | Optional |
+| `MESSAGES_SELFCHECK_TIMEOUT` | `60` | Timeout for message reception, in seconds | Optional |
+| `MESSAGES_SELFCHECK_WEBHOOK_URL` | None | Webhook URL POSTed on each successful selfcheck (updown.io-compatible heartbeat) | Optional |
+| `MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG` | None | Sentry cron monitor slug. When set (with `SENTRY_DSN`), each run is reported as a Sentry check-in. | Optional |
+
 ### Logging
 
 | Variable | Default | Description | Required |

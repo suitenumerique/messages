@@ -13,7 +13,12 @@ from django.utils import timezone
 from core import models
 from core.mda.draft import create_draft
 from core.mda.outbound import prepare_outbound_message, send_message
-from core.mda.selfcheck_reporting import SelfCheckResult, report_selfcheck
+from core.mda.selfcheck_reporting import (
+    SelfCheckResult,
+    finish_sentry_checkin,
+    report_selfcheck,
+    start_sentry_checkin,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +252,8 @@ def run_selfcheck() -> SelfCheckResult:
 
     logger.info("Starting selfcheck: %s -> %s", from_email, to_email)
 
+    check_in_id = start_sentry_checkin()
+
     try:
         # Step 1: Create test mailboxes
         from_mailbox, to_mailbox = _create_test_mailboxes(from_email, to_email)
@@ -339,5 +346,7 @@ that the mail delivery pipeline is working correctly.</p>
         report_selfcheck(result)
     except Exception:  # pylint: disable=broad-exception-caught
         logger.warning("Failed to report selfcheck result", exc_info=True)
+
+    finish_sentry_checkin(check_in_id, result)
 
     return result

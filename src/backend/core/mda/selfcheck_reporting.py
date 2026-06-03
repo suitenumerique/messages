@@ -1,4 +1,4 @@
-"""Selfcheck reporting: webhook and structured logging."""
+"""Selfcheck reporting: webhook, Sentry crons, and structured logging."""
 
 import logging
 from typing import Optional, TypedDict
@@ -6,6 +6,8 @@ from typing import Optional, TypedDict
 from django.conf import settings
 
 import requests
+from sentry_sdk.crons import capture_checkin
+from sentry_sdk.crons.consts import MonitorStatus
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +45,52 @@ def log_selfcheck_result(result: SelfCheckResult):
             'selfcheck_completed success=false error="%s"',
             result.get("error", "unknown"),
         )
+
+
+def start_sentry_checkin() -> Optional[str]:
+    """Open a Sentry cron check-in if configured. Returns the check_in_id."""
+    slug = settings.MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG
+    if not slug:
+        return None
+
+    try:
+        return capture_checkin(
+            monitor_slug=slug,
+            status=MonitorStatus.IN_PROGRESS,
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.warning("Failed to open Sentry selfcheck check-in", exc_info=True)
+        return None
+
+
+def finish_sentry_checkin(check_in_id: Optional[str], result: SelfCheckResult):
+    """Close a previously opened Sentry cron check-in with OK/ERROR.
+
+    Reports an explicit duration when both send and reception times are
+    known — Sentry would otherwise infer it from the check-in timestamp
+    delta, which also includes the post-run cleanup sleep.
+    """
+    slug = settings.MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG
+    if not slug or not check_in_id:
+        return
+
+    status = MonitorStatus.OK if result["success"] else MonitorStatus.ERROR
+    send_time = result["send_time"]
+    reception_time = result["reception_time"]
+    duration = (
+        send_time + reception_time
+        if send_time is not None and reception_time is not None
+        else None
+    )
+    try:
+        capture_checkin(
+            monitor_slug=slug,
+            check_in_id=check_in_id,
+            status=status,
+            duration=duration,
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.warning("Failed to close Sentry selfcheck check-in", exc_info=True)
 
 
 def send_selfcheck_webhook(result: SelfCheckResult):

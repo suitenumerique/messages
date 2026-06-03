@@ -507,6 +507,12 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG = values.Value(
+        None,
+        environ_name="MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG",
+        environ_prefix=None,
+    )
+
     # Manual retry settings
     MESSAGES_MANUAL_RETRY_MAX_AGE = values.PositiveIntegerValue(
         7 * 24 * 60 * 60,  # 7 days in seconds

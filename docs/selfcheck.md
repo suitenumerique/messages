@@ -28,6 +28,10 @@ Optionally, to enable uptime alerting via a selfcheck webhook:
 
 - `MESSAGES_SELFCHECK_WEBHOOK_URL`: URL of the selfcheck webhook endpoint (default: `None` - disabled)
 
+Optionally, to report selfcheck runs to [Sentry Crons](https://docs.sentry.io/product/crons/):
+
+- `MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG`: Slug of the Sentry cron monitor (default: `None` - disabled). Requires `SENTRY_DSN` to also be set.
+
 ## Usage
 
 ### Manual Execution
@@ -94,6 +98,16 @@ The POST body includes timing data:
 ```json
 {"send_time": 0.15, "reception_time": 2.34}
 ```
+
+### Sentry Crons
+
+When `MESSAGES_SELFCHECK_SENTRY_MONITOR_SLUG` is configured (and `SENTRY_DSN` is set), each selfcheck run is reported to [Sentry Crons](https://docs.sentry.io/product/crons/):
+
+- An `in_progress` check-in is opened before the test message is sent.
+- The check-in is closed with status `ok` on success or `error` on failure.
+- On success, the reported `duration` is `send_time + reception_time`, excluding the post-run cleanup pause.
+
+Configure the monitor schedule (interval and grace period) in the Sentry UI to match `MESSAGES_SELFCHECK_INTERVAL`. Runs skipped because `MESSAGES_SELFCHECK_FROM` or `MESSAGES_SELFCHECK_TO` is empty do not produce a check-in.
 
 ## Security Considerations
 
