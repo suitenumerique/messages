@@ -2007,16 +2007,25 @@ class Message(BaseModel):
         """Get a parsed field from the parsed email data."""
         return (self.get_parsed_data() or {}).get(field_name)
 
-    def get_mime_headers(self) -> Dict[str, str]:
-        """Get the MIME headers of the message."""
+    def get_mime_headers(self) -> Dict[str, Any]:
+        """Get the MIME headers of the message.
+
+        Values follow the rfc5322 parser contract: ``str`` for RFC max=1
+        headers, ``list[str]`` in document order for every other header.
+        """
         return self.get_parsed_data().get("headers", {})
 
     def get_stmsg_headers(self) -> Dict[str, str]:
-        """Get the STMSG headers of the message."""
+        """Get the STMSG headers of the message.
+
+        ``X-StMsg-*`` headers are stamped by our own MTA pipeline (one
+        per message) and any sender-supplied copies are stripped before
+        parsing. They surface as single-element lists; take the first.
+        """
         return {
-            k[len("x-stmsg-") :].lower(): v
+            k[len("x-stmsg-") :].lower(): v[0]
             for k, v in self.get_parsed_data().get("headers", {}).items()
-            if k.startswith("x-stmsg-")
+            if k.startswith("x-stmsg-") and v
         }
 
     def generate_mime_id(self) -> str:

@@ -519,7 +519,7 @@ class TestProcessInboundMessageAuthIntegration:
         call_kwargs = mock_create_message.call_args[1]
         assert call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth: none\r\n")
         parsed = call_kwargs["parsed_email"]
-        assert parsed["headers"].get("x-stmsg-sender-auth") == "none"
+        assert parsed["headers"].get("x-stmsg-sender-auth") == ["none"]
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "rspamd"})
     @patch("core.mda.inbound_tasks.check_inbound_authentication")
@@ -541,7 +541,7 @@ class TestProcessInboundMessageAuthIntegration:
         call_kwargs = mock_create_message.call_args[1]
         assert call_kwargs["raw_data"].startswith(b"X-StMsg-Sender-Auth: fail\r\n")
         parsed = call_kwargs["parsed_email"]
-        assert parsed["headers"].get("x-stmsg-sender-auth") == "fail"
+        assert parsed["headers"].get("x-stmsg-sender-auth") == ["fail"]
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "native"})
     @patch("core.mda.inbound_tasks.check_inbound_authentication")
@@ -683,7 +683,7 @@ class TestProcessInboundMessageAuthIntegration:
         """After prepending, the parser exposes the header via x-stmsg-*."""
         tagged = b"X-StMsg-Sender-Auth: fail\r\n" + RAW_EMAIL
         parsed = parse_email_message(tagged)
-        assert parsed["headers"].get("x-stmsg-sender-auth") == "fail"
+        assert parsed["headers"].get("x-stmsg-sender-auth") == ["fail"]
 
     @override_settings(SPAM_CONFIG={"inbound_auth": "native"})
     @patch("core.mda.inbound_tasks.parse_email_message")

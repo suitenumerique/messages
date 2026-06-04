@@ -851,10 +851,11 @@ Text part.
         parsed = parse_email_message(message.to_string().encode("utf-8"))
         assert parsed is not None
         assert parsed["subject"] == "Custom Headers"
-        assert "x-custom-header" in parsed["headers"]
-        assert parsed["headers"]["x-custom-header"] == "Custom Value"
-        assert parsed["headers"]["x-priority"] == "1"
-        assert parsed["headers"]["x-mailer"] == "Custom Mailer v1.0"
+        # Non-scalar headers (X-*, optional-field per RFC 5322 §3.6.8)
+        # are stored as list[str] in document order.
+        assert parsed["headers"]["x-custom-header"] == ["Custom Value"]
+        assert parsed["headers"]["x-priority"] == ["1"]
+        assert parsed["headers"]["x-mailer"] == ["Custom Mailer v1.0"]
 
         # Check headers_list contains custom headers in order
         assert "headers_list" in parsed
@@ -2167,6 +2168,746 @@ Content-Type: text/html; charset="utf-8"
         parsed = parse_email_message(email_content)
         assert parsed is not None
         assert "htmlBody" in parsed
+
+
+class TestUnrecognisedMessageSubtypeRobustness:
+    """Coverage for inbound bounces and any ``message/*`` content type
+    the underlying MIME engine has no dedicated branch for.
+
+    RFC 5337 / RFC 6533 i18n DSN variants
+    (``message/global-delivery-status``,
+    ``message/global-disposition-notification``,
+    ``message/global-headers``), plus other standardised ``message/*``
+    subtypes (``message/partial`` RFC 2046, ``message/imdn+xml`` RFC 5438,
+    ``message/sip`` RFC 3261, ``message/cpim`` RFC 3862, …) and any
+    vendor / unknown subtype must all parse successfully when nested
+    inside a ``multipart/report`` bounce.
+
+    Tests exercise the public ``parse_email_message`` API only — no
+    MIME-engine internals — so they remain valid if the parser backend
+    is swapped (e.g. flanker → ``email.parser``). The behavioural
+    contract:
+
+    1. Parsing must not raise ``EmailParseError`` on any well-formed
+       multipart/report whose status part uses an unrecognised
+       ``message/*`` subtype.
+    2. The human-readable notification text part must survive parsing
+       so the bounce remains useful to the recipient.
+    3. Legacy bounce part types must continue to parse correctly.
+    4. Top-level unrecognised ``message/*`` content types are accepted
+       too, not only the multipart-nested case.
+    """
+
+    BOUNCE_BOUNDARY = "boundary-dsn"
+    NOTIFICATION_TEXT = "Your message could not be delivered to one or more recipients."
+
+    @classmethod
+    def _build_dsn(cls, status_content_type: str, status_body: bytes) -> bytes:
+        """Build a realistic multipart/report bounce wrapping ``status_body``."""
+        boundary = cls.BOUNCE_BOUNDARY.encode()
+        return (
+            b"From: MAILER-DAEMON@mta.example.com (Mail Delivery System)\r\n"
+            b"To: sender@example.org\r\n"
+            b"Subject: Undelivered Mail Returned to Sender\r\n"
+            b"Date: Thu,  4 Jun 2026 02:30:20 +0200 (CEST)\r\n"
+            b"MIME-Version: 1.0\r\n"
+            b"Content-Type: multipart/report; report-type=delivery-status;\r\n"
+            b'\tboundary="' + boundary + b'"\r\n'
+            b"\r\n"
+            b"This is a MIME-encapsulated message.\r\n"
+            b"\r\n"
+            b"--" + boundary + b"\r\n"
+            b"Content-Description: Notification\r\n"
+            b"Content-Type: text/plain; charset=utf-8\r\n"
+            b"\r\n" + cls.NOTIFICATION_TEXT.encode() + b"\r\n"
+            b"\r\n"
+            b"--" + boundary + b"\r\n"
+            b"Content-Description: Delivery report\r\n"
+            b"Content-Type: " + status_content_type.encode() + b"\r\n"
+            b"\r\n" + status_body + b"\r\n"
+            b"\r\n"
+            b"--" + boundary + b"--\r\n"
+        )
+
+    @pytest.mark.parametrize(
+        "content_type",
+        [
+            # RFC 5337 / 6533 i18n equivalents of the legacy bounce / MDN /
+            # rfc822-headers parts. These need predicate-level recognition
+            # to be classified correctly (not just treated as opaque).
+            "message/global-delivery-status",
+            "message/global-disposition-notification",
+            "message/global-headers",
+            # Other standardised ``message/*`` subtypes — any unknown
+            # subtype must be tolerated, not only the i18n ones.
+            "message/partial",  # RFC 2046 §5.2.2 fragmented messages
+            "message/imdn+xml",  # RFC 5438 IMDN
+            "message/sip",  # RFC 3261 SIP signalling
+            "message/sipfrag",  # RFC 3420 partial SIP messages
+            "message/cpim",  # RFC 3862 Common Presence and IM
+            # Vendor / unknown subtypes must also be tolerated.
+            "message/x-vendor-future",
+            "message/x-totally-unknown",
+        ],
+    )
+    def test_dsn_with_unrecognised_message_subtype(self, content_type):
+        """A multipart/report bounce whose status part uses any unrecognised
+        ``message/*`` subtype must parse without raising, and the
+        human-readable notification text part must be preserved."""
+        raw = self._build_dsn(
+            content_type,
+            b"Reporting-MTA: dns; mta.example.com\r\n"
+            b"\r\n"
+            b"Final-Recipient: rfc822; recipient@example.com\r\n"
+            b"Action: failed\r\n"
+            b"Status: 5.0.0",
+        )
+        parsed = parse_email_message(raw)
+        assert parsed is not None
+        assert parsed["subject"] == "Undelivered Mail Returned to Sender"
+        assert parsed["from"]["email"] == "MAILER-DAEMON@mta.example.com"
+        assert any(
+            self.NOTIFICATION_TEXT in part["content"] for part in parsed["textBody"]
+        ), (
+            f"notification text missing from textBody for {content_type}; "
+            f"got parts: {[p.get('content', '')[:60] for p in parsed['textBody']]}"
+        )
+
+    @pytest.mark.parametrize(
+        "content_type",
+        [
+            "message/delivery-status",
+            "message/disposition-notification",
+            "text/rfc822-headers",
+        ],
+    )
+    def test_dsn_with_legacy_recognised_subtype(self, content_type):
+        """Legacy bounce part types must keep parsing correctly."""
+        raw = self._build_dsn(
+            content_type,
+            b"Reporting-MTA: dns; mta.example.com\r\n"
+            b"\r\n"
+            b"Final-Recipient: rfc822; recipient@example.com\r\n"
+            b"Action: failed\r\n"
+            b"Status: 5.0.0",
+        )
+        parsed = parse_email_message(raw)
+        assert parsed is not None
+        assert parsed["subject"] == "Undelivered Mail Returned to Sender"
+        assert any(
+            self.NOTIFICATION_TEXT in part["content"] for part in parsed["textBody"]
+        )
+
+    def test_postfix_i18n_dsn_full_shape(self):
+        """End-to-end shape: a Postfix bounce wrapping RFC 6533
+        ``message/global-delivery-status`` inside ``multipart/report``,
+        with the full set of headers Postfix typically emits."""
+        raw = self._build_dsn(
+            "message/global-delivery-status",
+            b"Reporting-MTA: dns; mta.example.com\r\n"
+            b"X-Postfix-Queue-ID: ABC123\r\n"
+            b"X-Postfix-Sender: rfc822; sender@example.org\r\n"
+            b"\r\n"
+            b"Final-Recipient: rfc822; user@example.com\r\n"
+            b"Original-Recipient: rfc822;user@example.com\r\n"
+            b"Action: failed\r\n"
+            b"Status: 5.0.0",
+        )
+        parsed = parse_email_message(raw)
+        assert parsed["subject"] == "Undelivered Mail Returned to Sender"
+        # Sanity-check the headers that downstream bounce handlers read.
+        assert parsed["headers"].get("from", "").startswith("MAILER-DAEMON")
+        assert "multipart/report" in parsed["headers"]["content-type"]
+
+    def test_top_level_unrecognised_message_subtype(self):
+        """An email whose ROOT Content-Type is an unrecognised
+        ``message/*`` subtype must parse — the fallback applies at the
+        root, not only nested inside a multipart."""
+        raw = (
+            b"From: sender@example.com\r\n"
+            b"To: recipient@example.com\r\n"
+            b"Subject: Weird top-level subtype\r\n"
+            b"MIME-Version: 1.0\r\n"
+            b"Content-Type: message/x-something-vendor\r\n"
+            b"\r\n"
+            b"opaque payload bytes\r\n"
+        )
+        # The contract is "do not raise". Whether the body bytes are
+        # surfaced verbatim in textBody is implementation-defined and
+        # not asserted here, so the test survives a backend swap.
+        parsed = parse_email_message(raw)
+        assert parsed is not None
+        assert parsed["subject"] == "Weird top-level subtype"
+        assert parsed["from"]["email"] == "sender@example.com"
+
+    def test_unrecognised_subtype_nested_in_message_container(self):
+        """A ``message/rfc822``-wrapped inner message with its own
+        unrecognised ``message/*`` content type must parse — the outer
+        container should not be affected by an unknown inner subtype."""
+        raw = (
+            b"From: x@example.com\r\n"
+            b"To: y@example.com\r\n"
+            b"Subject: Forwarded weird\r\n"
+            b"MIME-Version: 1.0\r\n"
+            b'Content-Type: multipart/mixed; boundary="OUTER"\r\n'
+            b"\r\n"
+            b"--OUTER\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"\r\n"
+            b"See the attached forwarded message.\r\n"
+            b"\r\n"
+            b"--OUTER\r\n"
+            b"Content-Type: message/rfc822\r\n"
+            b"\r\n"
+            b"From: inner@example.com\r\n"
+            b"Subject: Inner\r\n"
+            b"Content-Type: message/x-unknown-vendor\r\n"
+            b"\r\n"
+            b"opaque body\r\n"
+            b"--OUTER--\r\n"
+        )
+        parsed = parse_email_message(raw)
+        assert parsed is not None
+        assert parsed["subject"] == "Forwarded weird"
+        assert any("See the attached" in part["content"] for part in parsed["textBody"])
+
+    def test_multiple_unrecognised_subtypes_in_same_report(self):
+        """A bounce can contain multiple status sub-parts with mixed
+        legacy and i18n content types. None of them should crash and
+        the notification text must survive."""
+        raw = (
+            b"From: MAILER-DAEMON@mta.example.com\r\n"
+            b"To: sender@example.org\r\n"
+            b"Subject: Mixed bounce\r\n"
+            b"MIME-Version: 1.0\r\n"
+            b"Content-Type: multipart/report; report-type=delivery-status;\r\n"
+            b'\tboundary="MULTI"\r\n'
+            b"\r\n"
+            b"--MULTI\r\n"
+            b"Content-Type: text/plain; charset=utf-8\r\n"
+            b"\r\n" + self.NOTIFICATION_TEXT.encode() + b"\r\n"
+            b"--MULTI\r\n"
+            b"Content-Type: message/delivery-status\r\n"
+            b"\r\n"
+            b"Reporting-MTA: dns; legacy.example.com\r\n"
+            b"--MULTI\r\n"
+            b"Content-Type: message/global-delivery-status\r\n"
+            b"\r\n"
+            b"Reporting-MTA: dns; i18n.example.com\r\n"
+            b"--MULTI\r\n"
+            b"Content-Type: message/x-something-unknown\r\n"
+            b"\r\n"
+            b"opaque\r\n"
+            b"--MULTI--\r\n"
+        )
+        parsed = parse_email_message(raw)
+        assert parsed is not None
+        assert parsed["subject"] == "Mixed bounce"
+        assert any(
+            self.NOTIFICATION_TEXT in part["content"] for part in parsed["textBody"]
+        )
+
+
+class TestScalarHeaderDuplicates:
+    """RFC 5322 §3.6 makes every scalar header — Date, From, Sender,
+    Reply-To, To, Cc, Bcc, Message-ID, In-Reply-To, References, Subject —
+    appear at most once. Real-world senders sometimes emit duplicates
+    anyway, and the parser must tolerate that.
+
+    Behaviour matches the Python stdlib's
+    ``email.message.Message.__getitem__``: when a header is repeated,
+    the parser silently uses the first occurrence. Tests pin that
+    contract through the public ``parse_email_message`` API so they
+    survive a swap from flanker to ``email.parser``.
+    """
+
+    BASE_HEADERS = {
+        "From": "sender@example.com",
+        "To": "recipient@example.com",
+        "Subject": "hello",
+        "Date": "Thu, 4 Jun 2026 00:47:09 +0000",
+        "Message-ID": "<canonical@example.com>",
+    }
+
+    @classmethod
+    def _build(cls, **overrides: object) -> bytes:
+        """Build a minimal email. ``overrides`` may map a header name to
+        a single str (default behaviour) or a list[str] (the header is
+        emitted multiple times, in that order)."""
+        headers = {**cls.BASE_HEADERS, **overrides}
+        lines: list[str] = []
+        for name, value in headers.items():
+            if isinstance(value, list):
+                for v in value:
+                    lines.append(f"{name}: {v}")
+            else:
+                lines.append(f"{name}: {value}")
+        lines += ["", "body"]
+        return ("\r\n".join(lines)).encode("utf-8")
+
+    @pytest.mark.parametrize(
+        "header_name,values,result_key,expected_first",
+        [
+            # Identification: Message-ID and In-Reply-To strip <> on the
+            # first value; the second one must not leak into the result.
+            (
+                "Message-ID",
+                ["<first@example.com>", "<second@example.com>"],
+                "message_id",
+                "first@example.com",
+            ),
+            (
+                "In-Reply-To",
+                ["<parent-first@example.com>", "<parent-second@example.com>"],
+                "in_reply_to",
+                "parent-first@example.com",
+            ),
+            (
+                "References",
+                ["<r1@example.com>", "<r2@example.com>"],
+                "references",
+                "<r1@example.com>",
+            ),
+            (
+                "Subject",
+                ["first subject", "second subject"],
+                "subject",
+                "first subject",
+            ),
+        ],
+    )
+    def test_duplicate_scalar_header_takes_first(
+        self, header_name, values, result_key, expected_first
+    ):
+        """A duplicated scalar header must surface only its first
+        occurrence in the structured result."""
+        raw = self._build(**{header_name: values})
+        parsed = parse_email_message(raw)
+        assert parsed is not None
+        assert parsed[result_key] == expected_first
+
+    def test_duplicate_from_takes_first(self):
+        """``From`` is parsed into ``{name, email}`` — first occurrence wins."""
+        raw = self._build(**{"From": ["first@example.com", "second@example.com"]})
+        parsed = parse_email_message(raw)
+        assert parsed["from"]["email"] == "first@example.com"
+
+    @pytest.mark.parametrize(
+        "header_name,result_key",
+        [("To", "to"), ("Cc", "cc"), ("Bcc", "bcc")],
+    )
+    def test_duplicate_address_list_header_takes_first(self, header_name, result_key):
+        """Only the first occurrence's addresses should appear in the
+        structured result for duplicated address-list headers."""
+        raw = self._build(**{header_name: ["first@example.com", "second@example.com"]})
+        parsed = parse_email_message(raw)
+        assert len(parsed[result_key]) == 1
+        assert parsed[result_key][0]["email"] == "first@example.com"
+
+    def test_duplicate_date_takes_first(self):
+        """The first ``Date`` header wins."""
+        first = "Thu, 4 Jun 2026 00:47:09 +0000"
+        second = "Fri, 5 Jun 2026 00:00:00 +0000"
+        raw = self._build(Date=[first, second])
+        parsed = parse_email_message(raw)
+        # Assert only the day-of-month — uniquely identifies the choice
+        # without depending on tz formatting which can differ across
+        # parser backends.
+        assert parsed["date"] is not None
+        assert parsed["date"].day == 4
+
+    def test_dual_message_id_returns_first(self):
+        """A message with two ``Message-ID`` headers must yield a single
+        deterministic Message-ID downstream so the ``mime_id``-based
+        duplicate-message check in inbound delivery has something
+        stable to compare against."""
+        raw = self._build(
+            **{
+                "Message-ID": [
+                    "<0S7NGNc8g9oEF8bStCvPthDYCCU0T9dnM20qLmmECY@example.com>",
+                    "<cdd440bf7fd91e2e23ac53136b0b860d@example.com>",
+                ]
+            }
+        )
+        parsed = parse_email_message(raw)
+        assert isinstance(parsed["message_id"], str)
+        assert (
+            parsed["message_id"]
+            == "0S7NGNc8g9oEF8bStCvPthDYCCU0T9dnM20qLmmECY@example.com"
+        )
+
+    def test_no_duplication_still_works(self):
+        """Regression guard: emails without any duplicated header must
+        keep producing the same scalar fields after the helper change."""
+        raw = self._build()
+        parsed = parse_email_message(raw)
+        assert parsed["subject"] == "hello"
+        assert parsed["from"]["email"] == "sender@example.com"
+        assert parsed["to"][0]["email"] == "recipient@example.com"
+        assert parsed["message_id"] == "canonical@example.com"
+
+    def test_every_scalar_header_duplicated_simultaneously(self):
+        """Stress test: every scalar header per RFC 5322 §3.6 emitted
+        twice in the same email must not crash the parser."""
+        raw = self._build(
+            **{
+                "From": ["first-from@example.com", "second-from@example.com"],
+                "To": ["first-to@example.com", "second-to@example.com"],
+                "Cc": ["first-cc@example.com", "second-cc@example.com"],
+                "Bcc": ["first-bcc@example.com", "second-bcc@example.com"],
+                "Subject": ["first subj", "second subj"],
+                "Date": [
+                    "Thu, 4 Jun 2026 00:47:09 +0000",
+                    "Fri, 5 Jun 2026 00:00:00 +0000",
+                ],
+                "Message-ID": ["<id-a@example.com>", "<id-b@example.com>"],
+                "In-Reply-To": ["<irt-a@example.com>", "<irt-b@example.com>"],
+                "References": ["<ref-a@example.com>", "<ref-b@example.com>"],
+                "Reply-To": ["first-rt@example.com", "second-rt@example.com"],
+                "Sender": ["first-sender@example.com", "second-sender@example.com"],
+            }
+        )
+        parsed = parse_email_message(raw)
+        # Every scalar field must be a plain str (or scalar-shaped
+        # dict for ``from``) — never a list.
+        assert isinstance(parsed["subject"], str)
+        assert isinstance(parsed["from"]["email"], str)
+        assert isinstance(parsed["message_id"], str)
+        assert isinstance(parsed["in_reply_to"], str)
+        assert isinstance(parsed["references"], str)
+        # And the first values won.
+        assert parsed["subject"] == "first subj"
+        assert parsed["from"]["email"] == "first-from@example.com"
+        assert parsed["message_id"] == "id-a@example.com"
+        assert parsed["in_reply_to"] == "irt-a@example.com"
+        assert parsed["references"] == "<ref-a@example.com>"
+
+
+class TestParsedHeadersTypeContract:
+    """The ``parsed["headers"]`` dict follows a fixed per-header contract:
+
+    - Headers registered with max=1 in the IANA Provisional Message
+      Header Field Registry (RFC 5322 §3.6, RFC 3834 §5, RFC 2045 /
+      2046 / 2183, RFC 4021, RFC 3798, RFC 5703, RFC 8058, RFC 8098)
+      are stored as ``str``. On duplication, the first occurrence
+      wins — matching stdlib ``email.message.Message[name]`` semantics.
+    - Every other header (``received``, ``return-path``, ``precedence``,
+      ``dkim-signature``, ``authentication-results``, ``arc-*``,
+      ``list-*``, ``comments``, ``keywords``, every ``X-*`` /
+      optional-field) is stored as ``list[str]`` in document order.
+
+    Consumers can therefore rely on the type at the call site based on
+    the header name alone — no runtime ``isinstance`` checks. Tests
+    here exercise the public API only so they survive a swap to the
+    Python stdlib parser.
+    """
+
+    @pytest.mark.parametrize(
+        "header_name",
+        [
+            # RFC 5322 §3.6
+            "subject",
+            "from",
+            "sender",
+            "reply-to",
+            "to",
+            "cc",
+            "bcc",
+            "date",
+            "message-id",
+            "in-reply-to",
+            "references",
+            # RFC 3834 §5
+            "auto-submitted",
+            # RFC 2045 / 2046 / 2183
+            "mime-version",
+            "content-type",
+            "content-transfer-encoding",
+            # RFC 4021 — message-class indicators
+            "importance",
+            "priority",
+            "sensitivity",
+            # RFC 8098 — MDN request
+            "disposition-notification-to",
+            # RFC 3798 — MDN reporting
+            "original-message-id",
+            # RFC 5703 — Sieve archive
+            "original-from",
+            "original-subject",
+            # RFC 8058 — one-click unsubscribe
+            "list-unsubscribe-post",
+        ],
+    )
+    def test_scalar_header_is_str(self, header_name):
+        """Every header registered with max=1 in the IANA registry must
+        be ``str`` in ``parsed["headers"]``, even when the input had
+        only one occurrence. Pre-emptive coverage: a future consumer
+        reading any of these can rely on the type without
+        ``isinstance``."""
+        raw = (
+            b"From: sender@example.com\r\n"
+            b"To: recipient@example.com\r\n"
+            b"Date: Thu, 4 Jun 2026 00:47:09 +0000\r\n"
+            b"Subject: hi\r\n"
+            b"Sender: real-sender@example.com\r\n"
+            b"Reply-To: replies@example.com\r\n"
+            b"Cc: cc@example.com\r\n"
+            b"Bcc: bcc@example.com\r\n"
+            b"Message-ID: <id@example.com>\r\n"
+            b"In-Reply-To: <parent@example.com>\r\n"
+            b"References: <ref@example.com>\r\n"
+            b"Auto-Submitted: no\r\n"
+            b"Importance: high\r\n"
+            b"Priority: urgent\r\n"
+            b"Sensitivity: Personal\r\n"
+            b"Disposition-Notification-To: mdn@example.com\r\n"
+            b"Original-Message-ID: <orig@example.com>\r\n"
+            b"Original-From: orig@example.com\r\n"
+            b"Original-Subject: original subject\r\n"
+            b"List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n"
+            b"MIME-Version: 1.0\r\n"
+            b"Content-Type: text/plain\r\n"
+            b"Content-Transfer-Encoding: 7bit\r\n"
+            b"\r\n"
+            b"body\r\n"
+        )
+        parsed = parse_email_message(raw)
+        value = parsed["headers"].get(header_name)
+        assert isinstance(value, str), (
+            f"{header_name} expected str, got {type(value).__name__}"
+        )
+
+    @pytest.mark.parametrize(
+        "header_name,header_value",
+        [
+            # Trace fields — explicitly unlimited per RFC 5322 §3.6.7.
+            ("received", "from a.example.com by b.example.com"),
+            ("return-path", "<sender@example.com>"),
+            # RFC 5322 §3.6.5 — unlimited.
+            ("comments", "a comment"),
+            ("keywords", "tag1, tag2"),
+            # Optional-field — RFC 5322 §3.6.8 unlimited.
+            ("precedence", "bulk"),
+            ("x-mailer", "PHPMailer 7.1.1"),
+            ("x-priority", "1"),
+            # RFC 6376 — multiple signatures expected.
+            ("dkim-signature", "v=1; a=rsa-sha256; d=example.com; ..."),
+            # RFC 8601 — one per authserv-id, repeatable.
+            ("authentication-results", "mta.example.com; spf=pass"),
+            # RFC 2369 list-* — repeatable in practice.
+            ("list-id", "<list.example.com>"),
+            ("list-unsubscribe", "<mailto:u@example.com>"),
+        ],
+    )
+    def test_repeatable_header_is_list(self, header_name, header_value):
+        """Every header outside ``_SCALAR_HEADERS`` must be ``list[str]``
+        even when it appears only once."""
+        raw = (
+            b"From: sender@example.com\r\n"
+            b"Subject: hi\r\n"
+            + header_name.encode("ascii")
+            + b": "
+            + header_value.encode("ascii")
+            + b"\r\n"
+            b"\r\n"
+            b"body\r\n"
+        )
+        parsed = parse_email_message(raw)
+        value = parsed["headers"].get(header_name)
+        assert isinstance(value, list), (
+            f"{header_name} expected list, got {type(value).__name__}"
+        )
+        assert value == [header_value]
+
+    def test_multiple_received_preserved_in_order(self):
+        """``Received`` is repeatable — every hop must appear in
+        document order so spam / forensics consumers can walk the chain."""
+        raw = (
+            b"Received: from hop3 by hop4\r\n"
+            b"Received: from hop2 by hop3\r\n"
+            b"Received: from hop1 by hop2\r\n"
+            b"From: sender@example.com\r\n"
+            b"Subject: traced\r\n"
+            b"\r\n"
+            b"body\r\n"
+        )
+        parsed = parse_email_message(raw)
+        received = parsed["headers"]["received"]
+        assert isinstance(received, list)
+        assert len(received) == 3
+        assert "hop3 by hop4" in received[0]
+        assert "hop2 by hop3" in received[1]
+        assert "hop1 by hop2" in received[2]
+
+    def test_multiple_dkim_signatures_preserved(self):
+        """Multiple ``DKIM-Signature`` headers (RFC 6376) — each relay
+        can add its own. All must survive parsing as list entries."""
+        sig_a = "v=1; a=rsa-sha256; d=wanadoo.fr; s=t20230301; bh=AAA"
+        sig_b = "v=1; a=rsa-sha256; d=ac-limoges.fr; s=default; bh=BBB"
+        raw = (
+            b"From: sender@example.com\r\n"
+            b"Subject: dkim test\r\n"
+            b"DKIM-Signature: " + sig_a.encode() + b"\r\n"
+            b"DKIM-Signature: " + sig_b.encode() + b"\r\n"
+            b"\r\n"
+            b"body\r\n"
+        )
+        parsed = parse_email_message(raw)
+        signatures = parsed["headers"]["dkim-signature"]
+        assert isinstance(signatures, list)
+        assert len(signatures) == 2
+        assert "wanadoo.fr" in signatures[0]
+        assert "ac-limoges.fr" in signatures[1]
+
+    @pytest.mark.parametrize(
+        "header_name",
+        [
+            "received",
+            "dkim-signature",
+            "authentication-results",
+            "comments",
+            "keywords",
+            "resent-from",
+            "resent-to",
+            "list-id",
+            "x-custom",
+        ],
+    )
+    def test_repeatable_header_preserves_all_occurrences(self, header_name):
+        """Every occurrence of a repeatable header must be retained in
+        document order — no silent deduplication or truncation."""
+        raw = (
+            b"From: sender@example.com\r\nSubject: hi\r\n"
+            + (header_name.encode() + b": value-A\r\n")
+            + (header_name.encode() + b": value-B\r\n")
+            + (header_name.encode() + b": value-C\r\n")
+            + b"\r\nbody\r\n"
+        )
+        parsed = parse_email_message(raw)
+        values = parsed["headers"][header_name]
+        assert values == ["value-A", "value-B", "value-C"], (
+            f"{header_name}: expected all three preserved in order, got {values!r}"
+        )
+
+    def test_headers_blocks_always_uses_list_values(self):
+        """Inside ``headers_blocks`` every value is ``list[str]``,
+        even for scalar headers like Subject — block consumers index
+        uniformly so the trusted-relays cut stays simple.
+
+        ``parsed["headers"]`` and ``parsed["headers_blocks"]`` have
+        intentionally different shapes; pin both so a future refactor
+        doesn't quietly unify them.
+        """
+        raw = (
+            b"Received: from hop1 by hop2\r\n"
+            b"From: sender@example.com\r\n"
+            b"Subject: scalar in block\r\n"
+            b"\r\nbody\r\n"
+        )
+        parsed = parse_email_message(raw)
+        # parsed["headers"]["subject"] is the str scalar.
+        assert parsed["headers"]["subject"] == "scalar in block"
+        # parsed["headers_blocks"][N]["subject"] is the same value
+        # wrapped in a single-element list.
+        for block in parsed["headers_blocks"]:
+            if "subject" in block:
+                assert isinstance(block["subject"], list)
+                assert block["subject"] == ["scalar in block"]
+                break
+        else:  # pragma: no cover — fail loudly if no block had Subject
+            pytest.fail("Subject not found in any header block")
+
+    @pytest.mark.parametrize("case_variant", ["From", "FROM", "from", "FrOm"])
+    def test_scalar_header_lookup_is_case_insensitive(self, case_variant):
+        """Header names in input are case-insensitive per RFC 5322
+        §3.6.8; ``parsed["headers"]`` keys are always lowercase and
+        callers must reach values via the lowercase form regardless of
+        the wire casing."""
+        raw = (
+            case_variant.encode("ascii") + b": sender@example.com\r\n"
+            b"Subject: hi\r\n\r\nbody\r\n"
+        )
+        parsed = parse_email_message(raw)
+        assert parsed["headers"]["from"] == "sender@example.com"
+
+    def test_auto_submitted_duplicate_first_wins_per_rfc_3834(self):
+        """RFC 3834 §5 makes Auto-Submitted max=1; on duplication we
+        take the first value — matching stdlib semantics. A sender
+        that emits ``Auto-Submitted: no`` first and
+        ``Auto-Submitted: auto-replied`` second is non-compliant; we
+        intentionally trust the first occurrence."""
+        raw = (
+            b"From: sender@example.com\r\n"
+            b"Subject: hi\r\n"
+            b"Auto-Submitted: no\r\n"
+            b"Auto-Submitted: auto-replied\r\n"
+            b"\r\nbody\r\n"
+        )
+        parsed = parse_email_message(raw)
+        assert parsed["headers"]["auto-submitted"] == "no"
+
+    def test_precedence_poison_first_still_detected_as_auto_reply(self):
+        """Defence-in-depth for loop detection. ``Precedence`` is
+        repeatable per RFC 5322 §3.6.8 (optional-field); the autoreply
+        check iterates every occurrence, so a non-bulk value cannot
+        mask a later ``bulk`` one and provoke a reply loop."""
+        raw = (
+            b"From: list@example.com\r\nSubject: newsletter\r\n"
+            b"Precedence: not-bulk\r\n"
+            b"Precedence: bulk\r\n"
+            b"\r\nbody\r\n"
+        )
+        parsed = parse_email_message(raw)
+        from core.mda.autoreply import (  # pylint: disable=import-outside-toplevel
+            _is_auto_reply_message,
+        )
+
+        assert _is_auto_reply_message(parsed["headers"]) is True
+
+    def test_return_path_poison_first_still_detected_as_bounce(self):
+        """Same defence-in-depth as Precedence: a duplicate
+        ``Return-Path`` with a non-bounce value first must not mask a
+        bounce indicator (``<>`` / empty) later."""
+        raw = (
+            b"From: MAILER-DAEMON@example.com\r\nSubject: bounce\r\n"
+            b"Return-Path: <victim@anywhere.com>\r\n"
+            b"Return-Path: <>\r\n"
+            b"\r\nbody\r\n"
+        )
+        parsed = parse_email_message(raw)
+        from core.mda.autoreply import (  # pylint: disable=import-outside-toplevel
+            _is_auto_reply_message,
+        )
+
+        assert _is_auto_reply_message(parsed["headers"]) is True
+
+    def test_headers_dict_type_matches_call_site_expectation(self):
+        """Real-world inbound with multiple legitimately-repeated
+        ``DKIM-Signature`` and ``Received`` headers (RFC 6376 /
+        RFC 5322) must pass through the autoreply detection logic —
+        which does ``.strip().lower()`` on scalar lookups — without
+        raising."""
+        raw = (
+            b"Received: from hop2 by hop3\r\n"
+            b"Received: from hop1 by hop2\r\n"
+            b"DKIM-Signature: v=1; a=rsa-sha256; d=a.example.com\r\n"
+            b"DKIM-Signature: v=1; a=rsa-sha256; d=b.example.com\r\n"
+            b"From: sender@example.com\r\n"
+            b"To: recipient@example.com\r\n"
+            b"Subject: legitimate forwarded mail\r\n"
+            b"Precedence: bulk\r\n"
+            b"\r\n"
+            b"body\r\n"
+        )
+        parsed = parse_email_message(raw)
+        # Defer the autoreply import to keep this test isolated from
+        # the autoreply module's import-time side effects.
+        from core.mda.autoreply import (  # pylint: disable=import-outside-toplevel
+            _is_auto_reply_message,
+        )
+
+        # Must not raise — and the bulk Precedence must be detected.
+        assert _is_auto_reply_message(parsed["headers"]) is True
 
 
 if __name__ == "__main__":

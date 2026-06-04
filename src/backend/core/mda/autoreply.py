@@ -82,30 +82,36 @@ def _is_auto_reply_message(headers: dict) -> bool:
     if not headers:
         return False
 
-    # Normalize header keys to lowercase for comparison
+    # ``headers`` follows the rfc5322 parser contract:
+    #   - RFC max=1 headers (auto-submitted, …) are ``str``
+    #   - every other header is ``list[str]`` in document order
+    # Lowercase defensively so the function tolerates a caller that
+    # hasn't normalised yet (production callers go through the parser
+    # which already lowercases).
     lower_headers = {k.lower(): v for k, v in headers.items()}
 
-    # Return-Path: empty or <> means bounce (RFC 3834)
-    if "return-path" in lower_headers:
-        return_path = lower_headers["return-path"].strip()
-        if return_path in ("", "<>"):
+    # Return-Path: empty or <> means bounce (RFC 3834). Return-Path is
+    # not in _SCALAR_HEADERS so it's a list[str]; iterate every
+    # occurrence so a benign duplicate can't mask a bounce indicator.
+    for return_path in lower_headers.get("return-path", []):
+        if return_path.strip() in ("", "<>"):
             return True
 
-    # Auto-Submitted: anything other than "no" means auto-generated.
-    # RFC 3834 allows parameters after ";" (e.g. "auto-replied; owner-email=...").
+    # Auto-Submitted: RFC 3834 §5 makes this max=1, so it's a str.
+    # Parameters after ";" (e.g. "auto-replied; owner-email=...") are
+    # stripped before comparison; anything other than "no" counts.
     auto_submitted = lower_headers.get("auto-submitted", "").strip().lower()
     if auto_submitted:
-        # Strip parameters: "auto-replied; foo=bar" -> "auto-replied"
-        auto_submitted_value = auto_submitted.split(";", 1)[0].strip()
-        if auto_submitted_value and auto_submitted_value != "no":
+        if auto_submitted.split(";", 1)[0].strip() not in ("", "no"):
             return True
 
-    # Precedence: bulk, list, junk
-    precedence = lower_headers.get("precedence", "").strip().lower()
-    if precedence in _PRECEDENCE_VALUES:
-        return True
+    # Precedence: bulk, list, junk. Repeatable per RFC 5322 (optional-field).
+    for precedence in lower_headers.get("precedence", []):
+        if precedence.strip().lower() in _PRECEDENCE_VALUES:
+            return True
 
-    # Presence of any loop header
+    # Presence of any loop header is enough (list-id, list-unsubscribe,
+    # x-loop, …). All of these are list-typed; truthy ⇔ non-empty.
     for header_name in _LOOP_HEADERS:
         if lower_headers.get(header_name):
             return True

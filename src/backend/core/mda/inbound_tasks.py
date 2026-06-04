@@ -73,9 +73,12 @@ def _check_spam_with_hardcoded_rules(
             key = key.lower().strip()
             value = value.lower().strip()
 
-            # Get header value(s) - can be a string or list
-            header_value = headers.get(key)
-            if header_value is None:
+            # Existence check only — the actual value is read from
+            # headers_blocks below to apply the trusted-relays cut.
+            # ``headers`` follows the rfc5322 parser contract:
+            # str for RFC max=1 headers, list[str] otherwise; either
+            # shape is truthy when present, which is all we need here.
+            if headers.get(key) is None:
                 continue
 
             # Use headers_blocks to identify which headers to trust based on trusted_relays config.

@@ -111,42 +111,42 @@ class TestIsAutoReplyMessage:
 
     def test_precedence_bulk(self):
         """Precedence: bulk is detected."""
-        headers = {"Precedence": "bulk"}
+        headers = {"Precedence": ["bulk"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_precedence_list(self):
         """Precedence: list is detected."""
-        headers = {"Precedence": "list"}
+        headers = {"Precedence": ["list"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_precedence_junk(self):
         """Precedence: junk is detected."""
-        headers = {"Precedence": "junk"}
+        headers = {"Precedence": ["junk"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_list_id_header(self):
         """List-Id header is detected."""
-        headers = {"List-Id": "<list.example.com>"}
+        headers = {"List-Id": ["<list.example.com>"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_list_unsubscribe_header(self):
         """List-Unsubscribe header is detected."""
-        headers = {"List-Unsubscribe": "<mailto:unsub@example.com>"}
+        headers = {"List-Unsubscribe": ["<mailto:unsub@example.com>"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_x_auto_response_suppress(self):
         """X-Auto-Response-Suppress header is detected."""
-        headers = {"X-Auto-Response-Suppress": "All"}
+        headers = {"X-Auto-Response-Suppress": ["All"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_x_autoreply(self):
         """X-Autoreply header is detected."""
-        headers = {"X-Autoreply": "yes"}
+        headers = {"X-Autoreply": ["yes"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_x_autorespond(self):
         """X-Autorespond header is detected."""
-        headers = {"X-Autorespond": "yes"}
+        headers = {"X-Autorespond": ["yes"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_auto_submitted_with_parameters(self):
@@ -165,47 +165,47 @@ class TestIsAutoReplyMessageExtended:
 
     def test_return_path_null(self):
         """Return-Path: <> (null sender) is detected."""
-        headers = {"Return-Path": "<>"}
+        headers = {"Return-Path": ["<>"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_return_path_empty(self):
         """Return-Path with empty value is detected."""
-        headers = {"Return-Path": ""}
+        headers = {"Return-Path": [""]}
         assert _is_auto_reply_message(headers) is True
 
     def test_list_post_header(self):
         """List-Post header is detected."""
-        headers = {"List-Post": "<mailto:list@example.com>"}
+        headers = {"List-Post": ["<mailto:list@example.com>"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_list_help_header(self):
         """List-Help header is detected."""
-        headers = {"List-Help": "<mailto:help@example.com>"}
+        headers = {"List-Help": ["<mailto:help@example.com>"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_list_subscribe_header(self):
         """List-Subscribe header is detected."""
-        headers = {"List-Subscribe": "<mailto:sub@example.com>"}
+        headers = {"List-Subscribe": ["<mailto:sub@example.com>"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_list_owner_header(self):
         """List-Owner header is detected."""
-        headers = {"List-Owner": "<mailto:owner@example.com>"}
+        headers = {"List-Owner": ["<mailto:owner@example.com>"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_list_archive_header(self):
         """List-Archive header is detected."""
-        headers = {"List-Archive": "<https://archive.example.com>"}
+        headers = {"List-Archive": ["<https://archive.example.com>"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_x_loop_header(self):
         """X-Loop header is detected."""
-        headers = {"X-Loop": "yes"}
+        headers = {"X-Loop": ["yes"]}
         assert _is_auto_reply_message(headers) is True
 
     def test_feedback_id_header(self):
         """Feedback-ID header is detected (Gmail newsletters)."""
-        headers = {"Feedback-ID": "123:campaign:gmail"}
+        headers = {"Feedback-ID": ["123:campaign:gmail"]}
         assert _is_auto_reply_message(headers) is True
 
 

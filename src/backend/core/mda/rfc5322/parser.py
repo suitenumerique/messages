@@ -43,6 +43,58 @@ class EmailParseError(Exception):
     """Exception raised for errors during email parsing."""
 
 
+# Header names (lowercase) that the relevant RFCs specify as appearing
+# at most once per message. ``parsed["headers"][name]`` is ``str`` for
+# these and ``list[str]`` (in document order) for every other header.
+# When duplicated in the wild, the first occurrence wins — matching
+# Python stdlib ``email.message.Message[name]`` semantics.
+#
+# Inclusion criterion: registered with max=1 in the IANA Provisional
+# Message Header Field Registry (RFC 3864 / RFC 9057). The set is
+# pre-emptive — many of these headers have no consumer in the code
+# today, but pinning their type now means a future caller can write
+# ``parsed["headers"]["x"].strip()`` without an isinstance check.
+_SCALAR_HEADERS: frozenset[str] = frozenset(
+    {
+        # RFC 5322 §3.6 (origination, destination, identification,
+        # informational fields — all max=1):
+        "date",
+        "from",
+        "sender",
+        "reply-to",
+        "to",
+        "cc",
+        "bcc",
+        "message-id",
+        "in-reply-to",
+        "references",
+        "subject",
+        # RFC 3834 §5 — Auto-Submitted MUST NOT appear more than once:
+        "auto-submitted",
+        # RFC 2045 / 2046 / 2183 single-valued MIME container fields:
+        "mime-version",
+        "content-type",
+        "content-id",
+        "content-transfer-encoding",
+        "content-description",
+        "content-disposition",
+        # RFC 4021 §2.1.55 / .56 / .57 — message-class indicators:
+        "importance",
+        "priority",
+        "sensitivity",
+        # RFC 8098 §2.1 — MDN request (MUST NOT appear more than once):
+        "disposition-notification-to",
+        # RFC 3798 — MDN reporting:
+        "original-message-id",
+        # RFC 5703 §3.4 — Sieve archive original-envelope:
+        "original-from",
+        "original-subject",
+        # RFC 8058 §3.1 — one-click unsubscribe POST body:
+        "list-unsubscribe-post",
+    }
+)
+
+
 def decode_email_header_text(header_text: str) -> str:
     """
     Decode email header text that might be encoded (RFC 2047).
@@ -724,17 +776,36 @@ def _parse_labels_header(labels_str: str) -> list:
 
 
 def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
-    """
-    Parse a raw email message (bytes) into a structured dictionary following JMAP format.
+    """Parse a raw email message (bytes) into a structured dict (JMAP-ish).
+
+    The returned dict carries three header views, each with a fixed
+    type contract so callers don't need ``isinstance`` checks:
+
+    - ``headers`` — ``dict[str, str | list[str]]`` keyed by lowercase
+      name. RFC max=1 headers (see ``_SCALAR_HEADERS``) are ``str``;
+      first occurrence wins on duplication, matching stdlib
+      ``email.message.Message[name]``. Every other header is
+      ``list[str]`` in document order — ``received``, ``return-path``,
+      ``dkim-signature``, ``authentication-results``, ``arc-*``,
+      ``list-*``, ``comments``, ``keywords``, every ``X-*``.
+    - ``headers_list`` — ``list[tuple[str, str]]`` of every header in
+      document order, with lowercase names. Source of truth for full
+      occurrence + ordering.
+    - ``headers_blocks`` — ``list[dict[str, list[str]]]``. Each block
+      ends with a ``Received`` header; everything above (earlier) it
+      is in the same trust scope. Values inside a block are *always*
+      ``list[str]`` regardless of the header's spec, so trusted-relays
+      filters can index uniformly.
 
     Args:
-        raw_email_bytes: Raw email data as bytes
+        raw_email_bytes: Raw email data as bytes.
 
     Returns:
-        Dictionary containing parsed email data, or None if parsing fails fundamentally.
+        Dict of parsed fields, or raises ``EmailParseError`` on
+        fundamental parse failure.
 
     Raises:
-        EmailParseError: If parsing fails with a specific error we want to propagate.
+        EmailParseError: parsing failed.
     """
     if not raw_email_bytes or not isinstance(raw_email_bytes, bytes):
         # Ensure input is non-empty bytes
@@ -768,15 +839,12 @@ def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
             key_lower = k.lower()
             headers_list.append((key_lower, decoded_value))
 
-            # Build headers dict (for compatibility)
-            if key_lower in headers:
-                current_value = headers[key_lower]
-                if isinstance(current_value, list):
-                    current_value.append(decoded_value)
-                else:
-                    headers[key_lower] = [current_value, decoded_value]
+            if key_lower in _SCALAR_HEADERS:
+                # First occurrence wins (RFC max=1; matches stdlib).
+                headers.setdefault(key_lower, decoded_value)
             else:
-                headers[key_lower] = decoded_value
+                # Repeatable: always list[str] in document order.
+                headers.setdefault(key_lower, []).append(decoded_value)
 
         # Split headers into blocks based on Received headers
         # Each Received header marks the END of its block - everything above it (before it in the list) is trusted
@@ -804,29 +872,24 @@ def parse_email_message(raw_email_bytes: bytes) -> Optional[Dict[str, Any]]:
         gmail_labels = []
         seen_labels = set()
 
-        # Parse X-Gmail-Labels (Google Takeout format)
+        # Parse X-Gmail-Labels (Google Takeout format). The header is
+        # not in _SCALAR_HEADERS so it's a list[str]; only the first
+        # occurrence is meaningful for label semantics.
         if "x-gmail-labels" in headers:
-            labels_str = headers["x-gmail-labels"]
-            if isinstance(labels_str, list):
-                labels_str = labels_str[0]  # Take first value if multiple
-            for label in _parse_labels_header(labels_str):
+            for label in _parse_labels_header(headers["x-gmail-labels"][0]):
                 if label not in seen_labels:
                     seen_labels.add(label)
                     gmail_labels.append(label)
 
-        # Parse X-Keywords (Dovecot/OfflineIMAP/mu4e format)
+        # Parse X-Keywords (Dovecot/OfflineIMAP/mu4e format).
         if "x-keywords" in headers:
-            labels_str = headers["x-keywords"]
-            if isinstance(labels_str, list):
-                labels_str = labels_str[0]  # Take first value if multiple
-            for label in _parse_labels_header(labels_str):
+            for label in _parse_labels_header(headers["x-keywords"][0]):
                 if label not in seen_labels:
                     seen_labels.add(label)
                     gmail_labels.append(label)
 
         subject = headers.get("subject", "")
-        from_header_decoded = headers.get("from", "")
-        from_name, from_addr = parse_email_address(from_header_decoded)
+        from_name, from_addr = parse_email_address(headers.get("from", ""))
         to_recipients = parse_email_addresses(headers.get("to", ""))
         cc_recipients = parse_email_addresses(headers.get("cc", ""))
         bcc_recipients = parse_email_addresses(headers.get("bcc", ""))
