@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next"
-import Link from "next/link"
-import { useParams, useSearchParams } from "next/navigation"
+import { Link, useParams } from "@tanstack/react-router"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import clsx from "clsx"
@@ -28,8 +27,7 @@ type ThreadItemProps = {
 
 export const ThreadItem = ({ thread, isSelected, onToggleSelection, selectedThreadIds, isSelectionMode }: ThreadItemProps) => {
     const { t, i18n } = useTranslation();
-    const params = useParams<{ mailboxId: string, threadId: string }>()
-    const searchParams = useSearchParams()
+    const params = useParams({ strict: false }) as { mailboxId?: string; threadId?: string }
     const [isDragging, setIsDragging] = useState(false)
     const [isExiting, setIsExiting] = useState(false)
     const { setIsDragging: setGlobalDragging, setDragAction } = useLayoutDragContext();
@@ -150,7 +148,9 @@ export const ThreadItem = ({ thread, isSelected, onToggleSelection, selectedThre
     return (
         <>
             <Link
-                href={`/mailbox/${params?.mailboxId}/thread/${thread.id}?${searchParams}`}
+                to="/mailbox/$mailboxId/thread/$threadId"
+                params={{ mailboxId: params?.mailboxId ?? '', threadId: thread.id }}
+                search={true}
                 className={clsx(
                     'thread-item',
                     {

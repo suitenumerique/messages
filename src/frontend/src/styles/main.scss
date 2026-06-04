@@ -74,7 +74,7 @@
 @use "./../features/blocknote/column-layout-block";
 
 // Application views
-@use "./../pages";
-@use "./../pages/mailbox";
-@use "./../pages/mailbox/[mailboxId]/new";
-@use "./../pages/domain";
+@use "./views";
+@use "./views/mailbox";
+@use "./views/mailbox/new";
+@use "./views/domain";

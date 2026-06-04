@@ -481,10 +481,6 @@ test.describe("Thread Events (Internal Messages)", () => {
     // MailboxProvider that invalidates both the threads list and the stats
     // queries — the exact chain of cache updates we need for the UI
     // assertions below to pick up the new mention.
-    //
-    // We deliberately avoid `page.goto`/`page.reload` here: full page loads
-    // hit a Next.js static-export hydration race in MailboxProvider that
-    // bounces shared-mailbox sessions back to the personal mailbox.
     await page.getByRole("button", { name: "Refresh" }).click();
     await page.waitForLoadState("networkidle");
 

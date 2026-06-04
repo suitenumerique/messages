@@ -18,10 +18,10 @@ export const SurveyButton = ({ iconOnly = false, ...props }: SurveyButtonProps) 
   const { user } = useAuth();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  const apiUrl = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL;
-  const widgetPath = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH;
-  const channel = process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL;
-  const helpCenterUrl = process.env.NEXT_PUBLIC_HELP_CENTER_URL;
+  const apiUrl = import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL;
+  const widgetPath = import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH;
+  const channel = import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_CHANNEL;
+  const helpCenterUrl = import.meta.env.NEXT_PUBLIC_HELP_CENTER_URL;
 
   const hasWidget = !!(channel && apiUrl && widgetPath);
   const hasHelpCenter = !!helpCenterUrl;

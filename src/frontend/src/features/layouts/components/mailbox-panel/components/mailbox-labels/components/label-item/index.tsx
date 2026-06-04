@@ -6,13 +6,12 @@ import useAddLabel from "@/features/message/use-add-label";
 import { DropdownMenu, Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
 import { Button, useModals } from "@gouvfr-lasuite/cunningham-react";
 import clsx from "clsx";
-import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLayoutDragContext } from "@/features/layouts/components/layout-context";
-import router from "next/router";
 import { MAILBOX_FOLDERS } from "../../../mailbox-list";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { toast } from "react-toastify";
@@ -53,8 +52,9 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
   });
   const unreadCount = (stats?.data as ThreadsStatsRetrieve200)?.all_unread ?? 0;
   const { closeLeftPanel, setDragAction, getIsShiftHeld } = useLayoutDragContext();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const navigate = useNavigate();
+  const pathname = useLocation({ select: (l) => l.pathname });
+  const searchParams = useUrlSearchParams();
   const { t } = useTranslation();
   const isActive = searchParams.get('label_slug') === label.slug;
   const hasActiveChild = Boolean(searchParams.get('label_slug')?.startsWith(`${label.slug}-`));
@@ -76,7 +76,7 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
 
   const goToDefaultFolder = () => {
     const defaultFolder = MAILBOX_FOLDERS()[0];
-    router.push(pathname + `?${new URLSearchParams(defaultFolder.filter).toString()}`);
+    navigate({ to: pathname, search: defaultFolder.filter });
   }
   const moveLabelMutation = useLabelsPartialUpdate();
 
@@ -88,7 +88,7 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
           const newSearchParams = new URLSearchParams(searchParams.toString());
           newSearchParams.delete('label_slug');
           if (newSearchParams.toString()) {
-            router.push(`${pathname}?${newSearchParams.toString()}`);
+            navigate({ to: pathname, search: Object.fromEntries(newSearchParams) });
           } else {
             goToDefaultFolder();
           }
@@ -336,7 +336,8 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
   return (
     <>
       <Link
-        href={`${pathname}?${queryParams}`}
+        to="."
+        search={{ label_slug: label.slug }}
         onClick={closeLeftPanel}
         className={clsx("label-item", isActive && "label-item--active", isDragOver && "label-item--drag-over")}
         style={level > 0 ? { paddingLeft: getPaddingLeftItem(level) } : {}}

@@ -1,6 +1,6 @@
 import { useLabelsRemoveThreadsCreate } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { useSearchParams } from "next/navigation";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 
 type DeleteLabelOptions = {
     labelId: string;
@@ -23,7 +23,7 @@ type DeleteLabelOptions = {
  */
 const useDeleteLabel = () => {
     const { invalidateMailbox, unpinThreads, pinThreads } = useMailboxContext();
-    const searchParams = useSearchParams();
+    const searchParams = useUrlSearchParams();
     const { mutate, status } = useLabelsRemoveThreadsCreate();
 
     const deleteLabel = ({ labelId, labelSlug, threadIds, onSuccess }: DeleteLabelOptions) => {

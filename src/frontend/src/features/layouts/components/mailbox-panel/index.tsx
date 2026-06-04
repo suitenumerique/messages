@@ -3,16 +3,16 @@ import { MailboxPanelActions } from "./components/mailbox-actions"
 import { MailboxList } from "./components/mailbox-list"
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
-import { useRouter } from "next/router";
-import { useSearchParams } from "next/navigation";
+import { useNavigate } from "@tanstack/react-router";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { useLayoutContext } from "@/features/layouts/components/layout-context";
 import { MailboxLabels } from "./components/mailbox-labels";
 import { useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 
 export const MailboxPanel = () => {
-    const router = useRouter();
-    const searchParams = useSearchParams();
+    const navigate = useNavigate();
+    const searchParams = useUrlSearchParams();
     const { selectedMailbox, mailboxes, queryStates } = useMailboxContext();
     const { closeLeftPanel } = useLayoutContext();
     const [isOpen, setIsOpen] = useState(false);
@@ -50,7 +50,7 @@ export const MailboxPanel = () => {
                                 selectedValues={[selectedMailbox.id]}
                                 onSelectValue={(value) => {
                                     closeLeftPanel();
-                                    router.push(`/mailbox/${value}?${searchParams.toString()}`);
+                                    navigate({ to: '/mailbox/$mailboxId', params: { mailboxId: value }, search: Object.fromEntries(searchParams) });
                                 }}
                             >
                                 <Button

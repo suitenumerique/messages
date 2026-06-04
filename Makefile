@@ -214,6 +214,10 @@ analyze-back: ## analyze back-end python sources
 	@$(COMPOSE_RUN_APP_TOOLS) sh -c "pylint ."
 .PHONY: analyze-back
 
+analyze-front: ## analyze frontend bundle sizes (per-chunk + per-package breakdown)
+	@$(COMPOSE) run --rm frontend-tools npm run analyze
+.PHONY: analyze-front
+
 typecheck-front: ## run the frontend type checker
 	@$(COMPOSE) run --rm frontend-tools npm run ts:check
 .PHONY: typecheck-front

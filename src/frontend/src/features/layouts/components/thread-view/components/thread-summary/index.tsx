@@ -8,7 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import { TextLoader } from "@/features/ui/components/text-loader";
-import { useSearchParams } from "next/navigation";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { getMailboxThreadsListQueryKey } from "@/features/providers/mailbox";
 
 const SUMMARIZE_TOAST_ID = "summarize-toast";
@@ -29,7 +29,7 @@ export const ThreadSummary = ({
   onSummaryUpdated,
 }: ThreadSummaryProps) => {
   const { t } = useTranslation();
-  const searchParams = useSearchParams();
+  const searchParams = useUrlSearchParams();
 
   // Build the cache key for the thread
   const threadQueryKey = useMemo(() => {

@@ -1,8 +1,8 @@
 import { Mailbox, ThreadsStatsRetrieve200, ThreadsStatsRetrieveStatsFields, useThreadsStatsRetrieve } from "@/features/api/gen"
 import { getThreadsStatsQueryKey, useMailboxContext } from "@/features/providers/mailbox"
 import clsx from "clsx"
-import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { Link } from "@tanstack/react-router"
+import { useUrlSearchParams } from "@/hooks/use-url-search-params"
 import { useMemo, useState } from "react"
 import { useLayoutContext } from "@/features/layouts/components/layout-context"
 import { useTranslation } from "react-i18next"
@@ -319,9 +319,9 @@ type DroppableFolderId = typeof DROPPABLE_FOLDER_IDS[number];
 
 const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, childrenContainerId }: FolderItemProps) => {
     const { t } = useTranslation();
-    const { selectedMailbox } = useMailboxContext();
+    const { selectedMailbox, selectedThread, unselectThread } = useMailboxContext();
     const { closeLeftPanel } = useLayoutContext();
-    const searchParams = useSearchParams()
+    const searchParams = useUrlSearchParams()
     const [isDragOver, setIsDragOver] = useState(false);
 
     // Hooks for thread actions
@@ -444,6 +444,9 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
             if (!data.hasEditable) return;
 
             const threadIds = data.threadIds as string[];
+            if (selectedThread && threadIds.includes(selectedThread.id)) {
+                unselectThread();
+            }
 
             // Call the appropriate action based on folder
             switch (folder.id) {
@@ -529,9 +532,10 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
 
     const link = (
         <Link
-            href={`/mailbox/${selectedMailbox?.id}?${queryParams}`}
+            to="/mailbox/$mailboxId"
+            params={{ mailboxId: selectedMailbox?.id ?? '' }}
+            search={folder.filter}
             onClick={closeLeftPanel}
-            shallow={false}
             className={clsx("mailbox__item", {
                 "mailbox__item--active": isActive,
                 "mailbox__item--drag-over": isDragOver,

@@ -11,7 +11,7 @@ import { AttachmentPreviewProvider } from "@/features/providers/attachment-previ
 import { useTheme } from "@/features/providers/theme";
 import { LayoutProvider, useLayoutDragContext } from "@/features/layouts/components/layout-context";
 import { AttachmentPreviewModal } from "@/features/layouts/components/thread-view/components/attachment-preview-modal";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 
 export const MainLayout = ({ children }: PropsWithChildren) => {
     return (
@@ -46,7 +46,7 @@ const MainLayoutContent = ({ children }: PropsWithChildren<{ simple?: boolean }>
             isLeftPanelOpen={isLeftPanelOpen}
             setIsLeftPanelOpen={setIsLeftPanelOpen}
             leftPanelContent={<LeftPanel hasNoMailbox={hasNoMailbox} />}
-            icon={<Link href="/"><img src={`/images/${theme}/app-logo-${variant}.svg`} alt="logo" height={40} /></Link>}
+            icon={<Link to="/"><img src={`/images/${theme}/app-logo-${variant}.svg`} alt="logo" height={40} /></Link>}
             hideLeftPanelOnDesktop={hasNoMailbox}
             isDragging={isDragging}
         >

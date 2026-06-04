@@ -26,8 +26,8 @@ const ThemeContext = createContext<undefined | {
     cunninghamTheme: CunninghamTheme;
 }>(undefined)
 
-const THEME_CONFIG_ENV: ThemeConfigMap = process.env.NEXT_PUBLIC_THEME_CONFIG
-    ? JSON.parse(process.env.NEXT_PUBLIC_THEME_CONFIG) as ThemeConfigMap
+const THEME_CONFIG_ENV: ThemeConfigMap = import.meta.env.NEXT_PUBLIC_THEME_CONFIG
+    ? JSON.parse(import.meta.env.NEXT_PUBLIC_THEME_CONFIG) as ThemeConfigMap
     : { theme: "white-label" };
 
 const { theme = 'white-label', ...themeConfig } = THEME_CONFIG_ENV;

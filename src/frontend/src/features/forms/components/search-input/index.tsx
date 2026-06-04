@@ -1,6 +1,6 @@
-import { useRouter } from "next/router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { useEffect, useState, useRef } from "react";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { SearchFiltersForm } from "../search-filters-form";
@@ -9,10 +9,10 @@ import { MAILBOX_FOLDERS } from "@/features/layouts/components/mailbox-panel/com
 import { Icon } from "@gouvfr-lasuite/ui-kit";
 
 export const SearchInput = () => {
-    const router = useRouter();
-    const pathname = usePathname();
+    const navigate = useNavigate();
+    const pathname = useLocation({ select: (l) => l.pathname });
     const { closeLeftPanel } = useLayoutContext();
-    const searchParams = useSearchParams();
+    const searchParams = useUrlSearchParams();
     const [value, setValue] = useState<string>(searchParams.get('search') || '');
     const [showFilters, setShowFilters] = useState<boolean>(false);
     const { t } = useTranslation();
@@ -39,7 +39,7 @@ export const SearchInput = () => {
 
         if (submit) {
             closeLeftPanel();
-            router.replace(pathname + '?' + newSearchParams.toString(), undefined, { shallow: true });
+            navigate({ to: pathname, search: Object.fromEntries(newSearchParams), replace: true });
         }
     }
 

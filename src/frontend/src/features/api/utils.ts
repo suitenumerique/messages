@@ -28,7 +28,7 @@ export const isJson = (str: string) => {
 };
 
 export function getApiOrigin() {
-  return process.env.NEXT_PUBLIC_API_ORIGIN ||
+  return import.meta.env.NEXT_PUBLIC_API_ORIGIN ||
     (typeof window !== "undefined" ? window.location.origin : "");
 }
 

@@ -1,5 +1,5 @@
 import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { useMailboxContext } from "./mailbox";
 import { Thread } from "@/features/api/gen/models/thread";
 
@@ -37,7 +37,7 @@ interface ThreadSelectionState {
 const ThreadSelectionContext = createContext<ThreadSelectionState | null>(null);
 
 const useThreadSelectionState = (threads: Thread[] | undefined, selectedThread: Thread | null | undefined): ThreadSelectionState => {
-    const searchParams = useSearchParams();
+    const searchParams = useUrlSearchParams();
     const [selectedThreadIds, setSelectedThreadIds] = useState<Set<string>>(new Set());
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const lastActiveThreadIdRef = useRef<string | null>(null);

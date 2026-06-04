@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 
 // Threshold to use multipart upload (object storage allows chunks of 10MB at least)
-const CHUNK_SIZE_MB = process.env.NEXT_PUBLIC_MULTIPART_UPLOAD_CHUNK_SIZE ? parseInt(process.env.NEXT_PUBLIC_MULTIPART_UPLOAD_CHUNK_SIZE) : 100;
+const CHUNK_SIZE_MB = import.meta.env.NEXT_PUBLIC_MULTIPART_UPLOAD_CHUNK_SIZE ? parseInt(import.meta.env.NEXT_PUBLIC_MULTIPART_UPLOAD_CHUNK_SIZE) : 100;
 const CHUNK_SIZE = CHUNK_SIZE_MB * 1024 * 1024;
 const MULTIPART_THRESHOLD = CHUNK_SIZE;
 

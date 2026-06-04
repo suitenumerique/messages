@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { FieldErrors, FormProvider, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useRouter } from "next/router";
+import { useParams } from "@tanstack/react-router";
 import { useMaildomainsMailboxesCreate, useMaildomainsMailboxesList, useMaildomainsMailboxesPartialUpdate } from "@/features/api/gen/maildomains/maildomains";
 import { RhfInput } from "@/features/forms/components/react-hook-form";
 import { RhfCheckbox } from "@/features/forms/components/react-hook-form/rhf-checkbox";
@@ -47,8 +47,8 @@ type ModalCreateOrUpdateMailboxProps = {
 
 export const ModalCreateOrUpdateMailbox = ({ isOpen, mailbox, onClose, onSuccess }: ModalCreateOrUpdateMailboxProps) => {
   const { t } = useTranslation();
-  const router = useRouter();
-  const domainId = router.query.maildomainId as string;
+  const routeParams = useParams({ strict: false }) as { maildomainId?: string };
+  const domainId = routeParams.maildomainId ?? '';
   const [error, setError] = useState<string | null>(null);
   const { selectedMailDomain } = useAdminMailDomain();
   const isIdentitySyncDisabled = !(selectedMailDomain?.identity_sync ?? true);

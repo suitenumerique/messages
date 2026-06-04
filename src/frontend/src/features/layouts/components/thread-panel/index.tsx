@@ -5,7 +5,7 @@ import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { useEffect, useRef, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import ThreadPanelHeader from "./components/thread-panel-header";
 import { useThreadSelection } from "@/features/providers/thread-selection";
 import { useScrollRestore } from "@/features/providers/scroll-restore";
@@ -13,7 +13,7 @@ import { useThreadPanelFilters } from "./hooks/use-thread-panel-filters";
 
 export const ThreadPanel = () => {
     const { threads, queryStates, unselectThread, loadNextThreads, selectedThread, selectedMailbox } = useMailboxContext();
-    const searchParams = useSearchParams();
+    const searchParams = useUrlSearchParams();
     const isSearch = searchParams.has('search');
     const { hasActiveFilters, clearFilters } = useThreadPanelFilters();
     const { t } = useTranslation();

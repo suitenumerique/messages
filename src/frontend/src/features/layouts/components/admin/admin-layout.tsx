@@ -1,11 +1,11 @@
 import { AppLayout } from "@/features/layouts/components/main/layout";
 import { SKIP_LINK_TARGET_ID } from "@/features/ui/components/skip-link";
 import { Breadcrumbs } from "@/features/ui/components/breadcrumbs";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { AdminMailDomainProvider, useAdminMailDomain } from "@/features/providers/admin-maildomain";
 import useAbility, { Abilities } from "@/hooks/use-ability";
-import ErrorPage from "next/error";
+import { ErrorPage } from "@/features/ui/components/error-page";
 import { Toaster } from "@/features/ui/components/toaster";
 import { Badge, Icon, IconSize, IconType } from "@gouvfr-lasuite/ui-kit";
 import { useTheme } from "@/features/providers/theme";
@@ -30,7 +30,7 @@ function AdminLayoutContent({
   const breadcrumbItems = [
     {
       content: (
-        <Link href="/" className="c__breadcrumbs__button" title={t("Back to your inbox")}>
+        <Link to="/" className="c__breadcrumbs__button" title={t("Back to your inbox")}>
           <span className="c__breadcrumbs__avatar">
             <Icon name="mail" type={IconType.OUTLINED} size={IconSize.MEDIUM} />
           </span>
@@ -39,7 +39,7 @@ function AdminLayoutContent({
     },
     {
       content: (
-        <Link href="/domain" className="c__breadcrumbs__button">
+        <Link to="/domain" className="c__breadcrumbs__button">
           {t("Maildomains management")}
         </Link>
       )
@@ -49,7 +49,7 @@ function AdminLayoutContent({
   if (selectedMailDomain) {
     breadcrumbItems.push({
       content: (
-        <Link href={`/domain/${selectedMailDomain.id}`} className="c__breadcrumbs__button">
+        <Link to="/domain/$maildomainId" params={{ maildomainId: selectedMailDomain.id }} className="c__breadcrumbs__button">
           {selectedMailDomain.name || selectedMailDomain.id}
         </Link>
       )
@@ -76,11 +76,11 @@ function AdminLayoutContent({
       {
           id: "addresses",
           label: <div>{t("Addresses")} <Badge type="neutral">{selectedMailDomain.mailbox_count}</Badge></div>,
-          href: `/domain/${selectedMailDomain.id}`,
+          to: "/domain/$maildomainId" as const,
           icon: "inbox"
       },
-    { id: "dns", label: t("DNS"), href: `/domain/${selectedMailDomain.id}/dns`, icon: "dns" },
-    { id: "signatures", label: t("Signatures"), href: `/domain/${selectedMailDomain.id}/signatures`, icon: "drive_file_rename_outline" },
+    { id: "dns", label: t("DNS"), to: "/domain/$maildomainId/dns" as const, icon: "dns" },
+    { id: "signatures", label: t("Signatures"), to: "/domain/$maildomainId/signatures" as const, icon: "drive_file_rename_outline" },
   ] : [];
 
   if (!canViewDomainAdmin) {
@@ -106,7 +106,8 @@ function AdminLayoutContent({
             {tabs.map((tab) => (
               <Link
                 key={tab.id}
-                href={tab.href}
+                to={tab.to}
+                params={{ maildomainId: selectedMailDomain!.id }}
                 className={`admin-page__tab ${currentTab === tab.id ? "admin-page__tab--active" : ""}`}
               >
                 {tab.icon && <Icon name={tab.icon} type={IconType.OUTLINED} size={IconSize.MEDIUM} />}
@@ -135,7 +136,7 @@ export function AdminLayout(props: AdminLayoutProps) {
         leftPanelContent={null}
         hideSearch
         hideLeftPanelOnDesktop={true}
-        icon={<Link href="/"><img src={`/images/${theme}/app-logo-${variant}.svg`} alt="logo" height={40} /></Link>}
+        icon={<Link to="/"><img src={`/images/${theme}/app-logo-${variant}.svg`} alt="logo" height={40} /></Link>}
       >
         <AdminMailDomainProvider>
           <AdminLayoutContent {...props} />

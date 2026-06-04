@@ -127,15 +127,15 @@ export const WidgetIntegrationForm = ({
         }
     };
 
-    const widgetSnippet = channel ? `<script src="${process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH}loader.js" async></script>
+    const widgetSnippet = channel ? `<script src="${import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH}loader.js" async></script>
 <script>
 window._lasuite_widget = window._lasuite_widget || [];
 _lasuite_widget.push(["loader", "init", {
   "params": {
-    "api": "${process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL}",
+    "api": "${import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_API_URL}",
     "channel": "${channel.id}"
   },
-  "script": "${process.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH}feedback.js",
+  "script": "${import.meta.env.NEXT_PUBLIC_FEEDBACK_WIDGET_PATH}feedback.js",
   "widget": "feedback",
 }]);
 </script>` : "";

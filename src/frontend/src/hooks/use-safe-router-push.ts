@@ -1,27 +1,17 @@
-import { useRouter } from "next/router";
-import { useSearchParams } from "next/navigation";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 
 /**
- * Returns a function that safely performs a shallow navigation
- * by using Next.js object-form router.push instead of string interpolation,
- * preventing XSS and URL redirect vulnerabilities from user-controlled params.
+ * Returns a function that navigates to the current pathname with a new set of
+ * search params. On TanStack Router the pathname already carries the active
+ * path segments (mailboxId, threadId, …), so only the caller's params are
+ * handed to the structured `search` option, which encodes them safely and
+ * prevents XSS / open-redirect issues from user-controlled values.
  */
 export const useSafeRouterPush = () => {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   return (params: URLSearchParams) => {
-    const query: Record<string, string | string[] | undefined> = {};
-    for (const key of Object.keys(router.query)) {
-      if (!searchParams.has(key)) {
-        query[key] = router.query[key];
-      }
-    }
-    params.forEach((value, key) => {
-      query[key] = value;
-    });
-    router.push({ pathname: router.pathname, query }, undefined, {
-      shallow: true,
-    });
+    navigate({ to: location.pathname, search: Object.fromEntries(params) });
   };
 };

@@ -1,4 +1,4 @@
-import { useRouter } from "next/router";
+import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { useMailboxContext } from "@/features/providers/mailbox";
@@ -13,7 +13,7 @@ const MIN_ANIMATION_MS = 700;
 
 export const MailboxPanelActions = () => {
     const { t } = useTranslation();
-    const router = useRouter();
+    const navigate = useNavigate();
     const { selectedMailbox, refetchMailboxes } = useMailboxContext();
     const { closeLeftPanel } = useLayoutContext();
     const canWriteMessages = useAbility(Abilities.CAN_WRITE_MESSAGES, selectedMailbox);
@@ -55,7 +55,7 @@ export const MailboxPanelActions = () => {
         event.preventDefault();
         if (!canWriteMessages) return;
         closeLeftPanel();
-        router.push(`/mailbox/${selectedMailbox!.id}/new`);
+        navigate({ to: '/mailbox/$mailboxId/new', params: { mailboxId: selectedMailbox!.id } });
     };
 
     if (!selectedMailbox) return null;

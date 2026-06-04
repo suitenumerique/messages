@@ -5,7 +5,7 @@ import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { Button } from "@gouvfr-lasuite/cunningham-react";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
-import { useRouter } from "next/router";
+import { useParams } from "@tanstack/react-router";
 import { importFileCreateResponse202, importImapCreateResponse202, useImportFileCreate, useImportImapCreate } from "@/features/api/gen";
 import MailHelper, { IMAP_DOMAIN_REGEXES } from "@/features/utils/mail-helper";
 import { RhfInput } from "../../forms/components/react-hook-form";
@@ -51,7 +51,7 @@ type StepFormProps = {
 }
 export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepFormProps) => {
     const { t } = useTranslation();
-    const router = useRouter();
+    const routeParams = useParams({ strict: false }) as { mailboxId?: string };
     const [showAdvancedImapFields, setShowAdvancedImapFields] = useState(false);
     const [emailDomain, setEmailDomain] = useState<string | undefined>(undefined);
     const imapMutation = useImportImapCreate({
@@ -72,7 +72,7 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
         onSuccess: (manager) => archiveMutation.mutate({
             data: {
                 filename: manager.file!.name,
-                recipient: router.query.mailboxId as string,
+                recipient: routeParams.mailboxId ?? '',
             }
         }, {
             onSettled: manager.reset,
@@ -142,7 +142,7 @@ export const StepForm = ({ onUploading, onSuccess, onError, error, step }: StepF
             use_ssl: data.use_ssl!,
             username: data.username!,
             password: data.password!,
-            recipient: router.query.mailboxId as string,
+            recipient: routeParams.mailboxId ?? '',
         }
         return imapMutation.mutateAsync(
             { data: payload }

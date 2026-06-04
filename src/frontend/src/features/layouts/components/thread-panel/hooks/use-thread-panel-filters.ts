@@ -1,4 +1,4 @@
-import { useSearchParams } from "next/navigation";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { useCallback } from "react";
 import { useSafeRouterPush } from "@/hooks/use-safe-router-push";
 
@@ -14,7 +14,7 @@ export type FilterType = (typeof THREAD_PANEL_FILTER_PARAMS)[number];
 export const DEFAULT_SELECTED_FILTERS: FilterType[] = ["has_unread"];
 
 export const useThreadPanelFilters = () => {
-  const searchParams = useSearchParams();
+  const searchParams = useUrlSearchParams();
   const safePush = useSafeRouterPush();
 
   const activeFilters = THREAD_PANEL_FILTER_PARAMS.reduce(

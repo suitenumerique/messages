@@ -5,8 +5,8 @@ import { useMailboxContext } from "@/features/providers/mailbox";
 import { useTranslation } from "react-i18next";
 import { Icon, IconSize, IconType, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Tooltip } from "@gouvfr-lasuite/cunningham-react";
-import { usePathname, useSearchParams } from "next/navigation";
-import Link from "next/link";
+import { Link, useLocation } from "@tanstack/react-router";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { useMemo } from "react";
 import { addToast, ToasterItem } from "../toaster";
 import { toast } from "react-toastify";
@@ -24,8 +24,8 @@ type LabelBadgeProps = {
 
 export const LabelBadge = ({ label, removable = false, linkable = false, compact = false }: LabelBadgeProps) => {
     const { t } = useTranslation();
-    const pathname = usePathname();
-    const searchParams = useSearchParams();
+    const pathname = useLocation({ select: (l) => l.pathname });
+    const searchParams = useUrlSearchParams();
     const link = useMemo(() => {
         const params = new URLSearchParams({ label_slug: label.slug });
         return `${pathname}?${params.toString()}`;
@@ -68,7 +68,7 @@ export const LabelBadge = ({ label, removable = false, linkable = false, compact
 
     return (
         <Badge title={label.name} className={clsx("label-badge", {"label-badge--compact": compact })} style={{ backgroundColor: label.color, color: badgeColor }}>
-            {showLink ? <Link className="label-badge__label" href={link}>{label.display_name}</Link> : <span className="label-badge__label">{label.display_name}</span>}
+            {showLink ? <Link className="label-badge__label" to={link}>{label.display_name}</Link> : <span className="label-badge__label">{label.display_name}</span>}
             {canManageLabels && selectedThread?.id && removable && (
                 <Tooltip content={t('Delete')} placement="right">
                     <button

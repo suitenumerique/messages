@@ -2,9 +2,9 @@ import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useRe
 import { Mailbox, MailboxRoleChoices, Message, PaginatedThreadList, Thread, ThreadEvent, ThreadsListParams, useLabelsList, useMailboxesList, useMessagesList, useThreadsEventsList, useThreadsListInfinite, useThreadsRetrieve, getThreadsEventsListQueryKey, getThreadsRetrieveQueryKey } from "../api/gen";
 import { FetchStatus, InfiniteData, QueryStatus, RefetchOptions, useQueryClient } from "@tanstack/react-query";
 import type { threadsListResponse } from "../api/gen/threads/threads";
-import { useRouter } from "next/router";
+import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import usePrevious from "@/hooks/use-previous";
-import { useSearchParams } from "next/navigation";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { MAILBOX_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
 import {
     getMailboxThreadsListQueryKeyPrefix,
@@ -245,10 +245,12 @@ const MailboxContext = createContext<MailboxContextType>({
  */
 export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const queryClient = useQueryClient();
-    const router = useRouter();
+    const navigate = useNavigate();
+    const location = useLocation();
+    const routeParams = useParams({ strict: false }) as { mailboxId?: string; threadId?: string };
     const pinnedThreadIdsRef = useRef(new Set<string>());
     const [unmountThreadViewNeeded, setUnmountThreadViewNeeded] = useState(false);
-    const searchParams = useSearchParams();
+    const searchParams = useUrlSearchParams();
     const previousSearchParams = usePrevious(searchParams);
     const hasSearchParamsChanged = useMemo(() => {
         return previousSearchParams?.toString() !== searchParams.toString();
@@ -263,7 +265,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const selectedMailbox = useMemo(() => {
         if (!mailboxQuery.data?.data.length) return null;
 
-        const mailboxId = router.query.mailboxId;
+        const mailboxId = routeParams.mailboxId;
         const matched = mailboxQuery.data.data.find((mailbox) => mailbox.id === mailboxId);
         if (matched) return matched;
 
@@ -272,7 +274,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             ?? mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.sender)
             ?? mailboxQuery.data.data.findLast(m => m.role === MailboxRoleChoices.viewer)
             ?? mailboxQuery.data.data[mailboxQuery.data.data.length - 1]
-    }, [router.query.mailboxId, mailboxQuery.data])
+    }, [routeParams.mailboxId, mailboxQuery.data])
 
     const previousUnreadThreadsCount = usePrevious(selectedMailbox?.count_unread_threads);
     const previousDeliveringCount = usePrevious(selectedMailbox?.count_delivering);
@@ -363,7 +365,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
             }, {results: [], count: 0, next: null, previous: null} as PaginatedThreadList);
     }, [threadsQuery.data?.pages]);
 
-    const threadIdFromRoute = typeof router.query.threadId === 'string' ? router.query.threadId : undefined;
+    const threadIdFromRoute = typeof routeParams.threadId === 'string' ? routeParams.threadId : undefined;
 
     const threadInList = useMemo(() => {
         if (!threadIdFromRoute) return null;
@@ -410,8 +412,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         if (redirectedOnErrorRef.current) return;
         if (!selectedMailbox || !threadIdFromRoute) return;
         redirectedOnErrorRef.current = true;
-        const defaultFilter = new URLSearchParams(MAILBOX_FOLDERS()[0].filter).toString();
-        router.replace(`/mailbox/${selectedMailbox.id}?${defaultFilter}`);
+        navigate({ to: '/mailbox/$mailboxId', params: { mailboxId: selectedMailbox.id }, search: MAILBOX_FOLDERS()[0].filter, replace: true });
     }, [fallbackThreadQuery.isError, selectedMailbox, threadIdFromRoute]);
 
     const previousSelectedThreadMessagesCount = usePrevious(selectedThread?.messages.length);
@@ -551,16 +552,17 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
      * Unselect the current thread and navigate to the mailbox page if needed
      */
     const unselectThread = () => {
-        if (typeof window === 'undefined') return;
-
-        const threadId = router.query.threadId as string | undefined;
+        const threadId = routeParams.threadId;
         if (selectedMailbox && threadId && window.location.pathname.includes(threadId)) {
             // Unmount the thread view now (tearing down its auto-mark-as-read
             // observer before the mutation's cache patch lands), then clear the
             // flag once navigation has settled and `selectedThread` is null on
             // its own.
             setUnmountThreadViewNeeded(true);
-            router.push(`/mailbox/${selectedMailbox!.id}${window.location.search}`)
+            // `search: (prev) => prev` keeps the current filter from the
+            // router's committed state, avoiding the stale read window.location
+            // would give mid-navigation.
+            navigate({ to: '/mailbox/$mailboxId', params: { mailboxId: selectedMailbox.id }, search: (prev) => prev })
                 .finally(() => setUnmountThreadViewNeeded(false));
         }
     }
@@ -627,13 +629,18 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
 
     useEffect(() => {
         if (selectedMailbox) {
-            if (router.pathname === '/' ||  (selectedMailbox.id !== router.query.mailboxId && !router.pathname.includes('new'))) {
+          if (
+            location.pathname === '/'
+            || (selectedMailbox.id !== routeParams.mailboxId && !location.pathname.includes('new'))
+          ) {
                 const defaultFolder = MAILBOX_FOLDERS()[0];
-                const hash = window.location.hash;
-                if (router.query.threadId) {
-                    router.replace(`/mailbox/${selectedMailbox.id}/thread/${router.query.threadId}?${searchParams.toString()}${hash}`);
+                // TanStack Router's `hash` option expects the fragment without
+                // the leading '#'.
+                const hash = window.location.hash.replace(/^#/, '');
+                if (routeParams.threadId) {
+                    navigate({ to: '/mailbox/$mailboxId/thread/$threadId', params: { mailboxId: selectedMailbox.id, threadId: routeParams.threadId }, search: Object.fromEntries(searchParams), hash, replace: true });
                 } else {
-                    router.replace(`/mailbox/${selectedMailbox.id}?${new URLSearchParams(defaultFolder.filter).toString()}${hash}`);
+                    navigate({ to: '/mailbox/$mailboxId', params: { mailboxId: selectedMailbox.id }, search: defaultFolder.filter, hash, replace: true });
                 }
                 invalidateMailbox();
             }
@@ -642,10 +649,10 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
 
     useEffect(() => {
         if (selectedMailbox && !selectedThread) {
-            const threadId = router.query.threadId;
+            const threadId = routeParams.threadId;
             const thread = flattenThreads?.results.find((thread) => thread.id === threadId);
             if (thread) {
-                router.replace(`/mailbox/${selectedMailbox.id}/thread/${thread.id}?${searchParams}`);
+                navigate({ to: '/mailbox/$mailboxId/thread/$threadId', params: { mailboxId: selectedMailbox.id, threadId: thread.id }, search: Object.fromEntries(searchParams), replace: true });
             }
         }
     }, [flattenThreads]);

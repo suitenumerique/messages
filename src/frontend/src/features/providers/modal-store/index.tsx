@@ -1,6 +1,6 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
 import { modalStore } from "./global-store";
-import { useRouter } from "next/router";
+import { useNavigate } from "@tanstack/react-router";
 
 type ModalStoreContextType = {
     openModal: (modalId: string) => void;
@@ -20,16 +20,17 @@ const ModalStoreContext = createContext<ModalStoreContextType>({
  */
 export const ModalStoreProvider = ({ children }: PropsWithChildren) => {
     const [openModals, setOpenModals] = useState<Set<string>>(new Set());
-    const router = useRouter();
+    const navigate = useNavigate();
 
     const openModal = (modalId: string) => {
         setOpenModals((prev) => new Set([...prev, modalId]));
     };
 
     const closeModal = async (modalId: string) => {
-        // Remove the modal hash from the url if needed
+        // Remove the modal hash from the url if needed, keeping the current
+        // route and its search params untouched.
         if (window.location.hash.includes(`#${modalId}`)) {
-            await router.push(router.asPath.split('#')[0])
+            await navigate({ to: ".", search: (prev) => prev });
         }
         // Remove the modal hash from the localStorage if needed
         if (localStorage.getItem('openControlledModal') === modalId) {

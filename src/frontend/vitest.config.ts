@@ -18,4 +18,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-}); 
+  // Keep parity with vite.config.ts so tests see NEXT_PUBLIC_* via
+  // import.meta.env.
+  envPrefix: 'NEXT_PUBLIC_',
+});

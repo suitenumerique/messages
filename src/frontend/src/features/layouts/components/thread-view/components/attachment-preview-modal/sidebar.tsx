@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Button, Tooltip } from "@gouvfr-lasuite/cunningham-react";
 import { type FilePreviewType, Icon, IconSize, IconType, UserAvatar } from "@gouvfr-lasuite/ui-kit";
-import { useRouter } from "next/router";
+import { useNavigate } from "@tanstack/react-router";
 import type { AttachmentOrigin } from "./index";
 import type { Attachment } from "@/features/api/gen/models";
 import { useMailboxContext } from "@/features/providers/mailbox";
@@ -34,7 +34,7 @@ type AttachmentPreviewSidebarProps = {
  */
 export const AttachmentPreviewSidebar = ({ file, origin, isDrive, attachment, onClose }: AttachmentPreviewSidebarProps) => {
     const { t, i18n } = useTranslation();
-    const router = useRouter();
+    const navigate = useNavigate();
     const { selectedThread } = useMailboxContext();
     const { DRIVE } = useConfig();
 
@@ -84,11 +84,14 @@ export const AttachmentPreviewSidebar = ({ file, origin, isDrive, attachment, on
                 // Drafts have no persisted message to point to — nothing to
                 // do beyond closing the viewer.
                 if (origin) {
-                    router.replace(
-                        { pathname: router.pathname, query: router.query, hash: `thread-message-${origin.messageId}` },
-                        undefined,
-                        { shallow: true },
-                    );
+                    // Stay on the current route, keep its search params and only
+                    // deep-link the source message via the hash fragment.
+                    navigate({
+                        to: ".",
+                        search: (prev) => prev,
+                        hash: `thread-message-${origin.messageId}`,
+                        replace: true,
+                    });
                 }
                 return;
             }

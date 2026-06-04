@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useRouter } from "next/router";
+import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { threadsSplitCreateResponse201, useThreadsSplitCreate } from "@/features/api/gen/threads/threads";
 import { useMailboxContext } from "../providers/mailbox";
@@ -12,7 +12,7 @@ import { handle } from "../utils/errors";
  */
 const useSplitThread = () => {
     const { t } = useTranslation();
-    const router = useRouter();
+    const navigate = useNavigate();
     const { selectedMailbox, invalidateMailbox, invalidateThreadsStats } = useMailboxContext();
     const { mutateAsync, status } = useThreadsSplitCreate();
 
@@ -28,7 +28,7 @@ const useSplitThread = () => {
 
             // Navigate to the new thread
             if (selectedMailbox) {
-                router.replace(`/mailbox/${selectedMailbox.id}/thread/${response.data.id}${window.location.search}`);
+                navigate({ to: '/mailbox/$mailboxId/thread/$threadId', params: { mailboxId: selectedMailbox.id, threadId: response.data.id }, search: Object.fromEntries(new URLSearchParams(window.location.search)), replace: true });
             }
 
             addToast(
@@ -40,7 +40,7 @@ const useSplitThread = () => {
         } catch (error) {
             handle(error);
         }
-    }, [mutateAsync, invalidateMailbox, invalidateThreadsStats, selectedMailbox, router, t]);
+    }, [mutateAsync, invalidateMailbox, invalidateThreadsStats, selectedMailbox, navigate, t]);
 
     return { splitThread, status };
 };

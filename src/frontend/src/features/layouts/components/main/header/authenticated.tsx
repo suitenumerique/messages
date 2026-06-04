@@ -2,7 +2,7 @@ import { DropdownMenu, HeaderProps, Icon, IconType, useResponsive, UserMenu, Ver
 import { Button, Tooltip, useCunningham } from "@gouvfr-lasuite/cunningham-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useRouter } from "next/router";
+import { useNavigate } from "@tanstack/react-router";
 import { SearchInput } from "@/features/forms/components/search-input";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { useFeatureFlag, FEATURE_KEYS } from "@/hooks/use-feature";
@@ -65,7 +65,7 @@ const AutoreplyIndicator = () => {
   const { selectedMailbox } = useMailboxContext();
   const { closeLeftPanel } = useLayoutContext();
   const { t } = useTranslation();
-  const router = useRouter();
+  const navigate = useNavigate();
 
   const { data } = useMailboxesMessageTemplatesList(
     selectedMailbox?.id ?? "",
@@ -97,7 +97,7 @@ const AutoreplyIndicator = () => {
         onClick={() => {
           if (selectedMailbox) {
             closeLeftPanel();
-            router.push(`/mailbox/${selectedMailbox.id}/autoreplies`);
+            navigate({ to: '/mailbox/$mailboxId/autoreplies', params: { mailboxId: selectedMailbox.id } });
           }
         }}
       />
@@ -145,7 +145,7 @@ const ApplicationMenu = () => {
   const isIntegrationsEnabled = useFeatureFlag(FEATURE_KEYS.MAILBOX_ADMIN_CHANNELS);
   const canManageIntegrations = canManageMessageTemplates && isIntegrationsEnabled;
   const { t } = useTranslation();
-  const router = useRouter();
+  const navigate = useNavigate();
   const taskId = useMemo(() => {
     const taskImportCacheHelper = new TaskImportCacheHelper(selectedMailbox?.id);
     return taskImportCacheHelper.get();
@@ -205,7 +205,7 @@ const ApplicationMenu = () => {
               ...(canAccessDomainAdmin ? [{
                 label: t("Domain admin"),
                 icon: <Icon name="domain" />,
-                callback: () => router.push("/domain"),
+                callback: () => navigate({ to: "/domain" }),
                 showSeparator: canImportMessages || canManageMessageTemplates || canManageIntegrations,
               }] : []),
               ...(canImportMessages ? [importMessageOption] : []),
@@ -214,7 +214,7 @@ const ApplicationMenu = () => {
                 icon: <Icon name="description" />,
                 callback: () => {
                     if (selectedMailbox) {
-                        router.push(`/mailbox/${selectedMailbox.id}/message-templates`);
+                        navigate({ to: '/mailbox/$mailboxId/message-templates', params: { mailboxId: selectedMailbox.id } });
                     }
                 }
               },
@@ -223,7 +223,7 @@ const ApplicationMenu = () => {
                 icon: <Icon name="draw" />,
                 callback: () => {
                     if (selectedMailbox) {
-                        router.push(`/mailbox/${selectedMailbox.id}/signatures`);
+                        navigate({ to: '/mailbox/$mailboxId/signatures', params: { mailboxId: selectedMailbox.id } });
                     }
                 }
               },
@@ -232,7 +232,7 @@ const ApplicationMenu = () => {
                 icon: <Icon name="forward_to_inbox" />,
                 callback: () => {
                     if (selectedMailbox) {
-                        router.push(`/mailbox/${selectedMailbox.id}/autoreplies`);
+                        navigate({ to: '/mailbox/$mailboxId/autoreplies', params: { mailboxId: selectedMailbox.id } });
                     }
                 }
               }] : []),
@@ -241,7 +241,7 @@ const ApplicationMenu = () => {
                 icon: <Icon name="integration_instructions" type={IconType.OUTLINED} />,
                 callback: () => {
                     if (selectedMailbox) {
-                        router.push(`/mailbox/${selectedMailbox.id}/integrations`);
+                        navigate({ to: '/mailbox/$mailboxId/integrations', params: { mailboxId: selectedMailbox.id } });
                     }
                 }
               }] : []),

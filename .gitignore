@@ -14,8 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -27,7 +27,6 @@ share/python-wheels/
 *.egg
 MANIFEST
 .DS_Store
-.next/
 
 # Translations	# Translations
 *.pot
@@ -46,12 +45,12 @@ env.d/terraform
 
 # npm
 node_modules
-src/frontend/out/
+src/frontend/dist/
 tsconfig.tsbuildinfo
 src/frontend/.config
-src/frontend/.next
-src/frontend/next-env.d.ts
+src/frontend/src/routes.gen.ts
 .vite
+.tanstack
 
 # Mails
 src/backend/core/templates/mail/

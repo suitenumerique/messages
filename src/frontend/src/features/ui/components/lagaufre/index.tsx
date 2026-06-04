@@ -10,8 +10,8 @@ export const LagaufreButton = () => {
   const { t } = useTranslation()
   const [isWidgetInitialized, setIsWidgetInitialized] = useState(false)
   const buttonRef = useRef<ButtonElement>(null);
-  const apiUrl = process.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_API_URL;
-  const widgetPath = process.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_PATH;
+  const apiUrl = import.meta.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_API_URL;
+  const widgetPath = import.meta.env.NEXT_PUBLIC_LAGAUFRE_WIDGET_PATH;
 
   const label: string = t("Other services...");
   const closeLabel: string = t("Close the menu");

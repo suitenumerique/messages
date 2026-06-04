@@ -1,4 +1,4 @@
-import { useSearchParams } from "next/navigation";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { findRootFolder } from "../../mailbox-panel/components/mailbox-list";
 import { useLabelsList } from "@/features/api/gen";
 import type { TreeLabel } from "@/features/api/gen/models";
@@ -41,7 +41,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
     const { markAsSpam, markAsNotSpam } = useSpam();
     const { markAsStarred, markAsUnstarred } = useStarred();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-    const searchParams = useSearchParams();
+    const searchParams = useUrlSearchParams();
     const isSearch = searchParams.has('search');
     const { threads, selectedMailbox, unselectThread } = useMailboxContext();
     const labelsQuery = useLabelsList({ mailbox_id: selectedMailbox?.id }, { query: { enabled: !!selectedMailbox && !!searchParams.get('label_slug') } })

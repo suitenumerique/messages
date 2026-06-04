@@ -1,5 +1,4 @@
 import { Button } from "@gouvfr-lasuite/cunningham-react";
-import Image from "next/image";
 import { useTranslation } from "react-i18next";
 
 type ThreadViewEmptyProps = {
@@ -19,7 +18,7 @@ export const ThreadViewEmpty = ({ showImportButton = false, label }: ThreadViewE
     return (
         <div className="thread-view thread-view--empty">
             <div>
-                <Image src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
+                <img src="/images/svg/read-mail.svg" alt="" width={60} height={60} />
                 <p>{label ?? t('Select a thread')}</p>
                 {showImportButton && (
                     <Button href="#modal-message-importer">{t('Import messages')}</Button>

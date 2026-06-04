@@ -5,7 +5,8 @@ import { useMailboxContext } from "@/features/providers/mailbox";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Modal, ModalSize } from "@gouvfr-lasuite/cunningham-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { useEffect, useMemo } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
@@ -56,9 +57,9 @@ export const LabelModal = ({ isOpen, onClose, label, onSuccess }: LabelModalProp
     const createMutation = useLabelsCreate();
     const updateMutation = useLabelsUpdate();
     const { selectedMailbox } = useMailboxContext();
-    const router = useRouter();
-    const pathname = usePathname();
-    const searchParams = useSearchParams();
+    const navigate = useNavigate();
+    const pathname = useLocation({ select: (l) => l.pathname });
+    const searchParams = useUrlSearchParams();
     const queryClient = useQueryClient();
     const labelsQuery = useLabelsList({ mailbox_id: selectedMailbox!.id })
     const autoLabelChecked = form.watch('is_auto');
@@ -109,7 +110,7 @@ export const LabelModal = ({ isOpen, onClose, label, onSuccess }: LabelModalProp
           if (isUpdate && searchParams.get('label_slug') === (label as TreeLabel)?.slug) {
             const newSearchParams = new URLSearchParams(searchParams.toString());
             newSearchParams.set('label_slug', (data.data as Label).slug);
-            router.push(`${pathname}?${newSearchParams.toString()}`);
+            navigate({ to: pathname, search: Object.fromEntries(newSearchParams) });
           }
           onSuccess?.(data.data as Label);
           handleClose();

@@ -7,7 +7,7 @@ echo "-----> Running post-frontend script"
 
 # Move the frontend build to the app root and clean up
 mkdir -p build/
-mv src/frontend/out build/frontend-out
+mv src/frontend/dist build/frontend-out
 
 mv src/backend/* ./
 mkdir -p messages_backend && touch messages_backend/__init__.py

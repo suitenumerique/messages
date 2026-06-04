@@ -1,13 +1,14 @@
 {
   "compilerOptions": {
-    "target": "ES2017",
+    "target": "ES2020",
     "lib": [
       "dom",
       "dom.iterable",
       "esnext"
     ],
     "types": [
-      "vitest/globals"
+      "vitest/globals",
+      "vite/client"
     ],
     "allowJs": true,
     "skipLibCheck": true,
@@ -24,20 +25,15 @@
       "@/*": [
         "./src/*"
       ]
-    },
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ]
+    }
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    "next-env.d.ts",
-    ".next/types/**/*.ts"
+    "vite.config.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "dist"
   ]
 }

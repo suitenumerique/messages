@@ -35,35 +35,17 @@
 			header_up X-Forwarded-For {remote_host}
 		}
 
-		# Next.js static export routes
-		@mailbox path_regexp ^/mailbox/[^/]+$
-		rewrite @mailbox /mailbox/[mailboxId].html
-
-		@mailbox_thread path_regexp ^/mailbox/[^/]+/thread/[^/]+$
-		rewrite @mailbox_thread /mailbox/[mailboxId]/thread/[threadId].html
-
-		@mailbox_new path_regexp ^/mailbox/[^/]+/new$
-		rewrite @mailbox_new /mailbox/[mailboxId]/new.html
-
-		@domain_root path /domain
-		rewrite @domain_root /domain.html
-
-		@domain_id path_regexp ^/domain/[^/]+$
-		rewrite @domain_id /domain/[maildomainId].html
-
-		@domain_dns path_regexp ^/domain/[^/]+/dns$
-		rewrite @domain_dns /domain/[maildomainId]/dns.html
-
-		@domain_signatures path_regexp ^/domain/[^/]+/signatures$
-		rewrite @domain_signatures /domain/[maildomainId]/signatures.html
-
-		# Default: SPA fallback
+		# SPA fallback: any unmatched request returns index.html so the
+		# client-side router can resolve the path.
 		try_files {path} /index.html
 		file_server
 	}
 
 	handle_errors {
-		rewrite * /404.html
-		file_server
+		@spa_404 expression `{err.status_code} == 404`
+		handle @spa_404 {
+			rewrite * /index.html
+			file_server
+		}
 	}
 }

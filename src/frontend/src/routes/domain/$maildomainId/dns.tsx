@@ -1,0 +1,255 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useState, useEffect, useRef } from "react";
+import { Button, DataGrid } from "@gouvfr-lasuite/cunningham-react";
+import { useTranslation, Trans } from "react-i18next";
+import { Badge, Spinner } from "@gouvfr-lasuite/ui-kit";
+
+import { AdminLayout } from "@/features/layouts/components/admin/admin-layout";
+import { MailDomainAdmin, DNSRecordCheck } from "@/features/api/gen";
+import { Banner } from "@/features/ui/components/banner";
+import { useMaildomainsCheckDnsCreate, useMaildomainsRetrieve } from "@/features/api/gen/maildomains/maildomains";
+import { CopyableInput } from "@/features/ui/components/copyable-input";
+import { Icon } from "@gouvfr-lasuite/ui-kit";
+import { handle } from "@/features/utils/errors";
+import { useParams } from "@tanstack/react-router";
+
+type DNSRecordWithId = DNSRecordCheck & { id: string };
+
+type AdminDNSDataGridProps = {
+  domain: MailDomainAdmin;
+  dnsRecords: DNSRecordWithId[];
+  isLoading: boolean;
+  error: string | null;
+}
+
+function AdminDNSDataGrid({ domain, dnsRecords, isLoading, error }: AdminDNSDataGridProps) {
+  const { t } = useTranslation();
+  const [justCopied, setJustCopied] = useState(false);
+
+  const getStatusType = (status: string) => {
+    switch (status) {
+      case "correct":
+        return "success";
+      case "incorrect":
+        return "warning";
+      case "duplicate":
+        return "danger";
+      case "insecure":
+        return "warning";
+      case "conflicting":
+        return "danger";
+      case "missing":
+        return "danger";
+      default:
+        return "neutral";
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case "correct":
+        return t("Correct");
+      case "incorrect":
+        return t("Incorrect");
+      case "duplicate":
+        return t("Duplicate");
+      case "insecure":
+        return t("Insecure");
+      case "conflicting":
+        return t("Conflicting");
+      case "missing":
+        return t("Missing");
+      default:
+        return t("Unknown");
+    }
+  };
+
+  const columns = [
+    {
+      id: "type",
+      headerName: t("Type"),
+      size: 80,
+      renderCell: ({ row }: { row: DNSRecordWithId }) => (
+        <strong>
+          {row.type.toUpperCase()}
+        </strong>
+      ),
+    },
+    {
+      id: "target",
+      headerName: t("Target"),
+      size: 200,
+      renderCell: ({ row }: { row: DNSRecordWithId }) => (
+        <CopyableInput value={row.target || "@"} aria-label={t("Target")} />
+      ),
+    },
+    {
+      id: "value",
+      headerName: t("Value"),
+      renderCell: ({ row }: { row: DNSRecordWithId }) => (
+        <CopyableInput value={row.value} name="value" aria-label={t("Value")} />
+      ),
+    },
+    {
+      id: "status",
+      headerName: t("Current status"),
+      size: 120,
+      renderCell: ({ row }: { row: DNSRecordWithId }) => {
+        const status = row._check?.status || "unknown";
+        return (
+          <Badge type={getStatusType(status)}>
+            {getStatusText(status)}
+          </Badge>
+        );
+      },
+    },
+  ];
+
+  if (isLoading) {
+    return (
+      <div className="admin-data-grid">
+        <Banner type="info" icon={<Spinner />}>
+          {t("Checking DNS records...")}
+        </Banner>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="admin-data-grid">
+        <Banner type="error">
+          {error}
+        </Banner>
+      </div>
+    );
+  }
+
+  if (dnsRecords.length === 0) {
+    return (
+      <div className="admin-data-grid">
+        <Banner type="info">
+          {t("No DNS records found")}
+        </Banner>
+      </div>
+    );
+  }
+
+  return (
+    <div className="admin-data-grid">
+      <div style={{ marginBottom: "1.5rem" }}>
+        <Banner type="info">
+          <Trans i18nKey="These DNS records must be configured on the domain <strong>{{domain}}</strong> for the mail system to work properly. Changes may take up to 24 hours to propagate. If you don't know how to update them, please contact your technical service provider or system administrator." values={{ domain: domain.name }} components={{ strong: <strong /> }} />
+        </Banner>
+      </div>
+      <DataGrid
+        columns={columns}
+        rows={dnsRecords}
+      />
+      <div style={{ marginTop: "1.5rem" }}>
+        <Button icon={justCopied ? <Icon name="check" /> : <Icon name="content_copy" />} variant="bordered" onClick={() => {
+          const headerRow = t("Type") + "\t" + t("Target") + "\t" + t("Value") + "\n";
+          const records = headerRow + dnsRecords.map((record) => `${record.type.toUpperCase()}\t${record.target || "@"}\t${record.value}`).join("\n");
+          navigator.clipboard.writeText(records);
+          setJustCopied(true);
+          setTimeout(() => {
+            setJustCopied(false);
+          }, 2000);
+        }}>
+          {t("Copy all DNS records")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const AdminDNSPage = () => {
+  const { t } = useTranslation();
+  const routeParams = useParams({ strict: false }) as { maildomainId?: string };
+  const maildomainId = routeParams.maildomainId ?? '';
+  const [dnsRecords, setDnsRecords] = useState<DNSRecordWithId[]>([]);
+  const hasInitialCheck = useRef(false);
+
+  const { data: domainData, isLoading: domainLoading, error: domainError } = useMaildomainsRetrieve(maildomainId, {
+    query: {
+      enabled: !!maildomainId,
+    },
+  });
+
+  const selectedMailDomain = domainData?.data;
+
+  const dnsCheckMutation = useMaildomainsCheckDnsCreate({
+    mutation: {
+      onSuccess: (response) => {
+        const data = response.data;
+        const recordsWithIds = data.records.map((record, index) => ({
+          ...record,
+          id: `${record.type}-${record.target}-${index}`,
+        }));
+        setDnsRecords(recordsWithIds);
+      },
+      onError: (error) => {
+        handle(new Error('DNS check failed.'), { extra: { error } });
+      },
+    },
+  });
+
+  useEffect(() => {
+    if (selectedMailDomain && !hasInitialCheck.current && !dnsCheckMutation.isPending) {
+      hasInitialCheck.current = true;
+      dnsCheckMutation.mutate({ maildomainPk: selectedMailDomain.id });
+    }
+  }, [selectedMailDomain, dnsCheckMutation]);
+
+  const handleCheckDNS = () => {
+    if (!selectedMailDomain) return;
+    dnsCheckMutation.mutate({ maildomainPk: selectedMailDomain.id });
+  };
+
+  if (domainLoading) {
+    return (
+      <div className="admin-page__loading">
+        <Spinner />
+      </div>
+    )
+  }
+
+  if (domainError || !selectedMailDomain) {
+    return (
+      <Banner type="error">
+        {t("Domain not found")}
+      </Banner>
+    );
+  }
+
+  const isChecking = dnsCheckMutation.isPending;
+  const error = dnsCheckMutation.error ? t("Error while checking DNS records") : null;
+
+  return (
+    <AdminLayout
+      currentTab="dns"
+      actions={
+        <>
+          <Button
+            variant="primary"
+            onClick={handleCheckDNS}
+            disabled={dnsCheckMutation.isPending}
+          >
+            {dnsCheckMutation.isPending ? t("Checking DNS records...") : t("Check DNS again")}
+          </Button>
+        </>
+      }
+    >
+      <AdminDNSDataGrid
+        domain={selectedMailDomain}
+        dnsRecords={dnsRecords}
+        isLoading={isChecking}
+        error={error}
+      />
+    </AdminLayout>
+  );
+};
+
+export const Route = createFileRoute("/domain/$maildomainId/dns")({
+  component: AdminDNSPage,
+});

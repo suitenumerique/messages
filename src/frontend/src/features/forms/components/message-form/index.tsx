@@ -14,7 +14,7 @@ import { RhfInput, RhfSelect } from "../react-hook-form";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { toast } from "react-toastify";
 import { useSentBox } from "@/features/providers/sent-box";
-import { useRouter } from "next/router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { AttachmentUploader } from "./attachment-uploader";
 import { DateHelper } from "@/features/utils/date-helper";
 import { Banner } from "@/features/ui/components/banner";
@@ -23,7 +23,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import i18n from "@/features/i18n/initI18n";
 import { DropdownButton } from "@/features/ui/components/dropdown-button";
 import { PREFER_SEND_MODE_KEY, PreferSendMode } from "@/features/config/constants";
-import { useSearchParams } from "next/navigation";
+import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { useConfig } from "@/features/providers/config";
 import { DriveFile } from "./drive-attachment-picker";
 import { useAttachments } from "@/features/forms/hooks/use-attachments";
@@ -81,12 +81,26 @@ export const MessageForm = ({
     onSuccess
 }: MessageFormProps) => {
     const { t } = useTranslation();
-    const router = useRouter();
-    const searchParams = useSearchParams();
+    const navigate = useNavigate();
+    const location = useLocation();
+    const searchParams = useUrlSearchParams();
     const config = useConfig();
     const modals = useModals();
     const composerRef = useRef<MessageComposerHandle>(null);
     const [draft, setDraftState] = useState<Message | undefined>(draftMessage);
+    const {
+      selectedMailbox,
+      selectedThread,
+      mailboxes,
+      removeMessages,
+      patchMessages,
+      invalidateMailbox,
+      invalidateThreadList,
+      invalidateThreadsStats,
+      unselectThread,
+      unpinThreads,
+      pinThreads
+    } = useMailboxContext();
     // Synchronous mirror of `draft`. `saveDraftInner` may be re-entered (via
     // composer onChange firing right after `ensureDraft` resolves) before
     // React commits the previous setDraft, so the closure-captured `draft`
@@ -106,7 +120,6 @@ export const MessageForm = ({
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
     const saveDraftRef = useRef<() => void>(() => {});
     const quoteType: QuoteType | undefined = mode !== "new" ? (mode === "forward" ? "forward" : "reply") : undefined;
-    const { selectedMailbox, selectedThread, mailboxes, removeMessages, patchMessages, invalidateMailbox, invalidateThreadList, invalidateThreadsStats, unselectThread, unpinThreads, pinThreads } = useMailboxContext();
     const hideSubjectField = Boolean(draftMessage?.parent_id ?? parentMessage);
     // For replies/forwards, only allow sending from a mailbox that has access to the thread.
     const availableMailboxes = useMemo(() => {
@@ -413,14 +426,15 @@ export const MessageForm = ({
                 }
             });
 
-            if (router.asPath.includes("new")) {
+            if (location.pathname.includes("new")) {
                 setDraft(response.data as Message);
                 return;
             }
             const mailboxId = data.senderId;
-            const threadId = response.data.thread_id
-            // @TODO: Make something less hardcoded to improve the maintainability of the code
-            router.replace(`/mailbox/${mailboxId}/thread/${threadId}?has_draft=1`);
+            const threadId = (response.data as Message).thread_id
+            if (threadId) {
+                navigate({ to: '/mailbox/$mailboxId/thread/$threadId', params: { mailboxId, threadId }, search: { has_draft: '1' }, replace: true });
+            }
         }
     }
 
