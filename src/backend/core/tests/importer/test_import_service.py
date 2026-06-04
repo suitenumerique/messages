@@ -502,7 +502,7 @@ def test_import_file_mbox_misclassified_by_libmagic(admin_user, mailbox, mock_re
             patch(
                 "core.services.importer.service.magic.from_buffer",
                 return_value="text/html",
-            ),
+            ) as mock_magic,
             patch(
                 "core.services.importer.mbox_tasks.process_mbox_file_task.delay"
             ) as mock_task,
@@ -519,6 +519,9 @@ def test_import_file_mbox_misclassified_by_libmagic(admin_user, mailbox, mock_re
             assert success is True, response_data
             assert response_data["type"] == "mbox"
             mock_task.assert_called_once()
+            # The RFC 4155 ``From `` envelope at offset 0 must short-circuit
+            # detection — libmagic is never consulted on this branch.
+            mock_magic.assert_not_called()
     finally:
         s3_client.delete_object(Bucket=storage.bucket_name, Key=file_key)
 
