@@ -354,6 +354,20 @@
     gap: var(--c--globals--spacings--xs);
 }
 
+.calendar-invite__rsvp-hint {
+    flex-basis: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--3xs);
+    margin: 0;
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+    font-size: var(--c--globals--font--sizes--xs);
+
+    .material-icon {
+        font-size: 16px;
+    }
+}
+
 .calendar-invite__calendar-chooser {
     display: flex;
     align-items: center;

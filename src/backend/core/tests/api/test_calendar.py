@@ -2008,6 +2008,381 @@ class TestListCalendarsWritableFilter:
 
 
 # ---------------------------------------------------------------------------
+# Owner email / type parsing from PROPFIND cs:invite/cs:organizer
+# ---------------------------------------------------------------------------
+
+
+def _make_propfind_with_owner(entries):
+    """Build a multistatus body that mirrors suitenumerique/calendars output.
+
+    Each entry is (href, displayname, organizer_href, owner_type) where:
+      - ``organizer_href`` can be None to omit the cs:invite block
+        (simulating a non-suite CalDAV server)
+      - ``owner_type`` can be None to omit the ls:calendar-owner-type
+        extension (suitenumerique emits it only for MAILBOX calendars;
+        the user's own calendars don't carry it)
+    Privileges aren't emitted — the writable-only path is exercised by
+    the dedicated filter tests above.
+    """
+    parts = [
+        '<?xml version="1.0"?>',
+        '<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"'
+        ' xmlns:cs="http://calendarserver.org/ns/"'
+        ' xmlns:ls="http://lasuite.numerique.gouv.fr/ns/">',
+    ]
+    for entry in entries:
+        # Backwards-compatible tuple shape: 3-tuple still works (treats
+        # owner_type as absent) so older test cases don't have to grow
+        # an extra field.
+        if len(entry) == 3:
+            href, name, organizer_href = entry
+            owner_type = None
+        else:
+            href, name, organizer_href, owner_type = entry
+        parts.append(f"<d:response><d:href>{href}</d:href><d:propstat><d:prop>")
+        parts.append(f"<d:displayname>{name}</d:displayname>")
+        parts.append("<d:resourcetype><d:collection/><c:calendar/></d:resourcetype>")
+        if organizer_href is not None:
+            parts.append(
+                "<cs:invite><cs:organizer>"
+                f"<d:href>{organizer_href}</d:href>"
+                "</cs:organizer></cs:invite>"
+            )
+        if owner_type is not None:
+            parts.append(
+                f"<ls:calendar-owner-type>{owner_type}</ls:calendar-owner-type>"
+            )
+        parts.append("</d:prop></d:propstat></d:response>")
+    parts.append("</d:multistatus>")
+    return "".join(parts)
+
+
+class TestListCalendarsOwnerParsing:
+    """Unit tests for cs:invite/cs:organizer parsing in list_calendars."""
+
+    def _service_with_body(self, body):
+        service = CalDAVService(url="https://caldav.example.com/home/")
+        service._home_set = "https://caldav.example.com/home/"
+
+        class _FakeResp:
+            text = body
+
+        service._propfind = lambda *a, **kw: _FakeResp()  # type: ignore[method-assign]
+        return service
+
+    def test_personal_calendar_owner_is_user(self):
+        body = _make_propfind_with_owner(
+            [
+                (
+                    "/home/cal/",
+                    "Personal",
+                    "/caldav/principals/users/alice@example.com",
+                ),
+            ]
+        )
+        service = self._service_with_body(body)
+        [cal] = service.list_calendars()
+        assert cal["owner_email"] == "alice@example.com"
+        assert cal["owner_type"] == "USER"
+
+    def test_mailbox_calendar_owner_is_mailbox(self):
+        body = _make_propfind_with_owner(
+            [
+                (
+                    "/home/team/",
+                    "Team",
+                    "/caldav/principals/mailboxes/team@example.com",
+                    "MAILBOX",
+                ),
+            ]
+        )
+        service = self._service_with_body(body)
+        [cal] = service.list_calendars()
+        assert cal["owner_email"] == "team@example.com"
+        assert cal["owner_type"] == "MAILBOX"
+
+    def test_missing_invite_block_yields_none(self):
+        """Non-suitenumerique CalDAV servers omit cs:invite — owner stays None
+        so the frontend can fall back to mailbox-email matching instead of
+        silently hiding RSVP buttons everywhere."""
+        body = _make_propfind_with_owner([("/home/cal/", "Plain", None)])
+        service = self._service_with_body(body)
+        [cal] = service.list_calendars()
+        assert cal["owner_email"] is None
+        assert cal["owner_type"] is None
+
+    def test_owner_type_defaults_to_user_when_extension_absent(self):
+        """suitenumerique emits ``ls:calendar-owner-type`` only for MAILBOX
+        calendars; the user's own calendars omit it (404 propstat). When
+        cs:invite is present but the extension is absent we report USER —
+        the extension's absence is itself the signal."""
+        body = _make_propfind_with_owner(
+            [
+                (
+                    "/home/mine/",
+                    "Mine",
+                    "/caldav/principals/users/alice@example.com",
+                    None,
+                ),
+            ]
+        )
+        service = self._service_with_body(body)
+        [cal] = service.list_calendars()
+        assert cal["owner_email"] == "alice@example.com"
+        assert cal["owner_type"] == "USER"
+
+    def test_owner_email_is_last_path_segment(self):
+        """The principal href's trailing segment is taken verbatim as the
+        owner email — no pattern matching on intermediate path bits, so
+        custom CalDAV URL layouts (different prefix, longer path) still
+        parse correctly."""
+        body = _make_propfind_with_owner(
+            [
+                (
+                    "/home/cal/",
+                    "Custom",
+                    "/some/custom/dav/principals/users/alice@example.com/",
+                    None,
+                ),
+            ]
+        )
+        service = self._service_with_body(body)
+        [cal] = service.list_calendars()
+        assert cal["owner_email"] == "alice@example.com"
+
+    def test_owner_email_returns_none_when_href_has_no_segments(self):
+        """A bare slash or empty href yields no segment to use — return None
+        instead of an empty string (which would match an attendee with an
+        empty email field on garbage input)."""
+        body = _make_propfind_with_owner([("/home/cal/", "Empty", "/", None)])
+        service = self._service_with_body(body)
+        [cal] = service.list_calendars()
+        assert cal["owner_email"] is None
+        assert cal["owner_type"] is None
+
+    def test_calendar_order_respected(self):
+        """Apple ``calendar-order`` is written by the Calendars frontend so
+        users can reorder calendars; messages must honour the same order
+        instead of falling back to server iteration order."""
+        body = (
+            '<?xml version="1.0"?>'
+            '<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"'
+            ' xmlns:a="http://apple.com/ns/ical/">'
+            "<d:response><d:href>/home/a/</d:href><d:propstat><d:prop>"
+            "<d:displayname>A-third</d:displayname>"
+            "<d:resourcetype><d:collection/><c:calendar/></d:resourcetype>"
+            "<a:calendar-order>30</a:calendar-order>"
+            "</d:prop></d:propstat></d:response>"
+            "<d:response><d:href>/home/b/</d:href><d:propstat><d:prop>"
+            "<d:displayname>B-first</d:displayname>"
+            "<d:resourcetype><d:collection/><c:calendar/></d:resourcetype>"
+            "<a:calendar-order>10</a:calendar-order>"
+            "</d:prop></d:propstat></d:response>"
+            "<d:response><d:href>/home/c/</d:href><d:propstat><d:prop>"
+            "<d:displayname>C-second</d:displayname>"
+            "<d:resourcetype><d:collection/><c:calendar/></d:resourcetype>"
+            "<a:calendar-order>20</a:calendar-order>"
+            "</d:prop></d:propstat></d:response>"
+            "</d:multistatus>"
+        )
+        service = self._service_with_body(body)
+        names = [c["name"] for c in service.list_calendars()]
+        assert names == ["B-first", "C-second", "A-third"]
+
+    def test_unordered_calendars_sort_after_ordered_ones(self):
+        """A calendar without an order value goes after ordered ones, and
+        unordered calendars keep their relative server order (stable sort)
+        — so a fresh, unranked calendar doesn't jump ahead of explicitly
+        ranked ones."""
+        body = (
+            '<?xml version="1.0"?>'
+            '<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"'
+            ' xmlns:a="http://apple.com/ns/ical/">'
+            "<d:response><d:href>/home/u1/</d:href><d:propstat><d:prop>"
+            "<d:displayname>Unordered-1</d:displayname>"
+            "<d:resourcetype><d:collection/><c:calendar/></d:resourcetype>"
+            "</d:prop></d:propstat></d:response>"
+            "<d:response><d:href>/home/o/</d:href><d:propstat><d:prop>"
+            "<d:displayname>Ordered</d:displayname>"
+            "<d:resourcetype><d:collection/><c:calendar/></d:resourcetype>"
+            "<a:calendar-order>5</a:calendar-order>"
+            "</d:prop></d:propstat></d:response>"
+            "<d:response><d:href>/home/u2/</d:href><d:propstat><d:prop>"
+            "<d:displayname>Unordered-2</d:displayname>"
+            "<d:resourcetype><d:collection/><c:calendar/></d:resourcetype>"
+            "</d:prop></d:propstat></d:response>"
+            "</d:multistatus>"
+        )
+        service = self._service_with_body(body)
+        names = [c["name"] for c in service.list_calendars()]
+        assert names == ["Ordered", "Unordered-1", "Unordered-2"]
+
+    def test_malformed_order_treated_as_unordered(self):
+        """The order property comes from user input via PROPPATCH; a
+        non-integer must not crash the listing — treat as unordered."""
+        body = (
+            '<?xml version="1.0"?>'
+            '<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"'
+            ' xmlns:a="http://apple.com/ns/ical/">'
+            "<d:response><d:href>/home/g/</d:href><d:propstat><d:prop>"
+            "<d:displayname>Garbage</d:displayname>"
+            "<d:resourcetype><d:collection/><c:calendar/></d:resourcetype>"
+            "<a:calendar-order>not-a-number</a:calendar-order>"
+            "</d:prop></d:propstat></d:response>"
+            "</d:multistatus>"
+        )
+        service = self._service_with_body(body)
+        [cal] = service.list_calendars()
+        assert cal["order"] is None
+        assert cal["name"] == "Garbage"
+
+    def test_percent_encoded_email_is_decoded(self):
+        """Sabre/DAV happens to emit literal ``@`` but the spec lets a server
+        URL-encode it. Without decoding, attendee matching would silently
+        miss on those deployments — owner_email here must equal what
+        appears in ATTENDEE:mailto:..."""
+        body = _make_propfind_with_owner(
+            [
+                (
+                    "/home/cal/",
+                    "Encoded",
+                    "/caldav/principals/mailboxes/team%40example.com",
+                    "MAILBOX",
+                ),
+            ]
+        )
+        service = self._service_with_body(body)
+        [cal] = service.list_calendars()
+        assert cal["owner_email"] == "team@example.com"
+        assert cal["owner_type"] == "MAILBOX"
+
+
+# ---------------------------------------------------------------------------
+# respond_to_event: per-calendar owner_email targeting
+# ---------------------------------------------------------------------------
+
+
+class TestRespondToEventOwnerTargeting:
+    """When the selected calendar's owner is itself an attendee, the PARTSTAT
+    update must target that owner — so the iTIP REPLY is sent as the right
+    identity (e.g. responding as a shared mailbox from a personal session)."""
+
+    @staticmethod
+    def _ics(*attendees):
+        attendee_lines = "".join(
+            f"ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:{e}\r\n"
+            for e in attendees
+        )
+        return (
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "METHOD:REQUEST\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:owner-target@example.com\r\n"
+            "DTSTAMP:20260101T000000Z\r\n"
+            "DTSTART:20260601T100000Z\r\n"
+            "DTEND:20260601T110000Z\r\n"
+            "SUMMARY:Test\r\n"
+            "ORGANIZER:mailto:org@example.com\r\n"
+            f"{attendee_lines}"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+
+    def _service_with_calendars(self, calendars):
+        service = CalDAVService(url="https://caldav.example.com/")
+        service.list_calendars = lambda **_kw: calendars  # type: ignore[method-assign]
+        captured = {}
+
+        def _fake_put(url, ics_data):
+            captured["url"] = url
+            captured["ics"] = ics_data
+
+        service._put_event = _fake_put  # type: ignore[method-assign]
+        return service, captured
+
+    def test_uses_calendar_owner_when_on_attendee_list(self):
+        """Calendar owner ``team@x`` is on the invite; PARTSTAT updates target
+        it, not the mailbox fallback."""
+        service, captured = self._service_with_calendars(
+            [
+                {
+                    "id": "https://caldav.example.com/u/personal/",
+                    "name": "Personal",
+                    "owner_email": "alice@example.com",
+                    "owner_type": "USER",
+                },
+                {
+                    "id": "https://caldav.example.com/u/team/",
+                    "name": "Team",
+                    "owner_email": "team@example.com",
+                    "owner_type": "MAILBOX",
+                },
+            ]
+        )
+        service.respond_to_event(
+            ics_data=self._ics("team@example.com", "external@example.com"),
+            response="ACCEPTED",
+            attendee_email="alice@example.com",  # mailbox fallback (not in event)
+            calendar_id="https://caldav.example.com/u/team/",
+        )
+        assert captured["url"] == "https://caldav.example.com/u/team/"
+        cal = ICalendar.from_ical(captured["ics"])
+        team_attendee = next(
+            a
+            for a in cal.walk("VEVENT")[0].get("ATTENDEE")
+            if "team@example.com" in str(a).lower()
+        )
+        assert str(team_attendee.params.get("PARTSTAT")) == "ACCEPTED"
+
+    def test_falls_back_to_attendee_email_when_owner_unknown(self):
+        """No owner_email on the calendar (older backend) — RSVP must still
+        work via the legacy mailbox-email path."""
+        service, captured = self._service_with_calendars(
+            [
+                {
+                    "id": "https://caldav.example.com/u/cal/",
+                    "name": "Cal",
+                    # owner_email absent on purpose
+                },
+            ]
+        )
+        service.respond_to_event(
+            ics_data=self._ics("alice@example.com"),
+            response="ACCEPTED",
+            attendee_email="alice@example.com",
+            calendar_id="https://caldav.example.com/u/cal/",
+        )
+        cal = ICalendar.from_ical(captured["ics"])
+        att = cal.walk("VEVENT")[0].get("ATTENDEE")
+        assert str(att.params.get("PARTSTAT")) == "ACCEPTED"
+
+    def test_falls_back_to_attendee_email_when_owner_not_on_invite(self):
+        """The selected calendar's owner isn't an attendee — fall back to the
+        mailbox email so the user isn't silently blocked when both identities
+        are valid candidates."""
+        service, captured = self._service_with_calendars(
+            [
+                {
+                    "id": "https://caldav.example.com/u/cal/",
+                    "name": "Personal",
+                    "owner_email": "personal@example.com",
+                    "owner_type": "USER",
+                },
+            ]
+        )
+        service.respond_to_event(
+            ics_data=self._ics("mailbox@example.com"),
+            response="DECLINED",
+            attendee_email="mailbox@example.com",
+            calendar_id="https://caldav.example.com/u/cal/",
+        )
+        cal = ICalendar.from_ical(captured["ics"])
+        att = cal.walk("VEVENT")[0].get("ATTENDEE")
+        assert str(att.params.get("PARTSTAT")) == "DECLINED"
+
+
+# ---------------------------------------------------------------------------
 # Credential contract: Basic Auth user = OIDC identity email, password = setting
 # ---------------------------------------------------------------------------
 

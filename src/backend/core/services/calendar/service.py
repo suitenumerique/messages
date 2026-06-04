@@ -10,7 +10,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, timezone
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import quote, unquote, urljoin, urlparse
 
 from django.conf import settings as django_settings
 
@@ -33,6 +33,11 @@ CALDAV_TIMEOUT = 20
 DAV_NS = "DAV:"
 CALDAV_NS = "urn:ietf:params:xml:ns:caldav"
 APPLE_ICAL_NS = "http://apple.com/ns/ical/"
+CS_NS = "http://calendarserver.org/ns/"
+# suitenumerique/calendars custom extension. Currently exposes
+# ``calendar-owner-type`` (MAILBOX vs. user's own) so we don't have to
+# infer it from the principal URL shape.
+LASUITE_NS = "http://lasuite.numerique.gouv.fr/ns/"
 
 # Accept only #RRGGBB / #RGB hex from the calendar server's color property —
 # anything else is treated as no color (defensive against attacker-controlled
@@ -253,10 +258,15 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         body = (
             '<?xml version="1.0"?>'
             '<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"'
-            ' xmlns:a="http://apple.com/ns/ical/">'
+            ' xmlns:a="http://apple.com/ns/ical/"'
+            ' xmlns:cs="http://calendarserver.org/ns/"'
+            ' xmlns:ls="http://lasuite.numerique.gouv.fr/ns/">'
             "<d:prop>"
             "<d:displayname/><d:resourcetype/><a:calendar-color/>"
+            "<a:calendar-order/>"
             "<d:current-user-privilege-set/>"
+            "<cs:invite/>"
+            "<ls:calendar-owner-type/>"
             "</d:prop>"
             "</d:propfind>"
         )
@@ -276,14 +286,84 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             color = self._parse_color(
                 response.findtext(f".//{_q(APPLE_ICAL_NS, 'calendar-color')}")
             )
+            order = self._parse_order(
+                response.findtext(f".//{_q(APPLE_ICAL_NS, 'calendar-order')}")
+            )
+            owner_email, owner_type = self._parse_owner(response)
             result.append(
                 {
                     "id": urljoin(self.url, href),
                     "name": displayname.strip(),
                     "color": color,
+                    "order": order,
+                    "owner_email": owner_email,
+                    "owner_type": owner_type,
                 }
             )
+        # Honour the user's manual ordering from the Calendars UI (Apple's
+        # ``calendar-order`` property, written via PROPPATCH by the
+        # suitenumerique/calendars frontend). Calendars without an order
+        # value go after the ordered ones, in original server order — so
+        # adding a new calendar doesn't push it ahead of explicitly-ranked
+        # ones. Python's ``sorted`` is stable, which preserves server
+        # order within each bucket.
+        result.sort(key=lambda c: (c["order"] is None, c["order"] or 0))
         return result
+
+    @staticmethod
+    def _parse_owner(response):
+        """Extract (owner_email, owner_type) from a calendar PROPFIND response.
+
+        Owner type comes from the suitenumerique
+        ``ls:calendar-owner-type`` extension: ``MAILBOX`` for shared-mailbox
+        calendars, absent (404 in the propstat) for the user's own
+        calendars — which we report as ``USER``. We deliberately avoid
+        guessing the type from the principal URL shape; the extension is
+        authoritative.
+
+        The owner's email is the last non-empty path segment of
+        ``cs:invite/cs:organizer/d:href`` — the suite emits a principal
+        href like ``/.../principals/users/<email>`` or
+        ``/.../principals/mailboxes/<email>``, and the trailing segment is
+        the address. URL-decoded so percent-encoded ``@`` (RFC-legal but
+        emitted by some servers) matches the plain mailto: addresses in
+        event ATTENDEE entries.
+
+        Returns ``(None, None)`` for CalDAV servers that don't expose
+        ``cs:invite`` (non-suitenumerique implementations) — callers should
+        treat that as "owner unknown" and fall back to mailbox-email
+        matching.
+        """
+        organizer_href = response.findtext(
+            f".//{_q(CS_NS, 'invite')}/{_q(CS_NS, 'organizer')}/{_q(DAV_NS, 'href')}"
+        )
+        if not organizer_href:
+            return None, None
+        last_segment = organizer_href.strip().rstrip("/").rsplit("/", 1)[-1]
+        if not last_segment:
+            return None, None
+        owner_email = unquote(last_segment)
+
+        raw_type = response.findtext(f".//{_q(LASUITE_NS, 'calendar-owner-type')}")
+        owner_type = "MAILBOX" if (raw_type or "").strip() == "MAILBOX" else "USER"
+        return owner_email, owner_type
+
+    @staticmethod
+    def _parse_order(raw):
+        """Parse Apple ``calendar-order`` (integer sort key) defensively.
+
+        The property is written by the suitenumerique/calendars frontend
+        as a decimal integer, but the value flows through user input
+        (PROPPATCH from the browser) so we must not trust the format.
+        Returns None for missing/malformed values — those calendars sort
+        last while preserving server order among themselves.
+        """
+        if not raw:
+            return None
+        try:
+            return int(raw.strip())
+        except (ValueError, TypeError):
+            return None
 
     @staticmethod
     def _parse_color(raw):
@@ -489,17 +569,41 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         ``PARTSTAT=DECLINED``. The user can re-accept later by changing
         PARTSTAT on the same event.
 
-        Raises ``CalDAVError`` if the responding mailbox is not in the
-        ATTENDEE list — without that, the iTIP REPLY would never reach
-        the organizer (the broker uses ATTENDEE matching to decide who
-        to notify) and the user would see a "Response saved" toast for
-        a no-op write.
+        When ``calendar_id`` points to a calendar whose owner principal is
+        itself an ATTENDEE on the event, the PARTSTAT update targets that
+        owner address rather than ``attendee_email``. This is how a user
+        viewing an invite from their *personal* mailbox can RSVP on behalf
+        of a *shared mailbox* by picking the mailbox calendar: the iTIP
+        REPLY is then sent from the right identity (the mailbox, not the
+        personal address). Falls back to ``attendee_email`` when the
+        calendar's owner is not on the invite or the CalDAV server doesn't
+        expose owner info.
+
+        Raises ``CalDAVError`` if neither candidate is on the ATTENDEE
+        list — without that, the iTIP REPLY would never reach the
+        organizer (the broker uses ATTENDEE matching to decide who to
+        notify) and the user would see a "Response saved" toast for a
+        no-op write.
         """
         cal = ICalendar.from_ical(ics_data)
+        calendar = self._pick_calendar(calendar_id)
+
+        # Prefer the selected calendar's owner address — that's the identity
+        # this RSVP speaks for. Fall back to the mailbox address passed in
+        # by the viewset for backends that don't expose owner info.
+        candidates = []
+        owner = calendar.get("owner_email")
+        if owner:
+            candidates.append(owner)
+        if attendee_email and attendee_email not in candidates:
+            candidates.append(attendee_email)
+
         # Update PARTSTAT on the input first, then rebuild — the rebuild
         # preserves ATTENDEE entries (with our updated PARTSTAT) and
         # drops everything else.
-        if not self._update_partstat(cal, attendee_email, response):
+        if not any(
+            self._update_partstat(cal, candidate, response) for candidate in candidates
+        ):
             raise CalDAVError(
                 "Mailbox is not an attendee of this event; "
                 "RSVP would not notify the organizer."
@@ -508,7 +612,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         cal = rebuild_for_storage(cal)
 
         self._put_event(
-            self._pick_calendar_url(calendar_id),
+            calendar["id"],
             cal.to_ical().decode("utf-8"),
         )
         return True
@@ -566,7 +670,13 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 updated = True
         return updated
 
-    def _pick_calendar_url(self, calendar_id):
+    def _pick_calendar(self, calendar_id):
+        """Resolve ``calendar_id`` to the matching calendar dict.
+
+        Used by both add_event (needs the URL) and respond_to_event (also
+        needs ``owner_email`` to know which identity the RSVP speaks for).
+        Returns the full calendar dict from ``list_calendars(writable_only=True)``.
+        """
         if calendar_id and not self._same_origin(calendar_id):
             raise CalDAVError(
                 "Calendar URL host does not match the configured CalDAV server."
@@ -579,13 +689,14 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         if not calendars:
             raise CalDAVError("No writable calendars available on this CalDAV server.")
         if calendar_id:
-            valid_ids = {c["id"] for c in calendars}
-            if calendar_id not in valid_ids:
-                raise CalDAVError(
-                    "Calendar is not in this user's writable calendar list."
-                )
-            return calendar_id
-        return calendars[0]["id"]
+            for cal in calendars:
+                if cal["id"] == calendar_id:
+                    return cal
+            raise CalDAVError("Calendar is not in this user's writable calendar list.")
+        return calendars[0]
+
+    def _pick_calendar_url(self, calendar_id):
+        return self._pick_calendar(calendar_id)["id"]
 
     def _same_origin(self, candidate_url):
         """Whether ``candidate_url`` shares scheme + host + port with ``self.url``.
