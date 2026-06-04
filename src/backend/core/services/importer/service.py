@@ -66,17 +66,24 @@ class ImportService:
             Key=file_key,
             Range="bytes=0-2047",
         )["Body"].read()
-        content_type = magic.from_buffer(head, mime=True)
 
-        # Disambiguate ambiguous MIME types using filename extension
-        if content_type in ("text/plain", "application/octet-stream") and filename:
-            ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-            extension_map = {
-                "eml": "message/rfc822",
-                "mbox": "application/mbox",
-                "pst": "application/vnd.ms-outlook",
-            }
-            content_type = extension_map.get(ext, content_type)
+        # RFC 4155: an mbox file starts with a "From " envelope line at offset 0.
+        # Trust that signature first — libmagic can otherwise misclassify mbox
+        # files whose first message body contains HTML as text/html.
+        if head.startswith(b"From "):
+            content_type = "application/mbox"
+        else:
+            content_type = magic.from_buffer(head, mime=True)
+
+            # Disambiguate ambiguous MIME types using filename extension
+            if content_type in ("text/plain", "application/octet-stream") and filename:
+                ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+                extension_map = {
+                    "eml": "message/rfc822",
+                    "mbox": "application/mbox",
+                    "pst": "application/vnd.ms-outlook",
+                }
+                content_type = extension_map.get(ext, content_type)
 
         if content_type not in enums.ARCHIVE_SUPPORTED_MIME_TYPES:
             return False, {
