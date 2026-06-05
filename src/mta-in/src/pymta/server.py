@@ -41,6 +41,7 @@ async def _serve() -> None:
         ip_gate = IPGate(
             max_total=settings.PYMTA_MAX_SESSIONS_TOTAL,
             max_per_ip=settings.PYMTA_MAX_SESSIONS_PER_IP,
+            max_per_ip_per_minute=settings.PYMTA_MAX_SESSIONS_PER_IP_PER_MINUTE,
         )
 
         controller = HardenedController(
@@ -79,7 +80,16 @@ async def _serve() -> None:
         finally:
             logger.info("shutting down pymta SMTP listener")
             server.close()
-            await server.wait_closed()
+            try:
+                await asyncio.wait_for(
+                    server.wait_closed(), timeout=settings.PYMTA_SHUTDOWN_TIMEOUT
+                )
+            except TimeoutError:
+                logger.warning(
+                    "graceful shutdown deadline (%ds) exceeded; in-flight "
+                    "sessions abandoned",
+                    settings.PYMTA_SHUTDOWN_TIMEOUT,
+                )
     finally:
         await mda_client.close()
 

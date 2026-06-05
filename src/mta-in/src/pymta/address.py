@@ -5,8 +5,9 @@ the inbound SMTP server should not have to deal with — source routes
 (RFC 5321 §4.1.1.3), control characters (CRLF injection vector), overlong
 local-parts or domains, and the common ``user@`` / ``@domain`` truncations.
 
-They never accept already-unbalanced quoting or angle brackets. Strip the
-``< >`` wrapper before calling :func:`validate_envelope_address`.
+They never accept already-unbalanced quoting or angle brackets.
+:func:`validate_envelope_address` accepts either the wrapped (``<user@host>``)
+or unwrapped form; :func:`strip_brackets` runs unconditionally on entry.
 """
 
 from __future__ import annotations
@@ -123,6 +124,17 @@ def validate_envelope_address(
             smtp_text="5.1.3 Quoted local-parts not accepted",
         )
 
+    # ----- 3b. dot placement in unquoted local-part (RFC 5321 §4.1.2) -------
+    # A leading dot, trailing dot, or two consecutive dots are illegal in an
+    # unquoted local-part. Different mailbox-lookup paths normalise these
+    # inconsistently, so reject at the gate.
+    if local.startswith(".") or local.endswith(".") or ".." in local:
+        raise AddressError(
+            reason="bad_address",
+            smtp_code=553,
+            smtp_text="5.1.3 Malformed local part",
+        )
+
     # ----- 4. length limits (RFC 5321 §4.5.3.1) -----------------------------
     if len(local.encode("utf-8")) > max_local:
         raise AddressError(
@@ -143,9 +155,9 @@ def validate_envelope_address(
     # legitimate senders).
     if domain.startswith("[") and domain.endswith("]"):
         raise AddressError(
-            reason="bad_address",
+            reason="address_literal",
             smtp_code=501,
-            smtp_text="5.1.3 Malformed domain",
+            smtp_text="5.1.3 Address literals not accepted",
         )
     if domain.startswith(".") or domain.endswith(".") or ".." in domain:
         raise AddressError(

@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 # there; we attach to ``session`` via setattr instead.
 _ENVELOPES_ATTR = "_pymta_envelopes"
 _SOFT_ERRORS_ATTR = "_pymta_soft_errors"
+_RCPT_MISSES_ATTR = "_pymta_rcpt_misses"
 
 # Sentinel for the RFC 5321 null sender (MAIL FROM:<>). aiosmtpd's
 # ``smtp_RCPT`` rejects with 503 when ``envelope.mail_from`` is falsy, which
@@ -63,6 +64,12 @@ def _bump_soft_errors(session) -> int:
     return n
 
 
+def _bump_rcpt_misses(session) -> int:
+    n = getattr(session, _RCPT_MISSES_ATTR, 0) + 1
+    setattr(session, _RCPT_MISSES_ATTR, n)
+    return n
+
+
 def _peer_ip(session) -> str | None:
     proxy_data = getattr(session, "proxy_data", None)
     if proxy_data is not None and getattr(proxy_data, "src_addr", None):
@@ -83,16 +90,21 @@ def _peer_port(session) -> str | None:
     return None
 
 
-def _safe_hostname(raw: str | None) -> str | None:
+def _safe_hostname(raw: str | None, session=None) -> str | None:
     """Return ``raw`` only if it is free of CRLF/NUL/TAB; otherwise None.
 
     The MDA receives this through a JWT claim; downstream consumers may
     interpolate it into log lines or ``Received`` headers, so a control char
     here is a header-injection vector.
+
+    When ``session`` is supplied, a rejected hostname is counted and logged so
+    operators can spot floods of malformed HELO/EHLO greetings.
     """
     if raw is None:
         return None
     if _FORBIDDEN_HOSTNAME_CHARS & set(raw):
+        metrics.SECURITY_REJECTIONS.labels(reason="bad_helo").inc()
+        logger.info("dropping HELO/EHLO with forbidden control chars from %s", _peer_ip(session))
         return None
     return raw
 
@@ -110,10 +122,12 @@ class InboundHandler:
         Strips any extension keyword we've decided not to expose on inbound
         port 25: AUTH (would invite credential-stuffing or open relay if
         misconfigured), CHUNKING/BDAT (smuggling parser-confusion surface),
-        PIPELINING (makes command coalescing harder to spot). aiosmtpd
-        already omits these by default; we keep the filter as a guard
-        against future regressions or a contributor wiring an authenticator
-        without re-reading the security rationale.
+        and PIPELINING (announcing it advertises that we accept rapid command
+        coalescing; the actual per-verb rate cap lives in
+        ``controller.py:command_call_limit``). aiosmtpd already omits these
+        by default; we keep the filter as a guard against future regressions
+        or a contributor wiring an authenticator without re-reading the
+        security rationale.
         """
         denied_verbs = {"AUTH", "CHUNKING", "BDAT", "PIPELINING"}
         clean: list[str] = []
@@ -124,18 +138,19 @@ class InboundHandler:
             if verb in denied_verbs:
                 metrics.SECURITY_REJECTIONS.labels(reason="auth_offered").inc()
                 logger.warning(
-                    "stripping disallowed EHLO extension %r — review the SMTP "
-                    "configuration so it is not advertised in the first place",
+                    "stripping disallowed EHLO extension %r from %s — review the "
+                    "SMTP configuration so it is not advertised in the first place",
                     verb,
+                    _peer_ip(session),
                 )
                 continue
             clean.append(line)
 
-        session.host_name = _safe_hostname(hostname)
+        session.host_name = _safe_hostname(hostname, session=session)
         return clean
 
     async def handle_HELO(self, server, session, envelope, hostname):
-        session.host_name = _safe_hostname(hostname)
+        session.host_name = _safe_hostname(hostname, session=session)
         return f"250 {server.hostname}"
 
     # ------------------------------------------------------------------ MAIL
@@ -157,9 +172,11 @@ class InboundHandler:
                 try:
                     announced = int(opt.split("=", 1)[1])
                 except ValueError:
+                    _bump_soft_errors(session)
                     return "501 5.5.4 Bad SIZE parameter"
                 if announced > settings.MAX_INCOMING_EMAIL_SIZE:
                     metrics.SECURITY_REJECTIONS.labels(reason="oversize_announced").inc()
+                    _bump_soft_errors(session)
                     return "552 5.3.4 Message size exceeds fixed maximum"
 
         envelope.mail_from = clean if clean else NULL_SENDER_SENTINEL
@@ -174,13 +191,14 @@ class InboundHandler:
         # this single TCP session.
         if getattr(session, _SOFT_ERRORS_ATTR, 0) >= settings.PYMTA_HARD_ERROR_LIMIT:
             metrics.SECURITY_REJECTIONS.labels(reason="hard_error_limit").inc()
+            metrics.DISCONNECTS_421.labels(reason="hard_error_limit").inc()
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
             return "421 4.7.0 Too many errors, goodbye"
 
         # Per-envelope recipient cap.
         if len(envelope.rcpt_tos) >= settings.PYMTA_MAX_RECIPIENTS:
             metrics.SECURITY_REJECTIONS.labels(reason="max_recipients").inc()
-            metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
+            metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
             _bump_soft_errors(session)
             return "452 4.5.3 Too many recipients"
 
@@ -211,6 +229,11 @@ class InboundHandler:
         if not exists:
             metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
             _bump_soft_errors(session)
+            misses = _bump_rcpt_misses(session)
+            if misses >= settings.PYMTA_MAX_RCPT_MISSES_PER_SESSION:
+                metrics.SECURITY_REJECTIONS.labels(reason="max_rcpt_misses").inc()
+                metrics.DISCONNECTS_421.labels(reason="max_rcpt_misses").inc()
+                return "421 4.7.0 Too many unknown recipients, goodbye"
             return "550 5.1.1 No such recipient"
 
         envelope.rcpt_tos.append(clean)
@@ -224,6 +247,7 @@ class InboundHandler:
         if envelopes > settings.PYMTA_MAX_ENVELOPES_PER_CONNECTION:
             metrics.SECURITY_REJECTIONS.labels(reason="max_envelopes").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
+            _bump_soft_errors(session)
             return "451 4.7.0 Too many messages this session"
 
         content: bytes = envelope.content or b""
@@ -233,6 +257,7 @@ class InboundHandler:
         if b"\x00" in content:
             metrics.SECURITY_REJECTIONS.labels(reason="nul_byte").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
+            _bump_soft_errors(session)
             return "554 5.6.0 NUL byte in message body"
 
         if len(content) > settings.MAX_INCOMING_EMAIL_SIZE:
@@ -240,10 +265,11 @@ class InboundHandler:
             # exceeds data_size_limit, so reaching here is defensive only.
             metrics.SECURITY_REJECTIONS.labels(reason="oversize_announced").inc()
             metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
+            _bump_soft_errors(session)
             return "552 5.3.4 Message size exceeds fixed maximum"
 
         try:
-            sender = envelope.mail_from or ""
+            sender = envelope.mail_from
             if sender == NULL_SENDER_SENTINEL:
                 sender = ""
             result: MDAResult = await asyncio.wait_for(
@@ -257,14 +283,19 @@ class InboundHandler:
                     # own Received header using metadata and can decide what
                     # to do with the missing hostname.
                     client_hostname=None,
-                    client_helo=_safe_hostname(getattr(session, "host_name", None)),
+                    client_helo=_safe_hostname(getattr(session, "host_name", None), session=session),
                 ),
                 timeout=settings.PYMTA_DATA_TIMEOUT,
             )
         except TimeoutError:
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
             metrics.MESSAGE_BYTES.observe(len(content))
-            logger.warning("DATA deliver deadline exceeded (%ds)", settings.PYMTA_DATA_TIMEOUT)
+            _bump_soft_errors(session)
+            logger.warning(
+                "DATA deliver deadline exceeded (%ds) for peer %s",
+                settings.PYMTA_DATA_TIMEOUT,
+                _peer_ip(session),
+            )
             return "451 4.3.0 Delivery timed out, please retry"
 
         metrics.MESSAGE_BYTES.observe(len(content))
@@ -274,8 +305,10 @@ class InboundHandler:
             return "250 2.0.0 Message accepted for delivery"
         if result.temp_fail:
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
+            _bump_soft_errors(session)
             return "451 4.3.0 Delivery temporarily unavailable"
         metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
+        _bump_soft_errors(session)
         return "554 5.6.0 Message rejected by delivery agent"
 
     # ------------------------------------------------------------------ PROXY
@@ -298,5 +331,6 @@ class InboundHandler:
     async def handle_exception(self, error: BaseException) -> str:
         # Never leak stack traces or internal hostnames in SMTP replies.
         metrics.SECURITY_REJECTIONS.labels(reason="internal_error").inc()
+        metrics.DISCONNECTS_421.labels(reason="internal_error").inc()
         logger.exception("Unhandled error in SMTP handler")
         return "421 4.3.0 Internal error, please try again later"

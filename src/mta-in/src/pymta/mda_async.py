@@ -25,6 +25,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import httpx
 import jwt
@@ -32,6 +33,13 @@ import jwt
 from . import metrics, settings
 
 logger = logging.getLogger(__name__)
+
+# Local development URLs are the only place we tolerate a plaintext MDA;
+# anywhere else a leaked JWT secret on the wire is a credential incident.
+_LOCAL_HOSTNAMES = frozenset({"localhost", "127.0.0.1", "::1"})
+# Below this many bytes a shared HS256 secret is brute-forceable; refuse to
+# even start the process rather than minting weak tokens.
+_MIN_SECRET_LENGTH = 32
 
 
 @dataclass(frozen=True)
@@ -64,11 +72,58 @@ class MDAClient:
         base_url: str | None = None,
         secret: str | None = None,
         timeout: int | None = None,
+        breaker_threshold: int | None = None,
+        breaker_cooldown: int | None = None,
+        clock=time.monotonic,
     ):
         self.base_url = (base_url or settings.MDA_API_BASE_URL).rstrip("/") + "/"
         self.secret = secret or settings.MDA_API_SECRET
         self.timeout = timeout if timeout is not None else settings.MDA_API_TIMEOUT
+        self._breaker_threshold = (
+            breaker_threshold
+            if breaker_threshold is not None
+            else settings.PYMTA_MDA_BREAKER_THRESHOLD
+        )
+        self._breaker_cooldown = (
+            breaker_cooldown
+            if breaker_cooldown is not None
+            else settings.PYMTA_MDA_BREAKER_COOLDOWN
+        )
+        self._clock = clock
+        # Counts consecutive failures. Reset to 0 by any successful call.
+        self._consecutive_failures = 0
+        # Monotonic-time deadline until which the breaker stays open. None
+        # when closed; a future timestamp when open.
+        self._open_until: float | None = None
         self._client: httpx.AsyncClient | None = None
+        self._validate_credentials()
+
+    def _validate_credentials(self) -> None:
+        """Warn loudly at startup about weak secret or plaintext non-local MDA URL.
+
+        Warnings rather than hard failures because the shared dev secret
+        ``my-shared-secret-mda`` (20 chars) is intentionally short, and dev
+        deployments talk to the MDA over the docker bridge without TLS. The
+        log line gives a prod operator clear feedback to fix; promote to
+        ``RuntimeError`` here once prod has migrated to a stronger secret.
+        """
+        parsed = urlparse(self.base_url)
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme == "http" and host not in _LOCAL_HOSTNAMES:
+            logger.warning(
+                "MDA_API_BASE_URL uses plaintext http:// for non-local host %r "
+                "(%r). The JWT bearer token will traverse the network in clear. "
+                "Configure https:// in production.",
+                host,
+                self.base_url,
+            )
+        if self.secret and len(self.secret) < _MIN_SECRET_LENGTH:
+            logger.warning(
+                "MDA_API_SECRET is %d bytes; recommended minimum is %d. "
+                "Short HS256 secrets are brute-forceable from a captured JWT.",
+                len(self.secret),
+                _MIN_SECRET_LENGTH,
+            )
 
     async def start(self) -> httpx.AsyncClient:
         """Open the persistent HTTP client. Idempotent."""
@@ -85,12 +140,45 @@ class MDAClient:
     def _build_jwt(self, body: bytes, metadata: dict) -> str:
         if not self.secret:
             raise RuntimeError("MDA_API_SECRET is required to sign MDA API requests")
+        # Spread metadata FIRST so a stray metadata key named "exp" or
+        # "body_hash" cannot shadow the security-relevant claims.
         claims = {
+            **metadata,
             "exp": datetime.datetime.now(tz=datetime.UTC) + datetime.timedelta(seconds=60),
             "body_hash": hashlib.sha256(body).hexdigest(),
-            **metadata,
         }
         return jwt.encode(claims, self.secret, algorithm="HS256")
+
+    def _breaker_open(self) -> bool:
+        """True when the circuit is currently shedding traffic."""
+        if self._open_until is None:
+            return False
+        if self._clock() >= self._open_until:
+            # Cool-down elapsed; let the next request probe upstream.
+            self._open_until = None
+            self._consecutive_failures = 0
+            return False
+        return True
+
+    def _record_failure(self) -> None:
+        if not self._breaker_threshold:
+            return
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self._breaker_threshold and self._open_until is None:
+            self._open_until = self._clock() + self._breaker_cooldown
+            logger.warning(
+                "MDA circuit breaker OPEN after %d consecutive failures; "
+                "fast-failing for %ds",
+                self._consecutive_failures,
+                self._breaker_cooldown,
+            )
+
+    def _record_success(self) -> None:
+        if self._consecutive_failures and self._open_until is None:
+            logger.info(
+                "MDA recovered after %d consecutive failures", self._consecutive_failures
+            )
+        self._consecutive_failures = 0
 
     async def _post(
         self,
@@ -100,29 +188,37 @@ class MDAClient:
         metadata: dict,
         endpoint_label: str,
     ) -> MDAResult:
+        if self._breaker_open():
+            metrics.MDA_REQUEST_DURATION.labels(
+                endpoint=endpoint_label, result="breaker_open"
+            ).observe(0)
+            return MDAResult(ok=False, temp_fail=True, payload={}, status_code=0)
+
         client = self._client or await self.start()
 
         url = self.base_url + path.lstrip("/")
         token = self._build_jwt(body, metadata)
         headers = {"Content-Type": content_type, "Authorization": f"Bearer {token}"}
 
-        start = time.monotonic()
+        start = self._clock()
         try:
             response = await client.post(url, content=body, headers=headers)
         except httpx.TimeoutException:
             metrics.MDA_REQUEST_DURATION.labels(endpoint=endpoint_label, result="timeout").observe(
-                time.monotonic() - start
+                self._clock() - start
             )
-            logger.warning("MDA %s timeout after %.2fs", endpoint_label, time.monotonic() - start)
+            logger.warning("MDA %s timeout after %.2fs", endpoint_label, self._clock() - start)
+            self._record_failure()
             return MDAResult(ok=False, temp_fail=True, payload={}, status_code=0)
         except httpx.HTTPError:
             metrics.MDA_REQUEST_DURATION.labels(endpoint=endpoint_label, result="error").observe(
-                time.monotonic() - start
+                self._clock() - start
             )
             logger.exception("MDA %s transport error", endpoint_label)
+            self._record_failure()
             return MDAResult(ok=False, temp_fail=True, payload={}, status_code=0)
 
-        elapsed = time.monotonic() - start
+        elapsed = self._clock() - start
 
         # JSON decode is best-effort; some error bodies may be HTML.
         try:
@@ -135,15 +231,21 @@ class MDAClient:
             metrics.MDA_REQUEST_DURATION.labels(endpoint=endpoint_label, result="ok").observe(
                 elapsed
             )
+            self._record_success()
             return MDAResult(ok=True, temp_fail=False, payload=payload, status_code=status)
 
-        # 5xx → tempfail; 4xx → permanent reject.
+        # 5xx → tempfail (counted as a breaker failure); 4xx → permanent reject
+        # (not counted — it's the MDA telling us the *request* was bad).
         temp = status >= 500
         result_label = "http_5xx" if temp else "http_4xx"
         metrics.MDA_REQUEST_DURATION.labels(endpoint=endpoint_label, result=result_label).observe(
             elapsed
         )
         logger.warning("MDA %s returned HTTP %d", endpoint_label, status)
+        if temp:
+            self._record_failure()
+        else:
+            self._record_success()
         return MDAResult(ok=False, temp_fail=temp, payload=payload, status_code=status)
 
     async def check_recipient(self, address: str) -> MDAResult:

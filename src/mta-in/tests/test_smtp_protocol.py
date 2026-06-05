@@ -74,27 +74,10 @@ def test_partial_writes():
         assert response.startswith("250")
 
 
-@pytest.mark.skip(reason="TODO review")
-def test_pipelining_support():
-    """Test SMTP command pipelining support"""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((MTA_HOST, 25))
-        s.settimeout(2)
-        s.recv(1024)  # Greeting
-
-        # Send multiple commands at once
-        pipeline = (
-            b"HELO example.com\r\nMAIL FROM:<sender@example.com>\r\nRCPT TO:<test@example.com>\r\n"
-        )
-        s.send(pipeline)
-
-        # Should get multiple responses
-        responses = []
-        for _ in range(3):
-            response = s.recv(1024).decode()
-            responses.append(response)
-
-        assert all(r.startswith("250") for r in responses)
+# Pipelining is deliberately NOT advertised in EHLO (see handle_EHLO) and
+# command_call_limit enforces strict per-verb counts. A test that pipelines
+# multiple commands at once would assert behaviour we *avoid* — leaving the
+# placeholder skipped would only rot, so we don't keep one.
 
 
 @pytest.mark.skip(reason="Not supported for now")

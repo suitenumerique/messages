@@ -6,7 +6,6 @@ labels) to keep the time-series space bounded.
 """
 
 import logging
-from threading import Lock
 
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
@@ -19,7 +18,8 @@ _METRICS_NAMESPACE = "pymta"
 CONNECTIONS_TOTAL = Counter(
     f"{_METRICS_NAMESPACE}_connections_total",
     "Total inbound TCP connections, by post-accept outcome.",
-    labelnames=("result",),  # accepted | rejected_per_ip | rejected_global | proxy_error
+    # accepted | rejected_per_ip | rejected_per_ip_rate | rejected_global | proxy_error
+    labelnames=("result",),
 )
 
 SESSIONS_ACTIVE = Gauge(
@@ -72,38 +72,23 @@ MDA_REQUEST_DURATION = Histogram(
     buckets=(0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30),
 )
 
+DISCONNECTS_421 = Counter(
+    f"{_METRICS_NAMESPACE}_disconnects_421_total",
+    "Sessions where pymta replied 421 and closed the TCP connection.",
+    labelnames=("reason",),  # gate_global | gate_per_ip | gate_per_ip_rate |
+    # hard_error_limit | internal_error
+)
+
+
 SECURITY_REJECTIONS = Counter(
     f"{_METRICS_NAMESPACE}_security_rejections_total",
     "Requests rejected by an explicit hardening check, by reason.",
     labelnames=("reason",),
     # Known reasons: source_route, control_char, oversize_local, oversize_domain,
     # nul_byte, oversize_announced, max_recipients, max_envelopes, auth_offered,
-    # bad_address, hard_error_limit, internal_error
+    # bad_address, address_literal, bad_helo, hard_error_limit, max_rcpt_misses,
+    # internal_error
 )
-
-
-_per_ip_counts: dict[str, int] = {}
-_per_ip_lock = Lock()
-
-
-def session_acquired(ip: str) -> None:
-    """Bookkeeping helper called from HardenedSMTP after gate acquisition."""
-    with _per_ip_lock:
-        _per_ip_counts[ip] = _per_ip_counts.get(ip, 0) + 1
-        SESSIONS_PER_IP.set(len(_per_ip_counts))
-    SESSIONS_ACTIVE.inc()
-
-
-def session_released(ip: str) -> None:
-    """Bookkeeping helper called from HardenedSMTP on session close."""
-    with _per_ip_lock:
-        new = _per_ip_counts.get(ip, 0) - 1
-        if new <= 0:
-            _per_ip_counts.pop(ip, None)
-        else:
-            _per_ip_counts[ip] = new
-        SESSIONS_PER_IP.set(len(_per_ip_counts))
-    SESSIONS_ACTIVE.dec()
 
 
 def start_metrics_server(host: str, port: int) -> None:

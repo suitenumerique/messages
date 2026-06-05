@@ -37,6 +37,13 @@ MDA_API_BASE_URL = _env_str("MDA_API_BASE_URL", "http://localhost:8000/api/v1.0/
 MDA_API_SECRET = _env_str("MDA_API_SECRET", "")
 MDA_API_TIMEOUT = _env_int("MDA_API_TIMEOUT", 30)
 
+# Circuit-breaker: when this many consecutive MDA calls fail (timeout / 5xx /
+# transport error), pymta short-circuits subsequent calls for
+# ``PYMTA_MDA_BREAKER_COOLDOWN`` seconds and replies 451 directly. Prevents
+# SMTP sessions from stacking up against a dead MDA. Set to 0 to disable.
+PYMTA_MDA_BREAKER_THRESHOLD = _env_int("PYMTA_MDA_BREAKER_THRESHOLD", 10)
+PYMTA_MDA_BREAKER_COOLDOWN = _env_int("PYMTA_MDA_BREAKER_COOLDOWN", 30)
+
 
 # ---------------------------------------------------------------------------
 # SMTP listener
@@ -82,11 +89,21 @@ PYMTA_COMMAND_TIMEOUT = _env_int("PYMTA_COMMAND_TIMEOUT", 120)
 # plus the MDA delivery call. Defends against slowloris on the body.
 PYMTA_DATA_TIMEOUT = _env_int("PYMTA_DATA_TIMEOUT", 600)
 
+# Maximum wall-clock seconds the server waits for in-flight sessions to drain
+# after SIGTERM. Lower than k8s `terminationGracePeriodSeconds` so we exit
+# cleanly before SIGKILL would interrupt an in-progress MDA deliver call.
+PYMTA_SHUTDOWN_TIMEOUT = _env_int("PYMTA_SHUTDOWN_TIMEOUT", 25)
+
 # Per-IP concurrent SMTP sessions. 0 disables the cap.
 PYMTA_MAX_SESSIONS_PER_IP = _env_int("PYMTA_MAX_SESSIONS_PER_IP", 100)
 
 # Process-wide concurrent SMTP sessions. 0 disables.
 PYMTA_MAX_SESSIONS_TOTAL = _env_int("PYMTA_MAX_SESSIONS_TOTAL", 1000)
+
+# Per-IP new-session rate, measured in a rolling 60s window. Defends against a
+# peer that churns through fast open/close cycles (which never exceed the
+# concurrent cap but still cost CPU/TLS handshakes/MDA RCPT checks). 0 disables.
+PYMTA_MAX_SESSIONS_PER_IP_PER_MINUTE = _env_int("PYMTA_MAX_SESSIONS_PER_IP_PER_MINUTE", 600)
 
 # Per-session soft-error budget. Mirrors Postfix `smtpd_hard_error_limit`:
 # once a session accumulates this many 4xx/5xx replies (typically over-limit
@@ -94,6 +111,13 @@ PYMTA_MAX_SESSIONS_TOTAL = _env_int("PYMTA_MAX_SESSIONS_TOTAL", 1000)
 # connection closes. Defends against bulk address enumeration that lives in
 # one TCP session.
 PYMTA_HARD_ERROR_LIMIT = _env_int("PYMTA_HARD_ERROR_LIMIT", 50)
+
+# Per-session cap on unknown-mailbox lookups specifically. The hard-error
+# budget above covers the *aggregate* of all 4xx/5xx replies; this one
+# isolates enumeration: an attacker submitting valid-syntax addresses to
+# probe which exist gets cut off after this many ``no such recipient``
+# replies, even if the soft-error counter is still below its limit.
+PYMTA_MAX_RCPT_MISSES_PER_SESSION = _env_int("PYMTA_MAX_RCPT_MISSES_PER_SESSION", 10)
 
 
 # ---------------------------------------------------------------------------
@@ -112,10 +136,27 @@ PYMTA_PROXY_PROTOCOL_TIMEOUT = _env_int("PYMTA_PROXY_PROTOCOL_TIMEOUT", 5)
 
 # ---------------------------------------------------------------------------
 # STARTTLS (opportunistic). When both files are set, STARTTLS is advertised.
+#
+# Two ways to configure STARTTLS:
+#   * pymta-native: ``PYMTA_TLS_CERT_FILE`` + ``PYMTA_TLS_KEY_FILE`` (two paths).
+#   * Postfix-style: ``STARTTLS_CHAIN_FILES`` — a comma-separated list of PEM
+#     bundle files (each bundle contains a private key followed by the cert
+#     chain). pymta reads the first bundle in the list and loads it via
+#     ``SSLContext.load_cert_chain(certfile=path, keyfile=path)``: Python's
+#     ssl module accepts a single combined PEM that way. Postfix-compatible.
 # ---------------------------------------------------------------------------
 
 PYMTA_TLS_CERT_FILE = _env_str("PYMTA_TLS_CERT_FILE", "")
 PYMTA_TLS_KEY_FILE = _env_str("PYMTA_TLS_KEY_FILE", "")
+
+# Postfix-style fallback. Only the first path in the comma-separated list is
+# used (Postfix supports multiple for RSA+ECDSA dual-cert; pymta picks the
+# first chain and lets the operator add SNI later if needed).
+_chain_files = _env_str("STARTTLS_CHAIN_FILES", "")
+if _chain_files and not PYMTA_TLS_CERT_FILE and not PYMTA_TLS_KEY_FILE:
+    _first_chain = _chain_files.split(",", 1)[0].strip()
+    PYMTA_TLS_CERT_FILE = _first_chain
+    PYMTA_TLS_KEY_FILE = _first_chain
 
 
 # ---------------------------------------------------------------------------

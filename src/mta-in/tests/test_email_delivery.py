@@ -46,7 +46,9 @@ def test_simple_email_delivery(mock_api_server, smtp_client):
     assert not email["email"].is_multipart()
     body = email["email"].get_payload()
 
-    # TODO: why the \n ?
+    # smtplib converts the bare \n in the source string to the SMTP-mandatory
+    # CRLF (\r\n) during DATA transmission, so the body received by the MDA
+    # carries \r\n line endings — not the \n we put in the MIMEText source.
     assert body == "This is a test email\r\n"
 
 
@@ -91,7 +93,9 @@ def test_simple_email_delivery_with_multiple_recipients(mock_api_server, smtp_cl
     assert not email["email"].is_multipart()
     body = email["email"].get_payload()
 
-    # TODO: why the \n ?
+    # smtplib converts the bare \n in the source string to the SMTP-mandatory
+    # CRLF (\r\n) during DATA transmission, so the body received by the MDA
+    # carries \r\n line endings — not the \n we put in the MIMEText source.
     assert body == "This is a test email\r\n"
 
     mock_api_server.received_emails = []
@@ -119,7 +123,9 @@ def test_simple_email_delivery_with_multiple_recipients(mock_api_server, smtp_cl
     assert not email["email"].is_multipart()
     body = email["email"].get_payload()
 
-    # TODO: why the \n ?
+    # smtplib converts the bare \n in the source string to the SMTP-mandatory
+    # CRLF (\r\n) during DATA transmission, so the body received by the MDA
+    # carries \r\n line endings — not the \n we put in the MIMEText source.
     assert body == "This is a test email\r\n"
 
 

@@ -41,6 +41,11 @@ def build_smtp_kwargs(*, tls_context: ssl.SSLContext | None) -> dict:
             + 10,
             "DATA": settings.PYMTA_MAX_ENVELOPES_PER_CONNECTION + 2,
             "RSET": 20,
+            "QUIT": 1,
+            # STARTTLS pinned explicitly so a future contributor cannot raise
+            # the "*" bucket and silently let a peer burn TLS handshakes by
+            # repeating EHLO/STARTTLS within one TCP session.
+            "STARTTLS": 2,
             "*": 25,
         },
         "proxy_protocol_timeout": (

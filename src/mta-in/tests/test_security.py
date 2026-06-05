@@ -158,6 +158,10 @@ def test_smtp_smuggling_does_not_split_messages(mock_api_server, smuggle_bytes):
     separately-delivered envelope to an attacker-chosen recipient.
     """
     mock_api_server.add_mailbox("victim@example.com")
+    # Register the smuggled recipient too: otherwise an actual split would be
+    # rejected at RCPT by the MDA (mailbox not found) and the test would
+    # silently pass without proving smuggling failed.
+    mock_api_server.add_mailbox("smuggled@example.com")
 
     s = _raw_session()
     try:

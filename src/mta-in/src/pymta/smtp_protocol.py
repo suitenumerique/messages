@@ -95,6 +95,7 @@ class HardenedSMTP(BaseSMTP):
             await self._ip_gate._try_acquire(ip)  # noqa: SLF001
         except TooManyConnections as exc:
             metrics.CONNECTIONS_TOTAL.labels(result=f"rejected_{exc.scope}").inc()
+            metrics.DISCONNECTS_421.labels(reason=f"gate_{exc.scope}").inc()
             logger.info("connection from %s refused: %s cap reached", ip, exc.scope)
             with contextlib.suppress(OSError, ConnectionError):
                 await self.push("421 4.7.0 Too many connections, try again later")
@@ -108,14 +109,12 @@ class HardenedSMTP(BaseSMTP):
         self._gate_held_ip = ip
         self._gate_started = time.monotonic()
         metrics.CONNECTIONS_TOTAL.labels(result="accepted").inc()
-        metrics.session_acquired(ip)
         return True
 
     async def _release_gate(self) -> None:
         if self._gate_held_ip is None or self._ip_gate is None:
             return
         ip, self._gate_held_ip = self._gate_held_ip, None
-        metrics.session_released(ip)
         if self._gate_started is not None:
             metrics.SESSION_DURATION.observe(time.monotonic() - self._gate_started)
             self._gate_started = None
@@ -128,4 +127,7 @@ class HardenedSMTP(BaseSMTP):
         peer = getattr(self.session, "peer", None) if self.session else None
         if peer:
             return str(peer[0])
+        # All sessions without a wire peer collapse into one bucket; log so a
+        # spike here doesn't go invisible.
+        logger.warning("session has no transport peer; using 'unknown' bucket")
         return "unknown"

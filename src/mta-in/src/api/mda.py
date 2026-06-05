@@ -22,15 +22,17 @@ def mda_api_call(path, content_type, body, metadata):
     )
     mda_session.mount("https://", HTTPAdapter(max_retries=retries))
 
+    # Spread metadata FIRST so a stray metadata key named "exp" or "body_hash"
+    # cannot shadow the security-relevant claims.
     jwt_token = jwt.encode(
         {
+            **metadata,
             # Always anchor `exp` in UTC. A naive datetime here would be
             # interpreted as local time by PyJWT, so a container whose TZ
             # drifts from UTC could mint tokens that look pre-expired or
             # 12 hours in the future to the MDA.
             "exp": datetime.datetime.now(tz=datetime.UTC) + datetime.timedelta(seconds=60),
             "body_hash": hashlib.sha256(body).hexdigest(),
-            **metadata,
         },
         MDA_API_SECRET,
         algorithm="HS256",
