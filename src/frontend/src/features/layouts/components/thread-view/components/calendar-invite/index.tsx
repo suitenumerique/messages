@@ -765,7 +765,15 @@ export const CalendarInvite = ({
         const match = calendars.find(calendarMatchesAttendee);
         return (match ?? calendars[0]).id;
     }, [calendars, calendarMatchesAttendee]);
-    const effectiveCalendarId = selectedCalendarId ?? defaultCalendarId;
+    // Ignore ``selectedCalendarId`` when it no longer matches any calendar
+    // in the current list — otherwise a stale id (mailbox switch, calendar
+    // deleted server-side) would flow into the RSVP/add-to-calendar POST
+    // and the chooser display.
+    const effectiveCalendarId =
+        selectedCalendarId &&
+        calendars.some((c) => c.id === selectedCalendarId)
+            ? selectedCalendarId
+            : defaultCalendarId;
 
     const selectedCalendar = useMemo(
         () => calendars.find((c) => c.id === effectiveCalendarId) ?? null,
